@@ -7,7 +7,7 @@ Two new runtime headers alongside `ktc_core.h`:
 - `src/main/resources/ktc/ktc_mangle.h` — naming macros, variadic generic dispatch, optional access helpers
 - `src/main/resources/ktc/ktc_types.h`  — struct-definition macros (`KTC_DEFINE_OPT`, `KTC_DEFINE_ARRAY`, `KTC_DEFINE_OPT_ARRAY`)
 
-Both are already included at the top of `ktc_core.h`.
+Both are included at the top of `ktc_core.h`. `Main.kt` copies all four ktc files on transpile.
 
 ---
 
@@ -56,85 +56,63 @@ KTC_IS_NONE(v)    // (v).tag == ktc_NONE
 KTC_UNWRAP(v)     // (v).value
 ```
 
-### Nesting works (preprocessor expansion fix already applied)
+---
 
-```c
-// This correctly expands to testpackage_Configuration$3_...:
-KTC_GENERIC_TYPE(
-    testpackage_Configuration,
-    KTC_OPT_TYPE(KTC_GENERIC_TYPE(testpackage_Initial, testpackage_Param)),
-    KTC_OPT_TYPE(KTC_GENERIC_TYPE(
-        AdvancedSelector,
-        KTC_OPT_TYPE(testpackage_Param),
-        KTC_GENERIC_TYPE(testpackage_UpdatedParam, KTC_OPT_TYPE(testpackage_JsonHolder))
-    )),
-    KTC_GENERIC_TYPE(testpackage_Finalizer, testpackage_Param, KTC_OPT_TYPE(testpackage_Error))
-)
-```
+## ✅ Completed steps
 
-The `_IMPL_` indirection in `KTC_OPT_TYPE` / `KTC_ARRAY_TYPE` / `KTC_OPT_ARRAY_TYPE` ensures
-the argument is fully expanded before `##` concatenation — without it, passing another macro
-call as argument would paste `)` with `$Opt`, producing undefined behaviour.
+### Step 1 — ktc_core.h migration
+- [x] Add `#include "ktc_mangle.h"` and `#include "ktc_types.h"`
+- [x] Replace all `KTC_OPTIONAL(T)` callsites → `KTC_DEFINE_OPT(T)` (12 primitives + String)
+- [x] `KTC_OPTIONAL_GENERIC_NAME` / `KTC_OPTIONAL_GENERIC` kept as backwards-compat stubs
+- [x] `Main.kt` copies `ktc_mangle.h`, `ktc_types.h`, `ktc_core.h`, `ktc_core.c`
+
+### Step 2 — `$Opt` rename in codegen + `$N_` arity markers
+- [x] `CCodeGen.kt` — `optCTypeName`, `mangledGenericName`, `genericOptionalCName`, `optTypeArgComponent`
+- [x] `CCodeGenEmit.kt` — replaced `KTC_OPTIONAL_GENERIC` calls with direct typedef emit
+- [x] `CoreTypes.kt` — `Nullable.toCType()` → `$Opt` suffix
+- [x] `CCodeGenExpr.kt` — hardcoded `$Optional` → `$Opt` for Int/Long/Double/Float
+- [x] All `startsWith("name_")` checks updated to `startsWith("name$")` throughout codegen
+- [x] `matchTypeParam` updated for `$N_A1_A2` format in scan and expr phases
+- [x] Dead `Pair_A_B` / `Triple_A_B_C` parsing removed from `CoreTypes.kt`
+- [x] Unit tests and integration tests all passing (35/35 integration, 566 unit)
 
 ---
 
-## Codegen changes remaining
-
-### Step 1 — ktc_core.h migration (in progress)
-- [x] Add `#include "ktc_mangle.h"` and `#include "ktc_types.h"`
-- [ ] Replace `KTC_OPTIONAL(T)` callsites → `KTC_DEFINE_OPT(T)` (requires `$Opt` rename below)
-- [ ] Remove superseded macros: `KTC_OPTIONAL`, `KTC_OPTIONAL_GENERIC_NAME`, `KTC_OPTIONAL_GENERIC`
-- [ ] Add `extern const ktc_core_AnyVt ktc_core_Boxed<X>_vt;` declarations
-
-### Step 2 — `$Opt` rename in codegen strings
-All places in Kotlin codegen emitting `$Optional` suffix → `$Opt`:
-- `CCodeGen.kt` — `optCTypeName`, `optNone`, `optSome`
-- `CCodeGenEmit.kt` — `KTC_OPTIONAL_GENERIC` emit, forward-decl strings
-
-Update all expected-output `.h`/`.c` files in `tests/`.
+## Remaining steps
 
 ### Step 3 — Optional access macros in generated code
-- `optNone()` → `KTC_NONE(innerType)`
-- `optSome()` → `KTC_SOME(innerType, expr)`
-- null checks → `KTC_IS_NONE(v)` / `KTC_IS_SOME(v)`
-- value access → `KTC_UNWRAP(v)`
+Replace manual struct literals with macros in generated `.c`:
+- `optNone()` → `KTC_NONE(innerType)`  (currently emits `(T$Opt){ktc_NONE}`)
+- `optSome()` → `KTC_SOME(innerType, expr)` (currently emits `(T$Opt){ktc_SOME, expr}`)
+- null checks → `KTC_IS_NONE(v)` / `KTC_IS_SOME(v)` (currently emits `.tag == ktc_NONE/SOME`)
+- value access → `KTC_UNWRAP(v)` (currently emits `.value`)
 
-### Step 4 — Generic `$N_` arity markers
-Find name builder in `CCodeGenScan.kt` / `CCodeGenEmit.kt`:
-```kotlin
-// current: "${baseName}_${typeArgs.joinToString("_")}"
-// new:     "${baseName}\$${typeArgs.size}_${typeArgs.joinToString("_")}"
-```
-Optional-generic: `Base$Opt$N_A1_..._AN` (was `Base$Optional_TypeArg`).
-Mechanical test-output update pass required.
+Files: `CCodeGen.kt` (`optNone`, `optSome`), `CCodeGenExpr.kt`, `CCodeGenStmts.kt`
 
-### Step 5 — Fixed-array struct types
+### Step 4 — Fixed-array struct types
+Switch `@Size(N) Array<T>` from raw C arrays to `ktc_Array_T_N` wrapped structs:
 - `Arr.toCType()` in `CoreTypes.kt`: `sized != null -> "ktc_Array_${elem.toCType()}_${sized}"`
-- `cTypeStr(KtcType.Arr)` in `CCodeGenCTypes.kt`: same pattern
-- Track `Set<Pair<String,Int>>` of used (T,N) pairs; emit `KTC_DEFINE_ARRAY(T,N)` in generated headers
+- Track used `(T,N)` pairs; emit `KTC_DEFINE_ARRAY(T,N)` in generated headers
 - Struct fields: `T field[N]` → `ktc_Array_T_N field` (drop `$len` companion)
 - Constructor init: `memcpy(x.field.arr, expr, N*sizeof(T))`
 - Return type: remove `void + $out` pattern; return `ktc_Array_T_N` directly
 - Element access: `name[i]` → `name.arr[i]` in `CCodeGenExpr.kt`
-- New: `KtcType.Nullable(Arr(elem, sized=N))` → `ktc_Array$Opt$_T_N`; emit `KTC_DEFINE_OPT_ARRAY`
+- Optional: `Nullable(Arr(elem, sized=N))` → `ktc_Array$Opt$_T_N`; emit `KTC_DEFINE_OPT_ARRAY`
 
-### Step 6 — BoxedPrimitive vtables
-Add per-primitive `ktc_core_AnyVt` impls to `ktc_core.c` for Byte, Short, Int, Long,
-Float, Double, Bool, Char, UByte, UShort, UInt, ULong, String.
+### Step 5 — BoxedPrimitive vtables
+Add per-primitive `ktc_core_AnyVt` impls to `ktc_core.c` (Byte, Short, Int, Long,
+Float, Double, Bool, Char, UByte, UShort, UInt, ULong, String).
 
-Update boxing in `CCodeGenStmts.kt` (lines 282, 348, 969):
+Update boxing in `CCodeGenStmts.kt`:
 ```c
 // current: ktc_Any x = {{2}, (void*)&tVal};
 // new:     ktc_Any x = {{2}, (void*)&tVal, &ktc_core_BoxedInt_vt};
 ```
-Add `getBoxedVtName(typeName): String?` in `CCodeGen.kt`.
 
 ---
 
-## Execution order
+## Execution order for remaining
 
-1. ktc_core.h include (done) → then `$Opt` rename → test output pass
-2. Optional access macros (cosmetic, low risk)
-3. Generic `$N_` naming + test output pass
-4. Fixed-array structs (most invasive)
-5. BoxedPrimitive vtables (self-contained)
+3. Optional access macros (Step 3) — cosmetic, low risk, pure string substitution
+4. Fixed-array structs (Step 4) — most invasive, requires $out pattern removal
+5. BoxedPrimitive vtables (Step 5) — self-contained runtime addition
