@@ -2,7 +2,7 @@
 
 # IMPORTANT
 # Deprecate generic macro support and just process it on transpiller side
-# follow @Desired_Header.h design type
+# follow @Desired_Header.h design style
 
 ## Naming conventions
 
@@ -11,10 +11,10 @@
 | `T?`           | `T$Opt`              |
 | `Array<T, N>`  | `ktc_Array_T_N`      |
 | `Array<T, N>?` | `ktc_Array$Opt$_T_N` |
-| `Foo<A>`       | `Foo$1_A`            |
-| `Foo<A, B>`    | `Foo$2_A_B`          |
-| `Foo<A>?`      | `Foo$Opt$1_A`        |
-| `Foo<A, B>?`   | `Foo$Opt$2_A_B`      |
+| `Foo<A>`       | `Foo_A`              |
+| `Foo<A, B>`    | `Foo_A_B`            |
+| `Foo<A>?`      | `Foo$Opt_A`          |
+| `Foo<A, B>?`   | `Foo$Opt_A_B`        |
 
 > Non-generic user types are always `package_TypeName`  
 > e.g. `Vec2` defined in package `game` → `game_Vec2`
@@ -22,31 +22,32 @@
 ---
 
 ## Macros — type construction
-
+# DONT USE GENERIC MACROS, JUST PROCESS IT ON TRANSPILLER SIDE THEY WILL BE REMOVED
+# follow @Desired_Header.h design style
 ```c
 /* T?  →  T$Opt */
 KTC_OPT_TYPE(T)
-// KTC_OPT_TYPE(Int) → Int$Opt
+// KTC_OPT_TYPE(ktc_Int) → ktc_Int$Opt
 
 /* Array<T, N>  →  ktc_Array_T_N */
 KTC_ARRAY_TYPE(T, N)
-// KTC_ARRAY_TYPE(Int, 4) → ktc_Array_Int_4
+// KTC_ARRAY_TYPE(ktc_Int, 4) → ktc_Array_ktc_Int_4
 
 /* Array<T, N>?  →  ktc_Array$Opt$_T_N */
 KTC_OPT_ARRAY_TYPE(T, N)
-// KTC_OPT_ARRAY_TYPE(Int, 4) → ktc_Array$Opt$_Int_4
+// KTC_OPT_ARRAY_TYPE(ktc_Int, 4) → ktc_Array$Opt$_ktc_Int_4
 
-/* Base<A, B>  →  Base$2_A_B  (variadic, any arity) */
+/* Base<A, B>  →  Base_A_B  (variadic, any arity) */
 KTC_GENERIC_TYPE(Base, ...)
-// KTC_GENERIC_TYPE(Map, String, Int) → Map$2_String_Int
+// KTC_GENERIC_TYPE(ktc_Map, ktc_String, ktc_Int) → ktc_Map_ktc_String_ktc_Int
 
-/* Base<A, B>?  →  Base$Opt$2_A_B  (variadic) */
+/* Base<A, B>?  →  Base$Opt_A_B  (variadic) */
 KTC_OPT_GENERIC_TYPE(Base, ...)
-// KTC_OPT_GENERIC_TYPE(Map, String, Int) → Map$Opt$2_String_Int
+// KTC_OPT_GENERIC_TYPE(ktc_Map, ktc_String, ktc_Int) → ktc_Map$Opt_ktc_String_ktc_Int
 
 /* Type_funcName */
 KTC_FUNCTION_NAME(Type, name)
-// KTC_FUNCTION_NAME(Map$2_String_Int, get) → Map$2_String_Int_get
+// KTC_FUNCTION_NAME(ktc_Map_ktc_String_ktc_Int, get) → ktc_Map_ktc_String_ktc_Int_get
 ```
 
 ---
@@ -68,8 +69,8 @@ KTC_DEFINE_OPT_ARRAY(T, N)
 
 /* Base<...>? struct  — plain struct must come first */
 KTC_DEFINE_OPT_GENERIC(Base, ...)
-// KTC_DEFINE_OPT_GENERIC(Map, String, Int)
-// → typedef struct Map$Opt$2_String_Int { ktc_OptionalTag tag; Map$2_String_Int value; } ...
+// KTC_DEFINE_OPT_GENERIC(ktc_Map, ktc_String, ktc_Int)
+// → typedef struct ktc_Map$Opt_ktc_String_ktc_Int { ktc_OptionalTag tag; ktc_Map_ktc_String_ktc_Int value; } ...
 ```
 
 ---
@@ -91,12 +92,7 @@ KTC_UNWRAP(v)     /* get value   → (v).value */
 Any type arg can itself be a composed type:
 
 ```c
-KTC_GENERIC_TYPE(
-    Map,
-    KTC_OPT_TYPE(Int),          /* Int? */
-    KTC_GENERIC_TYPE(List, String)   /* List<String> */
-)
-/* → Map$2_Int$Opt_List$1_String */
+/* → ktc_Map_ktc_Int$Opt_List_ktc_String */
 ```
 
 ---
@@ -106,7 +102,7 @@ KTC_GENERIC_TYPE(
 ```c
 /* Forward declarations */
 typedef struct KTC_GENERIC_TYPE(pkg_Base, ArgType) KTC_GENERIC_TYPE(pkg_Base, ArgType);
-typedef struct pkg_Base$Opt$1_ArgType pkg_Base$Opt$1_ArgType;
+typedef struct pkg_Base$Opt_ArgType pkg_Base$Opt_ArgType;
 
 /* Struct definition */
 struct KTC_GENERIC_TYPE(pkg_Base, ArgType) {

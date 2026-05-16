@@ -2,11 +2,11 @@
  * class ListIterator<Float?> : Iterator<Float?>
  * package: ktc.std
  * file: Collections.kt
- * mangled: ktc_std_ListIterator$1_Float$Opt
+ * mangled: ktc_std_ListIterator_Float$Opt
  * ═══════════════════════════════════════════════════════════ */
-#define CLS ktc_std_ListIterator$1_ktc_Float$Opt
-#define CLS_OPT ktc_std_ListIterator$Opt$1_ktc_Float$Opt
-#define ktc_std_ListIterator$1_Float$Opt_TYPE_ID 49
+#define CLS ktc_std_ListIterator_ktc_Float$Opt
+#define CLS_OPT ktc_std_ListIterator$Opt_ktc_Float$Opt
+#define ktc_std_ListIterator_Float$Opt_TYPE_ID 49
 
 typedef struct {
     ktc_core_AnySupertype __base;
@@ -32,7 +32,7 @@ KTC_METHOD(ktc_Float$Opt, next)(CLS* $self);
 KTC_METHOD(ktc_Int, hashCode)(CLS $self);
 KTC_METHOD(ktc_Bool, equals)(CLS a, CLS b);
 KTC_METHOD(void, toString)(CLS* $self, ktc_StrBuf* sb); // max output: 34 chars
-#define ktc_std_ListIterator$1_Float$Opt_dispose(self) ((void)(self))
+#define ktc_std_ListIterator_Float$Opt_dispose(self) ((void)(self))
 
 // ════ Any cast ════
 KTC_METHOD(ktc_Any, as_Any)(CLS* $self);

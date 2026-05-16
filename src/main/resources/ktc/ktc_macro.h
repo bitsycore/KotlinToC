@@ -17,11 +17,12 @@
 /* =========================================================
  * Generic type mangling, Macro removed, handled by Transpiler
  * Map<String, Int>
- * pkg_Map$2_ktc_String_ktc_Int
- * package_typename$nbarg_arg1_arg2_argn
+ * pkg_Map_ktc_String_ktc_Int
+ * package_typename_arg1_arg2_argn
  * Map<String, Int>?
- * pkg_Map$Opt$2_ktc_String_ktc_Int
- * package_typename$Opt$nbarg_arg1_arg2_argn
+ * pkg_Map$Opt_ktc_String_ktc_Int
+ * package_typename$Opt_arg1_arg2_argn
+ * arg expand to the same rules
  * ========================================================= */
 
 /* =========================================================
@@ -120,12 +121,12 @@
 //  * class ListIterator<Float?> : Iterator<Float?>
 //  * package: ktc.std
 //  * file: Collections.kt
-//  * mangled: ktc_std_ListIterator$1_Float$Opt
+//  * mangled: ktc_std_ListIterator_Float$Opt
 //  * typeid: 49
 //  * ═══════════════════════════════════════════════════════════ */
-// #define CLS ktc_std_ListIterator$1_ktc_Float$Opt
-// #define CLS_OPT ktc_std_ListIterator$Opt$1_ktc_Float$Opt
-// #define ktc_std_ListIterator$1_Float$Opt_TYPE_ID 49
+// #define CLS ktc_std_ListIterator_ktc_Float$Opt
+// #define CLS_OPT ktc_std_ListIterator$Opt_ktc_Float$Opt
+// #define ktc_std_ListIterator_Float$Opt_TYPE_ID 49
 //
 // typedef struct {
 // 	ktc_core_AnySupertype __base;
@@ -151,7 +152,7 @@
 // KTC_METHOD(ktc_Int, hashCode)(CLS $self);
 // KTC_METHOD(ktc_Bool, equals)(CLS a, CLS b);
 // KTC_METHOD(void, toString)(CLS* $self, ktc_StrBuf* sb); // max output: 34 chars
-// #define ktc_std_ListIterator$1_Float$Opt_dispose(self) ((void)(self))
+// #define ktc_std_ListIterator_Float$Opt_dispose(self) ((void)(self))
 //
 // // ════ Any cast ════
 // KTC_METHOD(ktc_Any, as_Any)(CLS* $self);
