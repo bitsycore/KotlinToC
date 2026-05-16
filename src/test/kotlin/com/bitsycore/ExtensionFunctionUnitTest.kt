@@ -87,8 +87,8 @@ class ExtensionFunctionUnitTest : TranspilerTestBase() {
                 s.printSafe()
             }
         """)
-        // Should pass ktc_String\$Optional $self
-        r.sourceContains("void test_Main_String_printSafe(ktc_String\$Optional \$self)")
+        // Should pass ktc_String\$Opt $self
+        r.sourceContains("void test_Main_String_printSafe(ktc_String\$Opt \$self)")
     }
 
     @Test fun nullableReceiverCallPassesHas() {
@@ -140,7 +140,7 @@ class ExtensionFunctionUnitTest : TranspilerTestBase() {
             }
         """)
         // Class type: $self is by-value Optional
-        r.sourceContains("test_Main_Vec2\$Optional \$self")
+        r.sourceContains("test_Main_Vec2\$Opt \$self")
         r.sourceContains("test_Main_Vec2_printSafe(v)")
     }
 

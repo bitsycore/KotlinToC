@@ -135,7 +135,7 @@ class StringUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("ktc_core_str_toIntOrNull")
         r.sourceContains("n = ")
-        r.sourceContains("ktc_Int\$Optional")
+        r.sourceContains("ktc_Int\$Opt")
     }
 
     @Test fun toIntOrNull_usedWithElvis() {
@@ -155,7 +155,7 @@ class StringUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("ktc_core_str_toLongOrNull")
         r.sourceContains("n = ")
-        r.sourceContains("ktc_Long\$Optional")
+        r.sourceContains("ktc_Long\$Opt")
     }
 
     // ── toDoubleOrNull ───────────────────────────────────────────────
@@ -167,7 +167,7 @@ class StringUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("ktc_core_str_toDoubleOrNull")
         r.sourceContains("d = ")
-        r.sourceContains("ktc_Double\$Optional")
+        r.sourceContains("ktc_Double\$Opt")
     }
 
     // ── toFloatOrNull ────────────────────────────────────────────────
@@ -180,7 +180,7 @@ class StringUnitTest : TranspilerTestBase() {
         r.sourceContains("ktc_core_str_toDoubleOrNull")
         r.sourceContains("(ktc_Float)")
         r.sourceContains("f = ")
-        r.sourceContains("ktc_Float\$Optional")
+        r.sourceContains("ktc_Float\$Opt")
     }
 
     // ── toIntOrNull with null check ──────────────────────────────────

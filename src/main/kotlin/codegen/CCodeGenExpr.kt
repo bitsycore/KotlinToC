@@ -375,7 +375,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         val bTypeKtc = inferExprTypeKtc(e.right)
         if (genericClassDecls.containsKey("Pair")) {
             // stdlib Pair<A,B> is active — emit primaryConstructor call
-            val vMangledName = recordGenericInstantiation("Pair", listOf(aType, bType)) // e.g. "Pair_Int_String"
+            val vMangledName = recordGenericInstantiation("Pair", listOf(aType, bType)) // e.g. "Pair$2_Int_String"
             materializeGenericInstantiations() // ensure ClassInfo entry exists
             val vCi = classes[vMangledName] // concrete class info with correct pkg
             if (vCi != null) {
@@ -1785,7 +1785,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         "toIntOrNull" -> if (recvTypeKtc is KtcType.Str) {
             val t = tmp()
             preStmts += "ktc_Int ${t}_val;"
-            preStmts += "ktc_Int\$Optional $t;"
+            preStmts += "ktc_Int\$Opt $t;"
             preStmts += "$t.tag = ktc_core_str_toIntOrNull($recv, &${t}_val) ? ktc_SOME : ktc_NONE;"
             preStmts += "$t.value = ${t}_val;"
             markOptional(t)
@@ -1794,7 +1794,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         "toLongOrNull" -> if (recvTypeKtc is KtcType.Str) {
             val t = tmp()
             preStmts += "ktc_Long ${t}_val;"
-            preStmts += "ktc_Long\$Optional $t;"
+            preStmts += "ktc_Long\$Opt $t;"
             preStmts += "$t.tag = ktc_core_str_toLongOrNull($recv, &${t}_val) ? ktc_SOME : ktc_NONE;"
             preStmts += "$t.value = ${t}_val;"
             markOptional(t)
@@ -1803,7 +1803,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         "toDoubleOrNull" -> if (recvTypeKtc is KtcType.Str) {
             val t = tmp()
             preStmts += "ktc_Double ${t}_val;"
-            preStmts += "ktc_Double\$Optional $t;"
+            preStmts += "ktc_Double\$Opt $t;"
             preStmts += "$t.tag = ktc_core_str_toDoubleOrNull($recv, &${t}_val) ? ktc_SOME : ktc_NONE;"
             preStmts += "$t.value = ${t}_val;"
             markOptional(t)
@@ -1812,7 +1812,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         "toFloatOrNull" -> if (recvTypeKtc is KtcType.Str) {
             val t = tmp()
             preStmts += "ktc_Double ${t}_d;"
-            preStmts += "ktc_Float\$Optional $t;"
+            preStmts += "ktc_Float\$Opt $t;"
             preStmts += "$t.tag = ktc_core_str_toDoubleOrNull($recv, &${t}_d) ? ktc_SOME : ktc_NONE;"
             preStmts += "$t.value = (ktc_Float)${t}_d;"
             markOptional(t)
@@ -2003,7 +2003,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val genExt = genericFunDecls.find {
             it.name == method && it.receiver != null && (
                 it.receiver.name == pointerBase ||
-                (genericClassDecls.containsKey(it.receiver.name) && pointerBase.startsWith("${it.receiver.name}_"))
+                (genericClassDecls.containsKey(it.receiver.name) && pointerBase.startsWith("${it.receiver.name}\$"))
             )
         }
         // Also search interfaces implemented by the class for @Ptr generic ext funs
@@ -2015,12 +2015,12 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                 val m = genericFunDecls.find {
                     it.name == method && it.receiver != null && (
                         it.receiver.name == iface ||
-                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
+                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}\$"))
                     )
                 }
                 if (m != null) {
                     ifaceExt = m
-                    ifaceExtConcrete = if (iface.startsWith("${m.receiver!!.name}_")) iface
+                    ifaceExtConcrete = if (iface.startsWith("${m.receiver!!.name}\$")) iface
                         else {
                             val binding = genericTypeBindings[pointerBase]
                             if (binding != null) {
@@ -2034,9 +2034,14 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         }
         val effectiveGenExt = genExt ?: ifaceExt
         if (ifaceExt != null && ifaceExtConcrete != null) {
+            /* Extract type args from "$N_A1_A2" format: strip base name + "$", then skip arity + "_" */
             val tArgs = ifaceExt.typeParams.map { tp ->
-                val prefix = "${ifaceExt.receiver!!.name}_"
-                if (ifaceExtConcrete!!.startsWith(prefix)) ifaceExtConcrete!!.substring(prefix.length) else "Int"
+                val dollarPrefix = "${ifaceExt.receiver!!.name}\$"
+                if (ifaceExtConcrete!!.startsWith(dollarPrefix)) {
+                    val afterDollar = ifaceExtConcrete!!.removePrefix(dollarPrefix) // "1_Int" or "2_Int_String"
+                    val uIdx = afterDollar.indexOf('_')
+                    if (uIdx >= 0) afterDollar.substring(uIdx + 1) else afterDollar
+                } else "Int"
             }
             genericFunInstantiations.getOrPut(ifaceExt.name) { mutableSetOf() }.add(tArgs)
         }
@@ -2127,7 +2132,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         var genericExtDecl = if (methodDecl == null) genericFunDecls.find {
             it.name == method && it.receiver != null && (
                 it.receiver.name == vClassInfo.baseName ||
-                (genericClassDecls.containsKey(it.receiver.name) && vClassInfo.baseName.startsWith("${it.receiver.name}_"))
+                (genericClassDecls.containsKey(it.receiver.name) && vClassInfo.baseName.startsWith("${it.receiver.name}\$"))
             )
         } else null
         // Also check interfaces implemented by the class for generic ext funs
@@ -2138,15 +2143,15 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                 val match = genericFunDecls.find {
                     it.name == method && it.receiver != null && (
                         it.receiver.name == iface ||
-                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
+                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}\$"))
                     )
                 }
                 if (match != null) {
                     genericExtDecl = match
-                    // Determine the concrete interface name (e.g. List_Int)
-                    ifaceConcrete = if (iface.startsWith("${match.receiver!!.name}_")) iface
+                    // Determine the concrete interface name (e.g. List$1_Int)
+                    ifaceConcrete = if (iface.startsWith("${match.receiver!!.name}\$")) iface
                         else {
-                            // Infer from the class name: ArrayList_Int → T=Int → List_Int
+                            // Infer from the class name: ArrayList$1_Int → T=Int → List$1_Int
                             val binding = genericTypeBindings[vClassInfo.baseName]
                             if (binding != null) {
                                 val tArgs = match.typeParams.map { binding[it] ?: "Int" }
@@ -2159,10 +2164,14 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         }
         // Register generic instantiation if found via interface
         if (genericExtDecl != null && ifaceConcrete != null) {
+            /* Extract type args from "$N_A1_A2" format: strip base name + "$", then skip arity + "_" */
             val tArgs = genericExtDecl.typeParams.map { tp ->
-                // Infer from the concrete iface name: List_Int → Int
-                    val prefix = "${genericExtDecl.receiver!!.name}_"
-                if (ifaceConcrete.startsWith(prefix)) ifaceConcrete.substring(prefix.length) else "Int"
+                val dollarPrefix = "${genericExtDecl.receiver!!.name}\$"
+                if (ifaceConcrete.startsWith(dollarPrefix)) {
+                    val afterDollar = ifaceConcrete.removePrefix(dollarPrefix) // "1_Int"
+                    val uIdx = afterDollar.indexOf('_')
+                    if (uIdx >= 0) afterDollar.substring(uIdx + 1) else afterDollar
+                } else "Int"
             }
             genericFunInstantiations.getOrPut(genericExtDecl.name) { mutableSetOf() }.add(tArgs)
         }
@@ -2644,7 +2653,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
         markOptional(t)
         defineVar(t, fieldType)
     } else {
-        val optType = if (fieldType != null) optCTypeName("${fieldType}?") else "ktc_Int\$Optional"
+        val optType = if (fieldType != null) optCTypeName("${fieldType}?") else "ktc_Int\$Opt"
         preStmts += "$optType $t = $guard ? ($optType){ktc_SOME, $fieldAccess} : ${optNone(optType)};"
         markOptional(t)
         defineVar(t, "${fieldType ?: "Int"}?")

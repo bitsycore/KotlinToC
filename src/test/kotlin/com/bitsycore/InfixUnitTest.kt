@@ -71,9 +71,9 @@ class InfixUnitTest : TranspilerTestBase() {
 			}
 		""")
 		// Struct must be materialized
-		vR.headerContains("test_Main_Duo_Int_String")
+		vR.headerContains("test_Main_Duo\$2_Int_String")
 		// Result var must use the concrete mangled type
-		vR.sourceContains("test_Main_Duo_Int_String \$ir")
+		vR.sourceContains("test_Main_Duo\$2_Int_String \$ir")
 	}
 
 	@Test fun genericInfixReceiverAndArgBound() {
@@ -86,7 +86,7 @@ class InfixUnitTest : TranspilerTestBase() {
 			}
 		""")
 		// Both Int and Boolean should appear as type args in the materialized name
-		vR.headerContains("test_Main_Duo_Int_Boolean")
+		vR.headerContains("test_Main_Duo\$2_Int_Boolean")
 	}
 
 	@Test fun genericInfixDotCallAlsoInlined() {
@@ -100,7 +100,7 @@ class InfixUnitTest : TranspilerTestBase() {
 			}
 		""")
 		// Comment uses unsubstituted template type names (typeSubst cleared for comment)
-		vR.sourceContains("/* inline 1.duoWith(b = \"x\"): Duo_A_B */")
+		vR.sourceContains("/* inline 1.duoWith(b = \"x\"): Duo\$2_A_B */")
 		vR.sourceNotContains("test_Main_duoWith") // no regular function emitted
 	}
 
@@ -113,10 +113,10 @@ class InfixUnitTest : TranspilerTestBase() {
 				println(p.first)
 				println(p.second)
 			""")
-		// Pair_Int_String struct must exist in the header
-		vR.headerContains("ktc_std_Pair_Int_String")
+		// Pair$2_Int_String struct must exist in the header
+		vR.headerContains("ktc_std_Pair\$2_Int_String")
 		// Result variable uses that type
-		vR.sourceContains("ktc_std_Pair_Int_String \$ir")
+		vR.sourceContains("ktc_std_Pair\$2_Int_String \$ir")
 	}
 
 	@Test fun stdlibToStdFirstAndSecondAccess() {
@@ -124,7 +124,7 @@ class InfixUnitTest : TranspilerTestBase() {
 			body = """
 				val p = 42 toStd "world"
 			""")
-		vR.headerContains("ktc_std_Pair_Int_String")
+		vR.headerContains("ktc_std_Pair\$2_Int_String")
 	}
 
 	// ── Infix used inside expression position ───────────────────────

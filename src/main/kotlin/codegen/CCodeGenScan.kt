@@ -817,7 +817,7 @@ Infer type parameter substitutions from a single param/arg pair.
 Callers must call materializeGenericInstantiations() before invoking this so
 genericTypeBindings is populated for any generic types inferred by inferExprType.
 E.g., param=MutableList<T>, argType="MutableList_Int", typeParams={T} → subst[T]=Int
-E.g., param=Pair<K,V>,       argType="Pair_Int_String",  typeParams={K,V} → subst[K]=Int, subst[V]=String
+E.g., param=Pair<K,V>,       argType="Pair$2_Int_String",  typeParams={K,V} → subst[K]=Int, subst[V]=String
 */
 internal fun CCodeGen.matchTypeParam(paramType: TypeRef, argType: String, typeParams: Set<String>, subst: MutableMap<String, String>) {
     // Direct type param: param is T, arg is Int → T=Int
@@ -851,14 +851,17 @@ internal fun CCodeGen.matchTypeParam(paramType: TypeRef, argType: String, typePa
             }
         }
     }
-    // Generic interface param: List<T>, arg=ArrayList_Int → T=Int
+    // Generic interface param: List<T>, arg=ArrayList$1_Int → T=Int
     if (paramType.typeArgs.isNotEmpty() && genericIfaceDecls.containsKey(paramType.name)) {
         val baseType = argType.trimEnd('*', '?') // strip pointer/nullable suffix
         val classIfaces = classInterfaces[baseType] ?: return
         for (ifaceName in classIfaces) {
-            if (ifaceName.startsWith(paramType.name + "_")) {
-                val suffix = ifaceName.removePrefix(paramType.name + "_") // type args suffix
-                val extractedArgs = suffix.split("_")
+            /* New naming: List$1_Int — strip "List$", then "1_" arity prefix, then split type args */
+            if (ifaceName.startsWith(paramType.name + "\$")) {
+                val afterDollar = ifaceName.removePrefix(paramType.name + "\$") // "1_Int" or "2_Int_String"
+                val underscoreIdx = afterDollar.indexOf('_')
+                if (underscoreIdx < 0) return
+                val extractedArgs = afterDollar.substring(underscoreIdx + 1).split("_")
                 for ((i, typeArg) in paramType.typeArgs.withIndex()) {
                     if (typeArg.name in typeParams && i < extractedArgs.size) {
                         subst[typeArg.name] = extractedArgs[i]

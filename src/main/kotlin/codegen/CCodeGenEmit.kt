@@ -685,7 +685,7 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
     // Find all classes that implement a monomorphized version of this interface
     for ((className, ifaceList) in classInterfaces) {
         // Check if this class implements any monomorphized version of the interface
-        val matchingIface = ifaceList.find { it.startsWith("${ifaceBaseName}_") }
+        val matchingIface = ifaceList.find { it.startsWith("${ifaceBaseName}\$") }
         if (matchingIface == null) continue
         val ci = classes[className] ?: continue
         val key = "${className}_${f.name}"
@@ -1074,15 +1074,14 @@ internal fun CCodeGen.emitIfaceInfo(info: IfaceInfo) {
     }
     hdr.appendLine("    const ${cName}_vt* vt;")
     hdr.appendLine("} $cName;")
-    // Emit $Optional wrapper for nullable interface use
+    // Emit $Opt wrapper for nullable interface use
     val vIfaceComponents = mangledComponents[info.name]
     if (vIfaceComponents != null) {
         val (vGenBase, vTypeArgs) = vIfaceComponents
-        val vBaseCName = typeFlatName(vGenBase)
-        val vTypeArgStr = vTypeArgs.joinToString("_") { optTypeArgComponent(it) }
-        hdr.appendLine("KTC_OPTIONAL_GENERIC($cName, $vBaseCName, $vTypeArgStr);")
+        val vOptName = genericOptionalCName(vGenBase, vTypeArgs)
+        hdr.appendLine("typedef struct $vOptName { ktc_OptionalTag tag; $cName value; } $vOptName;")
     } else {
-        hdr.appendLine("KTC_OPTIONAL($cName);")
+        hdr.appendLine("KTC_DEFINE_OPT($cName);")
     }
     hdr.appendLine()
 }
@@ -1272,14 +1271,12 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
 internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
     val vComponents = mangledComponents[ci.name]
     if (vComponents != null) {
-        // Generic instance: emit KTC_OPTIONAL_GENERIC(T, Base, TypeArg) so the wrapper name is
-        // BaseName$Optional_TypeArg — distinct from the class name T_TypeArg$Optional.
+        // Generic instance: emit $Opt$N_ wrapper — distinct from the class name itself.
         val (vGenBase, vTypeArgs) = vComponents
-        val vBaseCName = typeFlatName(vGenBase)
-        val vTypeArgStr = vTypeArgs.joinToString("_") { optTypeArgComponent(it) }
-        hdr.appendLine("KTC_OPTIONAL_GENERIC($cName, $vBaseCName, $vTypeArgStr);")
+        val vOptName = genericOptionalCName(vGenBase, vTypeArgs)
+        hdr.appendLine("typedef struct $vOptName { ktc_OptionalTag tag; $cName value; } $vOptName;")
     } else {
-        hdr.appendLine("KTC_OPTIONAL($cName);")
+        hdr.appendLine("KTC_DEFINE_OPT($cName);")
     }
     hdr.appendLine()
     val vAllCtorParams = ci.ctorProps + ci.ctorPlainParams

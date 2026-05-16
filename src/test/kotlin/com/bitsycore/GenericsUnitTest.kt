@@ -22,9 +22,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val b = Box<Int>(42)
             }
         """)
-        // Mangled struct: Box_Int (forward typedef + struct definition)
-        r.headerContains("typedef struct test_Main_Box_Int test_Main_Box_Int;")
-        r.headerContains("struct test_Main_Box_Int {")
+        // Mangled struct: Box$1_Int (forward typedef + struct definition)
+        r.headerContains("typedef struct test_Main_Box\$1_Int test_Main_Box\$1_Int;")
+        r.headerContains("struct test_Main_Box\$1_Int {")
         r.headerContains("ktc_Int item;")
     }
 
@@ -37,8 +37,8 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Constructor function with mangled name
-        r.sourceContains("test_Main_Box_Int_primaryConstructor(")
-        r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
+        r.sourceContains("test_Main_Box\$1_Int_primaryConstructor(")
+        r.sourceContains("test_Main_Box\$1_Int_primaryConstructor(42)")
     }
 
     @Test fun genericClassHeapConstructors() {
@@ -50,7 +50,7 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Heap new is inlined (no separate _new function)
-        r.headerContains("test_Main_Box_Int test_Main_Box_Int_primaryConstructor(")
+        r.headerContains("test_Main_Box\$1_Int test_Main_Box\$1_Int_primaryConstructor(")
     }
 
     @Test fun genericTemplateNotEmitted() {
@@ -63,7 +63,7 @@ class GenericsUnitTest : TranspilerTestBase() {
         """)
         // The generic template itself should NOT appear as a concrete struct
         r.sourceNotContains("test_Main_Box_primaryConstructor(")
-        r.headerMatches(Regex("test_Main_Box_Int"))
+        r.headerMatches(Regex("test_Main_Box\\\$1_Int"))
     }
 
     // ── Multiple instantiations ─────────────────────────────────────
@@ -78,10 +78,10 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Both concrete types emitted
-        r.headerContains("test_Main_Box_Int")
-        r.headerContains("test_Main_Box_Float")
-        r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
-        r.sourceContains("test_Main_Box_Float_primaryConstructor(3.14f)")
+        r.headerContains("test_Main_Box\$1_Int")
+        r.headerContains("test_Main_Box\$1_Float")
+        r.sourceContains("test_Main_Box\$1_Int_primaryConstructor(42)")
+        r.sourceContains("test_Main_Box\$1_Float_primaryConstructor(3.14f)")
     }
 
     @Test fun stringInstantiation() {
@@ -92,7 +92,7 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val b = Box<String>("hello")
             }
         """)
-        r.headerContains("test_Main_Box_String")
+        r.headerContains("test_Main_Box\$1_String")
         r.headerContains("ktc_String item;")
     }
 
@@ -109,9 +109,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 println(b.get())
             }
         """)
-        r.sourceContains("test_Main_Box_Int_get(")
+        r.sourceContains("test_Main_Box\$1_Int_get(")
         // Method return type is concrete ktc_Int
-        r.sourceMatches(Regex("ktc_Int test_Main_Box_Int_get"))
+        r.sourceMatches(Regex("ktc_Int test_Main_Box\\\$1_Int_get"))
     }
 
     @Test fun genericClassMethodWithParam() {
@@ -127,9 +127,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 b.set(99)
             }
         """)
-        r.sourceContains("test_Main_Box_Int_set(")
+        r.sourceContains("test_Main_Box\$1_Int_set(")
         // Method takes concrete ktc_Int parameter
-        r.sourceMatches(Regex("void test_Main_Box_Int_set.*ktc_Int"))
+        r.sourceMatches(Regex("void test_Main_Box\\\$1_Int_set.*ktc_Int"))
     }
 
     // ── Generic class with body props ───────────────────────────────
@@ -160,8 +160,8 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // HeapAlloc<Box<Int>>(42) → inline malloc + primaryConstructor
-        r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
-        r.sourceContains("malloc(sizeof(test_Main_Box_Int))")
+        r.sourceContains("test_Main_Box\$1_Int_primaryConstructor(42)")
+        r.sourceContains("malloc(sizeof(test_Main_Box\$1_Int))")
     }
 
     // ── Generic class with multiple ctor params ─────────────────────
@@ -176,7 +176,7 @@ class GenericsUnitTest : TranspilerTestBase() {
         """)
         r.headerContains("ktc_Int first;")
         r.headerContains("ktc_Int second;")
-        r.sourceContains("test_Main_Pair_Int_primaryConstructor(1, 2)")
+        r.sourceContains("test_Main_Pair\$1_Int_primaryConstructor(1, 2)")
     }
 
     // ── VarDecl with generic class type ─────────────────────────────
@@ -190,7 +190,7 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Local variable should use the mangled type
-        r.sourceContains("test_Main_Box_Int b = test_Main_Box_Int_primaryConstructor(42);")
+        r.sourceContains("test_Main_Box\$1_Int b = test_Main_Box\$1_Int_primaryConstructor(42);")
     }
 
     // ── Generic class with method that calls self fields ────────────
@@ -210,7 +210,7 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val old = c.swap(20)
             }
         """)
-        r.sourceContains("test_Main_Container_Int_swap(")
+        r.sourceContains("test_Main_Container\$1_Int_swap(")
         // Method body accesses $self->stored
         r.sourceMatches(Regex("\\${'$'}self->stored"))
     }
@@ -242,9 +242,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val b: Box<Int> = Box<Int>(42)
             }
         """)
-        // Should still produce concrete Box_Int
-        r.headerContains("test_Main_Box_Int")
-        r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
+        // Should still produce concrete Box$1_Int
+        r.headerContains("test_Main_Box\$1_Int")
+        r.sourceContains("test_Main_Box\$1_Int_primaryConstructor(42)")
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -363,9 +363,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val c = b.getCount()
             }
         """)
-        // Star ext expands to Box_Int_getCount
-        r.sourceContains("test_Main_Box_Int_getCount(")
-        r.sourceMatches(Regex("ktc_Int test_Main_Box_Int_getCount"))
+        // Star ext expands to Box$1_Int_getCount
+        r.sourceContains("test_Main_Box\$1_Int_getCount(")
+        r.sourceMatches(Regex("ktc_Int test_Main_Box\\\$1_Int_getCount"))
     }
 
     @Test fun starExtMultipleInstantiations() {
@@ -383,8 +383,8 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Star ext emitted once per instantiation
-        r.sourceContains("test_Main_Box_Int_describe(")
-        r.sourceContains("test_Main_Box_Float_describe(")
+        r.sourceContains("test_Main_Box\$1_Int_describe(")
+        r.sourceContains("test_Main_Box\$1_Float_describe(")
     }
 
     @Test fun starExtAccessesSelfField() {
@@ -400,7 +400,7 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Extension receives $self pointer
-        r.sourceMatches(Regex("test_Main_Box_Int\\* \\${'$'}self"))
+        r.sourceMatches(Regex("test_Main_Box\\\$1_Int\\* \\\$self"))
     }
 
     @Test fun starExtNoDuplicateEmission() {
@@ -418,9 +418,9 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Even though Box<Int> is used twice, star ext should emit only once
-        val count = Regex("test_Main_Box_Int_tag\\(").findAll(r.source).count()
+        val count = Regex("test_Main_Box\\\$1_Int_tag\\(").findAll(r.source).count()
         // Implementation + one call per usage = more than 1, but the definition itself appears once
-        val implCount = Regex("ktc_Int test_Main_Box_Int_tag\\(test_Main_Box_Int\\*").findAll(r.source).count()
+        val implCount = Regex("ktc_Int test_Main_Box\\\$1_Int_tag\\(test_Main_Box\\\$1_Int\\*").findAll(r.source).count()
         assertTrue(implCount == 1, "Star ext should be emitted exactly once, got $implCount\n${r.source}")
     }
 
@@ -436,6 +436,6 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val r = w.reset()
             }
         """)
-        r.sourceMatches(Regex("ktc_Int test_Main_Wrapper_Int_reset"))
+        r.sourceMatches(Regex("ktc_Int test_Main_Wrapper\\\$1_Int_reset"))
     }
 }

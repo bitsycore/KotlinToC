@@ -211,7 +211,7 @@ typedef struct {
     const ktc_Char* ptr;
     ktc_Int         len;
 } ktc_String;
-KTC_OPTIONAL(ktc_String);
+KTC_DEFINE_OPT(ktc_String);
 
 /** String from a string literal — zero-cost, points into static storage. */
 #define ktc_core_str(s) ((ktc_String){(s), (ktc_Int)(sizeof(s) - 1)})

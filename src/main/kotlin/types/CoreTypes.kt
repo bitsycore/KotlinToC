@@ -128,7 +128,7 @@ internal sealed class KtcType {
     data class Nullable(val inner: KtcType) : KtcType() {
         override fun toCType(): String {
             val c = inner.toCType()
-            return if (inner is Ptr) c else "${c}\$Optional"
+            return if (inner is Ptr) c else "${c}\$Opt"
         }
     }
 
@@ -228,12 +228,6 @@ internal sealed class KtcType {
                     val elem = from(TypeRef(elemName), resolveName)
                     val arr = Arr(elem, sized = sizeAnn?.value?.toInt())
                     if (isPtr) Ptr(arr) else arr
-                }
-
-                base.startsWith("Pair_") || base.startsWith("Triple_") -> {
-                    val typeArgNames = base.removePrefix("Pair_").removePrefix("Triple_").split("_")
-                    val typeArgKtc = typeArgNames.map { from(TypeRef(it), resolveName) }
-                    User(BuiltinTypeDef(base, pkg = "ktc_"), typeArgKtc)
                 }
 
                 base == "Any" -> Any

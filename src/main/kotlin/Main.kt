@@ -217,20 +217,14 @@ fun main(args: Array<String>) {
     }
 
     // ── Copy intrinsic files to ktc/ subdirectory ────────────────
-    val intrinsicDst = File(ktcDir, "ktc_core.h")
-    val intrinsicSrc = aClass.getResourceAsStream("/ktc/ktc_core.h")
-    if (intrinsicSrc != null) {
-        intrinsicDst.writeText(intrinsicSrc.bufferedReader().readText())
-    } else {
-        System.err.println("Warning: ktc_core.h not found in resources, copy it manually.")
-    }
-
-    val intrinsicDstC = File(ktcDir, "ktc_core.c")
-    val intrinsicSrcC = aClass.getResourceAsStream("/ktc/ktc_core.c")
-    if (intrinsicSrcC != null) {
-        intrinsicDstC.writeText(intrinsicSrcC.bufferedReader().readText())
-    } else {
-        System.err.println("Warning: ktc_core.c not found in resources, copy it manually.")
+    for (vName in listOf("ktc_mangle.h", "ktc_types.h", "ktc_core.h", "ktc_core.c")) {
+        val vDst = File(ktcDir, vName)
+        val vSrc = aClass.getResourceAsStream("/ktc/$vName")
+        if (vSrc != null) {
+            vDst.writeText(vSrc.bufferedReader().readText())
+        } else {
+            System.err.println("Warning: $vName not found in resources, copy it manually.")
+        }
     }
 
     // Print compile command: ktc/ files first (intrinsic then stdlib), then user files

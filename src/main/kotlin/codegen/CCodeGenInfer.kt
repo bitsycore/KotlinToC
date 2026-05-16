@@ -93,10 +93,10 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
             if (genericClassDecls.containsKey("Pair")) {
                 /** Register and materialize immediately so genericTypeBindings is
                 available when matchTypeParam is called during scan phase. */
-                recordGenericInstantiation("Pair", listOf(a, b))
+                val vMangled = recordGenericInstantiation("Pair", listOf(a, b))
                 materializeGenericInstantiations()
-            }
-            "Pair_${a}_${b}"
+                vMangled
+            } else "Pair_${a}_${b}"
         }
         else {
             /** User-defined infix operator: look up in inlineExtFunDecls, resolve return type with type substitution. */

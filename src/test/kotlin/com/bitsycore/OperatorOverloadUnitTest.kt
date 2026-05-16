@@ -120,7 +120,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
             var sum = 0
             for (x in list) { sum += x }
         """)
-        r.sourceContains("ktc_std_ArrayList_Int_iterator")
+        r.sourceContains("ktc_std_ArrayList\$1_Int_iterator")
     }
 
     @Test fun operatorContainsMap() {
@@ -136,7 +136,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
             val map = mutableMapOf("a" to 1, "b" to 2)
             val v = map["a"]
         """)
-        r.sourceContains("ktc_std_HashMap_String_Int_get")
+        r.sourceContains("ktc_std_HashMap\$2_String_Int_get")
     }
 
     @Test fun operatorSetMap() {
@@ -144,6 +144,6 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
             val map = mutableMapOf("a" to 1, "b" to 2)
             map["a"] = 99
         """)
-        r.sourceContains("ktc_std_HashMap_String_Int_set")
+        r.sourceContains("ktc_std_HashMap\$2_String_Int_set")
     }
 }

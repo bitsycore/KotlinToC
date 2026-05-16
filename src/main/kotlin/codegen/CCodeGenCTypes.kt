@@ -24,7 +24,7 @@ import com.bitsycore.ktc.types.TypeDef
  *   - Pointers: @Ptr T → T*
  *   - Function types: (P1,P2)->R → Fun(P1,P2)->R (stored as string key)
  *   - Generics: MutableList<Int> → MutableList_Int (via mangledGenericName)
- *   - Pair/Triple/Tuple: Pair<Int,String> → ktc_Pair_Int_String
+ *   - Pair/Triple: stdlib generic classes, resolved via generic instantiation (e.g. Pair$2_Int_String)
  *
  * ## Main entry points:
  *

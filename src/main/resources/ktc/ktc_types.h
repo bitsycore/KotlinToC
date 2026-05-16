@@ -9,8 +9,8 @@
 /* ========================================================= */
 
 /* T? — requires ktc_OptionalTag to be declared (from ktc_core.h) */
-#define KTC_DEFINE_OPTIONAL(T)            \
-	typedef struct KTC_OPT_TYPE(T) { \
+#define KTC_DEFINE_OPT(T)                 \
+	typedef struct KTC_OPT_TYPE(T) {  \
 		ktc_OptionalTag tag;              \
 		T value;                          \
 	} KTC_OPT_TYPE(T)
@@ -32,8 +32,8 @@
 /* ========================================================= */
 
 /* @Size(N) Array<T>? — KTC_DEFINE_ARRAY(T, N) must come first */
-#define KTC_DEFINE_OPTIONAL_ARRAY(T, N)            \
-	typedef struct KTC_OPT_ARRAY_TYPE(T, N) { \
+#define KTC_DEFINE_OPT_ARRAY(T, N)                 \
+	typedef struct KTC_OPT_ARRAY_TYPE(T, N) {   \
 		ktc_OptionalTag tag;                       \
 		KTC_ARRAY_TYPE(T, N) value;                \
 	} KTC_OPT_ARRAY_TYPE(T, N)

@@ -75,7 +75,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = arrayOfNulls<Int>(5)
             println(arr.size)
         """)
-        r.sourceContains("ktc_Int\$Optional*")
+        r.sourceContains("ktc_Int\$Opt*")
         r.sourceContains("ktc_core_alloca")
         r.sourceContains("arr\$len")
         r.sourceContainsXTime("ktc_core_alloca", 1)
@@ -86,7 +86,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = arrayOfNulls<String>(3)
             println(arr.size)
         """)
-        r.sourceContains("ktc_String\$Optional*")
+        r.sourceContains("ktc_String\$Opt*")
         r.sourceContains("arr\$len")
         r.sourceContainsXTime("ktc_core_alloca", 1)
     }
@@ -96,7 +96,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = arrayOfNulls<Int>(3)
             val v: Int? = arr[0]
         """)
-        r.sourceContains("ktc_Int\$Optional")
+        r.sourceContains("ktc_Int\$Opt")
         r.sourceContains("arr")
         r.sourceContainsXTime("ktc_core_alloca", 1)
     }
@@ -107,7 +107,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = arrayOfNulls<Float>(n)
             println(arr.size)
         """)
-        r.sourceContains("ktc_Float\$Optional*")
+        r.sourceContains("ktc_Float\$Opt*")
         r.sourceContains("arr\$len")
         r.sourceContainsXTime("ktc_core_alloca")
     }

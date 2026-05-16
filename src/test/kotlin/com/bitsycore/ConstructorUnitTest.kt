@@ -213,8 +213,8 @@ class ConstructorUnitTest : TranspilerTestBase() {
     @Test
     fun genericClassCtor() {
         val r = transpileMain("val b = Box<Int>(42)", decls = "class Box<T>(val item: T)")
-        r.headerContains("test_Main_Box_Int_primaryConstructor(ktc_Int item)")
-        r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
+        r.headerContains("test_Main_Box\$1_Int_primaryConstructor(ktc_Int item)")
+        r.sourceContains("test_Main_Box\$1_Int_primaryConstructor(42)")
     }
 
     // ── Secondary ctor with no body ────────────────────────────

@@ -74,7 +74,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val x: Int? = 42
             val y: Int = checkNotNull(x)
         """)
-        r.sourceContains("ktc_Int\$Optional value = x")
+        r.sourceContains("ktc_Int\$Opt value = x")
         r.sourceContains("value.value")
     }
 
@@ -93,7 +93,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val x: Float? = 3.14f
             val y: Float = requireNotNull(x)
         """)
-        r.sourceContains("ktc_Float\$Optional value = x")
+        r.sourceContains("ktc_Float\$Opt value = x")
         r.sourceContains("value.value")
     }
 
