@@ -22,9 +22,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val b = Box<Int>(42)
             }
         """)
-        // Mangled struct: Box$1_Int (forward typedef + struct definition)
-        r.headerContains("typedef struct test_Main_Box\$1_Int test_Main_Box\$1_Int;")
-        r.headerContains("struct test_Main_Box\$1_Int {")
+        // Mangled struct: Box$1_Int (forward typedef + struct definition using KTC_GENERIC_TYPE macro)
+        r.headerContains("typedef struct KTC_GENERIC_TYPE(test_Main_Box, Int) KTC_GENERIC_TYPE(test_Main_Box, Int);")
+        r.headerContains("struct KTC_GENERIC_TYPE(test_Main_Box, Int) {")
         r.headerContains("ktc_Int item;")
     }
 

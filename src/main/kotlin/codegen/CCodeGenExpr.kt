@@ -74,7 +74,7 @@ fun CCodeGen.genExpr(e: Expr): String = when (e) {
         if (inlineThis != null) return inlineThis
         val selfKtc = lookupVarKtc("\$self")
         if (selfKtc != null && isOptional("\$self") && selfKtc !is KtcType.Nullable) {
-            "\$self.value"
+            "KTC_UNWRAP(\$self)"
         } else if (selfIsPointer) "(*\$self)" else "\$self"
     }
 
@@ -175,7 +175,7 @@ fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val r = genExpr(e.right)
         val ltKtc = inferExprTypeKtc(e.left)
         if (ltKtc != null && isValueNullableKtc(ltKtc)) {
-            "($l.tag == ktc_SOME ? $l.value : $r)"
+            "(KTC_IS_SOME($l) ? KTC_UNWRAP($l) : $r)"
         } else if (ltKtc is KtcType.Nullable && ltKtc.inner is KtcType.Ptr) {
             "($l != NULL ? $l : $r)"
         } else {
@@ -304,7 +304,7 @@ internal fun CCodeGen.genName(e: NameExpr): String {
             // If field is stored as Optional but accessed after smart-cast (non-nullable context), unwrap
             val fieldType = ci.props.find { it.first == e.name }?.second
             if (fieldType?.nullable == true && curKtc !is KtcType.Nullable) {
-                return "$fieldRef.value"
+                return "KTC_UNWRAP($fieldRef)"
             }
             return fieldRef
         }
@@ -330,9 +330,9 @@ internal fun CCodeGen.genName(e: NameExpr): String {
             val ct = cTypeStr(curType)
             return "(*(($ct*)(${e.name}.data)))"
         }
-        // Optional var smart-casted to non-nullable: unwrap to .value
+        // Optional var smart-casted to non-nullable: unwrap
         if (isOptional(e.name) && curKtc !is KtcType.Nullable) {
-            return "${e.name}.value"
+            return "KTC_UNWRAP(${e.name})"
         }
         return e.name
     }
@@ -2455,7 +2455,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
         }
         val optType2 = optCTypeName("${retType2}?")
         val t2 = tmp()
-        preStmts += "$optType2 $t2 = $guard2 ? ($optType2){ktc_SOME, $call2} : ${optNone(optType2)};"
+        preStmts += "$optType2 $t2 = $guard2 ? ${optSome(optType2, call2)} : ${optNone(optType2)};"
         markOptional(t2)
         defineVar(t2, "${retType2}?")
         return t2
@@ -2504,7 +2504,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
     // Emit temp as Optional
     val optType = optCTypeName("${retType}?")
     val t = tmp()
-    preStmts += "$optType $t = $guard ? ($optType){ktc_SOME, $call} : ${optNone(optType)};"
+    preStmts += "$optType $t = $guard ? ${optSome(optType, call)} : ${optNone(optType)};"
     markOptional(t)
     defineVar(t, "${retType}?")
     return t
@@ -2654,7 +2654,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
         defineVar(t, fieldType)
     } else {
         val optType = if (fieldType != null) optCTypeName("${fieldType}?") else "ktc_Int\$Opt"
-        preStmts += "$optType $t = $guard ? ($optType){ktc_SOME, $fieldAccess} : ${optNone(optType)};"
+        preStmts += "$optType $t = $guard ? ${optSome(optType, fieldAccess)} : ${optNone(optType)};"
         markOptional(t)
         defineVar(t, "${fieldType ?: "Int"}?")
     }

@@ -244,6 +244,6 @@ class LiteralsUnitTest : TranspilerTestBase() {
                 val x: Int? = null
             }
         """.trimIndent())
-        r.sourceContains("ktc_NONE")
+        r.sourceContains("KTC_NONE")
     }
 }

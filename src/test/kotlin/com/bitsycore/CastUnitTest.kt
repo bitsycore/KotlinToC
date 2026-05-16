@@ -106,8 +106,8 @@ class CastUnitTest : TranspilerTestBase() {
             }
         """)
         r.sourceContains("__base.typeId == test_Main_Circle_TYPE_ID")
-        r.sourceContains("ktc_SOME")
-        r.sourceContains("ktc_NONE")
+        r.sourceContains("KTC_SOME")
+        r.sourceContains("KTC_NONE")
     }
 
     @Test fun safeCastAsQuestionInterface() {

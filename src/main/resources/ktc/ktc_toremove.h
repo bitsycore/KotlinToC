@@ -9,6 +9,11 @@
 #define KTC_CAT3(a, b, c) a##b##c
 #define KTC_EXPAND(x) x
 
+#define KTC_DEFINE_OPT_GENERIC(BASE, ...)                      \
+    typedef struct KTC_OPT_GENERIC_TYPE(BASE, __VA_ARGS__) {   \
+        ktc_OptionalTag tag;                                   \
+        KTC_GENERIC_TYPE(BASE, __VA_ARGS__) value;             \
+    } KTC_OPT_GENERIC_TYPE(BASE, __VA_ARGS__)
 
 /* ========================================================= */
 /* Optional / array type constructors                         */

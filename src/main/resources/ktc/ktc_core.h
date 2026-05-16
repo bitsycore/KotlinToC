@@ -1,8 +1,8 @@
 //ktc_core.h — KotlinToC compiler intrinsics
 #pragma once
 
-#include "ktc_mangle.h"
-#include "ktc_types.h"
+#include "ktc_toremove.h"
+#include "ktc_macro.h"
 
 #include <stdio.h>
 #include <stdlib.h>

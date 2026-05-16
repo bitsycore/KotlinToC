@@ -508,8 +508,8 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
             val vOptCType = if (isOptArray) arrayElementCTypeKtc(tKtcCore)
             else optCTypeName("${typeSubst[vTypeArg!!.name] ?: vTypeArg.name}?")
             val vArgs = init.args.joinToString(", ") { vArg ->
-                if (vArg.expr is NullLit) "($vOptCType){ktc_NONE}"
-                else "($vOptCType){ktc_SOME, ${genExpr(vArg.expr)}}"
+                if (vArg.expr is NullLit) optNone(vOptCType)
+                else optSome(vOptCType, genExpr(vArg.expr))
             }
             return "${ind}$vOptCType ${varName}[] = {$vArgs};\n${ind}const ktc_Int ${varName}\$len = ${init.args.size};"
         }
@@ -760,7 +760,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         val isThis = s.target.obj is ThisExpr
         val isValueNullRecv = recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
         val guard = if (recvTypeKtc != null) nullGuardExpr(recvTypeKtc, recv, recvName, isThis) else "${recv}\$has"
-        val recvVal = if (isValueNullRecv) "$recv.value" else recv
+        val recvVal = if (isValueNullRecv) "KTC_UNWRAP($recv)" else recv
         val fieldExpr = if (recvTypeCoreKtc is KtcType.Ptr) "$recvVal->${s.target.name}"
         else "$recvVal.${s.target.name}"
         val value = genExpr(s.value)

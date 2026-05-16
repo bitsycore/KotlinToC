@@ -158,9 +158,12 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     impl.appendLine()
 
     // --- header: struct definition (forward typedef already emitted) ---
+    val (vGenBase, vTypeArgs) = mangledComponents[mangledName]!!
+    val vBaseCName = typeFlatName(vGenBase)
+    val vMacroArgs = vTypeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
     hdr.appendLine("// ══ $kind ${templateDecl.name}<$concreteTypes> ($currentSourceFile) ══")
     hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[ci.name]!!}")
-    hdr.appendLine("struct $cName {")
+    hdr.appendLine("struct KTC_GENERIC_TYPE($vBaseCName, $vMacroArgs) {")
     emitStructFields(ci)
     hdr.appendLine("};")
     emitConstructorBody(cName, ci)
@@ -218,11 +221,11 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
             type.nullable -> {
                 val vInnerName = type.name
                 val vValueCmp = when {
-                    vInnerName == "String" -> "ktc_core_string_eq(a.$fieldName.value, b.$fieldName.value)"
-                    classes[vInnerName]?.isData == true -> "${typeFlatName(vInnerName)}_equals(a.$fieldName.value, b.$fieldName.value)"
-                    else -> "a.$fieldName.value == b.$fieldName.value"
+                    vInnerName == "String" -> "ktc_core_string_eq(KTC_UNWRAP(a.$fieldName), KTC_UNWRAP(b.$fieldName))"
+                    classes[vInnerName]?.isData == true -> "${typeFlatName(vInnerName)}_equals(KTC_UNWRAP(a.$fieldName), KTC_UNWRAP(b.$fieldName))"
+                    else -> "KTC_UNWRAP(a.$fieldName) == KTC_UNWRAP(b.$fieldName)"
                 }
-                "(a.$fieldName.tag == b.$fieldName.tag && (a.$fieldName.tag == ktc_NONE || $vValueCmp))"
+                "(KTC_IS_SOME(a.$fieldName) == KTC_IS_SOME(b.$fieldName) && (KTC_IS_NONE(a.$fieldName) || $vValueCmp))"
             }
             vTStr == "String" -> "ktc_core_string_eq(a.$fieldName, b.$fieldName)"
             classes[vTStr]?.isData == true -> "${typeFlatName(vTStr)}_equals(a.$fieldName, b.$fieldName)"
@@ -1078,8 +1081,9 @@ internal fun CCodeGen.emitIfaceInfo(info: IfaceInfo) {
     val vIfaceComponents = mangledComponents[info.name]
     if (vIfaceComponents != null) {
         val (vGenBase, vTypeArgs) = vIfaceComponents
-        val vOptName = genericOptionalCName(vGenBase, vTypeArgs)
-        hdr.appendLine("typedef struct $vOptName { ktc_OptionalTag tag; $cName value; } $vOptName;")
+        val vBaseCName = typeFlatName(vGenBase)
+        val vArgList = vTypeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
+        hdr.appendLine("KTC_DEFINE_OPT_GENERIC($vBaseCName, $vArgList);")
     } else {
         hdr.appendLine("KTC_DEFINE_OPT($cName);")
     }
@@ -1137,7 +1141,7 @@ internal fun CCodeGen.emitImplicitHashCode(cName: String, ci: ClassInfo, isData:
             val fieldName = if (name in ci.privateProps) "PRIV_$name" else name
             val hashExpr = if (type.nullable && vKtcHash !is KtcType.Ptr) {
                 val valueExpr = "\$self->$fieldName"
-                "(${valueExpr}.tag == ktc_SOME ? ${hashFieldExprKtc(vKtcHash, "${valueExpr}.value")} : 0)"
+                "(KTC_IS_SOME($valueExpr) ? ${hashFieldExprKtc(vKtcHash, "KTC_UNWRAP($valueExpr)")} : 0)"
             } else {
                 hashFieldExprKtc(vKtcHash, "\$self->$fieldName")
             }
@@ -1273,8 +1277,9 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
     if (vComponents != null) {
         // Generic instance: emit $Opt$N_ wrapper — distinct from the class name itself.
         val (vGenBase, vTypeArgs) = vComponents
-        val vOptName = genericOptionalCName(vGenBase, vTypeArgs)
-        hdr.appendLine("typedef struct $vOptName { ktc_OptionalTag tag; $cName value; } $vOptName;")
+        val vBaseCName = typeFlatName(vGenBase)
+        val vArgList = vTypeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
+        hdr.appendLine("KTC_DEFINE_OPT_GENERIC($vBaseCName, $vArgList);")
     } else {
         hdr.appendLine("KTC_DEFINE_OPT($cName);")
     }
@@ -1412,7 +1417,7 @@ internal fun CCodeGen.hasDisposeOverride(className: String): Boolean {
 
 internal fun CCodeGen.hashFieldExprKtc(ktc: KtcType, valueExpr: String): String = when (ktc) { // Nullable value types: hash tag + value (or 0 if null)
     is KtcType.Nullable if isValueNullableKtc(ktc) -> {
-        "(${valueExpr}.tag == ktc_SOME ? ${hashFieldExprKtc(ktc.inner, "${valueExpr}.value")} : 0)"
+        "(KTC_IS_SOME($valueExpr) ? ${hashFieldExprKtc(ktc.inner, "KTC_UNWRAP($valueExpr)")} : 0)"
     }
 
     is KtcType.Prim -> when (ktc.kind) {

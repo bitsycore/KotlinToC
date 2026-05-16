@@ -75,7 +75,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val y: Int = checkNotNull(x)
         """)
         r.sourceContains("ktc_Int\$Opt value = x")
-        r.sourceContains("value.value")
+        r.sourceContains("KTC_UNWRAP(value)")
     }
 
     @Test fun checkNotNullSmartCastPropagation() {
@@ -85,7 +85,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val z: Int = x
         """)
         r.sourceContains("smart-cast: 'x' narrowed")
-        r.sourceContains("x.value")
+        r.sourceContains("KTC_UNWRAP(x)")
     }
 
     @Test fun requireNotNullExpandsWithConcreteType() {
@@ -94,7 +94,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val y: Float = requireNotNull(x)
         """)
         r.sourceContains("ktc_Float\$Opt value = x")
-        r.sourceContains("value.value")
+        r.sourceContains("KTC_UNWRAP(value)")
     }
 
     @Test fun requireNotNullSmartCastPropagation() {
@@ -104,6 +104,6 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val z: Float = x
         """)
         r.sourceContains("smart-cast: 'x' narrowed")
-        r.sourceContains("x.value")
+        r.sourceContains("KTC_UNWRAP(x)")
     }
 }

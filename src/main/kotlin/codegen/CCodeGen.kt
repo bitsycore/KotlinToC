@@ -237,12 +237,14 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         return mangledGenericName(baseName, typeArgs)
     }
 
-    /** C name for the Optional wrapper of a generic instance.
-    e.g. ArrayList + ["Int"]  → "ktc_std_ArrayList$Opt$1_ktc_Int"
-         ArrayList + ["Int?"] → "ktc_std_ArrayList$Opt$1_ktc_Int$Opt" */
+    /* C name for the Optional wrapper of a generic instance.
+    Uses internal type arg names (same tokens as the plain struct), so that
+    KTC_DEFINE_OPT_GENERIC(BASE, ...) can reference both via the same args.
+    e.g. ArrayList + ["Int"]  → "ktc_std_ArrayList$Opt$1_Int"
+         ArrayList + ["Int?"] → "ktc_std_ArrayList$Opt$1_Int$Opt" */
     internal fun genericOptionalCName(baseName: String, typeArgs: List<String>): String {
         val baseCName = typeFlatName(baseName)
-        val typeArgStr = typeArgs.joinToString("_") { optTypeArgComponent(it) }
+        val typeArgStr = typeArgs.joinToString("_") { it.replace("?", "\$Opt") }
         return "${baseCName}\$Opt\$${typeArgs.size}_${typeArgStr}"
     }
 
@@ -312,7 +314,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal fun nullGuardExpr(recvKtc: KtcType, recvExpr: String, recvName: String, isThis: Boolean): String = when (recvKtc) {
         is KtcType.Nullable if recvKtc.inner is KtcType.Ptr -> "$recvName != NULL"
         is KtcType.Nullable if isValueNullableKtc(recvKtc) ->
-            if (isThis) "\$self.tag == ktc_SOME" else "$recvName.tag == ktc_SOME"
+            if (isThis) "KTC_IS_SOME(\$self)" else "KTC_IS_SOME($recvName)"
 
         is KtcType.Nullable -> if (isThis) "\$self\$has" else "${recvName}\$has"
         else -> "${recvExpr}\$has"
@@ -478,7 +480,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 val components = mangledComponents[base]
                 if (components != null) {
                     val (genBase, typeArgs) = components
-                    "${typeFlatName(genBase)}\$Opt\$${typeArgs.size}_${typeArgs.joinToString("_") { optTypeArgComponent(it) }}"
+                    "${typeFlatName(genBase)}\$Opt\$${typeArgs.size}_${typeArgs.joinToString("_") { it.replace("?", "\$Opt") }}"
                 } else {
                     "${typeFlatName(base)}\$Opt"
                 }
@@ -515,11 +517,36 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         }
     }
 
-    /* Returns a C literal for "no value" for the given Optional C type. */
-    internal fun optNone(optCType: String): String = "($optCType){ktc_NONE}"
+    /* Extracts the inner type from an Optional C type name.
+    "ktc_Int$Opt" → "ktc_Int",  "Base$Opt$N_args" → "Base$N_args",  "ktc_Array$Opt$_T_N" → "ktc_Array_T_N" */
+    internal fun optInnerType(optCType: String): String {
+        val vIdx = optCType.indexOf("\$Opt\$")
+        if (vIdx >= 0) {
+            // Generic or array opt: check what follows "$Opt$"
+            val vAfter = optCType.getOrNull(vIdx + 5)
+            return if (vAfter?.isDigit() == true)
+                optCType.removeRange(vIdx + 1, vIdx + 5)  // "$Opt$N..." → "$N..." (keep $)
+            else
+                optCType.removeRange(vIdx, vIdx + 5)       // "$Opt$_..." → "_..." (remove $Opt$)
+        }
+        return optCType.removeSuffix("\$Opt")              // "T$Opt" → "T"
+    }
 
-    /* Returns a C literal for "has value" for the given Optional C type. */
-    internal fun optSome(optCType: String, expr: String): String = "($optCType){ktc_SOME, $expr}"
+    /* Returns a C expression for "no value".
+    Uses KTC_NONE macro for simple types; raw struct literal for generic opt types. */
+    internal fun optNone(optCType: String): String {
+        val vInner = optInnerType(optCType)
+        return if ("\$" in vInner) "($optCType){ktc_NONE}"
+        else "KTC_NONE($vInner)"
+    }
+
+    /* Returns a C expression for "has value".
+    Uses KTC_SOME macro for simple types; raw struct literal for generic opt types. */
+    internal fun optSome(optCType: String, expr: String): String {
+        val vInner = optInnerType(optCType)
+        return if ("\$" in vInner) "($optCType){ktc_SOME, $expr}"
+        else "KTC_SOME($vInner, $expr)"
+    }
 
     // ── Nullable return tracking ─────────────────────────────────────
     internal var currentFnReturnsNullable = false
@@ -1015,10 +1042,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         for ((baseName, instantiations) in genericInstantiations) {
             if (!genericClassDecls.containsKey(baseName)) continue
             for (typeArgs in instantiations) {
-                val mangledName = mangledGenericName(baseName, typeArgs)
-                val cName = typeFlatName(mangledName)
-                hdr.appendLine("typedef struct $cName $cName;")
-                // Forward-declare the Optional wrapper (Base$Optional_TypeArg style)
+                mangledGenericName(baseName, typeArgs)  // ensure mangledComponents is populated
+                val vBaseCName = typeFlatName(baseName)
+                val vMacroArgs = typeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
+                hdr.appendLine("typedef struct KTC_GENERIC_TYPE($vBaseCName, $vMacroArgs) KTC_GENERIC_TYPE($vBaseCName, $vMacroArgs);")
+                // Forward-declare the Optional wrapper
                 val optName = genericOptionalCName(baseName, typeArgs)
                 hdr.appendLine("typedef struct $optName $optName;")
             }

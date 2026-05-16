@@ -217,7 +217,7 @@ fun main(args: Array<String>) {
     }
 
     // ── Copy intrinsic files to ktc/ subdirectory ────────────────
-    for (vName in listOf("ktc_mangle.h", "ktc_types.h", "ktc_core.h", "ktc_core.c")) {
+    for (vName in listOf("ktc_macro.h", "ktc_toremove.h", "ktc_core.h", "ktc_core.c")) {
         val vDst = File(ktcDir, vName)
         val vSrc = aClass.getResourceAsStream("/ktc/$vName")
         if (vSrc != null) {

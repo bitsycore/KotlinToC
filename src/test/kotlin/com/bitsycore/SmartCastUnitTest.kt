@@ -32,8 +32,8 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 s.show()
             }
         """)
-        // After guard, s is smart-cast to String — s.value unwraps Optional
-        r.sourceContains("test_Main_String_show(s.value)")
+        // After guard, s is smart-cast to String — KTC_UNWRAP(s) unwraps Optional
+        r.sourceContains("test_Main_String_show(KTC_UNWRAP(s))")
     }
 
     @Test fun guardSmartCastWithBreak() {
@@ -48,8 +48,8 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        // After guard with break, x should be smart-cast — printed via .value
-        r.sourceContains("x.value")
+        // After guard with break, x should be smart-cast — printed via KTC_UNWRAP
+        r.sourceContains("KTC_UNWRAP(x)")
     }
 
     @Test fun guardSmartCastWithContinue() {
@@ -81,7 +81,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        r.sourceContains("test_Main_String_show(s.value)")
+        r.sourceContains("test_Main_String_show(KTC_UNWRAP(s))")
     }
 
     // ── If-else narrowing: if (x == null) { ... } else { x.use() } ──
@@ -99,8 +99,8 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        // In else branch, x is smart-cast — should print x.value
-        r.sourceContains("x.value")
+        // In else branch, x is smart-cast — should print KTC_UNWRAP(x)
+        r.sourceContains("KTC_UNWRAP(x)")
     }
 
     // ── Var NOT smart-cast ───────────────────────────────────────────
@@ -147,7 +147,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 s.show()
             }
         """)
-        r.sourceContains("test_Main_String_show(s.value)")
+        r.sourceContains("test_Main_String_show(KTC_UNWRAP(s))")
     }
 
     // ── Smart cast on this in nullable receiver ──────────────────────
@@ -163,9 +163,10 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 s.safe()
             }
         """)
-        // Inside the if, this should be smart-cast to String → $self.value
-        r.sourceContains("(\$self.value).len")
-        r.sourceContains("(\$self.value).ptr")
+        // Inside the if, this should be smart-cast to String — $self is unwrapped via KTC_UNWRAP
+        r.sourceContains("KTC_UNWRAP(\$self)")
+        r.sourceContains(".len")
+        r.sourceContains(".ptr")
     }
 
     // ── No smart cast without guard/if ───────────────────────────────
@@ -213,7 +214,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        r.sourceContains("s.value")
+        r.sourceContains("KTC_UNWRAP(s)")
     }
 
     @Test fun isCheckSmartCastInWhen() {

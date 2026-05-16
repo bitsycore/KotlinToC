@@ -76,18 +76,20 @@ KTC_UNWRAP(v)     // (v).value
 - [x] Dead `Pair_A_B` / `Triple_A_B_C` parsing removed from `CoreTypes.kt`
 - [x] Unit tests and integration tests all passing (35/35 integration, 566 unit)
 
+### Step 3 — Optional access macros in generated code ✅
+- [x] `optNone()` → `KTC_NONE(innerType)` for simple types; raw struct for generic opt
+- [x] `optSome()` → `KTC_SOME(innerType, expr)` for simple types; raw struct for generic opt
+- [x] null guards → `KTC_IS_SOME(v)` in `nullGuardExpr`, `hashFieldExprKtc`, equals emit
+- [x] value access → `KTC_UNWRAP(v)` in `genName`, `genExpr(ThisExpr)`, `genBin`, safe-call recv, hash
+- [x] `KTC_DEFINE_OPT_GENERIC` macro added to `ktc_types.h` and used in emit for generic opt structs
+- [x] Generic class structs use `struct KTC_GENERIC_TYPE(BASE, args) { ... }` form
+- [x] `genericOptionalCName` and `optCTypeName` use internal type arg names (consistent with struct names)
+- [x] Type system cheat sheet written to `docs/KTC_TYPE_SYSTEM.md`
+- [x] 35/35 integration + all unit tests passing
+
 ---
 
 ## Remaining steps
-
-### Step 3 — Optional access macros in generated code
-Replace manual struct literals with macros in generated `.c`:
-- `optNone()` → `KTC_NONE(innerType)`  (currently emits `(T$Opt){ktc_NONE}`)
-- `optSome()` → `KTC_SOME(innerType, expr)` (currently emits `(T$Opt){ktc_SOME, expr}`)
-- null checks → `KTC_IS_NONE(v)` / `KTC_IS_SOME(v)` (currently emits `.tag == ktc_NONE/SOME`)
-- value access → `KTC_UNWRAP(v)` (currently emits `.value`)
-
-Files: `CCodeGen.kt` (`optNone`, `optSome`), `CCodeGenExpr.kt`, `CCodeGenStmts.kt`
 
 ### Step 4 — Fixed-array struct types
 Switch `@Size(N) Array<T>` from raw C arrays to `ktc_Array_T_N` wrapped structs:
