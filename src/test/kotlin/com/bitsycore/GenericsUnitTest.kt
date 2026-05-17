@@ -24,7 +24,7 @@ class GenericsUnitTest : TranspilerTestBase() {
         """)
         // Mangled struct: Box_Int (forward typedef + struct definition using CLS macro)
         r.headerContains("typedef struct test_Main_Box_Int test_Main_Box_Int;")
-        r.headerContains("KTC_TYPE(CLS, CLS_OPT,")
+        r.headerContains("KTC_CLASS(CLS, CLS_OPT,")
         r.headerContains("ktc_Int item;")
     }
 

@@ -170,7 +170,7 @@
 /**
  * Define Type and it's Optional wrapper
  */
-#define KTC_TYPE(TYPE, TYPE_OPT, BODY) \
+#define KTC_CLASS(TYPE, TYPE_OPT, BODY) \
     typedef struct TYPE { BODY } TYPE; \
     KTC_DEFINE_OPT_NAMED(TYPE, TYPE_OPT)
 
