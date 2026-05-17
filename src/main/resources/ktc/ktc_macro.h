@@ -29,17 +29,32 @@
  * Methods & Related to Type Name
  * ========================================================= */
 
+/*
+ * Two-step expansion for KTC_RELATED and KTC_METHOD:
+ * The ## operator suppresses pre-expansion of its operands, so passing
+ * CLS directly to a macro that uses T##_##NAME would paste the literal
+ * token "CLS" instead of its expansion. The extra indirection level
+ * (__KTC_RELATED_ / __KTC_METHOD_) forces CLS to be fully expanded as
+ * a normal argument before it reaches the ##.
+ */
+
 #define __IMPL_KTC_RELATED(T, NAME) \
 	T##_##NAME
 
+#define __KTC_RELATED_(T, NAME) \
+	__IMPL_KTC_RELATED(T, NAME)
+
 #define KTC_RELATED(NAME) \
-	__IMPL_KTC_RELATED(CLS, NAME)
+	__KTC_RELATED_(CLS, NAME)
 
 #define __IMPL_KTC_METHOD(RETURN, T, NAME) \
 	RETURN T##_##NAME
 
+#define __KTC_METHOD_(RETURN, T, NAME) \
+	__IMPL_KTC_METHOD(RETURN, T, NAME)
+
 #define KTC_METHOD(RETURN, NAME) \
-	__IMPL_KTC_METHOD(RETURN, CLS, NAME)
+	__KTC_METHOD_(RETURN, CLS, NAME)
 
 /* =========================================================
  * Optional helpers
@@ -102,7 +117,7 @@
  * Optional type definition with inlined named type and type opt
  */
 #define KTC_DEFINE_OPT_NAMED(NOT_OPT, OPT) \
-	typedef struct {         \
+	typedef struct OPT {     \
 		ktc_OptionalTag tag; \
 		NOT_OPT value;       \
 	} OPT

@@ -135,7 +135,7 @@ class ClassUnitTest : TranspilerTestBase() {
             }
             fun main() { }
         """)
-        r.headerContains("typedef struct {")
+        r.headerContains("KTC_TYPE(CLS, CLS_OPT,")
         r.headerContains("Outer\$Inner")
         r.headerContains("ktc_Int x;")
     }

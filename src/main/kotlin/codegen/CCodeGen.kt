@@ -126,7 +126,9 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal var activeLambdas: Map<String, ActiveLambda> = emptyMap()
     internal val lambdaParamSubst = mutableMapOf<String, String>()  // also stores "\$this" → receiver C expr during inline ext expansion
     // Deferred hdr declarations: className → list of hdr lines (for methods moved to implements section)
-    internal val deferredHdrLines = mutableMapOf<String, MutableList<String>>()
+    /* Deferred header lines per class: (ifaceDisplayName, headerLine) pairs.
+    ifaceDisplayName is the Kotlin type-ref string, e.g. "Iterator<Float?>", or "" for non-iface methods. */
+    internal val deferredHdrLines = mutableMapOf<String, MutableList<Pair<String, String>>>()
     internal val lambdaParamTypes = mutableMapOf<String, String>()  // lambda param name → Kotlin type, used by inferExprType so .size etc. resolve correctly
     internal var inlineReturnVar: String? = null  // result var name (value pos), "" (stmt pos), null (not inside inline)
     internal var inlineEndLabel: String? = null   // goto label after the inline block to handle early return
@@ -172,11 +174,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         val genericMatch = genericFunDecls.any {
             it.name == method && it.receiver?.nullable == true && (
                 it.receiver!!.name == bareType ||
-                (genericClassDecls.containsKey(it.receiver!!.name) && bareType.startsWith("${it.receiver!!.name}\$")) ||
+                (genericClassDecls.containsKey(it.receiver!!.name) && bareType.startsWith("${it.receiver!!.name}_")) ||
                 (genericIfaceDecls.containsKey(it.receiver!!.name) && (
                     bareType == it.receiver!!.name ||
                     classInterfaces[bareType]?.contains(it.receiver!!.name) == true ||
-                    bareType.startsWith("${it.receiver!!.name}\$")
+                    bareType.startsWith("${it.receiver!!.name}_")
                 ))
             )
         }
@@ -187,7 +189,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             genericFunDecls.any { gf ->
                 gf.name == method && gf.receiver?.nullable == true && (
                     gf.receiver!!.name == iface ||
-                    (genericIfaceDecls.containsKey(gf.receiver!!.name) && iface.startsWith("${gf.receiver!!.name}\$"))
+                    (genericIfaceDecls.containsKey(gf.receiver!!.name) && iface.startsWith("${gf.receiver!!.name}_"))
                 )
             }
         }
@@ -223,10 +225,10 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     // Used to compute KTC_OPTIONAL_GENERIC_NAME-style Optional wrapper names.
     internal val mangledComponents = mutableMapOf<String, Pair<String, List<String>>>()
 
-    /** Mangle a generic class name with concrete type args: MyList + ["Int?"] → "MyList$1_Int$Opt" */
+    /** Mangle a generic class name with concrete type args: MyList + ["Int?"] → "MyList_Int$Opt" */
     internal fun mangledGenericName(baseName: String, typeArgs: List<String>): String {
         val sanitized = typeArgs.joinToString("_") { it.replace("?", "\$Opt") }
-        val mangledName = "${baseName}\$${typeArgs.size}_$sanitized"
+        val mangledName = "${baseName}_$sanitized"
         mangledComponents[mangledName] = Pair(baseName, typeArgs)
         return mangledName
     }
@@ -238,14 +240,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     }
 
     /* C name for the Optional wrapper of a generic instance.
-    Uses internal type arg names (same tokens as the plain struct), so that
-    KTC_DEFINE_OPT_GENERIC(BASE, ...) can reference both via the same args.
-    e.g. ArrayList + ["Int"]  → "ktc_std_ArrayList$Opt$1_Int"
-         ArrayList + ["Int?"] → "ktc_std_ArrayList$Opt$1_Int$Opt" */
+    e.g. ArrayList + ["Int"]  → "ktc_std_ArrayList$Opt_Int"
+         ArrayList + ["Int?"] → "ktc_std_ArrayList$Opt_Int$Opt" */
     internal fun genericOptionalCName(baseName: String, typeArgs: List<String>): String {
         val baseCName = typeFlatName(baseName)
         val typeArgStr = typeArgs.joinToString("_") { it.replace("?", "\$Opt") }
-        return "${baseCName}\$Opt\$${typeArgs.size}_${typeArgStr}"
+        return "${baseCName}\$Opt_${typeArgStr}"
     }
 
     // Maps mangled concrete name → type substitution (e.g. "MyList_Int" → {T: "Int"})
@@ -458,7 +458,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 
     /* Maps an internal type string to its C Optional struct type name.
     Primitives: Int? → ktc_Int$Opt.
-    Generic instances: ArrayList<Int>? → ktc_std_ArrayList$Opt$1_ktc_Int. */
+    Generic instances: ArrayList<Int>? → ktc_std_ArrayList$Opt_ktc_Int. */
     internal fun optCTypeName(internalType: String): String {
         val base = internalType.removeSuffix("?")
         return when (base) {
@@ -480,7 +480,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 val components = mangledComponents[base]
                 if (components != null) {
                     val (genBase, typeArgs) = components
-                    "${typeFlatName(genBase)}\$Opt\$${typeArgs.size}_${typeArgs.joinToString("_") { it.replace("?", "\$Opt") }}"
+                    "${typeFlatName(genBase)}\$Opt_${typeArgs.joinToString("_") { it.replace("?", "\$Opt") }}"
                 } else {
                     "${typeFlatName(base)}\$Opt"
                 }
@@ -498,11 +498,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             // Non-nullable type arg: use the C type name (with prefix)
             val components = mangledComponents[internalTypeArg]
             if (components != null) {
-                // Nested generic (non-nullable): baseName$N_typeArgs
+                // Nested generic (non-nullable): baseName_typeArgs
                 val (genBase, typeArgs) = components
                 val baseCName = typeFlatName(genBase)
                 val innerStr = typeArgs.joinToString("_") { optTypeArgComponent(it) }
-                "${baseCName}\$${typeArgs.size}_${innerStr}"
+                "${baseCName}_${innerStr}"
             } else {
                 // Non-generic non-nullable: map to C type
                 when (internalTypeArg) {
@@ -999,10 +999,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 if (!firstClass) hdr.appendLine()
                 firstClass = false
                 emitClass(d)
-                // Emit interface vtable header declarations right after the class struct
-                if (d.superInterfaces.isNotEmpty()) {
-                    emitInterfaceVtablesForClass(d.name, d.superInterfaces, declsOnly = true)
-                }
                 // Emit companion objects declared inside this class
                 for (vMember in d.members.filterIsInstance<ObjectDecl>()) {
                     hdr.appendLine()
@@ -1038,14 +1034,13 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 
         // Emit forward declarations for all monomorphized generic class types
         // so method signatures can reference them before their full definitions.
-        // Also forward-declare the KTC_OPTIONAL_GENERIC_NAME-style Optional wrapper.
+        // Also forward-declare the Optional wrapper.
         for ((baseName, instantiations) in genericInstantiations) {
             if (!genericClassDecls.containsKey(baseName)) continue
             for (typeArgs in instantiations) {
-                mangledGenericName(baseName, typeArgs)  // ensure mangledComponents is populated
-                val vBaseCName = typeFlatName(baseName)
-                val vMacroArgs = typeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
-                hdr.appendLine("typedef struct KTC_GENERIC_TYPE($vBaseCName, $vMacroArgs) KTC_GENERIC_TYPE($vBaseCName, $vMacroArgs);")
+                val vMangledName = mangledGenericName(baseName, typeArgs)  // ensure mangledComponents is populated
+                val vCName = typeFlatName(vMangledName)
+                hdr.appendLine("typedef struct $vCName $vCName;")
                 // Forward-declare the Optional wrapper
                 val optName = genericOptionalCName(baseName, typeArgs)
                 hdr.appendLine("typedef struct $optName $optName;")
@@ -1062,7 +1057,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // Also forward-declare the KTC_OPTIONAL_GENERIC_NAME-style Optional wrapper.
         var emittedMonoFwd = false
         for ((name, _) in interfaces) {
-            val isMonomorphized = genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "\$") }
+            val isMonomorphized = mangledComponents.containsKey(name) ||
+                genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "_") }
             if (isMonomorphized) {
                 val cName = typeFlatName(name)
                 hdr.appendLine("typedef struct ${cName}_vt ${cName}_vt;")
@@ -1090,11 +1086,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 val prevSourceFile = currentSourceFile
                 declSourceFile[baseName]?.let { currentSourceFile = it }
                 emitGenericClass(templateDecl, mangledName)
-                // Emit interface vtable header declarations right after the class struct
-                if (templateDecl.superInterfaces.isNotEmpty()) {
-                    val resolvedIfaces = templateDecl.superInterfaces.map { substituteTypeRef(it, typeSubst) }
-                    emitInterfaceVtablesForClass(mangledName, resolvedIfaces, declsOnly = true)
-                }
                 currentSourceFile = prevSourceFile
                 typeSubst = emptyMap()
             }
@@ -1110,7 +1101,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 // Skip non-generic interfaces from other packages (they're in that package's header).
                 // Monomorphized generics (e.g. MutableList_Int from MutableList<T>) are always
                 // emitted here because they may reference user-defined types.
-                val isMonomorphized = genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "\$") }
+                val isMonomorphized = mangledComponents.containsKey(name) ||
+                    genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "_") }
                 if (isMonomorphized) {
                     emitInterfaceVtable(info)
                     emittedMonoIfaceVtables += name

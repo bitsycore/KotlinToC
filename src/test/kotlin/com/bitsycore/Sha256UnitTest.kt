@@ -48,8 +48,8 @@ class Sha256UnitTest : TranspilerTestBase() {
                 class Inner(val x: Int)
             }
         """)
-        v.headerContains("test_Main_Obj\$Inner;")
-        v.headerContains("test_Main_Obj\$Inner_primaryConstructor")
+        v.headerContains("#define CLS test_Main_Obj\$Inner")
+        v.headerContains("KTC_METHOD(CLS, primaryConstructor)")
     }
 
     @Test fun sha256PrivateMethodHasPRIV() {
@@ -110,7 +110,7 @@ class Sha256UnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        v.headerContains("void test_Main_Obj\$Inner_finalizeHash(test_Main_Obj\$Inner* \$self, ktc_Byte* \$out)")
+        v.headerContains("KTC_METHOD(void, finalizeHash)(CLS* \$self, ktc_Byte* \$out)")
     }
 
     @Test fun sha256InitFlagStatic() {

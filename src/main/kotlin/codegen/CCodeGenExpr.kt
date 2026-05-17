@@ -2003,7 +2003,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val genExt = genericFunDecls.find {
             it.name == method && it.receiver != null && (
                 it.receiver.name == pointerBase ||
-                (genericClassDecls.containsKey(it.receiver.name) && pointerBase.startsWith("${it.receiver.name}\$"))
+                (genericClassDecls.containsKey(it.receiver.name) && pointerBase.startsWith("${it.receiver.name}_"))
             )
         }
         // Also search interfaces implemented by the class for @Ptr generic ext funs
@@ -2015,12 +2015,12 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                 val m = genericFunDecls.find {
                     it.name == method && it.receiver != null && (
                         it.receiver.name == iface ||
-                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}\$"))
+                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
                     )
                 }
                 if (m != null) {
                     ifaceExt = m
-                    ifaceExtConcrete = if (iface.startsWith("${m.receiver!!.name}\$")) iface
+                    ifaceExtConcrete = if (iface.startsWith("${m.receiver!!.name}_")) iface
                         else {
                             val binding = genericTypeBindings[pointerBase]
                             if (binding != null) {
@@ -2034,14 +2034,10 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         }
         val effectiveGenExt = genExt ?: ifaceExt
         if (ifaceExt != null && ifaceExtConcrete != null) {
-            /* Extract type args from "$N_A1_A2" format: strip base name + "$", then skip arity + "_" */
-            val tArgs = ifaceExt.typeParams.map { tp ->
-                val dollarPrefix = "${ifaceExt.receiver!!.name}\$"
-                if (ifaceExtConcrete!!.startsWith(dollarPrefix)) {
-                    val afterDollar = ifaceExtConcrete!!.removePrefix(dollarPrefix) // "1_Int" or "2_Int_String"
-                    val uIdx = afterDollar.indexOf('_')
-                    if (uIdx >= 0) afterDollar.substring(uIdx + 1) else afterDollar
-                } else "Int"
+            /* Extract type args via mangledComponents lookup */
+            val tArgComponents = mangledComponents[ifaceExtConcrete!!]?.second
+            val tArgs = ifaceExt.typeParams.mapIndexed { i, _ ->
+                tArgComponents?.getOrNull(i) ?: "Int"
             }
             genericFunInstantiations.getOrPut(ifaceExt.name) { mutableSetOf() }.add(tArgs)
         }
@@ -2132,7 +2128,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         var genericExtDecl = if (methodDecl == null) genericFunDecls.find {
             it.name == method && it.receiver != null && (
                 it.receiver.name == vClassInfo.baseName ||
-                (genericClassDecls.containsKey(it.receiver.name) && vClassInfo.baseName.startsWith("${it.receiver.name}\$"))
+                (genericClassDecls.containsKey(it.receiver.name) && vClassInfo.baseName.startsWith("${it.receiver.name}_"))
             )
         } else null
         // Also check interfaces implemented by the class for generic ext funs
@@ -2143,13 +2139,13 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                 val match = genericFunDecls.find {
                     it.name == method && it.receiver != null && (
                         it.receiver.name == iface ||
-                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}\$"))
+                        (genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
                     )
                 }
                 if (match != null) {
                     genericExtDecl = match
                     // Determine the concrete interface name (e.g. List$1_Int)
-                    ifaceConcrete = if (iface.startsWith("${match.receiver!!.name}\$")) iface
+                    ifaceConcrete = if (iface.startsWith("${match.receiver!!.name}_")) iface
                         else {
                             // Infer from the class name: ArrayList$1_Int → T=Int → List$1_Int
                             val binding = genericTypeBindings[vClassInfo.baseName]
@@ -2164,14 +2160,10 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         }
         // Register generic instantiation if found via interface
         if (genericExtDecl != null && ifaceConcrete != null) {
-            /* Extract type args from "$N_A1_A2" format: strip base name + "$", then skip arity + "_" */
-            val tArgs = genericExtDecl.typeParams.map { tp ->
-                val dollarPrefix = "${genericExtDecl.receiver!!.name}\$"
-                if (ifaceConcrete.startsWith(dollarPrefix)) {
-                    val afterDollar = ifaceConcrete.removePrefix(dollarPrefix) // "1_Int"
-                    val uIdx = afterDollar.indexOf('_')
-                    if (uIdx >= 0) afterDollar.substring(uIdx + 1) else afterDollar
-                } else "Int"
+            /* Extract type args via mangledComponents lookup */
+            val ifaceComponents = mangledComponents[ifaceConcrete]?.second
+            val tArgs = genericExtDecl.typeParams.mapIndexed { i, _ ->
+                ifaceComponents?.getOrNull(i) ?: "Int"
             }
             genericFunInstantiations.getOrPut(genericExtDecl.name) { mutableSetOf() }.add(tArgs)
         }

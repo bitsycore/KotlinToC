@@ -16,10 +16,10 @@ class DataClassUnitTest : TranspilerTestBase() {
 
     @Test fun structTypedef() {
         val r = transpileMain("val v = Vec2(1.0f, 2.0f)", decls = vec2Decl)
-        r.headerContains("typedef struct {")
+        r.headerContains("KTC_TYPE(CLS, CLS_OPT,")
         r.headerContains("ktc_Float x;")
         r.headerContains("ktc_Float y;")
-        r.headerContains("} test_Main_Vec2;")
+        r.headerContains(");")
     }
 
     // ── Constructor (create function) ────────────────────────────────

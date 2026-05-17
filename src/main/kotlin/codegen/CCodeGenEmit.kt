@@ -39,30 +39,73 @@ import com.bitsycore.ktc.types.KtcType
 
 // ═══════════════════════════ Emit declarations ════════════════════
 
+// ── Header comment helpers ───────────────────────────────────────
+
+private const val kHdrRule = "═══════════════════════════════════════════════════════════"
+
+/* Build the opening block comment for a class/data-class section in the generated header. */
+internal fun CCodeGen.classBlockHeader(
+    inKind: String,
+    inName: String,
+    inTypeParams: List<String>,
+    inSuperInterfaces: List<com.bitsycore.ktc.ast.TypeRef>,
+    inPkg: String,
+    inFile: String,
+    inCName: String
+): String {
+    val vTypeParamStr = if (inTypeParams.isNotEmpty()) "<${inTypeParams.joinToString(", ")}>" else ""
+    val vSuperStr = if (inSuperInterfaces.isNotEmpty())
+        " : ${inSuperInterfaces.joinToString(", ") { typeRefToStr(it) }}" else ""
+    val vSig = "$inKind $inName$vTypeParamStr$vSuperStr"
+    return buildString {
+        appendLine("/* $kHdrRule")
+        appendLine(" * $vSig")
+        if (inPkg.isNotEmpty()) appendLine(" * package: $inPkg")
+        appendLine(" * file: $inFile")
+        appendLine(" * mangled: $inCName")
+        append(" * $kHdrRule */")
+    }
+}
+
+/* Build the closing block comment for a class/data-class section. */
+internal fun CCodeGen.classBlockFooter(inKind: String, inName: String, inTypeParams: List<String>): String {
+    val vTypeParamStr = if (inTypeParams.isNotEmpty()) "<${inTypeParams.joinToString(", ")}>" else ""
+    return buildString {
+        appendLine("/* $kHdrRule")
+        appendLine(" * END $inKind $inName$vTypeParamStr")
+        append(" * $kHdrRule */")
+    }
+}
+
 // ── class / data class ───────────────────────────────────────────
 
 internal fun CCodeGen.emitClass(d: ClassDecl) {
     val ci = classes[d.name]!!
     val cName = ci.flatName
-
     val kind = if (d.isData) "data class" else "class"
+    val vOptName = "${cName}\$Opt"
+
     impl.appendLine("// ══ $kind ${d.name} ($currentSourceFile) ══")
     impl.appendLine()
 
-    // --- header: typedef struct ---
-    hdr.appendLine("// ══ $kind ${d.name} ($currentSourceFile) ══")
+    // Block header comment + CLS defines + struct
+    hdr.appendLine(classBlockHeader(kind, d.name, d.typeParams, d.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
+    hdr.appendLine("#define CLS $cName")
+    hdr.appendLine("#define CLS_OPT $vOptName")
     hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[d.name]!!}")
-    hdr.appendLine("typedef struct {")
+    hdr.appendLine("KTC_TYPE(CLS, CLS_OPT,")
     emitStructFields(ci)
-    hdr.appendLine("} $cName;")
-    emitConstructorBody(cName, ci)
-    // --- class extras: equals (all classes), toString (data only) ---
-    emitClassEquals(cName, ci)
-    if (d.isData) {
-        emitDataClassToString(d.name, cName, ci)
-    }
+    hdr.appendLine(");")
+    hdr.appendLine()
 
-    // --- methods ---
+    // Constructor section
+    hdr.appendLine("// ════ constructors ════")
+    emitConstructorBody(cName, ci)
+
+    // Secondary constructors (also in constructor section)
+    for (vSctor in d.secondaryCtors) emitSecondaryCtor(d.name, cName, vSctor)
+
+    // Methods (non-interface methods go here; interface methods are deferred)
     currentClass = d.name
     selfIsPointer = true
     pushScope()
@@ -70,37 +113,68 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         defineVarKtc(name, resolveTypeName(type))
         if (!ci.isValProp(name)) markMutable(name)
     }
-    // Build set of interface method names to suppress their hdr here (emitted under implements section)
-    val ifaceMethodNames = d.superInterfaces.flatMap { ifaceRef ->
-        val ifaceName = resolveIfaceName(ifaceRef)
-        val iface = interfaces[ifaceName] ?: return@flatMap emptyList()
-        (collectAllIfaceMethods(iface).map { it.name } + collectAllIfaceProperties(iface).map { it.name }).toSet()
-    }.toSet()
 
+    // Build map: method name → interface display string (e.g. "Iterator<Float?>")
+    val vIfaceMethodToStr = mutableMapOf<String, String>()
+    for (vIfaceRef in d.superInterfaces) {
+        val vIfaceName = resolveIfaceName(vIfaceRef)
+        val vIface = interfaces[vIfaceName] ?: continue
+        val vIfaceStr = typeRefToStr(vIfaceRef)
+        for (m in collectAllIfaceMethods(vIface)) vIfaceMethodToStr[m.name] = vIfaceStr
+        for (p in collectAllIfaceProperties(vIface)) vIfaceMethodToStr[p.name] = vIfaceStr
+    }
     for (m in d.members) {
         if (m is FunDecl && m.receiver == null) {
-            emitMethod(d.name, m, suppressHdr = m.name in ifaceMethodNames)
+            val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
+            emitMethod(d.name, m, suppressHdr = vIfaceStr.isNotEmpty(), ifaceName = vIfaceStr)
         }
     }
-    // Implicit no-op dispose if not overridden
-    if (d.members.none { it is FunDecl && it.name == "dispose" }) {
-        hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
-    }
-    // Implicit hashCode — default returns __type_id, data classes hash all fields
-    emitImplicitHashCode(cName, ci, d.isData, isGenericClass = false, d.members)
-    // Implicit toString for non-data classes (data classes already emitted above)
-    if (!d.isData && d.members.none { it is FunDecl && it.name == "toString" }) {
-        emitDefaultToString(d.name, cName, ci)
-    }
-    // Any vtable + _as_Any wrapper
-    emitAnyVtable(cName, ci.name, d.isData, d.members, isGenericClass = false)
     popScope()
     currentClass = null
 
-    // Secondary constructors
-    for (sctor in d.secondaryCtors) {
-        emitSecondaryCtor(d.name, cName, sctor)
+    // Deferred interface method declarations + vtable extern + as_ cast (per-interface sections)
+    val vDeferredLines = deferredHdrLines.remove(d.name)
+    if (d.superInterfaces.isNotEmpty()) {
+        val vByIface = vDeferredLines?.groupBy { it.first } ?: emptyMap()
+        for (vIfaceRef in d.superInterfaces) {
+            val vIfaceName = resolveIfaceName(vIfaceRef)
+            val vIface = interfaces[vIfaceName] ?: continue
+            val vIfaceStr = typeRefToStr(vIfaceRef)
+            val cIface = typeFlatName(vIfaceName)
+            hdr.appendLine()
+            hdr.appendLine("// ════ implements $vIfaceStr ════")
+            val vLines = vByIface[vIfaceStr]
+            if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
+            for (vProp in collectAllIfaceProperties(vIface)) {
+                val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
+                hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(CLS* \$self);")
+            }
+            hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
+            hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(CLS* \$self);")
+        }
     }
+
+    // Implements Any section
+    hdr.appendLine()
+    hdr.appendLine("// ════ implements Any ════")
+    emitClassEquals(cName, ci)
+    if (d.isData) emitDataClassToString(d.name, cName, ci)
+    if (d.members.none { it is FunDecl && it.name == "dispose" }) {
+        hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+    }
+    emitImplicitHashCode(cName, ci, d.isData, isGenericClass = false, d.members)
+    if (!d.isData && d.members.none { it is FunDecl && it.name == "toString" }) {
+        emitDefaultToString(d.name, cName, ci)
+    }
+
+    // Any cast section
+    hdr.appendLine()
+    hdr.appendLine("// ════ Any cast ════")
+    emitAnyVtable(cName, ci.name, d.isData, d.members, isGenericClass = false)
+
+    hdr.appendLine("#undef CLS")
+    hdr.appendLine("#undef CLS_OPT")
+    hdr.appendLine(classBlockFooter(kind, d.name, d.typeParams))
 }
 
 /** Generate a secondary constructor function name: ClassName_constructorWithType1_Type2 */
@@ -115,7 +189,7 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
     val ctorName = secondaryCtorName(cClass, sctor.params)
     val extraParams = expandParams(sctor.params)
 
-    hdr.appendLine("$cClass $ctorName($extraParams);")
+    hdr.appendLine("KTC_METHOD(CLS, $ctorName)($extraParams);")
     impl.appendLine("$cClass $ctorName($extraParams) {")
 
     // Generate call to primary constructor for delegation
@@ -143,31 +217,41 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
     impl.appendLine()
 }
 
-/**
- * Emit a concrete instantiation of a generic class.
- * typeSubst must be set before calling (e.g. {T → Int}).
- * [mangledName] is the concrete class name (e.g. "MyList_Int").
- */
+/*
+Emit a concrete instantiation of a generic class.
+typeSubst must be set before calling (e.g. {T → Int}).
+[mangledName] is the concrete class name (e.g. "MyList_Int").
+*/
 internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: String) {
     val ci = classes[mangledName]!!
     val cName = ci.flatName
-
     val kind = if (templateDecl.isData) "data class" else "class"
-    val concreteTypes = mangledName.removePrefix(templateDecl.name).removePrefix("_").replace("_", ", ")
-    impl.appendLine("// ══ $kind ${templateDecl.name}<$concreteTypes> ($currentSourceFile) ══")
+    val (vGenBase, vTypeArgs) = mangledComponents[mangledName]!!
+    val vGenOptName = genericOptionalCName(vGenBase, vTypeArgs)
+    val vConcreteTypes = vTypeArgs.joinToString(", ")
+
+    impl.appendLine("// ══ $kind ${templateDecl.name}<$vConcreteTypes> ($currentSourceFile) ══")
     impl.appendLine()
 
-    // --- header: struct definition (forward typedef already emitted) ---
-    val (vGenBase, vTypeArgs) = mangledComponents[mangledName]!!
-    val vBaseCName = typeFlatName(vGenBase)
-    val vMacroArgs = vTypeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
-    hdr.appendLine("// ══ $kind ${templateDecl.name}<$concreteTypes> ($currentSourceFile) ══")
+    // Block header comment + CLS defines + struct
+    hdr.appendLine(classBlockHeader(kind, "${templateDecl.name}<$vConcreteTypes>",
+        emptyList(), templateDecl.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
+    hdr.appendLine("#define CLS $cName")
+    hdr.appendLine("#define CLS_OPT $vGenOptName")
     hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[ci.name]!!}")
-    hdr.appendLine("struct KTC_GENERIC_TYPE($vBaseCName, $vMacroArgs) {")
+    hdr.appendLine("KTC_TYPE(CLS, CLS_OPT,")
     emitStructFields(ci)
-    hdr.appendLine("};")
+    hdr.appendLine(");")
+    hdr.appendLine()
+
+    // Constructor section
+    hdr.appendLine("// ════ constructors ════")
     emitConstructorBody(cName, ci)
-    // --- methods (from template AST, but with typeSubst active) ---
+
+    // Secondary constructors
+    for (vSctor in templateDecl.secondaryCtors) emitSecondaryCtor(mangledName, cName, vSctor)
+
+    // Methods
     currentClass = mangledName
     selfIsPointer = true
     pushScope()
@@ -178,37 +262,60 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     for (m in templateDecl.members) {
         if (m is FunDecl && m.receiver == null) emitMethod(mangledName, m)
     }
-    // Implicit no-op dispose if not overridden
-    if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
-        hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
-    }
-    // Implicit hashCode
-    emitImplicitHashCode(cName, ci, templateDecl.isData, isGenericClass = true, templateDecl.members)
-    // Implicit equals for all classes
-    if (templateDecl.members.none { it is FunDecl && it.name == "equals" }) {
-        emitClassEquals(cName, ci)
-    }
-    // Implicit toString for data classes
-    if (templateDecl.isData && templateDecl.members.none { it is FunDecl && it.name == "toString" }) {
-        emitDataClassToString(templateDecl.name, cName, ci)
-    }
-    // Implicit toString for non-data classes
-    if (!templateDecl.isData && templateDecl.members.none { it is FunDecl && it.name == "toString" }) {
-        emitDefaultToString(ci.name, cName, ci)
-    }
-    // Any vtable + _as_Any wrapper
-    emitAnyVtable(cName, ci.name, templateDecl.isData, templateDecl.members, isGenericClass = true)
     popScope()
     currentClass = null
 
-    // Secondary constructors
-    for (sctor in templateDecl.secondaryCtors) {
-        emitSecondaryCtor(mangledName, cName, sctor)
+    // Deferred interface method declarations + vtable extern + as_ cast (per-interface sections)
+    val vGenDeferredLines = deferredHdrLines.remove(mangledName)
+    if (templateDecl.superInterfaces.isNotEmpty()) {
+        val vByIface = vGenDeferredLines?.groupBy { it.first } ?: emptyMap()
+        for (vIfaceRef in templateDecl.superInterfaces) {
+            val vIfaceName = resolveIfaceName(vIfaceRef)
+            val vIface = interfaces[vIfaceName] ?: continue
+            val vIfaceStr = typeRefToStr(vIfaceRef)
+            val cIface = typeFlatName(vIfaceName)
+            hdr.appendLine()
+            hdr.appendLine("// ════ implements $vIfaceStr ════")
+            val vLines = vByIface[vIfaceStr]
+            if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
+            for (vProp in collectAllIfaceProperties(vIface)) {
+                val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
+                hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(CLS* \$self);")
+            }
+            hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
+            hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(CLS* \$self);")
+        }
     }
+
+    // Implements Any section
+    hdr.appendLine()
+    hdr.appendLine("// ════ implements Any ════")
+    if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
+        hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+    }
+    emitImplicitHashCode(cName, ci, templateDecl.isData, isGenericClass = true, templateDecl.members)
+    if (templateDecl.members.none { it is FunDecl && it.name == "equals" }) {
+        emitClassEquals(cName, ci)
+    }
+    if (templateDecl.isData && templateDecl.members.none { it is FunDecl && it.name == "toString" }) {
+        emitDataClassToString(templateDecl.name, cName, ci)
+    }
+    if (!templateDecl.isData && templateDecl.members.none { it is FunDecl && it.name == "toString" }) {
+        emitDefaultToString(ci.name, cName, ci)
+    }
+
+    // Any cast section
+    hdr.appendLine()
+    hdr.appendLine("// ════ Any cast ════")
+    emitAnyVtable(cName, ci.name, templateDecl.isData, templateDecl.members, isGenericClass = true)
+
+    hdr.appendLine("#undef CLS")
+    hdr.appendLine("#undef CLS_OPT")
+    hdr.appendLine(classBlockFooter(kind, templateDecl.name, vTypeArgs.map { it }))
 }
 
 internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
-    hdr.appendLine("ktc_Bool ${cName}_equals($cName a, $cName b);")
+    hdr.appendLine("KTC_METHOD(ktc_Bool, equals)(CLS a, CLS b);")
     impl.appendLine("ktc_Bool ${cName}_equals($cName a, $cName b) {")
     val eqs = ci.props.filter { (_, type) ->
         // Skip @Ptr interface fields — ktc_IfacePtr can't be compared with ==
@@ -240,7 +347,7 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
 internal fun CCodeGen.emitDataClassToString(ktName: String, cName: String, ci: ClassInfo) {
     val maxLen = toStringMaxLen(ci.name)
     val maxComment = if (maxLen != null) " // max output: $maxLen chars" else ""
-    hdr.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb);${maxComment}")
+    hdr.appendLine("KTC_METHOD(void, toString)(CLS* \$self, ktc_StrBuf* sb);${maxComment}")
     impl.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb) {")
     for ((i, prop) in ci.props.withIndex()) {
         val (name, type) = prop
@@ -256,7 +363,7 @@ internal fun CCodeGen.emitDataClassToString(ktName: String, cName: String, ci: C
     impl.appendLine()
 }
 
-internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boolean = false) {
+internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boolean = false, ifaceName: String = "") {
     val cClass = typeFlatName(className)
     val siblings = classes[className]?.methods ?: emptyList()
     val overloadedName = methodName(f, siblings)
@@ -291,13 +398,14 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
     if (outParam != null) allParts += outParam
     val allParams = allParts.joinToString(", ")
 
+    val vHdrSig = "KTC_METHOD($cRet, $methodName)(${allParams.replace(cClass, "CLS")});"
     if (f.isPrivate) {
         // Private: forward decl only in .c, not in .h
         implFwd.appendLine("$cRet ${cClass}_${methodName}($allParams);")
     } else if (suppressHdr) {
-        deferredHdrLines.getOrPut(className) { mutableListOf() }.add("$cRet ${cClass}_${methodName}($allParams);")
+        deferredHdrLines.getOrPut(className) { mutableListOf() }.add(Pair(ifaceName, vHdrSig))
     } else {
-        hdr.appendLine("$cRet ${cClass}_${methodName}($allParams);")
+        hdr.appendLine(vHdrSig)
     }
     impl.appendLine("$cRet ${cClass}_${methodName}($allParams) {")
 
@@ -688,7 +796,7 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
     // Find all classes that implement a monomorphized version of this interface
     for ((className, ifaceList) in classInterfaces) {
         // Check if this class implements any monomorphized version of the interface
-        val matchingIface = ifaceList.find { it.startsWith("${ifaceBaseName}\$") }
+        val matchingIface = ifaceList.find { it.startsWith("${ifaceBaseName}_") || it.startsWith("${ifaceBaseName}\$") }
         if (matchingIface == null) continue
         val ci = classes[className] ?: continue
         val key = "${className}_${f.name}"
@@ -1081,11 +1189,10 @@ internal fun CCodeGen.emitIfaceInfo(info: IfaceInfo) {
     val vIfaceComponents = mangledComponents[info.name]
     if (vIfaceComponents != null) {
         val (vGenBase, vTypeArgs) = vIfaceComponents
-        val vBaseCName = typeFlatName(vGenBase)
-        val vArgList = vTypeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
-        hdr.appendLine("KTC_DEFINE_OPT_GENERIC($vBaseCName, $vArgList);")
+        val vOptName = genericOptionalCName(vGenBase, vTypeArgs)
+        hdr.appendLine("typedef struct $vOptName { ktc_OptionalTag tag; $cName value; } $vOptName;")
     } else {
-        hdr.appendLine("KTC_DEFINE_OPT($cName);")
+        hdr.appendLine("typedef struct { ktc_OptionalTag tag; $cName value; } ${cName}\$Opt;")
     }
     hdr.appendLine()
 }
@@ -1132,7 +1239,7 @@ internal fun CCodeGen.ifaceDataName(className: String): String = "${typeFlatName
 /** Emit implicit hashCode for a class. Uses field-based hash for data classes, identity hash otherwise. */
 internal fun CCodeGen.emitImplicitHashCode(cName: String, ci: ClassInfo, isData: Boolean, isGenericClass: Boolean, members: List<Decl>) {
     if (members.any { it is FunDecl && it.name == "hashCode" }) return
-    hdr.appendLine("ktc_Int ${cName}_hashCode($cName* \$self);")
+    hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(CLS* \$self);")
     impl.appendLine("ktc_Int ${cName}_hashCode($cName* \$self) {")
     if (isData && ci.props.isNotEmpty()) {
         impl.appendLine("    ktc_Int h = 0;")
@@ -1168,7 +1275,7 @@ internal fun CCodeGen.emitImplicitHashCode(cName: String, ci: ClassInfo, isData:
 internal fun CCodeGen.emitDefaultToString(ktName: String, cName: String, ci: ClassInfo) {
     val maxLen = toStringMaxLen(ci.name)
     val maxComment = if (maxLen != null) " // max output: $maxLen chars" else ""
-    hdr.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb);${maxComment}")
+    hdr.appendLine("KTC_METHOD(void, toString)(CLS* \$self, ktc_StrBuf* sb);${maxComment}")
     impl.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb) {")
     if (maxLen != null && maxLen <= 64) {
         impl.appendLine("    ktc_Char buf[$maxLen];")
@@ -1223,7 +1330,7 @@ internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Bo
     impl.appendLine()
 
     // Static vtable
-    hdr.appendLine("extern const ktc_core_AnyVt ${cName}_AnyVt;")
+    hdr.appendLine("extern const ktc_core_AnyVt KTC_RELATED(AnyVt);")
     impl.appendLine("const ktc_core_AnyVt ${cName}_AnyVt = {")
     impl.appendLine("    (void (*)(void*, void*)) ${cName}_toString_any,")
     impl.appendLine("    (ktc_Int (*)(void*)) ${cName}_hashCode_any,")
@@ -1234,7 +1341,7 @@ internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Bo
     impl.appendLine()
 
     // _as_Any wrapper
-    hdr.appendLine("ktc_Any ${cName}_as_Any($cName* \$self);")
+    hdr.appendLine("KTC_METHOD(ktc_Any, as_Any)(CLS* \$self);")
     impl.appendLine("ktc_Any ${cName}_as_Any($cName* \$self) {")
     impl.appendLine("    return (ktc_Any){{.typeId = ${cName}_TYPE_ID}, (void*)\$self, &${cName}_AnyVt};")
     impl.appendLine("}")
@@ -1271,23 +1378,13 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
         }
 }
 
-/** Emit primary constructor body (shared by emitClass and emitGenericClass). */
+/* Emit primary constructor header declaration + impl body.
+Callers are expected to have already emitted the CLS_OPT typedef and the section header. */
 internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
-    val vComponents = mangledComponents[ci.name]
-    if (vComponents != null) {
-        // Generic instance: emit $Opt$N_ wrapper — distinct from the class name itself.
-        val (vGenBase, vTypeArgs) = vComponents
-        val vBaseCName = typeFlatName(vGenBase)
-        val vArgList = vTypeArgs.joinToString(", ") { it.replace("?", "\$Opt") }
-        hdr.appendLine("KTC_DEFINE_OPT_GENERIC($vBaseCName, $vArgList);")
-    } else {
-        hdr.appendLine("KTC_DEFINE_OPT($cName);")
-    }
-    hdr.appendLine()
     val vAllCtorParams = ci.ctorProps + ci.ctorPlainParams
     val vParamStr = expandCtorParams(vAllCtorParams)
     val vParamDecl = vParamStr.ifEmpty { "void" }
-    hdr.appendLine("$cName ${cName}_primaryConstructor($vParamDecl);")
+    hdr.appendLine("KTC_METHOD(CLS, primaryConstructor)($vParamDecl);")
     impl.appendLine("$cName ${cName}_primaryConstructor($vParamDecl) {")
     if (ci.bodyProps.isEmpty() && ci.ctorPlainParams.isEmpty() && ci.ctorProps.none { resolveTypeName(it.typeRef).isArrayLike || it.typeRef.nullable }) {
         impl.appendLine("    return ($cName){{${cName}_TYPE_ID}, ${ci.ctorProps.joinToString(", ") { it.name }}};")
@@ -1508,7 +1605,7 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(className: String, superIface
         if (!implsOnly) {
             val lines = deferredHdrLines[className]
             if (lines != null) {
-                for (line in lines) hdr.appendLine(line)
+                for ((_, line) in lines) hdr.appendLine(line)
                 deferredHdrLines.remove(className)
             }
         }

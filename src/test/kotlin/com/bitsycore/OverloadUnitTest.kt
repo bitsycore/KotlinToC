@@ -75,8 +75,8 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun log(code: Int) {}
             }
         """)
-        v.headerContains("C_logWithString")
-        v.headerContains("C_logWithInt")
+        v.headerContains(", logWithString)(CLS*")
+        v.headerContains(", logWithInt)(CLS*")
     }
 
     @Test fun classOverloadTypeMatching() {
@@ -95,7 +95,7 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun only(): Int = 42
             }
         """)
-        v.headerContains("test_Main_C_only")
+        v.headerContains(", only)(CLS*")
     }
 
     // ── Private overloads ──────────────────────────────────────────
@@ -135,7 +135,7 @@ class OverloadUnitTest : TranspilerTestBase() {
 
     @Test fun regularClassHasEquals() {
         val v = transpileMain("", "class C(val x: Int)")
-        v.headerContains("test_Main_C_equals")
+        v.headerContains("KTC_METHOD(ktc_Bool, equals)(CLS a, CLS b)")
     }
 
     @Test fun dataClassNotEqualsGeneratesNegatedEquals() {

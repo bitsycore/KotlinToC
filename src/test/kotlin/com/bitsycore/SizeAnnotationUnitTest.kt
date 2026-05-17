@@ -124,7 +124,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
             }
             fun main(args: Array<String>) {}
         """)
-        r.headerContains("void test_Main_Calc_items(test_Main_Calc* \$self, ktc_Int* \$out);")
+        r.headerContains("KTC_METHOD(void, items)(CLS* \$self, ktc_Int* \$out);")
     }
 
     // ── Object property with @Size ────────────────────────────────────
