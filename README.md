@@ -137,5 +137,14 @@ java -jar KotlinToC.jar <file.kt...> [-o <dir>] [--mem-track] [--ast] [--dump-se
 ./run_tests.sh       # unit + integration tests (Unix)
 .\run_tests.ps1      # unit + integration tests (Windows)
 ```
+### Clang-msvc
+#### Minimal Debug
+```powershell
+./run_tests.ps1 -M -CCArgs "-Oz -flto -ffunction-sections -fdata-sections -fuse-ld=lld /MD -fomit-frame-pointer -fno-asynchronous-unwind-tables -Wl,--gc-sections -g" -Co clang-cl
+```
+#### Minimal Release
+```powershell
+./run_tests.ps1 -M -CCArgs "-Oz -flto -ffunction-sections -fdata-sections -fuse-ld=lld /MD -fomit-frame-pointer -fno-asynchronous-unwind-tables -Wl,--gc-sections -Wl,-s" -Co clang-cl
+```
 
 Requires JDK 21+ and a C11 compiler (GCC, Clang, or MSVC) on PATH.
