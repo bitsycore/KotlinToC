@@ -112,7 +112,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     hdr.appendLine(classBlockHeader(kind, d.name.replace('$', '.'), d.typeParams, d.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
     hdr.appendLine("#define CLS $cName")
     hdr.appendLine("#define CLS_OPT $vOptName")
-    hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[d.name]!!}")
+    hdr.appendLine("KTC_TYPE_ID(${typeIds[d.name]!!})")
     hdr.appendLine()
     hdr.appendLine("KTC_TYPE(CLS, CLS_OPT,")
     emitStructFields(ci)
@@ -281,7 +281,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         emptyList(), templateDecl.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
     hdr.appendLine("#define CLS $cName")
     hdr.appendLine("#define CLS_OPT $vGenOptName")
-    hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[ci.name]!!}")
+    hdr.appendLine("KTC_TYPE_ID(${typeIds[ci.name]!!})")
     hdr.appendLine()
     hdr.appendLine("KTC_TYPE(CLS, CLS_OPT,")
     emitStructFields(ci)
@@ -1047,7 +1047,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
     hdr.appendLine("#define CLS $cName")
     val typeIdValue = typeIds.getOrPut(d.name) { nextTypeId++ }
-    hdr.appendLine("#define ${cName}_TYPE_ID $typeIdValue")
+    hdr.appendLine("KTC_TYPE_ID($typeIdValue)")
     hdr.appendLine()
 
     val vTls = if (d.name in tlsObjects) "ktc_core_tls " else ""  // TLS qualifier string for .c file
@@ -1237,7 +1237,7 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     // CLS / CLS_OPT / TYPE_ID defines
     hdr.appendLine("#define CLS $cName")
     hdr.appendLine("#define CLS_OPT $vOptName")
-    hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[info.name]!!}")
+    hdr.appendLine("KTC_TYPE_ID(${typeIds[info.name]!!})")
 
     // CLS_TYPES X-macro listing every concrete implementor (used by KTC_INTERFACE union).
     // Each entry is X(TYPE, NAME) where TYPE is the C struct type and NAME is the field base

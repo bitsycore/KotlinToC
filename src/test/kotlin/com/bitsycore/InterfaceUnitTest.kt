@@ -95,9 +95,8 @@ class InterfaceUnitTest : TranspilerTestBase() {
 
     @Test fun typeIdDefineInHeader() {
         val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls)
-        r.headerContains("#define test_Main_Circle_TYPE_ID")
-        r.headerContains("#define test_Main_Square_TYPE_ID")
-        r.headerContains("#define test_Main_Shape_TYPE_ID")
+        // TYPE_IDs are now declared via KTC_TYPE_ID(N) macro; symbol names are generated at preprocess time
+        r.headerContains("KTC_TYPE_ID(")
     }
 
     @Test fun typeIdFieldInStruct() {

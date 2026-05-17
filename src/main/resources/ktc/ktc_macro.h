@@ -205,4 +205,19 @@
 #define KTC_TLS_OBJECT(BODY) \
 	__KTC_TLS_OBJECT_IMPL(CLS, BODY)
 
+/*
+ * KTC_TYPE_ID(ID): defines CLS_TYPE_ID as an enum constant.
+ * Requires CLS to be #defined before invocation.
+ * Uses enum instead of #define so the constant is scoped and type-safe.
+ * Three levels of indirection are required: ## suppresses pre-expansion of its
+ * operands, so CLS must be fully expanded before reaching the ## paste step.
+ * Level 1 (KTC_TYPE_ID): passes CLS as a non-parameter token so it expands during rescan.
+ * Level 2 (__IMPL_KTC_TYPE_ID): receives the expanded name, forwards without ##.
+ * Level 3 (__IMPL_KTC_TYPE_ID_2): performs the ## paste on the already-expanded name.
+ */
+#define __IMPL_KTC_TYPE_ID_2(NAME, ID) \
+	enum { NAME##_TYPE_ID = ID };
+#define __IMPL_KTC_TYPE_ID(NAME, ID) __IMPL_KTC_TYPE_ID_2(NAME, ID)
+#define KTC_TYPE_ID(ID) __IMPL_KTC_TYPE_ID(CLS, ID)
+
 #endif
