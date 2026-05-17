@@ -601,6 +601,9 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
      *  Overridden when emitting generic instantiations from other packages (e.g. stdlib). */
     internal var currentSourceFile: String = sourceFileName
 
+    /** Last source file for which a functions banner was emitted; null = none yet. */
+    internal var lastEmittedFunFile: String? = null
+
     /** Throw an error with source context around the given line. */
     internal fun codegenError(msg: String): Nothing {
         val line = currentStmtLine
@@ -968,9 +971,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // (enables returning concrete class by value on stack instead of heap-allocating)
         computeGenericFunConcreteReturns()
 
-        // Forward-declare all concrete interface types (tagged union + vtable struct).
-        // Class declarations reference both before the full interface block is emitted.
-        // Also forward-declare $Opt wrappers for monomorphized generics (appear in method signatures).
+        // Forward-declare all concrete interface types and monomorphized generic class types.
+        // Everything is grouped here so all typedef struct decls appear before any definitions.
         hdr.appendLine("// forward declarations")
         var emittedAny = false
         for ((name, info) in interfaces) {
@@ -985,6 +987,17 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 hdr.appendLine("typedef struct $optName $optName;")
             }
             emittedAny = true
+        }
+        for ((baseName, instantiations) in genericInstantiations) {
+            if (!genericClassDecls.containsKey(baseName)) continue
+            for (typeArgs in instantiations) {
+                val vMangledName = mangledGenericName(baseName, typeArgs)
+                val vCName = typeFlatName(vMangledName)
+                hdr.appendLine("typedef struct $vCName $vCName;")
+                val optName = genericOptionalCName(baseName, typeArgs)
+                hdr.appendLine("typedef struct $optName $optName;")
+                emittedAny = true
+            }
         }
         if (emittedAny) hdr.appendLine()
 
@@ -1028,22 +1041,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             }
             else -> {}
         }
-
-        // Emit forward declarations for all monomorphized generic class types
-        // so method signatures can reference them before their full definitions.
-        // Also forward-declare the Optional wrapper.
-        for ((baseName, instantiations) in genericInstantiations) {
-            if (!genericClassDecls.containsKey(baseName)) continue
-            for (typeArgs in instantiations) {
-                val vMangledName = mangledGenericName(baseName, typeArgs)  // ensure mangledComponents is populated
-                val vCName = typeFlatName(vMangledName)
-                hdr.appendLine("typedef struct $vCName $vCName;")
-                // Forward-declare the Optional wrapper
-                val optName = genericOptionalCName(baseName, typeArgs)
-                hdr.appendLine("typedef struct $optName $optName;")
-            }
-        }
-        if (genericInstantiations.isNotEmpty()) hdr.appendLine()
 
         // Pre-pass: register classInterfaces for objects and all monomorphized generic classes
         // so that interfaceImplementors is fully populated before any function body emission.
@@ -1117,22 +1114,20 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // Emit complete interface blocks (vtable + tagged union + $Opt) with banner comments.
         // Must be AFTER all class struct definitions (tagged union members need complete types)
         // and AFTER vtable implementations (interfaceImplementors must be fully populated).
-        var firstIface = true
         for ((name, info) in interfaces) {
             if (info.typeParams.isNotEmpty()) continue  // skip generic templates
             val isMonomorphized = mangledComponents.containsKey(name) ||
                 genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "_") }
             val isCrossPackage = info.pkg.isNotEmpty() && info.pkg != prefix
             if (!isMonomorphized && isCrossPackage) continue  // belongs to another package's header
-            if (!firstIface) hdr.appendLine()
-            firstIface = false
+            hdr.appendLine()  // always blank line before each interface block
             val prevSourceFile = currentSourceFile
             declSourceFile[name]?.let { currentSourceFile = it }
             emitInterfaceBlock(info)
             currentSourceFile = prevSourceFile
         }
 
-        // Emit top-level functions and properties in declaration order
+        // Emit top-level functions and properties in declaration order.
         for (d in file.decls) when (d) {
             is FunDecl  -> {
                 // Skip generic function templates and star-projection extensions — handled below
@@ -1188,9 +1183,10 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 // Record the source file for generic declarations (for mem-track attribution)
                 if (f.sourceFile.isNotEmpty()) {
                     when (d) {
-                        is ClassDecl -> if (d.typeParams.isNotEmpty()) declSourceFile[d.name] = f.sourceFile
-                        is FunDecl -> if (d.typeParams.isNotEmpty()) declSourceFile[d.name] = f.sourceFile
+                        is ClassDecl -> declSourceFile[d.name] = f.sourceFile
+                        is FunDecl -> declSourceFile[d.name] = f.sourceFile
                         is InterfaceDecl -> declSourceFile[d.name] = f.sourceFile
+                        is ObjectDecl -> declSourceFile[d.name] = f.sourceFile
                         else -> {}
                     }
                 }

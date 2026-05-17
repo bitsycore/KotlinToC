@@ -77,6 +77,26 @@ internal fun CCodeGen.classBlockFooter(inKind: String, inName: String, inTypePar
     }
 }
 
+/* Build a banner comment for a group of top-level functions from the same file. */
+internal fun CCodeGen.funBlockHeader(inPkg: String, inFile: String): String =
+    buildString {
+        appendLine("/* $kHdrRule")
+        appendLine(" * top-level")
+        if (inPkg.isNotEmpty()) appendLine(" * package: $inPkg")
+        appendLine(" * file: $inFile")
+        append(" * $kHdrRule */")
+    }
+
+/* Emit a functions banner when the source file changes; tracks lastEmittedFunFile. */
+internal fun CCodeGen.maybeEmitFunBanner(inFunName: String) {
+    val vFile = declSourceFile[inFunName] ?: currentSourceFile // source file for this function
+    if (vFile != lastEmittedFunFile) {
+        hdr.appendLine()
+        hdr.appendLine(funBlockHeader(file.pkg ?: "", vFile))
+        lastEmittedFunFile = vFile
+    }
+}
+
 // ── class / data class ───────────────────────────────────────────
 
 internal fun CCodeGen.emitClass(d: ClassDecl) {
@@ -484,6 +504,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
     val recvIsNullable = f.receiver.nullable
     val paramSig = f.params.joinToString(", ") { p -> "${p.name}: ${typeRefToStr(p.type)}" }
     val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
+    maybeEmitFunBanner(f.name)
     impl.appendLine("// ══ ext fun ${recvTypeName}.${f.name}($paramSig)$retSig ($currentSourceFile) ══")
     impl.appendLine()
     val returnsSizedArray = f.returnType != null && isSizedArrayTypeRef(f.returnType)
@@ -649,6 +670,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
             else -> if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
         }
 
+        maybeEmitFunBanner(f.name)
         hdr.appendLine("$cRet $cName($params);")
         impl.appendLine("$cRet $cName($params) {")
 
@@ -1730,6 +1752,8 @@ internal fun CCodeGen.emitTransitiveIfaceHdrDecls(
 
 internal fun CCodeGen.emitFun(f: FunDecl) {
     if (f.isInline) return  // inline funs are expanded at call sites, not emitted as C functions
+
+    maybeEmitFunBanner(f.name)
 
     if (f.name != "main") {
         val paramSig = f.params.joinToString(", ") { p -> typeRefToStr(p.type) }
