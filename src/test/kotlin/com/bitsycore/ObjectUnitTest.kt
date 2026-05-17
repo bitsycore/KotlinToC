@@ -18,9 +18,9 @@ class ObjectUnitTest : TranspilerTestBase() {
 
     @Test fun objectStructTypedef() {
         val r = transpileMain("println(Config.maxRetries)", decls = configDecl)
-        r.headerContains("typedef struct {")
-        r.headerContains("test_Main_Config_t")
-        r.headerContains("extern test_Main_Config_t test_Main_Config;")
+        r.headerContains("KTC_OBJECT(")                       // macro-based struct + extern
+        r.headerContains("#define CLS test_Main_Config")      // CLS define before macro
+        r.headerContains("mangled: test_Main_Config")         // banner shows mangled C name
     }
 
     // ── Object field access ──────────────────────────────────────────

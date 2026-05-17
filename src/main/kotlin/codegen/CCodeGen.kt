@@ -1034,10 +1034,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 if (!firstClass) hdr.appendLine()
                 firstClass = false
                 emitObject(d)
-                // Emit interface vtable header declarations for objects implementing interfaces
-                if (d.superInterfaces.isNotEmpty()) {
-                    emitInterfaceVtablesForClass(d.name, d.superInterfaces, declsOnly = true)
-                }
             }
             else -> {}
         }

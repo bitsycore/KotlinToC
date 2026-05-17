@@ -20,7 +20,8 @@ class Sha256UnitTest : TranspilerTestBase() {
                 private fun rotr(x: Int, n: Int): Int = (x ushr n) or (x shl (32 - n))
             }
         """)
-        v.headerContains("test_Main_Sha256_t")
+        v.headerContains("KTC_OBJECT(")                       // macro-based struct + extern
+        v.headerContains("#define CLS test_Main_Sha256")      // CLS define
         v.sourceContains("test_Main_Sha256_t test_Main_Sha256 = {0};")
     }
 

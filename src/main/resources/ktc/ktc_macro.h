@@ -174,4 +174,35 @@
     typedef struct TYPE { BODY } TYPE; \
     KTC_DEFINE_OPT_NAMED(TYPE, TYPE_OPT)
 
+/*
+ * Paste helper for the _t suffix used by object singleton struct types.
+ * The ## operator suppresses pre-expansion of its operand, so a single-level
+ * CLS_##_t would paste the literal token "CLS" instead of its expanded value.
+ * Two levels of indirection force full expansion before the ## paste.
+ */
+#define __KTC_OBJ_T_IMPL(T) T##_t
+#define __KTC_OBJ_T(T) __KTC_OBJ_T_IMPL(T)
+
+/*
+ * KTC_OBJECT(BODY): defines a singleton object struct (CLS_t) and its extern instance.
+ * Requires CLS to be #defined before invocation.
+ * BODY is the { ... } struct body.
+ */
+#define __KTC_OBJECT_IMPL(CLS_, BODY) \
+	typedef struct __KTC_OBJ_T(CLS_) { BODY } __KTC_OBJ_T(CLS_); \
+	extern __KTC_OBJ_T(CLS_) CLS_
+
+#define KTC_OBJECT(BODY) \
+	__KTC_OBJECT_IMPL(CLS, BODY)
+
+/*
+ * KTC_TLS_OBJECT(BODY): same as KTC_OBJECT but the extern instance is thread-local.
+ */
+#define __KTC_TLS_OBJECT_IMPL(CLS_, BODY) \
+	typedef struct __KTC_OBJ_T(CLS_) { BODY } __KTC_OBJ_T(CLS_); \
+	extern ktc_core_tls __KTC_OBJ_T(CLS_) CLS_
+
+#define KTC_TLS_OBJECT(BODY) \
+	__KTC_TLS_OBJECT_IMPL(CLS, BODY)
+
 #endif

@@ -105,11 +105,11 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     val kind = if (d.isData) "data class" else "class"
     val vOptName = "${cName}\$Opt"
 
-    impl.appendLine("// ══ $kind ${d.name} ($currentSourceFile) ══")
+    impl.appendLine("// ══ $kind ${d.name.replace('$', '.')} ($currentSourceFile) ══")
     impl.appendLine()
 
     // Block header comment + CLS defines + struct
-    hdr.appendLine(classBlockHeader(kind, d.name, d.typeParams, d.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
+    hdr.appendLine(classBlockHeader(kind, d.name.replace('$', '.'), d.typeParams, d.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
     hdr.appendLine("#define CLS $cName")
     hdr.appendLine("#define CLS_OPT $vOptName")
     hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[d.name]!!}")
@@ -146,8 +146,11 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
     }
     for (vIfaceRef in d.superInterfaces) collectMethodsPerIface(vIfaceRef)
+    // Any-related methods are deferred to the "implements Any" section below.
+    val vAnyMethodNames = setOf("dispose", "toString", "hashCode")
     for (m in d.members) {
         if (m is FunDecl && m.receiver == null) {
+            if (m.name in vAnyMethodNames) continue
             val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
             emitMethod(d.name, m, suppressHdr = vIfaceStr.isNotEmpty(), ifaceName = vIfaceStr)
         }
@@ -178,7 +181,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         }
     }
 
-    // Implements Any section
+    // Implements Any section — also emits explicit dispose/toString/hashCode overrides
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
     emitClassEquals(cName, ci)
@@ -190,6 +193,21 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     if (!d.isData && d.members.none { it is FunDecl && it.name == "toString" }) {
         emitDefaultToString(d.name, cName, ci)
     }
+    // Emit explicit overrides of Any methods here (skipped in the methods loop above)
+    pushScope()
+    for ((name, type) in ci.props) {
+        defineVarKtc(name, resolveTypeName(type))
+        if (!ci.isValProp(name)) markMutable(name)
+    }
+    currentClass = d.name
+    selfIsPointer = true
+    for (m in d.members) {
+        if (m is FunDecl && m.receiver == null && m.name in vAnyMethodNames) {
+            emitMethod(d.name, m, suppressHdr = false, ifaceName = "")
+        }
+    }
+    currentClass = null
+    popScope()
 
     // Any cast section
     hdr.appendLine()
@@ -199,7 +217,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     hdr.appendLine()
     hdr.appendLine("#undef CLS")
     hdr.appendLine("#undef CLS_OPT")
-    hdr.appendLine(classBlockFooter(kind, d.name, d.typeParams))
+    hdr.appendLine(classBlockFooter(kind, d.name.replace('$', '.'), d.typeParams))
 }
 
 /** Generate a secondary constructor function name: ClassName_constructorWithType1_Type2 */
@@ -259,7 +277,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     impl.appendLine()
 
     // Block header comment + CLS defines + struct
-    hdr.appendLine(classBlockHeader(kind, "${templateDecl.name}<$vConcreteTypes>",
+    hdr.appendLine(classBlockHeader(kind, "${templateDecl.name.replace('$', '.')}<$vConcreteTypes>",
         emptyList(), templateDecl.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
     hdr.appendLine("#define CLS $cName")
     hdr.appendLine("#define CLS_OPT $vGenOptName")
@@ -296,8 +314,11 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
     }
     for (vIfaceRef in templateDecl.superInterfaces) collectMethodsPerIface(vIfaceRef)
+    // Any-related methods are deferred to the "implements Any" section below.
+    val vAnyMethodNamesGen = setOf("dispose", "toString", "hashCode")
     for (m in templateDecl.members) {
         if (m is FunDecl && m.receiver == null) {
+            if (m.name in vAnyMethodNamesGen) continue
             val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
             emitMethod(mangledName, m, suppressHdr = vIfaceStr.isNotEmpty(), ifaceName = vIfaceStr)
         }
@@ -328,7 +349,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         }
     }
 
-    // Implements Any section
+    // Implements Any section — also emits explicit dispose/toString/hashCode overrides
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
     if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
@@ -344,6 +365,21 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     if (!templateDecl.isData && templateDecl.members.none { it is FunDecl && it.name == "toString" }) {
         emitDefaultToString(ci.name, cName, ci)
     }
+    // Emit explicit overrides of Any methods here (skipped in the methods loop above)
+    pushScope()
+    for ((name, type) in ci.props) {
+        defineVarKtc(name, resolveTypeName(type))
+        if (!ci.isValProp(name)) markMutable(name)
+    }
+    currentClass = mangledName
+    selfIsPointer = true
+    for (m in templateDecl.members) {
+        if (m is FunDecl && m.receiver == null && m.name in vAnyMethodNamesGen) {
+            emitMethod(mangledName, m, suppressHdr = false, ifaceName = "")
+        }
+    }
+    currentClass = null
+    popScope()
 
     // Any cast section
     hdr.appendLine()
@@ -353,7 +389,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     hdr.appendLine()
     hdr.appendLine("#undef CLS")
     hdr.appendLine("#undef CLS_OPT")
-    hdr.appendLine(classBlockFooter(kind, templateDecl.name, vTypeArgs.map { it }))
+    hdr.appendLine(classBlockFooter(kind, templateDecl.name.replace('$', '.'), vTypeArgs.map { it }))
 }
 
 internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
@@ -968,13 +1004,54 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     val methods = d.members.filterIsInstance<FunDecl>().filter { it.name != "init" }
     val privPrefix = { p: PropDecl -> if (p.isPrivate) "PRIV_" else "" }
 
+    // Determine display name and kind for banner: "Foo$Companion" → "companion object Foo.Companion"
+    val vParts = d.name.split('$')
+    val vDisplayName = vParts.joinToString(".")
+    val vKind = if (vParts.size > 1 && vParts.last() == "Companion") "companion object" else "object"
+    val vPkg = oi.pkg.trimEnd('_').replace('_', '.')
+
+    // Forward-declare private methods into implFwd so they are grouped at the top of the .c file
+    for (m in methods) {
+        if (m.isPrivate) {
+            val vRetKtcFwd  = if (m.returnType != null) resolveTypeName(m.returnType) else null
+            val vFwdRetStr  = vRetKtcFwd?.toInternalStr ?: ""
+            val cRet = when {
+                m.returnType != null && isSizedArrayTypeRef(m.returnType) -> "void"
+                vFwdRetStr.isNotEmpty() -> cTypeStr(vFwdRetStr)
+                else -> "void"
+            }
+            val fwdParams = expandParams(m.params)
+            val overloadedName = methodName(m, methods)
+            implFwd.appendLine("$cRet ${cName}_PRIV_$overloadedName($fwdParams);")
+        }
+    }
+
+    // Emit nested classes BEFORE the object block so they don't conflict with #define CLS
+    for (nested in d.members.filterIsInstance<ClassDecl>()) {
+        if (nested.typeParams.isEmpty()) {
+            emitClass(
+                ClassDecl(
+                    "${d.name}$${nested.name}", nested.isData,
+                    nested.ctorParams, nested.members, nested.initBlocks,
+                    nested.superInterfaces, nested.typeParams, nested.secondaryCtors
+                )
+            )
+            hdr.appendLine()
+            impl.appendLine()
+        }
+    }
+
     impl.appendLine("// ══ object ${d.name} ($currentSourceFile) ══")
     impl.appendLine()
 
-    hdr.appendLine("// ══ object ${d.name} ($currentSourceFile) ══")
+    hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
+    hdr.appendLine("#define CLS $cName")
     val typeIdValue = typeIds.getOrPut(d.name) { nextTypeId++ }
     hdr.appendLine("#define ${cName}_TYPE_ID $typeIdValue")
-    hdr.appendLine("typedef struct {")
+    hdr.appendLine()
+
+    val vTls = if (d.name in tlsObjects) "ktc_core_tls " else ""  // TLS qualifier string for .c file
+    hdr.appendLine(if (vTls.isNotEmpty()) "KTC_TLS_OBJECT(" else "KTC_OBJECT(")
     if (props.isEmpty()) hdr.appendLine("    ktc_Char _dummy;")
     for (p in props) {
         val pType     = p.type ?: inferInitType(p.init)
@@ -997,14 +1074,12 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             hdr.appendLine("    ${mutComment}${cTypeStr(vKtcObj)} ${fn};${ptrNullComment(vKtcObj)}")
         }
     }
-    hdr.appendLine("} ${cName}_t;")
-    val tls = if (d.name in tlsObjects) "ktc_core_tls " else ""
-    hdr.appendLine("extern ${tls}${cName}_t $cName;")
+    hdr.appendLine(");")
     hdr.appendLine()
 
     // global instance (zero-initialized), init flag + ensure_init are internal
-    impl.appendLine("${tls}${cName}_t $cName = {0};")
-    impl.appendLine("${tls}static ktc_Bool ${cName}\$init = false;")
+    impl.appendLine("${vTls}${cName}_t $cName = {0};")
+    impl.appendLine("${vTls}static ktc_Bool ${cName}\$init = false;")
     impl.appendLine()
 
     // $ensure_init: lazy initialization function
@@ -1043,37 +1118,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     currentObject = prevObject
     impl.appendLine("}")
     impl.appendLine()
-
-    // Forward-declare private methods so nested classes can call them
-    for (m in methods) {
-        if (m.isPrivate) {
-            val vRetKtcFwd  = if (m.returnType != null) resolveTypeName(m.returnType) else null  // KtcType for fwd decl
-            val vFwdRetStr  = vRetKtcFwd?.toInternalStr ?: ""                                    // string for cTypeStr
-            val cRet = when {
-                m.returnType != null && isSizedArrayTypeRef(m.returnType) -> "void"
-                vFwdRetStr.isNotEmpty() -> cTypeStr(vFwdRetStr)
-                else -> "void"
-            }
-            val fwdParams = expandParams(m.params)
-            val overloadedName = methodName(m, methods)
-            impl.appendLine("$cRet ${cName}_PRIV_$overloadedName($fwdParams);")
-        }
-    }
-
-    // Emit nested classes BEFORE methods so method return types can reference them
-    for (nested in d.members.filterIsInstance<ClassDecl>()) {
-        if (nested.typeParams.isEmpty()) {
-            impl.appendLine()
-            hdr.appendLine()
-            emitClass(
-                ClassDecl(
-                    "${d.name}$${nested.name}", nested.isData,
-                    nested.ctorParams, nested.members, nested.initBlocks,
-                    nested.superInterfaces, nested.typeParams, nested.secondaryCtors
-                )
-            )
-        }
-    }
 
     // methods — inject $ensure_init() at the top of each
     val prevObjectForMethods = currentObject
@@ -1139,7 +1183,15 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine()
     }
     currentObject = prevObjectForMethods
-    // (nested classes already emitted above, before methods)
+
+    // Interface implementation sections — inside the object block, before #undef CLS
+    if (d.superInterfaces.isNotEmpty()) {
+        emitInterfaceVtablesForClass(d.name, d.superInterfaces, declsOnly = true)
+    }
+
+    hdr.appendLine()
+    hdr.appendLine("#undef CLS")
+    hdr.appendLine(classBlockFooter(vKind, vDisplayName, emptyList()))
 }
 
 // ── interface ────────────────────────────────────────────────────
@@ -1638,7 +1690,7 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(className: String, superIface
         val allProps = collectAllIfaceProperties(iface)
 
         if (!implsOnly) hdr.appendLine()
-        if (!implsOnly) hdr.appendLine("// ── $className implements $ifaceName ──")
+        if (!implsOnly) hdr.appendLine("// ════ implements $ifaceName ════")
         if (!declsOnly) impl.appendLine("// ── $className implements $ifaceName ──")
 
         // Emit property getter wrappers
