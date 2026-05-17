@@ -2042,8 +2042,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val isPtrExt = effectiveGenExt?.receiver?.annotations?.any { it.name == "Ptr" } == true
         val flatPtrBase = if (ifaceExtConcrete != null) {
             val f = typeFlatName(ifaceExtConcrete)
-            if (isPtrExt) "${f.removeSuffix("_$ifaceExtConcrete")}_Ptr_${ifaceExtConcrete}" else f
-        } else if (isPtrExt) "${typeFlatName(pointerBase).removeSuffix("_$pointerBase")}_Ptr_${pointerBase}" else typeFlatName(pointerBase)
+            if (isPtrExt) "${f.removeSuffix("_$ifaceExtConcrete")}_Ptr$${ifaceExtConcrete}" else f
+        } else if (isPtrExt) "${typeFlatName(pointerBase).removeSuffix("_$pointerBase")}_Ptr$${pointerBase}" else typeFlatName(pointerBase)
         val wrappedRecv = if (ifaceExtConcrete != null && isPtrExt) {
             val cConcrete = typeFlatName(pointerBase)
             val typeId = getTypeId(pointerBase)
@@ -2171,8 +2171,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val isNullableRecv = effectiveDecl?.receiver?.nullable == true
         val flatBase = if (ifaceConcrete != null) {
             val f = typeFlatName(ifaceConcrete)
-            if (isPtrRecv) "${f.removeSuffix("_$ifaceConcrete")}_Ptr_${ifaceConcrete}" else f
-        } else if (isPtrRecv) "${vClassInfo.flatName.removeSuffix("_${vClassInfo.baseName}")}_Ptr_${vClassInfo.baseName}" else vClassInfo.flatName
+            if (isPtrRecv) "${f.removeSuffix("_$ifaceConcrete")}_Ptr$${ifaceConcrete}" else f
+        } else if (isPtrRecv) "${vClassInfo.flatName.removeSuffix("_${vClassInfo.baseName}")}_Ptr$${vClassInfo.baseName}" else vClassInfo.flatName
         val nullableRecv = hasNullableReceiverExt(recvType ?: "", method)
         val selfArg = if (nullableRecv) {
             val recvName = (dot.obj as? NameExpr)?.name

@@ -678,7 +678,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
                 ?: recvKtc.toInternalStr.removeSuffix("*").removeSuffix("?")
             if (f.receiver.annotations.any { it.name == "Ptr" }) {
                 val baseFlat = typeFlatName(recvName)
-                "${baseFlat.removeSuffix("_$recvName")}_Ptr_${recvName}_${f.name}"
+                "${baseFlat.removeSuffix("_$recvName")}_Ptr$${recvName}_${f.name}"
             } else {
                 "${typeFlatName(recvName)}_${f.name}"
             }
