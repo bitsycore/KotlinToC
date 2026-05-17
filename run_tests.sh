@@ -28,7 +28,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 JAR="$ROOT/build/libs/KotlinToC-1.0-SNAPSHOT.jar"
 RELEASE_JAR="$ROOT/build/libs/KotlinToC-1.0-SNAPSHOT-release.jar"
-TESTS_DIR="$ROOT/tests"
+TESTS_DIR="$ROOT/integration"
 
 SKIP_UNIT=false
 RUN_TEST=""
