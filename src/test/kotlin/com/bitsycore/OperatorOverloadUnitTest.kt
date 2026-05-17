@@ -79,7 +79,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
                 val v = lst[0]
             }
         """)
-        r.sourceContains("lst.vt->get((void*)&lst.test_Main_IntList_data, 0)")
+        r.sourceContains("lst.vt->get((void*)&lst.data, 0)")
     }
 
     @Test fun operatorSetOnInterface() {
@@ -97,7 +97,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
                 lst[0] = 99
             }
         """)
-        r.sourceContains("lst.vt->set((void*)&lst.test_Main_IntList_data, 0, 99)")
+        r.sourceContains("lst.vt->set((void*)&lst.data, 0, 99)")
     }
 
     @Test fun operatorIterator() {

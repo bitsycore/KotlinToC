@@ -80,6 +80,51 @@
 #define KTC_UNWRAP(v) \
 	((v).value)
 
+/* =========================================================
+ * Interface macros
+ * ========================================================= */
+
+/*
+ * KTC_UNION_MEMBER(TYPE, NAME): emits one union member.
+ * TYPE is the C struct type (e.g. ktc_std_Heap_t for object singletons).
+ * NAME is the base used for the field name: NAME##_data (e.g. ktc_std_Heap_data).
+ * The two differ for object singletons where the type carries a _t suffix.
+ */
+#define KTC_UNION_MEMBER(TYPE, NAME) \
+	TYPE NAME##_data;
+
+/*
+ * Paste helper: expands T fully (since it arrives without ##) then appends _vt.
+ * Needed because ## suppresses pre-expansion of its operands — without this
+ * indirection, CLS_##_vt would paste the literal token "CLS" instead of
+ * the expanded type name like "ktc_std_Allocator".
+ */
+#define __KTC_IFACE_VT_IMPL(T) T##_vt
+#define __KTC_IFACE_VT(T) __KTC_IFACE_VT_IMPL(T)
+
+/*
+ * Two-step helper so CLS and CLS_OPT are fully expanded before ## pasting.
+ * CLS_ and CLS_OPT_ receive the already-expanded values of CLS / CLS_OPT.
+ * __KTC_IFACE_VT(CLS_) forces CLS_ to be expanded before the _vt paste.
+ */
+#define __KTC_INTERFACE_IMPL(CLS_, CLS_OPT_, VTABLE_BODY, CONCRETE_TYPES) \
+	typedef struct __KTC_IFACE_VT(CLS_) VTABLE_BODY __KTC_IFACE_VT(CLS_); \
+	typedef struct CLS_ { \
+		ktc_core_AnySupertype __base; \
+		union { CONCRETE_TYPES(KTC_UNION_MEMBER) } data; \
+		const __KTC_IFACE_VT(CLS_)* vt; \
+	} CLS_; \
+	KTC_DEFINE_OPT_NAMED(CLS_, CLS_OPT_)
+
+/*
+ * KTC_INTERFACE(VTABLE_BODY, CONCRETE_TYPES): defines a complete interface type.
+ * Requires CLS and CLS_OPT to be #defined before invocation.
+ * VTABLE_BODY is the { ... } struct body with function-pointer declarations (;-separated).
+ * CONCRETE_TYPES is an X-macro listing every concrete implementor: #define CLS_TYPES(X) X(T1) X(T2)
+ */
+#define KTC_INTERFACE(VTABLE_BODY, CONCRETE_TYPES) \
+	__KTC_INTERFACE_IMPL(CLS, CLS_OPT, VTABLE_BODY, CONCRETE_TYPES)
+
 // ===================================================================
 // DEFINITIONS MACROS
 // ===================================================================
@@ -130,51 +175,3 @@
     KTC_DEFINE_OPT_NAMED(TYPE, TYPE_OPT)
 
 #endif
-
-// Example of expected result using the macro utilities
-// /* ═══════════════════════════════════════════════════════════
-//  * class ListIterator<Float?> : Iterator<Float?>
-//  * package: ktc.std
-//  * file: Collections.kt
-//  * mangled: ktc_std_ListIterator_Float$Opt
-//  * typeid: 49
-//  * ═══════════════════════════════════════════════════════════ */
-// #define CLS ktc_std_ListIterator_ktc_Float$Opt
-// #define CLS_OPT ktc_std_ListIterator$Opt_ktc_Float$Opt
-// #define ktc_std_ListIterator_Float$Opt_TYPE_ID 49
-//
-// typedef struct {
-// 	ktc_core_AnySupertype __base;
-// 	/*VAL*/ ktc_Float$Opt * buf; /** notnull */
-// 	ktc_Int buf$len;
-// 	/*VAL*/ ktc_Int size;
-// 	/*VAR*/ ktc_Int idx;
-// } CLS;
-//
-// typedef struct {
-// 	ktc_OptionalTag tag;
-// 	CLS value;
-// } CLS_OPT;
-//
-// // ════ constructors ════
-// KTC_METHOD(CLS, primaryConstructor)(ktc_Float$Opt* buf, ktc_Int buf$len, ktc_Int size);
-//
-// // ════ implements Iterator<Float?> (Iterator.kt) ════
-// KTC_METHOD(ktc_Bool, hasNext)(CLS* $self);
-// KTC_METHOD(ktc_Float$Opt, next)(CLS* $self);
-//
-// // ════ implements Any ════
-// KTC_METHOD(ktc_Int, hashCode)(CLS $self);
-// KTC_METHOD(ktc_Bool, equals)(CLS a, CLS b);
-// KTC_METHOD(void, toString)(CLS* $self, ktc_StrBuf* sb); // max output: 34 chars
-// #define ktc_std_ListIterator_Float$Opt_dispose(self) ((void)(self))
-//
-// // ════ Any cast ════
-// KTC_METHOD(ktc_Any, as_Any)(CLS* $self);
-// extern const ktc_core_AnyVt KTC_RELATED(AnyVt);
-//
-// #undef CLS
-// #undef CLS_OPT
-// /* ═══════════════════════════════════════════════════════════
-//  * END class ListIterator<Float?> : Iterator<Float?>
-//  * ═══════════════════════════════════════════════════════════ */

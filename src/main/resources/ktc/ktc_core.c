@@ -252,7 +252,7 @@ void ktc_core_stacktrace_print(const char* inMessage, int inMessageLen)
         }
     }
 
-    if (vExeCount == 0) { fprintf(stderr, "\tat ??(Unknown Source)\n"); return; }
+    if (vExeCount == 0) { fprintf(stderr, "\tat ?...(Unknown Source)\n"); return; }
 
     if (vPos < (int)sizeof(vCmd) - 8)
         strncat(vCmd, " 2>NUL", sizeof(vCmd) - (size_t)vPos - 1);
@@ -260,7 +260,7 @@ void ktc_core_stacktrace_print(const char* inMessage, int inMessageLen)
     /* _popen/_pclose must be used explicitly: popen is hidden by __STRICT_ANSI__
      * which -std=c11 activates. */
     FILE* vFp = _popen(vCmd, "r");
-    if (!vFp) { fprintf(stderr, "\tat ??(Unknown Source)\n"); return; }
+    if (!vFp) { fprintf(stderr, "\tat ?...(Unknown Source)\n"); return; }
 
     char vFunc[256], vFileLine[512], vLoc[256];
     for (int i = 0; i < vExeCount; i++) {
@@ -305,7 +305,7 @@ void ktc_core_stacktrace_print(const char* inMessage, int inMessageLen)
     HMODULE vDbgHelp = LoadLibraryA("dbghelp.dll");
     if (!vDbgHelp) {
         for (USHORT i = 0; i < vFrameCount; i++)
-            fprintf(stderr, "\tat ??(Unknown Source)\n");
+            fprintf(stderr, "\tat ?...(Unknown Source)\n");
         return;
     }
 
@@ -375,7 +375,7 @@ void ktc_core_stacktrace_print(const char* message, int message_len)
         else if (syms && syms[i])
             fprintf(stderr, "\tat %s\n", syms[i]);
         else
-            fprintf(stderr, "\tat ??(Unknown Source)\n");
+            fprintf(stderr, "\tat ?...(Unknown Source)\n");
     }
 
     if (syms) free(syms);
@@ -384,10 +384,8 @@ void ktc_core_stacktrace_print(const char* message, int message_len)
 #else
 
 /* Unsupported platform: print message only, no frames. */
-void ktc_core_stacktrace_print(const char* message, int message_len)
-{
-    fprintf(stderr, "Exception in thread \"main\" kotlin.Error: %.*s\n",
-        message_len, message);
+void ktc_core_stacktrace_print(const char* message, int message_len){
+    fprintf(stderr, "Exception in thread \"main\" kotlin.Error: %.*s\n", message_len, message);
     fprintf(stderr, "\t(stack trace unavailable on this platform)\n");
 }
 

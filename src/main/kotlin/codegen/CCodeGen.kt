@@ -392,14 +392,14 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         {
         val vImpls = interfaceImplementors[inIfaceName]             // list of implementors for this interface
         val vDataName = "${typeFlatName(inNarrowedClass)}_data"     // e.g. "IsAsTest_Circle_data"
-        return if (vImpls != null && vImpls.size == 1) "$inRecv.$vDataName" else "$inRecv.data.$vDataName"
+        return if (vImpls.isNullOrEmpty()) "$inRecv.$vDataName" else "$inRecv.data.$vDataName"
         }
 
     /*
     Generates the (void*) argument to pass as $self in a vtable method call for an interface receiver.
     Vtable methods expect a pointer to the concrete struct data, NOT to the interface wrapper.
     For multi-implementor: pass &recv.data (start of union = start of first member = concrete struct start)
-    For single-implementor: pass &recv.ConcreteClass_data
+    For 1+ implementors: pass &recv.data (union start = concrete struct start)
     For zero-implementor (fallback): pass recv.obj (old void* design)
     */
     internal fun ifaceVtableSelf(inIfaceName: String, inRecv: String, isPtr: Boolean = false): String
@@ -409,7 +409,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         return when
             {
             vImpls.isNullOrEmpty() -> if (isPtr) "$inRecv->obj" else "$inRecv.obj"
-            vImpls.size == 1 -> "(void*)&$inRecv${deref}${typeFlatName(vImpls[0])}_data"
             else -> "(void*)&$inRecv${deref}data"
             }
         }
@@ -969,24 +968,22 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // (enables returning concrete class by value on stack instead of heap-allocating)
         computeGenericFunConcreteReturns()
 
-        // Emit interface vtable struct BEFORE classes (TYPE_ID + vtable function pointers)
-        // The tagged-union struct is emitted later after all class vtables are processed.
-        // Non-generic interfaces first (they only use primitive types in signatures)
-        val emittedIfaceNames = mutableSetOf<String>()
-        for (d in file.decls) if (d is InterfaceDecl && d.typeParams.isEmpty()) {
-            emitInterface(d)
-            emittedIfaceNames += d.name
-        }
-
-        // Forward-declare all interface structs so class _as_ declarations
-        // can reference them before the tagged union is fully defined.
-        // Skip generic templates (with type params) — only concrete/monomorphized types need forwarding.
+        // Forward-declare all concrete interface types (tagged union + vtable struct).
+        // Class declarations reference both before the full interface block is emitted.
+        // Also forward-declare $Opt wrappers for monomorphized generics (appear in method signatures).
         hdr.appendLine("// forward declarations")
         var emittedAny = false
         for ((name, info) in interfaces) {
-            if (info.typeParams.isNotEmpty()) continue
+            if (info.typeParams.isNotEmpty()) continue  // skip templates
             val cName = typeFlatName(name)
             hdr.appendLine("typedef struct $cName $cName;")
+            hdr.appendLine("typedef struct ${cName}_vt ${cName}_vt;")
+            val vComponents = mangledComponents[name]
+            if (vComponents != null) {
+                val (vGenBase, vTypeArgs) = vComponents
+                val optName = genericOptionalCName(vGenBase, vTypeArgs)
+                hdr.appendLine("typedef struct $optName $optName;")
+            }
             emittedAny = true
         }
         if (emittedAny) hdr.appendLine()
@@ -1048,30 +1045,31 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         }
         if (genericInstantiations.isNotEmpty()) hdr.appendLine()
 
-        // Emit monomorphized generic class instantiations BEFORE generic interfaces,
-        // because interface vtable structs may reference generic class types as return types
-        // (e.g., MapIterator<Int,String> returned by Map<Int,String>.iterator())
-
-        // Forward-declare all monomorphized generic interface vtable structs so that
-        // class _as_ declarations can reference them before the full vtable definition.
-        // Also forward-declare the KTC_OPTIONAL_GENERIC_NAME-style Optional wrapper.
-        var emittedMonoFwd = false
-        for ((name, _) in interfaces) {
-            val isMonomorphized = mangledComponents.containsKey(name) ||
-                genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "_") }
-            if (isMonomorphized) {
-                val cName = typeFlatName(name)
-                hdr.appendLine("typedef struct ${cName}_vt ${cName}_vt;")
-                val vIfaceComponents = mangledComponents[name]
-                if (vIfaceComponents != null) {
-                    val (vGenBase, vTypeArgs) = vIfaceComponents
-                    val optName = genericOptionalCName(vGenBase, vTypeArgs)
-                    hdr.appendLine("typedef struct $optName $optName;")
-                }
-                emittedMonoFwd = true
+        // Pre-pass: register classInterfaces for objects and all monomorphized generic classes
+        // so that interfaceImplementors is fully populated before any function body emission.
+        for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty()) {
+            classInterfaces[d.name] = d.superInterfaces.map { it.name }
+        }
+        for ((baseName, instantiations) in genericInstantiations) {
+            val templateDecl = genericClassDecls[baseName] ?: continue
+            if (templateDecl.superInterfaces.isEmpty()) continue
+            for (typeArgs in instantiations) {
+                val mangledName = mangledGenericName(baseName, typeArgs)
+                val ci = classes[mangledName] ?: continue
+                val subst = ci.typeParams.ifEmpty { templateDecl.typeParams }.zip(typeArgs).toMap()
+                    .ifEmpty { genericTypeBindings[mangledName] ?: emptyMap() }
+                val resolvedIfaces = templateDecl.superInterfaces.map { substituteTypeRef(it, subst) }
+                typeSubst = subst
+                classInterfaces[mangledName] = resolvedIfaces.map { resolveTypeNameStr(it) }
+                typeSubst = emptyMap()
             }
         }
-        if (emittedMonoFwd) hdr.appendLine()
+        // Build interfaceImplementors before emitting any generic class function bodies.
+        for ((className, ifaces) in classInterfaces) {
+            for (iface in ifaces) {
+                interfaceImplementors.getOrPut(iface) { mutableListOf() }.add(className)
+            }
+        }
 
         for ((baseName, instantiations) in genericInstantiations) {
             val templateDecl = genericClassDecls[baseName] ?: continue
@@ -1091,40 +1089,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             }
         }
 
-        // Emit monomorphized generic interfaces AFTER generic class structs so types are available
-        // Only emit the VTABLE here; the tagged-union struct is emitted later after all class vtables.
-        val emittedMonoIfaceVtables = mutableSetOf<String>()
-        for ((name, info) in interfaces) {
-            // Emit only monomorphized copies (not already emitted above as non-generic AST decl)
-            if (name !in emittedIfaceNames && info.typeParams.isEmpty()
-                && genericIfaceDecls.values.none { it.name == name }) {
-                // Skip non-generic interfaces from other packages (they're in that package's header).
-                // Monomorphized generics (e.g. MutableList_Int from MutableList<T>) are always
-                // emitted here because they may reference user-defined types.
-                val isMonomorphized = mangledComponents.containsKey(name) ||
-                    genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "_") }
-                if (isMonomorphized) {
-                    emitInterfaceVtable(info)
-                    emittedMonoIfaceVtables += name
-                } else {
-                    val isCrossPackage = interfaces[name]?.pkg?.let { it.isNotEmpty() && it != prefix } == true
-                    if (!isCrossPackage) {
-                        emitInterfaceVtable(info)
-                        emittedMonoIfaceVtables += name
-                    }
-                }
-            }
-        }
-
-        // Build initial reverse map: interface → list of implementing classes
-        // (from classInterfaces populated during collectDecl and materializeGenericClass).
-        // Updated incrementally by emitTransitiveInterfaceVtables for transitive parent interfaces.
-        for ((className, ifaces) in classInterfaces) {
-            for (iface in ifaces) {
-                interfaceImplementors.getOrPut(iface) { mutableListOf() }.add(className)
-            }
-        }
-
         // Emit static vtable instances + wrapping functions for interface implementations
         // Non-generic classes:
         for (d in file.decls) if (d is ClassDecl && d.typeParams.isEmpty() && d.superInterfaces.isNotEmpty()) {
@@ -1132,7 +1096,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         }
         // Objects implementing interfaces:
         for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty()) {
-            classInterfaces[d.name] = d.superInterfaces.map { it.name }
             emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true)
         }
         // Monomorphized generic classes:
@@ -1146,23 +1109,27 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     .ifEmpty { genericTypeBindings[mangledName] ?: emptyMap() }
                 val resolvedIfaces = templateDecl.superInterfaces.map { substituteTypeRef(it, subst) }
                 typeSubst = subst
-                classInterfaces[mangledName] = resolvedIfaces.map { resolveTypeNameStr(it) }
                 emitInterfaceVtablesForClass(mangledName, resolvedIfaces, implsOnly = true)
                 typeSubst = emptyMap()
             }
         }
 
-        // Emit tagged-union struct for ALL interfaces (non-generic + monomorphized).
-        // Must be AFTER class struct definitions so union members are complete types
-        // and AFTER all vtables so transitive implementors are known.
-        val hasTaggedUnions = interfaces.keys.any { it in emittedIfaceNames || it in emittedMonoIfaceVtables }
-        if (hasTaggedUnions) hdr.appendLine()
+        // Emit complete interface blocks (vtable + tagged union + $Opt) with banner comments.
+        // Must be AFTER all class struct definitions (tagged union members need complete types)
+        // and AFTER vtable implementations (interfaceImplementors must be fully populated).
+        var firstIface = true
         for ((name, info) in interfaces) {
-            if (name in emittedIfaceNames) {
-                emitIfaceInfo(info)
-            } else if (name in emittedMonoIfaceVtables) {
-                emitIfaceInfo(info)
-            }
+            if (info.typeParams.isNotEmpty()) continue  // skip generic templates
+            val isMonomorphized = mangledComponents.containsKey(name) ||
+                genericIfaceDecls.keys.any { tmpl -> name.startsWith(tmpl + "_") }
+            val isCrossPackage = info.pkg.isNotEmpty() && info.pkg != prefix
+            if (!isMonomorphized && isCrossPackage) continue  // belongs to another package's header
+            if (!firstIface) hdr.appendLine()
+            firstIface = false
+            val prevSourceFile = currentSourceFile
+            declSourceFile[name]?.let { currentSourceFile = it }
+            emitInterfaceBlock(info)
+            currentSourceFile = prevSourceFile
         }
 
         // Emit top-level functions and properties in declaration order
@@ -1223,6 +1190,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     when (d) {
                         is ClassDecl -> if (d.typeParams.isNotEmpty()) declSourceFile[d.name] = f.sourceFile
                         is FunDecl -> if (d.typeParams.isNotEmpty()) declSourceFile[d.name] = f.sourceFile
+                        is InterfaceDecl -> declSourceFile[d.name] = f.sourceFile
                         else -> {}
                     }
                 }

@@ -31,9 +31,10 @@ class InterfaceUnitTest : TranspilerTestBase() {
 
     @Test fun interfaceFatPointerStruct() {
         val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls)
-        // Tagged union: uses .data.ClassName for 2+ implementors, plain field for 1
-        r.headerContains("union {")
-        r.headerContains("test_Main_Shape_vt*")
+        // KTC_INTERFACE macro generates the tagged union; CLS_TYPES lists all implementors
+        r.headerContains("KTC_INTERFACE({")
+        r.headerContains("X(test_Main_Circle, test_Main_Circle)")
+        r.headerContains("X(test_Main_Square, test_Main_Square)")
     }
 
     // ── Interface dispatch ───────────────────────────────────────────
@@ -209,5 +210,32 @@ class InterfaceUnitTest : TranspilerTestBase() {
             }
         """.trimIndent()
         transpileMainExpectError("val f = Impl()", "does not override any interface method", decls = decls)
+    }
+
+    @Test fun ifaceBlockBannerFormat() {
+        val r = transpile("""
+            package test.Main
+            interface Shape { fun area(): Float }
+            interface Drawable : Shape { fun draw() }
+            class Circle(val radius: Float) : Drawable {
+                override fun area(): Float = 3.14f * radius * radius
+                override fun draw() {}
+            }
+            fun main(args: Array<String>) { val c = Circle(1.0f) }
+        """)
+        // Both interfaces should have banner headers and footers
+        r.headerContains("* interface Shape")
+        r.headerContains("* END interface Shape")
+        r.headerContains("* interface Drawable")
+        r.headerContains("* END interface Drawable")
+        // KTC_INTERFACE macro combines vtable and tagged union
+        r.headerContains("KTC_INTERFACE({")
+        r.headerContains("CLS_TYPES")
+        // KTC_INTERFACE should appear after the banner header
+        val vShapeIdx = r.header.indexOf("* interface Shape\n")
+        val vIfaceIdx = r.header.indexOf("KTC_INTERFACE({", vShapeIdx)
+        assert(vIfaceIdx > vShapeIdx) {
+            "KTC_INTERFACE should appear after the banner; header:\n${r.header}"
+        }
     }
 }

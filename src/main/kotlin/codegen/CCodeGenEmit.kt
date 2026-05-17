@@ -48,7 +48,7 @@ internal fun CCodeGen.classBlockHeader(
     inKind: String,
     inName: String,
     inTypeParams: List<String>,
-    inSuperInterfaces: List<com.bitsycore.ktc.ast.TypeRef>,
+    inSuperInterfaces: List<TypeRef>,
     inPkg: String,
     inFile: String,
     inCName: String
@@ -1137,86 +1137,105 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
  *     const game_Drawable_vt* vt;
  * } game_Drawable;
  */
-/** Emit only the vtable struct + TYPE_ID for an interface (used early, before class structs). */
-internal fun CCodeGen.emitInterface(d: InterfaceDecl) {
-    val info = interfaces[d.name] ?: return
-    emitInterfaceVtable(info)
-}
+/* Emit a complete interface block: banner, TYPE_ID, CLS_TYPES X-macro, KTC_INTERFACE invocation.
+Must be called after all class struct definitions and vtable implementations are emitted. */
+internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
+    val cName = info.flatName  // C name, e.g. ktc_std_MutableList_Int
 
-/**
- * Emit interface vtable struct + TYPE_ID define.
- * Handles inherited methods/properties from super interfaces.
- */
-internal fun CCodeGen.emitInterfaceVtable(info: IfaceInfo) {
-    val cName = info.flatName
-    hdr.appendLine("// ══ interface ${info.name} ($currentSourceFile) ══")
-    hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[info.name]!!}")
-    // Collect all methods/properties including inherited from super interfaces
-    val allMethods = collectAllIfaceMethods(info)
-    val allProps = collectAllIfaceProperties(info)
-    // vtable struct (named so it can be forward-declared)
-    hdr.appendLine("typedef struct ${cName}_vt {")
-    // Properties → getter function pointers
-    for (p in allProps) {
-        val ct = if (p.type != null) cType(p.type) else "ktc_Int"
-        hdr.appendLine("    $ct (*${p.name})(void* \$self);")
+    val vComponents = mangledComponents[info.name]
+    val (vBaseName, vDisplayArgs) = when {
+        vComponents != null -> vComponents.first to vComponents.second
+        else -> info.name to emptyList()
     }
-    for (m in allMethods) {
-        val mReturnsNullable = m.returnType != null && m.returnType.nullable
-        val vMRetKtc   = if (m.returnType != null) resolveTypeName(m.returnType) else null  // KtcType of method return
-        val mRetResolved = vMRetKtc?.toInternalStr ?: ""                                    // string for optCTypeName
-        val cRet = if (mReturnsNullable) optCTypeName(mRetResolved) else if (m.returnType != null) cType(m.returnType) else "void"
-        val extraParams = m.params.joinToString("") { p ->
-            val vKtcVtParam  = resolveTypeName(p.type)                  // KtcType of vtable param
-            val vVtParamStr  = vKtcVtParam.toInternalStr                // string for optCTypeName
-            if (p.type.nullable) ", ${optCTypeName(vVtParamStr)} ${p.name}"
-            else ", ${cType(p.type)} ${p.name}"
-        }
-        hdr.appendLine("    $cRet (*${m.name})(void* \$self$extraParams);")
-    }
-    if (allMethods.none { it.name == "dispose" }) {
-        hdr.appendLine("    void (*dispose)(void* \$self);")
-    }
-    hdr.appendLine("} ${cName}_vt;")
-    hdr.appendLine()
-}
-
-/**
- * Emit a concrete (non-generic) interface struct: tagged union containing all implementing classes.
- * Falls back to void* obj only for interfaces with zero known implementors.
- * Must be called after all class structs and vtables have been emitted.
- */
-internal fun CCodeGen.emitIfaceInfo(info: IfaceInfo) {
-    val cName = info.flatName
+    val vPkg = info.pkg.trimEnd('_').replace('_', '.')  // convert C prefix back to Kotlin pkg
     val impls = interfaceImplementors[info.name] ?: emptyList()
     fun implCType(name: String) = if (objects.containsKey(name)) "${typeFlatName(name)}_t" else typeFlatName(name)
-    hdr.appendLine("// ══ interface ${info.name} — tagged union ($currentSourceFile) ══")
-    hdr.appendLine("typedef struct $cName {")
-    if (impls.isEmpty()) {
-        hdr.appendLine("    void* obj;")
-    } else if (impls.size == 1) {
-        hdr.appendLine("    ktc_core_AnySupertype __base;")
-        hdr.appendLine("    ${implCType(impls[0])} ${ifaceDataName(impls[0])};")
+    val vOptName = if (vComponents != null) {
+        val (vGenBase, vTypeArgs) = vComponents
+        genericOptionalCName(vGenBase, vTypeArgs)
     } else {
-        hdr.appendLine("    ktc_core_AnySupertype __base;")
-        hdr.appendLine("    union {")
-        for (className in impls) {
-            hdr.appendLine("        ${implCType(className)} ${ifaceDataName(className)};")
+        "${cName}\$Opt"
+    }
+
+    hdr.appendLine(classBlockHeader("interface", vBaseName, vDisplayArgs,
+        info.superInterfaces, vPkg, currentSourceFile, cName))
+
+    // CLS / CLS_OPT / TYPE_ID defines
+    hdr.appendLine("#define CLS $cName")
+    hdr.appendLine("#define CLS_OPT $vOptName")
+    hdr.appendLine("#define ${cName}_TYPE_ID ${typeIds[info.name]!!}")
+
+    // CLS_TYPES X-macro listing every concrete implementor (used by KTC_INTERFACE union).
+    // Each entry is X(TYPE, NAME) where TYPE is the C struct type and NAME is the field base
+    // (these differ for object singletons: TYPE = Foo_t, NAME = Foo).
+    if (impls.isNotEmpty()) {
+        hdr.appendLine()
+        hdr.appendLine("#define CLS_TYPES(X) \\")
+        for ((i, impl) in impls.withIndex()) {
+            val vType = implCType(impl)           // e.g. ktc_std_Heap_t or ktc_std_Circle
+            val vName = typeFlatName(impl)        // always without _t, used for field name
+            if (i < impls.size - 1) hdr.appendLine("    X($vType, $vName) \\")
+            else hdr.appendLine("    X($vType, $vName)")
         }
-        hdr.appendLine("    } data;")
     }
-    hdr.appendLine("    const ${cName}_vt* vt;")
-    hdr.appendLine("} $cName;")
-    // Emit $Opt wrapper for nullable interface use
-    val vIfaceComponents = mangledComponents[info.name]
-    if (vIfaceComponents != null) {
-        val (vGenBase, vTypeArgs) = vIfaceComponents
-        val vOptName = genericOptionalCName(vGenBase, vTypeArgs)
-        hdr.appendLine("typedef struct $vOptName { ktc_OptionalTag tag; $cName value; } $vOptName;")
-    } else {
-        hdr.appendLine("typedef struct { ktc_OptionalTag tag; $cName value; } ${cName}\$Opt;")
-    }
+
     hdr.appendLine()
+
+    val allMethods = collectAllIfaceMethods(info)
+    val allProps = collectAllIfaceProperties(info)
+    val vtableHasDispose = allMethods.any { it.name == "dispose" }
+
+    if (impls.isEmpty()) {
+        // No-implementor fallback: raw structs (KTC_INTERFACE requires at least one union member)
+        hdr.appendLine("typedef struct ${cName}_vt {")
+        emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
+        hdr.appendLine("} ${cName}_vt;")
+        hdr.appendLine()
+        hdr.appendLine("typedef struct $cName {")
+        hdr.appendLine("    void* obj;")
+        hdr.appendLine("    const ${cName}_vt* vt;")
+        hdr.appendLine("} $cName;")
+        hdr.appendLine("typedef struct { ktc_OptionalTag tag; $cName value; } $vOptName;")
+    } else {
+        // Use KTC_INTERFACE macro — always emits a union (works for 1 or more implementors)
+        hdr.appendLine("KTC_INTERFACE({")
+        emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
+        hdr.appendLine("}, CLS_TYPES);")
+    }
+
+    hdr.appendLine()
+    hdr.appendLine("#undef CLS")
+    hdr.appendLine("#undef CLS_OPT")
+    if (impls.isNotEmpty()) hdr.appendLine("#undef CLS_TYPES")
+
+    hdr.appendLine(classBlockFooter("interface", vBaseName, vDisplayArgs))
+}
+
+/* Emit the vtable function-pointer body lines (without surrounding typedef/braces). */
+private fun CCodeGen.emitIfaceVtableBody(
+    inProps: List<PropDecl>,
+    inMethods: List<FunDecl>,
+    inHasDispose: Boolean
+) {
+    for (vP in inProps) {
+        val vCt = if (vP.type != null) cType(vP.type) else "ktc_Int"
+        hdr.appendLine("    $vCt (*${vP.name})(void* \$self);")
+    }
+    for (vM in inMethods) {
+        val vReturnsNullable = vM.returnType != null && vM.returnType.nullable
+        val vMRetKtc = if (vM.returnType != null) resolveTypeName(vM.returnType) else null
+        val vMRetResolved = vMRetKtc?.toInternalStr ?: ""
+        val vCRet = if (vReturnsNullable) optCTypeName(vMRetResolved)
+                    else if (vM.returnType != null) cType(vM.returnType) else "void"
+        val vExtraParams = vM.params.joinToString("") { vP ->
+            val vKtcVtParam = resolveTypeName(vP.type)
+            val vVtParamStr = vKtcVtParam.toInternalStr
+            if (vP.type.nullable) ", ${optCTypeName(vVtParamStr)} ${vP.name}"
+            else ", ${cType(vP.type)} ${vP.name}"
+        }
+        hdr.appendLine("    $vCRet (*${vM.name})(void* \$self$vExtraParams);")
+    }
+    if (!inHasDispose) hdr.appendLine("    void (*dispose)(void* \$self);")
 }
 
 /** Collect all methods for an interface, including inherited from super interfaces (depth-first). */
@@ -1574,7 +1593,6 @@ internal fun CCodeGen.ifaceAsInit(cIface: String, cClass: String, className: Str
     val typeIdField = ".__base.typeId = ${cClass}_TYPE_ID"
     return when {
         impls.isNullOrEmpty() -> "($cIface){(void*)\$self, &${cClass}_${ifaceName}_vt}"
-        impls.size == 1 -> "($cIface){$typeIdField, .$dataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
         else -> "($cIface){$typeIdField, .data.$dataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
     }
 }

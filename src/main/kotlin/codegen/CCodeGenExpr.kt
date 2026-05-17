@@ -753,8 +753,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     allocExpr
                 }
                 preStmts += "ktc_std_Allocator $t = $allocInit;"
-                val dataField = ifaceDataName(allocObjName ?: className)
-                preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.${dataField}, sizeof($cName));"
+                preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName));"
                 preStmts += "if (${t}_ptr) *${t}_ptr = ${cName}_primaryConstructor($ctorArgs);"
                 return "${t}_ptr"
             }
@@ -786,8 +785,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                             "${typeFlatName(allocObjName!!)}_as_Allocator(&$allocExpr)"
                         } else { allocExpr }
                         preStmts += "ktc_std_Allocator $t = $allocInit;"
-                        val dataField = ifaceDataName(allocObjName ?: className)
-                        preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.${dataField}, sizeof($cName));"
+                        preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName));"
                         preStmts += "if (${t}_ptr) *${t}_ptr = ${cName}_primaryConstructor($ctorArgs);"
                         return "${t}_ptr"
                     }
@@ -2715,10 +2713,7 @@ internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concrete
     val cConcrete = typeFlatName(concreteType)
     val impls = interfaceImplementors[ifaceName] ?: emptyList()
     val dataName = ifaceDataName(concreteType)
-    val fieldPath = when {
-        impls.size <= 1 -> ".$dataName"
-        else -> ".data.$dataName"
-    }
+    val fieldPath = if (impls.isEmpty()) ".$dataName" else ".data.$dataName"
     for ((i, s) in b.stmts.withIndex()) {
         if (i == b.stmts.lastIndex) {
             val expr = when (s) {
