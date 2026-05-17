@@ -115,15 +115,17 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         if (!ci.isValProp(name)) markMutable(name)
     }
 
-    // Build map: method name → interface display string (e.g. "Iterator<Float?>")
+    // Build map: method name → defining interface display string (per-interface, not flattened)
     val vIfaceMethodToStr = mutableMapOf<String, String>()
-    for (vIfaceRef in d.superInterfaces) {
-        val vIfaceName = resolveIfaceName(vIfaceRef)
-        val vIface = interfaces[vIfaceName] ?: continue
-        val vIfaceStr = typeRefToStr(vIfaceRef)
-        for (m in collectAllIfaceMethods(vIface)) vIfaceMethodToStr[m.name] = vIfaceStr
-        for (p in collectAllIfaceProperties(vIface)) vIfaceMethodToStr[p.name] = vIfaceStr
+    fun collectMethodsPerIface(ifaceRef: TypeRef) {
+        val vIfaceName = resolveIfaceName(ifaceRef)
+        val vIface = interfaces[vIfaceName] ?: return
+        val vIfaceStr = typeRefToStr(ifaceRef)
+        for (m in vIface.methods) if (m.name !in vIfaceMethodToStr) vIfaceMethodToStr[m.name] = vIfaceStr
+        for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStr) vIfaceMethodToStr[p.name] = vIfaceStr
+        for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
     }
+    for (vIfaceRef in d.superInterfaces) collectMethodsPerIface(vIfaceRef)
     for (m in d.members) {
         if (m is FunDecl && m.receiver == null) {
             val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
@@ -146,18 +148,19 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
             hdr.appendLine("// ════ implements $vIfaceStr ════")
             val vLines = vByIface[vIfaceStr]
             if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
-            for (vProp in collectAllIfaceProperties(vIface)) {
+            for (vProp in vIface.propDecls) {
                 val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
                 hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(CLS* \$self);")
             }
             hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
             hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(CLS* \$self);")
+            emitTransitiveIfaceHdrDecls(vIface, vByIface)
         }
     }
 
     // Implements Any section
     hdr.appendLine()
-    hdr.appendLine("// ════ implements Any ════")
+    hdr.appendLine("// ════ implements Any (implicit) ════")
     emitClassEquals(cName, ci)
     if (d.isData) emitDataClassToString(d.name, cName, ci)
     if (d.members.none { it is FunDecl && it.name == "dispose" }) {
@@ -173,6 +176,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     hdr.appendLine("// ════ Any cast ════")
     emitAnyVtable(cName, ci.name, d.isData, d.members, isGenericClass = false)
 
+    hdr.appendLine()
     hdr.appendLine("#undef CLS")
     hdr.appendLine("#undef CLS_OPT")
     hdr.appendLine(classBlockFooter(kind, d.name, d.typeParams))
@@ -261,8 +265,22 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         defineVarKtc(name, resolveTypeName(type))
         if (!ci.isValProp(name)) markMutable(name)
     }
+    // Build map: method name → defining interface display string (per-interface, not flattened)
+    val vIfaceMethodToStr = mutableMapOf<String, String>()
+    fun collectMethodsPerIface(ifaceRef: TypeRef) {
+        val vIfaceName = resolveIfaceName(ifaceRef)
+        val vIface = interfaces[vIfaceName] ?: return
+        val vIfaceStr = typeRefToStr(ifaceRef)
+        for (m in vIface.methods) if (m.name !in vIfaceMethodToStr) vIfaceMethodToStr[m.name] = vIfaceStr
+        for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStr) vIfaceMethodToStr[p.name] = vIfaceStr
+        for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
+    }
+    for (vIfaceRef in templateDecl.superInterfaces) collectMethodsPerIface(vIfaceRef)
     for (m in templateDecl.members) {
-        if (m is FunDecl && m.receiver == null) emitMethod(mangledName, m)
+        if (m is FunDecl && m.receiver == null) {
+            val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
+            emitMethod(mangledName, m, suppressHdr = vIfaceStr.isNotEmpty(), ifaceName = vIfaceStr)
+        }
     }
     popScope()
     currentClass = null
@@ -280,18 +298,19 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
             hdr.appendLine("// ════ implements $vIfaceStr ════")
             val vLines = vByIface[vIfaceStr]
             if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
-            for (vProp in collectAllIfaceProperties(vIface)) {
+            for (vProp in vIface.propDecls) {
                 val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
                 hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(CLS* \$self);")
             }
             hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
             hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(CLS* \$self);")
+            emitTransitiveIfaceHdrDecls(vIface, vByIface)
         }
     }
 
     // Implements Any section
     hdr.appendLine()
-    hdr.appendLine("// ════ implements Any ════")
+    hdr.appendLine("// ════ implements Any (implicit) ════")
     if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
         hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
     }
@@ -311,6 +330,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     hdr.appendLine("// ════ Any cast ════")
     emitAnyVtable(cName, ci.name, templateDecl.isData, templateDecl.members, isGenericClass = true)
 
+    hdr.appendLine()
     hdr.appendLine("#undef CLS")
     hdr.appendLine("#undef CLS_OPT")
     hdr.appendLine(classBlockFooter(kind, templateDecl.name, vTypeArgs.map { it }))
@@ -479,7 +499,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
         else -> "void"
     }
     val isClassType = classes.containsKey(recvTypeName)
-    val cRecvType = cType(f.receiver!!)    // use TypeRef to honor @Ptr annotations
+    val cRecvType = cType(f.receiver)    // use TypeRef to honor @Ptr annotations
     // Nullable receiver: pass as Optional struct (value) or OptionalPtr (pointer type)
     val selfParam = if (recvIsNullable) {
         val recvOptType = optCTypeName(recvTypeName)
@@ -599,7 +619,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
             val recvKtc = resolveTypeName(f.receiver)
             val recvName = (recvKtc as? KtcType.Ptr)?.inner?.let { (it as? KtcType.User)?.baseName }
                 ?: recvKtc.toInternalStr.removeSuffix("*").removeSuffix("?")
-            if (f.receiver!!.annotations.any { it.name == "Ptr" }) {
+            if (f.receiver.annotations.any { it.name == "Ptr" }) {
                 val baseFlat = typeFlatName(recvName)
                 "${baseFlat.removeSuffix("_$recvName")}_Ptr_${recvName}_${f.name}"
             } else {
@@ -608,10 +628,10 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
         } else funCName(mangledName)
         val baseParams = expandParams(f.params)
         val selfParam = if (hasReceiver) {
-            val selfRecvKtc = resolveTypeName(f.receiver!!)
-            val ct = if (f.receiver!!.nullable && selfRecvKtc !is KtcType.Ptr && selfRecvKtc !is KtcType.Nullable)
+            val selfRecvKtc = resolveTypeName(f.receiver)
+            val ct = if (f.receiver.nullable && selfRecvKtc !is KtcType.Ptr && selfRecvKtc !is KtcType.Nullable)
                 optCTypeName(selfRecvKtc.toInternalStr)
-            else cType(f.receiver!!)
+            else cType(f.receiver)
             "$ct \$self"
         } else null
         val params = when {
@@ -649,16 +669,16 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
         pushScope()
         // Set up receiver context for generic extension functions
         if (hasReceiver) {
-            val recvResolved = resolveTypeName(f.receiver!!)
+            val recvResolved = resolveTypeName(f.receiver)
             val recvFull = recvResolved.toInternalStr
             val recvName = recvFull.removeSuffix("?")
             val isClassType = classes.containsKey(recvName)
-            currentExtRecvType = if (f.receiver!!.nullable) "${recvName}?" else recvName
-            defineVar("\$self", if (f.receiver!!.nullable) "${recvName}?" else recvName)
-            if (f.receiver!!.nullable && isValueNullableKtc(recvResolved as? KtcType.Nullable ?: KtcType.Nullable(recvResolved))) markOptional("\$self")
+            currentExtRecvType = if (f.receiver.nullable) "${recvName}?" else recvName
+            defineVar("\$self", if (f.receiver.nullable) "${recvName}?" else recvName)
+            if (f.receiver.nullable && isValueNullableKtc(recvResolved as? KtcType.Nullable ?: KtcType.Nullable(recvResolved))) markOptional("\$self")
             if (isClassType) {
                 currentClass = recvName
-                selfIsPointer = f.receiver!!.annotations.any { it.name == "Ptr" }
+                selfIsPointer = f.receiver.annotations.any { it.name == "Ptr" }
             } else {
                 currentClass = null
                 selfIsPointer = false
@@ -1636,7 +1656,6 @@ internal fun CCodeGen.emitTransitiveInterfaceVtables(className: String, cClass: 
         val superMethods = collectAllIfaceMethods(superIface)
         val superProps = collectAllIfaceProperties(superIface)
 
-        hdr.appendLine("// ── $className implements $superName (transitive) ──")
         impl.appendLine("// ── $className implements $superName (transitive) ──")
 
         // Register this class as also implementing the parent interface
@@ -1649,10 +1668,8 @@ internal fun CCodeGen.emitTransitiveInterfaceVtables(className: String, cClass: 
         }
 
         // static vtable instance (same class methods, but only the parent's slots)
-        hdr.appendLine("extern const ${cSuper}_vt ${cClass}_${superName}_vt;")
         emitVtable(cClass, cSuper, superName, className, superProps, superMethods)
         // wrapping function
-        hdr.appendLine("$cSuper ${cClass}_as_${superName}($cClass* \$self);")
         impl.appendLine("$cSuper ${cClass}_as_${superName}($cClass* \$self) {")
         impl.appendLine("    return ${ifaceAsInit(cSuper, cClass, className, superName)};")
         impl.appendLine("}")
@@ -1664,6 +1681,32 @@ internal fun CCodeGen.emitTransitiveInterfaceVtables(className: String, cClass: 
 }
 
 
+
+/* Recursively emit transitive parent interface header declarations inside the current CLS block.
+Must be called while #define CLS is active so KTC_METHOD and KTC_RELATED expand correctly.
+inByIface maps interface display strings to their deferred method lines. */
+internal fun CCodeGen.emitTransitiveIfaceHdrDecls(
+    inIface: IfaceInfo,
+    inByIface: Map<String, List<Pair<String, String>>>
+) {
+    for (vSuperRef in inIface.superInterfaces) {
+        val vSuperName = resolveIfaceName(vSuperRef)
+        val vSuperIface = interfaces[vSuperName] ?: continue
+        val vCSuperName = typeFlatName(vSuperName)
+        val vSuperStr = typeRefToStr(vSuperRef)
+        hdr.appendLine()
+        hdr.appendLine("// ════ implements $vSuperStr (transitive) ════")
+        val vLines = inByIface[vSuperStr]
+        if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
+        for (vProp in vSuperIface.propDecls) {
+            val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
+            hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(CLS* \$self);")
+        }
+        hdr.appendLine("extern const ${vCSuperName}_vt KTC_RELATED(${vSuperName}_vt);")
+        hdr.appendLine("KTC_METHOD($vCSuperName, as_${vSuperName})(CLS* \$self);")
+        emitTransitiveIfaceHdrDecls(vSuperIface, inByIface)
+    }
+}
 
 // ── top-level fun ────────────────────────────────────────────────
 

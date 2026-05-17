@@ -438,4 +438,56 @@ class GenericsUnitTest : TranspilerTestBase() {
         """)
         r.sourceMatches(Regex("ktc_Int test_Main_Wrapper\\_Int_reset"))
     }
+
+    // ── Interface method categorization in generic classes ─────────
+
+    /* Verify that methods from a generic class implementing a multi-level interface
+    hierarchy are sorted into per-interface sections, not dumped under constructors. */
+    @Test fun genericClassIfaceMethodsCategorized() {
+        val r = transpileWithStdlib("""
+            package test.Main
+            fun main(args: Array<String>) {
+                val alloc = HeapAllocator.instance
+                val l = ArrayList<Int>(alloc, 4)
+                l.add(1)
+                val x = l.get(0)
+            }
+        """)
+        val vHdr = r.header
+        // Find the ArrayList_Int class block
+        val vClsStart = vHdr.indexOf("class ArrayList<Int>")
+        assertTrue(vClsStart >= 0, "ArrayList<Int> class block not found in header")
+        val vClsEnd = vHdr.indexOf("END class ArrayList", vClsStart)
+        val vBlock = vHdr.substring(vClsStart, vClsEnd)
+
+        // Locate constructor section end (first ════ section after constructors)
+        val vCtorLine = vBlock.indexOf("// ════ constructors ════")
+        val vFirstImpl = vBlock.indexOf("// ════ implements", vCtorLine + 1)
+        val vCtorBlock = vBlock.substring(0, vFirstImpl)
+
+        // add(), set(), removeAt(), clear() are MutableList-only — must NOT be in ctor block
+        assertTrue(!vCtorBlock.contains("KTC_METHOD(void, add)"),
+            "add() should be under implements, not constructors; block:\n$vBlock")
+        assertTrue(!vCtorBlock.contains("KTC_METHOD(void, clear)"),
+            "clear() should be under implements, not constructors; block:\n$vBlock")
+        // get() is List-only — must NOT be in ctor block
+        assertTrue(!vCtorBlock.contains("KTC_METHOD(ktc_Int, get)"),
+            "get() should be under implements, not constructors; block:\n$vBlock")
+
+        // MutableList<T> section must contain add/set/removeAt/clear
+        val vMutListIdx = vBlock.indexOf("// ════ implements MutableList<T> ════")
+        assertTrue(vMutListIdx >= 0, "Missing MutableList<T> implements section; block:\n$vBlock")
+        // List<Int> transitive section must exist and contain get/contains/indexOf/iterator
+        val vListIdx = vBlock.indexOf("// ════ implements List<Int> (transitive) ════")
+        assertTrue(vListIdx >= 0, "Missing List<Int> (transitive) section; block:\n$vBlock")
+        assertTrue(vListIdx > vMutListIdx, "List transitive section must come after MutableList section")
+
+        val vMutListSection = vBlock.substring(vMutListIdx, vListIdx)
+        val vListSection = vBlock.substring(vListIdx,
+            vBlock.indexOf("// ════", vListIdx + 1).takeIf { it > 0 } ?: vBlock.length)
+        assertTrue(vMutListSection.contains("KTC_METHOD(void, add)"),
+            "add() should be in MutableList<T> section")
+        assertTrue(vListSection.contains("KTC_METHOD(ktc_Int, get)"),
+            "get() should be in List<Int> (transitive) section")
+    }
 }

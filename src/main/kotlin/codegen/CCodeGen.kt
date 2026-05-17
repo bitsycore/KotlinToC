@@ -1165,7 +1165,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             }
         }
 
-        // Emit top-level functions and properties
+        // Emit top-level functions and properties in declaration order
         for (d in file.decls) when (d) {
             is FunDecl  -> {
                 // Skip generic function templates and star-projection extensions — handled below
@@ -1182,13 +1182,13 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             else -> {}
         }
 
-        // Emit monomorphized generic functions
+        // Emit monomorphized generic functions (demand-driven: populated during body emission above)
         for (f in genericFunDecls) emitGenericFunInstantiations(f)
 
         // Emit star-projection extension functions (one per known instantiation)
         for (f in starExtFunDecls) emitStarExtFunInstantiations(f)
 
-        // Emit enum values arrays and valueOf functions (only for enums referenced via enumValues/enumValueOf)
+        // Emit enum values arrays and valueOf functions — populated during body emission above
         emitEnumValuesData()
 
         val srcName = prefix.trimEnd('_').ifEmpty {

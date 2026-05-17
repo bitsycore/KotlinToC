@@ -4,11 +4,11 @@ class ListIterator<T>(val buf: @Ptr Array<T>, val size: Int) : Iterator<T> {
 
 	var idx: Int = 0
 
-	operator fun hasNext(): Boolean {
+	override operator fun hasNext(): Boolean {
 		return idx < size
 	}
 
-	operator fun next(): T {
+	override operator fun next(): T {
 		val v = buf[idx]
 		idx = idx + 1
 		return v
