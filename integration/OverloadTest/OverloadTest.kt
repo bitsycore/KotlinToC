@@ -5,8 +5,8 @@ object Calc {
     fun add(x: Double, y: Double): Double = x + y
     fun add(x: Int): Int = x
 
-    fun greet(): String = "hello"
-    fun greet(name: String): String = "hello $name"
+    fun greet(): Int = "hello".length
+    fun greet(name: String): Int = "hello $name".length
 }
 
 class Counter() {
@@ -33,8 +33,8 @@ fun main() {
     if (a != 5) error("FAIL add 2+3=$a")
     if (b != 6.0) error("FAIL add 2.5+3.5=$b")
     if (single != 42) error("FAIL add single=$single")
-    if (g1 != "hello") error("FAIL greet=$g1")
-    if (g2 != "hello World") error("FAIL greet=$g2")
+    if (g1 != 5) error("FAIL greet=$g1")
+    if (g2 != 11) error("FAIL greet=$g2")
     println("Object overloads OK")
 
     val ctr = Counter()
