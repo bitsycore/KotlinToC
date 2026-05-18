@@ -125,14 +125,17 @@ internal fun CCodeGen.maybeEmitFunBanner(inFunName: String) {
 
 // ── class / data class ───────────────────────────────────────────
 
+/* Returns a box-style section comment: // ═══ //\n//   title   //\n// ═══ // */
+private fun boxSection(inTitle: String): String {
+	val vRuler = "═".repeat(inTitle.length + 6)
+	return "// $vRuler //\n//    $inTitle    //\n// $vRuler //"
+}
+
 internal fun CCodeGen.emitClass(d: ClassDecl) {
     val ci = classes[d.name]!!
     val cName = ci.flatName
     val kind = if (d.isData) "data class" else "class"
     val vOptName = "${cName}\$Opt"
-
-    impl.appendLine("// ══ $kind ${d.name.replace('$', '.')} ($currentSourceFile) ══")
-    impl.appendLine()
 
     // Block header comment + KTC_TYPE_NAME defines + struct
     hdr.appendLine(classBlockHeader(kind, d.name.replace('$', '.'), d.typeParams, d.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
@@ -147,12 +150,22 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 
     // Constructor section
     hdr.appendLine("// ════ constructors ════")
+    impl.appendLine(boxSection("constructors"))
+    impl.appendLine()
     emitConstructorBody(cName, ci)
 
     // Secondary constructors (also in constructor section)
     for (vSctor in d.secondaryCtors) emitSecondaryCtor(d.name, cName, vSctor)
 
     // Methods (non-interface methods go here; interface methods are deferred)
+    // Any-related methods are deferred to the "implements Any" section below.
+    val vAnyMethodNames = setOf("dispose", "toString", "hashCode")
+    val vHasRegularMethods = d.members.any { it is FunDecl && it.receiver == null && it.name !in vAnyMethodNames }
+    if (vHasRegularMethods) {
+        impl.appendLine()
+        impl.appendLine(boxSection("methods"))
+        impl.appendLine()
+    }
     currentClass = d.name
     selfIsPointer = true
     pushScope()
@@ -172,8 +185,6 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
     }
     for (vIfaceRef in d.superInterfaces) collectMethodsPerIface(vIfaceRef)
-    // Any-related methods are deferred to the "implements Any" section below.
-    val vAnyMethodNames = setOf("dispose", "toString", "hashCode")
     for (m in d.members) {
         if (m is FunDecl && m.receiver == null) {
             if (m.name in vAnyMethodNames) continue
@@ -210,11 +221,15 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     // Implements Any section — also emits explicit dispose/toString/hashCode overrides
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
+    impl.appendLine()
+    impl.appendLine(boxSection("implements Any"))
+    impl.appendLine()
     emitClassEquals(cName, ci)
     if (d.isData) emitDataClassToString(d.name, cName, ci)
     if (d.members.none { it is FunDecl && it.name == "dispose" }) {
         if (disposedMode != "NO" || doubleDisposeMode != "NO") {
             hdr.appendLine("KTC_METHOD(void, dispose)(KTC_TYPE_NAME* \$self);")
+            impl.appendLine("// ══ fun dispose() ══")
             impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
             impl.appendLine()
         } else {
@@ -305,9 +320,6 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     val vGenOptName = genericOptionalCName(vGenBase, vTypeArgs)
     val vConcreteTypes = vTypeArgs.joinToString(", ")
 
-    impl.appendLine("// ══ $kind ${templateDecl.name}<$vConcreteTypes> ($currentSourceFile) ══")
-    impl.appendLine()
-
     // Block header comment + KTC_TYPE_NAME defines + struct
     hdr.appendLine(classBlockHeader(kind, "${templateDecl.name.replace('$', '.')}<$vConcreteTypes>",
         emptyList(), templateDecl.superInterfaces, file.pkg ?: "", currentSourceFile, cName))
@@ -322,12 +334,22 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
 
     // Constructor section
     hdr.appendLine("// ════ constructors ════")
+    impl.appendLine(boxSection("constructors"))
+    impl.appendLine()
     emitConstructorBody(cName, ci)
 
     // Secondary constructors
     for (vSctor in templateDecl.secondaryCtors) emitSecondaryCtor(mangledName, cName, vSctor)
 
     // Methods
+    // Any-related methods are deferred to the "implements Any" section below.
+    val vAnyMethodNamesGen = setOf("dispose", "toString", "hashCode")
+    val vHasRegularMethodsGen = templateDecl.members.any { it is FunDecl && it.receiver == null && it.name !in vAnyMethodNamesGen }
+    if (vHasRegularMethodsGen) {
+        impl.appendLine()
+        impl.appendLine(boxSection("methods"))
+        impl.appendLine()
+    }
     currentClass = mangledName
     selfIsPointer = true
     pushScope()
@@ -346,8 +368,6 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
     }
     for (vIfaceRef in templateDecl.superInterfaces) collectMethodsPerIface(vIfaceRef)
-    // Any-related methods are deferred to the "implements Any" section below.
-    val vAnyMethodNamesGen = setOf("dispose", "toString", "hashCode")
     for (m in templateDecl.members) {
         if (m is FunDecl && m.receiver == null) {
             if (m.name in vAnyMethodNamesGen) continue
@@ -384,9 +404,13 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     // Implements Any section — also emits explicit dispose/toString/hashCode overrides
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
+    impl.appendLine()
+    impl.appendLine(boxSection("implements Any"))
+    impl.appendLine()
     if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
         if (disposedMode != "NO" || doubleDisposeMode != "NO") {
             hdr.appendLine("KTC_METHOD(void, dispose)(KTC_TYPE_NAME* \$self);")
+            impl.appendLine("// ══ fun dispose() ══")
             impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
             impl.appendLine()
         } else {
@@ -432,6 +456,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
 
 internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
     hdr.appendLine("KTC_METHOD(ktc_Bool, equals)(KTC_TYPE_NAME a, KTC_TYPE_NAME b);")
+    impl.appendLine("// ══ fun equals ══")
     impl.appendLine("ktc_Bool ${cName}_equals($cName a, $cName b) {")
     val eqs = ci.props.filter { (_, type) ->
         // Skip @Ptr interface fields — ktc_IfacePtr can't be compared with ==
@@ -464,6 +489,7 @@ internal fun CCodeGen.emitDataClassToString(ktName: String, cName: String, ci: C
     val maxLen = toStringMaxLen(ci.name)
     val maxComment = if (maxLen != null) " // max output: $maxLen chars" else ""
     hdr.appendLine("KTC_METHOD(void, toString)(KTC_TYPE_NAME* \$self, ktc_StrBuf* sb);${maxComment}")
+    impl.appendLine("// ══ fun toString() ══")
     impl.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb) {")
     for ((i, prop) in ci.props.withIndex()) {
         val (name, type) = prop
@@ -489,8 +515,6 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
     val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
     val priv = if (f.isPrivate) "private " else ""
     impl.appendLine("// ══ ${priv}fun ${f.name}($paramSig)$retSig ══")
-    impl.appendLine()
-
     val returnsNullable = f.returnType != null && f.returnType.nullable
     val returnsSizedArray = !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
     val vRetKtc     = if (f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return, or null
@@ -583,7 +607,6 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
     val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
     maybeEmitFunBanner(f.name)
     impl.appendLine("// ══ ext fun ${recvTypeName}.${f.name}($paramSig)$retSig ($currentSourceFile) ══")
-    impl.appendLine()
     val returnsSizedArray = f.returnType != null && isSizedArrayTypeRef(f.returnType)
     val returnsNullable = f.returnType != null && f.returnType.nullable
     val vRetKtcExt  = if (f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return, or null
@@ -698,8 +721,6 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
         val mangledName = "${f.name}_${typeArgs.joinToString("_")}"
 
         impl.appendLine("// ══ generic ${f.name}<${typeArgs.joinToString(", ")}> ($currentSourceFile) ══")
-        impl.appendLine()
-
         // Prepend receiver as $self parameter for generic extensions
         val hasReceiver = f.receiver != null
         // Resolve return type and params under substitution
@@ -1082,9 +1103,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         }
     }
 
-    impl.appendLine("// ══ object ${d.name} ($currentSourceFile) ══")
-    impl.appendLine()
-
     hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
     hdr.appendLine("#define KTC_TYPE_NAME $cName")
     val typeIdValue = typeIds.getOrPut(d.name) { nextTypeId++ }
@@ -1162,6 +1180,11 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl.appendLine()
 
     // methods — inject $ensure_init() at the top of each
+    if (methods.isNotEmpty()) {
+        impl.appendLine()
+        impl.appendLine(boxSection("methods"))
+        impl.appendLine()
+    }
     val prevObjectForMethods = currentObject
     currentObject = d.name
     for (m in methods) {
@@ -1398,6 +1421,7 @@ internal fun CCodeGen.ifaceDataName(className: String): String = "${typeFlatName
 internal fun CCodeGen.emitImplicitHashCode(cName: String, ci: ClassInfo, isData: Boolean, isGenericClass: Boolean, members: List<Decl>) {
     if (members.any { it is FunDecl && it.name == "hashCode" }) return
     hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(KTC_TYPE_NAME* \$self);")
+    impl.appendLine("// ══ fun hashCode(): Int ══")
     impl.appendLine("ktc_Int ${cName}_hashCode($cName* \$self) {")
     if (isData && ci.props.isNotEmpty()) {
         impl.appendLine("    ktc_Int h = 0;")
@@ -1434,6 +1458,7 @@ internal fun CCodeGen.emitDefaultToString(ktName: String, cName: String, ci: Cla
     val maxLen = toStringMaxLen(ci.name)
     val maxComment = if (maxLen != null) " // max output: $maxLen chars" else ""
     hdr.appendLine("KTC_METHOD(void, toString)(KTC_TYPE_NAME* \$self, ktc_StrBuf* sb);${maxComment}")
+    impl.appendLine("// ══ fun toString() ══")
     impl.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb) {")
     if (maxLen != null && maxLen <= 64) {
         impl.appendLine("    ktc_Char buf[$maxLen];")
@@ -1455,22 +1480,23 @@ internal fun CCodeGen.emitDefaultToString(ktName: String, cName: String, ci: Cla
  */
 internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Boolean, members: List<Decl>, isGenericClass: Boolean) {
     // Thin wrapper functions for type-erased vtable dispatch
-    impl.appendLine("// ══════════════════════════ //")
-    impl.appendLine("//    Any vtable wrappers     //")
-    impl.appendLine("// ══════════════════════════ //")
+    impl.appendLine(boxSection("wrapper Any"))
     impl.appendLine()
     // toString wrapper
     impl.appendLine("static void ${cName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
     impl.appendLine("    ${cName}_toString(($cName*)\$self, sb);")
     impl.appendLine("}")
+    impl.appendLine()
     // hashCode wrapper
     impl.appendLine("static ktc_Int ${cName}_hashCode_any(void* \$self) {")
     impl.appendLine("    return ${cName}_hashCode(($cName*)\$self);")
     impl.appendLine("}")
+    impl.appendLine()
     // equals wrapper
     impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
     impl.appendLine("    return ${cName}_equals(*($cName*)\$self, *($cName*)other);")
     impl.appendLine("}")
+    impl.appendLine()
     // dispose wrapper
     if (members.none { it is FunDecl && it.name == "dispose" }) {
         impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")
@@ -1481,6 +1507,7 @@ internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Bo
         impl.appendLine("    ${cName}_dispose(($cName*)\$self);")
         impl.appendLine("}")
     }
+    impl.appendLine()
     // copyWith wrapper
     impl.appendLine("static void* ${cName}_copyWith_any(void* \$self, void* alloc) {")
     impl.appendLine("    ktc_std_Allocator* a = (ktc_std_Allocator*)alloc;")
@@ -1737,7 +1764,11 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(className: String, superIface
 
         if (!implsOnly) hdr.appendLine()
         if (!implsOnly) hdr.appendLine("// ════ implements $ifaceName ════")
-        if (!declsOnly) impl.appendLine("// ── $className implements $ifaceName ──")
+        if (!declsOnly) {
+            impl.appendLine()
+            impl.appendLine(boxSection("implements $ifaceName"))
+            impl.appendLine()
+        }
 
         // Emit property getter wrappers
         for (p in allProps) {
@@ -1856,7 +1887,6 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
     val paramSig = f.params.joinToString(", ") { p -> typeRefToStr(p.type) }
     val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
     impl.appendLine("// ══ fun ${f.name}($paramSig)$retSig ($currentSourceFile) ══")
-    impl.appendLine()
     val isMain = f.name == "main"                                       // true for the Kotlin main function
     // Get siblings for overload detection
     val siblings = file.decls.filterIsInstance<FunDecl>()

@@ -1303,11 +1303,9 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             val vInstHeaderPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
                                   else "$vSrcName/_Package.h"
             val vSrc = buildString {
-                appendLine(cSourceFileHeader(vKind, vKtName, vRoutingPkg, vCName, vSrcFile, vInstFrom))
-                appendLine()
-                // Always include the instantiator's header: it holds the concrete struct definition.
-                // For generic instantiations this is the current package's _Package.h, not the template's.
                 appendLine("#include \"$vInstHeaderPath\"")
+                appendLine()
+                appendLine(cSourceFileHeader(vKind, vKtName, vRoutingPkg, vCName, vSrcFile, vInstFrom))
                 appendLine()
                 if (vDeclImplFwd != null && vDeclImplFwd.isNotEmpty()) {
                     append(vDeclImplFwd)
