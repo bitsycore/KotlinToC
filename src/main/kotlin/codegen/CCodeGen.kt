@@ -56,7 +56,7 @@ import com.bitsycore.ktc.utils.wrapYellow
 
 /* Compute a file-relative #include path.
 inFromDir: the directory of the including file, relative to outDir (e.g. "ktc/std", "com/example", "")
-inToPath:  the target path relative to outDir (e.g. "ktc/core/ktc_core.h", "ktc/std/_Package.h") */
+inToPath:  the target path relative to outDir (e.g. "ktc/core/ktc_core.h", "ktc/std/_package_.h") */
 internal fun relIncludePath(inFromDir: String, inToPath: String): String {
 	val vFromParts = if (inFromDir.isEmpty()) emptyList() else inFromDir.split('/') // parts of the source directory
 	val vToParts   = inToPath.split('/')                                             // parts of the target path
@@ -991,7 +991,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             "LOG"    -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_LOG")
         }
         // All includes are file-relative — no -iquote flag needed.
-        val vFromDir = file.pkg?.replace('.', '/') ?: "" // directory of this _Package.h, relative to outDir
+        val vFromDir = file.pkg?.replace('.', '/') ?: "" // directory of this _package_.h, relative to outDir
         hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/core/ktc_core.h")}\"")
         hdr.appendLine()
 
@@ -1000,12 +1000,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             if (imp.startsWith("ktc.std") || imp.startsWith("ktc_std")) continue
             val parts = imp.removeSuffix(".*").split('.')
             val headerPath = parts.joinToString("/")
-            hdr.appendLine("#include \"${relIncludePath(vFromDir, "$headerPath/_Package.h")}\"")
+            hdr.appendLine("#include \"${relIncludePath(vFromDir, "$headerPath/_package_.h")}\"")
         }
-        // Auto-include ktc/std/_Package.h for non-stdlib packages when stdlib is present
+        // Auto-include ktc/std/_package_.h for non-stdlib packages when stdlib is present
         val hasStdlib = allFiles.any { it.pkg == "ktc.std" }
         if (hasStdlib && file.pkg != "ktc.std") {
-            hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/std/_Package.h")}\"")
+            hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/std/_package_.h")}\"")
         }
         hdr.appendLine()
 
@@ -1244,7 +1244,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             val vSrc = buildString {
                 appendLine(cSourceFileHeader("top-level", vSrcFull, vPkg, vSrcName, ""))
                 appendLine()
-                appendLine("#include \"_Package.h\"")                       // same directory as this .c file
+                appendLine("#include \"_package_.h\"")                       // same directory as this .c file
                 appendLine()
                 if (vTopImplFwd != null && vTopImplFwd.isNotEmpty()) {
                     append(vTopImplFwd)
@@ -1309,12 +1309,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 else -> continue  // unknown declaration type (e.g. generic template) — skip
                 }
 
-            /* The .c file lands in vRoutingPkg's directory; its struct defs are in vPkg's _Package.h.
-               For non-generic decls vRoutingPkg == vPkg → resolves to "_Package.h".
+            /* The .c file lands in vRoutingPkg's directory; its struct defs are in vPkg's _package_.h.
+               For non-generic decls vRoutingPkg == vPkg → resolves to "_package_.h".
                For generic instantiations routed to the template's package the paths differ. */
             val vFileDir    = vRoutingPkg.replace('.', '/')                 // directory of the output .c file
-            val vHdrAbsPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
-                              else "$vSrcName/_Package.h"                   // _Package.h with struct defs
+            val vHdrAbsPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_package_.h"
+                              else "$vSrcName/_package_.h"                   // _package_.h with struct defs
             val vSrc = buildString {
                 appendLine("#include \"${relIncludePath(vFileDir, vHdrAbsPath)}\"")
                 appendLine()

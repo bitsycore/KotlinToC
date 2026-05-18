@@ -229,8 +229,8 @@ fun main(args: Array<String>) {
         val baseName    = mergedFile.pkg?.replace('.', '_') ?: pkg  // mangled pkg (e.g. "com_example")
         val isKtcPkg    = baseName.startsWith("ktc_")               // is this a ktc.* stdlib package?
         val vPkgPath    = mergedFile.pkg?.replace('.', '/') ?: pkg  // e.g. "com/example", "ktc/std", or pkg key
-        // Package header goes in the package subdirectory as _Package.h (alphabetically first in dir).
-        // ktc packages: ktc/<subpath>/_Package.h;  user packages: outDir/<pkgPath>/_Package.h
+        // Package header goes in the package subdirectory as _package_.h (alphabetically first in dir).
+        // ktc packages: ktc/<subpath>/_package_.h;  user packages: outDir/<pkgPath>/_package_.h
         val pkgHdrDir   = when {
             isKtcPkg -> {
                 val vSubPath = vPkgPath.removePrefix("ktc/")        // e.g. "std" from "ktc/std"
@@ -239,7 +239,7 @@ fun main(args: Array<String>) {
             vPkgPath.isNotEmpty() -> File(outDir, vPkgPath).also { it.mkdirs() }
             else -> outDir
             }
-        val headerFile  = File(pkgHdrDir, "_Package.h")
+        val headerFile  = File(pkgHdrDir, "_package_.h")
         headerFile.writeText(output.header)
         println("  wrote ${headerFile.path}")
 
@@ -363,7 +363,7 @@ fun main(args: Array<String>) {
         val vMPrefix  = vMPkg.replace('.', '_').let { if (it.isNotEmpty()) "${it}_" else "" }
         val vCMain    = "${vMPrefix}${vMainFun.name}"                            // prefixed C function name
         val vMPkgPath = if (vMPkg.isNotEmpty()) vMPkg.replace('.', '/') else ""  // e.g. "test/Main"
-        val vPkgHdr   = if (vMPkgPath.isNotEmpty()) "$vMPkgPath/_Package.h" else "_Package.h"
+        val vPkgHdr   = if (vMPkgPath.isNotEmpty()) "$vMPkgPath/_package_.h" else "_package_.h"
         val vHasArgs  = vMainFun.params.size == 1                                // Array<String> param?
         val vReturnsInt = vMainFun.returnType?.name == "Int"                     // Int return type?
         val vMainC = buildString {
