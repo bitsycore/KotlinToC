@@ -29,6 +29,35 @@ class InterfaceUnitTest : TranspilerTestBase() {
         r.headerContains("test_Main_Shape_vt")
     }
 
+    @Test fun interfaceMethodGrouping() {
+        val multiIfaceDecls = """
+            interface Shape { fun area(): Float; fun name(): String }
+            interface Labeled { fun label(): String }
+            class Circle(val radius: Float) : Shape, Labeled {
+                override fun area(): Float = 3.14f * radius * radius
+                override fun name(): String = "Circle"
+                override fun label(): String = "circle-label"
+            }
+        """
+        val r = transpile("""
+            package test.Main
+            $multiIfaceDecls
+            fun main(args: Array<String>) { val c = Circle(1.0f) }
+        """)
+        // Interface methods appear under per-interface sections
+        r.sourceContains("implements Shape")
+        r.sourceContains("implements Labeled")
+        r.sourceNotContains("//    methods    //")
+        // Each vtable+cast is grouped under a "cast to X" section
+        r.sourceContains("cast to Shape")
+        r.sourceContains("cast to Labeled")
+        r.sourceContains("cast to Any")
+        r.sourceNotContains("//    as    //")
+        // Exactly one blank line between sections (no triple newlines within Circle's block)
+        val vCircleSrc = r.source.substringAfter("class Circle").substringBefore("#include _package_")
+        kotlin.test.assertTrue(!vCircleSrc.contains("\n\n\n"), "Double blank lines found in Circle source block")
+    }
+
     @Test fun interfaceFatPointerStruct() {
         val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls)
         // KTC_INTERFACE macro generates the tagged union; CLS_TYPES lists all implementors

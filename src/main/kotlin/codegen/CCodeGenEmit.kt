@@ -126,7 +126,7 @@ internal fun CCodeGen.maybeEmitFunBanner(inFunName: String) {
 // ── class / data class ───────────────────────────────────────────
 
 /* Returns a box-style section comment: // ═══ //\n//   title   //\n// ═══ // */
-private fun boxSection(inTitle: String): String {
+internal fun boxSection(inTitle: String): String {
 	val vRuler = "═".repeat(inTitle.length + 6)
 	return "// $vRuler //\n//    $inTitle    //\n// $vRuler //"
 }
@@ -163,15 +163,29 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     // Secondary constructors (also in constructor section)
     for (vSctor in d.secondaryCtors) emitSecondaryCtor(d.name, cName, vSctor)
 
-    // Methods (non-interface methods go here; interface methods are deferred)
-    // Any-related methods are deferred to the "implements Any" section below.
     val vAnyMethodNames = setOf("dispose", "toString", "hashCode")
-    val vHasRegularMethods = d.members.any { it is FunDecl && it.receiver == null && it.name !in vAnyMethodNames }
-    if (vHasRegularMethods) {
-        impl.appendLine()
-        impl.appendLine(boxSection("methods"))
-        impl.appendLine()
+
+    // Build map: method name → interface display string, and ordered list of interfaces
+    val vIfaceMethodToStr = mutableMapOf<String, String>()
+    val vIfaceOrder = mutableListOf<String>()
+    fun collectMethodsPerIface(ifaceRef: TypeRef) {
+        val vIfaceName = resolveIfaceName(ifaceRef)
+        val vIface = interfaces[vIfaceName] ?: return
+        val vIfaceStr = typeRefToStr(ifaceRef)
+        if (vIfaceStr !in vIfaceOrder) vIfaceOrder += vIfaceStr
+        for (m in vIface.methods) if (m.name !in vIfaceMethodToStr) vIfaceMethodToStr[m.name] = vIfaceStr
+        for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStr) vIfaceMethodToStr[p.name] = vIfaceStr
+        for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
     }
+    for (vIfaceRef in d.superInterfaces) collectMethodsPerIface(vIfaceRef)
+
+    // Group non-Any methods by interface (preserving declaration order within each group)
+    val vMethodsByIface = linkedMapOf<String, MutableList<FunDecl>>()
+    for (m in d.members) {
+        if (m is FunDecl && m.receiver == null && m.name !in vAnyMethodNames)
+            vMethodsByIface.getOrPut(vIfaceMethodToStr[m.name] ?: "") { mutableListOf() } += m
+    }
+
     currentClass = d.name
     selfIsPointer = true
     pushScope()
@@ -180,23 +194,26 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         if (!ci.isValProp(name)) markMutable(name)
     }
 
-    // Build map: method name → defining interface display string (per-interface, not flattened)
-    val vIfaceMethodToStr = mutableMapOf<String, String>()
-    fun collectMethodsPerIface(ifaceRef: TypeRef) {
-        val vIfaceName = resolveIfaceName(ifaceRef)
-        val vIface = interfaces[vIfaceName] ?: return
-        val vIfaceStr = typeRefToStr(ifaceRef)
-        for (m in vIface.methods) if (m.name !in vIfaceMethodToStr) vIfaceMethodToStr[m.name] = vIfaceStr
-        for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStr) vIfaceMethodToStr[p.name] = vIfaceStr
-        for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
+    // Emit per-interface method sections in interface declaration order.
+    // Only the FIRST section adds a leading blank; subsequent sections rely on the
+    // trailing blank left by the previous emitMethod call to avoid double blanks.
+    var vHasMethodSection = false
+    for (vIfaceStr in vIfaceOrder) {
+        val vMethods = vMethodsByIface[vIfaceStr] ?: continue
+        if (!vHasMethodSection) impl.appendLine()
+        impl.appendLine(boxSection("implements $vIfaceStr"))
+        impl.appendLine()
+        for (m in vMethods) emitMethod(d.name, m, suppressHdr = true, ifaceName = vIfaceStr)
+        vHasMethodSection = true
     }
-    for (vIfaceRef in d.superInterfaces) collectMethodsPerIface(vIfaceRef)
-    for (m in d.members) {
-        if (m is FunDecl && m.receiver == null) {
-            if (m.name in vAnyMethodNames) continue
-            val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
-            emitMethod(d.name, m, suppressHdr = vIfaceStr.isNotEmpty(), ifaceName = vIfaceStr)
-        }
+    // Emit non-interface methods in a "methods" section
+    val vOtherMethods = vMethodsByIface[""] ?: emptyList()
+    if (vOtherMethods.isNotEmpty()) {
+        if (!vHasMethodSection) impl.appendLine()
+        impl.appendLine(boxSection("methods"))
+        impl.appendLine()
+        for (m in vOtherMethods) emitMethod(d.name, m, suppressHdr = false, ifaceName = "")
+        vHasMethodSection = true
     }
     popScope()
     currentClass = null
@@ -224,10 +241,11 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
         }
     }
 
-    // Implements Any section — also emits explicit dispose/toString/hashCode overrides
+    // Implements Any section — also emits explicit dispose/toString/hashCode overrides.
+    // Only add leading blank if no prior method sections (those already end with a blank).
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
-    impl.appendLine()
+    if (!vHasMethodSection) impl.appendLine()
     impl.appendLine(boxSection("implements Any"))
     impl.appendLine()
     emitClassEquals(cName, ci)
@@ -347,15 +365,29 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     // Secondary constructors
     for (vSctor in templateDecl.secondaryCtors) emitSecondaryCtor(mangledName, cName, vSctor)
 
-    // Methods
-    // Any-related methods are deferred to the "implements Any" section below.
     val vAnyMethodNamesGen = setOf("dispose", "toString", "hashCode")
-    val vHasRegularMethodsGen = templateDecl.members.any { it is FunDecl && it.receiver == null && it.name !in vAnyMethodNamesGen }
-    if (vHasRegularMethodsGen) {
-        impl.appendLine()
-        impl.appendLine(boxSection("methods"))
-        impl.appendLine()
+
+    // Build map: method name → interface display string, and ordered list of interfaces
+    val vIfaceMethodToStrGen = mutableMapOf<String, String>()
+    val vIfaceOrderGen = mutableListOf<String>()
+    fun collectMethodsPerIfaceGen(ifaceRef: TypeRef) {
+        val vIfaceName = resolveIfaceName(ifaceRef)
+        val vIface = interfaces[vIfaceName] ?: return
+        val vIfaceStr = typeRefToStr(ifaceRef)
+        if (vIfaceStr !in vIfaceOrderGen) vIfaceOrderGen += vIfaceStr
+        for (m in vIface.methods) if (m.name !in vIfaceMethodToStrGen) vIfaceMethodToStrGen[m.name] = vIfaceStr
+        for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStrGen) vIfaceMethodToStrGen[p.name] = vIfaceStr
+        for (superRef in vIface.superInterfaces) collectMethodsPerIfaceGen(superRef)
     }
+    for (vIfaceRef in templateDecl.superInterfaces) collectMethodsPerIfaceGen(vIfaceRef)
+
+    // Group non-Any methods by interface (preserving declaration order within each group)
+    val vMethodsByIfaceGen = linkedMapOf<String, MutableList<FunDecl>>()
+    for (m in templateDecl.members) {
+        if (m is FunDecl && m.receiver == null && m.name !in vAnyMethodNamesGen)
+            vMethodsByIfaceGen.getOrPut(vIfaceMethodToStrGen[m.name] ?: "") { mutableListOf() } += m
+    }
+
     currentClass = mangledName
     selfIsPointer = true
     pushScope()
@@ -363,23 +395,27 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         defineVarKtc(name, resolveTypeName(type))
         if (!ci.isValProp(name)) markMutable(name)
     }
-    // Build map: method name → defining interface display string (per-interface, not flattened)
-    val vIfaceMethodToStr = mutableMapOf<String, String>()
-    fun collectMethodsPerIface(ifaceRef: TypeRef) {
-        val vIfaceName = resolveIfaceName(ifaceRef)
-        val vIface = interfaces[vIfaceName] ?: return
-        val vIfaceStr = typeRefToStr(ifaceRef)
-        for (m in vIface.methods) if (m.name !in vIfaceMethodToStr) vIfaceMethodToStr[m.name] = vIfaceStr
-        for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStr) vIfaceMethodToStr[p.name] = vIfaceStr
-        for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
+
+    // Emit per-interface method sections in interface declaration order.
+    // Only the FIRST section adds a leading blank; subsequent sections rely on the
+    // trailing blank left by the previous emitMethod call to avoid double blanks.
+    var vHasMethodSectionGen = false
+    for (vIfaceStr in vIfaceOrderGen) {
+        val vMethods = vMethodsByIfaceGen[vIfaceStr] ?: continue
+        if (!vHasMethodSectionGen) impl.appendLine()
+        impl.appendLine(boxSection("implements $vIfaceStr"))
+        impl.appendLine()
+        for (m in vMethods) emitMethod(mangledName, m, suppressHdr = true, ifaceName = vIfaceStr)
+        vHasMethodSectionGen = true
     }
-    for (vIfaceRef in templateDecl.superInterfaces) collectMethodsPerIface(vIfaceRef)
-    for (m in templateDecl.members) {
-        if (m is FunDecl && m.receiver == null) {
-            if (m.name in vAnyMethodNamesGen) continue
-            val vIfaceStr = vIfaceMethodToStr[m.name] ?: ""
-            emitMethod(mangledName, m, suppressHdr = vIfaceStr.isNotEmpty(), ifaceName = vIfaceStr)
-        }
+    // Emit non-interface methods in a "methods" section
+    val vOtherMethodsGen = vMethodsByIfaceGen[""] ?: emptyList()
+    if (vOtherMethodsGen.isNotEmpty()) {
+        if (!vHasMethodSectionGen) impl.appendLine()
+        impl.appendLine(boxSection("methods"))
+        impl.appendLine()
+        for (m in vOtherMethodsGen) emitMethod(mangledName, m, suppressHdr = false, ifaceName = "")
+        vHasMethodSectionGen = true
     }
     popScope()
     currentClass = null
@@ -407,10 +443,11 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
         }
     }
 
-    // Implements Any section — also emits explicit dispose/toString/hashCode overrides
+    // Implements Any section — also emits explicit dispose/toString/hashCode overrides.
+    // Only add leading blank if no prior method sections (those already end with a blank).
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
-    impl.appendLine()
+    if (!vHasMethodSectionGen) impl.appendLine()
     impl.appendLine(boxSection("implements Any"))
     impl.appendLine()
     if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
@@ -1267,9 +1304,78 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         emitInterfaceVtablesForClass(d.name, d.superInterfaces, declsOnly = true)
     }
 
+    // Any cast — same treatment as class: AnyVt + as_Any
+    hdr.appendLine()
+    hdr.appendLine("// ════ implements Any (implicit) ════")
+    hdr.appendLine()
+    hdr.appendLine("// ════ Any cast ════")
+    hdr.appendLine("extern const ktc_core_AnyVt KTC_RELATED(AnyVt);")
+    hdr.appendLine("ktc_Any ${cName}_as_Any(${cName}_t* \$self);")
+
     hdr.appendLine()
     hdr.appendLine("#undef KTC_TYPE_NAME")
     hdr.appendLine(classBlockFooter(vKind, vDisplayName, emptyList()))
+
+    emitObjectAnyCast(d, cName)
+}
+
+/*
+Emit the "cast to Any" section for an object (singleton).
+Objects are singletons so their Any wrappers are inline implementations rather than
+thin wrappers over named methods (which objects don't have for toString/hashCode/etc.).
+*/
+internal fun CCodeGen.emitObjectAnyCast(inDecl: ObjectDecl, inCName: String) {
+    val vDisplaySimple = inDecl.name.substringAfterLast('$') // simple name for toString output
+
+    impl.appendLine(boxSection("cast to Any"))
+    impl.appendLine()
+
+    // toString: "ObjectName@typeId" (type ID is stable for singletons)
+    impl.appendLine("static void ${inCName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
+    impl.appendLine("    (void)\$self;")
+    impl.appendLine("    ktc_Char buf[64];")
+    impl.appendLine("    snprintf(buf, 64, \"%s@%x\", \"$vDisplaySimple\", (unsigned)${inCName}_TYPE_ID);")
+    impl.appendLine("    ktc_core_sb_append_cstr(sb, buf);")
+    impl.appendLine("}")
+    impl.appendLine()
+
+    // hashCode: type ID is a stable identity hash for singletons
+    impl.appendLine("static ktc_Int ${inCName}_hashCode_any(void* \$self) {")
+    impl.appendLine("    (void)\$self;")
+    impl.appendLine("    return (ktc_Int)${inCName}_TYPE_ID;")
+    impl.appendLine("}")
+    impl.appendLine()
+
+    // equals: pointer equality (same singleton pointer = equal)
+    impl.appendLine("static ktc_Bool ${inCName}_equals_any(void* \$self, void* other) {")
+    impl.appendLine("    return \$self == other;")
+    impl.appendLine("}")
+    impl.appendLine()
+
+    // dispose: no-op for singletons
+    impl.appendLine("static void ${inCName}_dispose_any(void* \$self) { (void)\$self; }")
+    impl.appendLine()
+
+    // copyWith: return same pointer (singletons are not copied)
+    impl.appendLine("static void* ${inCName}_copyWith_any(void* \$self, void* alloc) {")
+    impl.appendLine("    (void)alloc;")
+    impl.appendLine("    return \$self;")
+    impl.appendLine("}")
+    impl.appendLine()
+
+    impl.appendLine("const ktc_core_AnyVt ${inCName}_AnyVt = {")
+    impl.appendLine("    (void (*)(void*, void*)) ${inCName}_toString_any,")
+    impl.appendLine("    (ktc_Int (*)(void*)) ${inCName}_hashCode_any,")
+    impl.appendLine("    (ktc_Bool (*)(void*, void*)) ${inCName}_equals_any,")
+    impl.appendLine("    (void (*)(void*)) ${inCName}_dispose_any,")
+    impl.appendLine("    (void* (*)(void*, void*)) ${inCName}_copyWith_any,")
+    impl.appendLine("};")
+    impl.appendLine()
+
+    impl.appendLine("ktc_Any ${inCName}_as_Any(${inCName}_t* \$self) {")
+    impl.appendLine("    return (ktc_Any){{.typeId = ${inCName}_TYPE_ID}, (void*)\$self, &${inCName}_AnyVt};")
+    impl.appendLine("}")
+    impl.appendLine()
 }
 
 // ── interface ────────────────────────────────────────────────────
@@ -1492,7 +1598,7 @@ internal fun CCodeGen.emitDefaultToString(ktName: String, cName: String, ci: Cla
  */
 internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Boolean, members: List<Decl>, isGenericClass: Boolean) {
     // Thin wrapper functions for type-erased vtable dispatch
-    impl.appendLine(boxSection("wrapper Any"))
+    impl.appendLine(boxSection("cast to Any"))
     impl.appendLine()
     // toString wrapper
     impl.appendLine("static void ${cName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
@@ -1543,11 +1649,26 @@ internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Bo
     impl.appendLine("};")
     impl.appendLine()
 
-    // _as_Any wrapper
+    // as_Any — emitted inline after AnyVt (no ordering constraint)
     hdr.appendLine("KTC_METHOD(ktc_Any, as_Any)(KTC_TYPE_NAME* \$self);")
     impl.appendLine("ktc_Any ${cName}_as_Any($cName* \$self) {")
     impl.appendLine("    return (ktc_Any){{.typeId = ${cName}_TYPE_ID}, (void*)\$self, &${cName}_AnyVt};")
     impl.appendLine("}")
+    impl.appendLine()
+}
+
+/*
+Emits the deferred as_* cast functions for [inClassName] into the current impl buffer,
+wrapped in a boxSection("as") header, then removes the entry from deferredAsCalls.
+Call this after all vtable structs for the class have been emitted.
+*/
+internal fun CCodeGen.flushDeferredAsForClass(inClassName: String) {
+    val vAsCalls = deferredAsCalls.remove(inClassName) ?: return // nothing deferred
+    if (vAsCalls.isEmpty()) return
+    impl.appendLine(boxSection("as"))
+    impl.appendLine()
+    impl.append(vAsCalls.toString().trimEnd())
+    impl.appendLine()
     impl.appendLine()
 }
 
@@ -1779,8 +1900,8 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(className: String, superIface
         if (!implsOnly) hdr.appendLine()
         if (!implsOnly) hdr.appendLine("// ════ implements $ifaceName ════")
         if (!declsOnly) {
-            impl.appendLine()
-            impl.appendLine(boxSection("implements $ifaceName"))
+            val vDisplayName = typeRefToStr(ifaceRef)
+            impl.appendLine(boxSection("cast to $vDisplayName"))
             impl.appendLine()
         }
 
@@ -1805,7 +1926,7 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(className: String, superIface
             emitVtable(cClass, cIface, ifaceName, className, allProps, allMethods)
         }
 
-        // wrapping function: ClassName_as_IfaceName
+        // as_IfaceName — emitted inline after vtable struct
         if (!implsOnly) hdr.appendLine("KTC_METHOD($cIface, as_${ifaceName})($cSelfPtr \$self);")
         if (!implsOnly) {
             val lines = deferredHdrLines[className]
@@ -1839,7 +1960,9 @@ internal fun CCodeGen.emitTransitiveInterfaceVtables(className: String, cClass: 
         val superMethods = collectAllIfaceMethods(superIface)
         val superProps = collectAllIfaceProperties(superIface)
 
-        impl.appendLine("// ── $className implements $superName (transitive) ──")
+        val vSuperDisplay = typeRefToStr(superRef)
+        impl.appendLine(boxSection("cast to $vSuperDisplay"))
+        impl.appendLine()
 
         // Register this class as also implementing the parent interface
         val existing = classInterfaces[className]?.toMutableList() ?: mutableListOf()
@@ -1852,7 +1975,7 @@ internal fun CCodeGen.emitTransitiveInterfaceVtables(className: String, cClass: 
 
         // static vtable instance (same class methods, but only the parent's slots)
         emitVtable(cClass, cSuper, superName, className, superProps, superMethods)
-        // wrapping function
+        // as_SuperName — emitted inline after vtable struct
         impl.appendLine("$cSuper ${cClass}_as_${superName}($cClass* \$self) {")
         impl.appendLine("    return ${ifaceAsInit(cSuper, cClass, className, superName)};")
         impl.appendLine("}")

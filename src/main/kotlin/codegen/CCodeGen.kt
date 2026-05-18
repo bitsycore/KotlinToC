@@ -707,6 +707,10 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal val perDeclImpl    = mutableMapOf<String, StringBuilder>()  // per-decl impl content
     internal val perDeclImplFwd = mutableMapOf<String, StringBuilder>()  // per-decl implFwd content
 
+    // Buffered as_* cast functions, emitted in a final "as" section after all vtable structs.
+    // Keyed by root declaration name (same key as perDeclImpl).
+    internal val deferredAsCalls = mutableMapOf<String, StringBuilder>()
+
     /*
     Returns the root key for a declaration name.
     Inner classes / companions ("Foo$Bar") map to their parent ("Foo")

@@ -1,4 +1,4 @@
-package advancedgenerics
+package advanced.generics
 
 // ===================================================
 // MARK: Concrete

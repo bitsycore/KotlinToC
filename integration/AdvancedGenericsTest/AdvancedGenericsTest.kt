@@ -1,4 +1,4 @@
-package advancedgenerics
+package advanced.generics
 
 fun arrayListAllocTest() {
     println("\n============ arrayListAllocTest ============\n")
