@@ -22,9 +22,9 @@ class GenericsUnitTest : TranspilerTestBase() {
                 val b = Box<Int>(42)
             }
         """)
-        // Mangled struct: Box_Int (forward typedef + struct definition using CLS macro)
+        // Mangled struct: Box_Int (forward typedef + struct definition using KTC_TYPE_NAME macro)
         r.headerContains("typedef struct test_Main_Box_Int test_Main_Box_Int;")
-        r.headerContains("KTC_CLASS(CLS, CLS_OPT,")
+        r.headerContains("KTC_CLASS(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME,")
         r.headerContains("ktc_Int item;")
     }
 
@@ -50,7 +50,7 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
         """)
         // Heap new is inlined (no separate _new function)
-        r.headerContains("KTC_METHOD(CLS, primaryConstructor)(")
+        r.headerContains("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)(")
     }
 
     @Test fun genericTemplateNotEmitted() {

@@ -16,7 +16,7 @@ class DataClassUnitTest : TranspilerTestBase() {
 
     @Test fun structTypedef() {
         val r = transpileMain("val v = Vec2(1.0f, 2.0f)", decls = vec2Decl)
-        r.headerContains("KTC_CLASS(CLS, CLS_OPT,")
+        r.headerContains("KTC_CLASS(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME,")
         r.headerContains("ktc_Float x;")
         r.headerContains("ktc_Float y;")
         r.headerContains(");")

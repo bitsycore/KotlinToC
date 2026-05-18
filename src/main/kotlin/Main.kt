@@ -12,13 +12,18 @@ val aClass = object {}.javaClass
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--ast] [--dump-semantics]")
+        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
         System.err.println("  Transpiles Kotlin subset files to C11.")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
         System.err.println("  --double-dispose=ASSERT|LOG|NO  Double-dispose: abort / log+continue / ignore (default: NO)")
+        System.err.println("  --main <qualified.name>      Select the entry point by qualified name (e.g. com.example.Main.run)")
+        System.err.println("                               Required when multiple main-compatible functions exist.")
+        System.err.println("                               Valid signatures: fun <name>(), fun <name>(): Int,")
+        System.err.println("                                                 fun <name>(args: Array<String>),")
+        System.err.println("                                                 fun <name>(args: Array<String>): Int")
         System.err.println("  --ast                        Dump parsed AST and exit (no C output)")
-        System.err.println("  --dump-semantics         Dump AST + semantic analysis and exit")
+        System.err.println("  --dump-semantics             Dump AST + semantic analysis and exit")
         exitProcess(1)
     }
 
@@ -26,8 +31,9 @@ fun main(args: Array<String>) {
     val inputPaths = mutableListOf<String>()
     var outputDir = "."
     var memTrack = false
-    var disposedMode = "NO"       // ASSERT | LOG | NO
-    var doubleDisposeMode = "NO"  // ASSERT | LOG | NO
+    var disposedMode = "NO"        // ASSERT | LOG | NO
+    var doubleDisposeMode = "NO"   // ASSERT | LOG | NO
+    var mainOverride: String? = null  // --main qualified.name
     var dumpAst = false
     var dumpSemantics = false
     var i = 0
@@ -44,6 +50,9 @@ fun main(args: Array<String>) {
         } else if (args[i].startsWith("--double-dispose=")) {
             doubleDisposeMode = args[i].removePrefix("--double-dispose=").uppercase()
             i++
+        } else if (args[i] == "--main" && i + 1 < args.size) {
+            mainOverride = args[i + 1]
+            i += 2
         } else if (args[i] == "--ast") {
             dumpAst = true
             i++
@@ -264,20 +273,99 @@ fun main(args: Array<String>) {
             }
     }
 
-    // ── Generate main.c if a top-level fun main() is found ──────
+    // ── Locate entry-point function ─────────────────────────────
+    /*
+    A function is a valid entry-point candidate when its signature matches one of:
+      fun <name>()
+      fun <name>(): Int
+      fun <name>(args: Array<String>)
+      fun <name>(args: Array<String>): Int
+    With no --main flag, only functions literally named "main" are considered.
+    With --main "pkg.name" the search is by qualified name; the function name
+    may differ from "main".
+    */
+    data class MainCandidate(
+        val vPkg:  String,    // dot-separated package, may be empty
+        val vFun:  FunDecl,   // the function declaration
+        val vFile: String     // originating source file name
+    )
+
+    /* Check whether a FunDecl has a valid entry-point signature */
+    fun isValidEntrySignature(inFun: FunDecl): Boolean {
+        val vRetOk  = inFun.returnType == null || inFun.returnType.name == "Unit" ||
+                      inFun.returnType.name == "Int"   // Unit/absent or Int return
+        val vArgsOk = inFun.params.isEmpty() ||
+                      (inFun.params.size == 1 &&
+                       inFun.params[0].type.name == "Array" &&
+                       inFun.params[0].type.typeArgs.singleOrNull()?.name == "String")
+        return vRetOk && vArgsOk
+    }
+
+    /* Format a candidate for error messages */
+    fun formatCandidate(inC: MainCandidate): String {
+        val vQName  = if (inC.vPkg.isNotEmpty()) "${inC.vPkg}.${inC.vFun.name}" else inC.vFun.name
+        val vParams = inC.vFun.params.joinToString(", ") { "${it.name}: ${it.type.name}" }
+        val vRet    = inC.vFun.returnType?.name?.let { ": $it" } ?: ""
+        return "  $vQName($vParams)$vRet  [${inC.vFile}]"
+    }
+
+    val vNonDocFiles = parsedFiles.filter { !it.ast.documentationOnly }  // skip doc-only files
+
+    val vMainCandidate: MainCandidate?
+
+    if (mainOverride != null) {
+        // --main "a.b.c.funName": split at the last dot to separate package from function name
+        val vDotIdx  = mainOverride.lastIndexOf('.')                        // split point
+        val vOvrPkg  = if (vDotIdx > 0) mainOverride.substring(0, vDotIdx) else ""  // package part
+        val vOvrName = mainOverride.substring(vDotIdx + 1)                  // function name part
+        val vFound   = vNonDocFiles
+            .filter { it.ast.pkg == vOvrPkg.ifEmpty { null } || (vOvrPkg.isEmpty() && it.ast.pkg == null) }
+            .flatMap { ps -> ps.ast.decls.filterIsInstance<FunDecl>()
+                .filter { it.name == vOvrName }
+                .map { MainCandidate(ps.ast.pkg ?: "", it, ps.ast.sourceFile) } }
+        when {
+            vFound.isEmpty() -> {
+                System.err.println("Error: --main \"$mainOverride\" not found.")
+                System.err.println("  No top-level function '$vOvrName' in package '${vOvrPkg.ifEmpty { "<root>" }}'.")
+                exitProcess(1)
+            }
+            !isValidEntrySignature(vFound.first().vFun) -> {
+                System.err.println("Error: --main \"$mainOverride\" has an invalid entry-point signature.")
+                System.err.println("  Valid signatures: fun name(), fun name(): Int,")
+                System.err.println("                    fun name(args: Array<String>), fun name(args: Array<String>): Int")
+                exitProcess(1)
+            }
+            else -> vMainCandidate = vFound.first()
+        }
+    } else {
+        // Auto-detect: collect every top-level function named "main" with a valid signature
+        val vCandidates = vNonDocFiles.flatMap { ps ->
+            ps.ast.decls.filterIsInstance<FunDecl>()
+                .filter { it.name == "main" && isValidEntrySignature(it) }
+                .map { MainCandidate(ps.ast.pkg ?: "", it, ps.ast.sourceFile) }
+        }
+        when {
+            vCandidates.isEmpty() -> vMainCandidate = null  // no main — library output, no main.c
+            vCandidates.size == 1 -> vMainCandidate = vCandidates.first()
+            else -> {
+                System.err.println("Error: multiple entry-point functions found. Use --main <qualified.name> to select one:")
+                vCandidates.forEach { System.err.println(formatCandidate(it)) }
+                exitProcess(1)
+            }
+        }
+    }
+
+    // ── Generate main.c from the resolved entry point ────────────
     var vGeneratedMainC = false
-    val vMainPs = parsedFiles.filter { !it.ast.documentationOnly }
-        .firstOrNull { ps -> ps.ast.decls.any { it is FunDecl && it.name == "main" } }
-    if (vMainPs != null) {
-        val vMainFun  = vMainPs.ast.decls.filterIsInstance<FunDecl>().first { it.name == "main" }
-        val vMPkg     = vMainPs.ast.pkg ?: ""                                    // package of the main function
+    if (vMainCandidate != null) {
+        val vMainFun  = vMainCandidate.vFun                                      // the entry-point FunDecl
+        val vMPkg     = vMainCandidate.vPkg                                      // package, may be empty
         val vMPrefix  = vMPkg.replace('.', '_').let { if (it.isNotEmpty()) "${it}_" else "" }
-        val vCMain    = "${vMPrefix}main"                                         // prefixed C function name
+        val vCMain    = "${vMPrefix}${vMainFun.name}"                            // prefixed C function name
         val vMPkgPath = if (vMPkg.isNotEmpty()) vMPkg.replace('.', '/') else ""  // e.g. "test/Main"
         val vPkgHdr   = if (vMPkgPath.isNotEmpty()) "$vMPkgPath/_Package.h" else "_Package.h"
-        val vHasArgs  = vMainFun.params.size == 1 &&
-                        vMainFun.params[0].type.name == "Array" &&
-                        vMainFun.params[0].type.typeArgs.singleOrNull()?.name == "String"
+        val vHasArgs  = vMainFun.params.size == 1                                // Array<String> param?
+        val vReturnsInt = vMainFun.returnType?.name == "Int"                     // Int return type?
         val vMainC = buildString {
             appendLine("/* main.c — C entry point generated by ktc */")
             appendLine("#include \"$vPkgHdr\"")
@@ -292,13 +380,22 @@ fun main(args: Array<String>) {
                 appendLine("    }")
                 appendLine("    ktc_ArrayTrampoline \$vargs = {0, \$nargs, \$args_buf};")
                 appendLine("    ktc_core_mainInit();")
-                appendLine("    ${vCMain}(\$vargs);")
+                if (vReturnsInt)
+                    appendLine("    return (int)${vCMain}(\$vargs);")
+                else {
+                    appendLine("    ${vCMain}(\$vargs);")
+                    appendLine("    return 0;")
+                }
             } else {
                 appendLine("int main(void) {")
                 appendLine("    ktc_core_mainInit();")
-                appendLine("    ${vCMain}();")
+                if (vReturnsInt)
+                    appendLine("    return (int)${vCMain}();")
+                else {
+                    appendLine("    ${vCMain}();")
+                    appendLine("    return 0;")
+                }
             }
-            appendLine("    return 0;")
             append("}")
         }
         val vMainCFile = File(outDir, "main.c")

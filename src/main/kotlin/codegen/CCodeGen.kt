@@ -1229,7 +1229,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             val vCFileName  = "${vSrcBase}Kt.c"                             // e.g. "GenericsTestKt.c"
             val vTopImplFwd = perDeclImplFwd[vKey]
             val vSrc = buildString {
-                appendLine(cSourceFileHeader("top-level", vSrcFull, vPkg, vSrcName, vSrcFull))
+                appendLine(cSourceFileHeader("top-level", vSrcFull, vPkg, vSrcName, ""))
                 appendLine()
                 appendLine("#include \"$vPkgHeaderPath\"")
                 appendLine()
@@ -1308,7 +1308,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 // Always include the instantiator's header: it holds the concrete struct definition.
                 // For generic instantiations this is the current package's _Package.h, not the template's.
                 appendLine("#include \"$vInstHeaderPath\"")
-                appendLine("#define CLS $vCName")
                 appendLine()
                 if (vDeclImplFwd != null && vDeclImplFwd.isNotEmpty()) {
                     append(vDeclImplFwd)

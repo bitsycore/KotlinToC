@@ -25,7 +25,7 @@ class CompanionObjectUnitTest : TranspilerTestBase() {
 	@Test fun companionStructTypedef() {
 		val vResult = transpileMain("println(Foo.kDefault)", decls = kClassWithCompanion)
 		vResult.headerContains("KTC_OBJECT(")                                      // macro-based struct + extern
-		vResult.headerContains("#define CLS test_Main_Foo\$Companion")             // CLS define
+		vResult.headerContains("#define KTC_TYPE_NAME test_Main_Foo\$Companion")    // KTC_TYPE_NAME define
 		vResult.headerContains("companion object Foo.Companion")                   // banner kind + name
 	}
 

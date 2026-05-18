@@ -17,9 +17,9 @@ class OverloadUnitTest : TranspilerTestBase() {
             }
         """)
         // No-arg overload keeps plain name, no suffix
-        v.headerContains("test_Main_O_greet();")
+        v.headerContains(", greet)(void)")
         // Parameterized overload gets With suffix
-        v.headerContains("test_Main_O_greetWithString")
+        v.headerContains(", greetWithString)(")
     }
 
     @Test fun objectOverloadWithTypeSuffix() {
@@ -29,7 +29,7 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun greet(name: String): String = name
             }
         """)
-        v.headerContains("O_greetWithString")
+        v.headerContains(", greetWithString)(")
     }
 
     @Test fun objectOverloadMultiParam() {
@@ -39,8 +39,8 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun add(x: Double, y: Double): Double = x + y
             }
         """)
-        v.headerContains("O_addWithInt_Int")
-        v.headerContains("O_addWithDouble_Double")
+        v.headerContains(", addWithInt_Int)(")
+        v.headerContains(", addWithDouble_Double)(")
     }
 
     @Test fun objectOverloadThreeVariants() {
@@ -52,9 +52,9 @@ class OverloadUnitTest : TranspilerTestBase() {
             }
         """)
         // No-arg keeps plain name
-        v.headerContains("test_Main_O_inc();")
-        v.headerContains("test_Main_O_incWithInt")
-        v.headerContains("test_Main_O_incWithInt_Int")
+        v.headerContains(", inc)(void)")
+        v.headerContains(", incWithInt)(")
+        v.headerContains(", incWithInt_Int)(")
     }
 
     @Test fun objectSingleMethodNoSuffix() {
@@ -63,7 +63,7 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun only(): Int = 42
             }
         """)
-        v.headerContains("test_Main_O_only")
+        v.headerContains(", only)(void)")
     }
 
     // ── Class overloads ────────────────────────────────────────────
@@ -75,8 +75,8 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun log(code: Int) {}
             }
         """)
-        v.headerContains(", logWithString)(CLS*")
-        v.headerContains(", logWithInt)(CLS*")
+        v.headerContains(", logWithString)(KTC_TYPE_NAME*")
+        v.headerContains(", logWithInt)(KTC_TYPE_NAME*")
     }
 
     @Test fun classOverloadTypeMatching() {
@@ -95,7 +95,7 @@ class OverloadUnitTest : TranspilerTestBase() {
                 fun only(): Int = 42
             }
         """)
-        v.headerContains(", only)(CLS*")
+        v.headerContains(", only)(KTC_TYPE_NAME*")
     }
 
     // ── Private overloads ──────────────────────────────────────────
@@ -135,7 +135,7 @@ class OverloadUnitTest : TranspilerTestBase() {
 
     @Test fun regularClassHasEquals() {
         val v = transpileMain("", "class C(val x: Int)")
-        v.headerContains("KTC_METHOD(ktc_Bool, equals)(CLS a, CLS b)")
+        v.headerContains("KTC_METHOD(ktc_Bool, equals)(KTC_TYPE_NAME a, KTC_TYPE_NAME b)")
     }
 
     @Test fun dataClassNotEqualsGeneratesNegatedEquals() {

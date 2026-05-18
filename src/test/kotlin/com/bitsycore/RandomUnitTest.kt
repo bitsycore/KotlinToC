@@ -15,7 +15,7 @@ class RandomUnitTest : TranspilerTestBase() {
 	@Test fun randomStructDeclaredInHeader() {
 		val vResult = transpileStdlibFile("Random.kt")
 		vResult.headerContains("KTC_TLS_OBJECT(")              // TLS singleton macro
-		vResult.headerContains("#define CLS ktc_std_Random")   // CLS define
+		vResult.headerContains("#define KTC_TYPE_NAME ktc_std_Random")   // KTC_TYPE_NAME define
 	}
 
 	@Test fun randomExternDeclaredInHeader() {
@@ -26,22 +26,22 @@ class RandomUnitTest : TranspilerTestBase() {
 
 	@Test fun randomNextIntDeclaredInHeader() {
 		val vResult = transpileStdlibFile("Random.kt")
-		vResult.headerContains("ktc_std_Random_nextIntWithInt(")
+		vResult.headerContains(", nextIntWithInt)(")
 	}
 
 	@Test fun randomNextFloatDeclaredInHeader() {
 		val vResult = transpileStdlibFile("Random.kt")
-		vResult.headerContains("ktc_std_Random_nextFloat(")
+		vResult.headerContains(", nextFloat)(")
 	}
 
 	@Test fun randomNextDoubleDeclaredInHeader() {
 		val vResult = transpileStdlibFile("Random.kt")
-		vResult.headerContains("ktc_std_Random_nextDouble(")
+		vResult.headerContains(", nextDouble)(")
 	}
 
 	@Test fun randomNextBooleanDeclaredInHeader() {
 		val vResult = transpileStdlibFile("Random.kt")
-		vResult.headerContains("ktc_std_Random_nextBoolean(")
+		vResult.headerContains(", nextBoolean)(")
 	}
 
 	// ── Init body (srand in ensure_init, in ktc package source) ──────

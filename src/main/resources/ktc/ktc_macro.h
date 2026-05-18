@@ -32,9 +32,9 @@
 /*
  * Two-step expansion for KTC_RELATED and KTC_METHOD:
  * The ## operator suppresses pre-expansion of its operands, so passing
- * CLS directly to a macro that uses T##_##NAME would paste the literal
- * token "CLS" instead of its expansion. The extra indirection level
- * (__KTC_RELATED_ / __KTC_METHOD_) forces CLS to be fully expanded as
+ * KTC_TYPE_NAME directly to a macro that uses T##_##NAME would paste the literal
+ * token "KTC_TYPE_NAME" instead of its expansion. The extra indirection level
+ * (__KTC_RELATED_ / __KTC_METHOD_) forces KTC_TYPE_NAME to be fully expanded as
  * a normal argument before it reaches the ##.
  */
 
@@ -45,7 +45,7 @@
 	__IMPL_KTC_RELATED(T, NAME)
 
 #define KTC_RELATED(NAME) \
-	__KTC_RELATED_(CLS, NAME)
+	__KTC_RELATED_(KTC_TYPE_NAME, NAME)
 
 #define __IMPL_KTC_METHOD(RETURN, T, NAME) \
 	RETURN T##_##NAME
@@ -54,7 +54,7 @@
 	__IMPL_KTC_METHOD(RETURN, T, NAME)
 
 #define KTC_METHOD(RETURN, NAME) \
-	__KTC_METHOD_(RETURN, CLS, NAME)
+	__KTC_METHOD_(RETURN, KTC_TYPE_NAME, NAME)
 
 /* =========================================================
  * Optional helpers
@@ -96,15 +96,15 @@
 /*
  * Paste helper: expands T fully (since it arrives without ##) then appends _vt.
  * Needed because ## suppresses pre-expansion of its operands — without this
- * indirection, CLS_##_vt would paste the literal token "CLS" instead of
- * the expanded type name like "ktc_std_Allocator".
+ * indirection, KTC_TYPE_NAME_##_vt would paste the literal token "KTC_TYPE_NAME"
+ * instead of the expanded type name like "ktc_std_Allocator".
  */
 #define __KTC_IFACE_VT_IMPL(T) T##_vt
 #define __KTC_IFACE_VT(T) __KTC_IFACE_VT_IMPL(T)
 
 /*
- * Two-step helper so CLS and CLS_OPT are fully expanded before ## pasting.
- * CLS_ and CLS_OPT_ receive the already-expanded values of CLS / CLS_OPT.
+ * Two-step helper so KTC_TYPE_NAME and KTC_OPT_TYPE_NAME are fully expanded before ## pasting.
+ * CLS_ and CLS_OPT_ receive the already-expanded values of KTC_TYPE_NAME / KTC_OPT_TYPE_NAME.
  * __KTC_IFACE_VT(CLS_) forces CLS_ to be expanded before the _vt paste.
  */
 #define __KTC_INTERFACE_IMPL(CLS_, CLS_OPT_, VTABLE_BODY, CONCRETE_TYPES) \
@@ -118,12 +118,12 @@
 
 /*
  * KTC_INTERFACE(VTABLE_BODY, CONCRETE_TYPES): defines a complete interface type.
- * Requires CLS and CLS_OPT to be #defined before invocation.
+ * Requires KTC_TYPE_NAME and KTC_OPT_TYPE_NAME to be #defined before invocation.
  * VTABLE_BODY is the { ... } struct body with function-pointer declarations (;-separated).
  * CONCRETE_TYPES is an X-macro listing every concrete implementor: #define CLS_TYPES(X) X(T1) X(T2)
  */
 #define KTC_INTERFACE(VTABLE_BODY, CONCRETE_TYPES) \
-	__KTC_INTERFACE_IMPL(CLS, CLS_OPT, VTABLE_BODY, CONCRETE_TYPES)
+	__KTC_INTERFACE_IMPL(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME, VTABLE_BODY, CONCRETE_TYPES)
 
 // ===================================================================
 // DEFINITIONS MACROS
@@ -177,15 +177,15 @@
 /*
  * Paste helper for the _t suffix used by object singleton struct types.
  * The ## operator suppresses pre-expansion of its operand, so a single-level
- * CLS_##_t would paste the literal token "CLS" instead of its expanded value.
+ * KTC_TYPE_NAME_##_t would paste the literal token "KTC_TYPE_NAME" instead of its expanded value.
  * Two levels of indirection force full expansion before the ## paste.
  */
 #define __KTC_OBJ_T_IMPL(T) T##_t
 #define __KTC_OBJ_T(T) __KTC_OBJ_T_IMPL(T)
 
 /*
- * KTC_OBJECT(BODY): defines a singleton object struct (CLS_t) and its extern instance.
- * Requires CLS to be #defined before invocation.
+ * KTC_OBJECT(BODY): defines a singleton object struct (KTC_TYPE_NAME_t) and its extern instance.
+ * Requires KTC_TYPE_NAME to be #defined before invocation.
  * BODY is the { ... } struct body.
  */
 #define __KTC_OBJECT_IMPL(CLS_, BODY) \
@@ -193,7 +193,7 @@
 	extern __KTC_OBJ_T(CLS_) CLS_
 
 #define KTC_OBJECT(BODY) \
-	__KTC_OBJECT_IMPL(CLS, BODY)
+	__KTC_OBJECT_IMPL(KTC_TYPE_NAME, BODY)
 
 /*
  * KTC_TLS_OBJECT(BODY): same as KTC_OBJECT but the extern instance is thread-local.
@@ -203,22 +203,22 @@
 	extern ktc_core_tls __KTC_OBJ_T(CLS_) CLS_
 
 #define KTC_TLS_OBJECT(BODY) \
-	__KTC_TLS_OBJECT_IMPL(CLS, BODY)
+	__KTC_TLS_OBJECT_IMPL(KTC_TYPE_NAME, BODY)
 
 /*
- * KTC_TYPE_ID(ID): defines CLS_TYPE_ID as an enum constant.
- * Requires CLS to be #defined before invocation.
+ * KTC_TYPE_ID(ID): defines KTC_TYPE_NAME_TYPE_ID as an enum constant.
+ * Requires KTC_TYPE_NAME to be #defined before invocation.
  * Uses enum instead of #define so the constant is scoped and type-safe.
  * Three levels of indirection are required: ## suppresses pre-expansion of its
- * operands, so CLS must be fully expanded before reaching the ## paste step.
- * Level 1 (KTC_TYPE_ID): passes CLS as a non-parameter token so it expands during rescan.
+ * operands, so KTC_TYPE_NAME must be fully expanded before reaching the ## paste step.
+ * Level 1 (KTC_TYPE_ID): passes KTC_TYPE_NAME as a non-parameter token so it expands during rescan.
  * Level 2 (__IMPL_KTC_TYPE_ID): receives the expanded name, forwards without ##.
  * Level 3 (__IMPL_KTC_TYPE_ID_2): performs the ## paste on the already-expanded name.
  */
 #define __IMPL_KTC_TYPE_ID_2(NAME, ID) \
 	enum { NAME##_TYPE_ID = ID };
 #define __IMPL_KTC_TYPE_ID(NAME, ID) __IMPL_KTC_TYPE_ID_2(NAME, ID)
-#define KTC_TYPE_ID(ID) __IMPL_KTC_TYPE_ID(CLS, ID)
+#define KTC_TYPE_ID(ID) __IMPL_KTC_TYPE_ID(KTC_TYPE_NAME, ID)
 
 /* =========================================================
  * Type-ID constants and read helper

@@ -16,7 +16,7 @@ class ConstructorUnitTest : TranspilerTestBase() {
     @Test
     fun emptyPrimaryConstructor() {
         val r = transpileMain("val e = Empty()", decls = "class Empty")
-        r.headerContains("KTC_METHOD(CLS, primaryConstructor)(void)")
+        r.headerContains("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)(void)")
         r.sourceContains("test_Main_Empty_primaryConstructor()")
     }
 
@@ -213,7 +213,7 @@ class ConstructorUnitTest : TranspilerTestBase() {
     @Test
     fun genericClassCtor() {
         val r = transpileMain("val b = Box<Int>(42)", decls = "class Box<T>(val item: T)")
-        r.headerContains("KTC_METHOD(CLS, primaryConstructor)(ktc_Int item)")
+        r.headerContains("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)(ktc_Int item)")
         r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
     }
 

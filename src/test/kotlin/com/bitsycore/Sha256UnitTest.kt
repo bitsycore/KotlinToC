@@ -21,7 +21,7 @@ class Sha256UnitTest : TranspilerTestBase() {
             }
         """)
         v.headerContains("KTC_OBJECT(")                       // macro-based struct + extern
-        v.headerContains("#define CLS test_Main_Sha256")      // CLS define
+        v.headerContains("#define KTC_TYPE_NAME test_Main_Sha256")      // KTC_TYPE_NAME define
         v.sourceContains("test_Main_Sha256_t test_Main_Sha256 = {0};")
     }
 
@@ -40,7 +40,7 @@ class Sha256UnitTest : TranspilerTestBase() {
                 fun make(): Inner = Inner(42)
             }
         """)
-        v.headerContains("test_Main_Obj\$Inner test_Main_Obj_make()")
+        v.headerContains("KTC_METHOD(test_Main_Obj\$Inner, make)(void)")
     }
 
     @Test fun sha256ContextClassEmitted() {
@@ -49,8 +49,8 @@ class Sha256UnitTest : TranspilerTestBase() {
                 class Inner(val x: Int)
             }
         """)
-        v.headerContains("#define CLS test_Main_Obj\$Inner")
-        v.headerContains("KTC_METHOD(CLS, primaryConstructor)")
+        v.headerContains("#define KTC_TYPE_NAME test_Main_Obj\$Inner")
+        v.headerContains("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)")
     }
 
     @Test fun sha256PrivateMethodHasPRIV() {
@@ -111,7 +111,7 @@ class Sha256UnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        v.headerContains("KTC_METHOD(void, finalizeHash)(CLS* \$self, ktc_Byte* \$out)")
+        v.headerContains("KTC_METHOD(void, finalizeHash)(KTC_TYPE_NAME* \$self, ktc_Byte* \$out)")
     }
 
     @Test fun sha256InitFlagStatic() {
