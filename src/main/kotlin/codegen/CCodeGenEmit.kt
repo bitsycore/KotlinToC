@@ -1849,54 +1849,38 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 
     maybeEmitFunBanner(f.name)
 
-    if (f.name != "main") {
-        val paramSig = f.params.joinToString(", ") { p -> typeRefToStr(p.type) }
-        val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
-        impl.appendLine("// ══ fun ${f.name}($paramSig)$retSig ($currentSourceFile) ══")
-        impl.appendLine()
-    }
-    val isMain = f.name == "main"
-    val isMainWithArgs = isMain && f.params.size == 1 &&
-            f.params[0].type.name == "Array" &&
-            f.params[0].type.typeArgs.singleOrNull()?.name == "String"
+    val paramSig = f.params.joinToString(", ") { p -> typeRefToStr(p.type) }
+    val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
+    impl.appendLine("// ══ fun ${f.name}($paramSig)$retSig ($currentSourceFile) ══")
+    impl.appendLine()
+    val isMain = f.name == "main"                                       // true for the Kotlin main function
     // Get siblings for overload detection
     val siblings = file.decls.filterIsInstance<FunDecl>()
     val overloadedName = methodName(f, siblings)
     val baseName = if (f.isPrivate) "PRIV_$overloadedName" else overloadedName
 
-    val returnsNullable = !isMain && f.returnType != null && f.returnType.nullable
-    val returnsSizedArray = !isMain && !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
-    val vRetKtcFun   = if (!isMain && f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return
-    val returnsArray = !isMain && !returnsNullable && !returnsSizedArray && (vRetKtcFun?.isArrayLike ?: false)
-    val retResolved  = vRetKtcFun?.toInternalStr ?: f.body?.let { inferBlockType(it) } ?: ""         // string for legacy helpers
+    val returnsNullable = f.returnType != null && f.returnType.nullable
+    val returnsSizedArray = !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
+    val vRetKtcFun   = if (f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return
+    val returnsArray = !returnsNullable && !returnsSizedArray && (vRetKtcFun?.isArrayLike ?: false)
+    val retResolved  = vRetKtcFun?.toInternalStr ?: f.body?.let { inferBlockType(it) } ?: ""  // string for legacy helpers
     val optRetCType = if (returnsNullable) optCTypeName(retResolved) else ""
-    val cRet  = if (isMain) "int" else if (returnsSizedArray) "void" else if (returnsNullable && vRetKtcFun is KtcType.Any) "ktc_Any" else if (returnsNullable) optRetCType else if (retResolved.isNotEmpty()) cTypeStr(retResolved) else "void"
-    val cName = if (isMain) "main" else funCName(baseName)
-    val params = when {
-        isMainWithArgs -> "int argc, char** argv"
-        isMain         -> "void"
-        else           -> {
-            val base = expandParams(f.params)
-            val extra = when {
-                returnsSizedArray -> {
-                    val elemCType = cTypeStr(vRetKtcFun!!.asArr!!.elem)
-                    "$elemCType* \$out"
-                }
-                returnsArray -> "ktc_Int* \$len_out"
-                else -> null
-            }
-            if (extra != null) {
-                if (base.isEmpty()) extra else "$base, $extra"
-            } else base
+    val cRet  = if (returnsSizedArray) "void" else if (returnsNullable && vRetKtcFun is KtcType.Any) "ktc_Any"
+                else if (returnsNullable) optRetCType else if (retResolved.isNotEmpty()) cTypeStr(retResolved) else "void"
+    val cName = funCName(baseName)                                      // always prefixed, including main
+    val base = expandParams(f.params)
+    val extra = when {
+        returnsSizedArray -> {
+            val elemCType = cTypeStr(vRetKtcFun!!.asArr!!.elem)
+            "$elemCType* \$out"
         }
+        returnsArray -> "ktc_Int* \$len_out"
+        else -> null
     }
+    val params = if (extra != null) { if (base.isEmpty()) extra else "$base, $extra" } else base
 
     hdr.appendLine("$cRet $cName($params);")
     impl.appendLine("$cRet $cName($params) {")
-
-    if (isMain) {
-        impl.appendLine("    ktc_core_mainInit();")
-    }
 
     val prevState = saveFunState()
     val prevIsMain = currentFnIsMain
@@ -1910,35 +1894,35 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
     }
     currentFnReturnType = retResolved
     currentFnReturnKtcType = vRetKtcFun
-    currentFnIsMain = isMain
+    currentFnIsMain = false                                             // main is now a regular void function
 
     pushScope()
-    if (isMainWithArgs) {
-        // Convert argc/argv → ktc_StringArray (skip argv[0] = program name)
-        val argName = f.params[0].name
-        impl.appendLine("    ktc_String \$args_buf[256];")
-        impl.appendLine("    ktc_Int \$nargs = (argc > 1) ? (ktc_Int)(argc - 1) : 0;")
-        impl.appendLine("    if (\$nargs > 256) \$nargs = 256;")
-        impl.appendLine("    for (ktc_Int \$i = 0; \$i < \$nargs; \$i++) {")
-        impl.appendLine("        \$args_buf[\$i] = (ktc_String){argv[\$i + 1], (ktc_Int)strlen(argv[\$i + 1])};")
-        impl.appendLine("    }")
-        impl.appendLine("    ktc_String* $argName = \$args_buf;")
-        impl.appendLine("    ktc_Int ${argName}\$len = \$nargs;")
-        defineVar(argName, "StringArray")
-    } else {
-        for (p in f.params) {
-            val vKtcFunParam = resolveTypeName(p.type)                  // KtcType of this parameter
-            val vFunPStr     = vKtcFunParam.toInternalStr               // string for vararg/nullable/isValueNullable
-            defineVar(p.name, when {
-                p.isVararg -> "${vFunPStr}Array"  // vararg params are arrays (ptr + $len)
-                p.type.nullable -> "${vFunPStr}?"
-                else -> vFunPStr
-            })
-            if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcFunParam))) markOptional(p.name)
-        }
+    for (p in f.params) {
+        val vKtcFunParam = resolveTypeName(p.type)                      // KtcType of this parameter
+        val vFunPStr     = vKtcFunParam.toInternalStr                   // string for vararg/nullable/isValueNullable
+        defineVar(p.name, when {
+            p.isVararg -> "${vFunPStr}Array"  // vararg params are arrays (ptr + $len)
+            p.type.nullable -> "${vFunPStr}?"
+            else -> vFunPStr
+        })
+        if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcFunParam))) markOptional(p.name)
     }
     val savedTrampolined7 = trampolinedParams.toHashSet(); trampolinedParams.clear()
-    if (!isMain) emitArrayParamCopies(f.params, "    ")
+    if (isMain) {
+        /* main's array params come from main.c already laid out in memory — alias without copying. */
+        for (vP in f.params) {
+            if (!isRawArrayTypeRef(vP.type)) continue
+            val vKtcMP   = resolveTypeName(vP.type)
+            val vArrElem = vKtcMP.asArr!!.elem                           // element KtcType
+            val vECType  = if (vArrElem is KtcType.Nullable)
+                               optCTypeName(vArrElem.inner.toInternalStr)
+                           else cTypeStr(vArrElem)
+            impl.appendLine("    $vECType* local\$${vP.name} = ($vECType*)${vP.name}.data;")
+            trampolinedParams += vP.name
+            }
+        } else {
+        emitArrayParamCopies(f.params, "    ")
+        }
     val savedDefers = deferStack.toList()
     deferStack.clear()
 
@@ -1955,7 +1939,6 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
         impl.appendLine("    fflush(stdout);")
         impl.appendLine("    ktc_core_mem_report();")
     }
-    if (isMain) impl.appendLine("    return 0;")
     else if (returnsNullable && lastStmt !is ReturnStmt) {
         if (vRetKtcFun is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
         else impl.appendLine("    return ${optNone(optRetCType)};")

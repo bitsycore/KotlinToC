@@ -168,12 +168,12 @@ class FunctionsUnitTest : TranspilerTestBase() {
 
     @Test fun mainWithArgs() {
         val r = transpileMain("println(args.size)")
-        r.sourceContains("int main(int argc, char** argv)")
-        r.sourceContains("ktc_String")  // args buffer setup
+        r.sourceContains("test_Main_main(ktc_ArrayTrampoline args")
+        r.sourceContains("local\$args")  // alias without copy
     }
 
-    @Test fun mainBareReturnEmitsZero() {
+    @Test fun mainBareReturnEmitsReturn() {
         val r = transpileMain("return")
-        r.sourceContains("return 0;")
+        r.sourceContains("return;")
     }
 }

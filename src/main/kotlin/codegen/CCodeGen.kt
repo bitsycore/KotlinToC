@@ -60,7 +60,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 
     /* Fallback C name: prefix + name. Used only for names not found in TypeDef maps or funNames. */
     internal fun pfx(inName: String): String {
-        if (inName == "main") return inName
         if (inName.startsWith("ktc_")) return inName
         return "$prefix$inName"
         }
@@ -72,7 +71,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     Falls back to pfx() for builtins and names not yet in TypeDef tables.
     */
     internal fun typeFlatName(inName: String): String {  // type or object name → C flat name
-        if (inName == "main") return inName
         if (inName.startsWith("ktc_")) return inName
         classes[inName]?.let { return it.flatName }
         objects[inName]?.let { return it.flatName }
@@ -88,7 +86,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     Falls back to pfx() for generic function instantiations (mangled names).
     */
     internal fun funCName(inName: String): String {  // function name → C function name
-        if (inName == "main") return inName
         if (inName.startsWith("ktc_")) return inName
         funNames[inName]?.let { return it }
         return pfx(inName)
@@ -985,13 +982,13 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         for (imp in file.imports) {
             if (imp.startsWith("ktc.std") || imp.startsWith("ktc_std")) continue
             val parts = imp.removeSuffix(".*").split('.')
-            val headerName = parts.joinToString("_")
-            hdr.appendLine("#include \"$headerName.h\"")
+            val headerPath = parts.joinToString("/")
+            hdr.appendLine("#include \"$headerPath/_Package.h\"")
         }
-        // Auto-include ktc/std/ktc_std.h for non-stdlib packages when stdlib is present
+        // Auto-include ktc/std/_Package.h for non-stdlib packages when stdlib is present
         val hasStdlib = allFiles.any { it.pkg == "ktc.std" }
         if (hasStdlib && file.pkg != "ktc.std") {
-            hdr.appendLine("#include \"ktc/std/ktc_std.h\"")
+            hdr.appendLine("#include \"ktc/std/_Package.h\"")
         }
         hdr.appendLine()
 
@@ -1183,40 +1180,58 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         }
 
         // Emit top-level functions, properties, generic funs, star ext funs, and enum values data.
-        // All of these go into the package-level .c file (key "").
-        captureForDecl("") {
-            for (d in file.decls) when (d) {
-                is FunDecl  -> {
-                    if (d.typeParams.isNotEmpty()) continue
-                    if (d.receiver != null && d.receiver.typeArgs.any { it.name == "*" }) continue
-                    if (d.receiver != null && d.receiver.typeArgs.isNotEmpty()
-                        && (genericIfaceDecls.containsKey(d.receiver.name) || genericClassDecls.containsKey(d.receiver.name))) continue
-                    if (d.receiver != null && (d.isInline || d.isInfix)) continue
+        // Each is captured into its own per-source-file buffer (key "|sourceFile.kt").
+        for (d in file.decls) when (d) {
+            is FunDecl  -> {
+                if (d.typeParams.isNotEmpty()) continue
+                if (d.receiver != null && d.receiver.typeArgs.any { it.name == "*" }) continue
+                if (d.receiver != null && d.receiver.typeArgs.isNotEmpty()
+                    && (genericIfaceDecls.containsKey(d.receiver.name) || genericClassDecls.containsKey(d.receiver.name))) continue
+                if (d.receiver != null && (d.isInline || d.isInfix)) continue
+                val vSrcKey = "|${declSourceFile[d.name] ?: sourceFileName}"  // per-source-file buffer key
+                captureForDecl(vSrcKey) {
                     if (d.receiver != null) emitExtensionFun(d) else emitFun(d)
                     }
-                is PropDecl -> emitTopProp(d)
-                else -> {}
                 }
-            for (f in genericFunDecls) emitGenericFunInstantiations(f)
-            for (f in starExtFunDecls) emitStarExtFunInstantiations(f)
-            emitEnumValuesData()
+            is PropDecl -> {
+                val vSrcKey = "|${declSourceFile[d.name] ?: sourceFileName}"  // per-source-file buffer key
+                captureForDecl(vSrcKey) { emitTopProp(d) }
+                }
+            else -> {}
             }
+        for (f in genericFunDecls) {
+            val vSrcKey = "|${declSourceFile[f.name] ?: sourceFileName}"      // per-source-file buffer key
+            captureForDecl(vSrcKey) { emitGenericFunInstantiations(f) }
+            }
+        for (f in starExtFunDecls) {
+            val vSrcKey = "|${declSourceFile[f.name] ?: sourceFileName}"      // per-source-file buffer key
+            captureForDecl(vSrcKey) { emitStarExtFunInstantiations(f) }
+            }
+        captureForDecl("|$sourceFileName") { emitEnumValuesData() }           // enum values data → primary file
 
         // ── Assemble output ────────────────────────────────────────────
         val vSrcName = prefix.trimEnd('_').ifEmpty {
             sourceFileName.removeSuffix(".kt").ifEmpty { "main" }
             }
         val vPkg     = file.pkg ?: ""                                       // Kotlin package string
+        /* Include path for the package header, relative to outDir via -iquote.
+           Examples:  "ktc/std/_Package.h",  "GenericsTest/_Package.h",  "com/example/_Package.h" */
+        val vPkgHeaderPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
+                             else "$vSrcName/_Package.h"
         val vSources = mutableMapOf<String, SourceFile>()                  // filename → SourceFile
 
-        // Package-level .c — top-level functions, generic funs, enum values data
-        val vTopImpl    = perDeclImpl[""]                                   // top-level impl builder
-        val vTopImplFwd = perDeclImplFwd[""]                                // top-level implFwd builder
-        if (vTopImpl != null && vTopImpl.isNotEmpty()) {
+        // Per-source-file top-level .c files (one per .kt source file, key starts with "|")
+        for ((vKey, vTopImpl) in perDeclImpl) {
+            if (!vKey.startsWith("|")) continue
+            if (vTopImpl.isEmpty()) continue
+            val vSrcFull    = vKey.removePrefix("|")                        // e.g. "GenericsTest.kt"
+            val vSrcBase    = vSrcFull.removeSuffix(".kt")                  // e.g. "GenericsTest"
+            val vCFileName  = "${vSrcBase}Kt.c"                             // e.g. "GenericsTestKt.c"
+            val vTopImplFwd = perDeclImplFwd[vKey]
             val vSrc = buildString {
-                appendLine(cSourceFileHeader("top-level", vSrcName, vPkg, vSrcName, sourceFileName))
+                appendLine(cSourceFileHeader("top-level", vSrcFull, vPkg, vSrcName, vSrcFull))
                 appendLine()
-                appendLine("#include \"$vSrcName.h\"")
+                appendLine("#include \"$vPkgHeaderPath\"")
                 appendLine()
                 if (vTopImplFwd != null && vTopImplFwd.isNotEmpty()) {
                     append(vTopImplFwd)
@@ -1224,13 +1239,13 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     }
                 append(vTopImpl)
                 }
-            vSources["$vSrcName.c"] = SourceFile(vSrc, vPkg)
+            vSources[vCFileName] = SourceFile(vSrc, vPkg)
             }
 
         // Per-declaration .c files — one per class / object / enum
         for ((vDeclName, vDeclImpl) in perDeclImpl) {
-            if (vDeclName.isEmpty()) continue   // package-level already handled above
-            if (vDeclImpl.isEmpty()) continue   // nothing was emitted
+            if (vDeclName.startsWith("|")) continue  // per-source-file keys already handled above
+            if (vDeclImpl.isEmpty()) continue        // nothing was emitted
             val vDeclImplFwd = perDeclImplFwd[vDeclName]                    // may be null if no private fwds
 
             val vCi = classes[vDeclName]                                    // ClassInfo if it's a class
@@ -1281,12 +1296,18 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 else -> continue  // unknown declaration type (e.g. generic template) — skip
                 }
 
+            /* Routing pkg header path — used for the instantiator's _Package.h include.
+               For generic instantiations routed to another package (e.g. ktc/std),
+               the include is still the current context's header: that's where the concrete
+               struct definition lives. */
+            val vInstHeaderPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
+                                  else "$vSrcName/_Package.h"
             val vSrc = buildString {
                 appendLine(cSourceFileHeader(vKind, vKtName, vRoutingPkg, vCName, vSrcFile, vInstFrom))
                 appendLine()
                 // Always include the instantiator's header: it holds the concrete struct definition.
-                // For generic instantiations this is the current package's .h, not the template's.
-                appendLine("#include \"$vSrcName.h\"")
+                // For generic instantiations this is the current package's _Package.h, not the template's.
+                appendLine("#include \"$vInstHeaderPath\"")
                 appendLine("#define CLS $vCName")
                 appendLine()
                 if (vDeclImplFwd != null && vDeclImplFwd.isNotEmpty()) {
@@ -1320,6 +1341,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                         is FunDecl -> declSourceFile[d.name] = f.sourceFile
                         is InterfaceDecl -> declSourceFile[d.name] = f.sourceFile
                         is ObjectDecl -> declSourceFile[d.name] = f.sourceFile
+                        is PropDecl -> declSourceFile[d.name] = f.sourceFile
                         else -> {}
                     }
                 }
@@ -1339,7 +1361,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     is ObjectDecl -> { objects[d.name]?.pkg = fpfx; declOrigPkg[d.name] = f.pkg ?: "" }
                     is FunDecl -> {
                         if (d.receiver == null)
-                            funNames[d.name] = if (d.name == "main") "main" else "$fpfx${d.name}"  // cross-file C name
+                            funNames[d.name] = "$fpfx${d.name}"               // cross-file C name
                         }
                     else -> {}
                 }
@@ -1368,7 +1390,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 is ObjectDecl -> objects[d.name]?.pkg = prefix
                 is FunDecl -> {
                     if (d.receiver == null)
-                        funNames[d.name] = if (d.name == "main") "main" else "$prefix${d.name}"  // current-file C name (overrides allFiles)
+                        funNames[d.name] = "$prefix${d.name}"                  // current-file C name (overrides allFiles)
                     }
                 else -> {}
             }

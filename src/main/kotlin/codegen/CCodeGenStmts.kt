@@ -928,7 +928,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         }
         // Check: bare 'return' (no value) from a non-Unit non-Any function
         if (s.value == null && vRetBase != "" && vRetBase != "Unit" && vRetBase != "Any" &&
-            !currentFnReturnsArray && !currentFnReturnsSizedArray && !currentFnIsMain) {
+            !currentFnReturnsArray && !currentFnReturnsSizedArray) {
             codegenError("A 'return' expression must return a value of type '$vRetBase'")
         }
     }
@@ -1063,7 +1063,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             }
         } else {
             emitDeferredBlocks(ind)
-            impl.appendLine(if (currentFnIsMain) "${ind}return 0;" else "${ind}return;")
+            impl.appendLine("${ind}return;")
         }
     }
 }
