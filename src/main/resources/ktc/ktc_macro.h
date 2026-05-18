@@ -110,7 +110,7 @@
 #define __KTC_INTERFACE_IMPL(CLS_, CLS_OPT_, VTABLE_BODY, CONCRETE_TYPES) \
 	typedef struct __KTC_IFACE_VT(CLS_) VTABLE_BODY __KTC_IFACE_VT(CLS_); \
 	typedef struct CLS_ { \
-		ktc_core_AnySupertype __base; \
+		ktc_core_AnyData __base; \
 		union { CONCRETE_TYPES(KTC_UNION_MEMBER) } data; \
 		const __KTC_IFACE_VT(CLS_)* vt; \
 	} CLS_; \

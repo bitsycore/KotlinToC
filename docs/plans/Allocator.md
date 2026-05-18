@@ -165,7 +165,7 @@ typedef struct ktc_std_Allocator_vt {
 } ktc_std_Allocator_vt;
 
 typedef struct {
-    ktc_core_AnySupertype __base;       // typeId
+    ktc_core_AnyData __base;       // typeId
     const ktc_std_Allocator_vt* vt;
 } ktc_std_Allocator;
 ```

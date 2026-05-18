@@ -3280,29 +3280,52 @@ internal fun CCodeGen.templateMaxLen(tmpl: StrTemplateExpr): Int? {
 internal fun CCodeGen.genToStringKtc(recv: String, type: KtcType): String = genToString(recv, type.toInternalStr)
 
 internal fun CCodeGen.genToString(recv: String, type: String): String {
-    if (classes.containsKey(type) && classes[type]!!.isData) {
-        val maxLen = toStringMaxLen(type)
+    val base = type.removeSuffix("*").removeSuffix("?")
+    val cName = typeFlatName(base)
+    val isPtr = parseResolvedTypeName(type) is KtcType.Ptr
+
+    // Data class: call ClassName_toString(&tmp, &sb)
+    if (classes.containsKey(base) && classes[base]!!.isData) {
+        val maxLen = toStringMaxLen(base)
         if (maxLen != null && maxLen <= 512) {
             // Single pass with fixed stack buffer (maxLen known at compile time)
             val buf = tmp()
             val vTmp = tmp()
-            preStmts += "${cTypeStr(type)} $vTmp = ($recv);"
+            preStmts += "${cTypeStr(base)} $vTmp = ($recv);"
             preStmts += "ktc_Char ${buf}[$maxLen];"
             preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
-            preStmts += "${typeFlatName(type)}_toString(&$vTmp, &${buf}_sb);"
+            preStmts += "${cName}_toString(&$vTmp, &${buf}_sb);"
             return "ktc_core_sb_to_string(&${buf}_sb)"
         }
         // Two-pass with alloca (unbounded fields or too large)
         val buf = tmp()
         val vTmp = tmp()
-        preStmts += "${cTypeStr(type)} $vTmp = ($recv);"
+        preStmts += "${cTypeStr(base)} $vTmp = ($recv);"
         preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
-        preStmts += "${typeFlatName(type)}_toString(&$vTmp, &${buf}_sb);"
+        preStmts += "${cName}_toString(&$vTmp, &${buf}_sb);"
         preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
         preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
-        preStmts += "${typeFlatName(type)}_toString(&$vTmp, &${buf}_sb);"
+        preStmts += "${cName}_toString(&$vTmp, &${buf}_sb);"
         return "ktc_core_sb_to_string(&${buf}_sb)"
     }
+
+    // Non-data class with explicit toString override: call ClassName_toString(&self, sb)
+    if (classes.containsKey(base) && classes[base]!!.methods.any { it.name == "toString" }) {
+        val buf = tmp()
+        val selfExpr = if (isPtr) recv else "&$recv"
+        preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
+        preStmts += "${cName}_toString($selfExpr, &${buf}_sb);"
+        preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
+        preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
+        preStmts += "${cName}_toString($selfExpr, &${buf}_sb);"
+        return "ktc_core_sb_to_string(&${buf}_sb)"
+    }
+
+    // Object with explicit toString override: call ObjectName_toString() → String
+    if (objects.containsKey(base) && objects[base]!!.methods.any { it.name == "toString" }) {
+        return "${cName}_toString()"
+    }
+
     return when (type) {
         "Byte" -> {
             val buf = tmp()
@@ -3411,14 +3434,18 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
             val base = type.removeSuffix("*").removeSuffix("?")
             val hasHash = classes.containsKey(base) || objects.containsKey(base)
             val hasIface = interfaces.containsKey(base)
+            val isObj   = objects.containsKey(base)
             val maxLen = toStringMaxLen(base)  // name@XXXXXXXX
             val sz = if (maxLen != null) maxLen + 2 else 64
             if (hasHash) {
                 val cName = typeFlatName(base)
                 val buf = tmp()
-                val selfExpr = if (parseResolvedTypeName(type) is KtcType.Ptr) recv else "&$recv"
+                val isPtr = parseResolvedTypeName(type) is KtcType.Ptr
+                // Objects: hashCode takes no args; classes: hashCode takes &self
+                val hcExpr = if (isObj) "${cName}_hashCode()"
+                             else "${cName}_hashCode(${if (isPtr) recv else "&$recv"})"
                 preStmts += "ktc_Char ${buf}[$sz];"
-                preStmts += "snprintf($buf, $sz, \"%s@%x\", \"${ktDisplayName(base)}\", ${cName}_hashCode($selfExpr));"
+                preStmts += "snprintf($buf, $sz, \"%s@%x\", \"${ktDisplayName(base)}\", $hcExpr);"
                 "ktc_core_str($buf)"
             } else if (hasIface) {
                 val buf = tmp()
@@ -3462,10 +3489,13 @@ internal fun CCodeGen.genToStringInto(recv: String, type: String, sb: String): S
             val hasIface = interfaces.containsKey(base)
             if (hasHash) {
                 val cName = typeFlatName(base)
-                val selfExpr = if (parseResolvedTypeName(type) is KtcType.Ptr) recv else "&$recv"
+                val isPtr  = parseResolvedTypeName(type) is KtcType.Ptr
+                val isObj  = objects.containsKey(base)
+                val hcExpr = if (isObj) "${cName}_hashCode()"
+                             else "${cName}_hashCode(${if (isPtr) recv else "&$recv"})"
                 val buf = tmp()
                 preStmts += "ktc_Char ${buf}[64];"
-                preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(base)}\", ${cName}_hashCode($selfExpr));"
+                preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(base)}\", $hcExpr);"
                 preStmts += "ktc_core_sb_append_cstr(&$sb, $buf);"
             } else if (hasIface) {
                 val buf = tmp()

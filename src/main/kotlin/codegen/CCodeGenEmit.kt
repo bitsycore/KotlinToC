@@ -1154,6 +1154,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
 
     val vTls = if (d.name in tlsObjects) "ktc_core_tls " else ""  // TLS qualifier string for .c file
     hdr.appendLine(if (vTls.isNotEmpty()) "KTC_TLS_OBJECT(" else "KTC_OBJECT(")
+    hdr.appendLine("    ktc_core_AnyData __base;")
     if (props.isEmpty()) hdr.appendLine("    ktc_Char _dummy;")
     for (p in props) {
         val pType     = p.type ?: inferInitType(p.init)
@@ -1195,10 +1196,14 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl.appendLine("void ${cName}_\$ensure_init(void) {")
     impl.appendLine("    if (${cName}\$init) return;")
     impl.appendLine("    ${cName}\$init = true;")
+    impl.appendLine("    $cName.__base.typeId = ${cName}_TYPE_ID;")
     val prevObject = currentObject
     currentObject = d.name
     pushScope()
-    for (p in props) defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
+    for (p in props) {
+        defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
+        if (p.mutable) markMutable(p.name)
+    }
     for (p in props) {
         if (p.init != null) {
             val pType       = p.type ?: inferInitType(p.init)
@@ -1279,7 +1284,10 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             currentFnSizedArrayElemType = cTypeStr(vRetKtcM!!.asArr!!.elem)
         }
         pushScope()
-        for (p in props) defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
+        for (p in props) {
+            defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
+            if (p.mutable) markMutable(p.name)
+        }
         for (p in m.params) {
             val vKtcObjParam = resolveTypeName(p.type)             // KtcType of this method parameter
             defineVar(p.name, if (p.isVararg) "${vKtcObjParam.toInternalStr}Array" else vKtcObjParam.toInternalStr)
@@ -1304,9 +1312,29 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         emitInterfaceVtablesForClass(d.name, d.superInterfaces, declsOnly = true)
     }
 
-    // Any cast — same treatment as class: AnyVt + as_Any
+    // Implements Any section — implicit inheritance for objects
+    val vHasToString = methods.any { it.name == "toString" }
+    val vHasHashCode = methods.any { it.name == "hashCode" }
+    val vHasDispose   = methods.any { it.name == "dispose" }
+
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
+    if (!vHasToString) {
+        val vMaxLen = toStringMaxLen(d.name)
+        val vMaxComment = if (vMaxLen != null) " // max output: $vMaxLen chars" else ""
+        hdr.appendLine("KTC_METHOD(void, toString)(ktc_StrBuf* sb);${vMaxComment}")
+    }
+    if (!vHasHashCode) {
+        hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(void);")
+    }
+    if (!vHasDispose) {
+        if (disposedMode != "NO" || doubleDisposeMode != "NO") {
+            hdr.appendLine("KTC_METHOD(void, dispose)(void);")
+        } else {
+            hdr.appendLine("#define ${cName}_dispose() ((void)0)")
+        }
+    }
+
     hdr.appendLine()
     hdr.appendLine("// ════ Any cast ════")
     hdr.appendLine("extern const ktc_core_AnyVt KTC_RELATED(AnyVt);")
@@ -1316,64 +1344,100 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     hdr.appendLine("#undef KTC_TYPE_NAME")
     hdr.appendLine(classBlockFooter(vKind, vDisplayName, emptyList()))
 
-    emitObjectAnyCast(d, cName)
-}
+    // ── Impl: auto-generated Any methods ──
+    val vDisplaySimple = d.name.substringAfterLast('$')
+    impl.appendLine()
+    impl.appendLine(boxSection("implements Any"))
+    impl.appendLine()
 
-/*
-Emit the "cast to Any" section for an object (singleton).
-Objects are singletons so their Any wrappers are inline implementations rather than
-thin wrappers over named methods (which objects don't have for toString/hashCode/etc.).
-*/
-internal fun CCodeGen.emitObjectAnyCast(inDecl: ObjectDecl, inCName: String) {
-    val vDisplaySimple = inDecl.name.substringAfterLast('$') // simple name for toString output
+    if (!vHasToString) {
+        impl.appendLine("// ══ fun toString() ══")
+        impl.appendLine("void ${cName}_toString(ktc_StrBuf* sb) {")
+        impl.appendLine("    ${cName}_\$ensure_init();")
+        val vMaxLen = toStringMaxLen(d.name)
+        if (vMaxLen != null && vMaxLen <= 64) {
+            impl.appendLine("    ktc_Char buf[$vMaxLen];")
+            impl.appendLine("    snprintf(buf, $vMaxLen, \"%s@%x\", \"$vDisplaySimple\", ${cName}_hashCode());")
+            impl.appendLine("    ktc_core_sb_append_cstr(sb, buf);")
+        } else {
+            impl.appendLine("    ktc_Char buf[64];")
+            impl.appendLine("    snprintf(buf, 64, \"%s@%x\", \"$vDisplaySimple\", ${cName}_hashCode());")
+            impl.appendLine("    ktc_core_sb_append_cstr(sb, buf);")
+        }
+        impl.appendLine("}")
+        impl.appendLine()
+    }
 
+    if (!vHasHashCode) {
+        impl.appendLine("// ══ fun hashCode(): Int ══")
+        impl.appendLine("ktc_Int ${cName}_hashCode() {")
+        impl.appendLine("    ${cName}_\$ensure_init();")
+        impl.appendLine("    return (ktc_Int)${cName}_TYPE_ID;")
+        impl.appendLine("}")
+        impl.appendLine()
+    }
+
+    if (!vHasDispose && (disposedMode != "NO" || doubleDisposeMode != "NO")) {
+        impl.appendLine("// ══ fun dispose() ══")
+        impl.appendLine("void ${cName}_dispose() {")
+        impl.appendLine("    ${cName}_\$ensure_init();")
+        impl.appendLine("    KTC_MARK_DISPOSED(&$cName);")
+        impl.appendLine("}")
+        impl.appendLine()
+    }
+
+    // ── Any cast wrappers (delegate to named methods) ──
     impl.appendLine(boxSection("cast to Any"))
     impl.appendLine()
 
-    // toString: "ObjectName@typeId" (type ID is stable for singletons)
-    impl.appendLine("static void ${inCName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
+    impl.appendLine("static void ${cName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
     impl.appendLine("    (void)\$self;")
-    impl.appendLine("    ktc_Char buf[64];")
-    impl.appendLine("    snprintf(buf, 64, \"%s@%x\", \"$vDisplaySimple\", (unsigned)${inCName}_TYPE_ID);")
-    impl.appendLine("    ktc_core_sb_append_cstr(sb, buf);")
+    if (vHasToString) {
+        // User-defined toString returns String; call it and append to buffer
+        impl.appendLine("    ktc_String s = ${cName}_toString();")
+        impl.appendLine("    ktc_core_sb_append_str(sb, s);")
+    } else {
+        impl.appendLine("    ${cName}_toString(sb);")
+    }
     impl.appendLine("}")
     impl.appendLine()
 
-    // hashCode: type ID is a stable identity hash for singletons
-    impl.appendLine("static ktc_Int ${inCName}_hashCode_any(void* \$self) {")
+    impl.appendLine("static ktc_Int ${cName}_hashCode_any(void* \$self) {")
     impl.appendLine("    (void)\$self;")
-    impl.appendLine("    return (ktc_Int)${inCName}_TYPE_ID;")
+    impl.appendLine("    return ${cName}_hashCode();")
     impl.appendLine("}")
     impl.appendLine()
 
-    // equals: pointer equality (same singleton pointer = equal)
-    impl.appendLine("static ktc_Bool ${inCName}_equals_any(void* \$self, void* other) {")
+    impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
     impl.appendLine("    return \$self == other;")
     impl.appendLine("}")
     impl.appendLine()
 
-    // dispose: no-op for singletons
-    impl.appendLine("static void ${inCName}_dispose_any(void* \$self) { (void)\$self; }")
+    impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")
+    impl.appendLine("    (void)\$self;")
+    if (vHasDispose || disposedMode != "NO" || doubleDisposeMode != "NO") {
+        impl.appendLine("    ${cName}_dispose();")
+    }
+    impl.appendLine("}")
     impl.appendLine()
 
-    // copyWith: return same pointer (singletons are not copied)
-    impl.appendLine("static void* ${inCName}_copyWith_any(void* \$self, void* alloc) {")
+    impl.appendLine("static void* ${cName}_copyWith_any(void* \$self, void* alloc) {")
     impl.appendLine("    (void)alloc;")
     impl.appendLine("    return \$self;")
     impl.appendLine("}")
     impl.appendLine()
 
-    impl.appendLine("const ktc_core_AnyVt ${inCName}_AnyVt = {")
-    impl.appendLine("    (void (*)(void*, void*)) ${inCName}_toString_any,")
-    impl.appendLine("    (ktc_Int (*)(void*)) ${inCName}_hashCode_any,")
-    impl.appendLine("    (ktc_Bool (*)(void*, void*)) ${inCName}_equals_any,")
-    impl.appendLine("    (void (*)(void*)) ${inCName}_dispose_any,")
-    impl.appendLine("    (void* (*)(void*, void*)) ${inCName}_copyWith_any,")
+    impl.appendLine("const ktc_core_AnyVt ${cName}_AnyVt = {")
+    impl.appendLine("    (void (*)(void*, void*)) ${cName}_toString_any,")
+    impl.appendLine("    (ktc_Int (*)(void*)) ${cName}_hashCode_any,")
+    impl.appendLine("    (ktc_Bool (*)(void*, void*)) ${cName}_equals_any,")
+    impl.appendLine("    (void (*)(void*)) ${cName}_dispose_any,")
+    impl.appendLine("    (void* (*)(void*, void*)) ${cName}_copyWith_any,")
     impl.appendLine("};")
     impl.appendLine()
 
-    impl.appendLine("ktc_Any ${inCName}_as_Any(${inCName}_t* \$self) {")
-    impl.appendLine("    return (ktc_Any){{.typeId = ${inCName}_TYPE_ID}, (void*)\$self, &${inCName}_AnyVt};")
+    impl.appendLine("ktc_Any ${cName}_as_Any(${cName}_t* \$self) {")
+    impl.appendLine("    return (ktc_Any){{.typeId = ${cName}_TYPE_ID}, (void*)\$self, &${cName}_AnyVt};")
     impl.appendLine("}")
     impl.appendLine()
 }
@@ -1675,7 +1739,7 @@ internal fun CCodeGen.flushDeferredAsForClass(inClassName: String) {
 /** KtcType-based overload. */
 /** Emit struct field declarations (shared by emitClass and emitGenericClass). */
 internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
-    hdr.appendLine("    ktc_core_AnySupertype __base;")
+    hdr.appendLine("    ktc_core_AnyData __base;")
     for ((name, type) in ci.props)
         {
         val vFieldName = if (name in ci.privateProps) "PRIV_$name" else name  // C field name

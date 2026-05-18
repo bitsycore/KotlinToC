@@ -130,7 +130,7 @@ class InterfaceUnitTest : TranspilerTestBase() {
 
     @Test fun typeIdFieldInStruct() {
         val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls)
-        r.headerContains("ktc_core_AnySupertype __base;")
+        r.headerContains("ktc_core_AnyData __base;")
     }
 
     @Test fun typeIdInConstructor() {

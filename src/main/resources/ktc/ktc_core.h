@@ -112,12 +112,12 @@ typedef struct { ktc_Int __array_type_id; ktc_Int size; void* data; } ktc_ArrayT
  *  without introducing negative values or sign-bit ambiguity. */
 typedef struct {
     ktc_UInt typeId;
-} ktc_core_AnySupertype;
+} ktc_core_AnyData;
 
 /** @Ptr interface trampoline — fat pointer for interface references.
  *  Uses __base.typeId for is-checks, vt for dispatch, obj for concrete data.
  *  One unified struct for all @Ptr InterfaceType regardless of which interface. */
-typedef struct { ktc_core_AnySupertype __base; const void* vt; void* obj; } ktc_IfacePtr;
+typedef struct { ktc_core_AnyData __base; const void* vt; void* obj; } ktc_IfacePtr;
 
 /** Vtable for Any methods — one static instance per class.
  *  All methods take void* for type-erased dispatch. */
@@ -130,7 +130,7 @@ typedef struct ktc_core_AnyVt {
 } ktc_core_AnyVt;
 
 /** Type-erased fat pointer for `Any` — identity checks + vtable dispatch. */
-typedef struct { ktc_core_AnySupertype __base; void* data; const ktc_core_AnyVt* vt; } ktc_Any;
+typedef struct { ktc_core_AnyData __base; void* data; const ktc_core_AnyVt* vt; } ktc_Any;
 
 typedef enum { ktc_NONE = 0, ktc_SOME = 1 } ktc_OptionalTag;
 
