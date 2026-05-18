@@ -148,6 +148,12 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     hdr.appendLine(");")
     hdr.appendLine()
 
+    // Nested classes get an inline banner in the .c file (parent's banner comes from generate())
+    if (d.name.contains('$')) {
+        impl.appendLine(cSourceFileHeader(kind, d.name.replace('$', '.'), file.pkg ?: "", cName, currentSourceFile))
+        impl.appendLine()
+    }
+
     // Constructor section
     hdr.appendLine("// ════ constructors ════")
     impl.appendLine(boxSection("constructors"))
@@ -1136,6 +1142,12 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     hdr.appendLine(");")
     hdr.appendLine()
 
+    // Companion/nested objects get an inline banner in the .c file (parent's banner comes from generate())
+    if (d.name.contains('$')) {
+        impl.appendLine(cSourceFileHeader(vKind, vDisplayName, vPkg, cName, currentSourceFile))
+        impl.appendLine()
+    }
+
     // global instance (zero-initialized), init flag declared externally visible
     impl.appendLine("${vTls}${cName}_t $cName = {0};")
     impl.appendLine("${vTls}static ktc_Bool ${cName}\$init = false;")
@@ -1630,7 +1642,6 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
         impl.appendLine("    return \$self;")
     }
     impl.appendLine("}")
-    impl.appendLine()
 }
 
 /** Emit vtable struct for a class implementing an interface (shared by two interface-emission paths). */
