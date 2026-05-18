@@ -41,7 +41,7 @@ import com.bitsycore.ktc.types.KtcType
 
 // ── Header comment helpers ───────────────────────────────────────
 
-private const val kHdrRule = "═══════════════════════════════════════════════════════════"
+internal const val kHdrRule = "═══════════════════════════════════════════════════════════"
 
 /* Build the opening block comment for a class/data-class section in the generated header. */
 internal fun CCodeGen.classBlockHeader(
@@ -85,6 +85,32 @@ internal fun CCodeGen.funBlockHeader(inPkg: String, inFile: String): String =
         if (inPkg.isNotEmpty()) appendLine(" * package: $inPkg")
         appendLine(" * file: $inFile")
         append(" * $kHdrRule */")
+    }
+
+/*
+Build the preamble block comment for a per-declaration .c source file.
+inKind      — "class", "data class", "object", "companion object", "enum", "top-level"
+inKtName    — Kotlin display name including generic args (e.g. "MapIterator<String, String>")
+inPkg       — Kotlin package string (e.g. "com.example"); empty for no-package
+inCName     — C mangled identifier (e.g. "com_example_Foo")
+inSrcFile   — original Kotlin source filename (template source for generic instantiations)
+inInstFrom  — source file that triggered the instantiation; empty for non-generic declarations
+*/
+internal fun CCodeGen.cSourceFileHeader(
+    inKind: String,
+    inKtName: String,
+    inPkg: String,
+    inCName: String,
+    inSrcFile: String,
+    inInstFrom: String = ""
+): String = buildString {
+    appendLine("/* $kHdrRule")
+    appendLine(" * $inKind $inKtName")
+    if (inPkg.isNotEmpty()) appendLine(" * package: $inPkg")
+    appendLine(" * source:  $inSrcFile")
+    appendLine(" * mangled: $inCName")
+    if (inInstFrom.isNotEmpty()) appendLine(" * instantiated from: $inInstFrom")
+    append(" * $kHdrRule */")
     }
 
 /* Emit a functions banner when the source file changes; tracks lastEmittedFunFile. */
@@ -238,7 +264,7 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
     val ctorName = secondaryCtorName(cClass, sctor.params)
     val extraParams = expandParams(sctor.params)
 
-    hdr.appendLine("KTC_METHOD(CLS, $ctorName)($extraParams);")
+    hdr.appendLine("$cClass $ctorName($extraParams);")  // full name — KTC_METHOD would double-prefix
     impl.appendLine("$cClass $ctorName($extraParams) {")
 
     // Generate call to primary constructor for delegation
@@ -1092,13 +1118,14 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     hdr.appendLine(");")
     hdr.appendLine()
 
-    // global instance (zero-initialized), init flag + ensure_init are internal
+    // global instance (zero-initialized), init flag declared externally visible
     impl.appendLine("${vTls}${cName}_t $cName = {0};")
     impl.appendLine("${vTls}static ktc_Bool ${cName}\$init = false;")
     impl.appendLine()
 
-    // $ensure_init: lazy initialization function
-    impl.appendLine("static void ${cName}_\$ensure_init(void) {")
+    // $ensure_init: lazy initializer — declared in header so other TUs can call it
+    hdr.appendLine("void ${cName}_\$ensure_init(void);")
+    impl.appendLine("void ${cName}_\$ensure_init(void) {")
     impl.appendLine("    if (${cName}\$init) return;")
     impl.appendLine("    ${cName}\$init = true;")
     val prevObject = currentObject

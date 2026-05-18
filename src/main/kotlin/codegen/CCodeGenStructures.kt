@@ -20,7 +20,7 @@ import com.bitsycore.ktc.types.TypeDef
  * IfaceInfo     — interface methods + properties + super-interfaces
  * ActiveLambda  — lambda expression being expanded inside an inline call
  * IteratorInfo  — result of findOperatorIterator() lookup
- * COutput       — result of code generation (.h + .c string pair)
+ * COutput       — result of code generation (.h + per-declaration .c files)
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -133,5 +133,21 @@ internal data class IfaceInfo(
 internal data class ActiveLambda(val expr: LambdaExpr, val paramTypes: List<String>, val returnType: String? = null)
 /** iterator dispatch info */
 internal data class IteratorInfo(val iterClass: String, val iterCType: String, val elemKtType: String, val isPointer: Boolean)
-/** Output of code generation: C header (.h) and source (.c) strings. */
-data class COutput(val header: String, val source: String)
+/*
+A single generated .c file: its text content and the routing package that
+determines which output subdirectory it goes into.
+routingPkg is the original dot-separated Kotlin package (e.g. "ktc.std", "com.example").
+It may differ from the current package when a generic class is instantiated by another
+package — the instantiation is routed to the template's package directory.
+*/
+data class SourceFile(val content: String, val routingPkg: String)
+
+/*
+Output of code generation.
+header  — the single package .h file content (structs, typedefs, prototypes).
+sources — map of filename → SourceFile for each generated .c file.
+          Key is the simple filename (e.g. "Point.c", "ktc_std.c").
+          One entry per class/object/enum; top-level functions in "$pkgName.c".
+          routingPkg inside each SourceFile determines the target subdirectory.
+*/
+data class COutput(val header: String, val sources: Map<String, SourceFile>)

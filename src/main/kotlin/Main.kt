@@ -181,12 +181,13 @@ fun main(args: Array<String>) {
 
     val outDir = File(outputDir)
     outDir.mkdirs()
-    val ktcDir = File(outDir, "ktc") // subdir for stdlib + intrinsics
-    ktcDir.mkdirs()
+    val ktcDir = File(outDir, "ktc")          // root ktc/ subdir for all intrinsic + stdlib output
+    val ktcCoreDir = File(ktcDir, "core")     // ktc/core/ for ktc_core.h / ktc_macro.h / ktc_core.c
+    ktcCoreDir.mkdirs()
 
     val allAsts = parsedFiles.map { it.ast }.filter { !it.documentationOnly }
-    val ktcOutputNames = mutableListOf<String>() // ktc_* packages (e.g. ktc_std)
-    val userOutputNames = mutableListOf<String>() // user packages
+    val ktcOutputNames = mutableListOf<String>()  // paths relative to ktc/  (e.g. "std/Heap")
+    val userOutputNames = mutableListOf<String>() // paths relative to outDir (e.g. "com/example/Point")
 
     for ((pkg, group) in byPackage) {
         // Merge all files in the same package into one KtFile — skip documentation-only files entirely
@@ -216,21 +217,56 @@ fun main(args: Array<String>) {
             exitProcess(1)
         }
 
-        val baseName = mergedFile.pkg?.replace('.', '_') ?: pkg
-        val isKtcPkg = baseName.startsWith("ktc_") // route ktc_* packages to ktc/ subdir
-        val targetDir = if (isKtcPkg) ktcDir else outDir
-        val headerFile = File(targetDir, "$baseName.h")
-        val sourceFile = File(targetDir, "$baseName.c")
+        val baseName    = mergedFile.pkg?.replace('.', '_') ?: pkg  // mangled pkg (e.g. "com_example")
+        val isKtcPkg    = baseName.startsWith("ktc_")               // is this a ktc.* stdlib package?
+        val vPkgPath    = mergedFile.pkg?.replace('.', '/') ?: ""   // e.g. "com/example" or "ktc/std"
+        // ktc package headers go in their subdirectory (e.g. ktc/std/ktc_std.h);
+        // user package headers stay flat in outDir (e.g. outDir/com_example.h).
+        val targetDir   = when {
+            isKtcPkg && vPkgPath.isNotEmpty() -> {
+                val vSubPath = vPkgPath.removePrefix("ktc/")        // e.g. "std" from "ktc/std"
+                if (vSubPath.isNotEmpty()) File(ktcDir, vSubPath).also { it.mkdirs() } else ktcDir
+                }
+            isKtcPkg -> ktcDir
+            else     -> outDir
+            }
+        val headerFile  = File(targetDir, "$baseName.h")
         headerFile.writeText(output.header)
-        sourceFile.writeText(output.source)
-        if (isKtcPkg) ktcOutputNames += baseName else userOutputNames += baseName
         println("  wrote ${headerFile.path}")
-        println("  wrote ${sourceFile.path}")
+
+        // Write each .c file to the directory determined by its routingPkg
+        for ((vFileName, vSourceFile) in output.sources) {
+            val vRoutingPkg  = vSourceFile.routingPkg                    // dot-separated, e.g. "ktc.std"
+            val vRoutingPath = vRoutingPkg.replace('.', '/')             // e.g. "ktc/std"
+            val vIsKtcFile   = vRoutingPkg.startsWith("ktc.")            // true for all ktc.* packages
+                            || vRoutingPkg == "ktc_std"                  // legacy fallback
+            val vFileSrcDir: File
+            val vRelBase: String                                          // path for compile command
+            if (vIsKtcFile) {
+                // Strip the "ktc/" prefix to get the subpath within ktcDir
+                val vSubPath = vRoutingPath.removePrefix("ktc/")         // e.g. "std" from "ktc/std"
+                vFileSrcDir = if (vSubPath.isNotEmpty()) File(ktcDir, vSubPath).also { it.mkdirs() } else ktcDir
+                val vBase   = vFileName.removeSuffix(".c")               // e.g. "Heap"
+                vRelBase    = if (vSubPath.isNotEmpty()) "$vSubPath/$vBase" else vBase
+                ktcOutputNames += vRelBase
+                } else {
+                // User package: use the routing path directly under outDir
+                vFileSrcDir = if (vRoutingPath.isNotEmpty())
+                                  File(outDir, vRoutingPath).also { it.mkdirs() }
+                              else outDir
+                val vBase   = vFileName.removeSuffix(".c")
+                vRelBase    = if (vRoutingPath.isNotEmpty()) "$vRoutingPath/$vBase" else vBase
+                userOutputNames += vRelBase
+                }
+            val vOutputFile = File(vFileSrcDir, vFileName)
+            vOutputFile.writeText(vSourceFile.content)
+            println("  wrote ${vOutputFile.path}")
+            }
     }
 
-    // ── Copy intrinsic files to ktc/ subdirectory ────────────────
+    // ── Copy intrinsic files to ktc/core/ ───────────────────────
     for (vName in listOf("ktc_macro.h", "ktc_core.h", "ktc_core.c")) {
-        val vDst = File(ktcDir, vName)
+        val vDst = File(ktcCoreDir, vName)
         val vSrc = aClass.getResourceAsStream("/ktc/$vName")
         if (vSrc != null) {
             vDst.writeText(vSrc.bufferedReader().readText())
@@ -239,12 +275,16 @@ fun main(args: Array<String>) {
         }
     }
 
-    // Print compile command: ktc/ files first (intrinsic then stdlib), then user files
-    val ktcSources = (listOf("ktc_core") + ktcOutputNames.sorted())
+    // Print compile command: core first, then other ktc/ files, then user files.
+    // ktcOutputNames are paths relative to ktc/ (e.g. "core/ktc_core", "std/Heap").
+    // userOutputNames are paths relative to outDir (e.g. "com/example/Point").
+    val ktcSources  = (listOf("core/ktc_core") + ktcOutputNames.sorted())
         .joinToString(" ") { "ktc/$it.c" }
     val userSources = userOutputNames.sorted().joinToString(" ") { "$it.c" }
-    val mainBase = userOutputNames.firstOrNull() ?: "output"
-    println("Done. Compile with:  cc -std=c11 -o $mainBase $ktcSources $userSources")
+    // Derive binary name from the last path component of the first user output name
+    val mainBase = userOutputNames.firstOrNull()
+        ?.substringAfterLast('/')?.substringBefore('_')?.ifEmpty { "output" } ?: "output"
+    println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")
 }
 
 // ═══════════════════════════ AST Dump ═══════════════════════════

@@ -101,7 +101,7 @@ open class TranspilerTestBase {
         val output = CCodeGen(ast, allAsts, source.lines()).generate()
         val result = TranspileResult(
             header = output.header,
-            source = output.source,
+            source = output.sources.values.joinToString("\n") { it.content },
             pkg = ast.pkg ?: "test"
         )
         if (verifyCompile) verifyCompiles(result)
@@ -163,7 +163,7 @@ open class TranspilerTestBase {
         val vOutput = CCodeGen(vAst, vAllAsts, vSource.lines()).generate()
         val result = TranspileResult(
             header = vOutput.header,
-            source = vOutput.source,
+            source = vOutput.sources.values.joinToString("\n"),
             pkg = vAst.pkg ?: "test"
         )
         if (verifyCompile) verifyCompiles(result)
@@ -185,7 +185,7 @@ open class TranspilerTestBase {
         val vOutput = CCodeGen(vAst, vAllAsts, vSource.lines()).generate()
         val result = TranspileResult(
             header = vOutput.header,
-            source = vOutput.source,
+            source = vOutput.sources.values.joinToString("\n"),
             pkg = vAst.pkg ?: "ktc_std"
         )
         if (verifyCompile) verifyCompiles(result)

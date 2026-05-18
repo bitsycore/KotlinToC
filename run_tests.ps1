@@ -217,23 +217,25 @@ function Invoke-Test {
 	Write-Host "(ktc: $(Format-Ms $vTMs))" -ForegroundColor DarkGray
 
 	# ── Discover .c files ────────────────────────────────────────
-	$vKtcDir = "$inOutDir\ktc"
-	$vCSrcs  = @()
+	$vKtcDir  = "$inOutDir\ktc"
+	$vCoreDir = "$vKtcDir\core"
+	$vCSrcs   = @()
 	if (Test-Path $vKtcDir -PathType Container) {
-		$vCore = "$vKtcDir\ktc_core.c"
+		$vCore = "$vCoreDir\ktc_core.c"
 		if (Test-Path $vCore) { $vCSrcs += $vCore }
-		Get-ChildItem "$vKtcDir\*.c" -ErrorAction SilentlyContinue |
-			Where-Object { $_.Name -ne "ktc_core.c" } | Sort-Object Name |
+		Get-ChildItem "$vKtcDir" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
+			Where-Object { $_.Name -ne "ktc_core.c" } | Sort-Object FullName |
 			ForEach-Object { $vCSrcs += $_.FullName }
 	}
-	Get-ChildItem "$inOutDir\*.c" -ErrorAction SilentlyContinue | Sort-Object Name |
+	Get-ChildItem "$inOutDir" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
+		Where-Object { $_.FullName -notlike "$vKtcDir*" } | Sort-Object FullName |
 		ForEach-Object { $vCSrcs += $_.FullName }
 	if ($vCSrcs.Count -eq 0) { Write-Fail "No .c files generated"; return $false }
 
 	# ── Compile ──────────────────────────────────────────────────
 	Write-Sec "Compile"
 	$vExe   = "$inOutDir\$inName.exe"
-	$vCArgs = @("-std=c11", "-o", $vExe)
+	$vCArgs = @("-std=c11", "-iquote", $inOutDir, "-o", $vExe)
 	if ($CCArgs) { $vCArgs += ($CCArgs -split '\s+') }
 	$vCArgs += $vCSrcs
 	Write-Cmd "$vCC -std=c11$(if ($CCArgs) { " $CCArgs" }) -o $vExe $($vCSrcs -join ' ')"
@@ -371,13 +373,14 @@ function Run-Suite {
 		# Discover .c files
 		$vKD  = "$vOut\ktc";  $vCS = @()
 		if (Test-Path $vKD -PathType Container) {
-			$vCr = "$vKD\ktc_core.c"
+			$vCr = "$vKD\core\ktc_core.c"
 			if (Test-Path $vCr) { $vCS += $vCr }
-			Get-ChildItem "$vKD\*.c" -ErrorAction SilentlyContinue |
-				Where-Object { $_.Name -ne "ktc_core.c" } | Sort-Object Name |
+			Get-ChildItem "$vKD" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
+				Where-Object { $_.Name -ne "ktc_core.c" } | Sort-Object FullName |
 				ForEach-Object { $vCS += $_.FullName }
 		}
-		Get-ChildItem "$vOut\*.c" -ErrorAction SilentlyContinue | Sort-Object Name |
+		Get-ChildItem "$vOut" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
+			Where-Object { $_.FullName -notlike "$vKD*" } | Sort-Object FullName |
 			ForEach-Object { $vCS += $_.FullName }
 		if ($vCS.Count -eq 0) {
 			Write-Host "  FAIL $vName (no .c files generated)" -ForegroundColor Red
@@ -386,7 +389,7 @@ function Run-Suite {
 
 		# Compile
 		$vExe = "$vOut\$vName.exe"
-		$vCA  = @("-std=c11", "-o", $vExe)
+		$vCA  = @("-std=c11", "-iquote", $vOut, "-o", $vExe)
 		if ($vCCa) { $vCA += $vCCa -split '\s+' }
 		$vCA += $vCS
 		& $vCC @vCA 2>&1 | Out-Null

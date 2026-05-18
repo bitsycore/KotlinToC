@@ -191,7 +191,7 @@ fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val exprKtc = inferExprTypeKtc(e.expr)
         val exprKtcCore = (exprKtc as? KtcType.Nullable)?.inner ?: exprKtc
         // ktc_IfacePtr is a value struct even though the KTC type is Ptr<Interface>
-        val isIfacePtr = exprKtcCore is KtcType.Ptr && exprKtcCore.inner is KtcType.User && (exprKtcCore.inner as KtcType.User).kind == KtcType.UserKind.Interface
+        val isIfacePtr = exprKtcCore is KtcType.Ptr && exprKtcCore.inner is KtcType.User && exprKtcCore.inner.kind == KtcType.UserKind.Interface
         val memOp = if (exprKtcCore is KtcType.Ptr && !isIfacePtr) "->" else "."
         val vIsClassInfo = classInfoFor(targetKtc)                                    // non-null if target is a user class
         val vIsIfaceInfo = ifaceInfoFor(targetKtc)                                    // non-null if target is an interface

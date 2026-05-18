@@ -173,12 +173,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // Check generic extension functions matching the base type or its interfaces
         val genericMatch = genericFunDecls.any {
             it.name == method && it.receiver?.nullable == true && (
-                it.receiver!!.name == bareType ||
-                (genericClassDecls.containsKey(it.receiver!!.name) && bareType.startsWith("${it.receiver!!.name}_")) ||
-                (genericIfaceDecls.containsKey(it.receiver!!.name) && (
-                    bareType == it.receiver!!.name ||
-                    classInterfaces[bareType]?.contains(it.receiver!!.name) == true ||
-                    bareType.startsWith("${it.receiver!!.name}_")
+                it.receiver.name == bareType ||
+                (genericClassDecls.containsKey(it.receiver.name) && bareType.startsWith("${it.receiver.name}_")) ||
+                (genericIfaceDecls.containsKey(it.receiver.name) && (
+                    bareType == it.receiver.name ||
+                    classInterfaces[bareType]?.contains(it.receiver.name) == true ||
+                    bareType.startsWith("${it.receiver.name}_")
                 ))
             )
         }
@@ -188,8 +188,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         return ifaces.any { iface ->
             genericFunDecls.any { gf ->
                 gf.name == method && gf.receiver?.nullable == true && (
-                    gf.receiver!!.name == iface ||
-                    (genericIfaceDecls.containsKey(gf.receiver!!.name) && iface.startsWith("${gf.receiver!!.name}_"))
+                    gf.receiver.name == iface ||
+                    (genericIfaceDecls.containsKey(gf.receiver.name) && iface.startsWith("${gf.receiver.name}_"))
                 )
             }
         }
@@ -213,6 +213,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal val genericIfaceDecls = mutableMapOf<String, InterfaceDecl>()
     // Track which source file a generic declaration came from (for mem-track attribution)
     internal val declSourceFile = mutableMapOf<String, String>()
+    // Track original dot-separated package for each declaration (for per-file routing)
+    internal val declOrigPkg = mutableMapOf<String, String>()
     // Active type parameter substitution map during monomorphized emission (e.g. {T → Int})
     internal var typeSubst: Map<String, String> = emptyMap()
     // Track all discovered concrete instantiations: "MyList" → [["Int"], ["Float"]]
@@ -222,7 +224,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal val allGenericTypeParamNames = mutableSetOf<String>()
 
     // Reverse map: mangled class name → (baseName, typeArgs) for generic instances.
-    // Used to compute KTC_OPTIONAL_GENERIC_NAME-style Optional wrapper names.
     internal val mangledComponents = mutableMapOf<String, Pair<String, List<String>>>()
 
     /** Mangle a generic class name with concrete type args: MyList + ["Int?"] → "MyList_Int$Opt" */
@@ -459,21 +460,20 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     Primitives: Int? → ktc_Int$Opt.
     Generic instances: ArrayList<Int>? → ktc_std_ArrayList$Opt_ktc_Int. */
     internal fun optCTypeName(internalType: String): String {
-        val base = internalType.removeSuffix("?")
-        return when (base) {
-            "Byte"    -> "ktc_Byte\$Opt"
-            "Short"   -> "ktc_Short\$Opt"
-            "Int"     -> "ktc_Int\$Opt"
-            "Long"    -> "ktc_Long\$Opt"
-            "Float"   -> "ktc_Float\$Opt"
-            "Double"  -> "ktc_Double\$Opt"
-            "Boolean" -> "ktc_Bool\$Opt"
-            "Char"    -> "ktc_Char\$Opt"
-            "UByte"   -> "ktc_UByte\$Opt"
-            "UShort"  -> "ktc_UShort\$Opt"
-            "UInt"    -> "ktc_UInt\$Opt"
-            "ULong"   -> "ktc_ULong\$Opt"
-            "String"  -> "ktc_String\$Opt"
+        return when (val base = internalType.removeSuffix("?")) {
+            "Byte"    -> $$"ktc_Byte$Opt"
+            "Short"   -> $$"ktc_Short$Opt"
+            "Int"     -> $$"ktc_Int$Opt"
+            "Long"    -> $$"ktc_Long$Opt"
+            "Float"   -> $$"ktc_Float$Opt"
+            "Double"  -> $$"ktc_Double$Opt"
+            "Boolean" -> $$"ktc_Bool$Opt"
+            "Char"    -> $$"ktc_Char$Opt"
+            "UByte"   -> $$"ktc_UByte$Opt"
+            "UShort"  -> $$"ktc_UShort$Opt"
+            "UInt"    -> $$"ktc_UInt$Opt"
+            "ULong"   -> $$"ktc_ULong$Opt"
+            "String"  -> $$"ktc_String$Opt"
             "Any"     -> "ktc_Any"   // Any uses data==NULL for null, not Optional
             else -> {
                 val components = mangledComponents[base]
@@ -683,9 +683,52 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     }
 
     // ── Output sections ──────────────────────────────────────────────
-    internal val hdr   = StringBuilder()   // .h forward decls & typedefs
-    internal val impl  = StringBuilder()   // .c implementations
-    internal val implFwd = StringBuilder()  // .c private forward decls (prepended at end)
+    internal val hdr     = StringBuilder()   // .h forward decls & typedefs
+    internal var impl    = StringBuilder()   // active .c impl target (swapped per-decl by captureForDecl)
+    internal var implFwd = StringBuilder()   // active .c private-fwd target (swapped per-decl by captureForDecl)
+
+    // Per-declaration impl accumulators — keyed by declaration simple name (e.g. "Foo").
+    // Inner classes and companion objects (name contains '$') share their parent's buffers
+    // via rootDeclKey(). Top-level functions use key "".
+    internal val perDeclImpl    = mutableMapOf<String, StringBuilder>()  // per-decl impl content
+    internal val perDeclImplFwd = mutableMapOf<String, StringBuilder>()  // per-decl implFwd content
+
+    /*
+    Returns the root key for a declaration name.
+    Inner classes / companions ("Foo$Bar") map to their parent ("Foo")
+    so they share the parent's .c file.
+    Generic instantiation names like "Pair_Int$Opt_String$Opt" also contain '$'
+    (the $Opt nullable suffix) but are NOT inner classes; they get their own file.
+    We distinguish by checking whether the substring before '$' is a known class/object.
+    */
+    internal fun rootDeclKey(inName: String): String {
+        val vDollar = inName.indexOf('$')
+        if (vDollar < 0) return inName                      // no '$' — top-level name
+        val vParent = inName.substring(0, vDollar)
+        return if (classes.containsKey(vParent) || objects.containsKey(vParent))
+            vParent     // confirmed inner class / companion → share parent file
+        else
+            inName      // '$' from type-arg mangling ($Opt etc.) → own file
+        }
+
+    /*
+    Routes impl and implFwd to the per-decl buffers for [inKey], runs [inBlock],
+    then restores the previous impl/implFwd.
+    Nested calls with the same root key append to the same buffer (getOrPut semantics).
+    */
+    internal fun captureForDecl(
+        inKey: String,     // declaration name; "" for top-level functions
+        inBlock: () -> Unit
+        ) {
+        val vKey        = rootDeclKey(inKey)                              // route inner classes to parent
+        val vSavedImpl    = impl                                          // save current target
+        val vSavedImplFwd = implFwd
+        impl    = perDeclImpl.getOrPut(vKey)    { StringBuilder() }      // swap to per-decl buffer
+        implFwd = perDeclImplFwd.getOrPut(vKey) { StringBuilder() }
+        inBlock()
+        impl    = vSavedImpl                                              // restore previous target
+        implFwd = vSavedImplFwd
+        }
 
     // ═══════════════════════════ Public entry ═════════════════════════
 
@@ -919,7 +962,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     fun generate(): COutput {
         /* @file:DocumentationOnly files provide type information to other files but
         produce no C output themselves — the real implementations live in ktc_core. */
-        if (file.documentationOnly) return COutput("", "")
+        if (file.documentationOnly) return COutput("", emptyMap())
 
         collectDecls()
 
@@ -933,23 +976,22 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             "ASSERT" -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_ASSERT")
             "LOG"    -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_LOG")
         }
-        // ktc_* packages live in ktc/ subdir alongside ktc_core; user packages live one level up
-        val vIsKtcPkg = (file.pkg?.replace('.', '_') ?: "").startsWith("ktc_")
-        val vKtcPrefix = if (vIsKtcPkg) "" else "ktc/"
-        hdr.appendLine("#include \"${vKtcPrefix}ktc_core.h\"")
+        // All includes use paths relative to outDir (resolved via -iquote outDir at compile time).
+        // core files live in ktc/core/, stdlib in ktc/std/, user packages headers are flat.
+        hdr.appendLine("#include \"ktc/core/ktc_core.h\"")
         hdr.appendLine()
 
-        // Imports → #include (skip ktc stdlib imports — handled below)
+        // Imports → #include (skip ktc.std imports — auto-included below)
         for (imp in file.imports) {
-            if (imp.startsWith("ktc_std")) continue
+            if (imp.startsWith("ktc.std") || imp.startsWith("ktc_std")) continue
             val parts = imp.removeSuffix(".*").split('.')
             val headerName = parts.joinToString("_")
             hdr.appendLine("#include \"$headerName.h\"")
         }
-        // Auto-include ktc_std.h for non-stdlib packages when stdlib is present
+        // Auto-include ktc/std/ktc_std.h for non-stdlib packages when stdlib is present
         val hasStdlib = allFiles.any { it.pkg == "ktc.std" }
-        if (hasStdlib && file.pkg != "ktc_std") {
-            hdr.appendLine("#include \"${vKtcPrefix}ktc_std.h\"")
+        if (hasStdlib && file.pkg != "ktc.std") {
+            hdr.appendLine("#include \"ktc/std/ktc_std.h\"")
         }
         hdr.appendLine()
 
@@ -1010,41 +1052,45 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         if (emittedAny) hdr.appendLine()
 
         // Emit struct/enum/object declarations (defines the element types needed by generic interfaces)
-        // Skip generic templates — they are emitted per concrete instantiation
+        // Skip generic templates — they are emitted per concrete instantiation.
+        // Each top-level declaration is captured into its own per-decl impl buffer.
+        // Companion objects and nested classes share the parent class's buffer (via captureForDecl).
         var firstClass = true
         for (d in file.decls) when (d) {
             is ClassDecl  -> if (d.typeParams.isEmpty()) {
                 if (!firstClass) hdr.appendLine()
                 firstClass = false
-                emitClass(d)
-                // Emit companion objects declared inside this class
-                for (vMember in d.members.filterIsInstance<ObjectDecl>()) {
-                    hdr.appendLine()
-                    emitObject(ObjectDecl("${d.name}$${vMember.name}", vMember.members))
-                }
-                // Emit nested classes recursively
-                fun emitNested(parentOriginal: ClassDecl, parentFlatName: String) {
-                    for (nested in parentOriginal.members.filterIsInstance<ClassDecl>()) {
-                        if (nested.typeParams.isEmpty()) {
-                            val flatName = "$parentFlatName$${nested.name}"
-                            hdr.appendLine()
-                            emitClass(ClassDecl(flatName, nested.isData,
-                                nested.ctorParams, nested.members, nested.initBlocks,
-                                nested.superInterfaces, nested.typeParams, nested.secondaryCtors))
-                            emitNested(nested, flatName)
+                captureForDecl(d.name) {
+                    emitClass(d)
+                    // Companion objects — emitted in the same .c as the parent class
+                    for (vMember in d.members.filterIsInstance<ObjectDecl>()) {
+                        hdr.appendLine()
+                        emitObject(ObjectDecl("${d.name}$${vMember.name}", vMember.members))
                         }
+                    // Nested classes — emitted in the same .c as the outermost parent class
+                    fun emitNested(inParent: ClassDecl, inParentFlatName: String) {
+                        for (vNested in inParent.members.filterIsInstance<ClassDecl>()) {
+                            if (vNested.typeParams.isEmpty()) {
+                                val vFlatName = "$inParentFlatName$${vNested.name}"
+                                hdr.appendLine()
+                                emitClass(ClassDecl(vFlatName, vNested.isData,
+                                    vNested.ctorParams, vNested.members, vNested.initBlocks,
+                                    vNested.superInterfaces, vNested.typeParams, vNested.secondaryCtors))
+                                emitNested(vNested, vFlatName)
+                                }
+                            }
+                        }
+                    emitNested(d, d.name)
                     }
                 }
-                emitNested(d, d.name)
-            }
-            is EnumDecl   -> emitEnum(d)
+            is EnumDecl   -> captureForDecl(d.name) { emitEnum(d) }
             is ObjectDecl -> {
                 if (!firstClass) hdr.appendLine()
                 firstClass = false
-                emitObject(d)
-            }
+                captureForDecl(d.name) { emitObject(d) }
+                }
             else -> {}
-        }
+            }
 
         // Pre-pass: register classInterfaces for objects and all monomorphized generic classes
         // so that interfaceImplementors is fully populated before any function body emission.
@@ -1079,26 +1125,29 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 firstClass = false
                 val mangledName = mangledGenericName(baseName, typeArgs)
                 val templateCi = classes[baseName] ?: continue
-                // Set type substitution for this instantiation
                 typeSubst = templateCi.typeParams.zip(typeArgs).toMap()
-                // Switch source file attribution for mem-track
                 val prevSourceFile = currentSourceFile
                 declSourceFile[baseName]?.let { currentSourceFile = it }
-                emitGenericClass(templateDecl, mangledName)
+                captureForDecl(mangledName) { emitGenericClass(templateDecl, mangledName) }
                 currentSourceFile = prevSourceFile
                 typeSubst = emptyMap()
+                }
             }
-        }
 
-        // Emit static vtable instances + wrapping functions for interface implementations
+        // Emit static vtable instances + wrapping functions for interface implementations.
+        // Each vtable emission is captured into the same buffer as its owning class/object.
         // Non-generic classes:
         for (d in file.decls) if (d is ClassDecl && d.typeParams.isEmpty() && d.superInterfaces.isNotEmpty()) {
-            emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true)
-        }
+            captureForDecl(d.name) {
+                emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true)
+                }
+            }
         // Objects implementing interfaces:
         for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty()) {
-            emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true)
-        }
+            captureForDecl(d.name) {
+                emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true)
+                }
+            }
         // Monomorphized generic classes:
         for ((baseName, instantiations) in genericInstantiations) {
             val templateDecl = genericClassDecls[baseName] ?: continue
@@ -1110,10 +1159,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     .ifEmpty { genericTypeBindings[mangledName] ?: emptyMap() }
                 val resolvedIfaces = templateDecl.superInterfaces.map { substituteTypeRef(it, subst) }
                 typeSubst = subst
-                emitInterfaceVtablesForClass(mangledName, resolvedIfaces, implsOnly = true)
+                captureForDecl(mangledName) {
+                    emitInterfaceVtablesForClass(mangledName, resolvedIfaces, implsOnly = true)
+                    }
                 typeSubst = emptyMap()
+                }
             }
-        }
 
         // Emit complete interface blocks (vtable + tagged union + $Opt) with banner comments.
         // Must be AFTER all class struct definitions (tagged union members need complete types)
@@ -1131,46 +1182,124 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             currentSourceFile = prevSourceFile
         }
 
-        // Emit top-level functions and properties in declaration order.
-        for (d in file.decls) when (d) {
-            is FunDecl  -> {
-                // Skip generic function templates and star-projection extensions — handled below
-                if (d.typeParams.isNotEmpty()) continue
-                if (d.receiver != null && d.receiver.typeArgs.any { it.name == "*" }) continue
-                // Skip extensions on generic types (expanded per class by emitStarExtFunInstantiations)
-                if (d.receiver != null && d.receiver.typeArgs.isNotEmpty()
-                    && (genericIfaceDecls.containsKey(d.receiver.name) || genericClassDecls.containsKey(d.receiver.name))) continue
-                // Skip inline/infix extension functions — expanded at call sites only, not emitted as C functions
-                if (d.receiver != null && (d.isInline || d.isInfix)) continue
-                if (d.receiver != null) emitExtensionFun(d) else emitFun(d)
+        // Emit top-level functions, properties, generic funs, star ext funs, and enum values data.
+        // All of these go into the package-level .c file (key "").
+        captureForDecl("") {
+            for (d in file.decls) when (d) {
+                is FunDecl  -> {
+                    if (d.typeParams.isNotEmpty()) continue
+                    if (d.receiver != null && d.receiver.typeArgs.any { it.name == "*" }) continue
+                    if (d.receiver != null && d.receiver.typeArgs.isNotEmpty()
+                        && (genericIfaceDecls.containsKey(d.receiver.name) || genericClassDecls.containsKey(d.receiver.name))) continue
+                    if (d.receiver != null && (d.isInline || d.isInfix)) continue
+                    if (d.receiver != null) emitExtensionFun(d) else emitFun(d)
+                    }
+                is PropDecl -> emitTopProp(d)
+                else -> {}
+                }
+            for (f in genericFunDecls) emitGenericFunInstantiations(f)
+            for (f in starExtFunDecls) emitStarExtFunInstantiations(f)
+            emitEnumValuesData()
             }
-            is PropDecl -> emitTopProp(d)
-            else -> {}
-        }
 
-        // Emit monomorphized generic functions (demand-driven: populated during body emission above)
-        for (f in genericFunDecls) emitGenericFunInstantiations(f)
-
-        // Emit star-projection extension functions (one per known instantiation)
-        for (f in starExtFunDecls) emitStarExtFunInstantiations(f)
-
-        // Emit enum values arrays and valueOf functions — populated during body emission above
-        emitEnumValuesData()
-
-        val srcName = prefix.trimEnd('_').ifEmpty {
+        // ── Assemble output ────────────────────────────────────────────
+        val vSrcName = prefix.trimEnd('_').ifEmpty {
             sourceFileName.removeSuffix(".kt").ifEmpty { "main" }
-        }
-        val src = StringBuilder()
-        src.appendLine("#include \"$srcName.h\"")
-        src.appendLine()
-        if (implFwd.isNotEmpty()) {
-            src.append(implFwd)
-            src.appendLine()
-        }
-        src.append(impl)
+            }
+        val vPkg     = file.pkg ?: ""                                       // Kotlin package string
+        val vSources = mutableMapOf<String, SourceFile>()                  // filename → SourceFile
 
-        return COutput(hdr.toString(), src.toString())
-    }
+        // Package-level .c — top-level functions, generic funs, enum values data
+        val vTopImpl    = perDeclImpl[""]                                   // top-level impl builder
+        val vTopImplFwd = perDeclImplFwd[""]                                // top-level implFwd builder
+        if (vTopImpl != null && vTopImpl.isNotEmpty()) {
+            val vSrc = buildString {
+                appendLine(cSourceFileHeader("top-level", vSrcName, vPkg, vSrcName, sourceFileName))
+                appendLine()
+                appendLine("#include \"$vSrcName.h\"")
+                appendLine()
+                if (vTopImplFwd != null && vTopImplFwd.isNotEmpty()) {
+                    append(vTopImplFwd)
+                    appendLine()
+                    }
+                append(vTopImpl)
+                }
+            vSources["$vSrcName.c"] = SourceFile(vSrc, vPkg)
+            }
+
+        // Per-declaration .c files — one per class / object / enum
+        for ((vDeclName, vDeclImpl) in perDeclImpl) {
+            if (vDeclName.isEmpty()) continue   // package-level already handled above
+            if (vDeclImpl.isEmpty()) continue   // nothing was emitted
+            val vDeclImplFwd = perDeclImplFwd[vDeclName]                    // may be null if no private fwds
+
+            val vCi = classes[vDeclName]                                    // ClassInfo if it's a class
+            val vOi = objects[vDeclName]                                    // ObjInfo  if it's an object
+            val vEi = enums[vDeclName]                                      // EnumInfo if it's an enum
+
+            /* Generic instantiation: find the template base name (e.g. "MapIterator" from
+               "MapIterator_String_String"). Used for routing and display-name formatting. */
+            val vGenBase     = mangledComponents[vDeclName]?.first          // null for non-generic decls
+            val vGenTypeArgs = mangledComponents[vDeclName]?.second         // type args for display name
+
+            val vKind: String                   // Kotlin keyword for the file header comment
+            val vCName: String                  // C mangled identifier (also the filename base)
+            val vKtName: String                 // Kotlin display name with generic args if applicable
+            val vSrcFile: String                // originating Kotlin source file (template's for generics)
+            val vInstFrom: String               // instantiator source file ("" for non-generic decls)
+            val vRoutingPkg: String             // dot-separated package that determines output directory
+            when {
+                vCi != null -> {
+                    vKind       = if (vCi.isData) "data class" else "class"
+                    vCName      = vCi.flatName
+                    val vBase   = vGenBase ?: vDeclName
+                    vSrcFile    = declSourceFile[vBase] ?: sourceFileName
+                    vInstFrom   = if (vGenBase != null) sourceFileName else ""
+                    vKtName     = if (vGenBase != null && vGenTypeArgs != null)
+                                      "$vGenBase<${vGenTypeArgs.joinToString(", ")}>"
+                                  else vDeclName.replace('$', '.')
+                    vRoutingPkg = declOrigPkg[vBase] ?: vPkg
+                    }
+                vOi != null -> {
+                    val vParts  = vDeclName.split('$')
+                    vKind       = if (vParts.size > 1 && vParts.last() == "Companion")
+                                      "companion object" else "object"
+                    vCName      = vOi.flatName
+                    vSrcFile    = declSourceFile[vDeclName] ?: sourceFileName
+                    vInstFrom   = ""
+                    vKtName     = vDeclName.replace('$', '.')
+                    vRoutingPkg = declOrigPkg[vDeclName] ?: vPkg
+                    }
+                vEi != null -> {
+                    vKind       = "enum"
+                    vCName      = vEi.flatName
+                    vSrcFile    = declSourceFile[vDeclName] ?: sourceFileName
+                    vInstFrom   = ""
+                    vKtName     = vDeclName
+                    vRoutingPkg = declOrigPkg[vDeclName] ?: vPkg
+                    }
+                else -> continue  // unknown declaration type (e.g. generic template) — skip
+                }
+
+            val vSrc = buildString {
+                appendLine(cSourceFileHeader(vKind, vKtName, vRoutingPkg, vCName, vSrcFile, vInstFrom))
+                appendLine()
+                // Always include the instantiator's header: it holds the concrete struct definition.
+                // For generic instantiations this is the current package's .h, not the template's.
+                appendLine("#include \"$vSrcName.h\"")
+                appendLine("#define CLS $vCName")
+                appendLine()
+                if (vDeclImplFwd != null && vDeclImplFwd.isNotEmpty()) {
+                    append(vDeclImplFwd)
+                    appendLine()
+                    }
+                append(vDeclImpl)
+                }
+            vSources["$vDeclName.c"] = SourceFile(vSrc, vRoutingPkg)
+            }
+
+        return COutput(hdr.toString(), vSources)
+        }
 
     // ═══════════════════════════ Collect declarations (pre-pass) ═════
 
@@ -1198,14 +1327,16 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 when (d) {
                     is ClassDecl -> {
                         classes[d.name]?.pkg = fpfx  // set pkg on ClassInfo
+                        declOrigPkg[d.name] = f.pkg ?: ""  // original package for routing
                         // Register companion object prefix
                         for (vMember in d.members.filterIsInstance<ObjectDecl>()) {
                             objects["${d.name}$${vMember.name}"]?.pkg = fpfx  // set pkg on ObjInfo
+                            declOrigPkg["${d.name}$${vMember.name}"] = f.pkg ?: ""
                         }
                     }
-                    is EnumDecl -> enums[d.name]?.pkg = fpfx
+                    is EnumDecl   -> { enums[d.name]?.pkg = fpfx;   declOrigPkg[d.name] = f.pkg ?: "" }
                     is InterfaceDecl -> interfaces[d.name]?.pkg = fpfx
-                    is ObjectDecl -> objects[d.name]?.pkg = fpfx
+                    is ObjectDecl -> { objects[d.name]?.pkg = fpfx; declOrigPkg[d.name] = f.pkg ?: "" }
                     is FunDecl -> {
                         if (d.receiver == null)
                             funNames[d.name] = if (d.name == "main") "main" else "$fpfx${d.name}"  // cross-file C name
@@ -1480,11 +1611,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         return "${base}With${types.joinToString("_")}"
     }
 
-    /*
-    Find the matching overloaded method from the given siblings that best matches the call args.
-    Phase 4.6: uses KtcType comparison instead of string equality for type matching.
-    Returns the matched FunDecl, or null.
-    */
+    /**
+     * Find the matching overloaded method from the given siblings that best matches the call args.
+     * Phase 4.6: uses KtcType comparison instead of string equality for type matching.
+     * Returns the matched FunDecl, or null.
+     */
     internal fun findOverload(inName: String, inArgs: List<Arg>, inSiblings: List<FunDecl>): FunDecl?
         {
         val vCandidates = inSiblings.filter { it.name == inName }  // methods with matching name
