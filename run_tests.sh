@@ -8,9 +8,13 @@
 #   ./run_tests.sh --run HashMapTest          # Run a single test (verbose)
 #   ./run_tests.sh --run "Test1,Test2"        # Run multiple tests
 #   ./run_tests.sh --skip-unit                # Skip unit tests
-#   ./run_tests.sh --run game --mem-track     # With --mem-track
-#   ./run_tests.sh --run game --ast           # With --ast
+#   ./run_tests.sh --run game --mem-track          # With --mem-track
+#   ./run_tests.sh --run game --ast                # With --ast
 #   ./run_tests.sh --run game --dump-semantics
+#   ./run_tests.sh --run game --disposed=assert         # Use-after-dispose: abort
+#   ./run_tests.sh --run game --disposed=log             # Use-after-dispose: log and continue
+#   ./run_tests.sh --run game --double-dispose=assert    # Double-dispose: abort
+#   ./run_tests.sh --run game --double-dispose=log       # Double-dispose: log and continue
 #   ./run_tests.sh --clean                    # Remove all test out/ directories
 #   ./run_tests.sh --rebuild                  # Force clean rebuild of JAR
 #   ./run_tests.sh --compiler clang           # Override C compiler
@@ -46,9 +50,11 @@ while [[ $# -gt 0 ]]; do
 		--interactive|-I|-i)    INTERACTIVE=true; shift ;;
 		--skip-unit)      SKIP_UNIT=true; shift ;;
 		--run)            RUN_TEST="$2"; shift 2 ;;
-		--mem-track)      EXTRA_ARGS="$EXTRA_ARGS --mem-track"; shift ;;
-		--ast)            EXTRA_ARGS="$EXTRA_ARGS --ast"; shift ;;
-		--dump-semantics) EXTRA_ARGS="$EXTRA_ARGS --dump-semantics"; shift ;;
+		--mem-track)          EXTRA_ARGS="$EXTRA_ARGS --mem-track"; shift ;;
+		--ast)                EXTRA_ARGS="$EXTRA_ARGS --ast"; shift ;;
+		--dump-semantics)     EXTRA_ARGS="$EXTRA_ARGS --dump-semantics"; shift ;;
+		--disposed=*)      EXTRA_ARGS="$EXTRA_ARGS --disposed=${1#*=}"; shift ;;
+		--double-dispose=*) EXTRA_ARGS="$EXTRA_ARGS --double-dispose=${1#*=}"; shift ;;
 		--args)           EXTRA_ARGS="$EXTRA_ARGS $2"; shift 2 ;;
 		--compiler)       COMPILER="$2"; shift 2 ;;
 		--cc-args)        CC_ARGS="$2"; shift 2 ;;
@@ -483,9 +489,9 @@ run_interactive() {
 
 	# State arrays (0=off 1=on)
 	local vTestOn=(); for ((i=0; i<vCount; i++)); do vTestOn[$i]=1; done
-	local vOptOn=(0 0 0 0)   # SkipUnit MemTrack Ast DumpSemantics
-	local vBuildOn=(1 0 0)   # jar gradle proguard
-	local vOptLabels=("Skip Unit Tests  (--skip-unit)" "Memory Tracking  (--mem-track)" "Dump AST         (--ast)" "Dump Semantics   (--dump-semantics)")
+	local vOptOn=(0 0 0 0 0 0 0 0)   # SkipUnit MemTrack Ast DumpSemantics DisposedAssert DisposedLog DoubleDisposeAssert DoubleDisposeLog
+	local vBuildOn=(1 0 0)           # jar gradle proguard
+	local vOptLabels=("Skip Unit Tests      (--skip-unit)" "Memory Tracking      (--mem-track)" "Dump AST             (--ast)" "Dump Semantics       (--dump-semantics)" "Disposed ASSERT      (--disposed=ASSERT)" "Disposed LOG         (--disposed=LOG)" "Double-Dispose ASSERT  (--double-dispose=ASSERT)" "Double-Dispose LOG     (--double-dispose=LOG)")
 	local vBuildLabels=("JAR (default)" "Gradle" "ProGuard")
 	local vBuildVals=("jar" "gradle" "proguard")
 	local vCompiler="$CC"    # editable compiler override
@@ -506,14 +512,14 @@ run_interactive() {
 		# opts-hdr(1) sep(1) 4opts(4) blank(1)=7  build-hdr(1) sep(1) 3builds(3) blank(1)=6
 		# compiler-hdr(1) sep(1) 2fields(2) blank(1)=5  dsep(1) hints(1)=2  total=27
 
-		# Guard: 27 fixed lines + 2-line margin = 29 minimum rows required
-		if (( vTermH < 29 )); then
+		# Guard: 31 fixed lines + 2-line margin = 33 minimum rows required
+		if (( vTermH < 33 )); then
 			local vRows vCols; read vRows vCols <<< "$(get_term_size)"
 			(( vCols > 64 )) && vCols=62 || vCols=$(( vCols - 2 ))
 			(( vCols < 1 )) && vCols=1
 			local vBlank; printf -v vBlank '%*s' "$vCols" ''; vBlank="${vBlank// / }"
 			printf '\033[H\033[2J'
-			printf " ${YELLOW}Terminal too small — need at least 29 rows (current: %d)${NC}\n" "$vTermH"
+			printf " ${YELLOW}Terminal too small — need at least 33 rows (current: %d)${NC}\n" "$vTermH"
 			local vi; for (( vi=1; vi<vRows; vi++ )); do printf '%s\n' "$vBlank"; done
 			printf '%s' "$vBlank"
 			return
@@ -571,7 +577,7 @@ run_interactive() {
 		printf "\n"
 		printf " ${YELLOW}OPTIONS${NC}\n"
 		printf " ${GRAY}%s${NC}\n" "$vSep"
-		for ((i=0; i<4; i++)); do
+		for ((i=0; i<8; i++)); do
 			local vPtr=" "; local vFg="$GRAY"
 			[[ "$vSection" == "opts" && $i -eq $vIdx ]] && vPtr="►" && vFg="$WHITE"
 			local vBox="[ ]"; [[ ${vOptOn[$i]} -eq 1 ]] && vBox="[✓]"
@@ -611,7 +617,7 @@ run_interactive() {
 		# Fill rows below the 27 fixed lines with blanks — overwrites sub-screen residue without [2J flicker.
 		# Use (vTermH-28) lines with newlines + 1 without: total newlines = vTermH-1, no terminal scroll.
 		local vBlankRow; printf -v vBlankRow '%*s' "$vW" ''; vBlankRow="${vBlankRow// / }"
-		local vFillCount=$(( vTermH - 28 ))
+		local vFillCount=$(( vTermH - 32 ))
 		(( vFillCount < 0 )) && vFillCount=0 || true
 		local vi; for (( vi=0; vi < vFillCount; vi++ )); do printf '%s\n' "$vBlankRow"; done
 		printf '%s' "$vBlankRow"
@@ -720,7 +726,7 @@ run_interactive() {
 	clamp_idx() {
 		case "$vSection" in
 			tests)    vIdx=0 ;;
-			opts)     (( vIdx >= 4 )) && vIdx=3 || true ;;
+			opts)     (( vIdx >= 8 )) && vIdx=7 || true ;;
 			build)    (( vIdx >= 3 )) && vIdx=2 || true ;;
 			compiler) (( vIdx >= 2 )) && vIdx=1 || true ;;
 		esac
@@ -740,7 +746,7 @@ run_interactive() {
 						else vSection="tests"; vIdx=0; fi ;;
 					build)
 						if [[ $vIdx -gt 0 ]]; then ((vIdx--))
-						else vSection="opts"; vIdx=3; fi ;;
+						else vSection="opts"; vIdx=7; fi ;;
 					compiler)
 						if [[ $vIdx -gt 0 ]]; then ((vIdx--))
 						else vSection="build"; vIdx=2; fi ;;
@@ -750,7 +756,7 @@ run_interactive() {
 				case "$vSection" in
 					tests)    vSection="opts"; vIdx=0 ;;
 					opts)
-						if (( vIdx < 3 )); then ((vIdx++))
+						if (( vIdx < 7 )); then ((vIdx++))
 						else vSection="build"; vIdx=0; fi ;;
 					build)
 						if (( vIdx < 2 )); then ((vIdx++))
@@ -814,6 +820,10 @@ run_interactive() {
 	[[ ${vOptOn[1]} -eq 1 ]] && TUI_EXTRA_ARGS+=" --mem-track"
 	[[ ${vOptOn[2]} -eq 1 ]] && TUI_EXTRA_ARGS+=" --ast"
 	[[ ${vOptOn[3]} -eq 1 ]] && TUI_EXTRA_ARGS+=" --dump-semantics"
+	if [[ ${vOptOn[4]} -eq 1 ]]; then TUI_EXTRA_ARGS+=" --disposed=ASSERT"
+	elif [[ ${vOptOn[5]} -eq 1 ]]; then TUI_EXTRA_ARGS+=" --disposed=LOG"; fi
+	if [[ ${vOptOn[6]} -eq 1 ]]; then TUI_EXTRA_ARGS+=" --double-dispose=ASSERT"
+	elif [[ ${vOptOn[7]} -eq 1 ]]; then TUI_EXTRA_ARGS+=" --double-dispose=LOG"; fi
 
 	for ((i=0; i<3; i++)); do
 		[[ ${vBuildOn[$i]} -eq 1 ]] && TUI_BUILD="${vBuildVals[$i]}" && break

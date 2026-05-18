@@ -187,7 +187,13 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
     emitClassEquals(cName, ci)
     if (d.isData) emitDataClassToString(d.name, cName, ci)
     if (d.members.none { it is FunDecl && it.name == "dispose" }) {
-        hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+        if (disposedMode != "NO" || doubleDisposeMode != "NO") {
+            hdr.appendLine("KTC_METHOD(void, dispose)(CLS* \$self);")
+            impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
+            impl.appendLine()
+        } else {
+            hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+        }
     }
     emitImplicitHashCode(cName, ci, d.isData, isGenericClass = false, d.members)
     if (!d.isData && d.members.none { it is FunDecl && it.name == "toString" }) {
@@ -353,7 +359,13 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
     if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
-        hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+        if (disposedMode != "NO" || doubleDisposeMode != "NO") {
+            hdr.appendLine("KTC_METHOD(void, dispose)(CLS* \$self);")
+            impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
+            impl.appendLine()
+        } else {
+            hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+        }
     }
     emitImplicitHashCode(cName, ci, templateDecl.isData, isGenericClass = true, templateDecl.members)
     if (templateDecl.members.none { it is FunDecl && it.name == "equals" }) {
@@ -486,6 +498,9 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
         hdr.appendLine(vHdrSig)
     }
     impl.appendLine("$cRet ${cClass}_${methodName}($allParams) {")
+    val vTrackDispose = disposedMode != "NO" || doubleDisposeMode != "NO" // dispose tracking active
+    if (vTrackDispose && f.name == "dispose") impl.appendLine("    KTC_MARK_DISPOSED(\$self);")
+    else if (disposedMode != "NO") impl.appendLine("    KTC_ASSERT_NOT_DISPOSED(\$self);")
 
     val prevState = saveFunState()
     currentFnReturnsNullable = returnsNullable

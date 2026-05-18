@@ -164,7 +164,6 @@ fun main() {
     // Disposable-like interface
     val f = File("data.txt")
     println(f.label())
-    f.dispose()
 
     // dispose through interface (vtable dispatch)
     val r: Resource = f

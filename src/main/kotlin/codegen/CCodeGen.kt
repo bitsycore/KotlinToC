@@ -53,7 +53,7 @@ import com.bitsycore.ktc.utils.wrapYellow
  *
  * `fun main()` is never prefixed — always emits `int main(void)`.
  */
-class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = listOf(), internal val sourceLines: List<String> = emptyList(), internal val memTrack: Boolean = false, internal val sourceFileName: String = "") {
+class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = listOf(), internal val sourceLines: List<String> = emptyList(), internal val memTrack: Boolean = false, internal val disposedMode: String = "NO", internal val doubleDisposeMode: String = "NO", internal val sourceFileName: String = "") {
 
     // ── Package prefix ───────────────────────────────────────────────
     internal val prefix: String = file.pkg?.replace('.', '_')?.plus("_") ?: ""
@@ -925,6 +925,14 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 
         hdr.appendLine("#pragma once")
         if (memTrack) hdr.appendLine("#define KTC_MEM_TRACK")
+        when (disposedMode) {
+            "ASSERT" -> hdr.appendLine("#define KTC_DISPOSED_ASSERT")
+            "LOG"    -> hdr.appendLine("#define KTC_DISPOSED_LOG")
+        }
+        when (doubleDisposeMode) {
+            "ASSERT" -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_ASSERT")
+            "LOG"    -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_LOG")
+        }
         // ktc_* packages live in ktc/ subdir alongside ktc_core; user packages live one level up
         val vIsKtcPkg = (file.pkg?.replace('.', '_') ?: "").startsWith("ktc_")
         val vKtcPrefix = if (vIsKtcPkg) "" else "ktc/"

@@ -8,9 +8,13 @@
 #   .\run_tests.ps1 -Run HashMapTest           # Run a single test (verbose)
 #   .\run_tests.ps1 -Run "Test1,Test2"         # Run multiple tests
 #   .\run_tests.ps1 -Skip unit                 # Skip unit tests
-#   .\run_tests.ps1 -Run game -MemTrack        # With --mem-track
-#   .\run_tests.ps1 -Run game -Ast             # With --ast
-#   .\run_tests.ps1 -Run game -DumpSemantics   # With --dump-semantics
+#   .\run_tests.ps1 -Run game -MemTrack           # With --mem-track
+#   .\run_tests.ps1 -Run game -Ast                # With --ast
+#   .\run_tests.ps1 -Run game -DumpSemantics      # With --dump-semantics
+#   .\run_tests.ps1 -Run game -Disposed ASSERT        # Use-after-dispose: abort
+#   .\run_tests.ps1 -Run game -Disposed LOG            # Use-after-dispose: log and continue
+#   .\run_tests.ps1 -Run game -DoubleDispose ASSERT    # Double-dispose: abort
+#   .\run_tests.ps1 -Run game -DoubleDispose LOG       # Double-dispose: log and continue
 #   .\run_tests.ps1 -Clean                     # Remove all test out/ directories
 #   .\run_tests.ps1 -Rebuild                   # Force clean rebuild of JAR
 #   .\run_tests.ps1 -Compiler clang            # Override C compiler
@@ -31,16 +35,20 @@ param(
 	[switch]$MemTrack,
 	[switch]$Ast,
 	[switch]$DumpSemantics,
+	[string]$Disposed      = "NO",   # ASSERT | LOG | NO
+	[string]$DoubleDispose = "NO",   # ASSERT | LOG | NO
 	[switch]$Clean,
 	[switch]$Rebuild,
-	[switch]$Help
+	[switch]$Help,
+	[Parameter(ValueFromRemainingArguments=$true)]
+	[string[]]$vUnknownArgs = @()
 )
 
 # ==================
 # MARK: Setup
 # ==================
 
-if ($Help) {
+function Show-Help {
 	$vInUsage = $false
 	Get-Content $PSCommandPath | ForEach-Object {
 		$vLine = $_.TrimStart()
@@ -48,6 +56,17 @@ if ($Help) {
 		elseif ($vInUsage -and $vLine -notmatch '^#') { $vInUsage = $false; return }
 		if ($vInUsage) { Write-Host ($vLine -replace '^# ?', '') }
 	}
+}
+
+if ($vUnknownArgs.Count -gt 0) {
+	Write-Host "Unknown parameter(s): $($vUnknownArgs -join ', ')" -ForegroundColor Red
+	Write-Host ""
+	Show-Help
+	exit 1
+}
+
+if ($Help) {
+	Show-Help
 	exit 0
 }
 
@@ -458,10 +477,14 @@ class TuiRunner {
 	TuiRunner([string[]]$inNames, [string]$inCC) {
 		$this.Tests  = @($inNames | ForEach-Object { [PSCustomObject]@{ Name = $_; On = $true } })
 		$this.Opts   = @(
-			[PSCustomObject]@{ Label = "Skip Unit Tests  (-Skip unit)";       Key = "SkipUnit";      On = $false },
-			[PSCustomObject]@{ Label = "Memory Tracking  (--mem-track)";      Key = "MemTrack";      On = $false },
-			[PSCustomObject]@{ Label = "Dump AST         (--ast)";            Key = "Ast";           On = $false },
-			[PSCustomObject]@{ Label = "Dump Semantics   (--dump-semantics)"; Key = "DumpSemantics"; On = $false }
+			[PSCustomObject]@{ Label = "Skip Unit Tests      (-Skip unit)";        Key = "SkipUnit";            On = $false },
+			[PSCustomObject]@{ Label = "Memory Tracking      (--mem-track)";       Key = "MemTrack";            On = $false },
+			[PSCustomObject]@{ Label = "Dump AST             (--ast)";             Key = "Ast";                 On = $false },
+			[PSCustomObject]@{ Label = "Dump Semantics       (--dump-semantics)";  Key = "DumpSemantics";       On = $false },
+			[PSCustomObject]@{ Label = "Disposed ASSERT      (--disposed=ASSERT)"; Key = "DisposedAssert";      On = $false },
+			[PSCustomObject]@{ Label = "Disposed LOG         (--disposed=LOG)";    Key = "DisposedLog";         On = $false },
+			[PSCustomObject]@{ Label = "Double-Dispose ASSERT  (--double-dispose=ASSERT)"; Key = "DoubleDisposeAssert"; On = $false },
+			[PSCustomObject]@{ Label = "Double-Dispose LOG     (--double-dispose=LOG)";    Key = "DoubleDisposeLog";    On = $false }
 		)
 		$this.Builds = @(
 			[PSCustomObject]@{ Label = "JAR (default)"; Value = "jar";      On = $true  },
@@ -497,8 +520,8 @@ class TuiRunner {
 		$vW     = [Math]::Min(62, [Console]::WindowWidth - 2)
 		$vTermH = [Console]::WindowHeight
 
-		# Guard: 27 fixed lines + 2-line margin = 29 minimum rows required
-		$kMinH = 29
+		# Guard: 31 fixed lines + 2-line margin = 33 minimum rows required
+		$kMinH = 33
 		if ($vTermH -lt $kMinH) {
 			$vSb = [System.Text.StringBuilder]::new(512)
 			[void]$vSb.Append("${e}[H")
@@ -599,7 +622,7 @@ class TuiRunner {
 		# Fill rows below the 27 fixed lines with blanks — overwrites sub-screen residue without [2J flicker.
 		# Use $vTermH-28 lines with newlines + 1 line without: total newlines = $vTermH-1, no terminal scroll.
 		$vBlankLine = "".PadRight($vW + 2) + "`n"
-		$vFillCount = [Math]::Max(0, $vTermH - 28)
+		$vFillCount = [Math]::Max(0, $vTermH - 32)
 		for ($vi = 0; $vi -lt $vFillCount; $vi++) { [void]$vSb.Append($vBlankLine) }
 		[void]$vSb.Append("".PadRight($vW + 2))
 
@@ -792,12 +815,18 @@ class TuiRunner {
 	[object] BuildResult() {
 		$vSelected = @($this.Tests | Where-Object { $_.On } | ForEach-Object { $_.Name })
 		if ($vSelected.Count -eq 0) { return $null }
+		$vDispAssert = ($this.Opts | Where-Object { $_.Key -eq "DisposedAssert" }).On   # disposed ASSERT checked
+		$vDispLog    = ($this.Opts | Where-Object { $_.Key -eq "DisposedLog"   }).On   # disposed LOG checked
+		$vDDAssert   = ($this.Opts | Where-Object { $_.Key -eq "DoubleDisposeAssert" }).On  # double-dispose ASSERT
+		$vDDLog      = ($this.Opts | Where-Object { $_.Key -eq "DoubleDisposeLog"   }).On  # double-dispose LOG
 		return [PSCustomObject]@{
 			Tests         = $vSelected
 			SkipUnit      = ($this.Opts   | Where-Object { $_.Key -eq "SkipUnit"      }).On
 			MemTrack      = ($this.Opts   | Where-Object { $_.Key -eq "MemTrack"      }).On
 			Ast           = ($this.Opts   | Where-Object { $_.Key -eq "Ast"           }).On
 			DumpSemantics = ($this.Opts   | Where-Object { $_.Key -eq "DumpSemantics" }).On
+			Disposed      = if ($vDispAssert) { "ASSERT" } elseif ($vDispLog) { "LOG" } else { "NO" }
+			DoubleDispose = if ($vDDAssert)   { "ASSERT" } elseif ($vDDLog)   { "LOG" } else { "NO" }
 			Build         = ($this.Builds | Where-Object { $_.On                      }).Value
 			Compiler      = ($this.Fields | Where-Object { $_.Key -eq "Compiler"      }).Value
 			CcArgs        = ($this.Fields | Where-Object { $_.Key -eq "CcArgs"        }).Value
@@ -829,9 +858,11 @@ if ($Interactive) {
 	$vCC    = $vSel.Compiler
 	$CCArgs = $vSel.CcArgs
 	$vArgsStr = (@(
-		if ($vSel.MemTrack)      { "--mem-track" }
-		if ($vSel.Ast)           { "--ast" }
-		if ($vSel.DumpSemantics) { "--dump-semantics" }
+		if ($vSel.MemTrack)                    { "--mem-track" }
+		if ($vSel.Ast)                         { "--ast" }
+		if ($vSel.DumpSemantics)               { "--dump-semantics" }
+		if ($vSel.Disposed      -ne "NO") { "--disposed=$($vSel.Disposed)" }
+		if ($vSel.DoubleDispose -ne "NO") { "--double-dispose=$($vSel.DoubleDispose)" }
 	) -join " ")
 
 	Write-Info "Using C compiler: $vCC"
@@ -857,10 +888,12 @@ if ($Run -ne "") {
 	Invoke-Build
 
 	$vArgsStr = (@(
-		if ($MemTrack)              { "--mem-track" }
-		if ($Ast)                   { "--ast" }
-		if ($DumpSemantics)         { "--dump-semantics" }
-		if ($TranspilerArgs -ne "") { $TranspilerArgs }
+		if ($MemTrack)                    { "--mem-track" }
+		if ($Ast)                         { "--ast" }
+		if ($DumpSemantics)               { "--dump-semantics" }
+		if ($Disposed      -ne "NO") { "--disposed=$($Disposed.ToUpper())" }
+		if ($DoubleDispose -ne "NO") { "--double-dispose=$($DoubleDispose.ToUpper())" }
+		if ($TranspilerArgs -ne "")       { $TranspilerArgs }
 	) -join " ")
 
 	$vRunNames  = $Run -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
@@ -884,10 +917,12 @@ if ($Run -ne "") {
 Write-Info "Using C compiler: $vCC"
 
 $vArgsStr  = (@(
-	if ($MemTrack)              { "--mem-track" }
-	if ($Ast)                   { "--ast" }
-	if ($DumpSemantics)         { "--dump-semantics" }
-	if ($TranspilerArgs -ne "") { $TranspilerArgs }
+	if ($MemTrack)                    { "--mem-track" }
+	if ($Ast)                         { "--ast" }
+	if ($DumpSemantics)               { "--dump-semantics" }
+	if ($Disposed      -ne "NO") { "--disposed=$($Disposed.ToUpper())" }
+	if ($DoubleDispose -ne "NO") { "--double-dispose=$($DoubleDispose.ToUpper())" }
+	if ($TranspilerArgs -ne "")       { $TranspilerArgs }
 ) -join " ")
 $vAllNames = @(Get-ChildItem $vTestsDir -Directory | Sort-Object Name | ForEach-Object Name)
 

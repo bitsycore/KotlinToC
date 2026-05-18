@@ -1831,11 +1831,11 @@ internal fun CCodeGen.genWhenCond(c: WhenCond, subject: Expr?): String {
             val exprKtcCore = (exprKtc as? KtcType.Nullable)?.inner ?: exprKtc
             val memOp = if (exprKtcCore is KtcType.Ptr) "->" else "."
             val check = if (classes.containsKey(target)) {
-                "$subj${memOp}__base.typeId == ${typeFlatName(target)}_TYPE_ID"
+                "KTC_GET_TYPEID($subj${memOp}__base.typeId) == ${typeFlatName(target)}_TYPE_ID"
             } else if (interfaces.containsKey(target)) {
                 val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
                 if (impls.isEmpty()) "false"
-                else impls.joinToString(" || ") { "$subj${memOp}__base.typeId == ${typeFlatName(it)}_TYPE_ID" }
+                else impls.joinToString(" || ") { "KTC_GET_TYPEID($subj${memOp}__base.typeId) == ${typeFlatName(it)}_TYPE_ID" }
             } else if (targetKtc.isArrayLike) {
                 if (exprKtcCore != null && exprKtcCore.isArrayLike) {
                     if (exprKtcCore.toInternalStr == target) "true" else "false"

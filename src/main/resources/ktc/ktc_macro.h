@@ -220,4 +220,100 @@
 #define __IMPL_KTC_TYPE_ID(NAME, ID) __IMPL_KTC_TYPE_ID_2(NAME, ID)
 #define KTC_TYPE_ID(ID) __IMPL_KTC_TYPE_ID(CLS, ID)
 
+/* =========================================================
+ * Type-ID constants and read helper
+ *
+ * typeId is ktc_UInt (uint32_t) so bit 31 is the disposed flag
+ * and all valid IDs fit cleanly in bits 0-30.
+ *
+ * KTC_UNDEFINED_TYPE_ID — sentinel for uninitialized instances.
+ *   Value 0xFFFFFFFE (UINT32_MAX-1) is outside the valid ID range
+ *   and outside any disposed-flag combination.
+ *
+ * KTC_GET_TYPEID — strips bit 31 before comparisons so is/as
+ *   checks work even on disposed objects if needed.
+ * ========================================================= */
+#define KTC_UNDEFINED_TYPE_ID ((ktc_UInt)0xFFFFFFFEU)
+#define KTC_GET_TYPEID(x)     ((ktc_UInt)(x) & (ktc_UInt)0x7FFFFFFFU)
+
+/* =========================================================
+ * Dispose-tracking helpers
+ *
+ * Define one or both mode flags before the generated header to
+ * activate runtime dispose tracking.  The MSB of typeId (bit 31)
+ * is the disposed flag; KTC_GET_TYPEID strips it for type checks.
+ *
+ * Use-after-dispose — controls KTC_ASSERT_NOT_DISPOSED:
+ *   KTC_DISPOSED_ASSERT  abort with stacktrace (ASSERT mode)
+ *   KTC_DISPOSED_LOG     print stacktrace and continue (LOG mode)
+ *   (neither)            silent no-op (NO / default)
+ *
+ * Double-dispose — controls the guard inside KTC_MARK_DISPOSED:
+ *   KTC_DOUBLE_DISPOSE_ASSERT  abort with stacktrace
+ *   KTC_DOUBLE_DISPOSE_LOG     print stacktrace and continue
+ *   (neither)                  silent no-op (NO / default)
+ *
+ * ktc_core_stacktrace_print is declared in ktc_core.h which is
+ * always included before user code expands these macros.
+ * ========================================================= */
+#if defined(KTC_DISPOSED_ASSERT) || defined(KTC_DISPOSED_LOG) || \
+    defined(KTC_DOUBLE_DISPOSE_ASSERT) || defined(KTC_DOUBLE_DISPOSE_LOG)
+
+#define KTC_DISPOSED_FLAG ((ktc_UInt)0x80000000)
+
+/* KTC_ASSERT_NOT_DISPOSED — inserted at the top of every non-dispose method */
+#if defined(KTC_DISPOSED_ASSERT)
+#define KTC_ASSERT_NOT_DISPOSED(self) \
+    do { \
+        if ((self)->__base.typeId & KTC_DISPOSED_FLAG) { \
+            static const char _ktc_msg[] = "This instance is already disposed"; \
+            ktc_core_stacktrace_print(_ktc_msg, (int)(sizeof(_ktc_msg) - 1)); \
+            exit(1); \
+        } \
+    } while (0)
+#elif defined(KTC_DISPOSED_LOG)
+#define KTC_ASSERT_NOT_DISPOSED(self) \
+    do { \
+        if ((self)->__base.typeId & KTC_DISPOSED_FLAG) { \
+            static const char _ktc_msg[] = "Warning: method called on disposed instance"; \
+            ktc_core_stacktrace_print(_ktc_msg, (int)(sizeof(_ktc_msg) - 1)); \
+        } \
+    } while (0)
+#else
+#define KTC_ASSERT_NOT_DISPOSED(self) ((void)(self))
+#endif
+
+/* _KTC_DOUBLE_DISPOSE_HANDLE — inline action on double-dispose */
+#if defined(KTC_DOUBLE_DISPOSE_ASSERT)
+#define _KTC_DOUBLE_DISPOSE_HANDLE \
+    do { \
+        static const char _ktc_msg[] = "Already Disposed"; \
+        ktc_core_stacktrace_print(_ktc_msg, (int)(sizeof(_ktc_msg) - 1)); \
+        exit(1); \
+    } while (0)
+#elif defined(KTC_DOUBLE_DISPOSE_LOG)
+#define _KTC_DOUBLE_DISPOSE_HANDLE \
+    do { \
+        static const char _ktc_msg[] = "Warning: dispose() called on already-disposed instance"; \
+        ktc_core_stacktrace_print(_ktc_msg, (int)(sizeof(_ktc_msg) - 1)); \
+    } while (0)
+#else
+#define _KTC_DOUBLE_DISPOSE_HANDLE do { (void)0; } while (0)
+#endif
+
+/* KTC_MARK_DISPOSED — inserted at the top of dispose(); sets bit 31 */
+#define KTC_MARK_DISPOSED(self) \
+    do { \
+        if ((self)->__base.typeId & KTC_DISPOSED_FLAG) { \
+            _KTC_DOUBLE_DISPOSE_HANDLE; \
+        } \
+        (self)->__base.typeId |= KTC_DISPOSED_FLAG; \
+    } while (0)
+
+#else
+/* No dispose tracking (NO mode / default) */
+#define KTC_MARK_DISPOSED(self)       ((void)(self))
+#define KTC_ASSERT_NOT_DISPOSED(self) ((void)(self))
+#endif
+
 #endif

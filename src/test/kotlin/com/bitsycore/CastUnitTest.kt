@@ -19,7 +19,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c is Circle
             }
         """)
-        r.sourceContains("__base.typeId == test_Main_Circle_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
     }
 
     @Test fun isCheckNegated() {
@@ -32,7 +32,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c !is Circle
             }
         """)
-        r.sourceContains("!(c.__base.typeId == test_Main_Circle_TYPE_ID)")
+        r.sourceContains("!(KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID)")
     }
 
     @Test fun isCheckOnInterface() {
@@ -47,7 +47,7 @@ class CastUnitTest : TranspilerTestBase() {
             }
         """)
         // Interface is-check enumerates implementing classes
-        r.sourceContains("c.__base.typeId == test_Main_Circle_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
     }
 
     @Test fun isCheckOnInterfaceMultipleImpls() {
@@ -61,7 +61,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c is Drawable
             }
         """)
-        r.sourceContains("__base.typeId == test_Main_Circle_TYPE_ID || c.__base.typeId == test_Main_Square_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID || KTC_GET_TYPEID(c.__base.typeId) == test_Main_Square_TYPE_ID")
     }
 
     @Test fun asCastNonInterface() {
@@ -105,7 +105,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val c = (s as? Circle)
             }
         """)
-        r.sourceContains("__base.typeId == test_Main_Circle_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Main_Circle_TYPE_ID")
         r.sourceContains("KTC_SOME")
         r.sourceContains("KTC_NONE")
     }
@@ -122,7 +122,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val d = (c as? Drawable)
             }
         """)
-        r.sourceContains("__base.typeId == test_Main_Circle_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
     }
 
     @Test fun isCheckInWhen() {
@@ -140,7 +140,7 @@ class CastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        r.sourceContains("__base.typeId == test_Circle_TYPE_ID")
-        r.sourceContains("__base.typeId == test_Square_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Circle_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Square_TYPE_ID")
     }
 }

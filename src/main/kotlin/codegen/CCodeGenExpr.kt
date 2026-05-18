@@ -196,11 +196,11 @@ fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val vIsClassInfo = classInfoFor(targetKtc)                                    // non-null if target is a user class
         val vIsIfaceInfo = ifaceInfoFor(targetKtc)                                    // non-null if target is an interface
         val check = if (vIsClassInfo != null) {
-            "${inner}${memOp}__base.typeId == ${vIsClassInfo.flatName}_TYPE_ID"
+            "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${vIsClassInfo.flatName}_TYPE_ID"
         } else if (vIsIfaceInfo != null) {
             val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
             if (impls.isEmpty()) "false"
-            else impls.joinToString(" || ") { "${inner}${memOp}__base.typeId == ${typeFlatName(it)}_TYPE_ID" }
+            else impls.joinToString(" || ") { "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${typeFlatName(it)}_TYPE_ID" }
         } else if (targetKtc.isArrayLike) {
             if (exprKtcCore != null && exprKtcCore.isArrayLike) {
                 if (exprKtcCore.toInternalStr == target) "true" else "false"
@@ -220,7 +220,7 @@ fun CCodeGen.genExpr(e: Expr): String = when (e) {
                 } else "false"
             } else {
                 val typeId = getTypeId(target)
-                    "(${inner}${memOp}__base.typeId == $typeId)"
+                    "(KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == $typeId)"
             }
         } else {
             "/* is-check: unknown type '${target}' */ true"
@@ -242,14 +242,14 @@ fun CCodeGen.genExpr(e: Expr): String = when (e) {
             val optCType = optCTypeName("$target?")
             val memOp = if (isPtr) "->" else "."
             val check = if (vCastClassInfo != null) {
-                "${inner}${memOp}__base.typeId == ${vCastClassInfo.flatName}_TYPE_ID"
+                "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${vCastClassInfo.flatName}_TYPE_ID"
             } else if (vCastIfaceInfo != null) {
                 val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
                 if (impls.isEmpty()) "false"
-                else impls.joinToString(" || ") { "${inner}${memOp}__base.typeId == ${typeFlatName(it)}_TYPE_ID" }
+                else impls.joinToString(" || ") { "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${typeFlatName(it)}_TYPE_ID" }
             } else if (targetKtc !is KtcType.User || targetKtc.kind != KtcType.UserKind.Class) {
                 val typeId = getTypeId(target)
-                "${inner}${memOp}__base.typeId == $typeId"
+                "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == $typeId"
             } else {
                 "true"
             }

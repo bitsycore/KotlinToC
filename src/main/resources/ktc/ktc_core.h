@@ -107,9 +107,11 @@ ktc_UInt ktc_core_rand_range(ktc_ULong* state, ktc_ULong* inc, ktc_UInt bound);
 typedef struct { ktc_Int __array_type_id; ktc_Int size; void* data; } ktc_ArrayTrampoline;
 
 /** Base "supertype" embedded at the start of every class/object/interface struct.
- *  Mirrors Kotlin's implicit `Any` superclass. */
+ *  Mirrors Kotlin's implicit `Any` superclass.
+ *  typeId is unsigned so the MSB (bit 31) can serve as a disposed flag
+ *  without introducing negative values or sign-bit ambiguity. */
 typedef struct {
-    ktc_Int typeId;
+    ktc_UInt typeId;
 } ktc_core_AnySupertype;
 
 /** @Ptr interface trampoline — fat pointer for interface references.

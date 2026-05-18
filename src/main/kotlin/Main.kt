@@ -12,11 +12,13 @@ val aClass = object {}.javaClass
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--mem-track] [--ast] [--dump-semantics]")
+        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--ast] [--dump-semantics]")
         System.err.println("  Transpiles Kotlin subset files to C11.")
-        System.err.println("  --mem-track        Enable allocation tracking (alloc/free counts + leak report)")
-        System.err.println("  --ast              Dump parsed AST and exit (no C output)")
-        System.err.println("  --dump-semantics   Dump AST + semantic analysis (classes, interfaces, generics, etc.) and exit")
+        System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
+        System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
+        System.err.println("  --double-dispose=ASSERT|LOG|NO  Double-dispose: abort / log+continue / ignore (default: NO)")
+        System.err.println("  --ast                        Dump parsed AST and exit (no C output)")
+        System.err.println("  --dump-semantics         Dump AST + semantic analysis and exit")
         exitProcess(1)
     }
 
@@ -24,6 +26,8 @@ fun main(args: Array<String>) {
     val inputPaths = mutableListOf<String>()
     var outputDir = "."
     var memTrack = false
+    var disposedMode = "NO"       // ASSERT | LOG | NO
+    var doubleDisposeMode = "NO"  // ASSERT | LOG | NO
     var dumpAst = false
     var dumpSemantics = false
     var i = 0
@@ -33,6 +37,12 @@ fun main(args: Array<String>) {
             i += 2
         } else if (args[i] == "--mem-track") {
             memTrack = true
+            i++
+        } else if (args[i].startsWith("--disposed=")) {
+            disposedMode = args[i].removePrefix("--disposed=").uppercase()
+            i++
+        } else if (args[i].startsWith("--double-dispose=")) {
+            doubleDisposeMode = args[i].removePrefix("--double-dispose=").uppercase()
             i++
         } else if (args[i] == "--ast") {
             dumpAst = true
@@ -196,6 +206,8 @@ fun main(args: Array<String>) {
                 allAsts,
                 mergedSourceLines,
                 memTrack = memTrack,
+                disposedMode = disposedMode,
+                doubleDisposeMode = doubleDisposeMode,
                 sourceFileName = srcName
             ).generate()
         } catch (e: Exception) {
