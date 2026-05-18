@@ -680,8 +680,10 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal fun tmp(): String = "$${tmpCounter++}"
 
     // ── Memory tracking helpers (Kotlin source attribution) ──────────
-    /** Kotlin source location string for current statement, e.g. `"File.kt", 42` */
+    /* Raw const char* location for direct C calls (ktc_core_malloc/free/realloc) */
     internal fun ktSrc(): String = "\"$currentSourceFile\", $currentStmtLine"
+    /* ktc_String location for Allocator vtable calls (file param is String) */
+    internal fun ktSrcStr(): String = "ktc_core_str(\"$currentSourceFile\"), $currentStmtLine"
     internal fun tMalloc(sizeExpr: String) = if (memTrack) "ktc_core_malloc($sizeExpr, ${ktSrc()})" else "malloc($sizeExpr)"
     internal fun tCalloc(nExpr: String, sizeExpr: String) = if (memTrack) "ktc_core_calloc($nExpr, $sizeExpr, ${ktSrc()})" else "calloc($nExpr, $sizeExpr)"
     internal fun tRealloc(ptrExpr: String, sizeExpr: String) = if (memTrack) "ktc_core_realloc($ptrExpr, $sizeExpr, ${ktSrc()})" else "realloc($ptrExpr, $sizeExpr)"

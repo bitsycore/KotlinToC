@@ -736,7 +736,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     // Assume it's already a trampoline or compatible
                     ifExpr = allocExpr
                 }
-                preStmts += "$elemC* ${t}_ptr = ($elemC*)((ktc_std_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($elemC) * (size_t)($sizeExpr));"
+                preStmts += "$elemC* ${t}_ptr = ($elemC*)((ktc_std_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($elemC) * (size_t)($sizeExpr), ${ktSrcStr()});"
                 if (className == "Array") preStmts += "const ktc_Int ${t}_ptr\$len = $sizeExpr;"
                 return "${t}_ptr"
             }
@@ -753,7 +753,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     allocExpr
                 }
                 preStmts += "ktc_std_Allocator $t = $allocInit;"
-                preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName));"
+                preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName), ${ktSrcStr()});"
                 preStmts += "if (${t}_ptr) *${t}_ptr = ${cName}_primaryConstructor($ctorArgs);"
                 return "${t}_ptr"
             }
@@ -785,7 +785,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                             "${typeFlatName(allocObjName!!)}_as_Allocator(&$allocExpr)"
                         } else { allocExpr }
                         preStmts += "ktc_std_Allocator $t = $allocInit;"
-                        preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName));"
+                        preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName), ${ktSrcStr()});"
                         preStmts += "if (${t}_ptr) *${t}_ptr = ${cName}_primaryConstructor($ctorArgs);"
                         return "${t}_ptr"
                     }
@@ -1318,7 +1318,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             val overloadedName = methodName(methodDecl, ci.methods)
             val fnName = if (methodDecl.isPrivate) "PRIV_$overloadedName" else overloadedName
             // Re-expand args with the method's actual param types (ensures $len is added for @Ptr arrays)
-            val filledArgs = fillDefaults(args, methodDecl.params, methodDecl.params.associate { it.name to it.default }, methodDecl.name, strict = true)
+            val filledArgs = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, currentClass), methodDecl.name, strict = true)
             val expandedArgs2 = expandCallArgs(filledArgs, methodDecl.params)
             val selfArg = if (selfIsPointer) "\$self" else "&\$self"
             val allArgs = if (expandedArgs2.isEmpty()) selfArg else "$selfArg, $expandedArgs2"
@@ -1344,7 +1344,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             if (methodDecl != null) {
                 val overloadedName = methodName(methodDecl, objects[parentObj]!!.methods)
                 val fnName = if (methodDecl.isPrivate) "PRIV_$overloadedName" else overloadedName
-                val filledArgs = fillDefaults(args, methodDecl.params, methodDecl.params.associate { it.name to it.default }, methodDecl.name, strict = true)
+                val filledArgs = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, parentObj), methodDecl.name, strict = true)
                 val expandedArgs2 = expandCallArgs(filledArgs, methodDecl.params)
                 // @Size(N) return → out-parameter ABI
                 if (methodDecl.returnType != null && isSizedArrayTypeRef(methodDecl.returnType)) {
@@ -1383,7 +1383,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         if (methodDecl != null) {
             val overloadedName = methodName(methodDecl, oi.methods)
             val fnName = if (methodDecl.isPrivate) "PRIV_$overloadedName" else overloadedName
-            val filledArgs = fillDefaults(args, methodDecl.params, methodDecl.params.associate { it.name to it.default }, methodDecl.name, strict = true)
+            val filledArgs = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, currentObject), methodDecl.name, strict = true)
             val expandedArgs2 = expandCallArgs(filledArgs, methodDecl.params)
             // @Size(N) return → out-parameter ABI
             if (methodDecl.returnType != null && isSizedArrayTypeRef(methodDecl.returnType)) {
@@ -1933,7 +1933,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                 ifExpr = t
             } else { ifExpr = allocExpr }
         }
-        preStmts += "$elemC* ${t}_ptr = ($elemC*)((ktc_std_Allocator_vt*)$ifExpr.vt)->reallocMem($ifExpr.obj, $recv, sizeof($elemC) * (size_t)($newSizeExpr));"
+        preStmts += "$elemC* ${t}_ptr = ($elemC*)((ktc_std_Allocator_vt*)$ifExpr.vt)->reallocMem($ifExpr.obj, $recv, sizeof($elemC) * (size_t)($newSizeExpr), ${ktSrcStr()});"
         val isRawArray = recvTypeKtc.asArr == null && recvTypeKtc is KtcType.Ptr
         if (!isRawArray) preStmts += "ktc_Int ${t}_ptr\$len = $newSizeExpr;"
         return "${t}_ptr"
@@ -1968,7 +1968,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                 typeSubst = classBindings2
             }
             val expandedArgs2 = if (methodDecl != null) {
-                val filled2 = fillDefaults(args, methodDecl.params, methodDecl.params.associate { it.name to it.default }, methodDecl.name, strict = true)
+                val filled2 = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, pointerBase), methodDecl.name, strict = true)
                 expandCallArgs(filled2, methodDecl.params)
             } else argStr
             if (classBindings2 != null && classBindings2.isNotEmpty()) {
@@ -2074,11 +2074,16 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         // Value interface uses tagged union: recv.vt->method(&recv.data, ...)
         val isIfacePtr = rawRecvTypeKtc is KtcType.Ptr
         val vSelfArg = if (isIfacePtr) "$recv.obj" else ifaceVtableSelf(vIfaceInfo.name, recv)
-        val allArgs = if (argStr.isEmpty()) vSelfArg else "$vSelfArg, $argStr"
         val vtAccess = if (isIfacePtr) "((${cIface}_vt*)$recv.vt)"
                        else "$recv.vt"
         val ifaceMethod = vIfaceInfo.methods.find { it.name == method }
             ?: collectAllIfaceMethods(vIfaceInfo).find { it.name == method }
+        // Fill defaults from the interface method (the origin of default values in Kotlin)
+        val vFilledArgStr = if (ifaceMethod != null) {
+            val vFilled = fillDefaults(args, ifaceMethod.params, ifaceMethod.params.associate { it.name to it.default }, method, strict = true)
+            expandCallArgs(vFilled, ifaceMethod.params)
+        } else argStr
+        val allArgs = if (vFilledArgStr.isEmpty()) vSelfArg else "$vSelfArg, $vFilledArgStr"
         if (ifaceMethod?.returnType?.nullable == true) {
             val retType = resolveTypeName(ifaceMethod.returnType).toInternalStr
             val optType = optCTypeName("${retType}?")
@@ -2244,7 +2249,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
             typeSubst = classBindings
         }
         val expandedArgs = if (methodDecl != null) {
-            val filled = fillDefaults(args, methodDecl.params, methodDecl.params.associate { it.name to it.default }, methodDecl.name, strict = true)
+            val filled = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, vClassInfo.baseName), methodDecl.name, strict = true)
             expandCallArgs(filled, methodDecl.params)
         } else argStr
         if (classBindings != null && classBindings.isNotEmpty()) {
@@ -2280,7 +2285,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val vObjMethod = findOverload(method, args, vDotObjInfo.methods)
         val overloadedMethod = vObjMethod?.let { methodName(it, vDotObjInfo.methods) } ?: method
         val vObjArgs = if (vObjMethod != null) {
-            val filled = fillDefaults(args, vObjMethod.params, vObjMethod.params.associate { it.name to it.default }, vObjMethod.name, strict = true)
+            val filled = fillDefaults(args, vObjMethod.params, effectiveDefaults(vObjMethod, vDotObjInfo.name), vObjMethod.name, strict = true)
             expandCallArgs(filled, vObjMethod.params)
         } else argStr
         // @Size(N) return → out-parameter ABI
@@ -2507,6 +2512,16 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     if (e.obj is NameExpr && e.obj.name == "c" && lookupVar("c") == null) {
         return e.name
     }
+    // Macro compile-time callsite info: expands to the Kotlin source file/line at the call site
+    if (e.obj is NameExpr && e.obj.name == "Macro") {
+        return when (e.name) {
+            "FILE"   -> "ktc_core_str(\"$currentSourceFile\")"
+            "LINE"   -> "$currentStmtLine"
+            "C_FILE" -> "ktc_core_str(__FILE__)"
+            "C_LINE" -> "__LINE__"
+            else     -> codegenError("Macro has no member '${e.name}'")
+        }
+    }
 
     val recvType = inferExprType(e.obj)                                               // String? receiver type (string-based)
     val recvTypeKtc = inferExprTypeKtc(e.obj)                                         // KtcType? receiver type
@@ -2546,6 +2561,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Array .size → trampolined param uses trampoline struct field; others use $len
     if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return "${e.obj.name}.size"
     if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}\$len"
+    if (e.name == "ptr" && recvTypeCoreKtc is KtcType.Str) return "$recv.ptr"
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"
     if (e.name == "runeLen" && recvTypeKtc is KtcType.Str) return "ktc_core_str_runeLen($recv)"
     // Enum .ordinal → the int value itself
@@ -3641,6 +3657,26 @@ internal fun CCodeGen.genHeapArrayOfExpr(args: List<Arg>, inTypeArg: TypeRef? = 
 
 
 // ── fill default arguments ───────────────────────────────────────
+
+/* Returns the effective defaults map for a method, merging interface defaults for overrides.
+In Kotlin, only the interface (origin) declares default values; overrides don't re-declare them.
+inOwnerName: the class/object name that owns the method (null for top-level functions). */
+internal fun CCodeGen.effectiveDefaults(
+	inMethodDecl: FunDecl,
+	inOwnerName: String?
+): Map<String, Expr?> {
+	val vLocal = inMethodDecl.params.associate { it.name to it.default } // defaults on the override itself
+	if (!inMethodDecl.isOverride || inOwnerName == null) return vLocal
+	val vIfaces = classInterfaces[inOwnerName] ?: return vLocal
+	for (vIfaceName in vIfaces) {
+		val vIfaceInfo = interfaces[vIfaceName] ?: continue
+		val vIfaceMethod = collectAllIfaceMethods(vIfaceInfo).find { it.name == inMethodDecl.name }
+			?: continue
+		val vIfaceDefaults = vIfaceMethod.params.associate { it.name to it.default }
+		return vLocal.mapValues { (vKey, vVal) -> vVal ?: vIfaceDefaults[vKey] } // local wins, iface fills gaps
+	}
+	return vLocal
+}
 
 /*
 strict=true: called after overload resolution is already committed to this specific FunDecl.

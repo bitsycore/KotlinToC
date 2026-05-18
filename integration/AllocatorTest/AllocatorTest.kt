@@ -7,7 +7,7 @@ fun testAlloc(alloc: Allocator, size: Int): @Ptr Byte {
 }
 
 fun main() {
-    println("=== alloc / free ===")
+    println("=== alloc / free === ${Macro.FILE}")
     val p1: @Ptr Byte = Heap.allocMem(64)
     println("Heap.allocMem(64): ok")
     Heap.freeMem(p1)

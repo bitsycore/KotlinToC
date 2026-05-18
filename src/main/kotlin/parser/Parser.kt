@@ -21,7 +21,7 @@ class Parser(private val tokens: List<Token>) {
             && tokens[pos + 1].type == TokenType.IDENT && tokens[pos + 1].value == "file"
             && tokens[pos + 2].type == TokenType.COLON
             && tokens[pos + 3].type == TokenType.IDENT && tokens[pos + 3].value == "DocumentationOnly"
-        if (documentationOnly) { repeat(4) { advance() }; skipTerminator() }
+        if (documentationOnly) return KtFile(null, emptyList(), emptyList(), documentationOnly = true)
         val pkg = if (at(TokenType.PACKAGE)) { advance(); parseQualifiedName().also { skipTerminator() } } else null
         val imports = mutableListOf<String>()
         while (at(TokenType.IMPORT)) { advance(); imports += parseQualifiedName(); skipTerminator() }

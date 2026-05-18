@@ -1514,7 +1514,7 @@ internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Bo
     // copyWith wrapper
     impl.appendLine("static void* ${cName}_copyWith_any(void* \$self, void* alloc) {")
     impl.appendLine("    ktc_std_Allocator* a = (ktc_std_Allocator*)alloc;")
-    impl.appendLine("    $cName* dst = ($cName*)a->vt->allocMem(a, sizeof($cName));")
+    impl.appendLine("    $cName* dst = ($cName*)a->vt->allocMem(a, sizeof($cName), ${ktSrcStr()});")
     impl.appendLine("    if (dst) *dst = *($cName*)\$self;")
     impl.appendLine("    return dst;")
     impl.appendLine("}")

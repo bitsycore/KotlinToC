@@ -490,6 +490,14 @@ internal fun CCodeGen.inferDotType(e: DotExpr): String? = inferDotTypeKtc(e)?.to
 internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
     // C package: can't infer type of C constants/macros
     if (e.obj is NameExpr && e.obj.name == "c" && lookupVar("c") == null) return null
+    // Macro compile-time callsite info
+    if (e.obj is NameExpr && e.obj.name == "Macro") {
+        return when (e.name) {
+            "FILE",   "C_FILE" -> KtcType.Str
+            "LINE",   "C_LINE" -> KtcType.Prim(KtcType.PrimKind.Int)
+            else               -> null
+        }
+    }
     if (e.obj is NameExpr && enums.containsKey(e.obj.name)) return parseResolvedTypeName(e.obj.name)
     val vDotObjInfo = resolveDotObjInfo(e)
     if (vDotObjInfo != null) {
@@ -521,6 +529,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
         val arr = recvTypeCoreKtc.asArr
         if (arr != null) return KtcType.Ptr(arr.elem)
     }
+    if (e.name == "ptr" && recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
     if (e.name == "length" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
     if (e.name == "runeLen" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
     // Enum value .name / .ordinal
