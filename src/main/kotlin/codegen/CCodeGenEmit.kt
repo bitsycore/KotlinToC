@@ -1500,7 +1500,10 @@ internal fun CCodeGen.emitAnyVtable(cName: String, className: String, isData: Bo
     // dispose wrapper
     if (members.none { it is FunDecl && it.name == "dispose" }) {
         impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")
-        impl.appendLine("    (void)\$self;")
+        if (disposedMode != "NO" || doubleDisposeMode != "NO")
+            impl.appendLine("    KTC_MARK_DISPOSED(($cName*)\$self);")
+        else
+            impl.appendLine("    (void)\$self;")
         impl.appendLine("}")
     } else {
         impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")

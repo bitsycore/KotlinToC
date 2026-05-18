@@ -83,7 +83,7 @@ fun testAtPtrAlloc(alloc: @Ptr Allocator) {
 
 class AllocHolder(private val alloc: @Ptr Allocator) {
     fun test() {
-        val p: @Ptr Byte = alloc.allocMem(64)
+        val p: @Ptr RawArray<Byte> = alloc.allocMem(64)
         println("Holder allocMem(64): ok")
         alloc.freeMem(p)
         println("Holder freeMem: ok")

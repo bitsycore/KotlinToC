@@ -53,6 +53,21 @@ import com.bitsycore.ktc.utils.wrapYellow
  *
  * `fun main()` is never prefixed — always emits `int main(void)`.
  */
+
+/* Compute a file-relative #include path.
+inFromDir: the directory of the including file, relative to outDir (e.g. "ktc/std", "com/example", "")
+inToPath:  the target path relative to outDir (e.g. "ktc/core/ktc_core.h", "ktc/std/_Package.h") */
+internal fun relIncludePath(inFromDir: String, inToPath: String): String {
+	val vFromParts = if (inFromDir.isEmpty()) emptyList() else inFromDir.split('/') // parts of the source directory
+	val vToParts   = inToPath.split('/')                                             // parts of the target path
+	var vCommon    = 0                                                               // length of shared prefix
+	while (vCommon < vFromParts.size && vCommon < vToParts.size - 1 && vFromParts[vCommon] == vToParts[vCommon])
+		vCommon++
+	val vUps  = vFromParts.size - vCommon                // how many ".." hops needed
+	val vDown = vToParts.drop(vCommon).joinToString("/") // path from the common ancestor to the target
+	return if (vUps == 0) vDown else "../".repeat(vUps) + vDown
+}
+
 class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = listOf(), internal val sourceLines: List<String> = emptyList(), internal val memTrack: Boolean = false, internal val disposedMode: String = "NO", internal val doubleDisposeMode: String = "NO", internal val sourceFileName: String = "") {
 
     // ── Package prefix ───────────────────────────────────────────────
@@ -973,9 +988,9 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             "ASSERT" -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_ASSERT")
             "LOG"    -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_LOG")
         }
-        // All includes use paths relative to outDir (resolved via -iquote outDir at compile time).
-        // core files live in ktc/core/, stdlib in ktc/std/, user packages headers are flat.
-        hdr.appendLine("#include \"ktc/core/ktc_core.h\"")
+        // All includes are file-relative — no -iquote flag needed.
+        val vFromDir = file.pkg?.replace('.', '/') ?: "" // directory of this _Package.h, relative to outDir
+        hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/core/ktc_core.h")}\"")
         hdr.appendLine()
 
         // Imports → #include (skip ktc.std imports — auto-included below)
@@ -983,12 +998,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             if (imp.startsWith("ktc.std") || imp.startsWith("ktc_std")) continue
             val parts = imp.removeSuffix(".*").split('.')
             val headerPath = parts.joinToString("/")
-            hdr.appendLine("#include \"$headerPath/_Package.h\"")
+            hdr.appendLine("#include \"${relIncludePath(vFromDir, "$headerPath/_Package.h")}\"")
         }
         // Auto-include ktc/std/_Package.h for non-stdlib packages when stdlib is present
         val hasStdlib = allFiles.any { it.pkg == "ktc.std" }
         if (hasStdlib && file.pkg != "ktc.std") {
-            hdr.appendLine("#include \"ktc/std/_Package.h\"")
+            hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/std/_Package.h")}\"")
         }
         hdr.appendLine()
 
@@ -1214,10 +1229,6 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             sourceFileName.removeSuffix(".kt").ifEmpty { "main" }
             }
         val vPkg     = file.pkg ?: ""                                       // Kotlin package string
-        /* Include path for the package header, relative to outDir via -iquote.
-           Examples:  "ktc/std/_Package.h",  "GenericsTest/_Package.h",  "com/example/_Package.h" */
-        val vPkgHeaderPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
-                             else "$vSrcName/_Package.h"
         val vSources = mutableMapOf<String, SourceFile>()                  // filename → SourceFile
 
         // Per-source-file top-level .c files (one per .kt source file, key starts with "|")
@@ -1231,7 +1242,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             val vSrc = buildString {
                 appendLine(cSourceFileHeader("top-level", vSrcFull, vPkg, vSrcName, ""))
                 appendLine()
-                appendLine("#include \"$vPkgHeaderPath\"")
+                appendLine("#include \"_Package.h\"")                       // same directory as this .c file
                 appendLine()
                 if (vTopImplFwd != null && vTopImplFwd.isNotEmpty()) {
                     append(vTopImplFwd)
@@ -1296,14 +1307,14 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 else -> continue  // unknown declaration type (e.g. generic template) — skip
                 }
 
-            /* Routing pkg header path — used for the instantiator's _Package.h include.
-               For generic instantiations routed to another package (e.g. ktc/std),
-               the include is still the current context's header: that's where the concrete
-               struct definition lives. */
-            val vInstHeaderPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
-                                  else "$vSrcName/_Package.h"
+            /* The .c file lands in vRoutingPkg's directory; its struct defs are in vPkg's _Package.h.
+               For non-generic decls vRoutingPkg == vPkg → resolves to "_Package.h".
+               For generic instantiations routed to the template's package the paths differ. */
+            val vFileDir    = vRoutingPkg.replace('.', '/')                 // directory of the output .c file
+            val vHdrAbsPath = if (vPkg.isNotEmpty()) "${vPkg.replace('.', '/')}/_Package.h"
+                              else "$vSrcName/_Package.h"                   // _Package.h with struct defs
             val vSrc = buildString {
-                appendLine("#include \"$vInstHeaderPath\"")
+                appendLine("#include \"${relIncludePath(vFileDir, vHdrAbsPath)}\"")
                 appendLine()
                 appendLine(cSourceFileHeader(vKind, vKtName, vRoutingPkg, vCName, vSrcFile, vInstFrom))
                 appendLine()
