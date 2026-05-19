@@ -170,9 +170,13 @@
 /**
  * Define Type and it's Optional wrapper
  */
-#define KTC_CLASS(TYPE, TYPE_OPT, BODY) \
-    typedef struct TYPE { BODY } TYPE; \
-    KTC_DEFINE_OPT_NAMED(TYPE, TYPE_OPT)
+#define KTC_CLASS(BODY) \
+    typedef struct KTC_TYPE_NAME { BODY } KTC_TYPE_NAME; \
+    KTC_DEFINE_OPT_NAMED(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME)
+
+/* Define an enum type using the pre-defined KTC_TYPE_NAME. */
+/* Variadic so comma-separated entries are not split into separate arguments. */
+#define KTC_ENUM(...) typedef enum { __VA_ARGS__ } KTC_TYPE_NAME
 
 /*
  * Paste helper for the _t suffix used by object singleton struct types.

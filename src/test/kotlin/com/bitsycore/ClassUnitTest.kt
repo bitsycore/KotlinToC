@@ -135,7 +135,7 @@ class ClassUnitTest : TranspilerTestBase() {
             }
             fun main() { }
         """)
-        r.headerContains("KTC_CLASS(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME,")
+        r.headerContains("KTC_CLASS(")
         r.headerContains("Outer\$Inner")
         r.headerContains("ktc_Int x;")
     }

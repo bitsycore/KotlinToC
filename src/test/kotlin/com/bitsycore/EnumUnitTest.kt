@@ -13,11 +13,10 @@ class EnumUnitTest : TranspilerTestBase() {
 
     @Test fun enumTypedef() {
         val r = transpileMain("val c = Color.RED", decls = colorDecl)
-        r.headerContains("typedef enum {")
+        r.headerContains("KTC_ENUM(")
         r.headerContains("KTC_RELATED(RED)")
         r.headerContains("KTC_RELATED(GREEN)")
         r.headerContains("KTC_RELATED(BLUE)")
-        r.headerContains("} KTC_TYPE_NAME;")
     }
 
     // ── Enum value usage ─────────────────────────────────────────────

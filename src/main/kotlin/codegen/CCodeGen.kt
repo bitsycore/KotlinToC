@@ -1116,7 +1116,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     emitNested(d, d.name)
                     }
                 }
-            is EnumDecl   -> captureForDecl(d.name) { emitEnum(d) }
+            is EnumDecl   -> {
+                if (!firstClass) hdr.appendLine()
+                firstClass = false
+                captureForDecl(d.name) { emitEnum(d) }
+                }
             is ObjectDecl -> {
                 if (!firstClass) hdr.appendLine()
                 firstClass = false

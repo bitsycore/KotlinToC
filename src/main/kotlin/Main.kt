@@ -372,9 +372,8 @@ fun main(args: Array<String>) {
             appendLine()
             if (vHasArgs) {
                 appendLine("int main(int argc, char* argv[]) {")
-                appendLine("    ktc_String \$args_buf[256];")
                 appendLine("    ktc_Int \$nargs = (argc > 1) ? (ktc_Int)(argc - 1) : 0;")
-                appendLine("    if (\$nargs > 256) \$nargs = 256;")
+                appendLine("    ktc_String* \$args_buf = (\$nargs > 0) ? (ktc_String*)ktc_core_alloca((size_t)\$nargs * sizeof(ktc_String)) : NULL;")
                 appendLine("    for (ktc_Int \$i = 0; \$i < \$nargs; \$i++) {")
                 appendLine("        \$args_buf[\$i] = (ktc_String){argv[\$i + 1], (ktc_Int)strlen(argv[\$i + 1])};")
                 appendLine("    }")
