@@ -307,9 +307,9 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
     impl.appendLine("$cClass $ctorName($extraParams) {")
 
     // Generate call to primary constructor for delegation
-    val delegateArgs = sctor.delegation.args.joinToString(", ") { a ->
-        genExpr(a.expr)
-    }
+    // genExpr may accumulate preStmts (e.g. HeapAlloc tmp vars) — flush them first.
+    val delegateArgs = sctor.delegation.args.joinToString(", ") { a -> genExpr(a.expr) }
+    flushPreStmts("    ")
     impl.appendLine("    $cClass \$self = ${cClass}_primaryConstructor($delegateArgs);")
 
     // Emit body using $self as the implicit receiver

@@ -219,6 +219,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 
 
     // ── Generics (monomorphization) ──────────────────────────────────
+    // Store original ClassDecl for every class (generic and concrete) — used for secondary ctor lookup across files.
+    internal val allClassDecls = mutableMapOf<String, ClassDecl>()
     // Store original ClassDecl for generic classes so we can re-emit per instantiation
     internal val genericClassDecls = mutableMapOf<String, ClassDecl>()
     // Store original InterfaceDecl for generic interfaces so we can monomorphize them
@@ -1588,6 +1590,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     ci.methods += m
                 }
                 classes[d.name] = ci
+                allClassDecls[d.name] = d
                 getTypeId(d.name)
                 if (d.typeParams.isNotEmpty()) genericClassDecls[d.name] = d
                 if (d.superInterfaces.isNotEmpty()) classInterfaces[d.name] = d.superInterfaces.map { it.name }

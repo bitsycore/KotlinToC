@@ -746,16 +746,38 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 val ctorArgs = e.args.drop(1).joinToString(", ") { genExpr(it.expr) }
                 val t = tmp()
                 val allocObjName = (e.args[0].expr as? NameExpr)?.name
-                val isAllocObj = allocObjName != null && classInterfaces[allocObjName]?.contains("Allocator") == true
-                val allocInit = if (isAllocObj) {
-                    "${typeFlatName(allocObjName!!)}_as_Allocator(&$allocExpr)"
-                } else {
-                    allocExpr
+                // Resolve allocator class name from type inference — allocObjName is a variable name,
+                // not a class name, so classInterfaces must be keyed by the inferred type.
+                val allocArgKtc2 = inferExprTypeKtc(e.args[0].expr)
+                val allocArgCore2 = (allocArgKtc2 as? KtcType.Nullable)?.inner ?: allocArgKtc2
+                val allocArgClassName = (allocArgCore2 as? KtcType.User)?.baseName
+                val isAllocObj = allocObjName != null && objects.containsKey(allocObjName) && classInterfaces[allocObjName]?.contains("Allocator") == true
+                val isAllocClass = allocArgClassName != null && classes.containsKey(allocArgClassName) && classInterfaces[allocArgClassName]?.contains("Allocator") == true
+                // @Ptr Allocator (ktc_IfacePtr): .obj points to original — mutations propagate correctly.
+                val isAllocTrampoline = run { val i = (allocArgCore2 as? KtcType.Ptr)?.inner; i is KtcType.User && i.kind == KtcType.UserKind.Interface }
+                val ifaceCreated: Boolean
+                val ifExpr: String
+                when {
+                    isAllocObj -> {
+                        val cConcrete = typeFlatName(allocObjName!!); val typeId = getTypeId(allocObjName)
+                        preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
+                        ifaceCreated = true; ifExpr = t
+                    }
+                    isAllocClass -> {
+                        val cConcrete = typeFlatName(allocArgClassName!!); val typeId = getTypeId(allocArgClassName)
+                        preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
+                        ifaceCreated = true; ifExpr = t
+                    }
+                    else -> { ifaceCreated = false; ifExpr = allocExpr }
                 }
-                preStmts += "ktc_std_Allocator $t = $allocInit;"
-                preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName), ${ktSrcStr()});"
-                preStmts += "if (${t}_ptr) *${t}_ptr = ${cName}_primaryConstructor($ctorArgs);"
-                return "${t}_ptr"
+                val tPtr = tmp()
+                if (ifaceCreated || isAllocTrampoline) {
+                    preStmts += "$cName* ${tPtr}_ptr = ($cName*)((ktc_std_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
+                } else {
+                    preStmts += "$cName* ${tPtr}_ptr = ($cName*)$ifExpr.vt->allocMem((void*)&$ifExpr.data, sizeof($cName), ${ktSrcStr()});"
+                }
+                preStmts += "if (${tPtr}_ptr) *${tPtr}_ptr = ${cName}_primaryConstructor($ctorArgs);"
+                return "${tPtr}_ptr"
             }
             if (genericClassDecls.containsKey(className)) {
                 val typeArgs = e.typeArgs.ifEmpty { heapAllocTargetType?.typeArgs ?: emptyList() }
@@ -780,14 +802,35 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                         }
                         val t = tmp()
                         val allocObjName = (e.args[0].expr as? NameExpr)?.name
-                        val isAllocObj = allocObjName != null && classInterfaces[allocObjName]?.contains("Allocator") == true
-                        val allocInit = if (isAllocObj) {
-                            "${typeFlatName(allocObjName!!)}_as_Allocator(&$allocExpr)"
-                        } else { allocExpr }
-                        preStmts += "ktc_std_Allocator $t = $allocInit;"
-                        preStmts += "$cName* ${t}_ptr = ($cName*)${t}.vt->allocMem((void*)&${t}.data, sizeof($cName), ${ktSrcStr()});"
-                        preStmts += "if (${t}_ptr) *${t}_ptr = ${cName}_primaryConstructor($ctorArgs);"
-                        return "${t}_ptr"
+                        val allocArgKtc3 = inferExprTypeKtc(e.args[0].expr)
+                        val allocArgCore3 = (allocArgKtc3 as? KtcType.Nullable)?.inner ?: allocArgKtc3
+                        val allocArgClassName3 = (allocArgCore3 as? KtcType.User)?.baseName
+                        val isAllocObj = allocObjName != null && objects.containsKey(allocObjName) && classInterfaces[allocObjName]?.contains("Allocator") == true
+                        val isAllocClass3 = allocArgClassName3 != null && classes.containsKey(allocArgClassName3) && classInterfaces[allocArgClassName3]?.contains("Allocator") == true
+                        val isAllocTrampoline3 = run { val i = (allocArgCore3 as? KtcType.Ptr)?.inner; i is KtcType.User && i.kind == KtcType.UserKind.Interface }
+                        val ifaceCreated3: Boolean
+                        val ifExpr3: String
+                        when {
+                            isAllocObj -> {
+                                val cConcrete = typeFlatName(allocObjName!!); val typeId = getTypeId(allocObjName)
+                                preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
+                                ifaceCreated3 = true; ifExpr3 = t
+                            }
+                            isAllocClass3 -> {
+                                val cConcrete = typeFlatName(allocArgClassName3!!); val typeId = getTypeId(allocArgClassName3)
+                                preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
+                                ifaceCreated3 = true; ifExpr3 = t
+                            }
+                            else -> { ifaceCreated3 = false; ifExpr3 = allocExpr }
+                        }
+                        val tPtr3 = tmp()
+                        if (ifaceCreated3 || isAllocTrampoline3) {
+                            preStmts += "$cName* ${tPtr3}_ptr = ($cName*)((ktc_std_Allocator_vt*)$ifExpr3.vt)->allocMem($ifExpr3.obj, sizeof($cName), ${ktSrcStr()});"
+                        } else {
+                            preStmts += "$cName* ${tPtr3}_ptr = ($cName*)$ifExpr3.vt->allocMem((void*)&$ifExpr3.data, sizeof($cName), ${ktSrcStr()});"
+                        }
+                        preStmts += "if (${tPtr3}_ptr) *${tPtr3}_ptr = ${cName}_primaryConstructor($ctorArgs);"
+                        return "${tPtr3}_ptr"
                     }
                 }
             }
@@ -1116,6 +1159,15 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         }
     }
 
+    // StringBuffer(ptr, len, cap) — explicit capacity variant (e.g. arena-backed buffer)
+    if (name == "StringBuffer" && args.size == 3
+        && !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")
+    ) {
+        val vPtrExpr = genExpr(args[0].expr)  // char* pointer
+        val vLenExpr = genExpr(args[1].expr)  // initial length
+        val vCapExpr = genExpr(args[2].expr)  // capacity
+        return "(ktc_StrBuf){$vPtrExpr, $vLenExpr, $vCapExpr}"
+    }
     // StringBuffer constructor (intrinsic — only when no user-defined class named StringBuffer)
     if (name == "StringBuffer" && args.size == 2
         && !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")
@@ -1226,7 +1278,8 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     if (classes.containsKey(resolvedName)) {
         val ci = classes[resolvedName]!!
         // Check secondary constructors by argument count (skip those with same count as primary)
-        val declClass = file.decls.filterIsInstance<ClassDecl>().find { c -> c.name == resolvedName }
+        // allClassDecls covers stdlib classes too (file.decls only has the current file's decls)
+        val declClass = allClassDecls[resolvedName]
         val primaryParamCount = ci.ctorProps.size + ci.ctorPlainParams.size
         val sctor = declClass?.secondaryCtors?.find { it.params.size == args.size && it.params.size != primaryParamCount }
         if (sctor != null) {
@@ -1238,9 +1291,8 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         val vAllParams3 = ci.ctorProps + ci.ctorPlainParams                        // all ctor parameters
         val vCtorParamList3 = vAllParams3.map { Param(it.name, it.typeRef) }        // as Param list
         val vFilledArgs3 = fillDefaults(args, vCtorParamList3, vAllParams3.associate {
-            // find matching ctor param default
-            val vCp = (file.decls.filterIsInstance<ClassDecl>().find { c -> c.name == resolvedName })
-                ?.ctorParams?.find { p -> p.name == it.name }                       // matching ctor param
+            // find matching ctor param default — allClassDecls covers stdlib classes too
+            val vCp = declClass?.ctorParams?.find { p -> p.name == it.name }       // matching ctor param
             it.name to vCp?.default
         }, resolvedName, strict = true)
         val expandedArgs = expandCallArgs(vFilledArgs3, vCtorParamList3, isCtorCall = true)
