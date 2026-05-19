@@ -111,7 +111,7 @@ class Sha256UnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        v.headerContains("KTC_METHOD(void, finalizeHash)(KTC_TYPE_NAME* \$self, ktc_Byte* \$out)")
+        v.headerContains("KTC_METHOD(ktc_Array_ktc_Byte_32, finalizeHash)(KTC_TYPE_NAME* \$self)")
     }
 
     @Test fun sha256InitFlagStatic() {

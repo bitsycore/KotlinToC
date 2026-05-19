@@ -51,7 +51,9 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
         is ForStmt -> emitFor(s, ind, insideMethod)
         is WhileStmt -> {
             loopDepth++
-            impl.appendLine("${ind}while (${genExpr(s.cond)}) {")
+            val vWhileCond = genExpr(s.cond)
+            flushPreStmts(ind)
+            impl.appendLine("${ind}while ($vWhileCond) {")
             emitBlock(s.body, ind, insideMethod)
             impl.appendLine("$ind}")
             loopDepth--
@@ -61,7 +63,9 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
             loopDepth++
             impl.appendLine("${ind}do {")
             emitBlock(s.body, ind, insideMethod)
-            impl.appendLine("$ind} while (${genExpr(s.cond)});")
+            val vDoWhileCond = genExpr(s.cond)
+            flushPreStmts(ind)
+            impl.appendLine("$ind} while ($vDoWhileCond);")
             loopDepth--
         }
 
@@ -305,17 +309,6 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                         }
                         return
                     }
-                }
-                // Sized-array-returning function call: declare local array, pass as out-param
-                if (isSizedArrayReturningCall(s.init)) {
-                    val call = s.init as CallExpr
-                    val size = getSizedArrayReturnSize(call)!!
-                    val elemCType = getSizedArrayReturnElemType(call)!!
-                    impl.appendLine("${ind}${elemCType} ${s.name}[$size];")
-                    impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $size;")
-                    genExprWithSizedArrayOut(s.init, s.name)
-                    flushPreStmts(ind)
-                    return
                 }
                 // Array-returning function call: declare $len first, pass &$len as out-param
                 if (vKtcCore.isArrayLike && isArrayReturningCall(s.init)) {
@@ -585,7 +578,9 @@ internal fun CCodeGen.isArrayReturningCall(e: Expr?): Boolean {
     }
     // Check regular functions
     val sig = funSigs[name] ?: return false
-    return sig.returnType != null && !sig.returnType.nullable && resolveTypeName(sig.returnType).isArrayLike
+    if (sig.returnType == null || sig.returnType.nullable) return false
+    if (isSizedArrayTypeRef(sig.returnType)) return false  // sized arrays use struct-return ABI
+    return resolveTypeName(sig.returnType).isArrayLike
 }
 
 /** Check if an expression is a malloc/calloc/realloc call (returns nullable pointer). */
@@ -723,30 +718,6 @@ internal fun CCodeGen.genExprWithArrayLenOut(e: Expr, varName: String): String {
 
 /** Generate a call expression that returns a sized array (@Size(N) Array<T>),
  *  appending the varName as $out arg. The call is added as a preStmt since it returns void. */
-internal fun CCodeGen.genExprWithSizedArrayOut(e: Expr, varName: String) {
-    if (e !is CallExpr) return
-    val name = (e.callee as? NameExpr)?.name ?: return
-    val genFun = genericFunDecls.find { it.name == name }
-    if (genFun != null && e.typeArgs.isNotEmpty()) {
-        val typeArgNames = e.typeArgs.map { resolveTypeName(it).toInternalStr }
-        val mangledName = "${name}_${typeArgNames.joinToString("_")}"
-        val prevSubst = typeSubst
-        typeSubst = genFun.typeParams.zip(typeArgNames).toMap()
-        val filledArgs = fillDefaults(e.args, genFun.params, genFun.params.associate { it.name to it.default })
-        val expandedArgs = expandCallArgs(filledArgs, genFun.params)
-        typeSubst = prevSubst
-        val allArgs = if (expandedArgs.isEmpty()) varName else "$expandedArgs, $varName"
-        preStmts += "${funCName(mangledName)}($allArgs);"
-        return
-    }
-    val cName = if (currentObject != null) "${typeFlatName(currentObject!!)}_$name" else funCName(name)
-    val sig = funSigs[name]
-    val filledArgs = if (sig != null) fillDefaults(e.args, sig.params, sig.params.associate { it.name to it.default }) else e.args
-    val args = expandCallArgs(filledArgs, sig?.params)
-    val allArgs = if (args.isEmpty()) varName else "$args, $varName"
-    preStmts += "$cName($allArgs);"
-}
-
 // ── assignment ───────────────────────────────────────────────────
 
 internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
@@ -1003,11 +974,29 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             val expr = genExpr(s.value)
             flushPreStmts(ind)
             if (currentFnReturnsSizedArray) {
-                impl.appendLine("${ind}memcpy(\$out, $expr, $currentFnSizedArraySize * sizeof(${currentFnSizedArrayElemType}));")
+                // Direct struct return: copy expression data into ktc_Array_T_N and return by value
+                val vStructType = sizedArrayCTypeName(currentFnSizedArrayElemType, currentFnSizedArraySize)
                 if (deferStack.isNotEmpty()) {
+                    val vT = tmp()
+                    impl.appendLine("${ind}$vStructType $vT;")
+                    impl.appendLine("${ind}memcpy($vT.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType));")
                     emitDeferredBlocks(ind)
+                    impl.appendLine("${ind}return $vT;")
+                } else {
+                    impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType)); return \$r; }")
                 }
-                impl.appendLine("${ind}return;")
+            } else if (currentFnReturnsSizedString) {
+                // Direct struct return: copy ktc_String into ktc_String_N and return by value
+                val vStructType = sizedStringCTypeName(currentFnSizedStringSize)
+                if (deferStack.isNotEmpty()) {
+                    val vT = tmp()
+                    impl.appendLine("${ind}$vStructType $vT;")
+                    impl.appendLine("${ind}memcpy($vT.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); $vT.len = ($expr).len;")
+                    emitDeferredBlocks(ind)
+                    impl.appendLine("${ind}return $vT;")
+                } else {
+                    impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); \$r.len = ($expr).len; return \$r; }")
+                }
             } else if (currentFnReturnsArray) {
                 // Array return: pass length through out-parameter
                 impl.appendLine("$ind*\$len_out = ${expr}\$len;")
@@ -1749,7 +1738,9 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
         val vVal = e.cond.value
         codegenWarning("Condition is always ${if (vVal) "true" else "false"}")
     }
-    impl.appendLine("${ind}if (${genExpr(e.cond)}) {")
+    val vCond = genExpr(e.cond)
+    flushPreStmts(ind)
+    impl.appendLine("${ind}if ($vCond) {")
     // Smart cast: narrow types in then-branch
     val thenCasts = extractSmartCasts(e.cond)
     if (thenCasts.isNotEmpty()) {

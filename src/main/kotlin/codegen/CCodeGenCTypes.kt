@@ -1,7 +1,9 @@
 package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.codegen.mapping.arrayElementCTypeKtc
+import com.bitsycore.ktc.ast.IntLit
+import com.bitsycore.ktc.ast.LongLit
+import com.bitsycore.ktc.ast.Param
+import com.bitsycore.ktc.ast.TypeRef
 import com.bitsycore.ktc.codegen.mapping.primitiveArraySet
 import com.bitsycore.ktc.codegen.mapping.primitiveToArrayOptionalType
 import com.bitsycore.ktc.codegen.mapping.primitiveToArrayType
@@ -88,12 +90,31 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
     var vAny = false // whether any trampoline was emitted
     for (vP in inParams) {
         if (vP.isVararg) continue
+        // @Size(N) String param: unpack ktc_String_N struct to ktc_String view for body access
+        if (isSizedStringTypeRef(vP.type)) {
+            if (!vAny) { impl.appendLine("${inInd}// ── sized param unpack start ──"); vAny = true }
+            impl.appendLine("${inInd}ktc_String local\$${vP.name} = {${vP.name}.buf, ${vP.name}.len};")
+            trampolinedParams += vP.name            // redirect body references to local$name
+            continue
+        }
+        // @Size(N) Array<T> param: unpack ktc_Array_T_N struct to T* pointer for body access
+        if (isSizedArrayTypeRef(vP.type)) {
+            if (!vAny) { impl.appendLine("${inInd}// ── sized param unpack start ──"); vAny = true }
+            val vElemKtc   = resolveTypeName(vP.type).asArr!!.elem  // element KtcType
+            val vElemCType = cTypeStr(vElemKtc)                     // element C type string
+            val vSize      = getSizeAnnotation(vP.type)!!           // @Size value
+            impl.appendLine("${inInd}$vElemCType* local\$${vP.name} = ${vP.name}.arr;")
+            impl.appendLine("${inInd}const ktc_Int local\$${vP.name}\$len = $vSize;")
+            trampolinedParams += vP.name            // redirect body references to local$name
+            sizedArrayTrampolinedParams += vP.name  // mark as sized (use $len not .size)
+            continue
+        }
         // Use isRawArrayTypeRef to identify trampoline-passed arrays (not @Ptr, not @Size)
         if (!isRawArrayTypeRef(vP.type)) continue
         // Both nullable and non-nullable array params use ktc_ArrayTrampoline.
         // Non-nullable: copy unconditionally. Nullable: copy only when data != NULL.
         if (!vAny) {
-            impl.appendLine("${inInd}// ── trampoline array start ──")
+            impl.appendLine("${inInd}// ── sized param unpack start ──")
             vAny = true
         }
         val vElem = resolveTypeName(vP.type).asArr!!.elem            // element KtcType
@@ -113,7 +134,7 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
         }
         trampolinedParams += vP.name
     }
-    if (vAny) impl.appendLine("${inInd}// ── trampoline array end ──")
+    if (vAny) impl.appendLine("${inInd}// ── sized param unpack end ──")
 }
 
 // KtcType overload
@@ -124,7 +145,7 @@ internal fun ptrNullComment(kt: KtcType): String = when (kt) {
     else -> ""
 }
 
-/** Expand a parameter list: variable array params → ktc_ArrayTrampoline, @Size arrays → T*, nullable params → OptT name. */
+/** Expand a parameter list: variable array params → ktc_ArrayTrampoline, @Size arrays → struct, nullable params → OptT name. */
 internal fun CCodeGen.expandParams(inParams: List<Param>): String {
     val vParts = mutableListOf<String>() // accumulated C parameter declarations
     for (vP in inParams) {
@@ -134,6 +155,10 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
             vParts += "ktc_Int ${vP.name}\$len"
         } else if (vKtc is KtcType.Func) {
             vParts += cFuncPtrDecl(vKtc, vP.name)
+        } else if (isSizedStringTypeRef(vP.type)) {
+            // @Size(N) String — passed as ktc_String_N value struct (contains buf[N] + len)
+            val vSize = getSizeAnnotation(vP.type)!!  // must have @Size annotation
+            vParts += "${sizedStringCTypeName(vSize)} ${vP.name}"
         } else if (vKtc is KtcType.Ptr && vP.type.annotations.any { it.name == "Ptr" }) {
             // Explicitly @Ptr-annotated: raw pointer; nullability lives in vP.type.nullable
             // (typed arrays — IntArray, IntOptArray — also resolve to Ptr but are handled by isArrayLike below)
@@ -144,8 +169,10 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
             if (vInnerArr != null && vInnerArr.sized == null) vParts += "ktc_Int ${vP.name}\$len"
         } else if (vKtc.isArrayLike) {
             if (hasSizeAnnotation(vP.type)) {
-                // @Size(N) fixed array — passed as raw pointer (size known at compile time)
-                vParts += "${cTypeStr(vKtc)} ${vP.name}"
+                // @Size(N) fixed array — passed as ktc_Array_T_N value struct (contains arr[N])
+                val vElemCType = cTypeStr(vKtc.asArr!!.elem)  // element C type
+                val vSize = getSizeAnnotation(vP.type)!!       // annotation value
+                vParts += "${sizedArrayCTypeName(vElemCType, vSize)} ${vP.name}"
             } else {
                 // Both nullable and non-nullable arrays use ktc_ArrayTrampoline for value semantics.
                 // Nullable: data == NULL means the array argument was null.
@@ -363,36 +390,63 @@ internal fun isSizedArrayTypeRef(t: TypeRef): Boolean {
     return false
 }
 
-/** Check if a call expression returns a sized array (@Size(N) Array<T>). */
-internal fun CCodeGen.isSizedArrayReturningCall(e: Expr?): Boolean {
-    if (e !is CallExpr) return false
-    val name = (e.callee as? NameExpr)?.name ?: return false
-    val genFun = genericFunDecls.find { it.name == name }
-    if (genFun != null && genFun.returnType != null && isSizedArrayTypeRef(genFun.returnType))
-        return true
-    val sig = funSigs[name] ?: return false
-    return sig.returnType != null && isSizedArrayTypeRef(sig.returnType)
+/** True if the TypeRef is a String type WITH @Size(N) annotation (fixed-size string buffer). */
+internal fun isSizedStringTypeRef(t: TypeRef): Boolean =
+    hasSizeAnnotation(t) && t.name == "String"
+
+/* Primitive C types defined in ktc_macro.h — no user package owns them. */
+private val kPrimitiveCTypes = setOf(
+    "ktc_Byte", "ktc_Short", "ktc_Int",    "ktc_Long",
+    "ktc_Float", "ktc_Double", "ktc_Bool", "ktc_Char",  "ktc_Rune",
+    "ktc_UByte", "ktc_UShort", "ktc_UInt", "ktc_ULong"
+)
+
+/* True when inCTypeName is a user type defined in the package currently being compiled. */
+internal fun CCodeGen.isCurrentPkgUserType(inCTypeName: String): Boolean =
+    classes.values.any    { it.flatName == inCTypeName }
+        || objects.values.any    { it.flatName == inCTypeName }
+        || enums.values.any      { it.flatName == inCTypeName }
+        || interfaces.values.any { it.flatName == inCTypeName }
+
+/*
+Registers KTC_DEFINE_ARRAY(T, N) in the correct set and returns the C struct type name.
+- T from current package  → sizedArrayDecls     (emitted once, no guard; this is the canonical location)
+- T primitive / external  → sizedArrayGuardedDecls (emitted with #ifndef guard; safe in multiple headers)
+e.g. ("ktc_Int", 4) → "ktc_Array_ktc_Int_4"
+*/
+internal fun CCodeGen.sizedArrayCTypeName(inElemCType: String, inSize: Int): String {
+    val vPair = Pair(inElemCType, inSize)
+    if (isCurrentPkgUserType(inElemCType))
+        sizedArrayDecls.add(vPair)        // current-pkg user type: one canonical definition
+    else
+        sizedArrayGuardedDecls.add(vPair) // primitive or external type: guarded, safe to include multiple times
+    return "ktc_Array_${inElemCType}_$inSize"
 }
 
-/** Get the @Size value from a call to a sized-array-returning function. */
-internal fun CCodeGen.getSizedArrayReturnSize(e: CallExpr): Int? {
-    val name = (e.callee as? NameExpr)?.name ?: return null
-    val genFun = genericFunDecls.find { it.name == name }
-    if (genFun != null && genFun.returnType != null) return getSizeAnnotation(genFun.returnType)
-    val sig = funSigs[name] ?: return null
-    if (sig.returnType != null) return getSizeAnnotation(sig.returnType)
-    return null
+/*
+Returns the C struct type name for a @Size(N) String and registers it for KTC_DEFINE_STRING emission.
+e.g. 16 → "ktc_String_16"
+*/
+internal fun CCodeGen.sizedStringCTypeName(inSize: Int): String {
+    sizedStringDecls.add(inSize)  // register for header emission
+    return "ktc_String_$inSize"
 }
 
-/** Get the element C type from a call to a sized-array-returning function. */
-internal fun CCodeGen.getSizedArrayReturnElemType(e: CallExpr): String? {
-    val name = (e.callee as? NameExpr)?.name ?: return null
-    val genFun = genericFunDecls.find { it.name == name }
-    if (genFun != null && genFun.returnType != null) return arrayElementCTypeKtc(resolveTypeName(genFun.returnType))
-    val sig = funSigs[name] ?: return null
-    if (sig.returnType != null) return arrayElementCTypeKtc(resolveTypeName(sig.returnType))
-    return null
-}
+/*
+Returns the C struct type name for a @Size(N) Array<T> WITHOUT registering it.
+Use this at call sites — the definition belongs to the package that declares the function.
+e.g. ("ktc_Int", 4) → "ktc_Array_ktc_Int_4"
+*/
+internal fun sizedArrayCTypeRef(inElemCType: String, inSize: Int): String =
+    "ktc_Array_${inElemCType}_$inSize"
+
+/*
+Returns the C struct type name for a @Size(N) String WITHOUT registering it.
+Use this at call sites — the definition belongs to the package that declares the function.
+e.g. 16 → "ktc_String_16"
+*/
+internal fun sizedStringCTypeRef(inSize: Int): String =
+    "ktc_String_$inSize"
 
 // ═══════════════════════════ printf helpers ═══════════════════════
 

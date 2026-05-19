@@ -178,6 +178,14 @@
 /* Variadic so comma-separated entries are not split into separate arguments. */
 #define KTC_ENUM(...) typedef enum { __VA_ARGS__ } KTC_TYPE_NAME
 
+/* Define a fixed-size string type of N chars (like std::array for strings). */
+/* ktc_String_N holds an inline char buffer and a length field. */
+#define KTC_DEFINE_STRING(N) \
+	typedef struct ktc_String_##N { \
+		ktc_Char buf[N]; \
+		ktc_Int  len; \
+	} ktc_String_##N
+
 /*
  * Paste helper for the _t suffix used by object singleton struct types.
  * The ## operator suppresses pre-expansion of its operand, so a single-level

@@ -20,7 +20,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
         r.sourceNotContains("cannot return raw array type")
     }
 
-    // ── Return type: @Size(N) Array<T> → void with $out ───────────────
+    // ── Return type: @Size(N) Array<T> → ktc_Array_T_N struct return ───
 
     @Test fun sizedArrayReturnBecomesVoidWithOutParam() {
         val r = transpile("""
@@ -30,7 +30,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
             }
             fun main(args: Array<String>) {}
         """)
-        r.headerContains("void test_Main_makeData(ktc_Int* \$out);")
+        r.headerContains("ktc_Array_ktc_Int_3 test_Main_makeData();")
     }
 
     @Test fun sizedArrayReturnNoLenOut() {
@@ -87,7 +87,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
         r.sourceContains("memcpy(")
     }
 
-    // ── Call site: caller allocates fixed array ───────────────────────
+    // ── Call site: struct return unpacked to pointer ──────────────────
 
     @Test fun callerAllocatesLocalArrayForSizedReturn() {
         val r = transpileMain("""
@@ -97,7 +97,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
                 return intArrayOf(1, 2, 3)
             }
         """)
-        r.sourceContains("ktc_Int arr[3];")
+        r.sourceContains("ktc_Array_ktc_Int_3")
         r.sourceContains("test_Main_makeData(")
     }
 
@@ -124,7 +124,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
             }
             fun main(args: Array<String>) {}
         """)
-        r.headerContains("KTC_METHOD(void, items)(KTC_TYPE_NAME* \$self, ktc_Int* \$out);")
+        r.headerContains("KTC_METHOD(ktc_Array_ktc_Int_3, items)(KTC_TYPE_NAME* \$self);")
     }
 
     // ── Object property with @Size ────────────────────────────────────
@@ -138,6 +138,36 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
             fun main(args: Array<String>) {}
         """)
         r.sourceNotContains("cannot have raw array type")
+    }
+
+    // ── Primitive-type arrays use #ifndef guard (safe for multi-package) ─
+
+    @Test fun primitiveArrayDefUsesIfndefGuard() {
+        val r = transpile("""
+            package test.Main
+            fun makeData(): @Size(3) IntArray {
+                return intArrayOf(1, 2, 3)
+            }
+            fun main(args: Array<String>) {}
+        """)
+        r.headerContains("#ifndef KTC_ARRAY_DEF_ktc_Int_3")
+        r.headerContains("#define KTC_ARRAY_DEF_ktc_Int_3")
+        r.headerContains("KTC_DEFINE_ARRAY(ktc_Int, 3);")
+        r.headerContains("#endif")
+    }
+
+    @Test fun userTypeArrayDefNoGuard() {
+        val r = transpile("""
+            package test.Main
+            class Vec2(val x: Int, val y: Int)
+            fun points(): @Size(4) Array<Vec2> {
+                var arr: Array<Vec2> = Array<Vec2>(4)
+                return arr
+            }
+            fun main(args: Array<String>) {}
+        """)
+        r.headerContains("KTC_DEFINE_ARRAY(test_Main_Vec2, 4);")
+        r.headerNotContains("#ifndef KTC_ARRAY_DEF_test_Main_Vec2_4")
     }
 
     // ── Negative tests: @Size on non-array type should still be raw ───

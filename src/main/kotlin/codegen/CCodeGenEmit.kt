@@ -558,28 +558,25 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
     val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
     val priv = if (f.isPrivate) "private " else ""
     impl.appendLine("// ══ ${priv}fun ${f.name}($paramSig)$retSig ══")
-    val returnsNullable = f.returnType != null && f.returnType.nullable
-    val returnsSizedArray = !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
+    val returnsNullable    = f.returnType != null && f.returnType.nullable
+    val returnsSizedArray  = !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
+    val returnsSizedString = !returnsNullable && f.returnType != null && isSizedStringTypeRef(f.returnType)
     val vRetKtc     = if (f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return, or null
     val retResolved = vRetKtc?.toInternalStr ?: f.body?.let { inferBlockType(it) } ?: "" // string for legacy helpers
     val optRetCType = if (returnsNullable) optCTypeName(retResolved) else ""
     val cRet = when {
-        returnsSizedArray -> "void"
+        returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtc!!.asArr!!.elem), getSizeAnnotation(f.returnType)!!)
+        returnsSizedString -> sizedStringCTypeName(getSizeAnnotation(f.returnType)!!)
         returnsNullable && vRetKtc is KtcType.Any -> "ktc_Any"
         returnsNullable -> optRetCType
         retResolved.isNotEmpty() -> cTypeStr(retResolved)
         else -> "void"
     }
-    val selfParam = "$cClass* \$self"
+    val selfParam   = "$cClass* \$self"
     val extraParams = expandParams(f.params)
-    val outParam: String? = if (returnsSizedArray) {
-        val elemCType = cTypeStr(vRetKtc!!.asArr!!.elem)
-        "$elemCType* \$out"
-    } else null
-    val allParts = mutableListOf(selfParam)
+    val allParts    = mutableListOf(selfParam)
     if (extraParams.isNotEmpty()) allParts += extraParams
-    if (outParam != null) allParts += outParam
-    val allParams = allParts.joinToString(", ")
+    val allParams   = allParts.joinToString(", ")
 
     val vHdrSig = "KTC_METHOD($cRet, $methodName)(${allParams.replace(cClass, "KTC_TYPE_NAME")});"
     if (f.isPrivate) {
@@ -596,14 +593,16 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
     else if (disposedMode != "NO") impl.appendLine("    KTC_ASSERT_NOT_DISPOSED(\$self);")
 
     val prevState = saveFunState()
-    currentFnReturnsNullable = returnsNullable
-    currentFnReturnsArray = false
+    currentFnReturnsNullable   = returnsNullable
+    currentFnReturnsArray      = false
     currentFnReturnsSizedArray = returnsSizedArray
     currentFnOptReturnCTypeName = optRetCType
     if (returnsSizedArray) {
-        currentFnSizedArraySize = getSizeAnnotation(f.returnType)!!
+        currentFnSizedArraySize     = getSizeAnnotation(f.returnType)!!
         currentFnSizedArrayElemType = cTypeStr(vRetKtc!!.asArr!!.elem)
     }
+    currentFnReturnsSizedString = returnsSizedString
+    if (returnsSizedString) currentFnSizedStringSize = getSizeAnnotation(f.returnType)!!
     currentFnReturnType = retResolved
 
     pushScope()
@@ -620,6 +619,7 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
     val ci = classes[className]
     if (ci != null) for ((name, type) in ci.props) defineVarKtc(name, resolveTypeName(type))
     val savedTrampolined1 = trampolinedParams.toHashSet(); trampolinedParams.clear()
+    val savedSizedTrampolined1 = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
     emitArrayParamCopies(f.params, "    ")
 
     val savedDefers = deferStack.toList(); deferStack.clear()
@@ -633,6 +633,7 @@ internal fun CCodeGen.emitMethod(className: String, f: FunDecl, suppressHdr: Boo
     }
     deferStack.clear(); deferStack.addAll(savedDefers)
     trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined1)
+    sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined1)
     popScope()
 
     restoreFunState(prevState)
@@ -650,13 +651,15 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
     val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
     maybeEmitFunBanner(f.name)
     impl.appendLine("// ══ ext fun ${recvTypeName}.${f.name}($paramSig)$retSig ($currentSourceFile) ══")
-    val returnsSizedArray = f.returnType != null && isSizedArrayTypeRef(f.returnType)
-    val returnsNullable = f.returnType != null && f.returnType.nullable
+    val returnsSizedArray  = f.returnType != null && isSizedArrayTypeRef(f.returnType)
+    val returnsSizedString = f.returnType != null && isSizedStringTypeRef(f.returnType)
+    val returnsNullable    = f.returnType != null && f.returnType.nullable
     val vRetKtcExt  = if (f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return, or null
     val retResolved = vRetKtcExt?.toInternalStr ?: ""                                    // string for legacy helpers
     val optRetCType = if (returnsNullable) optCTypeName(retResolved) else ""
     val cRet = when {
-        returnsSizedArray -> "void"
+        returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtcExt!!.asArr!!.elem), getSizeAnnotation(f.returnType)!!)
+        returnsSizedString -> sizedStringCTypeName(getSizeAnnotation(f.returnType)!!)
         returnsNullable && vRetKtcExt is KtcType.Any -> "ktc_Any"
         returnsNullable -> optRetCType
         f.returnType != null -> cType(f.returnType)
@@ -670,13 +673,8 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
         "$recvOptType \$self"
     } else "$cRecvType \$self"
     val extraParams = expandParams(f.params)
-    val outParam = if (returnsSizedArray) {
-        val elemCType = cTypeStr(vRetKtcExt!!.asArr!!.elem)
-        "$elemCType* \$out"
-    } else null
     val allParts = mutableListOf(selfParam)
     if (extraParams.isNotEmpty()) allParts += extraParams
-    if (outParam != null) allParts += outParam
     val allParams = allParts.joinToString(", ")
     val cFnName = "${typeFlatName(recvTypeName)}_${f.name}"
 
@@ -690,6 +688,8 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
         currentFnSizedArraySize = getSizeAnnotation(f.returnType)!!
         currentFnSizedArrayElemType = cTypeStr(vRetKtcExt!!.asArr!!.elem)
     }
+    currentFnReturnsSizedString = returnsSizedString
+    if (returnsSizedString) currentFnSizedStringSize = getSizeAnnotation(f.returnType)!!
     currentExtRecvType = if (recvIsNullable) "$recvTypeName?" else recvTypeName
     if (isClassType) {
         currentClass = recvTypeName
@@ -721,7 +721,8 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
             if (!ci.isValProp(name)) markMutable(name)
         }
     }
-    val savedTrampolined2 = trampolinedParams.toHashSet(); trampolinedParams.clear()
+    val savedTrampolined2      = trampolinedParams.toHashSet(); trampolinedParams.clear()
+    val savedSizedTrampolined2 = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
     emitArrayParamCopies(f.params, "    ")
     val savedDefers2 = deferStack.toList(); deferStack.clear()
     if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
@@ -734,6 +735,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
     }
     deferStack.clear(); deferStack.addAll(savedDefers2)
     trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined2)
+    sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined2)
     popScope()
 
     restoreFunState(prevState)
@@ -767,12 +769,14 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
         // Prepend receiver as $self parameter for generic extensions
         val hasReceiver = f.receiver != null
         // Resolve return type and params under substitution
-        val returnsSizedArray = f.returnType != null && isSizedArrayTypeRef(f.returnType)
+        val returnsSizedArray  = f.returnType != null && isSizedArrayTypeRef(f.returnType)
+        val returnsSizedString = f.returnType != null && isSizedStringTypeRef(f.returnType)
         val vRetKtcGen   = if (f.returnType != null) resolveTypeName(f.returnType) else null   // KtcType of return, or null
         val returnsArray = !returnsSizedArray && (vRetKtcGen?.isArrayLike ?: false)             // true if return is non-sized array
         val concreteRet = genericFunConcreteReturn[mangledName]
         val cRet = when {
-            returnsSizedArray -> "void"
+            returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtcGen!!.asArr!!.elem), getSizeAnnotation(f.returnType)!!)
+            returnsSizedString -> sizedStringCTypeName(getSizeAnnotation(f.returnType)!!)
             concreteRet != null -> typeFlatName(concreteRet)
             f.returnType != null -> cType(f.returnType)
             else -> "void"
@@ -797,12 +801,6 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
             "$ct \$self"
         } else null
         val params = when {
-            returnsSizedArray -> {
-                val elemCType = cTypeStr(vRetKtcGen!!.asArr!!.elem)
-                val extra = "$elemCType* \$out"
-                val p = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
-                if (p.isNotEmpty()) "$p, $extra" else extra
-            }
             returnsArray -> {
                 val extra = "ktc_Int* \$len_out"
                 val p = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
@@ -819,9 +817,11 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
         currentFnReturnsArray = returnsArray
         currentFnReturnsSizedArray = returnsSizedArray
         if (returnsSizedArray) {
-            currentFnSizedArraySize = getSizeAnnotation(f.returnType)!!
+            currentFnSizedArraySize     = getSizeAnnotation(f.returnType)!!
             currentFnSizedArrayElemType = cTypeStr(vRetKtcGen!!.asArr!!.elem)
         }
+        currentFnReturnsSizedString = returnsSizedString
+        if (returnsSizedString) currentFnSizedStringSize = getSizeAnnotation(f.returnType)!!
         currentFnReturnType = concreteRet
             ?: if (f.returnType != null) {
                 val vKtc = vRetKtcGen!!
@@ -857,13 +857,15 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
             })
             if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcGenParam))) markOptional(p.name)
         }
-        val savedTrampolined3 = trampolinedParams.toHashSet(); trampolinedParams.clear()
+        val savedTrampolined3      = trampolinedParams.toHashSet(); trampolinedParams.clear()
+        val savedSizedTrampolined3 = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
         emitArrayParamCopies(f.params, "    ")
         val savedDefers = deferStack.toList(); deferStack.clear()
         if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = false)
         if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = false)
         deferStack.clear(); deferStack.addAll(savedDefers)
         trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined3)
+        sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined3)
         popScope()
 
         restoreFunState(prevState)
@@ -1286,11 +1288,13 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     fun emitOneObjMethod(m: FunDecl, inHdrLines: MutableList<String>?) {
         if (m.isInline) return  // expanded at call sites via inlineFunDecls, not emitted as C functions
         val returnsSizedArray  = m.returnType != null && isSizedArrayTypeRef(m.returnType)
+        val returnsSizedString = m.returnType != null && isSizedStringTypeRef(m.returnType)
         val vRetKtcM           = if (m.returnType != null) resolveTypeName(m.returnType) else null
         val returnsArray       = !returnsSizedArray && (vRetKtcM?.isArrayLike ?: false)
         val retResolved        = vRetKtcM?.toInternalStr ?: ""
         val cRet = when {
-            returnsSizedArray -> "void"
+            returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtcM!!.asArr!!.elem), getSizeAnnotation(m.returnType)!!)
+            returnsSizedString -> sizedStringCTypeName(getSizeAnnotation(m.returnType)!!)
             retResolved.isNotEmpty() -> cTypeStr(retResolved)
             else -> "void"
         }
@@ -1298,7 +1302,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         val fnName = if (m.isPrivate) "PRIV_$overloadedName" else overloadedName
         val baseParams = expandParams(m.params)
         val extraParam = when {
-            returnsSizedArray -> { val elemCType = cTypeStr(vRetKtcM!!.asArr!!.elem); "$elemCType* \$out" }
             returnsArray -> "ktc_Int* \$len_out"
             else -> null
         }
@@ -1318,14 +1321,16 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine("    ${cName}_\$ensure_init();")
         val prevState = saveFunState()
         val prevObjectM = currentObject
-        currentFnReturnsArray = returnsArray
+        currentFnReturnsArray      = returnsArray
         currentFnReturnsSizedArray = returnsSizedArray
-        currentFnReturnType = retResolved
-        currentFnReturnKtcType = vRetKtcM
+        currentFnReturnType        = retResolved
+        currentFnReturnKtcType     = vRetKtcM
         if (returnsSizedArray) {
-            currentFnSizedArraySize = getSizeAnnotation(m.returnType)!!
+            currentFnSizedArraySize     = getSizeAnnotation(m.returnType)!!
             currentFnSizedArrayElemType = cTypeStr(vRetKtcM!!.asArr!!.elem)
         }
+        currentFnReturnsSizedString = returnsSizedString
+        if (returnsSizedString) currentFnSizedStringSize = getSizeAnnotation(m.returnType)!!
         pushScope()
         for (p in props) {
             defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
@@ -1335,13 +1340,15 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val vKtcObjParam = resolveTypeName(p.type)
             defineVar(p.name, if (p.isVararg) "${vKtcObjParam.toInternalStr}Array" else vKtcObjParam.toInternalStr)
         }
-        val savedTrampolined = trampolinedParams.toHashSet(); trampolinedParams.clear()
+        val savedTrampolined      = trampolinedParams.toHashSet(); trampolinedParams.clear()
+        val savedSizedTrampolined = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
         emitArrayParamCopies(m.params, "    ")
         val savedDefers = deferStack.toList(); deferStack.clear()
         if (m.body != null) for (s in m.body.stmts) emitStmt(s, "    ")
         if (m.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ")
         deferStack.clear(); deferStack.addAll(savedDefers)
         trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined)
+        sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined)
         popScope()
         restoreFunState(prevState)
         currentObject = prevObjectM
@@ -2172,21 +2179,24 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
     val overloadedName = methodName(f, siblings)
     val baseName = if (f.isPrivate) "PRIV_$overloadedName" else overloadedName
 
-    val returnsNullable = f.returnType != null && f.returnType.nullable
-    val returnsSizedArray = !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
+    val returnsNullable    = f.returnType != null && f.returnType.nullable
+    val returnsSizedArray  = !returnsNullable && f.returnType != null && isSizedArrayTypeRef(f.returnType)
+    val returnsSizedString = !returnsNullable && f.returnType != null && isSizedStringTypeRef(f.returnType)
     val vRetKtcFun   = if (f.returnType != null) resolveTypeName(f.returnType) else null  // KtcType of return
     val returnsArray = !returnsNullable && !returnsSizedArray && (vRetKtcFun?.isArrayLike ?: false)
     val retResolved  = vRetKtcFun?.toInternalStr ?: f.body?.let { inferBlockType(it) } ?: ""  // string for legacy helpers
     val optRetCType = if (returnsNullable) optCTypeName(retResolved) else ""
-    val cRet  = if (returnsSizedArray) "void" else if (returnsNullable && vRetKtcFun is KtcType.Any) "ktc_Any"
-                else if (returnsNullable) optRetCType else if (retResolved.isNotEmpty()) cTypeStr(retResolved) else "void"
+    val cRet = when {
+        returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtcFun!!.asArr!!.elem), getSizeAnnotation(f.returnType)!!)
+        returnsSizedString -> sizedStringCTypeName(getSizeAnnotation(f.returnType)!!)
+        returnsNullable && vRetKtcFun is KtcType.Any -> "ktc_Any"
+        returnsNullable -> optRetCType
+        retResolved.isNotEmpty() -> cTypeStr(retResolved)
+        else -> "void"
+    }
     val cName = funCName(baseName)                                      // always prefixed, including main
     val base = expandParams(f.params)
     val extra = when {
-        returnsSizedArray -> {
-            val elemCType = cTypeStr(vRetKtcFun!!.asArr!!.elem)
-            "$elemCType* \$out"
-        }
         returnsArray -> "ktc_Int* \$len_out"
         else -> null
     }
@@ -2195,17 +2205,19 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
     hdr.appendLine("$cRet $cName($params);")
     impl.appendLine("$cRet $cName($params) {")
 
-    val prevState = saveFunState()
+    val prevState  = saveFunState()
     val prevIsMain = currentFnIsMain
-    currentFnReturnsNullable = returnsNullable
-    currentFnReturnsArray = returnsArray
-    currentFnReturnsSizedArray = returnsSizedArray
+    currentFnReturnsNullable    = returnsNullable
+    currentFnReturnsArray       = returnsArray
+    currentFnReturnsSizedArray  = returnsSizedArray
     currentFnOptReturnCTypeName = optRetCType
     if (returnsSizedArray) {
-        currentFnSizedArraySize = getSizeAnnotation(f.returnType)!!
+        currentFnSizedArraySize     = getSizeAnnotation(f.returnType)!!
         currentFnSizedArrayElemType = cTypeStr(vRetKtcFun!!.asArr!!.elem)
     }
-    currentFnReturnType = retResolved
+    currentFnReturnsSizedString = returnsSizedString
+    if (returnsSizedString) currentFnSizedStringSize = getSizeAnnotation(f.returnType)!!
+    currentFnReturnType    = retResolved
     currentFnReturnKtcType = vRetKtcFun
     currentFnIsMain = false                                             // main is now a regular void function
 
@@ -2220,7 +2232,8 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
         })
         if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcFunParam))) markOptional(p.name)
     }
-    val savedTrampolined7 = trampolinedParams.toHashSet(); trampolinedParams.clear()
+    val savedTrampolined7      = trampolinedParams.toHashSet(); trampolinedParams.clear()
+    val savedSizedTrampolined7 = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
     if (isMain) {
         /* main's array params come from main.c already laid out in memory — alias without copying. */
         for (vP in f.params) {
@@ -2257,6 +2270,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
         else impl.appendLine("    return ${optNone(optRetCType)};")
     }
     trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined7)
+    sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined7)
     popScope()
 
     deferStack.clear()

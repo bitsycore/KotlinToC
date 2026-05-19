@@ -1276,20 +1276,32 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             typeSubst = genFun.typeParams.zip(typeArgNames).toMap()
             // Check for @Size array return
             if (genFun.returnType != null && isSizedArrayTypeRef(genFun.returnType)) {
-                val vRetKtcSized = resolveTypeName(genFun.returnType)
-                val retType = vRetKtcSized.toInternalStr
-                val elemCType = arrayElementCTypeKtc(vRetKtcSized)
-                val size = getSizeAnnotation(genFun.returnType)!!
-                val t = tmp()
-                preStmts += "$elemCType ${t}[$size];"
-                preStmts += "const ktc_Int ${t}\$len = $size;"
-                val filledArgs = fillDefaults(args, genFun.params, genFun.params.associate { it.name to it.default }, genFun.name, strict = true)
+                val vRetKtcSized  = resolveTypeName(genFun.returnType)
+                val retType       = vRetKtcSized.toInternalStr
+                val elemCType     = arrayElementCTypeKtc(vRetKtcSized)
+                val size          = getSizeAnnotation(genFun.returnType)!!
+                val structType    = sizedArrayCTypeRef(elemCType, size)
+                val filledArgs    = fillDefaults(args, genFun.params, genFun.params.associate { it.name to it.default }, genFun.name, strict = true)
                 val expandedArgs2 = expandCallArgs(filledArgs, genFun.params)
-                val allArgs = if (expandedArgs2.isEmpty()) t else "$expandedArgs2, $t"
-                preStmts += "${funCName(mangledName)}($allArgs);"
+                val tStruct = tmp(); val tPtr = tmp()
+                preStmts += "$structType $tStruct = ${funCName(mangledName)}($expandedArgs2);"
+                preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+                preStmts += "const ktc_Int ${tPtr}\$len = $size;"
                 typeSubst = prevSubst
-                defineVar(t, retType)
-                return t
+                defineVar(tPtr, retType)
+                return tPtr
+            }
+            if (genFun.returnType != null && isSizedStringTypeRef(genFun.returnType)) {
+                val size          = getSizeAnnotation(genFun.returnType)!!
+                val structType    = sizedStringCTypeRef(size)
+                val filledArgs    = fillDefaults(args, genFun.params, genFun.params.associate { it.name to it.default }, genFun.name, strict = true)
+                val expandedArgs2 = expandCallArgs(filledArgs, genFun.params)
+                val tStruct = tmp(); val tStr = tmp()
+                preStmts += "$structType $tStruct = ${funCName(mangledName)}($expandedArgs2);"
+                preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+                typeSubst = prevSubst
+                defineVar(tStr, "String")
+                return tStr
             }
             // Fill in default arguments
             val filledArgs = fillDefaults(args, genFun.params, genFun.params.associate { it.name to it.default }, genFun.name, strict = true)
@@ -1322,18 +1334,27 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             val expandedArgs2 = expandCallArgs(filledArgs, methodDecl.params)
             val selfArg = if (selfIsPointer) "\$self" else "&\$self"
             val allArgs = if (expandedArgs2.isEmpty()) selfArg else "$selfArg, $expandedArgs2"
-            // @Size(N) return → out-parameter ABI
             if (methodDecl.returnType != null && isSizedArrayTypeRef(methodDecl.returnType)) {
                 val vRetKtcSz2 = resolveTypeName(methodDecl.returnType)
-                val retType = vRetKtcSz2.toInternalStr
-                val elemCType = arrayElementCTypeKtc(vRetKtcSz2)
-                val size = getSizeAnnotation(methodDecl.returnType)!!
-                val t = tmp()
-                preStmts += "$elemCType ${t}[$size];"
-                preStmts += "const ktc_Int ${t}\$len = $size;"
-                preStmts += "${typeFlatName(currentClass!!)}_$fnName($allArgs, $t);"
-                defineVar(t, retType)
-                return t
+                val retType    = vRetKtcSz2.toInternalStr
+                val elemCType  = arrayElementCTypeKtc(vRetKtcSz2)
+                val size       = getSizeAnnotation(methodDecl.returnType)!!
+                val structType = sizedArrayCTypeRef(elemCType, size)
+                val tStruct = tmp(); val tPtr = tmp()
+                preStmts += "$structType $tStruct = ${typeFlatName(currentClass!!)}_$fnName($allArgs);"
+                preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+                preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+                defineVar(tPtr, retType)
+                return tPtr
+            }
+            if (methodDecl.returnType != null && isSizedStringTypeRef(methodDecl.returnType)) {
+                val size       = getSizeAnnotation(methodDecl.returnType)!!
+                val structType = sizedStringCTypeRef(size)
+                val tStruct = tmp(); val tStr = tmp()
+                preStmts += "$structType $tStruct = ${typeFlatName(currentClass!!)}_$fnName($allArgs);"
+                preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+                defineVar(tStr, "String")
+                return tStr
             }
             return "${typeFlatName(currentClass!!)}_$fnName($allArgs)"
         }
@@ -1346,18 +1367,27 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 val fnName = if (methodDecl.isPrivate) "PRIV_$overloadedName" else overloadedName
                 val filledArgs = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, parentObj), methodDecl.name, strict = true)
                 val expandedArgs2 = expandCallArgs(filledArgs, methodDecl.params)
-                // @Size(N) return → out-parameter ABI
                 if (methodDecl.returnType != null && isSizedArrayTypeRef(methodDecl.returnType)) {
-                val vRetKtcSize = resolveTypeName(methodDecl.returnType)
-                val retType = vRetKtcSize.toInternalStr
-                val elemCType = arrayElementCTypeKtc(vRetKtcSize)
-                    val size = getSizeAnnotation(methodDecl.returnType)!!
-                    val t = tmp()
-                    preStmts += "$elemCType ${t}[$size];"
-                    preStmts += "const ktc_Int ${t}\$len = $size;"
-                    preStmts += "${typeFlatName(parentObj)}_$fnName($expandedArgs2, $t);"
-                    defineVar(t, retType)
-                    return t
+                    val vRetKtcSize = resolveTypeName(methodDecl.returnType)
+                    val retType     = vRetKtcSize.toInternalStr
+                    val elemCType   = arrayElementCTypeKtc(vRetKtcSize)
+                    val size        = getSizeAnnotation(methodDecl.returnType)!!
+                    val structType  = sizedArrayCTypeRef(elemCType, size)
+                    val tStruct = tmp(); val tPtr = tmp()
+                    preStmts += "$structType $tStruct = ${typeFlatName(parentObj)}_$fnName($expandedArgs2);"
+                    preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+                    preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+                    defineVar(tPtr, retType)
+                    return tPtr
+                }
+                if (methodDecl.returnType != null && isSizedStringTypeRef(methodDecl.returnType)) {
+                    val size       = getSizeAnnotation(methodDecl.returnType)!!
+                    val structType = sizedStringCTypeRef(size)
+                    val tStruct = tmp(); val tStr = tmp()
+                    preStmts += "$structType $tStruct = ${typeFlatName(parentObj)}_$fnName($expandedArgs2);"
+                    preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+                    defineVar(tStr, "String")
+                    return tStr
                 }
                 return "${typeFlatName(parentObj)}_$fnName($expandedArgs2)"
             }
@@ -1385,18 +1415,28 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             val fnName = if (methodDecl.isPrivate) "PRIV_$overloadedName" else overloadedName
             val filledArgs = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, currentObject), methodDecl.name, strict = true)
             val expandedArgs2 = expandCallArgs(filledArgs, methodDecl.params)
-            // @Size(N) return → out-parameter ABI
             if (methodDecl.returnType != null && isSizedArrayTypeRef(methodDecl.returnType)) {
                 val vRetKtcSz2 = resolveTypeName(methodDecl.returnType)
-                val retType = vRetKtcSz2.toInternalStr
-                val elemCType = arrayElementCTypeKtc(vRetKtcSz2)
-                val size = getSizeAnnotation(methodDecl.returnType)!!
-                val t = tmp()
-                preStmts += "$elemCType ${t}[$size];"
-                preStmts += "const ktc_Int ${t}\$len = $size;"
-                preStmts += "${typeFlatName(currentObject!!)}_$fnName($expandedArgs2, $t);"
-                defineVar(t, retType)
-                return t
+                val retType    = vRetKtcSz2.toInternalStr
+                val elemCType  = arrayElementCTypeKtc(vRetKtcSz2)
+                val size       = getSizeAnnotation(methodDecl.returnType)!!
+                val structType = sizedArrayCTypeRef(elemCType, size)
+                val tStruct    = tmp()
+                val tPtr       = tmp()
+                preStmts += "$structType $tStruct = ${typeFlatName(currentObject!!)}_$fnName($expandedArgs2);"
+                preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+                preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+                defineVar(tPtr, retType)
+                return tPtr
+            }
+            if (methodDecl.returnType != null && isSizedStringTypeRef(methodDecl.returnType)) {
+                val size       = getSizeAnnotation(methodDecl.returnType)!!
+                val structType = sizedStringCTypeRef(size)
+                val tStruct = tmp(); val tStr = tmp()
+                preStmts += "$structType $tStruct = ${typeFlatName(currentObject!!)}_$fnName($expandedArgs2);"
+                preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+                defineVar(tStr, "String")
+                return tStr
             }
             return "${typeFlatName(currentObject!!)}_$fnName($expandedArgs2)"
         }
@@ -1408,48 +1448,75 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         return "${typeFlatName(currentObject!!)}_${name}($expandedArgs)"
     }
 
-    // Top-level @Size(N) return → out-parameter ABI
-    if (sig?.returnType != null && isSizedArrayTypeRef(sig.returnType)) {
-        val vRetKtcTop = resolveTypeName(sig.returnType)
-        val retType = vRetKtcTop.toInternalStr
-        val elemCType = arrayElementCTypeKtc(vRetKtcTop)
-        val size = getSizeAnnotation(sig.returnType)!!
-        val t = tmp()
-        preStmts += "$elemCType ${t}[$size];"
-        preStmts += "const ktc_Int ${t}\$len = $size;"
-        val allArgs = if (expandedArgs.isEmpty()) t else "$expandedArgs, $t"
-        preStmts += "${funCName(name)}($allArgs);"
-        defineVar(t, retType)
-        return t
-    }
-
     // Top-level function overload resolution
     val topFuns = file.decls.filterIsInstance<FunDecl>()
+    val vIsOverloaded = topFuns.count { it.name == name } > 1
+    // Sized-return via sig: only for non-overloaded functions (overloads use topOvr below)
+    if (!vIsOverloaded && sig?.returnType != null && isSizedArrayTypeRef(sig.returnType)) {
+        val vRetKtcTop = resolveTypeName(sig.returnType)
+        val retType    = vRetKtcTop.toInternalStr
+        val elemCType  = arrayElementCTypeKtc(vRetKtcTop)
+        val size       = getSizeAnnotation(sig.returnType)!!
+        val structType = sizedArrayCTypeRef(elemCType, size)
+        val tStruct    = tmp()
+        val tPtr       = tmp()
+        preStmts += "$structType $tStruct = ${funCName(name)}($expandedArgs);"
+        preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+        preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+        defineVar(tPtr, retType)
+        return tPtr
+    }
+    if (!vIsOverloaded && sig?.returnType != null && isSizedStringTypeRef(sig.returnType)) {
+        val size       = getSizeAnnotation(sig.returnType)!!
+        val structType = sizedStringCTypeRef(size)
+        val tStruct    = tmp()
+        val tStr       = tmp()
+        preStmts += "$structType $tStruct = ${funCName(name)}($expandedArgs);"
+        preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+        defineVar(tStr, "String")
+        return tStr
+    }
     val topOvr = findOverload(name, args, topFuns)
-    if (topOvr != null && topFuns.count { it.name == name } > 1) {
+    if (topOvr != null && vIsOverloaded) {
         val overloadedName = methodName(topOvr, topFuns)
         val fnName = if (topOvr.isPrivate) "PRIV_$overloadedName" else overloadedName
         val filledArgs = fillDefaults(args, topOvr.params, topOvr.params.associate { it.name to it.default }, topOvr.name, strict = true)
         val expandedArgs2 = expandCallArgs(filledArgs, topOvr.params)
-        // @Size(N) return → out-parameter ABI
         if (topOvr.returnType != null && isSizedArrayTypeRef(topOvr.returnType)) {
             val vRetKtcOvr = resolveTypeName(topOvr.returnType)
-            val retType = vRetKtcOvr.toInternalStr
-            val elemCType = arrayElementCTypeKtc(vRetKtcOvr)
-            val size = getSizeAnnotation(topOvr.returnType)!!
-            val t = tmp()
-            preStmts += "$elemCType ${t}[$size];"
-            preStmts += "const ktc_Int ${t}\$len = $size;"
-            val allArgs = if (expandedArgs2.isEmpty()) t else "$expandedArgs2, $t"
-            preStmts += "${funCName(fnName)}($allArgs);"
-            defineVar(t, retType)
-            return t
+            val retType    = vRetKtcOvr.toInternalStr
+            val elemCType  = arrayElementCTypeKtc(vRetKtcOvr)
+            val size       = getSizeAnnotation(topOvr.returnType)!!
+            val structType = sizedArrayCTypeRef(elemCType, size)
+            val tStruct    = tmp()
+            val tPtr       = tmp()
+            preStmts += "$structType $tStruct = ${funCName(fnName)}($expandedArgs2);"
+            preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+            preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+            defineVar(tPtr, retType)
+            return tPtr
+        }
+        if (topOvr.returnType != null && isSizedStringTypeRef(topOvr.returnType)) {
+            val size       = getSizeAnnotation(topOvr.returnType)!!
+            val structType = sizedStringCTypeRef(size)
+            val tStruct    = tmp()
+            val tStr       = tmp()
+            preStmts += "$structType $tStruct = ${funCName(fnName)}($expandedArgs2);"
+            preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+            defineVar(tStr, "String")
+            return tStr
         }
         return "${funCName(fnName)}($expandedArgs2)"
     }
 
     return "${funCName(name)}($expandedArgs)"
 }
+
+/* Returns the size expression for a trampolined param's array length.
+For sized struct params (in sizedArrayTrampolinedParams), the local$name$len constant is used.
+For regular ktc_ArrayTrampoline params, the trampoline .size field is used. */
+private fun CCodeGen.arrayParamSizeExpr(inName: String): String =
+    if (inName in sizedArrayTrampolinedParams) "local\$${inName}\$len" else "$inName.size"
 
 /** Expand call arguments: array → (arg, arg$len); nullable → (arg, arg$has); class→interface wrapping; vararg packing. */
 /** If expr accesses a @Size(N) array field, return N. */
@@ -1577,17 +1644,32 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
                         parts += sizeFromAnn?.toString() ?: "${expr}\$len"
                     }
                 }
+            } else if (isSizedStringTypeRef(param.type)) {
+                // @Size(N) String param — wrap ktc_String into ktc_String_N value struct
+                val vSize = getSizeAnnotation(param.type)!!  // annotation size
+                val vStructType = sizedStringCTypeRef(vSize)
+                val vWrap = tmp()
+                preStmts += "$vStructType $vWrap;"
+                preStmts += "memcpy($vWrap.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); $vWrap.len = ($expr).len;"
+                parts += vWrap
             } else if (isArrayType(paramType)) {
                 if (hasSizeAnnotation(param.type)) {
-                    // @Size fixed array — passed as raw pointer
-                    parts += expr
+                    // @Size(N) array param — wrap pointer into ktc_Array_T_N value struct
+                    val vElemKtc   = paramTypeKtc.asArr!!.elem  // element KtcType
+                    val vElemCType = cTypeStr(vElemKtc)         // element C type
+                    val vSize      = getSizeAnnotation(param.type)!!
+                    val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
+                    val vWrap = tmp()
+                    preStmts += "$vStructType $vWrap;"
+                    preStmts += "memcpy($vWrap.arr, $expr, $vSize * sizeof($vElemCType));"
+                    parts += vWrap
                 } else if (arg.expr is NullLit && !isCtorCall) {
                     // Both nullable and non-nullable use ktc_ArrayTrampoline; NULL is data == NULL
                     parts += "(ktc_ArrayTrampoline){.size = 0, .data = NULL}"
                 } else {
                     // Non-null array (nullable or not): pack as ktc_ArrayTrampoline
                     val argName = (arg.expr as? NameExpr)?.name
-                    val sizeExpr = if (argName != null && argName in trampolinedParams) "$argName.size" else "${expr}\$len"
+                    val sizeExpr = if (argName != null && argName in trampolinedParams) arrayParamSizeExpr(argName) else "${expr}\$len"
                     if (isCtorCall) {
                         parts += expr
                         parts += sizeExpr
@@ -1891,10 +1973,10 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         }
     }
 
-    // Array .size → trampolined param uses trampoline size field; others use $len
+    // Array .size → sized-struct param uses local$name$len; trampoline uses .size field; others use $len
     if (method == "size" && recvTypeKtc != null && recvTypeKtc.isArrayLike) {
         val dotName = (dot.obj as? NameExpr)?.name
-        return if (dotName != null && dotName in trampolinedParams) "$dotName.size" else "${recv}\$len"
+        return if (dotName != null && dotName in trampolinedParams) arrayParamSizeExpr(dotName) else "${recv}\$len"
     }
     // Array .ptr() → just the pointer (already a pointer type)
     if (method == "ptr" && recvTypeKtc != null && recvTypeKtc.isArrayLike) {
@@ -1904,7 +1986,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
     if (method == "toHeap" && recvTypeKtc != null && recvTypeKtc.isArrayLike) {
         val elemC = arrayElementCTypeKtc(recvTypeKtc)
         val lenExpr = when {
-            dot.obj is NameExpr && dot.obj.name in trampolinedParams -> "${dot.obj.name}.size"
+            dot.obj is NameExpr && dot.obj.name in trampolinedParams -> arrayParamSizeExpr(dot.obj.name)
             else -> "${recv}\$len"
         }
         val t = tmp()
@@ -2258,19 +2340,27 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val allArgs = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
         val overloadedName = methodDecl?.let { methodName(it, vClassInfo.methods) } ?: method
         val fnPrefix = if (methodDecl?.isPrivate == true) "PRIV_$overloadedName" else overloadedName
-        // @Size(N) return → out-parameter ABI
         if (methodDecl?.returnType != null && isSizedArrayTypeRef(methodDecl.returnType)) {
-                val vRetKtcSz = resolveTypeName(methodDecl.returnType)
-                val retType = vRetKtcSz.toInternalStr
-                val elemCType = arrayElementCTypeKtc(vRetKtcSz)
-
-            val size = getSizeAnnotation(methodDecl.returnType)!!
-            val t = tmp()
-            preStmts += "$elemCType ${t}[$size];"
-            preStmts += "const ktc_Int ${t}\$len = $size;"
-            preStmts += "${vClassInfo.flatName}_$fnPrefix($allArgs, $t);"
-            defineVar(t, retType)
-            return t
+            val vRetKtcSz  = resolveTypeName(methodDecl.returnType)
+            val retType    = vRetKtcSz.toInternalStr
+            val elemCType  = arrayElementCTypeKtc(vRetKtcSz)
+            val size       = getSizeAnnotation(methodDecl.returnType)!!
+            val structType = sizedArrayCTypeRef(elemCType, size)
+            val tStruct = tmp(); val tPtr = tmp()
+            preStmts += "$structType $tStruct = ${vClassInfo.flatName}_$fnPrefix($allArgs);"
+            preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+            preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+            defineVar(tPtr, retType)
+            return tPtr
+        }
+        if (methodDecl?.returnType != null && isSizedStringTypeRef(methodDecl.returnType)) {
+            val size       = getSizeAnnotation(methodDecl.returnType)!!
+            val structType = sizedStringCTypeRef(size)
+            val tStruct = tmp(); val tStr = tmp()
+            preStmts += "$structType $tStruct = ${vClassInfo.flatName}_$fnPrefix($allArgs);"
+            preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+            defineVar(tStr, "String")
+            return tStr
         }
         // Nullable return: use out-pointer pattern
         if (methodDecl?.returnType?.nullable == true) {
@@ -2288,18 +2378,27 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
             val filled = fillDefaults(args, vObjMethod.params, effectiveDefaults(vObjMethod, vDotObjInfo.name), vObjMethod.name, strict = true)
             expandCallArgs(filled, vObjMethod.params)
         } else argStr
-        // @Size(N) return → out-parameter ABI
         if (vObjMethod?.returnType != null && isSizedArrayTypeRef(vObjMethod.returnType)) {
             val vRetKtcObj = resolveTypeName(vObjMethod.returnType)
-            val retType = vRetKtcObj.toInternalStr
-            val elemCType = arrayElementCTypeKtc(vRetKtcObj)
-            val size = getSizeAnnotation(vObjMethod.returnType)!!
-            val t = tmp()
-            preStmts += "$elemCType ${t}[$size];"
-            preStmts += "const ktc_Int ${t}\$len = $size;"
-            preStmts += "${vDotObjCName}_$overloadedMethod($vObjArgs, $t);"
-            defineVar(t, retType)
-            return t
+            val retType    = vRetKtcObj.toInternalStr
+            val elemCType  = arrayElementCTypeKtc(vRetKtcObj)
+            val size       = getSizeAnnotation(vObjMethod.returnType)!!
+            val structType = sizedArrayCTypeRef(elemCType, size)
+            val tStruct = tmp(); val tPtr = tmp()
+            preStmts += "$structType $tStruct = ${vDotObjCName}_$overloadedMethod($vObjArgs);"
+            preStmts += "$elemCType* $tPtr = $tStruct.arr;"
+            preStmts += "const ktc_Int ${tPtr}\$len = $size;"
+            defineVar(tPtr, retType)
+            return tPtr
+        }
+        if (vObjMethod?.returnType != null && isSizedStringTypeRef(vObjMethod.returnType)) {
+            val size       = getSizeAnnotation(vObjMethod.returnType)!!
+            val structType = sizedStringCTypeRef(size)
+            val tStruct = tmp(); val tStr = tmp()
+            preStmts += "$structType $tStruct = ${vDotObjCName}_$overloadedMethod($vObjArgs);"
+            preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+            defineVar(tStr, "String")
+            return tStr
         }
         return "${vDotObjCName}_$overloadedMethod($vObjArgs)"
     }
@@ -2558,8 +2657,8 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         val fieldName = if (objInfo != null && objInfo.privateProps.contains(e.name)) "PRIV_${e.name}" else e.name
         return "${vDotObjCName}.${fieldName}"
     }
-    // Array .size → trampolined param uses trampoline struct field; others use $len
-    if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return "${e.obj.name}.size"
+    // Array .size → sized-struct param uses local$name$len; trampoline uses .size field; others use $len
+    if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return arrayParamSizeExpr(e.obj.name)
     if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}\$len"
     if (e.name == "ptr" && recvTypeCoreKtc is KtcType.Str) return "$recv.ptr"
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"

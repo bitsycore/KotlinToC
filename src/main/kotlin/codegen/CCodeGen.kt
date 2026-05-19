@@ -565,29 +565,50 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal var currentFnReturnsSizedArray = false
     internal var currentFnSizedArraySize = 0
     internal var currentFnSizedArrayElemType = ""
+    internal var currentFnReturnsSizedString = false        // true when function returns @Size(N) String
+    internal var currentFnSizedStringSize = 0              // N for @Size(N) String return
     internal var currentFnReturnType: String = ""
     internal var currentFnReturnKtcType: KtcType? = null  // KtcType counterpart for pattern matching
     internal var currentFnOptReturnCTypeName: String = ""  // Optional C type for nullable returns
     internal var currentFnIsMain = false
     internal fun currentFnReturnBaseType(): String = currentFnReturnType.removeSuffix("?")
 
+    // ── Sized array/string struct type registry ───────────────────────
+    /* (elemCType, size) pairs for KTC_DEFINE_ARRAY(T, N) emitted WITHOUT guard.
+    Used only for user types defined in the current package (one canonical location). */
+    internal val sizedArrayDecls = mutableSetOf<Pair<String, Int>>()         // unguarded: current-pkg user types
+    /* Same pairs but emitted WITH #ifndef guard.
+    Used for primitive element types and types from other packages (safe in multiple headers). */
+    internal val sizedArrayGuardedDecls = mutableSetOf<Pair<String, Int>>()  // guarded: primitives / external types
+    /* Sizes N for KTC_DEFINE_STRING(N) emission (always guarded – String is a primitive). */
+    internal val sizedStringDecls = mutableSetOf<Int>()                      // string size N
+
+    // ── Sized array param tracking ────────────────────────────────────
+    /* Names of @Size(N) array params that arrived as ktc_Array_T_N structs and were
+    unpacked to local$name pointers. Subset of trampolinedParams; checked when
+    emitting .size to avoid accessing a non-existent .size field on the struct. */
+    internal val sizedArrayTrampolinedParams = mutableSetOf<String>() // sized struct param names
+
     /** Snapshot of current function state for save/restore across emit functions. */
     internal data class FunState(
-        var returnsNullable: Boolean,
-        var returnsArray: Boolean,
-        var returnsSizedArray: Boolean,
-        var sizedArraySize: Int,
-        var sizedArrayElemType: String,
-        var returnType: String,
-        var returnKtcType: KtcType?,
-        var optReturnCTypeName: String,
-        var klass: String?,
-        var selfPtr: Boolean,
-        var extRecvType: String?,
+        var returnsNullable: Boolean,          // true when function returns a nullable type
+        var returnsArray: Boolean,             // true when function returns a variable-length array
+        var returnsSizedArray: Boolean,        // true when function returns @Size(N) array struct
+        var sizedArraySize: Int,               // N for @Size(N) array return
+        var sizedArrayElemType: String,        // element C type for @Size(N) array return
+        var returnsSizedString: Boolean,       // true when function returns @Size(N) String struct
+        var sizedStringSize: Int,              // N for @Size(N) String return
+        var returnType: String,                // C return type string (legacy)
+        var returnKtcType: KtcType?,           // KtcType of return (for pattern matching)
+        var optReturnCTypeName: String,        // Optional C type for nullable returns
+        var klass: String?,                    // current class context
+        var selfPtr: Boolean,                  // true when $self is a pointer
+        var extRecvType: String?,              // extension receiver type name
     )
     internal fun saveFunState() = FunState(
         currentFnReturnsNullable, currentFnReturnsArray, currentFnReturnsSizedArray,
         currentFnSizedArraySize, currentFnSizedArrayElemType,
+        currentFnReturnsSizedString, currentFnSizedStringSize,
         currentFnReturnType, currentFnReturnKtcType, currentFnOptReturnCTypeName,
         currentClass, selfIsPointer, currentExtRecvType
     )
@@ -597,6 +618,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         currentFnReturnsSizedArray = s.returnsSizedArray
         currentFnSizedArraySize = s.sizedArraySize
         currentFnSizedArrayElemType = s.sizedArrayElemType
+        currentFnReturnsSizedString = s.returnsSizedString
+        currentFnSizedStringSize = s.sizedStringSize
         currentFnReturnType = s.returnType
         currentFnReturnKtcType = s.returnKtcType
         currentFnOptReturnCTypeName = s.optReturnCTypeName
@@ -1017,6 +1040,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         }
         hdr.appendLine()
 
+        // Placeholder replaced after emission with KTC_DEFINE_ARRAY/KTC_DEFINE_STRING calls.
+        // Must appear before any forward declarations so the structs are visible everywhere.
+        hdr.appendLine("/* @SIZED_TYPES@ */")
+        hdr.appendLine()
+
         // Pre-scan for Array<T> type references to discover class array types early
         scanForClassArrayTypes()
 
@@ -1353,6 +1381,43 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 }
             vSources["$vDeclName.c"] = SourceFile(vSrc, vRoutingPkg)
             }
+
+        // Replace the sized-types placeholder with KTC_DEFINE_ARRAY / KTC_DEFINE_STRING calls.
+        // Collected during emission; empty when no @Size(N) arrays/strings are used.
+        val vSizedTypesSb = StringBuilder()  // accumulated sized-type definitions
+        // User types from this package — no guard needed (exactly one canonical definition).
+        val vSortedArrayDecls = sizedArrayDecls.sortedWith(compareBy({ it.first }, { it.second }))
+        for ((vElemCType, vSize) in vSortedArrayDecls)
+            vSizedTypesSb.appendLine("KTC_DEFINE_ARRAY($vElemCType, $vSize);")
+        // Primitive / external types — guard with #ifndef so multiple includes are safe.
+        val vSortedGuarded = sizedArrayGuardedDecls
+            .filter { it !in sizedArrayDecls }  // skip if already emitted without guard
+            .sortedWith(compareBy({ it.first }, { it.second }))
+        for ((vElemCType, vSize) in vSortedGuarded) {
+            val vGuard = "KTC_ARRAY_DEF_${vElemCType}_$vSize"
+            vSizedTypesSb.appendLine("#ifndef $vGuard")
+            vSizedTypesSb.appendLine("#define $vGuard")
+            vSizedTypesSb.appendLine("KTC_DEFINE_ARRAY($vElemCType, $vSize);")
+            vSizedTypesSb.appendLine("#endif")
+        }
+        // String types — always guarded (String is a primitive-like built-in).
+        for (vSize in sizedStringDecls.sorted()) {
+            val vGuard = "KTC_STRING_DEF_$vSize"
+            vSizedTypesSb.appendLine("#ifndef $vGuard")
+            vSizedTypesSb.appendLine("#define $vGuard")
+            vSizedTypesSb.appendLine("KTC_DEFINE_STRING($vSize);")
+            vSizedTypesSb.appendLine("#endif")
+        }
+        val vPlaceholder = "/* @SIZED_TYPES@ */"  // placeholder emitted before forward declarations
+        val vIdx = hdr.indexOf(vPlaceholder)
+        if (vIdx >= 0) {
+            val vSection = if (vSizedTypesSb.isNotEmpty()) {
+                "/* $kHdrRule\n * sized array / string types\n * $kHdrRule */\n$vSizedTypesSb"
+            } else ""
+            // Remove placeholder + trailing newline (the appendLine added one)
+            val vEnd = vIdx + vPlaceholder.length + if (hdr.getOrNull(vIdx + vPlaceholder.length) == '\n') 1 else 0
+            hdr.replace(vIdx, vEnd, vSection)
+        }
 
         return COutput(hdr.toString(), vSources)
         }
