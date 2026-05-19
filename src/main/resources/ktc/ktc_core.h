@@ -99,6 +99,8 @@ ktc_UInt ktc_core_rand_range(ktc_ULong* state, ktc_ULong* inc, ktc_UInt bound);
     #endif
 #endif
 
+#include "ktc_thread.h"
+
 // ══════════════════════════════════════════════════════════════════
 // MARK: Types System
 // ══════════════════════════════════════════════════════════════════

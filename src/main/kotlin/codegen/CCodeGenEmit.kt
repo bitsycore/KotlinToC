@@ -1186,17 +1186,12 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine()
     }
 
-    // global instance (zero-initialized), init flag declared externally visible
+    // global instance (zero-initialized), thread-once control block
     impl.appendLine("${vTls}${cName}_t $cName = {0};")
-    impl.appendLine("${vTls}static ktc_Bool ${cName}\$init = false;")
+    impl.appendLine("static ktc_thread_once_t ${cName}\$once = KTC_THREAD_ONCE_INIT;")
     impl.appendLine()
 
-    // $ensure_init: lazy initializer — declared in header so other TUs can call it
-    hdr.appendLine("void ${cName}_\$ensure_init(void);")
-    impl.appendLine("void ${cName}_\$ensure_init(void) {")
-    impl.appendLine("    if (${cName}\$init) return;")
-    impl.appendLine("    ${cName}\$init = true;")
-    impl.appendLine("    $cName.__base.typeId = ${cName}_TYPE_ID;")
+    // static init function — body run exactly once across all threads
     val prevObject = currentObject
     currentObject = d.name
     pushScope()
@@ -1204,6 +1199,8 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
         if (p.mutable) markMutable(p.name)
     }
+    impl.appendLine("static void ${cName}_init(void) {")
+    impl.appendLine("    $cName.__base.typeId = ${cName}_TYPE_ID;")
     for (p in props) {
         if (p.init != null) {
             val pType       = p.type ?: inferInitType(p.init)
@@ -1224,12 +1221,18 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             }
         }
     }
-    // emit init { } block bodies
     for (ib in initBlocks) {
         if (ib.body != null) for (s in ib.body.stmts) emitStmt(s, "    ")
     }
     popScope()
     currentObject = prevObject
+    impl.appendLine("}")
+    impl.appendLine()
+
+    // $ensure_init: thread-safe lazy initializer — declared in header so other TUs can call it
+    hdr.appendLine("void ${cName}_\$ensure_init(void);")
+    impl.appendLine("void ${cName}_\$ensure_init(void) {")
+    impl.appendLine("    ktc_thread_call_once(&${cName}\$once, ${cName}_init);")
     impl.appendLine("}")
     impl.appendLine()
 
@@ -1287,6 +1290,8 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val vHdrLine = "KTC_METHOD($cRet, $fnName)($vParamsOrVoid);"
             if (inHdrLines != null) inHdrLines += vHdrLine else hdr.appendLine(vHdrLine)
         }
+        val vRetSuffix = if (m.returnType != null) ": ${typeRefToStr(m.returnType)}" else ""
+        impl.appendLine("// ══ fun ${m.name}()$vRetSuffix ══")
         impl.appendLine("$cRet ${cName}_$fnName($params) {")
         impl.appendLine("    ${cName}_\$ensure_init();")
         val prevState = saveFunState()
@@ -1385,7 +1390,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
 
     // Impl: "implements Any" section — overrides first, then auto-generated
     val vDisplaySimple = d.name.substringAfterLast('$')
-    impl.appendLine(boxSection("implements Any"))
+    impl.appendLine(boxSection("implements Any (implicit)"))
     impl.appendLine()
 
     impl.append(vAnyOverrideImplBuf)  // user-defined Any overrides (toString/hashCode/dispose)

@@ -118,7 +118,7 @@ class Sha256UnitTest : TranspilerTestBase() {
         val v = transpileMain("", """
             object Sha { val x = 1 }
         """)
-        v.sourceContains("static ktc_Bool test_Main_Sha\$init = false;")
+        v.sourceContains("static ktc_thread_once_t test_Main_Sha\$once = KTC_THREAD_ONCE_INIT;")
     }
 
     @Test fun sha256EnsureInitCalledInMethods() {

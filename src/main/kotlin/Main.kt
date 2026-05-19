@@ -406,7 +406,7 @@ fun main(args: Array<String>) {
     }
 
     // ── Copy intrinsic files to ktc/core/ ───────────────────────
-    for (vName in listOf("ktc_macro.h", "ktc_core.h", "ktc_core.c")) {
+    for (vName in listOf("ktc_macro.h", "ktc_thread.h", "ktc_thread.c", "ktc_core.h", "ktc_core.c")) {
         val vDst = File(ktcCoreDir, vName)
         val vSrc = aClass.getResourceAsStream("/ktc/$vName")
         if (vSrc != null) {
