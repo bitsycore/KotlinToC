@@ -1369,15 +1369,15 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     if (!vHasToString) {
         val vMaxLen = toStringMaxLen(d.name)
         val vMaxComment = if (vMaxLen != null) " // max output: $vMaxLen chars" else ""
-        hdr.appendLine("void ${cName}_toString(${cName}_t* \$self, ktc_StrBuf* sb);${vMaxComment}")
+        hdr.appendLine("KTC_METHOD(void, toString)(${cName}_t* \$self, ktc_StrBuf* sb);${vMaxComment}")
     }
     if (!vHasHashCode) hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(void);")
     if (!vHasDispose) {
         if (disposedMode != "NO" || doubleDisposeMode != "NO") hdr.appendLine("KTC_METHOD(void, dispose)(void);")
         else hdr.appendLine("#define ${cName}_dispose() ((void)0)")
     }
-    hdr.appendLine("ktc_Bool ${cName}_equals(${cName}_t* \$self, void* other);")
-    hdr.appendLine("void* ${cName}_copyWith(${cName}_t* \$self, void* alloc);")
+    hdr.appendLine("KTC_METHOD(ktc_Bool, equals)(${cName}_t* \$self, void* other);")
+    hdr.appendLine("KTC_METHOD(void*, copyWith)(${cName}_t* \$self, void* alloc);")
 
     hdr.appendLine()
     hdr.appendLine("// ════ Any cast ════")

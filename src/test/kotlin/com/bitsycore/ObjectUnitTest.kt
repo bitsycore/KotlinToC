@@ -64,7 +64,7 @@ class ObjectUnitTest : TranspilerTestBase() {
 
     @Test fun objectHasToString() {
         val r = transpileMain("Config.maxRetries", decls = configDecl)
-        r.headerContains("void test_Main_Config_toString(test_Main_Config_t* \$self, ktc_StrBuf* sb);")
+        r.headerContains("KTC_METHOD(void, toString)(test_Main_Config_t* \$self, ktc_StrBuf* sb);")
         r.sourceContains("void test_Main_Config_toString(test_Main_Config_t* \$self, ktc_StrBuf* sb)")
     }
 
