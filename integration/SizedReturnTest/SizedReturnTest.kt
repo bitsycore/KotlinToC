@@ -200,13 +200,13 @@ fun makeMedium(): @Size(4) IntArray { return intArrayOf(10, 20, 30, 40) }
 
 fun testMultipleSizes() {
     println("--- testMultipleSizes ---")
-    val small  = makeSmall()
+    val smoll  = makeSmall()
     val large  = makeLarge()
     val medium = makeMedium()
-    assertEq(small.size,  2)
+    assertEq(smoll.size,  2)
     assertEq(large.size,  8)
     assertEq(medium.size, 4)
-    assertEq(small[0],  1)
+    assertEq(smoll[0],  1)
     assertEq(large[7],  8)
     assertEq(medium[2], 30)
     println("OK")
@@ -251,6 +251,31 @@ fun testSizedParamSize() {
     println("OK")
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 12. Using data class
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+data class Vec3(val x: Int, val y: Int, val z: Int) {
+    fun dot(b: Vec3): Float {
+        return x * b.x + y * b.y + z * b.z
+    }
+}
+
+fun returnVec3(): @Size(4) Array<Vec3> {
+    return arrayOf(Vec3(1, 2, 3), Vec3(4, 5, 6), Vec3(7, 8, 9), Vec3(10, 11, 12))
+}
+
+fun testReturnDataClass() {
+    val arr1 = returnVec3()
+    val arr2 = returnVec3()
+    val arr3 = returnVec3()
+
+    if (arr1.size != 4) error("arr1 size not 4")
+    if (arr2.size != 4) error("arr2 size not 4")
+    if (arr3.size != 4) error("arr3 size not 4")
+    println("OK")
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * main
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -268,5 +293,6 @@ fun main(args: Array<String>) {
     testMultipleSizes()
     testOverloadedSizedReturn()
     testSizedParamSize()
+    testReturnDataClass()
     println("All tests passed!")
 }

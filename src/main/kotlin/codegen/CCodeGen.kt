@@ -1040,8 +1040,9 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         }
         hdr.appendLine()
 
-        // Placeholder replaced after emission with KTC_DEFINE_ARRAY/KTC_DEFINE_STRING calls.
-        // Must appear before any forward declarations so the structs are visible everywhere.
+        // Placeholder for primitive/external/string KTC_DEFINE_ARRAY|STRING — replaced after emission.
+        // Must appear before forward declarations. User-type arrays use @SIZED_TYPES_USER@ instead
+        // (placed after class definitions, since KTC_DEFINE_ARRAY requires the element type to be complete).
         hdr.appendLine("/* @SIZED_TYPES@ */")
         hdr.appendLine()
 
@@ -1247,6 +1248,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             currentSourceFile = prevSourceFile
         }
 
+        // Placeholder replaced after emission with KTC_DEFINE_ARRAY for current-pkg user types.
+        // Must appear AFTER all class struct definitions (user types are incomplete before this point).
+        hdr.appendLine()
+        hdr.appendLine("/* @SIZED_TYPES_USER@ */")
+
         // Emit top-level functions, properties, generic funs, star ext funs, and enum values data.
         // Each is captured into its own per-source-file buffer (key "|sourceFile.kt").
         for (d in file.decls) when (d) {
@@ -1382,42 +1388,48 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             vSources["$vDeclName.c"] = SourceFile(vSrc, vRoutingPkg)
             }
 
-        // Replace the sized-types placeholder with KTC_DEFINE_ARRAY / KTC_DEFINE_STRING calls.
-        // Collected during emission; empty when no @Size(N) arrays/strings are used.
-        val vSizedTypesSb = StringBuilder()  // accumulated sized-type definitions
+        // Replace @SIZED_TYPES@ (before forward decls) with primitive/external/string array defs.
+        // Replace @SIZED_TYPES_USER@ (after class defs) with current-pkg user type array defs.
+        // Split so user-type KTC_DEFINE_ARRAY appears after the struct it references is defined.
+        val vEarlyTypesSb = StringBuilder()   // primitives + external types + strings (before fwd decls)
+        val vUserTypesSb  = StringBuilder()   // current-pkg user types (after class definitions)
         // User types from this package — no guard needed (exactly one canonical definition).
         val vSortedArrayDecls = sizedArrayDecls.sortedWith(compareBy({ it.first }, { it.second }))
         for ((vElemCType, vSize) in vSortedArrayDecls)
-            vSizedTypesSb.appendLine("KTC_DEFINE_ARRAY($vElemCType, $vSize);")
+            vUserTypesSb.appendLine("KTC_DEFINE_ARRAY($vElemCType, $vSize);")
         // Primitive / external types — guard with #ifndef so multiple includes are safe.
         val vSortedGuarded = sizedArrayGuardedDecls
             .filter { it !in sizedArrayDecls }  // skip if already emitted without guard
             .sortedWith(compareBy({ it.first }, { it.second }))
         for ((vElemCType, vSize) in vSortedGuarded) {
             val vGuard = "KTC_ARRAY_DEF_${vElemCType}_$vSize"
-            vSizedTypesSb.appendLine("#ifndef $vGuard")
-            vSizedTypesSb.appendLine("#define $vGuard")
-            vSizedTypesSb.appendLine("KTC_DEFINE_ARRAY($vElemCType, $vSize);")
-            vSizedTypesSb.appendLine("#endif")
+            vEarlyTypesSb.appendLine("#ifndef $vGuard")
+            vEarlyTypesSb.appendLine("#define $vGuard")
+            vEarlyTypesSb.appendLine("KTC_DEFINE_ARRAY($vElemCType, $vSize);")
+            vEarlyTypesSb.appendLine("#endif")
         }
         // String types — always guarded (String is a primitive-like built-in).
         for (vSize in sizedStringDecls.sorted()) {
             val vGuard = "KTC_STRING_DEF_$vSize"
-            vSizedTypesSb.appendLine("#ifndef $vGuard")
-            vSizedTypesSb.appendLine("#define $vGuard")
-            vSizedTypesSb.appendLine("KTC_DEFINE_STRING($vSize);")
-            vSizedTypesSb.appendLine("#endif")
+            vEarlyTypesSb.appendLine("#ifndef $vGuard")
+            vEarlyTypesSb.appendLine("#define $vGuard")
+            vEarlyTypesSb.appendLine("KTC_DEFINE_STRING($vSize);")
+            vEarlyTypesSb.appendLine("#endif")
         }
-        val vPlaceholder = "/* @SIZED_TYPES@ */"  // placeholder emitted before forward declarations
-        val vIdx = hdr.indexOf(vPlaceholder)
-        if (vIdx >= 0) {
-            val vSection = if (vSizedTypesSb.isNotEmpty()) {
-                "/* $kHdrRule\n * sized array / string types\n * $kHdrRule */\n$vSizedTypesSb"
-            } else ""
-            // Remove placeholder + trailing newline (the appendLine added one)
-            val vEnd = vIdx + vPlaceholder.length + if (hdr.getOrNull(vIdx + vPlaceholder.length) == '\n') 1 else 0
+        /* Replace @SIZED_TYPES_USER@ first (it appears later in hdr, so replacing it first
+           doesn't shift the index of the earlier @SIZED_TYPES@ placeholder). */
+        fun replaceHdrPlaceholder(inPlaceholder: String, inContent: StringBuilder, inTitle: String) {
+            val vIdx = hdr.indexOf(inPlaceholder)
+            if (vIdx < 0) return
+            val vSection = if (inContent.isNotEmpty())
+                "/* $kHdrRule\n * $inTitle\n * $kHdrRule */\n$inContent"
+            else ""
+            val vEnd = vIdx + inPlaceholder.length +
+                if (hdr.getOrNull(vIdx + inPlaceholder.length) == '\n') 1 else 0
             hdr.replace(vIdx, vEnd, vSection)
         }
+        replaceHdrPlaceholder("/* @SIZED_TYPES_USER@ */", vUserTypesSb,  "sized array types (user-defined element types)")
+        replaceHdrPlaceholder("/* @SIZED_TYPES@ */",      vEarlyTypesSb, "sized array / string types")
 
         return COutput(hdr.toString(), vSources)
         }

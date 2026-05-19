@@ -655,7 +655,7 @@ internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
         }
         // allocWith returns @Ptr always
         if (inner.callee is DotExpr && inner.callee.name == "allocWith") {
-            val obj = (inner.callee as DotExpr).obj
+            val obj = inner.callee.obj
             val objName = (obj as? NameExpr)?.name ?: ""
             if (objName == "Array" || objName == "RawArray") {
                 val elem = inner.typeArgs.getOrNull(0) ?: TypeRef("Int")
@@ -1937,7 +1937,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 if (arrType != null && interfaces.containsKey(arrType)) {
                     impl.appendLine("$ind$iterCType $iterVar = $arrExpr.vt->iterator(${ifaceVtableSelf(arrType, arrExpr)});")
                 } else if (isPtrIface) {
-                    val arrKtc = parseResolvedTypeName(arrType!!)
+                    val arrKtc = parseResolvedTypeName(arrType)
                     val ifaceName = ((arrKtc as KtcType.Ptr).inner as KtcType.User).baseName
                     val cIface = typeFlatName(ifaceName)
                     impl.appendLine("$ind$iterCType $iterVar = ((${cIface}_vt*)$arrExpr.vt)->iterator($arrExpr.obj);")
@@ -2033,7 +2033,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
     // Ptr to interface (e.g. @Ptr List<T> → List_Int*)
     val isMonoIface = indirectBase != null && genericIfaceDecls.keys.any { indirectBase.startsWith(it + "_") }
     if ((indirectBase != null && interfaces.containsKey(indirectBase)) || isMonoIface) {
-        val ifaceName = if (isMonoIface) indirectBase!! else indirectBase!!
+        val ifaceName = if (isMonoIface) indirectBase else indirectBase
         val vIndirectIfaceII = interfaces[ifaceName]
         val allIfaceMethods = if (vIndirectIfaceII != null) collectAllIfaceMethods(vIndirectIfaceII)
             else {
@@ -2064,7 +2064,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
         }
     }
     // Interface
-    if (interfaces.containsKey(type)) {
+    interfaces[type]?.let {
         val vIfaceII = interfaces[type]!!                                               // IfaceInfo for the iterable interface
         val allMethods = collectAllIfaceMethods(vIfaceII)
         val iterMethod = allMethods.find { it.name == "iterator" && it.isOperator }
