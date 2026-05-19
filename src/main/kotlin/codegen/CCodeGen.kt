@@ -711,6 +711,10 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     // Keyed by root declaration name (same key as perDeclImpl).
     internal val deferredAsCalls = mutableMapOf<String, StringBuilder>()
 
+    // Buffered object interface method bodies: (objectName, ifaceName) -> impl content.
+    // Populated in emitObject, consumed in emitInterfaceVtablesForClass (implsOnly pass).
+    internal val deferredObjIfaceMethods = mutableMapOf<Pair<String, String>, StringBuilder>()
+
     /*
     Returns the root key for a declaration name.
     Inner classes / companions ("Foo$Bar") map to their parent ("Foo")

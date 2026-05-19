@@ -64,14 +64,14 @@ class ObjectUnitTest : TranspilerTestBase() {
 
     @Test fun objectHasToString() {
         val r = transpileMain("Config.maxRetries", decls = configDecl)
-        r.headerContains("KTC_METHOD(void, toString)(ktc_StrBuf* sb);")
-        r.sourceContains("void test_Main_Config_toString(ktc_StrBuf* sb)")
+        r.headerContains("void test_Main_Config_toString(test_Main_Config_t* \$self, ktc_StrBuf* sb);")
+        r.sourceContains("void test_Main_Config_toString(test_Main_Config_t* \$self, ktc_StrBuf* sb)")
     }
 
     @Test fun objectHasHashCode() {
         val r = transpileMain("Config.maxRetries", decls = configDecl)
         r.headerContains("KTC_METHOD(ktc_Int, hashCode)(void);")
-        r.sourceContains("void test_Main_Config_toString(ktc_StrBuf* sb)")
+        r.sourceContains("void test_Main_Config_toString(test_Main_Config_t* \$self, ktc_StrBuf* sb)")
     }
 
     @Test fun objectAnyVtable() {
@@ -86,7 +86,7 @@ class ObjectUnitTest : TranspilerTestBase() {
 
     @Test fun objectAnyWrappersDelegate() {
         val r = transpileMain("Config.maxRetries", decls = configDecl)
-        r.sourceContains("test_Main_Config_toString(sb);")
+        r.sourceContains("test_Main_Config_toString((test_Main_Config_t*)\$self, sb);")
         r.sourceContains("return test_Main_Config_hashCode();")
     }
 

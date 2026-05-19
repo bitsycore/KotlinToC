@@ -3326,6 +3326,25 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
         return "${cName}_toString()"
     }
 
+    // Object implicit toString: use public toString(self, sb) with stack buffer
+    if (objects.containsKey(base)) {
+        val maxLen = toStringMaxLen(base)
+        val buf = tmp()
+        val selfExpr = if (isPtr) recv else "&$recv"
+        if (maxLen != null) {
+            preStmts += "ktc_Char ${buf}[$maxLen];"
+            preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
+            preStmts += "${cName}_toString($selfExpr, &${buf}_sb);"
+        } else {
+            preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
+            preStmts += "${cName}_toString($selfExpr, &${buf}_sb);"
+            preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
+            preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
+            preStmts += "${cName}_toString($selfExpr, &${buf}_sb);"
+        }
+        return "ktc_core_sb_to_string(&${buf}_sb)"
+    }
+
     return when (type) {
         "Byte" -> {
             val buf = tmp()
@@ -3491,12 +3510,16 @@ internal fun CCodeGen.genToStringInto(recv: String, type: String, sb: String): S
                 val cName = typeFlatName(base)
                 val isPtr  = parseResolvedTypeName(type) is KtcType.Ptr
                 val isObj  = objects.containsKey(base)
-                val hcExpr = if (isObj) "${cName}_hashCode()"
-                             else "${cName}_hashCode(${if (isPtr) recv else "&$recv"})"
-                val buf = tmp()
-                preStmts += "ktc_Char ${buf}[64];"
-                preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(base)}\", $hcExpr);"
-                preStmts += "ktc_core_sb_append_cstr(&$sb, $buf);"
+                if (isObj) {
+                    val selfExpr = if (isPtr) recv else "&$recv"
+                    preStmts += "${cName}_toString($selfExpr, &$sb);"
+                } else {
+                    val hcExpr = "${cName}_hashCode(${if (isPtr) recv else "&$recv"})"
+                    val buf = tmp()
+                    preStmts += "ktc_Char ${buf}[64];"
+                    preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(base)}\", $hcExpr);"
+                    preStmts += "ktc_core_sb_append_cstr(&$sb, $buf);"
+                }
             } else if (hasIface) {
                 val buf = tmp()
                 preStmts += "ktc_Char ${buf}[64];"
