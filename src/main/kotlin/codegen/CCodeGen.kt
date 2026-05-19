@@ -1571,6 +1571,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     if (funSigs[m.name] == null) {
                         funSigs[m.name] = FunSig(m.params, m.returnType)
                     }
+                    // Inline object methods are expanded at call sites — register for expansion
+                    if (m.isInline) inlineFunDecls.getOrPut(m.name) { mutableListOf() }.add(m)
                 }
                 objects[d.name] = oi
                 // Register interface implementations for objects

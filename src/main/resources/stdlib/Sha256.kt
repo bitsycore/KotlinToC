@@ -238,31 +238,31 @@ object Sha256 {
         }
     }
 
-    private fun rotr(x: Int, n: Int): Int {
+    private inline fun rotr(x: Int, n: Int): Int {
         return (x ushr n) or (x shl (32 - n))
     }
 
-    private fun ch(x: Int, y: Int, z: Int): Int {
+    private inline fun ch(x: Int, y: Int, z: Int): Int {
         return (x and y) xor (x.inv() and z)
     }
 
-    private fun maj(x: Int, y: Int, z: Int): Int {
+    private inline fun maj(x: Int, y: Int, z: Int): Int {
         return (x and y) xor (x and z) xor (y and z)
     }
 
-    private fun bigSigma0(x: Int): Int {
+    private inline fun bigSigma0(x: Int): Int {
         return rotr(x, 2) xor rotr(x, 13) xor rotr(x, 22)
     }
 
-    private fun bigSigma1(x: Int): Int {
+    private inline fun bigSigma1(x: Int): Int {
         return rotr(x, 6) xor rotr(x, 11) xor rotr(x, 25)
     }
 
-    private fun smallSigma0(x: Int): Int {
+    private inline fun smallSigma0(x: Int): Int {
         return rotr(x, 7) xor rotr(x, 18) xor (x ushr 3)
     }
 
-    private fun smallSigma1(x: Int): Int {
+    private inline fun smallSigma1(x: Int): Int {
         return rotr(x, 17) xor rotr(x, 19) xor (x ushr 10)
     }
 }

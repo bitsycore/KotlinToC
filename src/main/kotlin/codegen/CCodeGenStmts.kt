@@ -1273,7 +1273,13 @@ internal fun CCodeGen.emitInlineCall(
     if (receiverExpr != null) lambdaParamSubst["\$this"] = receiverExpr
     if (receiverType != null) lambdaParamTypes["\$this"] = receiverType
 
-    // Bind each parameter: lambda params go into activeLambdas, value params become locals
+    // Bind each parameter: lambda params go into activeLambdas, value params become locals.
+    // Two-pass approach: evaluate all argument expressions first, then declare parameter variables.
+    // This prevents C self-initialization UB when a param name shadows an outer variable of the
+    // same name (e.g. `rotr(x, n)` called with arg `x` would emit `ktc_Int x = x;` where the
+    // right-hand `x` would refer to the newly declared uninitialized variable, not the outer one).
+    data class BoundParam(val cTypeName: String, val paramName: String, val cVal: String, val scopeKtc: KtcType, val isNullable: Boolean)
+    val vBoundParams = mutableListOf<BoundParam>()
     callArgs.forEachIndexed { i, arg ->
         val param = decl.params.getOrNull(i) ?: return@forEachIndexed
         val expr = arg.expr
@@ -1286,7 +1292,6 @@ internal fun CCodeGen.emitInlineCall(
             val resolvedKtc = resolveTypeName(param.type)
             val isValueNullable = param.type.nullable && !param.type.annotations.any { it.name == "Ptr" }
             val (cTypeName, scopeKtc) = if (isValueNullable) {
-                markOptional(param.name)
                 val innerKtc = resolveTypeName(param.type.copy(nullable = false))
                 optCTypeName(innerKtc.toInternalStr) to KtcType.Nullable(innerKtc)
             } else {
@@ -1294,9 +1299,23 @@ internal fun CCodeGen.emitInlineCall(
             }
             val cVal = genExpr(expr)
             flushPreStmts(ind)
-            impl.appendLine("$ind    $cTypeName ${param.name} = $cVal;")
-            defineVarKtc(param.name, scopeKtc)
+            vBoundParams.add(BoundParam(cTypeName, param.name, cVal, scopeKtc, isValueNullable))
         }
+    }
+    for (vBp in vBoundParams) {
+        if (vBp.isNullable) markOptional(vBp.paramName)
+        // If cVal equals paramName, declaring `T x = x;` in C causes self-initialization UB
+        // because the new variable's scope starts after the declarator, shadowing the outer one.
+        // Capture the outer value in a temp first.
+        val vFinalVal = if (vBp.cVal == vBp.paramName) {
+            val vTmp = "\$ptmp_${vBp.paramName}"
+            impl.appendLine("$ind    ${vBp.cTypeName} $vTmp = ${vBp.cVal};")
+            vTmp
+        } else {
+            vBp.cVal
+        }
+        impl.appendLine("$ind    ${vBp.cTypeName} ${vBp.paramName} = $vFinalVal;")
+        defineVarKtc(vBp.paramName, vBp.scopeKtc)
     }
     activeLambdas = newLambdas
 

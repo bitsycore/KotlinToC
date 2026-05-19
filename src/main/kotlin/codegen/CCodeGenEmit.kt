@@ -1117,7 +1117,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
 
     // Forward-declare private methods into implFwd so they are grouped at the top of the .c file
     for (m in methods) {
-        if (m.isPrivate) {
+        if (m.isPrivate && !m.isInline) {
             val vRetKtcFwd  = if (m.returnType != null) resolveTypeName(m.returnType) else null
             val vFwdRetStr  = vRetKtcFwd?.toInternalStr ?: ""
             val cRet = when {
@@ -1131,7 +1131,11 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         }
     }
 
-    // Emit nested classes BEFORE the object block so they don't conflict with #define KTC_TYPE_NAME
+    // Emit nested classes BEFORE the object block so they don't conflict with #define KTC_TYPE_NAME.
+    // Their impl output is captured separately so it appears after the object's own body in the .c file.
+    val vNestedClassImpl = StringBuilder()
+    val vSavedImplForNested = impl
+    impl = vNestedClassImpl
     for (nested in d.members.filterIsInstance<ClassDecl>()) {
         if (nested.typeParams.isEmpty()) {
             emitClass(
@@ -1142,9 +1146,10 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
                 )
             )
             hdr.appendLine()
-            impl.appendLine()
+            vNestedClassImpl.appendLine()
         }
     }
+    impl = vSavedImplForNested
 
     hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
     hdr.appendLine("#define KTC_TYPE_NAME $cName")
@@ -1263,6 +1268,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     /* Shared body for emitting one object method — used for both regular and any-override passes.
     inHdrLines: if non-null, collect hdr declaration strings instead of writing to hdr directly. */
     fun emitOneObjMethod(m: FunDecl, inHdrLines: MutableList<String>?) {
+        if (m.isInline) return  // expanded at call sites via inlineFunDecls, not emitted as C functions
         val returnsSizedArray  = m.returnType != null && isSizedArrayTypeRef(m.returnType)
         val vRetKtcM           = if (m.returnType != null) resolveTypeName(m.returnType) else null
         val returnsArray       = !returnsSizedArray && (vRetKtcM?.isArrayLike ?: false)
@@ -1486,6 +1492,9 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl.appendLine("    return (ktc_Any){{.typeId = ${cName}_TYPE_ID}, (void*)\$self, &${cName}_AnyVt};")
     impl.appendLine("}")
     impl.appendLine()
+
+    // Nested class implementations follow the object's own body
+    if (vNestedClassImpl.isNotEmpty()) impl.append(vNestedClassImpl)
 }
 
 // ── interface ────────────────────────────────────────────────────

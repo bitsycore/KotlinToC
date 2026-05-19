@@ -50,11 +50,11 @@ class Parser(private val tokens: List<Token>) {
         if (isOperator) advance()
         val isInfix = at(TokenType.IDENT) && cur().value == "infix"
         if (isInfix) advance()
+        val isPrivate = at(TokenType.PRIVATE)
+        if (isPrivate) advance()
         val isInlineExplicit = at(TokenType.IDENT) && cur().value == "inline" && peek().type == TokenType.FUN
         if (isInlineExplicit) advance()
         val isInline = isInlineExplicit || isInfix
-        val isPrivate = at(TokenType.PRIVATE)
-        if (isPrivate) advance()
         return when {
             at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInline = isInline, isOverride = isOverride, isInfix = isInfix)
             at(TokenType.DATA)   -> { if (isPrivate) error("private with data not supported"); advance(); expect(TokenType.CLASS); parseClassDecl(isData = true) }
