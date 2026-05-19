@@ -118,6 +118,44 @@ internal fun CCodeGen.emitBlock(b: Block, ind: String, insideMethod: Boolean = f
 
 // ── var / val ────────────────────────────────────────────────────
 
+/*
+Returns the static element count of an array-init expression, or null if unknown at transpile time.
+Handles: literal arrayOf / intArrayOf / etc., function calls with a @Size(N) return type,
+and method calls to copyOf(N) where N is a literal (explicit truncation — no warning needed).
+*/
+internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
+    if (inInit == null) return null
+    // Local variable whose array size was recorded when it was declared.
+    if (inInit is NameExpr) return lookupArraySize(inInit.name)
+    if (inInit !is CallExpr) return null
+    // Method call: arr.copyOf(N) with literal N — explicit size, suppress unsized warning.
+    if (inInit.callee is DotExpr && (inInit.callee as DotExpr).name == "copyOf") {
+        val vArg = inInit.args.firstOrNull()?.expr
+        if (vArg is IntLit)  return vArg.value.toInt()
+        if (vArg is LongLit) return vArg.value.toInt()
+        return null  // dynamic size — still unknown
+    }
+    val vCallee = (inInit.callee as? NameExpr)?.name ?: return null
+    // Literal arrayOf / *arrayOf — size equals argument count.
+    if (vCallee in setOf(
+            "arrayOf", "intArrayOf", "longArrayOf", "floatArrayOf", "doubleArrayOf",
+            "booleanArrayOf", "charArrayOf", "byteArrayOf", "shortArrayOf",
+            "uintArrayOf", "ulongArrayOf", "ubyteArrayOf", "ushortArrayOf"
+        )) return inInit.args.size
+    // IntArray(N) / LongArray(N) / etc. with a literal size — constant-size allocation.
+    if (vCallee in setOf(
+            "IntArray", "LongArray", "FloatArray", "DoubleArray",
+            "BooleanArray", "CharArray", "ByteArray", "ShortArray", "Array"
+        )) {
+        val vArg = inInit.args.firstOrNull()?.expr
+        if (vArg is IntLit)  return vArg.value.toInt()
+        if (vArg is LongLit) return vArg.value.toInt()
+        return null  // dynamic size
+    }
+    // Named function call — look up @Size(N) on its return type.
+    return funSigs[vCallee]?.returnType?.let { getSizeAnnotation(it) }
+}
+
 internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val vKtc = if (s.type != null) resolveTypeName(s.type) else parseResolvedTypeName(inferExprType(s.init) ?: "Int") // KtcType (for C type emission)
     val vKtcKtc = inferExprTypeKtc(s.init)
@@ -128,6 +166,26 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val t = if (inferredNullable) tRaw.removeSuffix("?") else tRaw
     // malloc/calloc/realloc return nullable pointers (may return NULL)
     val isAlloc = s.type == null && isAllocCall(s.init)
+
+    // Size compatibility check for @Size(N) array assignments.
+    if (s.type != null && s.init != null && isSizedArrayTypeRef(s.type)) {
+        val vTargetSize = getSizeAnnotation(s.type)
+        if (vTargetSize != null) {
+            val vInitSize = inferInitArraySize(s.init) // null = unknown at transpile time
+            if (vInitSize != null && vInitSize > vTargetSize)
+                error("Cannot assign @Size($vInitSize) array to @Size($vTargetSize) variable '${s.name}': source has more elements than the target (would truncate). Use .copyOf($vTargetSize) to truncate explicitly.")
+            if (vInitSize == null) {
+                System.err.println("WARNING [$currentSourceFile]: Assigning array of unknown compile-time size to @Size($vTargetSize) variable '${s.name}' — applying implicit .copyOf($vTargetSize) to guarantee bounds safety. Use .copyOf($vTargetSize) explicitly to suppress this warning.")
+                // Implicitly apply .copyOf(N) so the stored slice is always exactly N elements.
+                val vSyntheticInit = CallExpr(
+                    callee = DotExpr(obj = s.init, name = "copyOf"),
+                    args   = listOf(Arg(expr = IntLit(vTargetSize.toLong())))
+                )
+                emitVarDecl(s.copy(init = vSyntheticInit), ind)
+                return
+            }
+        }
+    }
 
     // Is this a pointer type? (@Ptr annotation adds * suffix)
     // Only user-class pointers (Vec2*), not typed-array pointers (IntArray which is Ptr<Arr<Int>>)
@@ -165,6 +223,11 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         }
     )
     if (s.mutable) markMutable(s.name)
+    // Record inferred literal array size so downstream @Size(N) checks can resolve it.
+    if (vKtcCore.isArrayLike) {
+        val vInferredSize = inferInitArraySize(s.init) ?: (s.type?.let { getSizeAnnotation(it) })
+        if (vInferredSize != null) defineArraySize(s.name, vInferredSize)
+    }
     val mutComment = if (s.mutable) "/*VAR*/ " else "/*VAL*/ "
 
     // ── Function pointer type: special declaration syntax ──
@@ -974,16 +1037,28 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             val expr = genExpr(s.value)
             flushPreStmts(ind)
             if (currentFnReturnsSizedArray) {
-                // Direct struct return: copy expression data into ktc_Array_T_N and return by value
                 val vStructType = sizedArrayCTypeName(currentFnSizedArrayElemType, currentFnSizedArraySize)
-                if (deferStack.isNotEmpty()) {
-                    val vT = tmp()
-                    impl.appendLine("${ind}$vStructType $vT;")
-                    impl.appendLine("${ind}memcpy($vT.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType));")
-                    emitDeferredBlocks(ind)
-                    impl.appendLine("${ind}return $vT;")
+                if (expr in arrayOfSizedStructVars) {
+                    // Optimization: genArrayOfExpr already emitted a ktc_Array_T_N struct — return it directly.
+                    if (deferStack.isNotEmpty()) {
+                        val vT = tmp()
+                        impl.appendLine("${ind}$vStructType $vT = $expr;")
+                        emitDeferredBlocks(ind)
+                        impl.appendLine("${ind}return $vT;")
+                    } else {
+                        impl.appendLine("${ind}return $expr;")
+                    }
                 } else {
-                    impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType)); return \$r; }")
+                    // General path: copy raw array data into struct and return by value.
+                    if (deferStack.isNotEmpty()) {
+                        val vT = tmp()
+                        impl.appendLine("${ind}$vStructType $vT;")
+                        impl.appendLine("${ind}memcpy($vT.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType));")
+                        emitDeferredBlocks(ind)
+                        impl.appendLine("${ind}return $vT;")
+                    } else {
+                        impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType)); return \$r; }")
+                    }
                 }
             } else if (currentFnReturnsSizedString) {
                 // Direct struct return: copy ktc_String into ktc_String_N and return by value

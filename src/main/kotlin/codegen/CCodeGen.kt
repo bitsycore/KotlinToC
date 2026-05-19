@@ -267,8 +267,15 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     // ── Per-scope variable → type mapping ────────────────────────────
     /* Phase 4.3: scopes store KtcType; string interface kept via toInternalStr bridge. */
     internal val scopes = ArrayDeque<MutableMap<String, KtcType>>()  // variable name → KtcType
-    internal fun pushScope() { scopes.addLast(mutableMapOf()); optValVarNames.addLast(mutableSetOf()); mutableVarScopes.addLast(mutableSetOf()) }
-    internal fun popScope()  { scopes.removeLast(); optValVarNames.removeLast(); mutableVarScopes.removeLast() }
+    internal val arraySizeScopes = ArrayDeque<MutableMap<String, Int>>()  // variable name → inferred literal array size
+    internal fun pushScope() { scopes.addLast(mutableMapOf()); optValVarNames.addLast(mutableSetOf()); mutableVarScopes.addLast(mutableSetOf()); arraySizeScopes.addLast(mutableMapOf()) }
+    internal fun popScope()  { scopes.removeLast(); optValVarNames.removeLast(); mutableVarScopes.removeLast(); arraySizeScopes.removeLast() }
+
+    /* Record the compile-time-known element count for a local array variable. */
+    internal fun defineArraySize(inName: String, inSize: Int) { if (arraySizeScopes.isNotEmpty()) arraySizeScopes.last()[inName] = inSize }
+
+    /* Look up the compile-time size of a local array variable across all scopes, innermost first. */
+    internal fun lookupArraySize(inName: String): Int? = arraySizeScopes.lastOrNull { it.containsKey(inName) }?.get(inName)
 
     /* Store a variable type using a KtcType (Phase 4.3+ primary API). */
     internal fun defineVarKtc(inName: String, inType: KtcType) { scopes.last()[inName] = inType }
@@ -588,6 +595,10 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     unpacked to local$name pointers. Subset of trampolinedParams; checked when
     emitting .size to avoid accessing a non-existent .size field on the struct. */
     internal val sizedArrayTrampolinedParams = mutableSetOf<String>() // sized struct param names
+
+    /* Tmp var names emitted as ktc_Array_T_N structs by genArrayOfExpr (rather than raw C arrays).
+    Used by the return handler to emit `return tmpVar` directly without an extra memcpy. */
+    internal val arrayOfSizedStructVars = mutableSetOf<String>()
 
     /** Snapshot of current function state for save/restore across emit functions. */
     internal data class FunState(
@@ -1112,7 +1123,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // Companion objects and nested classes share the parent class's buffer (via captureForDecl).
         var firstClass = true
         for (d in file.decls) when (d) {
-            is ClassDecl  -> if (d.typeParams.isEmpty()) {
+            is ClassDecl  -> if (d.typeParams.isEmpty() && !d.annotations.any { it.name == "DocumentationOnly" }) {
                 if (!firstClass) hdr.appendLine()
                 firstClass = false
                 captureForDecl(d.name) {
@@ -1257,6 +1268,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
         // Each is captured into its own per-source-file buffer (key "|sourceFile.kt").
         for (d in file.decls) when (d) {
             is FunDecl  -> {
+                if (d.annotations.any { it.name == "DocumentationOnly" }) continue  // intrinsic stub — handled at call site
                 if (d.typeParams.isNotEmpty()) continue
                 if (d.receiver != null && d.receiver.typeArgs.any { it.name == "*" }) continue
                 if (d.receiver != null && d.receiver.typeArgs.isNotEmpty()
@@ -1525,6 +1537,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal fun collectDecl(d: Decl, validate: Boolean = false) {
         when (d) {
             is ClassDecl -> {
+                if (d.annotations.any { it.name == "DocumentationOnly" }) return  // intrinsic stub — skip registration
                 for (p in d.ctorParams) {
                     if ((p.isVal || p.isVar) && isRawArrayTypeRef(p.type)) {
                         codegenError("Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
@@ -1695,6 +1708,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 }
             }
             is FunDecl -> {
+                if (d.annotations.any { it.name == "DocumentationOnly" }) return  // intrinsic stub — skip validation and signature collection
                 if (d.returnType != null && isRawArrayTypeRef(d.returnType)) {
                     codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                 }

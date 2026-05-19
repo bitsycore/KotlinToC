@@ -37,7 +37,8 @@ data class FunDecl(
     val isPrivate: Boolean = false,
     val isInline: Boolean = false,
     val isOverride: Boolean = false,
-    val isInfix: Boolean = false
+    val isInfix: Boolean = false,
+    val annotations: List<Annotation> = emptyList()  // declaration-level annotations (e.g. @DocumentationOnly)
 ) : Decl()
 
 data class ClassDecl(
@@ -48,7 +49,8 @@ data class ClassDecl(
     val initBlocks: List<Block>,
     val superInterfaces: List<TypeRef> = emptyList(),
     val typeParams: List<String> = emptyList(),
-    val secondaryCtors: List<SecondaryCtor> = emptyList()
+    val secondaryCtors: List<SecondaryCtor> = emptyList(),
+    val annotations: List<Annotation> = emptyList()  // declaration-level annotations (e.g. @DocumentationOnly)
 ) : Decl()
 
 data class EnumDecl(

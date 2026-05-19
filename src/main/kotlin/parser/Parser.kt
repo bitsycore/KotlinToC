@@ -81,6 +81,15 @@ class Parser(private val tokens: List<Token>) {
                         advance()
                         parseCompanionObjectDecl(anns)
                     }
+                    at(TokenType.FUN) -> parseFunDecl(
+                        isOperator = isOperator, isPrivate = isPrivate, isInline = isInline,
+                        isOverride = isOverride, isInfix = isInfix, annotations = anns
+                    )
+                    at(TokenType.DATA) -> {
+                        advance(); expect(TokenType.CLASS)
+                        parseClassDecl(isData = true, annotations = anns)
+                    }
+                    at(TokenType.CLASS) -> { advance(); parseClassDecl(isData = false, annotations = anns) }
                     else -> error("Annotations @${anns.joinToString(" ") { it.name }} before '${cur().value}' are not supported")
                 }
             }
@@ -91,7 +100,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── fun ──────────────────────────────────────────────────────────
 
-    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false): FunDecl {
+    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
         expect(TokenType.FUN)
         // Parse optional type parameters: fun <T, U> name(...)
         val typeParams = if (at(TokenType.LT)) {
@@ -139,7 +148,7 @@ class Parser(private val tokens: List<Token>) {
             else -> null
         }
         skipTerminator()
-        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInline, isOverride, isInfix)
+        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInline, isOverride, isInfix, annotations)
     }
 
     private fun parseParamList(): List<Param> {
@@ -162,7 +171,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── class / data class ───────────────────────────────────────────
 
-    private fun parseClassDecl(isData: Boolean): ClassDecl {
+    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList()): ClassDecl {
         val name = expectIdent()
         // Parse type parameters: class Foo<T, U>(...)
         val typeParams = if (at(TokenType.LT)) {
@@ -207,7 +216,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors)
+        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations)
     }
 
     private fun parseCtorParams(): List<CtorParam> {
