@@ -14,10 +14,10 @@ class EnumUnitTest : TranspilerTestBase() {
     @Test fun enumTypedef() {
         val r = transpileMain("val c = Color.RED", decls = colorDecl)
         r.headerContains("typedef enum {")
-        r.headerContains("test_Main_Color_RED")
-        r.headerContains("test_Main_Color_GREEN")
-        r.headerContains("test_Main_Color_BLUE")
-        r.headerContains("} test_Main_Color;")
+        r.headerContains("KTC_RELATED(RED)")
+        r.headerContains("KTC_RELATED(GREEN)")
+        r.headerContains("KTC_RELATED(BLUE)")
+        r.headerContains("} KTC_TYPE_NAME;")
     }
 
     // ── Enum value usage ─────────────────────────────────────────────
@@ -71,8 +71,8 @@ class EnumUnitTest : TranspilerTestBase() {
                 println(arr[0])
             }
         """)
-        r.headerContains("extern const test_Main_Color test_Main_Color_values[3];")
-        r.headerContains("extern const ktc_Int test_Main_Color_values\$len;")
+        r.headerContains("extern const KTC_TYPE_NAME KTC_RELATED(values[3]);")
+        r.headerContains("extern const ktc_Int KTC_RELATED(values\$len);")
         r.sourceContains("test_Main_Color_values[]")
         r.sourceContains("test_Main_Color_values\$len")
     }
@@ -106,8 +106,8 @@ class EnumUnitTest : TranspilerTestBase() {
                 println(c)
             }
         """)
-        r.headerContains("test_Main_Color test_Main_Color_valueOf(ktc_String name);")
-        r.headerContains("extern const test_Main_Color test_Main_Color_values[3];")
+        r.headerContains("KTC_METHOD(KTC_TYPE_NAME, valueOf)(ktc_String name);")
+        r.headerContains("extern const KTC_TYPE_NAME KTC_RELATED(values[3]);")
     }
 
     // ── .name / .ordinal on enum values ───────────────────────────────

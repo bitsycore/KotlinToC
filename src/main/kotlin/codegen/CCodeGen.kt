@@ -1045,33 +1045,37 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 
         // Forward-declare all concrete interface types and monomorphized generic class types.
         // Everything is grouped here so all typedef struct decls appear before any definitions.
-        hdr.appendLine("// forward declarations")
-        var emittedAny = false
+        data class FwdDecl(val vCName: String, val vSrc: String) // one forward declaration line
+        val vFwdDecls = mutableListOf<FwdDecl>()
         for ((name, info) in interfaces) {
             if (info.typeParams.isNotEmpty()) continue  // skip templates
             val cName = typeFlatName(name)
-            hdr.appendLine("typedef struct $cName $cName;")
-            hdr.appendLine("typedef struct ${cName}_vt ${cName}_vt;")
+            val vSrc = declSourceFile[name]?.let { " // $it" } ?: "" // source origin comment
+            vFwdDecls.add(FwdDecl(cName, vSrc))
+            vFwdDecls.add(FwdDecl("${cName}_vt", vSrc))
             val vComponents = mangledComponents[name]
             if (vComponents != null) {
                 val (vGenBase, vTypeArgs) = vComponents
-                val optName = genericOptionalCName(vGenBase, vTypeArgs)
-                hdr.appendLine("typedef struct $optName $optName;")
+                vFwdDecls.add(FwdDecl(genericOptionalCName(vGenBase, vTypeArgs), vSrc))
             }
-            emittedAny = true
         }
         for ((baseName, instantiations) in genericInstantiations) {
             if (!genericClassDecls.containsKey(baseName)) continue
             for (typeArgs in instantiations) {
-                val vMangledName = mangledGenericName(baseName, typeArgs)
+                val vMangledName = mangledGenericName(baseName, typeArgs) // mangled instantiation name
                 val vCName = typeFlatName(vMangledName)
-                hdr.appendLine("typedef struct $vCName $vCName;")
-                val optName = genericOptionalCName(baseName, typeArgs)
-                hdr.appendLine("typedef struct $optName $optName;")
-                emittedAny = true
+                val vSrc = declSourceFile[baseName]?.let { " // $it" } ?: "" // source origin comment
+                vFwdDecls.add(FwdDecl(vCName, vSrc))
+                vFwdDecls.add(FwdDecl(genericOptionalCName(baseName, typeArgs), vSrc))
             }
         }
-        if (emittedAny) hdr.appendLine()
+        if (vFwdDecls.isNotEmpty()) {
+            hdr.appendLine("/* $kHdrRule")
+            hdr.appendLine(" * forward declarations")
+            hdr.appendLine(" * $kHdrRule */")
+            for (vFd in vFwdDecls) hdr.appendLine("typedef struct ${vFd.vCName} ${vFd.vCName};${vFd.vSrc}")
+            hdr.appendLine()
+        }
 
         // Emit struct/enum/object declarations (defines the element types needed by generic interfaces)
         // Skip generic templates — they are emitted per concrete instantiation.
@@ -1087,18 +1091,25 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     // Companion objects — emitted in the same .c as the parent class
                     for (vMember in d.members.filterIsInstance<ObjectDecl>()) {
                         hdr.appendLine()
-                        emitObject(ObjectDecl("${d.name}$${vMember.name}", vMember.members))
+                        val vCompName = "${d.name}$${vMember.name}" // fully qualified companion name
+                        emitObject(ObjectDecl(vCompName, vMember.members))
+                        val vCompKind = if (vMember.name == "Companion") "companion object" else "object" // kind label
+                        impl.appendLine(classBlockFooter(vCompKind, vCompName.replace('$', '.'), emptyList()))
+                        impl.appendLine()
                         }
                     // Nested classes — emitted in the same .c as the outermost parent class
                     fun emitNested(inParent: ClassDecl, inParentFlatName: String) {
                         for (vNested in inParent.members.filterIsInstance<ClassDecl>()) {
                             if (vNested.typeParams.isEmpty()) {
-                                val vFlatName = "$inParentFlatName$${vNested.name}"
+                                val vFlatName = "$inParentFlatName$${vNested.name}" // mangled nested name
                                 hdr.appendLine()
                                 emitClass(ClassDecl(vFlatName, vNested.isData,
                                     vNested.ctorParams, vNested.members, vNested.initBlocks,
                                     vNested.superInterfaces, vNested.typeParams, vNested.secondaryCtors))
                                 emitNested(vNested, vFlatName)
+                                val vNestedKind = if (vNested.isData) "data class" else "class" // kind label
+                                impl.appendLine(classBlockFooter(vNestedKind, vFlatName.replace('$', '.'), emptyList()))
+                                impl.appendLine()
                                 }
                             }
                         }
@@ -1232,7 +1243,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             val vSrcKey = "|${declSourceFile[f.name] ?: sourceFileName}"      // per-source-file buffer key
             captureForDecl(vSrcKey) { emitStarExtFunInstantiations(f) }
             }
-        captureForDecl("|$sourceFileName") { emitEnumValuesData() }           // enum values data → primary file
+        emitEnumValuesData()                                                   // enum values data → each enum's own .c file
 
         // ── Assemble output ────────────────────────────────────────────
         val vSrcName = prefix.trimEnd('_').ifEmpty {
@@ -1250,7 +1261,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             val vCFileName  = "${vSrcBase}Kt.c"                             // e.g. "GenericsTestKt.c"
             val vTopImplFwd = perDeclImplFwd[vKey]
             val vSrc = buildString {
-                appendLine(cSourceFileHeader("top-level", vSrcFull, vPkg, vSrcName, ""))
+                appendLine(funBlockHeader(vPkg, vSrcFull))
                 appendLine()
                 appendLine("#include \"_package_.h\"")                       // same directory as this .c file
                 appendLine()
@@ -1333,6 +1344,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                     appendLine()
                     }
                 append(vDeclImpl)
+                appendLine(classBlockFooter(vKind, vKtName, emptyList()))
+                appendLine()
                 }
             vSources["$vDeclName.c"] = SourceFile(vSrc, vRoutingPkg)
             }

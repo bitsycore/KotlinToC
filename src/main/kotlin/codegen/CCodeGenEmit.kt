@@ -127,8 +127,8 @@ internal fun CCodeGen.maybeEmitFunBanner(inFunName: String) {
 
 /* Returns a box-style section comment: // ═══ //\n//   title   //\n// ═══ // */
 internal fun boxSection(inTitle: String): String {
-	val vRuler = "═".repeat(inTitle.length + 6)
-	return "// $vRuler //\n//    $inTitle    //\n// $vRuler //"
+	val vRuler = "═".repeat(inTitle.length + 6) // ruler width matches title with 4-space padding each side
+	return "/* $vRuler *\n *    $inTitle    *\n * $vRuler */"
 }
 
 internal fun CCodeGen.emitClass(d: ClassDecl) {
@@ -1051,17 +1051,29 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 internal fun CCodeGen.emitEnum(d: EnumDecl) {
     val ei = enums[d.name]!!
     val cName = ei.flatName
+    val n = d.entries.size
+    hdr.appendLine(classBlockHeader("enum class", d.name, emptyList(), emptyList(), file.pkg ?: "", currentSourceFile, cName))
+    hdr.appendLine("#define KTC_TYPE_NAME $cName")
+    hdr.appendLine()
     hdr.appendLine("typedef enum {")
     for ((i, e) in d.entries.withIndex()) {
-        hdr.append("    ${cName}_$e")
+        hdr.append("    KTC_RELATED($e)")
         if (i < d.entries.lastIndex) hdr.append(",")
         hdr.appendLine()
     }
-    hdr.appendLine("} $cName;")
-    val n = d.entries.size
-    val nameInits = d.entries.joinToString(", ") { "ktc_core_str(\"$it\")" }
-    hdr.appendLine("extern const ktc_String ${cName}_names[$n];")
+    hdr.appendLine("} KTC_TYPE_NAME;")
     hdr.appendLine()
+    hdr.appendLine("extern const ktc_String KTC_RELATED(names[$n]);")
+    hdr.appendLine("extern const KTC_TYPE_NAME KTC_RELATED(values[$n]);")
+    hdr.appendLine("extern const ktc_Int KTC_RELATED(values\$len);")
+    hdr.appendLine("KTC_METHOD(KTC_TYPE_NAME, valueOf)(ktc_String name);")
+    hdr.appendLine()
+    hdr.appendLine("#undef KTC_TYPE_NAME")
+    hdr.appendLine(classBlockFooter("enum class", d.name, emptyList()))
+    hdr.appendLine()
+    val nameInits = d.entries.joinToString(", ") { "ktc_core_str(\"$it\")" }
+    impl.appendLine(boxSection("names"))
+    impl.appendLine()
     impl.appendLine("const ktc_String ${cName}_names[$n] = {$nameInits};")
     impl.appendLine()
 }
@@ -1072,28 +1084,30 @@ internal fun CCodeGen.emitEnumValuesData() {
         val cName = typeFlatName(enumName)
         val entryNames = info.entries.joinToString(", ") { "${cName}_${it}" }
         val n = info.entries.size
-        // extern declarations in header
-        hdr.appendLine("extern const $cName ${cName}_values[$n];")
-        hdr.appendLine("extern const ktc_Int ${cName}_values\$len;")
-        // definitions in source
-        impl.appendLine("const $cName ${cName}_values[] = {$entryNames};")
-        impl.appendLine("const ktc_Int ${cName}_values\$len = $n;")
+        // definitions go into the enum's own .c file
+        captureForDecl(enumName) {
+            impl.appendLine(boxSection("values"))
+            impl.appendLine()
+            impl.appendLine("const $cName ${cName}_values[] = {$entryNames};")
+            impl.appendLine("const ktc_Int ${cName}_values\$len = $n;")
+            impl.appendLine()
+        }
     }
     for (enumName in enumValueOfCalled) {
         val info = enums[enumName] ?: continue
         val cName = typeFlatName(enumName)
-        // valueOf function forward declaration in header
-        hdr.appendLine("$cName ${cName}_valueOf(ktc_String name);")
-        // valueOf function body in source
-        val body = StringBuilder()
-        body.appendLine("$cName ${cName}_valueOf(ktc_String name) {")
-        for (entry in info.entries) {
-            body.appendLine("    if (ktc_core_string_eq(name, ktc_core_str(\"$entry\"))) return ${cName}_$entry;")
+        // valueOf body goes into the enum's own .c file
+        captureForDecl(enumName) {
+            impl.appendLine(boxSection("valueOf"))
+            impl.appendLine()
+            impl.appendLine("$cName ${cName}_valueOf(ktc_String name) {")
+            for (entry in info.entries) {
+                impl.appendLine("    if (ktc_core_string_eq(name, ktc_core_str(\"$entry\"))) return ${cName}_$entry;")
+            }
+            impl.appendLine("    return ${cName}_${info.entries.first()};")
+            impl.appendLine("}")
+            impl.appendLine()
         }
-        body.appendLine("    return ${cName}_${info.entries.first()};")
-        body.append("}")
-        impl.appendLine(body.toString())
-        impl.appendLine()
     }
     enumValuesCalled.clear()
     enumValueOfCalled.clear()
@@ -1138,15 +1152,18 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl = vNestedClassImpl
     for (nested in d.members.filterIsInstance<ClassDecl>()) {
         if (nested.typeParams.isEmpty()) {
+            val vNestedFlatName = "${d.name}$${nested.name}" // mangled nested class name
             emitClass(
                 ClassDecl(
-                    "${d.name}$${nested.name}", nested.isData,
+                    vNestedFlatName, nested.isData,
                     nested.ctorParams, nested.members, nested.initBlocks,
                     nested.superInterfaces, nested.typeParams, nested.secondaryCtors
                 )
             )
             hdr.appendLine()
-            vNestedClassImpl.appendLine()
+            val vNestedKind = if (nested.isData) "data class" else "class" // kind label for footer
+            impl.appendLine(classBlockFooter(vNestedKind, vNestedFlatName.replace('$', '.'), emptyList()))
+            impl.appendLine()
         }
     }
     impl = vSavedImplForNested
