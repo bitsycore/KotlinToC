@@ -1,6 +1,5 @@
-package com.bitsycore.ktc.codegen.mapping
+package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.types.KtcType
 
 val primitiveArraySet = setOf(

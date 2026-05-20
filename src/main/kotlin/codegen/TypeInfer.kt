@@ -7,9 +7,6 @@ import com.bitsycore.ktc.codegen.expr.inferBlockType
 import com.bitsycore.ktc.codegen.expr.inferIfExprType
 import com.bitsycore.ktc.codegen.expr.inferInlineFunSubst
 import com.bitsycore.ktc.codegen.expr.inferWhenExprType
-import com.bitsycore.ktc.codegen.mapping.arrayElementKtTypeKtc
-import com.bitsycore.ktc.codegen.mapping.primitiveToArrayOptionalType
-import com.bitsycore.ktc.codegen.mapping.primitiveToArrayType
 import com.bitsycore.ktc.types.KtcType
 
 /**

@@ -1,9 +1,6 @@
 ﻿package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.codegen.mapping.primitiveArraySet
-import com.bitsycore.ktc.codegen.mapping.primitiveToArrayOptionalType
-import com.bitsycore.ktc.codegen.mapping.primitiveToArrayType
 import com.bitsycore.ktc.types.BuiltinTypeDef
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.types.TypeDef
