@@ -1,4 +1,4 @@
-package com.bitsycore.ktc.codegen
+﻿package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.ast.Annotation
@@ -51,9 +51,7 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
         is ForStmt -> emitFor(s, ind, insideMethod)
         is WhileStmt -> {
             loopDepth++
-            val vWhileCond = genExpr(s.cond)
-            flushPreStmts(ind)
-            impl.appendLine("${ind}while ($vWhileCond) {")
+            impl.appendLine("${ind}while (${genExprFlushed(s.cond, ind)}) {")
             emitBlock(s.body, ind, insideMethod)
             impl.appendLine("$ind}")
             loopDepth--
@@ -63,9 +61,7 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
             loopDepth++
             impl.appendLine("${ind}do {")
             emitBlock(s.body, ind, insideMethod)
-            val vDoWhileCond = genExpr(s.cond)
-            flushPreStmts(ind)
-            impl.appendLine("$ind} while ($vDoWhileCond);")
+            impl.appendLine("$ind} while (${genExprFlushed(s.cond, ind)});")
             loopDepth--
         }
 
@@ -153,7 +149,7 @@ internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
         return null  // dynamic size
     }
     // Named function call — look up @Size(N) on its return type.
-    return funSigs[vCallee]?.returnType?.let { getSizeAnnotation(it) }
+    return funSigs[vCallee]?.returnType?.getSizeAnnotation()
 }
 
 internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
@@ -168,8 +164,8 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val isAlloc = s.type == null && isAllocCall(s.init)
 
     // Size compatibility check for @Size(N) array assignments.
-    if (s.type != null && s.init != null && isSizedArrayTypeRef(s.type)) {
-        val vTargetSize = getSizeAnnotation(s.type)
+    if (s.type != null && s.init != null && s.type.isSizedArray()) {
+        val vTargetSize = s.type.getSizeAnnotation()
         if (vTargetSize != null) {
             val vInitSize = inferInitArraySize(s.init) // null = unknown at transpile time
             if (vInitSize != null && vInitSize > vTargetSize)
@@ -225,7 +221,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     if (s.mutable) markMutable(s.name)
     // Record inferred literal array size so downstream @Size(N) checks can resolve it.
     if (vKtcCore.isArrayLike) {
-        val vInferredSize = inferInitArraySize(s.init) ?: (s.type?.let { getSizeAnnotation(it) })
+        val vInferredSize = inferInitArraySize(s.init) ?: s.type?.getSizeAnnotation()
         if (vInferredSize != null) defineArraySize(s.name, vInferredSize)
     }
     val mutComment = if (s.mutable) "/*VAR*/ " else "/*VAL*/ "
@@ -642,7 +638,7 @@ internal fun CCodeGen.isArrayReturningCall(e: Expr?): Boolean {
     // Check regular functions
     val sig = funSigs[name] ?: return false
     if (sig.returnType == null || sig.returnType.nullable) return false
-    if (isSizedArrayTypeRef(sig.returnType)) return false  // sized arrays use struct-return ABI
+    if (sig.returnType.isSizedArray()) return false  // sized arrays use struct-return ABI
     return resolveTypeName(sig.returnType).isArrayLike
 }
 
@@ -739,7 +735,7 @@ internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
 internal fun CCodeGen.emitBodyPropLenIfArray(inProp: PropertyDef) {
     val vKtcProp = resolveTypeName(inProp.typeRef)  // resolved KtcType
     if (!vKtcProp.isArrayLike) return
-    if (hasSizeAnnotation(inProp.typeRef)) return
+    if (inProp.typeRef.hasSizeAnnotation()) return
     val vFieldName = if (inProp.isPrivate) "PRIV_${inProp.name}" else inProp.name  // C field name
     val vAllocSize = extractAllocSize(inProp.initExpr)  // extracted allocation size expr
     if (vAllocSize != null) {
@@ -1813,9 +1809,7 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
         val vVal = e.cond.value
         codegenWarning("Condition is always ${if (vVal) "true" else "false"}")
     }
-    val vCond = genExpr(e.cond)
-    flushPreStmts(ind)
-    impl.appendLine("${ind}if ($vCond) {")
+    impl.appendLine("${ind}if (${genExprFlushed(e.cond, ind)}) {")
     // Smart cast: narrow types in then-branch
     val thenCasts = extractSmartCasts(e.cond)
     if (thenCasts.isNotEmpty()) {

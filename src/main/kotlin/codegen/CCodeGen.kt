@@ -1541,13 +1541,13 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             is ClassDecl -> {
                 if (d.annotations.any { it.name == "DocumentationOnly" }) return  // intrinsic stub — skip registration
                 for (p in d.ctorParams) {
-                    if ((p.isVal || p.isVar) && isRawArrayTypeRef(p.type)) {
+                    if ((p.isVal || p.isVar) && p.type.isRawArray()) {
                         codegenError("Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                     }
                 }
                 for (p in d.members.filterIsInstance<PropDecl>()) {
                     val propType = p.type ?: inferInitType(p.init)
-                    if (isRawArrayTypeRef(propType)) {
+                    if (propType.isRawArray()) {
                         currentStmtLine = p.line
                         codegenError("Class property '${p.name}' cannot have raw array type '${propType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                     }
@@ -1584,7 +1584,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 				val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams)
                 if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
                 for (m in d.members) if (m is FunDecl && m.receiver == null) {
-                    if (m.returnType != null && isRawArrayTypeRef(m.returnType)) {
+                    if (m.returnType != null && m.returnType.isRawArray()) {
                         codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                     }
                     ci.methods += m
@@ -1655,7 +1655,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
                 if (d.annotations.any { it.name == "Tls" }) tlsObjects.add(d.name)
                 for (p in d.members.filterIsInstance<PropDecl>()) {
                     val propType = p.type ?: inferInitType(p.init)
-                    if (isRawArrayTypeRef(propType)) {
+                    if (propType.isRawArray()) {
                         currentStmtLine = p.line
                         codegenError("Object property '${p.name}' cannot have raw array type '${propType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                     }
@@ -1673,7 +1673,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
 					}
 				val oi = ObjInfo(d.name, vObjProps)
                 for (m in d.members) if (m is FunDecl) {
-                    if (m.returnType != null && isRawArrayTypeRef(m.returnType)) {
+                    if (m.returnType != null && m.returnType.isRawArray()) {
                         codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                     }
                     oi.methods += m
@@ -1712,7 +1712,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             }
             is FunDecl -> {
                 if (d.annotations.any { it.name == "DocumentationOnly" }) return  // intrinsic stub — skip validation and signature collection
-                if (d.returnType != null && isRawArrayTypeRef(d.returnType)) {
+                if (d.returnType != null && d.returnType.isRawArray()) {
                     codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
                 }
                 if (d.returnType != null && d.returnType.name == "Any" && d.returnType.annotations.none { it.name == "Ptr" }) {

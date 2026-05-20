@@ -198,3 +198,25 @@ sealed class WhenCond
 data class ExprCond(val expr: Expr) : WhenCond()
 data class IsCond(val type: TypeRef, val negated: Boolean = false) : WhenCond()
 data class InCond(val expr: Expr, val negated: Boolean = false) : WhenCond()
+
+// ═══════════════════════════ TypeRef extensions ════════════════════════════
+
+/* True when this TypeRef carries a @Size(N) annotation. */
+fun TypeRef.hasSizeAnnotation(): Boolean = annotations.any { it.name == "Size" }
+
+/*
+Returns the integer value of the @Size(N) annotation, or null if absent / malformed.
+Supports both Int and Long literals as the annotation argument.
+*/
+fun TypeRef.getSizeAnnotation(): Int? {
+    val vAnn = annotations.find { it.name == "Size" } ?: return null
+    if (vAnn.args.isEmpty()) return null
+    return when (val vArg = vAnn.args[0]) {
+        is IntLit  -> vArg.value.toInt()
+        is LongLit -> vArg.value.toInt()
+        else       -> null
+    }
+}
+
+/* True when this TypeRef is a @Size(N)-annotated String — a fixed-capacity string buffer. */
+fun TypeRef.isSizedString(): Boolean = hasSizeAnnotation() && name == "String"

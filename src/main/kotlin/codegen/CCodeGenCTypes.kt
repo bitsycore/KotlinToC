@@ -1,9 +1,6 @@
-package com.bitsycore.ktc.codegen
+﻿package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.IntLit
-import com.bitsycore.ktc.ast.LongLit
-import com.bitsycore.ktc.ast.Param
-import com.bitsycore.ktc.ast.TypeRef
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.mapping.primitiveArraySet
 import com.bitsycore.ktc.codegen.mapping.primitiveToArrayOptionalType
 import com.bitsycore.ktc.codegen.mapping.primitiveToArrayType
@@ -68,7 +65,7 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
         if (vKtc is KtcType.Func) {
             vParts += cFuncPtrDecl(vKtc, vName)
         } else if (vKtc.isArrayLike) {
-            if (hasSizeAnnotation(vType)) {
+            if (vType.hasSizeAnnotation()) {
                 vParts += "${cTypeStr(vKtc)} $vName"
             } else {
                 vParts += "${cTypeStr(vKtc)} $vName"
@@ -91,18 +88,18 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
     for (vP in inParams) {
         if (vP.isVararg) continue
         // @Size(N) String param: unpack ktc_String_N struct to ktc_String view for body access
-        if (isSizedStringTypeRef(vP.type)) {
+        if (vP.type.isSizedString()) {
             if (!vAny) { impl.appendLine("${inInd}// ── sized param unpack start ──"); vAny = true }
             impl.appendLine("${inInd}ktc_String local\$${vP.name} = {${vP.name}.buf, ${vP.name}.len};")
             trampolinedParams += vP.name            // redirect body references to local$name
             continue
         }
         // @Size(N) Array<T> param: unpack ktc_Array_T_N struct to T* pointer for body access
-        if (isSizedArrayTypeRef(vP.type)) {
+        if (vP.type.isSizedArray()) {
             if (!vAny) { impl.appendLine("${inInd}// ── sized param unpack start ──"); vAny = true }
             val vElemKtc   = resolveTypeName(vP.type).asArr!!.elem  // element KtcType
             val vElemCType = cTypeStr(vElemKtc)                     // element C type string
-            val vSize      = getSizeAnnotation(vP.type)!!           // @Size value
+            val vSize      = vP.type.getSizeAnnotation()!!           // @Size value
             impl.appendLine("${inInd}$vElemCType* local\$${vP.name} = ${vP.name}.arr;")
             impl.appendLine("${inInd}const ktc_Int local\$${vP.name}\$len = $vSize;")
             trampolinedParams += vP.name            // redirect body references to local$name
@@ -110,7 +107,7 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
             continue
         }
         // Use isRawArrayTypeRef to identify trampoline-passed arrays (not @Ptr, not @Size)
-        if (!isRawArrayTypeRef(vP.type)) continue
+        if (!vP.type.isRawArray()) continue
         // Both nullable and non-nullable array params use ktc_ArrayTrampoline.
         // Non-nullable: copy unconditionally. Nullable: copy only when data != NULL.
         if (!vAny) {
@@ -155,9 +152,9 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
             vParts += "ktc_Int ${vP.name}\$len"
         } else if (vKtc is KtcType.Func) {
             vParts += cFuncPtrDecl(vKtc, vP.name)
-        } else if (isSizedStringTypeRef(vP.type)) {
+        } else if (vP.type.isSizedString()) {
             // @Size(N) String — passed as ktc_String_N value struct (contains buf[N] + len)
-            val vSize = getSizeAnnotation(vP.type)!!  // must have @Size annotation
+            val vSize = vP.type.getSizeAnnotation()!!  // must have @Size annotation
             vParts += "${sizedStringCTypeName(vSize)} ${vP.name}"
         } else if (vKtc is KtcType.Ptr && vP.type.annotations.any { it.name == "Ptr" }) {
             // Explicitly @Ptr-annotated: raw pointer; nullability lives in vP.type.nullable
@@ -168,10 +165,10 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
             val vInnerArr = vKtc.inner.asArr                                                  // Arr node if Ptr(Arr)
             if (vInnerArr != null && vInnerArr.sized == null) vParts += "ktc_Int ${vP.name}\$len"
         } else if (vKtc.isArrayLike) {
-            if (hasSizeAnnotation(vP.type)) {
+            if (vP.type.hasSizeAnnotation()) {
                 // @Size(N) fixed array — passed as ktc_Array_T_N value struct (contains arr[N])
                 val vElemCType = cTypeStr(vKtc.asArr!!.elem)  // element C type
-                val vSize = getSizeAnnotation(vP.type)!!       // annotation value
+                val vSize = vP.type.getSizeAnnotation()!!       // annotation value
                 vParts += "${sizedArrayCTypeName(vElemCType, vSize)} ${vP.name}"
             } else {
                 // Both nullable and non-nullable arrays use ktc_ArrayTrampoline for value semantics.
@@ -355,44 +352,22 @@ internal fun CCodeGen.defaultVal(t: KtcType): String = when (t) {
     }
 }
 
-/** True if the internal type name represents an array (IntArray, LongArray, Vec2Array, etc.). Strips pointer/nullable suffixes. */
-internal fun isArrayType(t: String): Boolean {
-    val base = t.removeSuffix("?").removeSuffix("*")
-    return base.endsWith("Array")
+/* True if the internal type name represents an array. Strips pointer/nullable suffixes. */
+internal fun isArrayType(inTypeName: String): Boolean =
+    inTypeName.removeSuffix("?").removeSuffix("*").endsWith("Array")
+
+/* True if this TypeRef is a raw Array<T> or primitive array — not @Ptr, not @Size. */
+internal fun TypeRef.isRawArray(): Boolean {
+    if (hasSizeAnnotation()) return false
+    if (annotations.any { it.name == "Ptr" }) return false
+    return name == "Array" || name in primitiveArraySet
 }
 
-/** True if the TypeRef is a raw Array<T> or primitive array type (not wrapped in Heap, Ptr, or Value). */
-internal fun isRawArrayTypeRef(t: TypeRef): Boolean {
-    if (hasSizeAnnotation(t)) return false
-    if (t.annotations.any { it.name == "Ptr" }) return false
-    if (t.name == "Array") return true
-    if (t.name in primitiveArraySet) return true
-    return false
+/* True if this TypeRef is a @Size(N)-annotated array — allowed fixed-size ABI. */
+internal fun TypeRef.isSizedArray(): Boolean {
+    if (!hasSizeAnnotation()) return false
+    return name == "Array" || name in primitiveArraySet
 }
-
-internal fun hasSizeAnnotation(t: TypeRef): Boolean = t.annotations.any { it.name == "Size" }
-
-internal fun getSizeAnnotation(t: TypeRef): Int? {
-    val ann = t.annotations.find { it.name == "Size" }
-    if (ann != null && ann.args.isNotEmpty()) {
-        val arg = ann.args[0]
-        if (arg is IntLit) return arg.value.toInt()
-        if (arg is LongLit) return arg.value.toInt()
-    }
-    return null
-}
-
-/** True if the TypeRef is an array type WITH @Size(N) annotation (allowed fixed-size array). */
-internal fun isSizedArrayTypeRef(t: TypeRef): Boolean {
-    if (!hasSizeAnnotation(t)) return false
-    if (t.name == "Array") return true
-    if (t.name in primitiveArraySet) return true
-    return false
-}
-
-/** True if the TypeRef is a String type WITH @Size(N) annotation (fixed-size string buffer). */
-internal fun isSizedStringTypeRef(t: TypeRef): Boolean =
-    hasSizeAnnotation(t) && t.name == "String"
 
 /* Primitive C types defined in ktc_macro.h — no user package owns them. */
 private val kPrimitiveCTypes = setOf(
@@ -486,24 +461,6 @@ internal fun CCodeGen.printfArg(expr: String, ktc: KtcType): String = when (ktc)
 
     else -> expr
 }
-
-internal fun escapeC(c: Char): String = when (c) {
-    '\'' -> "\\'"
-    '\\' -> "\\\\"
-    '\n' -> "\\n"
-    '\t' -> "\\t"
-    '\r' -> "\\r"
-    '\u0000' -> "\\0"
-    else -> c.toString()
-}
-
-internal fun escapeStr(s: String): String = s
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-    .replace("\n", "\\n")
-    .replace("\t", "\\t")
-    .replace("\r", "\\r")
-
 // ── Typed bridge (KtcType) ──────────────────────────────────────────
 
 /**
@@ -607,7 +564,7 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
             "String" -> KtcType.Str
             else -> userType(elemName)
         }
-        val sized = t?.let { getSizeAnnotation(it) }
+        val sized = t?.let { it.getSizeAnnotation() }
         val isTypedArray = elemName in KtcType.PrimKind.entries.map { it.name } || elemName == "String"
                 || classArrayTypes.contains(elemName) || enums.containsKey(elemName)
         val arr = KtcType.Arr(elem, sized = sized)
