@@ -1,9 +1,9 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.types.KtcType
 
-// Sized-array/string type helpers and printf format/arg helpers.
+// Sized-array/string type registration and predicates.
+// Printf helpers (printfFmt / printfArg) live in CTypes.kt alongside other KtcType→C mappers.
 
 // ═══════════════════════════ type predicates ══════════════════════
 
@@ -66,37 +66,3 @@ internal fun sizedArrayCTypeRef(inElemCType: String, inSize: Int): String =
 internal fun sizedStringCTypeRef(inSize: Int): String =
 	"ktc_String_$inSize"
 
-// ═══════════════════════════ printf helpers ═══════════════════════
-
-internal fun SymbolReader.printfFmt(ktc: KtcType): String = when (ktc) {
-	is KtcType.Prim -> when (ktc.kind) {
-		KtcType.PrimKind.Byte    -> "%\" PRId8 \""
-		KtcType.PrimKind.Short   -> "%\" PRId16 \""
-		KtcType.PrimKind.Int     -> "%\" PRId32 \""
-		KtcType.PrimKind.Long    -> "%\" PRId64 \""
-		KtcType.PrimKind.Float   -> "%f"
-		KtcType.PrimKind.Double  -> "%f"
-		KtcType.PrimKind.Boolean -> "%s"
-		KtcType.PrimKind.Char    -> "%c"
-		KtcType.PrimKind.Rune    -> "%\" PRId32 \""
-		KtcType.PrimKind.UByte   -> "%\" PRIu8 \""
-		KtcType.PrimKind.UShort  -> "%\" PRIu16 \""
-		KtcType.PrimKind.UInt    -> "%\" PRIu32 \""
-		KtcType.PrimKind.ULong   -> "%\" PRIu64 \""
-		}
-	is KtcType.Str      -> "%.*s"
-	is KtcType.Ptr      -> "%p"
-	is KtcType.Nullable -> if (ktc.inner is KtcType.Ptr) "%p" else printfFmt(ktc.inner)
-	is KtcType.User     -> "%.*s"
-	else                -> "%.*s"
-	}
-
-internal fun SymbolReader.printfArg(expr: String, ktc: KtcType): String = when (ktc) {
-	is KtcType.Prim if ktc.kind == KtcType.PrimKind.Boolean -> "($expr) ? \"true\" : \"false\""
-	is KtcType.Str -> "(ktc_Int)($expr).len, ($expr).ptr"
-	is KtcType.User if ktc.kind == KtcType.UserKind.Enum -> {
-		val cName = typeFlatName(ktc.baseName)
-		"(ktc_Int)${cName}_names[($expr)].len, ${cName}_names[($expr)].ptr"
-		}
-	else -> expr
-	}
