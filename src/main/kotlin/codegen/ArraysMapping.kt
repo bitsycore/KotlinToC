@@ -18,7 +18,7 @@ val primitiveArraySet = setOf(
     "StringArray"
 )
 
-fun CCodeGen.primitiveToArrayType(vElem: String): String = when (vElem) {
+internal fun CCodeGen.primitiveToArrayType(vElem: String): String = when (vElem) {
     "Byte" -> "ByteArray"
     "Short" -> "ShortArray"
     "Int" -> "IntArray"
@@ -38,7 +38,7 @@ fun CCodeGen.primitiveToArrayType(vElem: String): String = when (vElem) {
     }
 }
 
-fun CCodeGen.primitiveToArrayOptionalType(vElem: String): String = when (vElem) {
+internal fun CCodeGen.primitiveToArrayOptionalType(vElem: String): String = when (vElem) {
     "Byte" -> "ByteOptArray"
     "Short" -> "ShortOptArray"
     "Int" -> "IntOptArray"

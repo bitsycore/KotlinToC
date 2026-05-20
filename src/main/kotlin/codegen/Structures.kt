@@ -151,3 +151,39 @@ sources — map of filename → SourceFile for each generated .c file.
           routingPkg inside each SourceFile determines the target subdirectory.
 */
 data class COutput(val header: String, val sources: Map<String, SourceFile>)
+
+/*
+Read-only view of the symbol tables and core name-resolution helpers used across
+codegen modules. Implemented by CCodeGen; can also be implemented by test stubs.
+Extension functions in CTypes.kt and (eventually) TypeInfer.kt take SymbolReader
+as their receiver, decoupling them from the full mutable CCodeGen instance.
+*/
+internal interface SymbolReader
+	{
+	/* Symbol maps */
+	val classes: Map<String, ClassInfo>                            // class name → ClassInfo
+	val interfaces: Map<String, IfaceInfo>                         // interface name → IfaceInfo
+	val enums: Map<String, EnumInfo>                               // enum name → EnumInfo
+	val objects: Map<String, ObjInfo>                              // object name → ObjInfo
+	val classInterfaces: Map<String, List<String>>                 // class name → implemented iface names
+	val interfaceImplementors: Map<String, List<String>>           // iface name → implementor class names
+	val classArrayTypes: Set<String>                               // class/enum names used as Array element types
+	val genericClassDecls: Map<String, ClassDecl>                  // generic class name → original ClassDecl
+	val genericIfaceDecls: Map<String, InterfaceDecl>              // generic iface name → original InterfaceDecl
+	val allGenericTypeParamNames: Set<String>                      // all known type-param names (T, U, …)
+	val typeSubst: Map<String, String>                             // active type-param substitution
+	val prefix: String                                             // package C prefix (e.g. "game_")
+	val mangledComponents: Map<String, Pair<String, List<String>>> // mangled name → (baseName, typeArgs)
+
+	/* Core name-resolution methods */
+	fun typeFlatName(inName: String): String                       // Kotlin type name → C flat name
+	fun optCTypeName(internalType: String): String                 // internal type → Optional C name
+	fun isFuncType(inT: String): Boolean                           // true if "Fun(…)->…" string
+	fun parseFuncType(inT: String): Pair<List<String>, String>     // parse "Fun(P1,P2)->R" → (params, ret)
+	fun mangledGenericName(inBaseName: String, inTypeArgs: List<String>): String  // make mangled name
+	fun recordGenericInstantiation(inBaseName: String, inTypeArgs: List<String>): String // record + mangle
+
+	/* Error reporting */
+	fun codegenError(inMsg: String): Nothing                       // throw a fatal codegen error
+	fun codegenWarning(inMsg: String)                              // emit a non-fatal warning
+	}

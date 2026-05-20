@@ -72,10 +72,10 @@ internal fun relIncludePath(inFromDir: String, inToPath: String): String {
 	return if (vUps == 0) vDown else "../".repeat(vUps) + vDown
 }
 
-class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = listOf(), internal val sourceLines: List<String> = emptyList(), internal val memTrack: Boolean = false, internal val disposedMode: String = "NO", internal val doubleDisposeMode: String = "NO", internal val sourceFileName: String = "") {
+internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val sourceFileName: String = "") : SymbolReader {
 
     // ── Package prefix ───────────────────────────────────────────────
-    internal val prefix: String = file.pkg?.replace('.', '_')?.plus("_") ?: ""
+    override val prefix: String = file.pkg?.replace('.', '_')?.plus("_") ?: ""
 
     /* Fallback C name: prefix + name. Used only for names not found in TypeDef maps or funNames. */
     internal fun pfx(inName: String): String {
@@ -89,7 +89,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     Looks up the TypeDef and returns its flatName (pkg + baseName).
     Falls back to pfx() for builtins and names not yet in TypeDef tables.
     */
-    internal fun typeFlatName(inName: String): String {  // type or object name → C flat name
+    override fun typeFlatName(inName: String): String {  // type or object name → C flat name
         if (inName.startsWith("ktc_")) return inName
         classes[inName]?.let { return it.flatName }
         objects[inName]?.let { return it.flatName }
@@ -130,11 +130,11 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     // ── Symbol tables (populated by collectDecls) ────────────────────
     // Data classes now in CCodeGenStructures.kt
 
-    internal val classes  = mutableMapOf<String, ClassInfo>()
-    internal val enums    = mutableMapOf<String, EnumInfo>()
+    override val classes  = mutableMapOf<String, ClassInfo>()
+    override val enums    = mutableMapOf<String, EnumInfo>()
     internal val enumValuesCalled  = mutableSetOf<String>()
     internal val enumValueOfCalled = mutableSetOf<String>()
-    internal val objects  = mutableMapOf<String, ObjInfo>()
+    override val objects  = mutableMapOf<String, ObjInfo>()
     internal val funSigs  = mutableMapOf<String, FunSig>()
     internal val funNames = mutableMapOf<String, String>()  // top-level function name → C name
     internal val inlineFunDecls = mutableMapOf<String, MutableList<FunDecl>>()
@@ -153,7 +153,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     internal val topProps = mutableSetOf<String>()  // top-level property names (need pfx)
     internal val valTopProps = mutableSetOf<String>()  // top-level val properties (cannot be reassigned)
     internal val extensionFuns = mutableMapOf<String, MutableList<FunDecl>>()
-    internal val interfaces = mutableMapOf<String, IfaceInfo>()
+    override val interfaces = mutableMapOf<String, IfaceInfo>()
     // Type ID registry: each class/interface gets an incrementing integer ID for is/as checks
     internal val typeIds = mutableMapOf<String, Int>()
     internal var nextTypeId = 14  // 0-13 reserved for builtin types (ktc_core.h)
@@ -212,12 +212,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     }
 
     // Map class name → list of interface names it implements
-    internal val classInterfaces = mutableMapOf<String, List<String>>()
+    override val classInterfaces = mutableMapOf<String, List<String>>()
     // Reverse map: interface name → list of class names that implement it
-    internal val interfaceImplementors = mutableMapOf<String, MutableList<String>>()
+    override val interfaceImplementors = mutableMapOf<String, MutableList<String>>()
 
     // Track class/enum types used in Array<T> so we emit KT_ARRAY_DEF for them
-    internal val classArrayTypes = mutableSetOf<String>()
+    override val classArrayTypes = mutableSetOf<String>()
 
     /* Pair/Triple types are now handled entirely by stdlib — no intrinsic maps needed. */
 
@@ -226,36 +226,36 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     // Store original ClassDecl for every class (generic and concrete) — used for secondary ctor lookup across files.
     internal val allClassDecls = mutableMapOf<String, ClassDecl>()
     // Store original ClassDecl for generic classes so we can re-emit per instantiation
-    internal val genericClassDecls = mutableMapOf<String, ClassDecl>()
+    override val genericClassDecls = mutableMapOf<String, ClassDecl>()
     // Store original InterfaceDecl for generic interfaces so we can monomorphize them
-    internal val genericIfaceDecls = mutableMapOf<String, InterfaceDecl>()
+    override val genericIfaceDecls = mutableMapOf<String, InterfaceDecl>()
     // Track which source file a generic declaration came from (for mem-track attribution)
     internal val declSourceFile = mutableMapOf<String, String>()
     // Track original dot-separated package for each declaration (for per-file routing)
     internal val declOrigPkg = mutableMapOf<String, String>()
     // Active type parameter substitution map during monomorphized emission (e.g. {T → Int})
-    internal var typeSubst: Map<String, String> = emptyMap()
+    override var typeSubst: Map<String, String> = emptyMap()
     // Track all discovered concrete instantiations: "MyList" → [["Int"], ["Float"]]
     internal val genericInstantiations = mutableMapOf<String, MutableSet<List<String>>>()
     // All known type parameter names from generic classes and functions (e.g. "T", "U")
     // Used to prevent registering type params as concrete instantiations
-    internal val allGenericTypeParamNames = mutableSetOf<String>()
+    override val allGenericTypeParamNames = mutableSetOf<String>()
 
     // Reverse map: mangled class name → (baseName, typeArgs) for generic instances.
-    internal val mangledComponents = mutableMapOf<String, Pair<String, List<String>>>()
+    override val mangledComponents = mutableMapOf<String, Pair<String, List<String>>>()
 
-    /** Mangle a generic class name with concrete type args: MyList + ["Int?"] → "MyList_Int$Opt" */
-    internal fun mangledGenericName(baseName: String, typeArgs: List<String>): String {
-        val sanitized = typeArgs.joinToString("_") { it.replace("?", "\$Opt") }
-        val mangledName = "${baseName}_$sanitized"
-        mangledComponents[mangledName] = Pair(baseName, typeArgs)
-        return mangledName
+    /* Mangle a generic class name with concrete type args: MyList + ["Int?"] → "MyList_Int$Opt" */
+    override fun mangledGenericName(inBaseName: String, inTypeArgs: List<String>): String {
+        val vSanitized  = inTypeArgs.joinToString("_") { it.replace("?", "\$Opt") }  // sanitized type arg string
+        val vMangledName = "${inBaseName}_$vSanitized"                                 // full mangled name
+        mangledComponents[vMangledName] = Pair(inBaseName, inTypeArgs)
+        return vMangledName
     }
 
-    /** Record a concrete instantiation of a generic class and return the mangled name. */
-    internal fun recordGenericInstantiation(baseName: String, typeArgs: List<String>): String {
-        genericInstantiations.getOrPut(baseName) { mutableSetOf() }.add(typeArgs)
-        return mangledGenericName(baseName, typeArgs)
+    /* Record a concrete instantiation of a generic class and return the mangled name. */
+    override fun recordGenericInstantiation(inBaseName: String, inTypeArgs: List<String>): String {
+        genericInstantiations.getOrPut(inBaseName) { mutableSetOf() }.add(inTypeArgs)
+        return mangledGenericName(inBaseName, inTypeArgs)
     }
 
     /* C name for the Optional wrapper of a generic instance.
@@ -439,11 +439,12 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
             }
         }
 
-    /** True if type is a function pointer type: "Fun(P1,P2)->R" */
-    internal fun isFuncType(t: String): Boolean = t.startsWith("Fun(")
+    /* True if type is a function pointer type: "Fun(P1,P2)->R" */
+    override fun isFuncType(inT: String): Boolean = inT.startsWith("Fun(")
 
-    /** Parse a function type string "Fun(P1,P2)->R" or "Fun(R|P1,P2)->R" (receiver function) into (paramTypes, returnType) */
-    internal fun parseFuncType(t: String): Pair<List<String>, String> {
+    /* Parse a function type string "Fun(P1,P2)->R" or "Fun(R|P1,P2)->R" (receiver function) into (paramTypes, returnType) */
+    override fun parseFuncType(inT: String): Pair<List<String>, String> {
+        val t = inT  // local alias so body can use `t` unchanged
         // Format: Fun(P1,P2,...)->R or Fun(R|P1,P2)->R
         val inner = t.removePrefix("Fun(")
         val parenEnd = inner.indexOf(")->")
@@ -484,7 +485,7 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     /* Maps an internal type string to its C Optional struct type name.
     Primitives: Int? → ktc_Int$Opt.
     Generic instances: ArrayList<Int>? → ktc_std_ArrayList$Opt_ktc_Int. */
-    internal fun optCTypeName(internalType: String): String {
+    override fun optCTypeName(internalType: String): String {
         return when (val base = internalType.removeSuffix("?")) {
             "Byte"    -> $$"ktc_Byte$Opt"
             "Short"   -> $$"ktc_Short$Opt"
@@ -656,8 +657,9 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     /** Last source file for which a functions banner was emitted; null = none yet. */
     internal var lastEmittedFunFile: String? = null
 
-    /** Throw an error with source context around the given line. */
-    internal fun codegenError(msg: String): Nothing {
+    /* Throw an error with source context around the given line. */
+    override fun codegenError(inMsg: String): Nothing {
+        val msg = inMsg  // local alias so body can use `msg` unchanged
         val line = currentStmtLine
         if (line > 0 && sourceLines.isNotEmpty()) {
             val sb = StringBuilder()
@@ -676,7 +678,8 @@ class CCodeGen(internal val file: KtFile, internal val allFiles: List<KtFile> = 
     }
 
     /* Print a non-fatal warning with the same source-context display as codegenError. */
-    internal fun codegenWarning(msg: String) {
+    override fun codegenWarning(inMsg: String) {
+        val msg = inMsg  // local alias so body can use `msg` unchanged
         val line = currentStmtLine
         val sb = StringBuilder()
 

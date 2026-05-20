@@ -195,7 +195,7 @@ internal fun CCodeGen.cTypeStr(t: String): String {
     return cTypeStr(ktc)
 }
 
-/** Resolve a TypeRef to its internal string type name (legacy bridge). */
+/* Resolve a TypeRef to its internal string type name (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
     if (t == null) return "Int"
     val vSubstituted = substituteTypeParams(t)   // type-param substituted copy
@@ -217,7 +217,7 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
     return vBase
 }
 
-internal fun CCodeGen.typeRefToStr(t: TypeRef?): String {
+internal fun SymbolReader.typeRefToStr(t: TypeRef?): String {
     if (t == null) return "Unit"
     val ann = if (t.annotations.any { it.name == "Ptr" }) "@Ptr " else ""
     val args = if (t.typeArgs.isNotEmpty()) "<${t.typeArgs.joinToString(", ") { typeRefToStr(it) }}>" else ""
@@ -225,8 +225,8 @@ internal fun CCodeGen.typeRefToStr(t: TypeRef?): String {
     return "$ann${t.name}$args$nullable"
 }
 
-/** Recursively substitute type parameters throughout a TypeRef tree. */
-internal fun CCodeGen.substituteTypeParams(t: TypeRef): TypeRef {
+/* Recursively substitute type parameters throughout a TypeRef tree. */
+internal fun SymbolReader.substituteTypeParams(t: TypeRef): TypeRef {
     if (typeSubst.isEmpty()) return t
     val rawNewName = typeSubst[t.name] ?: t.name
     val hasNullableSuffix = rawNewName.endsWith("?")
@@ -241,7 +241,7 @@ internal fun CCodeGen.substituteTypeParams(t: TypeRef): TypeRef {
     } else t
 }
 
-/** Internal string-based type resolution after @Ptr stripping (legacy bridge). */
+/* Internal string-based type resolution after @Ptr stripping (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
     // Function type: (P1, P2) -> R → "Fun(P1,P2)->R"
     // Receiver function type: T.(P1) -> R → "Fun(T|P1)->R"
@@ -374,7 +374,7 @@ private val kPrimitiveCTypes = setOf(
 )
 
 /* True when inCTypeName is a user type defined in the package currently being compiled. */
-internal fun CCodeGen.isCurrentPkgUserType(inCTypeName: String): Boolean =
+internal fun SymbolReader.isCurrentPkgUserType(inCTypeName: String): Boolean =
     classes.values.any    { it.flatName == inCTypeName }
         || objects.values.any    { it.flatName == inCTypeName }
         || enums.values.any      { it.flatName == inCTypeName }
@@ -422,7 +422,7 @@ internal fun sizedStringCTypeRef(inSize: Int): String =
 
 // ═══════════════════════════ printf helpers ═══════════════════════
 
-internal fun CCodeGen.printfFmt(ktc: KtcType): String = when (ktc) {
+internal fun SymbolReader.printfFmt(ktc: KtcType): String = when (ktc) {
     is KtcType.Prim -> when (ktc.kind) {
         KtcType.PrimKind.Byte -> "%\" PRId8 \""
         KtcType.PrimKind.Short -> "%\" PRId16 \""
@@ -448,7 +448,7 @@ internal fun CCodeGen.printfFmt(ktc: KtcType): String = when (ktc) {
     else -> "%.*s"
 }
 
-internal fun CCodeGen.printfArg(expr: String, ktc: KtcType): String = when (ktc) {
+internal fun SymbolReader.printfArg(expr: String, ktc: KtcType): String = when (ktc) {
     is KtcType.Prim if ktc.kind == KtcType.PrimKind.Boolean -> "($expr) ? \"true\" : \"false\""
     is KtcType.Str -> "(ktc_Int)($expr).len, ($expr).ptr"
     is KtcType.User if ktc.kind == KtcType.UserKind.Enum -> {
@@ -481,7 +481,7 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
     return if (isSubstNullable && base !is KtcType.Ptr && base !is KtcType.Nullable) KtcType.Nullable(base) else base
 }
 
-/** Create KtcType.User by looking up the TypeDef from symbol tables, or creating a BuiltinTypeDef. */
+/* Create KtcType.User by looking up the TypeDef from symbol tables, or creating a BuiltinTypeDef. */
 internal fun CCodeGen.userType(inName: String, inKind: KtcType.UserKind = KtcType.UserKind.Class): KtcType.User {
     val vTypeDef: TypeDef = when {
         classes.containsKey(inName) -> classes[inName]!!
@@ -584,8 +584,8 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
     return userType(resolved)
 }
 
-/** C type string from KtcType, uses pfx for user types. */
-internal fun CCodeGen.cTypeStr(ktc: KtcType): String = when (ktc) {
+/* C type string from KtcType, uses pfx for user types. */
+internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
     is KtcType.Prim -> ktc.toCType()
     is KtcType.Str -> ktc.toCType()
     is KtcType.Void -> ktc.toCType()

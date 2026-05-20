@@ -59,7 +59,7 @@ internal fun CCodeGen.genCArg(e: Expr): String = when (e) {
     else -> genExpr(e)
 }
 
-fun CCodeGen.genExpr(e: Expr): String = when (e) {
+internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
     is IntLit -> if (e.hex) "0x${e.value.toString(16)}" else "${e.value}"
     is LongLit -> if (e.hex) "0x${e.value.toString(16)}LL" else "${e.value}LL"
     is UIntLit -> if (e.hex) "0x${e.value.toString(16)}U" else "${e.value}U"
