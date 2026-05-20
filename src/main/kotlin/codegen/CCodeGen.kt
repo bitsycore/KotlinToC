@@ -739,24 +739,23 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         preStmts.clear()
     }
 
-    // ── Output sections ──────────────────────────────────────────────
-    internal val hdr     = StringBuilder()   // .h forward decls & typedefs
-    internal var impl    = StringBuilder()   // active .c impl target (swapped per-decl by captureForDecl)
-    internal var implFwd = StringBuilder()   // active .c private-fwd target (swapped per-decl by captureForDecl)
+    // ── Output sections (backed by CodeBuilder) ─────────────────────
+    internal val cb = CodeBuilder()                                      // all output buffer state
 
-    // Per-declaration impl accumulators — keyed by declaration simple name (e.g. "Foo").
-    // Inner classes and companion objects (name contains '$') share their parent's buffers
-    // via rootDeclKey(). Top-level functions use key "".
-    internal val perDeclImpl    = mutableMapOf<String, StringBuilder>()  // per-decl impl content
-    internal val perDeclImplFwd = mutableMapOf<String, StringBuilder>()  // per-decl implFwd content
-
-    // Buffered as_* cast functions, emitted in a final "as" section after all vtable structs.
-    // Keyed by root declaration name (same key as perDeclImpl).
-    internal val deferredAsCalls = mutableMapOf<String, StringBuilder>()
-
-    // Buffered object interface method bodies: (objectName, ifaceName) -> impl content.
-    // Populated in emitObject, consumed in emitInterfaceVtablesForClass (implsOnly pass).
-    internal val deferredObjIfaceMethods = mutableMapOf<Pair<String, String>, StringBuilder>()
+    // Delegate properties — keep all call sites in emit/expr files unchanged.
+    // Per-declaration impl accumulators: keyed by declaration simple name (e.g. "Foo");
+    // inner classes and companions share the parent's buffers via rootDeclKey().
+    internal val hdr     get() = cb.hdr                                  // .h forward decls & typedefs
+    internal var impl: StringBuilder                                      // active .c impl target (swapped per-decl)
+        get()      = cb.impl
+        set(v)     { cb.impl = v }
+    internal var implFwd: StringBuilder                                   // active .c private-fwd target (swapped per-decl)
+        get()      = cb.implFwd
+        set(v)     { cb.implFwd = v }
+    internal val perDeclImpl    get() = cb.perDeclImpl                   // per-decl impl content
+    internal val perDeclImplFwd get() = cb.perDeclImplFwd               // per-decl implFwd content
+    internal val deferredAsCalls         get() = cb.deferredAsCalls      // as_* cast functions, keyed by root decl name
+    internal val deferredObjIfaceMethods get() = cb.deferredObjIfaceMethods  // (objectName, ifaceName) → impl content
 
     /*
     Returns the root key for a declaration name.
@@ -777,7 +776,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         }
 
     /*
-    Routes impl and implFwd to the per-decl buffers for [inKey], runs [inBlock],
+    Routes impl and implFwd to the per-decl buffers for inKey, runs inBlock,
     then restores the previous impl/implFwd.
     Nested calls with the same root key append to the same buffer (getOrPut semantics).
     */
@@ -785,14 +784,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         inKey: String,     // declaration name; "" for top-level functions
         inBlock: () -> Unit
         ) {
-        val vKey        = rootDeclKey(inKey)                              // route inner classes to parent
-        val vSavedImpl    = impl                                          // save current target
-        val vSavedImplFwd = implFwd
-        impl    = perDeclImpl.getOrPut(vKey)    { StringBuilder() }      // swap to per-decl buffer
-        implFwd = perDeclImplFwd.getOrPut(vKey) { StringBuilder() }
-        inBlock()
-        impl    = vSavedImpl                                              // restore previous target
-        implFwd = vSavedImplFwd
+        val vKey = rootDeclKey(inKey)                                     // route inner classes to parent
+        cb.captureForDecl(vKey, inBlock)
         }
 
     // ═══════════════════════════ Public entry ═════════════════════════

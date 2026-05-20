@@ -153,6 +153,41 @@ sources — map of filename → SourceFile for each generated .c file.
 data class COutput(val header: String, val sources: Map<String, SourceFile>)
 
 /*
+Output buffer state for a single package's code generation pass.
+All mutable output state that was formerly on CCodeGen lives here, making it
+possible to construct a CCodeGen without output side-effects and to test emit
+functions with a controlled CodeBuilder instance.
+*/
+internal class CodeBuilder
+	{
+	val hdr     = StringBuilder()                                         // .h forward decls & typedefs
+	var impl    = StringBuilder()                                         // active .c impl target (swapped per-decl)
+	var implFwd = StringBuilder()                                         // active .c private-fwd target (swapped per-decl)
+	val perDeclImpl    = mutableMapOf<String, StringBuilder>()            // per-decl impl content, keyed by decl name
+	val perDeclImplFwd = mutableMapOf<String, StringBuilder>()            // per-decl implFwd content
+	val deferredAsCalls = mutableMapOf<String, StringBuilder>()           // as_* cast functions, keyed by root decl name
+	val deferredObjIfaceMethods = mutableMapOf<Pair<String, String>, StringBuilder>() // (objectName, ifaceName) → impl content
+
+	/*
+	Routes impl and implFwd to the per-decl buffers for inKey, runs inBlock,
+	then restores the previous impl/implFwd.
+	inKey must already be resolved to the root declaration key by the caller.
+	*/
+	fun captureForDecl(
+		inKey: String,         // already-resolved root declaration key; "" for top-level functions
+		inBlock: () -> Unit
+		) {
+		val vSavedImpl    = impl                                          // save current target
+		val vSavedImplFwd = implFwd
+		impl    = perDeclImpl.getOrPut(inKey)    { StringBuilder() }     // swap to per-decl buffer
+		implFwd = perDeclImplFwd.getOrPut(inKey) { StringBuilder() }
+		inBlock()
+		impl    = vSavedImpl                                              // restore previous target
+		implFwd = vSavedImplFwd
+		}
+	}
+
+/*
 Read-only view of the symbol tables and core name-resolution helpers used across
 codegen modules. Implemented by CCodeGen; can also be implemented by test stubs.
 Extension functions in CTypes.kt and (eventually) TypeInfer.kt take SymbolReader

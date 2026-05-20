@@ -61,15 +61,14 @@ Make type inference and type mapping testable without a full CCodeGen instance.
 - [x] Functions kept on `CCodeGen` (not movable): `cTypeStr(String)`, `cType`, `resolveTypeName`, `resolveTypeNameStr`, `resolveTypeNameInnerStr`, `parseResolvedTypeName`, `userType`, `defaultVal` — these form a chain through `primitiveToArrayType` which mutates `classArrayTypes`
 - [x] Run unit tests — expect green
 
-## Phase G — CodeBuilder output state
+## Phase G — CodeBuilder output state ✅
 Decouple output buffers from CCodeGen logic. (Most architectural, highest risk — do last.)
 
-- [ ] Define `DeclBuffer(fwd, impl)` in `CCodeGenStructures.kt`
-- [ ] Define `CodeBuilder` holding `header`, `implFwd`, `impl`, `perDecl`, `deferred` sections
-- [ ] Pass `CodeBuilder` explicitly to `emitClass`, `emitObject`, `emitFun`, etc.
-- [ ] Remove `hdr`, `impl`, `implFwd`, `perDeclImpl`, `perDeclImplFwd`, `deferredHdrLines`, `deferredAsCalls`, `deferredObjIfaceMethods` from CCodeGen
-- [ ] Update `generate()` to assemble output from `CodeBuilder` at the end
-- [ ] Run unit tests + integration tests — expect green
+- [x] Define `CodeBuilder` in `Structures.kt` — holds `hdr`, `impl`, `implFwd`, `perDeclImpl`, `perDeclImplFwd`, `deferredAsCalls`, `deferredObjIfaceMethods`; owns `captureForDecl(key, block)` (swap/restore logic)
+- [x] Add `internal val cb = CodeBuilder()` to `CCodeGen`; delegate properties (`hdr`, `impl`, `implFwd`, `perDeclImpl`, `perDeclImplFwd`, `deferredAsCalls`, `deferredObjIfaceMethods`) keep all call sites unchanged
+- [x] Simplify `captureForDecl` on `CCodeGen` to resolve root key then call `cb.captureForDecl`
+- [x] Remove raw buffer field declarations from `CCodeGen`
+- [x] Run unit tests + integration tests — expect green
 
 ---
-*Last updated: Phase F complete — next: Phase G (CodeBuilder output state)*
+*Last updated: Phase G complete — all planned phases done*
