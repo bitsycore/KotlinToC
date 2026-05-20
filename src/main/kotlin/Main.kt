@@ -3,6 +3,7 @@ package com.bitsycore.ktc
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.codegen.COutput
+import com.bitsycore.ktc.codegen.dumpSemantics
 import com.bitsycore.ktc.parser.Lexer
 import com.bitsycore.ktc.parser.Parser
 import java.io.File
