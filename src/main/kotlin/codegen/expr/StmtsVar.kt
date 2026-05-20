@@ -3,8 +3,6 @@ package com.bitsycore.ktc.codegen.expr
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.codegen.*
-import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
-import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.types.KtcType
 
 // ── var / val ────────────────────────────────────────────────────
@@ -20,7 +18,7 @@ internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
     if (inInit is NameExpr) return lookupArraySize(inInit.name)
     if (inInit !is CallExpr) return null
     // Method call: arr.copyOf(N) with literal N — explicit size, suppress unsized warning.
-    if (inInit.callee is DotExpr && (inInit.callee as DotExpr).name == "copyOf") {
+    if (inInit.callee is DotExpr && inInit.callee.name == "copyOf") {
         val vArg = inInit.args.firstOrNull()?.expr
         if (vArg is IntLit)  return vArg.value.toInt()
         if (vArg is LongLit) return vArg.value.toInt()

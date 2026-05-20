@@ -73,8 +73,8 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             if (thisKtc is KtcType.Nullable) {
                 // @Ptr T? → compare pointer to NULL
                 if (thisKtc.inner is KtcType.Ptr && thisKtc.inner.inner !is KtcType.Arr) {
-                    if ((thisKtc.inner as KtcType.Ptr).inner is KtcType.User
-                        && ((thisKtc.inner as KtcType.Ptr).inner as KtcType.User).kind == KtcType.UserKind.Interface)
+                    if (thisKtc.inner.inner is KtcType.User
+                        && thisKtc.inner.inner.kind == KtcType.UserKind.Interface)
                         return if (e.op == "==") "!\$self.vt" else "\$self.vt"
                     return if (e.op == "==") "\$self == NULL" else "\$self != NULL"
                 }
@@ -90,8 +90,8 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             // @Ptr T? → compare pointer to NULL (exclude typed array pointers like IntArray)
             if (varKtc is KtcType.Nullable && varKtc.inner is KtcType.Ptr && varKtc.inner.inner !is KtcType.Arr) {
                 // @Ptr InterfaceType → check vt for null (ktc_IfacePtr is a struct)
-                if ((varKtc.inner as KtcType.Ptr).inner is KtcType.User
-                    && ((varKtc.inner as KtcType.Ptr).inner as KtcType.User).kind == KtcType.UserKind.Interface)
+                if (varKtc.inner.inner is KtcType.User
+                    && varKtc.inner.inner.kind == KtcType.UserKind.Interface)
                     return if (e.op == "==") "!${varName}.vt" else "${varName}.vt"
                 return if (e.op == "==") "$varName == NULL" else "$varName != NULL"
             }
@@ -308,5 +308,3 @@ internal fun CCodeGen.genStringConcat(e: BinExpr): String {
     preStmts += "ktc_Char ${buf}[512];"
     return "ktc_core_string_cat($buf, sizeof($buf), ${genExpr(e.left)}, ${genExpr(e.right)})"
 }
-
-// ── function / constructor call ──────────────────────────────────

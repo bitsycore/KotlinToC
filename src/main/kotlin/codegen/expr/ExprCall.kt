@@ -57,7 +57,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 // If it's a concrete object name, wrap into ktc_IfacePtr.
                 val allocArgKtc = inferExprTypeKtc(e.args[0].expr)
                 val allocArgCore = (allocArgKtc as? KtcType.Nullable)?.inner ?: allocArgKtc
-                val isTrampoline = allocArgCore is KtcType.Ptr && allocArgCore.inner is KtcType.User && (allocArgCore.inner as KtcType.User).kind == KtcType.UserKind.Interface
+                val isTrampoline = allocArgCore is KtcType.Ptr && allocArgCore.inner is KtcType.User && allocArgCore.inner.kind == KtcType.UserKind.Interface
                 val ifExpr: String
                 if (isTrampoline) {
                     ifExpr = allocExpr
@@ -93,12 +93,12 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 val ifExpr: String
                 when {
                     isAllocObj -> {
-                        val cConcrete = typeFlatName(allocObjName!!); val typeId = getTypeId(allocObjName)
+                        val cConcrete = typeFlatName(allocObjName); val typeId = getTypeId(allocObjName)
                         preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
                         ifaceCreated = true; ifExpr = t
                     }
                     isAllocClass -> {
-                        val cConcrete = typeFlatName(allocArgClassName!!); val typeId = getTypeId(allocArgClassName)
+                        val cConcrete = typeFlatName(allocArgClassName); val typeId = getTypeId(allocArgClassName)
                         preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
                         ifaceCreated = true; ifExpr = t
                     }
@@ -146,12 +146,12 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                         val ifExpr3: String
                         when {
                             isAllocObj -> {
-                                val cConcrete = typeFlatName(allocObjName!!); val typeId = getTypeId(allocObjName)
+                                val cConcrete = typeFlatName(allocObjName); val typeId = getTypeId(allocObjName)
                                 preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
                                 ifaceCreated3 = true; ifExpr3 = t
                             }
                             isAllocClass3 -> {
-                                val cConcrete = typeFlatName(allocArgClassName3!!); val typeId = getTypeId(allocArgClassName3)
+                                val cConcrete = typeFlatName(allocArgClassName3); val typeId = getTypeId(allocArgClassName3)
                                 preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_Allocator_vt, (void*)&$allocExpr};"
                                 ifaceCreated3 = true; ifExpr3 = t
                             }
@@ -960,7 +960,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
                 // @Ptr-annotated type — pass raw pointer (NULL for null)
                 if (arg.expr is NullLit) {
                     if (paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.User
-                        && (paramTypeKtc.inner as KtcType.User).kind == KtcType.UserKind.Interface)
+                        && paramTypeKtc.inner.kind == KtcType.UserKind.Interface)
                         parts += "(ktc_IfacePtr){0}"   // zero-init for iface trampoline
                     else parts += "NULL"
                     if (isArrayType(paramType)) parts += "0"
@@ -982,7 +982,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
                     parts += "&$tAny"
                 } else if ((paramTypeKtc as? KtcType.Ptr)?.inner is KtcType.User && interfaces.containsKey((paramTypeKtc.inner as KtcType.User).baseName)) {
                     // @Ptr InterfaceType → wrap into ktc_IfacePtr trampoline
-                    val ifaceName = (paramTypeKtc.inner as KtcType.User).baseName
+                    val ifaceName = paramTypeKtc.inner.baseName
                     val cIface = typeFlatName(ifaceName)
                     val argKtc = inferExprTypeKtc(arg.expr)
                     val argKtcCore = (argKtc as? KtcType.Nullable)?.inner ?: argKtc
@@ -1000,11 +1000,11 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
                         val objPtr: String = if (arg.expr is NameExpr && objects.containsKey(arg.expr.name)) {
                             "(void*)&$expr"
                         } else if (arg.expr is NameExpr && argKtcCore is KtcType.Ptr) {
-                            "$expr"
+                            expr
                         } else if (arg.expr is NameExpr) {
-                            "$expr"
+                            expr
                         } else if (argKtcCore is KtcType.Ptr) {
-                            "$expr"
+                            expr
                         } else {
                             val tVal = tmp()
                             val ct = cTypeStr(argKtcCore?.toInternalStr ?: "Int")
@@ -1013,10 +1013,10 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
                         }
                         val tIface = tmp()
                         val argIsNullable = argKtc is KtcType.Nullable || inferExprTypeKtc(arg.expr) is KtcType.Nullable
-                        if (argIsNullable) {
-                            preStmts += "ktc_IfacePtr $tIface = ($expr) ? ((ktc_IfacePtr){{$typeId}, (const void*)&${cConcrete}_${ifaceName}_vt, (void*)($expr)}) : ((ktc_IfacePtr){0});"
+                        preStmts += if (argIsNullable) {
+                            "ktc_IfacePtr $tIface = ($expr) ? ((ktc_IfacePtr){{$typeId}, (const void*)&${cConcrete}_${ifaceName}_vt, (void*)($expr)}) : ((ktc_IfacePtr){0});"
                         } else {
-                            preStmts += "ktc_IfacePtr $tIface = {{$typeId}, (const void*)&${cConcrete}_${ifaceName}_vt, $objPtr};"
+                            "ktc_IfacePtr $tIface = {{$typeId}, (const void*)&${cConcrete}_${ifaceName}_vt, $objPtr};"
                         }
                         parts += tIface
                     } else {
@@ -1063,7 +1063,10 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
                         parts += "(ktc_ArrayTrampoline){.size = $sizeExpr, .data = $expr}"
                     }
                 }
-            } else if ((param.type.nullable || paramTypeKtc is KtcType.Nullable) && isValueNullableKtc(paramTypeKtc.let { if (it is KtcType.Nullable) it else KtcType.Nullable(it) })) {
+            } else if ((param.type.nullable || paramTypeKtc is KtcType.Nullable) && isValueNullableKtc(paramTypeKtc.let {
+                    it as? KtcType.Nullable
+                        ?: KtcType.Nullable(it)
+                })) {
                 // Value-nullable param → pass as Optional struct
                 val optBase = if (paramType.endsWith("?")) paramType.dropLast(1) else paramType
                 val optType = optCTypeName("${optBase}?")
@@ -1407,7 +1410,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val t = tmp()
         val allocArgKtc = inferExprTypeKtc(args[0].expr)
         val allocArgCore = (allocArgKtc as? KtcType.Nullable)?.inner ?: allocArgKtc
-        val isTrampoline = allocArgCore is KtcType.Ptr && allocArgCore.inner is KtcType.User && (allocArgCore.inner as KtcType.User).kind == KtcType.UserKind.Interface
+        val isTrampoline = allocArgCore is KtcType.Ptr && allocArgCore.inner is KtcType.User && allocArgCore.inner.kind == KtcType.UserKind.Interface
         val ifExpr: String
         if (isTrampoline) {
             ifExpr = allocExpr
@@ -1509,7 +1512,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                             val binding = genericTypeBindings[pointerBase]
                             if (binding != null) {
                                 val tArgs = m.typeParams.map { binding[it] ?: "Int" }
-                                mangledGenericName(m.receiver!!.name, tArgs)
+                                mangledGenericName(m.receiver.name, tArgs)
                             } else iface
                         }
                     break
@@ -1519,7 +1522,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         val effectiveGenExt = genExt ?: ifaceExt
         if (ifaceExt != null && ifaceExtConcrete != null) {
             /* Extract type args via mangledComponents lookup */
-            val tArgComponents = mangledComponents[ifaceExtConcrete!!]?.second
+            val tArgComponents = mangledComponents[ifaceExtConcrete]?.second
             val tArgs = ifaceExt.typeParams.mapIndexed { i, _ ->
                 tArgComponents?.getOrNull(i) ?: "Int"
             }
@@ -1640,7 +1643,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
                             val binding = genericTypeBindings[vClassInfo.baseName]
                             if (binding != null) {
                                 val tArgs = match.typeParams.map { binding[it] ?: "Int" }
-                                mangledGenericName(match.receiver!!.name, tArgs)
+                                mangledGenericName(match.receiver.name, tArgs)
                             } else iface
                         }
                     break
@@ -1651,7 +1654,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         if (genericExtDecl != null && ifaceConcrete != null) {
             /* Extract type args via mangledComponents lookup */
             val ifaceComponents = mangledComponents[ifaceConcrete]?.second
-            val tArgs = genericExtDecl.typeParams.mapIndexed { i, _ ->
+            val tArgs = List(genericExtDecl.typeParams.size) { i ->
                 ifaceComponents?.getOrNull(i) ?: "Int"
             }
             genericFunInstantiations.getOrPut(genericExtDecl.name) { mutableSetOf() }.add(tArgs)
@@ -1962,7 +1965,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
     val dotExpr = DotExpr(dot.obj, dot.name)
 
     // Handle .ptr() safe-call: guard first, then take address
-    if (dot.name == "ptr" && isValueNullRecv && recvName != null) {
+    if (dot.name == "ptr" && isValueNullRecv) {
         val baseClass = recvType!!.removeSuffix("?")
         val cName = typeFlatName(baseClass)
         val t = tmp()
@@ -1970,7 +1973,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
         defineVar(t, "${baseClass}*?")
         return t
     }
-    if (dot.name == "ptr" && recvType != null && recvName != null) {
+    if (dot.name == "ptr" && recvType != null) {
         val cleanType = recvType.removeSuffix("?")
         if (recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) {
             val t = tmp()
@@ -1985,7 +1988,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 
     val call = genMethodCall(dotExpr, args)
     // Determine the null guard expression
-    val guard = if (recvName != null && recvTypeKtc != null) nullGuardExpr(recvTypeKtc, recvName, recvName, isThis = false) else "${recvName}\$has"
+    val guard = if (recvTypeKtc != null) nullGuardExpr(recvTypeKtc, recvName, recvName, isThis = false) else "${recvName}\$has"
     // Determine the return type
     val retType = inferMethodReturnType(dotExpr, args)
     if (retType == null || retType == "Unit") {
