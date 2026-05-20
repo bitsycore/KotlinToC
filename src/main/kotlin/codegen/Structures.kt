@@ -188,6 +188,30 @@ internal class CodeBuilder
 	}
 
 /*
+Live state for the function currently being emitted.
+Replaces the 14 scattered currentFn* / currentClass / selfIsPointer / currentExtRecvType fields
+on CCodeGen. CCodeGen holds a single var fnCtx: FunctionContext and exposes delegate properties
+so all call sites in emit/expr files stay unchanged.
+Saved and restored by saveFunState/restoreFunState for nested function emission (e.g. inner classes).
+*/
+internal data class FunctionContext(
+	var returnsNullable: Boolean   = false,   // true when function returns a nullable type
+	var returnsArray: Boolean      = false,   // true when function returns a variable-length array
+	var returnsSizedArray: Boolean = false,   // true when function returns @Size(N) array struct
+	var sizedArraySize: Int        = 0,       // N for @Size(N) array return
+	var sizedArrayElemType: String = "",      // element C type for @Size(N) array return
+	var returnsSizedString: Boolean = false,  // true when function returns @Size(N) String struct
+	var sizedStringSize: Int       = 0,       // N for @Size(N) String return
+	var returnType: String         = "",      // C return type string
+	var returnKtcType: KtcType?    = null,    // KtcType of return (for pattern matching)
+	var optReturnCTypeName: String = "",      // Optional C type for nullable returns
+	var isMain: Boolean            = false,   // true when emitting main() (affects void vs int)
+	var klass: String?             = null,    // current class context (name of class being emitted)
+	var selfPtr: Boolean           = true,    // true when $self is a pointer
+	var extRecvType: String?       = null,    // extension receiver type name
+	)
+
+/*
 Read-only view of the symbol tables and core name-resolution helpers used across
 codegen modules. Implemented by CCodeGen; can also be implemented by test stubs.
 Extension functions in CTypes.kt and (eventually) TypeInfer.kt take SymbolReader

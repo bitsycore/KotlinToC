@@ -361,9 +361,10 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun isOptional(name: String): Boolean = optValVarNames.any { name in it }
 
     // ── Current class context (when generating methods) ──────────────
-    internal var currentClass: String? = null
+    internal var fnCtx = FunctionContext()
+    internal var currentClass: String?  get() = fnCtx.klass;   set(v) { fnCtx.klass = v }
     internal var currentObject: String? = null
-    internal var selfIsPointer = true
+    internal var selfIsPointer: Boolean get() = fnCtx.selfPtr; set(v) { fnCtx.selfPtr = v }
     // Objects with dispose methods — called on main() exit
     internal val objectsWithDispose = mutableListOf<String>()  // cName of objects with dispose
     // @Tls-annotated objects and top-level properties → emit ktc_core_tls specifier
@@ -374,7 +375,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // Names of array parameters whose data has been copied via alloca+memcpy.
     // genName redirects these to their local$name copy; .size uses the trampoline field.
     internal val trampolinedParams = mutableSetOf<String>()
-    internal var currentExtRecvType: String? = null
+    internal var currentExtRecvType: String? get() = fnCtx.extRecvType; set(v) { fnCtx.extRecvType = v }
     // Target type for HeapAlloc/HeapArrayZero/HeapArrayResize inference (context from LHS)
     internal var heapAllocTargetType: TypeRef? = null
 
@@ -574,17 +575,17 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     }
 
     // ── Nullable return tracking ─────────────────────────────────────
-    internal var currentFnReturnsNullable = false
-    internal var currentFnReturnsArray = false
-    internal var currentFnReturnsSizedArray = false
-    internal var currentFnSizedArraySize = 0
-    internal var currentFnSizedArrayElemType = ""
-    internal var currentFnReturnsSizedString = false        // true when function returns @Size(N) String
-    internal var currentFnSizedStringSize = 0              // N for @Size(N) String return
-    internal var currentFnReturnType: String = ""
-    internal var currentFnReturnKtcType: KtcType? = null  // KtcType counterpart for pattern matching
-    internal var currentFnOptReturnCTypeName: String = ""  // Optional C type for nullable returns
-    internal var currentFnIsMain = false
+    internal var currentFnReturnsNullable: Boolean   get() = fnCtx.returnsNullable;    set(v) { fnCtx.returnsNullable = v }
+    internal var currentFnReturnsArray: Boolean      get() = fnCtx.returnsArray;       set(v) { fnCtx.returnsArray = v }
+    internal var currentFnReturnsSizedArray: Boolean get() = fnCtx.returnsSizedArray;  set(v) { fnCtx.returnsSizedArray = v }
+    internal var currentFnSizedArraySize: Int        get() = fnCtx.sizedArraySize;     set(v) { fnCtx.sizedArraySize = v }
+    internal var currentFnSizedArrayElemType: String get() = fnCtx.sizedArrayElemType; set(v) { fnCtx.sizedArrayElemType = v }
+    internal var currentFnReturnsSizedString: Boolean get() = fnCtx.returnsSizedString; set(v) { fnCtx.returnsSizedString = v }
+    internal var currentFnSizedStringSize: Int       get() = fnCtx.sizedStringSize;    set(v) { fnCtx.sizedStringSize = v }
+    internal var currentFnReturnType: String         get() = fnCtx.returnType;         set(v) { fnCtx.returnType = v }
+    internal var currentFnReturnKtcType: KtcType?   get() = fnCtx.returnKtcType;      set(v) { fnCtx.returnKtcType = v }
+    internal var currentFnOptReturnCTypeName: String get() = fnCtx.optReturnCTypeName; set(v) { fnCtx.optReturnCTypeName = v }
+    internal var currentFnIsMain: Boolean            get() = fnCtx.isMain;             set(v) { fnCtx.isMain = v }
     internal fun currentFnReturnBaseType(): String = currentFnReturnType.removeSuffix("?")
 
     // ── Sized array/string struct type registry ───────────────────────
@@ -607,44 +608,10 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     Used by the return handler to emit `return tmpVar` directly without an extra memcpy. */
     internal val arrayOfSizedStructVars = mutableSetOf<String>()
 
-    /** Snapshot of current function state for save/restore across emit functions. */
-    internal data class FunState(
-        var returnsNullable: Boolean,          // true when function returns a nullable type
-        var returnsArray: Boolean,             // true when function returns a variable-length array
-        var returnsSizedArray: Boolean,        // true when function returns @Size(N) array struct
-        var sizedArraySize: Int,               // N for @Size(N) array return
-        var sizedArrayElemType: String,        // element C type for @Size(N) array return
-        var returnsSizedString: Boolean,       // true when function returns @Size(N) String struct
-        var sizedStringSize: Int,              // N for @Size(N) String return
-        var returnType: String,                // C return type string (legacy)
-        var returnKtcType: KtcType?,           // KtcType of return (for pattern matching)
-        var optReturnCTypeName: String,        // Optional C type for nullable returns
-        var klass: String?,                    // current class context
-        var selfPtr: Boolean,                  // true when $self is a pointer
-        var extRecvType: String?,              // extension receiver type name
-    )
-    internal fun saveFunState() = FunState(
-        currentFnReturnsNullable, currentFnReturnsArray, currentFnReturnsSizedArray,
-        currentFnSizedArraySize, currentFnSizedArrayElemType,
-        currentFnReturnsSizedString, currentFnSizedStringSize,
-        currentFnReturnType, currentFnReturnKtcType, currentFnOptReturnCTypeName,
-        currentClass, selfIsPointer, currentExtRecvType
-    )
-    internal fun restoreFunState(s: FunState) {
-        currentFnReturnsNullable = s.returnsNullable
-        currentFnReturnsArray = s.returnsArray
-        currentFnReturnsSizedArray = s.returnsSizedArray
-        currentFnSizedArraySize = s.sizedArraySize
-        currentFnSizedArrayElemType = s.sizedArrayElemType
-        currentFnReturnsSizedString = s.returnsSizedString
-        currentFnSizedStringSize = s.sizedStringSize
-        currentFnReturnType = s.returnType
-        currentFnReturnKtcType = s.returnKtcType
-        currentFnOptReturnCTypeName = s.optReturnCTypeName
-        currentClass = s.klass
-        selfIsPointer = s.selfPtr
-        currentExtRecvType = s.extRecvType
-    }
+    /* Snapshot type for save/restore of function context across nested emit functions. */
+    internal typealias FunState = FunctionContext
+    internal fun saveFunState(): FunState = fnCtx.copy()
+    internal fun restoreFunState(inState: FunState) { fnCtx = inState }
 
     internal var loopDepth: Int = 0  // nesting depth of active for/while/do-while loops
 
