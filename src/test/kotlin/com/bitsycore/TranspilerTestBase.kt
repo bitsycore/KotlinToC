@@ -2,6 +2,7 @@ package com.bitsycore.ktc
 
 import com.bitsycore.ktc.ast.KtFile
 import com.bitsycore.ktc.codegen.CCodeGen
+import com.bitsycore.ktc.codegen.generate
 import com.bitsycore.ktc.parser.Lexer
 import com.bitsycore.ktc.parser.Parser
 import org.intellij.lang.annotations.Language
