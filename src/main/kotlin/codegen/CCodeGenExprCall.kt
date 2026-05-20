@@ -1380,6 +1380,24 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
         preStmts += "ktc_Int ${t}\$len = $lenExpr;"
         return t
     }
+    // Array .copyOf(newSize) → stack copy, truncating or zero-padding to newSize elements.
+    // Recognized as a sized-array source by inferInitArraySize when newSize is a literal.
+    if (method == "copyOf" && recvTypeKtc != null && recvTypeKtc.isArrayLike && args.size == 1) {
+        val vElemC    = arrayElementCTypeKtc(recvTypeKtc)  // C element type
+        val vNewSize  = genExpr(args[0].expr)               // new size expression
+        val vSrcLen   = when {
+            dot.obj is NameExpr && dot.obj.name in trampolinedParams -> arrayParamSizeExpr(dot.obj.name)
+            else -> "${recv}\$len"
+        }
+        val t         = tmp()
+        val vCopyLen  = tmp()
+        preStmts += "$vElemC* $t = ($vElemC*)ktc_core_alloca(sizeof($vElemC) * (size_t)($vNewSize));"
+        preStmts += "const ktc_Int $vCopyLen = ($vSrcLen < ($vNewSize)) ? $vSrcLen : ($vNewSize);"
+        preStmts += "memcpy($t, $recv, (size_t)$vCopyLen * sizeof($vElemC));"
+        preStmts += "if ($vCopyLen < ($vNewSize)) memset($t + $vCopyLen, 0, (size_t)(($vNewSize) - $vCopyLen) * sizeof($vElemC));"
+        preStmts += "const ktc_Int ${t}\$len = $vNewSize;"
+        return t
+    }
     // Array / RawArray .resizeWith(allocator, newSize) → allocator-based realloc
     if (method == "resizeWith" && recvTypeKtc != null && recvTypeKtc.isArrayLike && args.size >= 2) {
         val elemC = arrayElementCTypeKtc(recvTypeKtc)

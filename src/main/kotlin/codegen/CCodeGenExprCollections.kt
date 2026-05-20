@@ -40,6 +40,14 @@ internal fun CCodeGen.genArrayOfExpr(
     val vals = args.joinToString(", ") { genExpr(it.expr) }
     val n = args.size
     val t = tmp()
+    /* Optimization: when this call is the direct return value of a @Size(N) function whose element
+    type and count match, emit the ktc_Array_T_N struct inline — no raw array + memcpy needed. */
+    if (currentFnReturnsSizedArray && n == currentFnSizedArraySize && elemType == currentFnSizedArrayElemType) {
+        val vStructType = sizedArrayCTypeName(elemType, n)
+        preStmts += "$vStructType $t = {{$vals}};"  // struct has only arr[N], no len field
+        arrayOfSizedStructVars += t
+        return t
+    }
     preStmts += "$elemType ${t}[] = {$vals};"
     preStmts += "const ktc_Int ${t}\$len = $n;"
     return t
