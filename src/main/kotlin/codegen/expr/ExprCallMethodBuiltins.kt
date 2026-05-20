@@ -1,6 +1,9 @@
 package com.bitsycore.ktc.codegen.expr
 
-import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.ast.Arg
+import com.bitsycore.ktc.ast.DotExpr
+import com.bitsycore.ktc.ast.NameExpr
+import com.bitsycore.ktc.ast.StrLit
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
@@ -10,12 +13,12 @@ import com.bitsycore.ktc.types.KtcType
 /* Handles built-in String/primitive methods and array methods.
 Returns the expression string, or null if not a recognised built-in. */
 internal fun CCodeGen.genBuiltinMethodCallOrNull(
-	inDot:         DotExpr,
-	inArgs:        List<Arg>,
-	inRecv:        String,
-	inRecvType:    String?,
+	inDot: DotExpr,
+	inArgs: List<Arg>,
+	inRecv: String,
+	inRecvType: String?,
 	inRecvTypeKtc: KtcType?
-	): String? {
+): String? {
 	val vMethod = inDot.name  // method name
 
 	// ── Built-in methods ──────────────────────────────────────────────
@@ -190,18 +193,6 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 	if (vMethod == "ptr" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		return inRecv
 		}
-	if (vMethod == "toHeap" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
-		val vElemC   = arrayElementCTypeKtc(inRecvTypeKtc)
-		val vLenExpr = when {
-			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> arrayParamSizeExpr(inDot.obj.name)
-			else -> "${inRecv}\$len"
-			}
-		val vT = tmp()
-		preStmts += "$vElemC* $vT = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vLenExpr)")};"
-		preStmts += "if ($vT) memcpy($vT, $inRecv, sizeof($vElemC) * (size_t)($vLenExpr));"
-		preStmts += "ktc_Int ${vT}\$len = $vLenExpr;"
-		return vT
-		}
 	if (vMethod == "copyOf" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size == 1) {
 		val vElemC   = arrayElementCTypeKtc(inRecvTypeKtc)
 		val vNewSize = genExpr(inArgs[0].expr)
@@ -242,14 +233,38 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		if (!vIsRawArray) preStmts += "ktc_Int ${vT}_ptr\$len = $vNewSizeExpr;"
 		return "${vT}_ptr"
 		}
+	if (vMethod == "copyWith" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size == 1) {
+		val vElemC        = arrayElementCTypeKtc(inRecvTypeKtc)
+		val vAllocExpr    = genExpr(inArgs[0].expr)
+		val vSrcLen       = when {
+			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> arrayParamSizeExpr(inDot.obj.name)
+			else -> "${inRecv}\$len"
+			}
+		val vT            = tmp()
+		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
+		val vAllocCore    = (vAllocKtc as? KtcType.Nullable)?.inner ?: vAllocKtc
+		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User && vAllocCore.inner.kind == KtcType.UserKind.Interface
+		val vIfExpr: String
+		if (vIsTrampoline) {
+			vIfExpr = vAllocExpr
+			} else {
+			val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
+			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
+				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
+				preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
+				vIfExpr = vT
+				} else { vIfExpr = vAllocExpr }
+			}
+		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSrcLen), ${ktSrcStr()});"
+		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $inRecv, (size_t)$vSrcLen * sizeof($vElemC));"
+		preStmts += "ktc_Int ${vT}_ptr\$len = $vSrcLen;"
+		return "${vT}_ptr"
+		}
 	if ((vMethod == "get" || vMethod == "set") && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		val vIdx = inArgs.getOrNull(0)?.let { genExpr(it.expr) } ?: "0"
 		if (vMethod == "get") return "${inRecv}[$vIdx]"
 		val vValExpr = inArgs.getOrNull(1)?.let { genExpr(it.expr) } ?: "0"
 		return "(${inRecv}[$vIdx] = $vValExpr)"
-		}
-	if (vMethod == "deref" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inRecvTypeKtc is KtcType.Ptr) {
-		return inRecv
 		}
 
 	return null

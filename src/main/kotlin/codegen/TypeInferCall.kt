@@ -232,7 +232,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
 				val base = recvType.removeSuffix("?")
 				if (base.endsWith("Array*")) base.removeSuffix("Array*") else base.removeSuffix("*")
 				}
-			"ptr", "toHeap" -> {
+			"ptr", "copyWith" -> {
 				val base = recvType.removeSuffix("?")
 				if (base.endsWith("Array*")) {
 					val elem = base.removeSuffix("Array*")
@@ -263,17 +263,17 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
 		val extFun = extensionFuns[pointerBase]?.find { it.name == method }
 		if (extFun != null) return if (extFun.returnType != null) resolveTypeName(extFun.returnType).toInternalStr else "Unit"
 		return when (method) {
-			"value", "deref" -> pointerBase
-			"set"            -> "Unit"
-			"copy"           -> pointerBase
-			"toHeap", "ptr"  -> "${pointerBase}*"
-			else             -> null
-			}
+			"value" -> pointerBase
+			"set" -> "Unit"
+			"copy" -> pointerBase
+			"ptr" -> "${pointerBase}*"
+			else -> null
+		}
 		}
 	val baseClass = recvType.removeSuffix("?")
 	if (classes.containsKey(baseClass)) {
 		if (method == "copy")             return baseClass
-		if (method == "toHeap" || method == "ptr") return "${baseClass}*"
+		if (method == "ptr") return "${baseClass}*"
 		}
 	val iface = interfaces[recvType]
 	if (iface != null) {

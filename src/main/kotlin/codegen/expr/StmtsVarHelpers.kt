@@ -11,10 +11,10 @@ import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t: String, ind: String): String? {
 	if (init !is CallExpr) return null
-	// .ptr() / .toHeap() on array expression → propagate $len to the target variable
+	// .ptr() / .copyWith() on array expression → propagate $len to the target variable
 	if (init.callee is DotExpr) {
 		val vDot = init.callee
-		if (vDot.name == "ptr" || vDot.name == "toHeap") {
+		if (vDot.name == "ptr" || vDot.name == "copyWith") {
 			val vRecvKtc = inferExprTypeKtc(vDot.obj)
 			if (vRecvKtc?.isArrayLike == true) {
 				val vExpr = genExpr(init)

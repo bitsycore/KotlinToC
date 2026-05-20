@@ -4,7 +4,7 @@ import kotlin.test.Test
 
 /**
  * Tests for data classes: declaration, construction, properties,
- * toString, equals, copy, toHeap.
+ * toString, equals, copy.
  */
 class DataClassUnitTest : TranspilerTestBase() {
 
@@ -81,16 +81,6 @@ class DataClassUnitTest : TranspilerTestBase() {
         )
         r.headerContains("test_Main_Vec2 origin;")
         r.headerContains("test_Main_Vec2 size;")
-    }
-
-    // ── toHeap ───────────────────────────────────────────────────────
-
-    @Test fun toHeapGenerated() {
-        val r = transpileMain(
-            "val v = Vec2(1.0f, 2.0f)\nval hp = v.toHeap()",
-            decls = vec2Decl
-        )
-        r.sourceContains("malloc(sizeof(test_Main_Vec2))")
     }
 
     // ── new (heap constructor) ───────────────────────────────────────

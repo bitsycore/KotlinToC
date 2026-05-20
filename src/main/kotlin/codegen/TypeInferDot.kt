@@ -1,6 +1,9 @@
 package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.ast.DotExpr
+import com.bitsycore.ktc.ast.IndexExpr
+import com.bitsycore.ktc.ast.NameExpr
+import com.bitsycore.ktc.ast.SafeDotExpr
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
@@ -42,10 +45,6 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 			}
 		if (recvTypeCoreKtc is KtcType.Ptr && recvTypeCoreKtc.inner is KtcType.Arr) return parseResolvedTypeName(recvType)
 		return if (recvTypeCoreKtc is KtcType.Ptr) parseResolvedTypeName(recvType) else parseResolvedTypeName("${recvType}*")
-		}
-	if (e.name == "toHeap" && recvTypeCoreKtc?.isArrayLike == true) {
-		val arr = recvTypeCoreKtc.asArr
-		if (arr != null) return KtcType.Ptr(arr.elem)
 		}
 	if (e.name == "ptr"    && recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
 	if (e.name == "length" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)

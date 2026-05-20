@@ -50,16 +50,6 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("= p;") // v = p (same pointer)
     }
 
-    // ── .deref() → stack copy ────────────────────────────────────────
-
-    @Test fun heapDeref() {
-        val r = transpileMain(
-            "val p = HeapAlloc<Vec2>(10.0f, 20.0f)!!\nval v = p.deref()",
-            decls = vec2Decl
-        )
-        r.sourceContains("(*p)")
-    }
-
     // ── .set() → update ──────────────────────────────────────────────
 
     @Test fun heapSet() {
@@ -68,20 +58,6 @@ class HeapUnitTest : TranspilerTestBase() {
             decls = vec2Decl
         )
         r.sourceContains("*p =")
-    }
-
-    // ── .toHeap() → stack to heap (inlined) ─────────────────────────
-
-    @Test fun stackToHeap() {
-        val r = transpileMain(
-            """
-            val v = Vec2(5.0f, 6.0f)
-            val hp = v.toHeap()
-            """.trimIndent(),
-            decls = vec2Decl
-        )
-        r.sourceContains("malloc(sizeof(test_Main_Vec2))")
-        r.sourceContains("*$") // struct copy: if ($t) *$t = v;
     }
 
     // ── HeapFree ─────────────────────────────────────────────────────
@@ -234,16 +210,6 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("(*p)")
     }
 
-    // ── Ptr.deref() → stack copy ─────────────────────────────────────
-
-    @Test fun ptrDeref() {
-        val r = transpileMain(
-            "val v = Vec2(1.0f, 2.0f)\nval p = v.ptr()\nval copy = p.deref()",
-            decls = vec2Decl
-        )
-        r.sourceContains("(*")
-    }
-
     // ── Ptr.set() ────────────────────────────────────────────────────
 
     @Test fun ptrSet() {
@@ -297,7 +263,7 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("v.x = 99.0f;")
     }
 
-    // ── Value<T>.deref() → stack copy ────────────────────────────────
+    // ── Value<T>.value() → stack copy ────────────────────────────────
 
     @Test fun valueDeref() {
         val r = transpileMain(

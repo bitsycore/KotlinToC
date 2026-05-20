@@ -33,12 +33,12 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val recvArg        = if (isExt) "(*$recv)" else recv
 			val savedSubst2    = typeSubst
 			val classBindings2 = genericTypeBindings[pointerBase]
-			if (classBindings2 != null && classBindings2.isNotEmpty()) typeSubst = classBindings2
+			if (classBindings2.isNullOrEmpty().not()) typeSubst = classBindings2
 			val expandedArgs2 = if (methodDecl != null) {
 				val filled2 = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, pointerBase), methodDecl.name, strict = true)
 				expandCallArgs(filled2, methodDecl.params)
 				} else argStr
-			if (classBindings2 != null && classBindings2.isNotEmpty()) typeSubst = savedSubst2
+			if (classBindings2.isNullOrEmpty().not()) typeSubst = savedSubst2
 			val allArgs = if (expandedArgs2.isEmpty()) recvArg else "$recvArg, $expandedArgs2"
 			if (methodDecl?.returnType?.nullable == true) {
 				return genNullableMethodCall(pointerBase, "${typeFlatName(pointerBase)}_$method", allArgs, methodDecl)
@@ -50,13 +50,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				if (objects.containsKey(pointerBase)) codegenError("Cannot call .value() on object '${pointerBase}' — objects are always @Ptr")
 				return "(*$recv)"
 				}
-			"deref" -> {
-				if (objects.containsKey(pointerBase)) codegenError("Cannot call .deref() on object '${pointerBase}' — objects are always @Ptr")
-				return "(*$recv)"
-				}
 			"set"  -> return "(*$recv = $argStr)"
 			"copy" -> if (classes[pointerBase]?.isData == true) return genDataClassCopy(recv, pointerBase, args, heap = true)
-			"toHeap", "ptr" -> return recv
+			"ptr" -> return recv
 			}
 		// Check generic extension functions and interfaces for @Ptr receiver
 		val genExt = genericFunDecls.find {
@@ -164,13 +160,6 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	val vClassInfo = classInfoFor(recvTypeKtc)
 	if (vClassInfo != null) {
 		if (method == "copy" && vClassInfo.isData) return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
-		if (method == "toHeap") {
-			val cName = vClassInfo.flatName
-			val t     = tmp()
-			preStmts += "$cName* $t = ($cName*)${tMalloc("sizeof($cName)")};"
-			preStmts += "if ($t) *$t = $recv;"
-			return t
-			}
 		if (method == "ptr") {
 			val t = tmp()
 			preStmts += "${vClassInfo.flatName}* $t = &$recv;"

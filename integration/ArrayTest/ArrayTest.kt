@@ -35,7 +35,7 @@ fun testArrayPtr() {
     arrayPtr(arr3)
     arrayPtr(arr4)
 
-    val arr5 = arrayOf(1,2,3,4,5).toHeap()
+    val arr5 = arrayOf(1,2,3,4,5).copyWith(Heap)
     defer Heap.freeMem(arr5)
     val arr6 = arr5
     val arr7: @Ptr Array<Int> = arr6

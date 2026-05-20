@@ -132,7 +132,7 @@ All types are **by value** by default. Assignment copies the struct. `@Ptr T` in
 | `.value()` | `(*ptr)` | Dereference to stack copy |
 | `.ptr()` | `&value` | Take address → `T*` |
 | `.copy()` | data class copy | Struct copy for data classes |
-| `.toHeap()` | malloc + memcpy | Heap allocation |
+| `.copyTo(allocator)` | Allocation to selected allocator like "Heap" |
 
 ---
 
