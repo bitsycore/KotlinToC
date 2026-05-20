@@ -1,6 +1,11 @@
-package com.bitsycore.ktc.codegen
+package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.expr.emitStmt
+import com.bitsycore.ktc.codegen.expr.genExpr
+import com.bitsycore.ktc.codegen.expr.inferInitType
+import com.bitsycore.ktc.codegen.expr.toStringMaxLen
 
 // ──────────────────────────────────────────────────────────
 // singleton object — lazy init, methods, Any vtable, as_Any

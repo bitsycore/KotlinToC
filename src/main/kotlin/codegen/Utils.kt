@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.Expr
+import com.bitsycore.ktc.codegen.expr.genExpr
 
 /*
 Miscellaneous pure utilities used throughout C code emission.

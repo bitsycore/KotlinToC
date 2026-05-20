@@ -1,6 +1,7 @@
-package com.bitsycore.ktc.codegen
+package com.bitsycore.ktc.codegen.expr
 
 import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.genArrayOfExpr(

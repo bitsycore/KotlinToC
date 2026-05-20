@@ -2,6 +2,11 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.ast.Annotation
+import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
+import com.bitsycore.ktc.codegen.expr.inferBlockType
+import com.bitsycore.ktc.codegen.expr.inferIfExprType
+import com.bitsycore.ktc.codegen.expr.inferInlineFunSubst
+import com.bitsycore.ktc.codegen.expr.inferWhenExprType
 import com.bitsycore.ktc.codegen.mapping.arrayElementKtTypeKtc
 import com.bitsycore.ktc.codegen.mapping.primitiveToArrayOptionalType
 import com.bitsycore.ktc.codegen.mapping.primitiveToArrayType

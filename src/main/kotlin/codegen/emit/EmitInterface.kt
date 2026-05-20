@@ -1,8 +1,9 @@
-package com.bitsycore.ktc.codegen
+package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.FunDecl
 import com.bitsycore.ktc.ast.PropDecl
 import com.bitsycore.ktc.ast.TypeRef
+import com.bitsycore.ktc.codegen.*
 
 // ──────────────────────────────────────────────────────────
 // interface — vtable struct, fat-pointer, implementor casts

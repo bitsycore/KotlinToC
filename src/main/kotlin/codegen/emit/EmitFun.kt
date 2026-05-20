@@ -1,6 +1,10 @@
-package com.bitsycore.ktc.codegen
+package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.expr.emitStmt
+import com.bitsycore.ktc.codegen.expr.genExpr
+import com.bitsycore.ktc.codegen.expr.inferBlockType
 import com.bitsycore.ktc.types.KtcType
 
 // ──────────────────────────────────────────────────────────
