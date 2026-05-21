@@ -59,11 +59,19 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 			return mangledGenericName(name, inferredArgs)
 			}
 		if (classes.containsKey(name)) return name
-		if (name == "HeapAlloc" || name == "HeapArrayZero" || name == "HeapArrayResize" || name == "heapArrayOf") {
+		if (name == "heapArrayOf") {
+			val elemName = if (e.typeArgs.isNotEmpty()) {
+				typeSubst[e.typeArgs[0].name] ?: e.typeArgs[0].name
+				} else if (e.args.isNotEmpty()) {
+				inferExprType(e.args[0].expr) ?: "Int"
+				} else "Int"
+			return "${elemName}Array"
+			}
+		if (name == "HeapAlloc" || name == "HeapArrayZero" || name == "HeapArrayResize") {
 			val ta = e.typeArgs.getOrNull(0) ?: heapAllocTargetType ?: return "void*"
 			if (ta.name == "Array" && ta.typeArgs.isNotEmpty()) {
 				val elemName = typeSubst[ta.typeArgs[0].name] ?: ta.typeArgs[0].name
-				return "${elemName}*"
+				return "${elemName}Array"
 				}
 			if (ta.name == "RawArray" && ta.typeArgs.isNotEmpty()) {
 				val elemName = typeSubst[ta.typeArgs[0].name] ?: ta.typeArgs[0].name
@@ -232,18 +240,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
 				val base = recvType.removeSuffix("?")
 				if (base.endsWith("Array*")) base.removeSuffix("Array*") else base.removeSuffix("*")
 				}
-			"ptr", "copyWith" -> {
-				val base = recvType.removeSuffix("?")
-				if (base.endsWith("Array*")) {
-					val elem = base.removeSuffix("Array*")
-					val internal = if (elem.endsWith("Opt")) "${elem.removeSuffix("Opt")}?" else elem
-					"${internal}*"
-					} else if (recvType.endsWith("Array")) {
-					val elem = recvType.removeSuffix("Array")
-					val internal = if (elem.endsWith("Opt")) "${elem.removeSuffix("Opt")}?" else elem
-					"${internal}*"
-					} else recvType
-				}
+			"ptr", "copyWith" -> recvType
 			"set" -> "Unit"
 			else  -> null
 			}

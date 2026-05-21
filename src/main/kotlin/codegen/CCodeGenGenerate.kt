@@ -148,6 +148,10 @@ internal fun CCodeGen.generate(): COutput {
 		else -> {}
 		}
 
+	// User-package VarArr types — after non-generic type defs, before monomorphized generics.
+	hdr.appendLine()
+	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
+
 	// Pre-pass: register classInterfaces for objects and all monomorphized generic classes.
 	for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty())
 		classInterfaces[d.name] = d.superInterfaces.map { it.name }
@@ -220,9 +224,6 @@ internal fun CCodeGen.generate(): COutput {
 		currentSourceFile = prevSourceFile
 		}
 
-	// Placeholder for KTC_DECL_VAR_ARR — after all type defs so user struct/enum names are visible.
-	hdr.appendLine()
-	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
 	// Placeholder replaced later with user-type KTC_DEFINE_ARRAY (must be after struct defs).
 	hdr.appendLine()
 	hdr.appendLine("/* @SIZED_TYPES_USER@ */")
