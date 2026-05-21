@@ -98,10 +98,9 @@ internal fun CCodeGen.generate(): COutput {
 		for (vFd in vFwdDecls) hdr.appendLine("typedef struct ${vFd.vCName} ${vFd.vCName};${vFd.vSrc}")
 		hdr.appendLine()
 		}
-	// Placeholder for KTC_DECL_VAR_ARR — after forward decls so user struct names are visible.
-	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
+	// Primitive/external VarArr types (always-visible element types) — must come before class method prototypes.
+	hdr.appendLine("/* @VAR_ARR_PRIM_TYPES@ */")
 	hdr.appendLine()
-
 	// Emit struct/enum/object declarations (non-generic).
 	var firstClass = true
 	for (d in file.decls) when (d) {
@@ -221,6 +220,9 @@ internal fun CCodeGen.generate(): COutput {
 		currentSourceFile = prevSourceFile
 		}
 
+	// Placeholder for KTC_DECL_VAR_ARR — after all type defs so user struct/enum names are visible.
+	hdr.appendLine()
+	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
 	// Placeholder replaced later with user-type KTC_DEFINE_ARRAY (must be after struct defs).
 	hdr.appendLine()
 	hdr.appendLine("/* @SIZED_TYPES_USER@ */")
@@ -374,14 +376,19 @@ internal fun CCodeGen.generate(): COutput {
 	replaceHdrPlaceholder("/* @SIZED_TYPES_USER@ */", vUserTypesSb,  "sized array types (user-defined element types)")
 	replaceHdrPlaceholder("/* @SIZED_TYPES@ */",      vEarlyTypesSb, "sized array / string types")
 
-	// All VarArr declarations go in one guarded section after forward decls.
-	// Guarding allows safe inclusion from multiple headers (both primitive and user element types).
-	val vVarArrSb = StringBuilder()
-	for (vElemCType in (varArrDecls + varArrGuardedDecls).toSortedSet()) {
-		val vGuard = "KTC_VAR_ARR_DEF_${sanitizeForVarArrName(vElemCType)}"
-		vVarArrSb.appendLine("#ifndef $vGuard\n#define $vGuard\nKTC_DECL_VAR_ARR($vElemCType, ${varArrTypeRef(vElemCType)});\n#endif")
+	// VarArr declarations split by when element type is visible:
+	//   @VAR_ARR_PRIM_TYPES@ — primitives/external types: before class method prototypes
+	//   @VAR_ARR_TYPES@      — current-package user types: after all type definitions
+	fun buildVarArrSection(inTypes: Set<String>): StringBuilder {
+		val vSb = StringBuilder()
+		for (vElemCType in inTypes.toSortedSet()) {
+			val vGuard = "KTC_VAR_ARR_DEF_${sanitizeForVarArrName(vElemCType)}"
+			vSb.appendLine("#ifndef $vGuard\n#define $vGuard\nKTC_DECL_VAR_ARR($vElemCType, ${varArrTypeRef(vElemCType)});\n#endif")
+			}
+		return vSb
 		}
-	replaceHdrPlaceholder("/* @VAR_ARR_TYPES@ */", vVarArrSb, "typed VarArr types")
+	replaceHdrPlaceholder("/* @VAR_ARR_PRIM_TYPES@ */", buildVarArrSection(varArrGuardedDecls), "typed VarArr types (primitives / external)")
+	replaceHdrPlaceholder("/* @VAR_ARR_TYPES@ */",      buildVarArrSection(varArrDecls),        "typed VarArr types (current-package user types)")
 
 	return COutput(hdr.toString(), vSources)
 	}

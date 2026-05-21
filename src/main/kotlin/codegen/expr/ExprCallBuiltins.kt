@@ -151,8 +151,9 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 			if (inCall.typeArgs.isNotEmpty()) {
 				val vEnumName = inCall.typeArgs[0].name
 				val vResolved = typeSubst[vEnumName] ?: vEnumName
+				val vFlat     = typeFlatName(vResolved)
 				enumValuesCalled.add(vResolved)
-				return "${typeFlatName(vResolved)}_values"
+				return "{${vFlat}_values, ${vFlat}_values\$len}"
 				}
 			error("enumValues requires a type argument")
 			}
@@ -210,17 +211,17 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 			is NullLit -> "0"
 			is DotExpr if (inArgs[0].expr as DotExpr).name == "ptr" -> {
 				val vArrExpr = genExpr((inArgs[0].expr as DotExpr).obj)
-				"$vArrExpr\$len"
+				"$vArrExpr.len"
 				}
 			is CallExpr if (inArgs[0].expr as CallExpr).callee is DotExpr
 					&& ((inArgs[0].expr as CallExpr).callee as DotExpr).name == "ptr" -> {
 				val vDot     = (inArgs[0].expr as CallExpr).callee as DotExpr
 				val vArrExpr = genExpr(vDot.obj)
-				"$vArrExpr\$len"
+				"$vArrExpr.len"
 				}
 			else -> {
 				val vPtrKtc = inferExprTypeKtc(inArgs[0].expr)
-				if (vPtrKtc is KtcType.Ptr && vPtrKtc.inner is KtcType.Arr) "${vPtrExpr}\$len"
+				if (vPtrKtc is KtcType.Ptr && vPtrKtc.inner is KtcType.Arr) "${vPtrExpr}.len"
 				else "0x7FFFFFFF"
 				}
 			}

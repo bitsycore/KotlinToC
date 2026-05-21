@@ -289,12 +289,12 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val elemCType  = arrayElementCTypeKtc(vRetKtcSz)
 			val size       = methodDecl.returnType.getSizeAnnotation()!!
 			val structType = sizedArrayCTypeRef(elemCType, size)
-			val tStruct = tmp(); val tPtr = tmp()
+			val tStruct = tmp(); val vT = tmp()
 			preStmts += "$structType $tStruct = ${vClassInfo.flatName}_$fnPrefix($allArgs);"
-			preStmts += "$elemCType* $tPtr = $tStruct.arr;"
-			preStmts += "const ktc_Int ${tPtr}\$len = $size;"
-			defineVar(tPtr, retType)
-			return tPtr
+			val vVarArrType = varArrTypeName(elemCType)
+			preStmts += "$vVarArrType $vT = {$tStruct.arr, $size};"
+			defineVar(vT, retType)
+			return vT
 			}
 		if (methodDecl?.returnType != null && methodDecl.returnType.isSizedString()) {
 			val size       = methodDecl.returnType.getSizeAnnotation()!!
@@ -321,19 +321,26 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val vObjArgs = if (vObjMethod != null) {
 			val filled = fillDefaults(args, vObjMethod.params, effectiveDefaults(vObjMethod, vDotObjInfo.name), vObjMethod.name, strict = true)
 			expandCallArgs(filled, vObjMethod.params)
-			} else argStr
+			} else {
+			/* Method not found in object — try extension functions for proper arg expansion. */
+			val vExtForObj = extensionFuns[vDotObjInfo.name]?.find { it.name == method }
+			if (vExtForObj != null) {
+				val vFilled = fillDefaults(args, vExtForObj.params, effectiveDefaults(vExtForObj, vDotObjInfo.name), vExtForObj.name, strict = true)
+				expandCallArgs(vFilled, vExtForObj.params)
+				} else argStr
+			}
 		if (vObjMethod?.returnType != null && vObjMethod.returnType.isSizedArray()) {
 			val vRetKtcObj = resolveTypeName(vObjMethod.returnType)
 			val retType    = vRetKtcObj.toInternalStr
 			val elemCType  = arrayElementCTypeKtc(vRetKtcObj)
 			val size       = vObjMethod.returnType.getSizeAnnotation()!!
 			val structType = sizedArrayCTypeRef(elemCType, size)
-			val tStruct = tmp(); val tPtr = tmp()
+			val tStruct = tmp(); val vT = tmp()
 			preStmts += "$structType $tStruct = ${vDotObjCName}_$overloadedMethod($vObjArgs);"
-			preStmts += "$elemCType* $tPtr = $tStruct.arr;"
-			preStmts += "const ktc_Int ${tPtr}\$len = $size;"
-			defineVar(tPtr, retType)
-			return tPtr
+			val vVarArrType = varArrTypeName(elemCType)
+			preStmts += "$vVarArrType $vT = {$tStruct.arr, $size};"
+			defineVar(vT, retType)
+			return vT
 			}
 		if (vObjMethod?.returnType != null && vObjMethod.returnType.isSizedString()) {
 			val size       = vObjMethod.returnType.getSizeAnnotation()!!
@@ -354,7 +361,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		when (method) {
 			"values" -> {
 				enumValuesCalled.add(vEnumInfo.baseName)
-				return "${vEnumInfo.flatName}_values"
+				return "{${vEnumInfo.flatName}_values, ${vEnumInfo.flatName}_values\$len}"
 				}
 
 			"valueOf" -> {
