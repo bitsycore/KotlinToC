@@ -49,7 +49,11 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val (vIfExpr, _) = resolveAllocIface(vAllocKtc)
 		val vT = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSizeExpr), ${ktSrcStr()});"
-		if (vClassName == "Array") preStmts += "const ktc_Int ${vT}_ptr\$len = $vSizeExpr;"
+		if (vClassName == "Array") {
+				val vVarArrType = varArrTypeName(vElemC)
+				preStmts += "$vVarArrType $vT = {${vT}_ptr, $vSizeExpr};"
+				return vT
+			}
 		return "${vT}_ptr"
 		}
 

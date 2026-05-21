@@ -110,7 +110,7 @@ internal fun CCodeGen.genLValue(e: Expr, method: Boolean): String {
 			val vObjKtc        = inferExprTypeKtc(e.obj)
 			val vObjKtcCore    = (vObjKtc as? KtcType.Nullable)?.inner ?: vObjKtc
 			val vIsRawPtr      = vObjKtcCore is KtcType.Ptr && (vObjKtcCore as KtcType.Ptr).inner !is KtcType.Arr // raw pointer (not @Ptr Array)
-			val vIsSizedArr    = (vObjKtcCore as? KtcType.Arr)?.sized != null                                     // fixed-size C array
+			val vIsSizedArr    = vObjKtcCore?.asArr?.sized != null                                               // fixed-size C array
 			val vIsTrampolined = e.obj is NameExpr && e.obj.name in trampolinedParams                             // @Size trampolined param
 			if (vIsRawPtr || vIsSizedArr || vIsTrampolined) "${genExpr(e.obj)}[${genExpr(e.index)}]"
 			else "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"

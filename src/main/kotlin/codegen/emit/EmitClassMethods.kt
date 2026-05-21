@@ -26,6 +26,7 @@ internal fun CCodeGen.emitMethod(
 	val returnsSizedArray  = !returnsNullable && f.returnType != null && f.returnType.isSizedArray()
 	val returnsSizedString = !returnsNullable && f.returnType != null && f.returnType.isSizedString()
 	val vRetKtc      = if (f.returnType != null) resolveTypeName(f.returnType) else null // KtcType of return, or null
+	val returnsArray       = !returnsNullable && !returnsSizedArray && (vRetKtc?.isArrayLike ?: false) // non-sized array return
 	val retResolved  = vRetKtc?.toInternalStr ?: f.body?.let { inferBlockType(it) } ?: "" // string for legacy helpers
 	val optRetCType  = if (returnsNullable) optCTypeName(retResolved) else ""
 	val cRet = when {
@@ -33,6 +34,10 @@ internal fun CCodeGen.emitMethod(
 		returnsSizedString -> sizedStringCTypeName(f.returnType.getSizeAnnotation()!!)
 		returnsNullable && vRetKtc is KtcType.Any -> "ktc_Any"
 		returnsNullable    -> optRetCType
+		returnsArray       -> {
+			val vArrElem = vRetKtc!!.asArr?.elem ?: ((vRetKtc as? KtcType.Ptr)?.inner as KtcType.Arr).elem
+			varArrTypeName(cTypeStr(vArrElem))
+			}
 		retResolved.isNotEmpty() -> cTypeStr(retResolved)
 		else -> "void"
 		}
@@ -57,7 +62,7 @@ internal fun CCodeGen.emitMethod(
 
 	val prevState = saveFunState()
 	currentFnReturnsNullable    = returnsNullable
-	currentFnReturnsArray       = false
+	currentFnReturnsArray       = returnsArray
 	currentFnReturnsSizedArray  = returnsSizedArray
 	currentFnOptReturnCTypeName = optRetCType
 	if (returnsSizedArray) {
@@ -66,7 +71,8 @@ internal fun CCodeGen.emitMethod(
 		}
 	currentFnReturnsSizedString = returnsSizedString
 	if (returnsSizedString) currentFnSizedStringSize = f.returnType.getSizeAnnotation()!!
-	currentFnReturnType = retResolved
+	currentFnReturnType    = retResolved
+	currentFnReturnKtcType = vRetKtc
 
 	pushScope()
 	for (p in f.params) {
@@ -173,7 +179,9 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 						heapAllocTargetType = null
 						flushPreStmts("    ")
 						val vElemType = cTypeStr(resolveTypeName(vBp.typeRef).asArr!!.elem)
-						impl.appendLine("    memcpy(\$self.$vBodyFieldName, $vExpr, $vSizeAnn * sizeof($vElemType));")
+						val vSrcKtc  = inferExprTypeKtc(vBp.initExpr)
+						val vSrcExpr = if (vSrcKtc != null && vSrcKtc.isArrayLike && vSrcKtc.asArr?.sized == null) "($vExpr).ptr" else vExpr
+						impl.appendLine("    memcpy(\$self.$vBodyFieldName, $vSrcExpr, $vSizeAnn * sizeof($vElemType));")
 						} else {
 						heapAllocTargetType = null
 						}

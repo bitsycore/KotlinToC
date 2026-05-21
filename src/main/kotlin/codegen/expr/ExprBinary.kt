@@ -73,6 +73,10 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         if (nonNull is ThisExpr) {
             val thisKtc = inferExprTypeKtc(nonNull)
             if (thisKtc is KtcType.Nullable) {
+                // Nullable VarArr (@Ptr Array<T>?) → check .ptr for null
+                if (thisKtc.inner.isArrayLike && thisKtc.inner.asArr?.sized == null) {
+                    return if (e.op == "==") "\$self.ptr == NULL" else "\$self.ptr != NULL"
+                }
                 // @Ptr T? → compare pointer to NULL
                 if (thisKtc.inner is KtcType.Ptr && thisKtc.inner.inner !is KtcType.Arr) {
                     if (thisKtc.inner.inner is KtcType.User && thisKtc.inner.inner.kind == KtcType.UserKind.Interface)
@@ -107,6 +111,10 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             // Trampolined array param: null is data == NULL — use local copy for consistency
             if (varName in trampolinedParams) {
                 return if (e.op == "==") "local$$varName == NULL" else "local$$varName != NULL"
+            }
+            // Nullable VarArr (@Ptr Array<T>?) → check .ptr for null
+            if (varKtc is KtcType.Nullable && varKtc.inner.isArrayLike && varKtc.inner.asArr?.sized == null) {
+                return if (e.op == "==") "$varName.ptr == NULL" else "$varName.ptr != NULL"
             }
             // Fallback for other nullable
             if (varKtc is KtcType.Nullable) {

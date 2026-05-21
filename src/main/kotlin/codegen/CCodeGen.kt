@@ -288,6 +288,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
 
     /** Shared null-guard expression for safe-call dispatch. */
     internal fun nullGuardExpr(recvKtc: KtcType, recvExpr: String, recvName: String, isThis: Boolean): String = when (recvKtc) {
+        is KtcType.Nullable if recvKtc.inner.isArrayLike && recvKtc.inner.asArr?.sized == null -> "$recvName.ptr != NULL"
         is KtcType.Nullable if recvKtc.inner is KtcType.Ptr -> "$recvName != NULL"
         is KtcType.Nullable if isValueNullableKtc(recvKtc) ->
             if (isThis) "KTC_IS_SOME(\$self)" else "KTC_IS_SOME($recvName)"
@@ -711,6 +712,24 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         val vKey = rootDeclKey(inKey)                                     // route inner classes to parent
         cb.captureForDecl(vKey, inBlock)
         }
+
+    // ═══════════════════ array ptr / len helpers ═══════════════════
+
+    /* Return the C expression for the data pointer of an array expression.
+       VarArr structs (isArrayLike && !sized): use .ptr member.
+       Everything else (sized arrays, raw pointers, non-arrays): expression itself. */
+    internal fun arrayDataPtr(expr: String, srcKtc: KtcType?): String =
+        if (srcKtc != null && srcKtc.isArrayLike && srcKtc.asArr?.sized == null) "($expr).ptr" else expr
+
+    /* Return the C expression for the length of an array expression.
+       Sized arrays: the constant size from the annotation.
+       VarArr structs: use .len member.
+       Non-arrays: "0" (should not be called). */
+    internal fun arrayDataLen(expr: String, srcKtc: KtcType?): String {
+        val sized = srcKtc?.asArr?.sized
+        if (sized != null) return "$sized"
+        return if (srcKtc != null && srcKtc.isArrayLike) "($expr).len" else "0"
+    }
 
     // ═══════════════════════════ Public entry ═════════════════════════
     // collectAndScan() and generate() are extension functions in CCodeGenGenerate.kt.

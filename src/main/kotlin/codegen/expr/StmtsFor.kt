@@ -103,7 +103,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 val elemType    = if (arrTypeKtc != null) arrayElementCTypeKtc(arrTypeKtc) else "ktc_Int"
                 val arrOrigName = (rangeExpr as? NameExpr)?.name
                 val vIsTrampolined = arrOrigName != null && arrOrigName in trampolinedParams // @Size trampolined: local ptr
-                val vIsSizedArr    = (arrTypeKtc as? KtcType.Arr)?.sized != null            // fixed-size C array
+                val vIsSizedArr    = arrTypeKtc?.asArr?.sized != null                  // fixed-size C array
                 val sizeExpr    = if (vIsTrampolined) arrayParamSizeExpr(arrOrigName!!) else "${arrExpr}.len"
                 val vElemAccess = if (vIsTrampolined || vIsSizedArr) "$arrExpr[$idx]" else "$arrExpr.ptr[$idx]"
                 impl.appendLine("${ind}for (ktc_Int $idx = 0; $idx < $sizeExpr; $idx++) {")

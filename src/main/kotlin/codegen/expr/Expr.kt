@@ -109,7 +109,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
             } else {
                 "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
             }
-        } else if (objTypeCoreKtc is KtcType.Ptr) {
+        } else if (objTypeCoreKtc is KtcType.Ptr && objTypeCoreKtc.inner !is KtcType.Arr) {
             // Ptr<T>/Value<T> with operator get() → pointer-based dispatch
             val baseClass = objTypeCoreKtc.inner
             val baseName = (baseClass as? KtcType.User)?.baseName ?: baseClass.toInternalStr
@@ -150,7 +150,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         } else if (objTypeCoreKtc != null && objTypeCoreKtc.isArrayLike) {
             val vObjName       = (e.obj as? NameExpr)?.name                             // name of array expr (if any)
             val vIsTrampolined = vObjName != null && vObjName in trampolinedParams      // @Size trampolined param
-            val vIsSizedArr    = (objTypeCoreKtc as? KtcType.Arr)?.sized != null        // fixed-size C array
+            val vIsSizedArr    = objTypeCoreKtc?.asArr?.sized != null              // fixed-size C array
             if (vIsTrampolined || vIsSizedArr) "${genExpr(e.obj)}[${genExpr(e.index)}]"
             else "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
         } else {

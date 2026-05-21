@@ -31,7 +31,7 @@ internal interface TypeDef {
 }
 
 /*
-TypeDef for intrinsic types (Pair, Triple, Any, ktc_StrBuf) that have no ClassDecl.
+TypeDef for intrinsic types (Any, ktc_StrBuf) that have no ClassDecl.
 */
 internal data class BuiltinTypeDef(
     override val baseName: String,                               // builtin type name

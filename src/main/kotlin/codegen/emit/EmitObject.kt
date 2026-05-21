@@ -134,7 +134,9 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             if (vKtcObjInit.isArrayLike && sizeAnn != null) {
                 val vElemType = cTypeStr(vKtcObjInit.asArr!!.elem)     // element C type for sized array
                 val fn = privPrefix(p) + p.name
-                impl.appendLine("    memcpy($cName.$fn, $expr, $sizeAnn * sizeof($vElemType));")
+                val vSrcKtc = inferExprTypeKtc(p.init)
+                val vSrcExpr = if (vSrcKtc != null && vSrcKtc.isArrayLike && vSrcKtc.asArr?.sized == null) "($expr).ptr" else expr
+                impl.appendLine("    memcpy($cName.$fn, $vSrcExpr, $sizeAnn * sizeof($vElemType));")
             } else {
                 val fn = privPrefix(p) + p.name
                 impl.appendLine("    $cName.$fn = $expr;")
@@ -192,19 +194,16 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         val cRet = when {
             returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtcM!!.asArr!!.elem), m.returnType.getSizeAnnotation()!!)
             returnsSizedString -> sizedStringCTypeName(m.returnType.getSizeAnnotation()!!)
+            returnsArray       -> {
+                val vArrElem = vRetKtcM!!.asArr?.elem ?: ((vRetKtcM as? KtcType.Ptr)?.inner as KtcType.Arr).elem
+                varArrTypeName(cTypeStr(vArrElem))
+                }
             retResolved.isNotEmpty() -> cTypeStr(retResolved)
             else -> "void"
         }
         val overloadedName = methodName(m, methods)
         val fnName = if (m.isPrivate) "PRIV_$overloadedName" else overloadedName
-        val baseParams = expandParams(m.params)
-        val extraParam = when {
-            returnsArray -> "ktc_Int* \$len_out"
-            else -> null
-        }
-        val params = if (extraParam != null) {
-            if (baseParams.isEmpty()) extraParam else "$baseParams, $extraParam"
-        } else baseParams
+        val params = expandParams(m.params)
         if (m.isPrivate) {
             impl.appendLine("$cRet ${cName}_$fnName($params);")
         } else {

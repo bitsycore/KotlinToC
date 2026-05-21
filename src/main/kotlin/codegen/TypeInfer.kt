@@ -102,6 +102,20 @@ internal fun CCodeGen.inferExprTypeKtc(inExpr: Expr?): KtcType? {
 	if (inExpr is NameExpr) {
 		val vKtc = lookupVarKtc(inExpr.name)
 		if (vKtc != null) return vKtc
+		/* Outer object props are not registered in local scope — look them up directly
+		to avoid the string round-trip that would lose @Size annotations. */
+		val vParentObj = currentClass?.substringBefore('$')
+		if (vParentObj != null && currentObject == null) {
+			val vOi   = objects[vParentObj]
+			val vProp = vOi?.props?.find { it.first == inExpr.name }
+			if (vProp != null) return resolveTypeName(vProp.second)
+			}
+		/* Also check the current object's own props (for methods inside objects). */
+		if (currentObject != null) {
+			val vOi   = objects[currentObject]
+			val vProp = vOi?.props?.find { it.first == inExpr.name }
+			if (vProp != null) return resolveTypeName(vProp.second)
+			}
 		}
 	val vStr = inferExprType(inExpr) ?: return null
 	return parseResolvedTypeName(vStr)
