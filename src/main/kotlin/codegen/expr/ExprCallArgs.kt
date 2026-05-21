@@ -25,7 +25,7 @@ private fun CCodeGen.getSizedArrayFieldSize(expr: Expr): Int? {
 	return null
 	}
 
-/* Expand call arguments: array → (arg, arg$len); nullable → (arg, arg$has); class→interface wrapping; vararg packing. */
+/* Expand call arguments: array → VarArr struct; nullable → (arg, arg$has); class→interface wrapping; vararg packing. */
 internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCtorCall: Boolean = false): String {
 	val parts = mutableListOf<String>()
 	if (params == null) {

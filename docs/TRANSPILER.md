@@ -38,16 +38,62 @@ Source files live in `src/main/kotlin/` organized by sub-package:
 
 **`com.bitsycore.codegen`** — `codegen/`
 
-| File                    | Role                                                               |
-|-------------------------|--------------------------------------------------------------------|
-| `CCodeGenStructures.kt` | Symbol table data classes (`ClassInfo`, `ObjInfo`, `IfaceInfo`, …) |
-| `CCodeGen.kt`           | Orchestrator: all shared state, `collectDecls()`, `generate()`     |
-| `CCodeGenCTypes.kt`     | Type resolution: `resolveTypeName`, `cTypeStr`, `expandParams`     |
-| `CCodeGenScan.kt`       | Pre-scanning: generic instantiation discovery                      |
-| `CCodeGenEmit.kt`       | Declaration emission: structs, ctors, vtables, top-level funs      |
-| `CCodeGenStmts.kt`      | Statement codegen: var/if/for/while/return/inline                  |
-| `CCodeGenExpr.kt`       | Expression codegen: calls, dot access, casts, operators            |
-| `CCodeGenInfer.kt`      | Type inference: `inferExprType`, `inferCallType`, `inferDotType`   |
+| File                    | Role                                                             |
+|-------------------------|------------------------------------------------------------------|
+| `Structures.kt`         | Symbol table data classes (`ClassInfo`, `ObjInfo`, `IfaceInfo`, …) |
+| `CCodeGen.kt`           | Orchestrator: all shared state, main entry point                 |
+| `CCodeGenCollect.kt`    | Declaration collection: `collectDecls()`, scans all file symbols |
+| `CCodeGenGenerate.kt`   | Code generation: `generate()`, header assembly, emit dispatch    |
+| `CTypes.kt`             | Type resolution: `resolveTypeName`, `cTypeStr`, `parseResolvedTypeName` |
+| `CTypesParams.kt`       | Parameter expansion: `expandParams` and helpers                  |
+| `CTypesSized.kt`        | Sized array/string type helpers                                  |
+| `TypeInfer.kt`          | Expression type inference: `inferExprType`                       |
+| `TypeInferCall.kt`      | Call return-type inference: `inferCallType`                      |
+| `TypeInferDot.kt`       | Dot expression type inference: `inferDotType`                    |
+| `ScanClasses.kt`        | Generic class instantiation scanning                             |
+| `ScanFunctions.kt`      | Generic function instantiation scanning                          |
+| `ScanSubst.kt`          | Type substitution helpers                                        |
+| `ArraysMapping.kt`      | Array type name mapping utilities                                |
+| `Utils.kt`              | Misc helpers (tmp vars, Malloc/Calloc, etc.)                     |
+| `BannerHelper.kt`       | Source banner comment generation                                 |
+
+**`com.bitsycore.codegen.emit`** — `codegen/emit/`
+
+| File                    | Role                                                  |
+|-------------------------|-------------------------------------------------------|
+| `EmitClass.kt`          | Non-generic class struct/ctor emission                |
+| `EmitClassGeneric.kt`   | Monomorphized generic class emission                  |
+| `EmitClassMethods.kt`   | Method emission (class + object methods)              |
+| `EmitClassAny.kt`       | `as_Any` cast methods                                 |
+| `EmitEnum.kt`           | Enum struct + value emission                          |
+| `EmitFun.kt`            | Top-level function emission                            |
+| `EmitFunGeneric.kt`     | Monomorphized generic function emission               |
+| `EmitInterface.kt`      | Interface vtable + union emission                     |
+| `EmitObject.kt`         | Object/singleton emission                             |
+| `EmitVtable.kt`         | Vtable instance generation for interface implementors  |
+
+**`com.bitsycore.codegen.expr`** — `codegen/expr/`
+
+| File                       | Role                                               |
+|----------------------------|----------------------------------------------------|
+| `Expr.kt`                  | Expression dispatch: `genExpr`, `genStmt`          |
+| `ExprBinary.kt`            | Binary/arithmetic expressions                      |
+| `ExprCall.kt`              | Function call dispatch                             |
+| `ExprCallArgs.kt`          | Argument expansion (array/nullable/vararg/ptr)     |
+| `ExprCallBuiltins.kt`      | Built-in calls (HeapAlloc, arrayOf, StringBuffer)  |
+| `ExprCallMethod.kt`        | Method/extension call dispatch                     |
+| `ExprCallMethodBuiltins.kt`| Built-in method calls (size, get, set, ptr, etc.)  |
+| `ExprCallSafe.kt`          | Safe call (?.) generation                          |
+| `ExprCallAlloc.kt`         | allocWith generation                               |
+| `ExprCollections.kt`       | arrayOf/heapArrayOf generation                     |
+| `ExprControl.kt`           | if/when/for/while/return generation                |
+| `ExprDot.kt`               | Dot expression, not-null assertion, etc.           |
+| `ExprName.kt`              | Name expression (variable reference)               |
+| `StmtsAssign.kt`           | Assignment statement generation                    |
+| `StmtsFor.kt`              | For-loop generation                                |
+| `StmtsInline.kt`           | Inline function expansion                          |
+| `StmtsVar.kt`              | Variable declaration generation                    |
+| `StmtsVarHelpers.kt`       | Variable init helpers (heap alloc, sized arrays)   |
 
 **`com.bitsycore`** — `Main.kt` (CLI entry point)
 
@@ -130,7 +176,7 @@ KtcType
 `KtcType.User` holds a **reference to a `TypeDef`** — it never duplicates `pkg`, `baseName`,
 or `kind`. Those come from `decl`.
 
-### `TypeDef` (resolved declaration — `CoreTypes.kt` + `CCodeGenStructures.kt`)
+### `TypeDef` (resolved declaration — `CoreTypes.kt` + `Structures.kt`)
 
 Interface implemented by every resolved symbol-table entry:
 
@@ -275,7 +321,7 @@ add fields only for genuinely new type-level constructs.
 
 Parse the new syntax and construct the AST nodes.
 
-### 3. Declare symbol table entries if needed (`CCodeGenStructures.kt`)
+### 3. Declare symbol table entries if needed (`Structures.kt`)
 
 If the feature introduces a new kind of declaration, add a data class implementing
 `TypeDef` (or extend an existing one).
@@ -285,18 +331,18 @@ If the feature introduces a new kind of declaration, add a data class implementi
 Walk the new `Decl` node and populate the relevant maps. Set `pkg` on every `TypeDef`.
 Register type IDs with `getTypeId(name)` for any type that participates in `is`/`as`.
 
-### 5. Resolve types in `CCodeGenCTypes.kt`
+### 5. Resolve types in `CTypes.kt`
 
 If the feature introduces new type syntax, extend `resolveTypeName` and/or
 `parseResolvedTypeName`. Always return a `KtcType`, never a raw string.
 
-### 6. Infer expression types in `CCodeGenInfer.kt`
+### 6. Infer expression types in `TypeInfer.kt`
 
 For new `Expr` subtypes, add a branch in `inferExprType`. Return the internal string
 (e.g. `"Int"`, `"Vec2"`, `"IntArray?"`). This function still returns `String?` — Phase 4.4
 (return `KtcType?`) is the next evolution step.
 
-### 7. Emit declarations in `CCodeGenEmit.kt`
+### 7. Emit declarations in `codegen/emit/`
 
 Add a new `emit*` function. Follow the existing pattern:
 
@@ -309,11 +355,11 @@ impl.appendLine("...")
 
 Call it from the main emit loop in `generate()`.
 
-### 8. Generate statements in `CCodeGenStmts.kt`
+### 8. Generate statements in `codegen/expr/Stmts*.kt`
 
 Add a branch in `emitStmt` for the new `Stmt` subtype.
 
-### 9. Generate expressions in `CCodeGenExpr.kt`
+### 9. Generate expressions in `codegen/expr/Expr.kt`
 
 Add a branch in `genExpr` for the new `Expr` subtype.
 
@@ -394,7 +440,7 @@ Three representations depending on the type:
 |---------------------------|-----------------------------------------|----------------|
 | `T?` (primitive / struct) | `ktc_T$Optional { has, value }`         | `has == 0`     |
 | `@Ptr T?`                 | `T*`                                    | `NULL`         |
-| `Array<T>?`               | `ktc_ArrayTrampoline` + `bool name$has` | `has == false` |
+| `Array<T>?`               | `ktc_VarArr_T` with `.ptr == NULL`      | `ptr == NULL`  |
 | `Any?`                    | `ktc_Any` trampoline                    | `data == NULL` |
 
 Predicates: `isValueNullableType(str)`, `KtcType.Nullable`.
@@ -404,16 +450,17 @@ Emit helpers: `optCTypeName(base)`, `optNone(cType)`, `optSome(cType, expr)`.
 
 ## Arrays
 
-| Kotlin                    | C representation                                       |
-|---------------------------|--------------------------------------------------------|
-| `IntArray` / `Array<Int>` | `ktc_Int*` + companion `int32_t name$len`              |
-| `@Size(N) IntArray`       | `ktc_Int[N]` on the stack, no `$len`                   |
-| `@Ptr IntArray`           | `ktc_Int*` raw pointer (explicit, no $len companion)   |
-| `Array<Vec2>`             | `game_Vec2*` + `int32_t name$len` (via `KT_ARRAY_DEF`) |
-| `RawArray<T>`             | `T*` (no length tracking at all)                       |
+| Kotlin                    | C representation                                  |
+|---------------------------|---------------------------------------------------|
+| `IntArray` / `Array<Int>` | `ktc_VarArr_ktc_Int` struct `{ ptr, len }`        |
+| `@Size(N) IntArray`       | `ktc_Int[N]` on the stack, no `.len`              |
+| `@Ptr IntArray`           | `ktc_VarArr_ktc_Int` (same struct, value-copy)    |
+| `Array<Vec2>`             | `ktc_VarArr_game_Vec2` struct `{ Vec2*, len }`    |
+| `RawArray<T>`             | `T*` (no length tracking at all)                  |
 
-Array return values use an extra `int32_t* name_len_out` out-parameter.
-The `$len` companion is always adjacent to its array variable in scope.
+Typed arrays (`IntArray`, `Array<T>`, `@Ptr Array<T>`) all use `ktc_VarArr_T`
+structs with `.ptr` and `.len` fields. Array return values use the VarArr struct
+directly — no out-parameter needed.
 
 ---
 
@@ -447,7 +494,7 @@ $end_ir_0:;
   Use `typeFlatName`, `funCName`, or `ci.flatName`.
 - **Writing to `classes[name]` pkg after collectDecls**: `pkg` must be set during
   `collectDecls` before any code generation reads it.
-- **Calling `resolveTypeNameStr` outside `CCodeGenCTypes.kt`**: it is a legacy bridge
+- **Calling `resolveTypeNameStr` outside `CTypes.kt`**: it is a legacy bridge
   that lives only inside that file's own implementation.
 
 ### Planned next phase (Phase 4.4)
@@ -462,7 +509,7 @@ instead, which will allow full elimination of:
 - `cTypeStr(String)` (the string overload)
 
 Until that migration is complete, the above functions remain as bridges and may be
-called from `CCodeGenInfer.kt` and from string-returning helpers only.
+called from `TypeInfer.kt` and from string-returning helpers only.
 
 ### Adding a string utility is a regression
 
@@ -488,7 +535,7 @@ val result = compileAndRun(output)
 assertEquals("expected output\n", result)
 ```
 
-Run: `./gradlew test` — currently 541 tests, all must pass before merging.
+Run: `./gradlew test` — currently 577 tests, all must pass before merging.
 
 To diagnose a test failure, use `output.source` and `output.header` to inspect the
 full generated C, or add `println(output.source)` temporarily.

@@ -45,9 +45,9 @@ import com.bitsycore.ktc.types.KtcType
  *   classArrayTypes, classCompanions, preStmts, hdr, impl
  *
  * ## Dependencies:
- *   Calls into CCodeGenStmts.kt (emitStmt, emitInlineCall, emitBlock)
- *   Calls into CCodeGenInfer.kt (inferExprType, inferMethodReturnType, ...)
- *   Calls into CCodeGenCTypes.kt (cType, cTypeStr, resolveTypeName, optNone, optSome, ...)
+ *   Calls into codegen/expr/Stmts*.kt (emitStmt, emitInlineCall, emitBlock)
+ *   Calls into TypeInfer.kt / TypeInferCall.kt (inferExprType, inferMethodReturnType, ...)
+ *   Calls into CTypes.kt (cType, cTypeStr, resolveTypeName, optNone, optSome, ...)
  */
 
 // ═══════════════════════════ Expression codegen ═══════════════════

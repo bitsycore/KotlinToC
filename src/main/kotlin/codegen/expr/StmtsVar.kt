@@ -93,7 +93,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         else -> s.type?.nullable == true || s.init is NullLit || isNullableReturningCall(s.init) || inferredNullable
     }
 
-    // Nullable array (Array<T>?): uses pointer + $len, null = NULL
+    // Nullable array (Array<T>?): uses VarArr struct, null = .ptr == NULL
     val isNullableArray = isArrayType(t) && !isPointer &&
             (s.type?.nullable == true || s.init is NullLit || inferredNullable)
 

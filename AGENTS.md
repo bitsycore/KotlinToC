@@ -7,23 +7,20 @@ Kotlin source → Lexer → Parser → AST → CCodeGen → .h + .c files
 ```
 
 - **Language features, syntax, and C mapping** → [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md)
-@docs/KOTLIN_TO_C.md
-
 - **Transpiler internals, architecture, how to add features** → [TRANSPILER.md](docs/TRANSPILER.md)
-@docs/TRANSPILER.md
 
 ---
 
 ## Running Tests
 
 ```bash
-./gradlew test                       # 541 unit tests (fast, no C compiler needed)
+./gradlew test                       # 577 unit tests (fast, no C compiler needed)
 ./run_tests.sh                       # integration tests (transpile + compile + run, Unix)
 .\run_tests.ps1                      # integration tests (Windows)
 ./run_tests.sh --run GenericsTest    # single integration test
 ```
 
-All 541 unit tests must pass before merging.
+All 577 unit tests must pass before merging.
 
 ---
 
@@ -47,7 +44,7 @@ class MyFeatureUnitTest : TranspilerTestBase() {
     @Test fun withMainBody() {
         // transpileMain wraps the body in a package + main()
         val r = transpileMain("val x: Int? = null")
-        r.sourceContains("ktc_Int$Optional x = (ktc_Int$Optional){ktc_NONE}")
+        r.sourceContains("ktc_Int\$Opt x = KTC_NONE(ktc_Int)")
     }
 }
 ```

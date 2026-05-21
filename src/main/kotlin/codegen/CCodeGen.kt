@@ -78,7 +78,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     }
 
     // ── Symbol tables (populated by collectDecls) ────────────────────
-    // Data classes now in CCodeGenStructures.kt
+    // Data classes in Structures.kt
 
     override val classes  = mutableMapOf<String, ClassInfo>()
     override val enums    = mutableMapOf<String, EnumInfo>()

@@ -11,7 +11,7 @@ import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t: String, ind: String): String? {
 	if (init !is CallExpr) return null
-	// .ptr() / .copyWith() on array expression → propagate $len to the target variable
+	// .ptr() / .copyWith() on array expression → propagate VarArr struct to the target variable
 	if (init.callee is DotExpr) {
 		val vDot = init.callee
 		if (vDot.name == "ptr" || vDot.name == "copyWith") {
@@ -175,7 +175,7 @@ internal fun CCodeGen.isNullableReturningCall(e: Expr?): Boolean {
 	return funSigs[name]?.returnType?.nullable == true
 	}
 
-/* Check if a call expression returns an array type (function has $len_out parameter). */
+/* Check if a call expression returns an array type (VarArr struct return). */
 internal fun CCodeGen.isArrayReturningCall(e: Expr?): Boolean {
 	if (e !is CallExpr) return false
 	val name = (e.callee as? NameExpr)?.name ?: return false

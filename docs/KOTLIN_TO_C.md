@@ -36,16 +36,18 @@ All primitives have `ktc_T$Optional` and `ktc_hash_*` support.
 |-------------------|--------------------------------------------------------|
 | `T?` (value type) | `ktc_T$Optional` = `{ ktc$OptionalTag tag; T value; }` |
 | `@Ptr T?`         | `T*` (NULL = null)                                     |
-| `Array<T>?`       | `ktc_ArrayTrampoline` with `data == NULL`              |
+| `Array<T>?`       | `ktc_VarArr_T` with `ptr == NULL`                       |
 
 ### Arrays
 
-| Kotlin                       | C                                    | Notes                              |
-|------------------------------|--------------------------------------|------------------------------------|
-| `Array<T>`                   | `ktc_ArrayTrampoline { size, data }` | Stack-only, **cannot be returned** |
-| `@Size(N) Array<T>`          | `T[N]` (out-pointer)                 | Fixed-size, **can be returned**    |
-| `@Ptr Array<T>`              | `T*` + companion `int32_t name$len`  | Heap pointer, has `$len`           |
-| `ByteArray`, `IntArray`, ... | `ktc_Byte*`, `ktc_Int*`, ...         | Raw pointer, has `$len`            |
+| Kotlin                       | C                                  | Notes                                    |
+|------------------------------|------------------------------------|------------------------------------------|
+| `IntArray`, `ByteArray`, ... | `ktc_VarArr_ktc_Int`               | Struct `{ ptr, len }`, stack or heap     |
+| `Array<T>`                   | `ktc_VarArr_T`                     | Struct `{ T*, len }`, **cannot be returned** |
+| `@Size(N) Array<T>`          | `T[N]` (out-pointer for return)    | Fixed-size, **can be returned** via out-ptr |
+| `@Ptr Array<T>`              | `ktc_VarArr_T`                     | Same VarArr struct, passed by value      |
+| `RawArray<T>` + `@Ptr`       | `T*`                               | Raw pointer, no length tracking          |
+| `heapArrayOf<T>(...)`        | Heap-allocated `ktc_VarArr_T`      | Safe to return from functions            |
 
 **Array factories:**
 
@@ -70,7 +72,7 @@ HeapArrayZero<Array<T>>(n)  // zero-initialized heap
 ### `@Ptr`
 Pointer semantics. `@Ptr T` becomes `T*` in C.
 ```kotlin
-fun update(buf: @Ptr ByteArray) { ... }   // → ktc_Byte* buf, int32_t buf$len
+fun update(buf: @Ptr ByteArray) { ... }   // → ktc_VarArr_ktc_Byte buf
 fun passVec(v: @Ptr Vec2) { ... }         // → Vec2* v
 ```
 
