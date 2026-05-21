@@ -277,14 +277,18 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     }
                 } else {
                     // General path: copy raw array data into struct and return by value.
+                    val vSrcKtc = inferExprTypeKtc(s.value)
+                    // Trampolined @Size params: local$name is already a raw T* pointer — skip .ptr extraction
+                    val vPtrSrc = if (s.value is NameExpr && s.value.name in trampolinedParams) expr
+                        else arrayDataPtr(expr, vSrcKtc)
                     if (deferStack.isNotEmpty()) {
                         val vT = tmp()
                         impl.appendLine("${ind}$vStructType $vT;")
-                        impl.appendLine("${ind}memcpy($vT.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType));")
+                        impl.appendLine("${ind}memcpy($vT.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType));")
                         emitDeferredBlocks(ind)
                         impl.appendLine("${ind}return $vT;")
                     } else {
-                        impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $expr, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType)); return \$r; }")
+                        impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType)); return \$r; }")
                     }
                 }
             } else if (currentFnReturnsSizedString) {

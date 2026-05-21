@@ -196,7 +196,10 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 	if (inName == "StringBuffer" && inArgs.size == 3
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")
 	) {
-		val vPtrExpr = genExpr(inArgs[0].expr)
+		val vPtrRaw  = genExpr(inArgs[0].expr)
+		val vPtrKtc3 = inferExprTypeKtc(inArgs[0].expr)
+		val vPtrCore = (vPtrKtc3 as? KtcType.Nullable)?.inner ?: vPtrKtc3
+		val vPtrExpr = if (vPtrCore?.isArrayLike == true && vPtrCore.asArr?.sized == null) "$vPtrRaw.ptr" else vPtrRaw
 		val vLenExpr = genExpr(inArgs[1].expr)
 		val vCapExpr = genExpr(inArgs[2].expr)
 		return "(ktc_StrBuf){$vPtrExpr, $vLenExpr, $vCapExpr}"
@@ -205,7 +208,10 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 	if (inName == "StringBuffer" && inArgs.size == 2
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")
 	) {
-		val vPtrExpr = genExpr(inArgs[0].expr)
+		val vPtrRaw  = genExpr(inArgs[0].expr)
+		val vPtrKtc2 = inferExprTypeKtc(inArgs[0].expr)
+		val vPtrCore = (vPtrKtc2 as? KtcType.Nullable)?.inner ?: vPtrKtc2
+		val vPtrExpr = if (vPtrCore?.isArrayLike == true && vPtrCore.asArr?.sized == null) "$vPtrRaw.ptr" else vPtrRaw
 		val vLenExpr = genExpr(inArgs[1].expr)
 		val vCapExpr = when (inArgs[0].expr) {
 			is NullLit -> "0"
@@ -221,7 +227,8 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				}
 			else -> {
 				val vPtrKtc = inferExprTypeKtc(inArgs[0].expr)
-				if (vPtrKtc is KtcType.Ptr && vPtrKtc.inner is KtcType.Arr) "${vPtrExpr}.len"
+				// Use vPtrRaw.len (the VarArr) not vPtrExpr.len (the extracted pointer)
+				if (vPtrKtc is KtcType.Ptr && vPtrKtc.inner is KtcType.Arr) "${vPtrRaw}.len"
 				else "0x7FFFFFFF"
 				}
 			}
