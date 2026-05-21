@@ -78,7 +78,7 @@ class ToStringUnitTest : TranspilerTestBase() {
             val sb = StringBuffer(chars.ptr(), 0)
         """.trimIndent())
         r.sourceContains("(ktc_StrBuf){")
-        r.sourceContains("\$len")
+        r.sourceContains(".len")
     }
 
     @Test fun `StringBuffer field buffer maps to ptr`() {
@@ -162,7 +162,7 @@ class ToStringUnitTest : TranspilerTestBase() {
         // First toString: counting mode (NULL buffer)
         r.sourceContains("(ktc_StrBuf){NULL, 0, 0}")
         // Second toString: write mode with derived capacity
-        r.sourceContains("buf\$len")
+        r.sourceContains("buf.len")
         r.sourceContains("Point_toString")
     }
 

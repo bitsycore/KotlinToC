@@ -15,7 +15,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             println(arr[0])
         """)
         r.sourceContains("ktc_Int arr_data[] = {10, 20, 30};")
-        r.sourceContains("arr[0]")
+        r.sourceContains("arr.ptr[0]")
     }
 
     @Test fun intArraySize() {

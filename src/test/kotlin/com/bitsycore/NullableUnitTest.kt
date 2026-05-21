@@ -119,7 +119,7 @@ class NullableUnitTest : TranspilerTestBase() {
             }
         """)
         // Safe call: if (s.tag == ktc_SOME) { String_show(s.value); }
-        r.sourceContains("s.tag == ktc_SOME")
+        r.sourceContains("KTC_IS_SOME(s)")
         r.sourceContains("s.value")
     }
 
