@@ -60,6 +60,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return arrayParamSizeExpr(e.obj.name)
     if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}.len"
     if (e.name == "ptr" && recvTypeCoreKtc is KtcType.Str) return "$recv.ptr"
+    if (e.name == "ptr" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "$recv.ptr"
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"
     if (e.name == "runeLen" && recvTypeKtc is KtcType.Str) return "ktc_core_str_runeLen($recv)"
     // Enum .ordinal → the int value itself
@@ -140,6 +141,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
     val fieldAccess = when {
         recvTypeCoreKtc is KtcType.Ptr -> "$recvVal->${e.name}"
         e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.len"
+        e.name == "ptr" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.ptr"
         e.name == "length" && recvTypeCoreKtc is KtcType.Str -> "$recvVal.len"
         else -> "$recvVal.${e.name}"
     }
@@ -179,6 +181,22 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
     val isPtr = innerKtcCore is KtcType.Ptr || isAllocCall(e.expr)
 
     if (isPtr) {
+        // VarArr nullable (@Ptr Array<T>?): use .ptr field for null check
+        val isVarArr = innerKtcCore is KtcType.Ptr && (innerKtcCore as KtcType.Ptr).inner.let {
+            it is KtcType.Arr && it.sized == null
+            }
+        if (isVarArr) {
+            val vElemC    = arrayElementCTypeKtc(innerKtcCore!!)
+            val vVarArrCt = varArrTypeName(vElemC)
+            if (e.expr is NameExpr) {
+                preStmts += "if (!$inner.ptr) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+                return inner
+                }
+            val t = tmp()
+            preStmts += "$vVarArrCt $t = $inner;"
+            preStmts += "if (!$t.ptr) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+            return t
+            }
         val ct = cTypeStr(baseType.ifEmpty { "void*" })
         // Simple name — no temp needed
         if (e.expr is NameExpr) {
