@@ -100,7 +100,7 @@ class Sha256UnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        v.headerContains("ktc_Int buff\$len")
+        v.headerContains("ktc_VarArr_ktc_Byte buff")
     }
 
     @Test fun sha256FinalizeHashOutParam() {

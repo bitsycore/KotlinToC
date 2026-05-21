@@ -109,7 +109,7 @@ class SizeAnnotationUnitTest : TranspilerTestBase() {
                 return intArrayOf(1, 2)
             }
         """)
-        r.sourceContains("arr\$len")
+        r.sourceContains("ktc_VarArr_ktc_Int arr")
     }
 
     // ── Method: @Size return ──────────────────────────────────────────

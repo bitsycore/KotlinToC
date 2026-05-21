@@ -110,7 +110,7 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
             class Foo(var arr: @Ptr Array<Int>)
             fun main(args: Array<String>) {}
         """)
-        r.headerContains("ktc_Int* arr;")
+        r.headerContains("ktc_VarArr_ktc_Int arr;")
     }
 
     @Test fun classPropertyWithPtrArrayIntSucceeds() {
@@ -119,6 +119,6 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
             class Foo(var arr: @Ptr Array<Int>)
             fun main(args: Array<String>) {}
         """)
-        r.headerContains("ktc_Int* arr;")
+        r.headerContains("ktc_VarArr_ktc_Int arr;")
     }
 }

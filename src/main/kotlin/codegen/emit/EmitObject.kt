@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.codegen.expr.emitStmt
 import com.bitsycore.ktc.codegen.expr.genExpr
 import com.bitsycore.ktc.codegen.expr.inferInitType
@@ -85,12 +86,12 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val fn = privPrefix(p) + p.name
             val mutComment = if (p.mutable) "/*VAR*/ " else "/*VAL*/ "
             hdr.appendLine("    $mutComment$vElemType ${fn}[${sizeAnn}];")
-            hdr.appendLine("    ktc_Int ${fn}\$len;")
         } else if (vKtcObj.isArrayLike) {
-            val fn = privPrefix(p) + p.name
+            val fn         = privPrefix(p) + p.name
             val mutComment = if (p.mutable) "/*VAR*/ " else "/*VAL*/ "
-            hdr.appendLine("    $mutComment${cTypeStr(vKtcObj)} ${fn};${ptrNullComment(vKtcObj)}")
-            hdr.appendLine("    ktc_Int ${fn}\$len;")
+            val vArrElem   = vKtcObj.asArr?.elem ?: ((vKtcObj as? KtcType.Ptr)?.inner as KtcType.Arr).elem
+            val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr) else cTypeStr(vArrElem)
+            hdr.appendLine("    $mutComment${varArrTypeName(vElemCType)} ${fn};")
         } else {
             val fn = privPrefix(p) + p.name
             val mutComment = if (p.mutable) "/*VAR*/ " else "/*VAL*/ "
@@ -134,7 +135,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
                 val vElemType = cTypeStr(vKtcObjInit.asArr!!.elem)     // element C type for sized array
                 val fn = privPrefix(p) + p.name
                 impl.appendLine("    memcpy($cName.$fn, $expr, $sizeAnn * sizeof($vElemType));")
-                impl.appendLine("    $cName.${fn}\$len = ${sizeAnn};")
             } else {
                 val fn = privPrefix(p) + p.name
                 impl.appendLine("    $cName.$fn = $expr;")

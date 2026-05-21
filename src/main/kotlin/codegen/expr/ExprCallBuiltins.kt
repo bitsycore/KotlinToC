@@ -27,8 +27,10 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 					val vElemC    = cTypeStr(vElemName)
 					val vSizeExpr = genExpr(inArgs[0].expr)
 					val vT        = tmp()
-					preStmts += "$vElemC* $vT = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-					if (vTa.name == "Array") preStmts += "const ktc_Int ${vT}\$len = $vSizeExpr;"
+					preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
+					if (vTa.name == "Array") {
+						preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
+						} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
 					return vT
 					}
 				var vTypeName = typeSubst[vTa.name] ?: vTa.name
@@ -56,8 +58,10 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 					val vElemC    = cTypeStr(vElemName)
 					val vSizeExpr = genExpr(inArgs[0].expr)
 					val vT        = tmp()
-					preStmts += "$vElemC* $vT = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-					if (vTt.name == "Array") preStmts += "const ktc_Int ${vT}\$len = $vSizeExpr;"
+					preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
+					if (vTt.name == "Array") {
+						preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
+						} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
 					return vT
 					}
 				var vTypeName = typeSubst[vTt.name] ?: vTt.name
@@ -89,8 +93,10 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				val vElemC    = cTypeStr(vElemName)
 				val vSizeExpr = genExpr(inArgs[0].expr)
 				val vT        = tmp()
-				preStmts += "$vElemC* $vT = ($vElemC*)${tCalloc("(size_t)($vSizeExpr)", "sizeof($vElemC)")};"
-				if (vIsArray) preStmts += "const ktc_Int ${vT}\$len = $vSizeExpr;"
+				preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tCalloc("(size_t)($vSizeExpr)", "sizeof($vElemC)")};"
+				if (vIsArray) {
+					preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
+					} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
 				return vT
 				}
 			if (inCall.typeArgs.isNotEmpty()) return genBranch(inCall.typeArgs[0])
@@ -107,8 +113,11 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				val vPtrExpr  = genExpr(inArgs[0].expr)
 				val vSizeExpr = genExpr(inArgs[1].expr)
 				val vT        = tmp()
-				preStmts += "$vElemC* $vT = ($vElemC*)${tRealloc(vPtrExpr, "sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-				if (vIsArray) preStmts += "const ktc_Int ${vT}\$len = $vSizeExpr;"
+				val vRawPtrExpr = if (vIsArray) "($vPtrExpr).ptr" else vPtrExpr
+				preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tRealloc(vRawPtrExpr, "sizeof($vElemC) * (size_t)($vSizeExpr)")};"
+				if (vIsArray) {
+					preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
+					} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
 				return vT
 				}
 			if (inCall.typeArgs.isNotEmpty()) return genBranch(inCall.typeArgs[0])
@@ -116,7 +125,12 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 			return tRealloc(genExpr(inArgs[0].expr), "(size_t)(${genExpr(inArgs[1].expr)})")
 			}
 
-		"HeapFree" -> return tFree(genExpr(inArgs[0].expr))
+		"HeapFree" -> {
+			val vFreeArgKtc  = inferExprTypeKtc(inArgs[0].expr)
+			val vFreeArgCore = (vFreeArgKtc as? KtcType.Nullable)?.inner ?: vFreeArgKtc
+			val vFreeExpr    = genExpr(inArgs[0].expr)
+			return if (vFreeArgCore?.isArrayLike == true) tFree("($vFreeExpr).ptr") else tFree(vFreeExpr)
+			}
 
 		"byteArrayOf", "shortArrayOf", "intArrayOf", "longArrayOf",
 		"floatArrayOf", "doubleArrayOf", "booleanArrayOf", "charArrayOf",

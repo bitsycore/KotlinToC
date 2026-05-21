@@ -168,7 +168,7 @@ class FunctionsUnitTest : TranspilerTestBase() {
 
     @Test fun mainWithArgs() {
         val r = transpileMain("println(args.size)")
-        r.sourceContains("test_Main_main(ktc_ArrayTrampoline args")
+        r.sourceContains("test_Main_main(ktc_VarArr_ktc_String args")
         r.sourceContains("local\$args")  // alias without copy
     }
 

@@ -33,6 +33,10 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 		val cRet = when {
 			returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtc!!.asArr!!.elem), f.returnType.getSizeAnnotation()!!)
 			returnsSizedString -> sizedStringCTypeName(f.returnType.getSizeAnnotation()!!)
+			returnsArray       -> {
+				val vArrElem = vRetKtc!!.asArr?.elem ?: ((vRetKtc as? KtcType.Ptr)?.inner as KtcType.Arr).elem
+				varArrTypeName(cTypeStr(vArrElem))
+				}
 			concreteRet != null -> typeFlatName(concreteRet)
 			f.returnType != null -> cType(f.returnType)
 			else -> "void"
@@ -53,14 +57,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 				optCTypeName(selfRecvKtc.toInternalStr) else cType(f.receiver)
 			"$ct \$self"
 			} else null
-		val params = when {
-			returnsArray -> {
-				val extra = "ktc_Int* \$len_out"
-				val p = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
-				if (p.isNotEmpty()) "$p, $extra" else extra
-				}
-			else -> if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
-			}
+		val params = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
 
 		maybeEmitFunBanner(f.name)
 		hdr.appendLine("$cRet $cName($params);")

@@ -135,7 +135,7 @@ class ControlFlowUnitTest : TranspilerTestBase() {
             val arr = intArrayOf(1, 2, 3)
             for (x in arr) { println(x) }
         """)
-        r.sourceMatches(Regex("for.*ktc_Int.*<.*arr\\${'$'}len"))
+        r.sourceMatches(Regex("for.*ktc_Int.*<.*arr\\.len"))
     }
 
     // ── While ────────────────────────────────────────────────────────

@@ -340,7 +340,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun heapArrayResizeInt() {
         val r = transpileMain("val buf = HeapAlloc<Array<Int>>(10)\nval buf2 = HeapArrayResize<Array<Int>>(buf, 20)")
-        r.sourceContains("(ktc_Int*)realloc(buf, sizeof(ktc_Int) * (size_t)(20))")
+        r.sourceContains("(ktc_Int*)realloc((buf).ptr, sizeof(ktc_Int) * (size_t)(20))")
     }
 
     // ── HeapArrayZero<Array<T>>(n) → typed array calloc ─────────────────────
@@ -359,8 +359,8 @@ class HeapUnitTest : TranspilerTestBase() {
             }
         """
         val r = transpileMain("val b = Buf(16)", decls = decl)
-        // struct field: ktc_Int* buf
-        r.headerContains("ktc_Int* buf;")
+        // struct field: ktc_VarArr_ktc_Int buf
+        r.headerContains("ktc_VarArr_ktc_Int buf;")
         // _primaryConstructor initializes body prop from ctor param
         r.sourceContains("(ktc_Int*)malloc(sizeof(ktc_Int) * (size_t)(capacity))")
     }

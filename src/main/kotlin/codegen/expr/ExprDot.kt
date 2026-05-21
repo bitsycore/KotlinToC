@@ -58,7 +58,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     }
     // Array .size → sized-struct param uses local$name$len; trampoline uses .size field; others use $len
     if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return arrayParamSizeExpr(e.obj.name)
-    if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}\$len"
+    if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}.len"
     if (e.name == "ptr" && recvTypeCoreKtc is KtcType.Str) return "$recv.ptr"
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"
     if (e.name == "runeLen" && recvTypeKtc is KtcType.Str) return "ktc_core_str_runeLen($recv)"
@@ -139,7 +139,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
     // Determine field access expression (same logic as genDot but without nullable check)
     val fieldAccess = when {
         recvTypeCoreKtc is KtcType.Ptr -> "$recvVal->${e.name}"
-        e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}\$len"
+        e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.len"
         e.name == "length" && recvTypeCoreKtc is KtcType.Str -> "$recvVal.len"
         else -> "$recvVal.${e.name}"
     }
@@ -187,9 +187,6 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
         }
         val t = tmp()
         preStmts += "$ct $t = $inner;"
-        if (isArrayType(baseType) || isAllocArrayCall(e.expr)) {
-            preStmts += "const ktc_Int ${t}\$len = ${inner}\$len;"
-        }
         preStmts += "if (!$t) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
         return t
     }

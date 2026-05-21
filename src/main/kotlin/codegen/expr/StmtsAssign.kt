@@ -142,6 +142,13 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
             flushPreStmts(ind)
             impl.appendLine("$ind$target ${s.op} $value;")
         }
+        // Nullable array = null → {NULL, 0} struct + clear $has flag
+        varKtc is KtcType.Nullable && varKtc.inner.isArrayLike && s.value is NullLit -> {
+            val vElemC      = arrayElementCTypeKtc(varKtc.inner)
+            val vVarArrType = varArrTypeName(vElemC)
+            impl.appendLine("$ind$target = ($vVarArrType){NULL, 0};")
+            if (varName != null) impl.appendLine("$ind${varName}\$has = false;")
+        }
         // Value nullable = null → Optional{NONE}
         varKtc is KtcType.Nullable && s.value is NullLit && isValueNullableKtc(varKtc) -> {
             val optType = optCTypeName(varType!!)
@@ -165,13 +172,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
             } else {
                 impl.appendLine("$ind$target ${s.op} $value;")
             }
-            // Update array $len when assigning from malloc/realloc
-            if (varKtc != null && varKtc.isArrayLike && s.op == "=") {
-                val allocSize = extractAllocSize(s.value)
-                if (allocSize != null) {
-                    impl.appendLine("$ind${target}\$len = ${genExpr(allocSize)};")
-                }
-            }
+            // Array struct assignment: .len already part of ktc_VarArr_T — no separate update needed
         }
     }
 }
@@ -299,11 +300,13 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); \$r.len = ($expr).len; return \$r; }")
                 }
             } else if (currentFnReturnsArray) {
-                // Array return: pass length through out-parameter
-                impl.appendLine("$ind*\$len_out = ${expr}\$len;")
+                // Array return: return ktc_VarArr_T directly
                 if (deferStack.isNotEmpty()) {
+                    val vArrKtc  = currentFnReturnKtcType
+                    val vArrElem = vArrKtc?.asArr?.elem ?: ((vArrKtc as? KtcType.Ptr)?.inner as? KtcType.Arr)?.elem
+                    val vRetType = if (vArrElem != null) varArrTypeName(cTypeStr(vArrElem)) else cTypeStr(currentFnReturnType)
                     val t = tmp()
-                    impl.appendLine("$ind${cTypeStr(currentFnReturnType)} $t = $expr;")
+                    impl.appendLine("$ind$vRetType $t = $expr;")
                     emitDeferredBlocks(ind)
                     impl.appendLine("${ind}return $t;")
                 } else {

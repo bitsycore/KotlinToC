@@ -196,8 +196,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 				val vExpandedArgs = expandCallArgs(vFilledArgs, vGenFun.params)
 				val vTStruct = tmp(); val vTPtr = tmp()
 				preStmts += "$vStructType $vTStruct = ${funCName(vMangled)}($vExpandedArgs);"
-				preStmts += "$vElemCType* $vTPtr = $vTStruct.arr;"
-				preStmts += "const ktc_Int ${vTPtr}\$len = $vSize;"
+				preStmts += "${varArrTypeName(vElemCType)} $vTPtr = {$vTStruct.arr, $vSize};"
 				typeSubst = vPrevSubst
 				defineVar(vTPtr, vRetType)
 				return vTPtr
@@ -245,8 +244,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 				val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
 				val vTStruct = tmp(); val vTPtr = tmp()
 				preStmts += "$vStructType $vTStruct = ${typeFlatName(currentClass!!)}_$vFnName($vAllArgs);"
-				preStmts += "$vElemCType* $vTPtr = $vTStruct.arr;"
-				preStmts += "const ktc_Int ${vTPtr}\$len = $vSize;"
+				preStmts += "${varArrTypeName(vElemCType)} $vTPtr = {$vTStruct.arr, $vSize};"
 				defineVar(vTPtr, vRetType)
 				return vTPtr
 				}
@@ -278,8 +276,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 					val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
 					val vTStruct = tmp(); val vTPtr = tmp()
 					preStmts += "$vStructType $vTStruct = ${typeFlatName(vParentObj)}_$vFnName($vExpanded2);"
-					preStmts += "$vElemCType* $vTPtr = $vTStruct.arr;"
-					preStmts += "const ktc_Int ${vTPtr}\$len = $vSize;"
+					preStmts += "${varArrTypeName(vElemCType)} $vTPtr = {$vTStruct.arr, $vSize};"
 					defineVar(vTPtr, vRetType)
 					return vTPtr
 					}
@@ -326,8 +323,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 				val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
 				val vTStruct = tmp(); val vTPtr = tmp()
 				preStmts += "$vStructType $vTStruct = ${typeFlatName(currentObject!!)}_$vFnName($vExpanded2);"
-				preStmts += "$vElemCType* $vTPtr = $vTStruct.arr;"
-				preStmts += "const ktc_Int ${vTPtr}\$len = $vSize;"
+				preStmts += "${varArrTypeName(vElemCType)} $vTPtr = {$vTStruct.arr, $vSize};"
 				defineVar(vTPtr, vRetType)
 				return vTPtr
 				}
@@ -360,8 +356,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 		val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
 		val vTStruct = tmp(); val vTPtr = tmp()
 		preStmts += "$vStructType $vTStruct = ${funCName(vName)}($vExpandedArgs);"
-		preStmts += "$vElemCType* $vTPtr = $vTStruct.arr;"
-		preStmts += "const ktc_Int ${vTPtr}\$len = $vSize;"
+		preStmts += "${varArrTypeName(vElemCType)} $vTPtr = {$vTStruct.arr, $vSize};"
 		defineVar(vTPtr, vRetType)
 		return vTPtr
 		}
@@ -388,8 +383,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 			val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
 			val vTStruct = tmp(); val vTPtr = tmp()
 			preStmts += "$vStructType $vTStruct = ${funCName(vFnName)}($vExpanded2);"
-			preStmts += "$vElemCType* $vTPtr = $vTStruct.arr;"
-			preStmts += "const ktc_Int ${vTPtr}\$len = $vSize;"
+			preStmts += "${varArrTypeName(vElemCType)} $vTPtr = {$vTStruct.arr, $vSize};"
 			defineVar(vTPtr, vRetType)
 			return vTPtr
 			}

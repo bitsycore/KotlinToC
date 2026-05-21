@@ -160,16 +160,6 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     flushPreStmts(ind)
                     impl.appendLine("$ind$mutComment$ct ${s.name} /* nullable */ = $expr;")
                 }
-                // Emit $len companion for array pointer types
-                if (isAllocArrayCall(s.init)) {
-                    val allocSize = extractAllocSize(s.init)
-                    if (allocSize != null) {
-                        impl.appendLine("${ind}ktc_Int ${s.name}\$len = ${genExpr(allocSize)};")
-                    }
-                } else if (vKtcCore.isArrayLike && s.init is NameExpr) {
-                    val lenVar = s.init.name + "\$len"
-                    impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $lenVar;")
-                }
             }
             // ── Value nullable — use Optional struct ──
             isValueNullable -> {
@@ -189,37 +179,51 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     }
                 }
             }
-            // ── Nullable array (Array<T>?) ──
+            // ── Nullable array (Array<T>?) — stored as ktc_VarArr_T + bool $has ──
             isNullableArray -> {
-                val elemCType = arrayElementCTypeKtc(vKtcCore)
+                val elemCType   = arrayElementCTypeKtc(vKtcCore)
+                val vVarArrType = varArrTypeName(elemCType)
                 if (s.init is NullLit) {
-                    impl.appendLine("$ind$mutComment$elemCType* ${s.name} = NULL;")
-                    impl.appendLine("${ind}const ktc_Int ${s.name}\$len = 0;")
+                    impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {NULL, 0};")
+                    impl.appendLine("${ind}bool ${s.name}\$has = false;")
                 } else if (s.init is DotExpr && s.init.name == "buffer") {
-                    val dotInit = s.init
+                    val dotInit     = s.init
                     val dotRecvType = inferExprType(dotInit.obj)
-                    val dotRecvTypeKtc = inferExprTypeKtc(dotInit.obj)
                     if (dotRecvType == "ktc_StrBuf" || dotRecvType == "StringBuffer") {
                         val recvExpr = genExpr(dotInit.obj)
-                        val expr = genExpr(s.init)
+                        val expr     = genExpr(s.init)
                         flushPreStmts(ind)
-                        impl.appendLine("$ind$mutComment$elemCType* ${s.name} /* nullable */ = $expr;")
-                        impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $recvExpr.cap;")
+                        impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$expr, $recvExpr.cap};")
+                        impl.appendLine("${ind}bool ${s.name}\$has = ($expr != NULL);")
                     } else {
-                        val expr = genExpr(s.init)
+                        val expr      = genExpr(s.init)
+                        val vSrcTmp   = "${s.name}_src"
+                        val vDataName = "${s.name}_data"
                         flushPreStmts(ind)
-                        val lenExpr = "${expr}\$len"
-                        impl.appendLine("$ind$mutComment$elemCType* ${s.name} = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $lenExpr);")
-                        impl.appendLine("${ind}memcpy(${s.name}, $expr, sizeof($elemCType) * $lenExpr);")
-                        impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $lenExpr;")
+                        impl.appendLine("${ind}$vVarArrType $vSrcTmp = $expr;")
+                        impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcTmp.len);")
+                        impl.appendLine("${ind}memcpy($vDataName, $vSrcTmp.ptr, sizeof($elemCType) * $vSrcTmp.len);")
+                        impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$vDataName, $vSrcTmp.len};")
+                        impl.appendLine("${ind}bool ${s.name}\$has = ($vSrcTmp.ptr != NULL);")
                     }
-                } else {
-                    val expr = genExpr(s.init)
+                } else if (s.init is NameExpr) {
+                    val vSrcName  = s.init.name
+                    val vDataName = "${s.name}_data"
                     flushPreStmts(ind)
-                    val lenExpr = if (s.init is NameExpr) "${s.init.name}\$len" else "${expr}\$len"
-                    impl.appendLine("$ind$mutComment$elemCType* ${s.name} = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $lenExpr);")
-                    impl.appendLine("${ind}memcpy(${s.name}, $expr, sizeof($elemCType) * $lenExpr);")
-                    impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $lenExpr;")
+                    impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcName.len);")
+                    impl.appendLine("${ind}memcpy($vDataName, $vSrcName.ptr, sizeof($elemCType) * $vSrcName.len);")
+                    impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$vDataName, $vSrcName.len};")
+                    impl.appendLine("${ind}bool ${s.name}\$has = ($vSrcName.ptr != NULL);")
+                } else {
+                    val expr      = genExpr(s.init)
+                    val vSrcTmp   = "${s.name}_src"
+                    val vDataName = "${s.name}_data"
+                    flushPreStmts(ind)
+                    impl.appendLine("${ind}$vVarArrType $vSrcTmp = $expr;")
+                    impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcTmp.len);")
+                    impl.appendLine("${ind}memcpy($vDataName, $vSrcTmp.ptr, sizeof($elemCType) * $vSrcTmp.len);")
+                    impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$vDataName, $vSrcTmp.len};")
+                    impl.appendLine("${ind}bool ${s.name}\$has = ($vSrcTmp.ptr != NULL);")
                 }
             }
             // ── Nullable Any (trampoline, null = data == NULL) ──
@@ -262,49 +266,54 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                         return
                     }
                 }
-                // Array-returning function call: declare $len first, pass &$len as out-param
+                // Array-returning function call: function returns ktc_VarArr_T directly
                 if (vKtcCore.isArrayLike && isArrayReturningCall(s.init)) {
-                    impl.appendLine("${ind}ktc_Int ${s.name}\$len;")
-                    val expr = genExprWithArrayLenOut(s.init, s.name)
+                    val vElemC      = arrayElementCTypeKtc(vKtcCore)
+                    val vVarArrType = varArrTypeName(vElemC)
+                    val expr        = genExpr(s.init)
                     flushPreStmts(ind)
-                    impl.appendLine("$ind$qual$ct ${s.name} = $expr;")
+                    impl.appendLine("$ind$qual$vVarArrType ${s.name} = $expr;")
                     return
                 }
                 if (s.type != null) heapAllocTargetType = s.type
                 val expr = genExpr(s.init)
                 heapAllocTargetType = null
                 flushPreStmts(ind)
-                // Array type: deep copy from source (value semantics, not alias)
+                // Stack array: deep copy from source (value semantics); result is ktc_VarArr_T
                 if (vKtcCore is KtcType.Arr && s.init !is NullLit) {
-                    val elemCType = arrayElementCTypeKtc(vKtcCore)
-                    val lenExpr = if (s.init is NameExpr) "${s.init.name}\$len" else "${expr}\$len"
-                    impl.appendLine("${ind}$elemCType* ${s.name} = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $lenExpr);")
-                    impl.appendLine("${ind}memcpy(${s.name}, $expr, sizeof($elemCType) * $lenExpr);")
-                    impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $lenExpr;")
+                    val elemCType   = arrayElementCTypeKtc(vKtcCore)
+                    val vVarArrType = varArrTypeName(elemCType)
+                    val vDataName   = "${s.name}_data"
+                    if (s.init is NameExpr) {
+                        val vSrcName = s.init.name
+                        impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcName.len);")
+                        impl.appendLine("${ind}memcpy($vDataName, $vSrcName.ptr, sizeof($elemCType) * $vSrcName.len);")
+                        impl.appendLine("${ind}$qual$vVarArrType ${s.name} = {$vDataName, $vSrcName.len};")
+                    } else {
+                        val vTmpName = "${s.name}_tmp"
+                        impl.appendLine("${ind}$vVarArrType $vTmpName = $expr;")
+                        impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vTmpName.len);")
+                        impl.appendLine("${ind}memcpy($vDataName, $vTmpName.ptr, sizeof($elemCType) * $vTmpName.len);")
+                        impl.appendLine("${ind}$qual$vVarArrType ${s.name} = {$vDataName, $vTmpName.len};")
+                    }
                 } else {
+                    // Heap array (Ptr<Arr>): copy the ktc_VarArr_T struct (reference semantics)
+                    val vHeapArrType = if (vKtcCore is KtcType.Ptr && vKtcCore.inner is KtcType.Arr) {
+                        varArrTypeName(arrayElementCTypeKtc(vKtcCore))
+                    } else null
                     // Auto-wrap init into ktc_Any trampoline when variable is typed Any
                     if (vKtc is KtcType.Any && s.init !is NullLit) {
-                        val initType = inferExprType(s.init)?.removeSuffix("?") ?: "Int"
+                        val initType    = inferExprType(s.init)?.removeSuffix("?") ?: "Int"
                         val initTypeKtc = inferExprTypeKtc(s.init)
-                        val typeId = getTypeId(initType)
-                        val initCT = cTypeStr(initType)
-                        val tVal = tmp()
+                        val typeId      = getTypeId(initType)
+                        val initCT      = cTypeStr(initType)
+                        val tVal        = tmp()
                         impl.appendLine("$ind$initCT $tVal = $expr;")
                         impl.appendLine("$ind$mutComment$qual$ct ${s.name} = (ktc_Any){{$typeId}, (void*)&$tVal};")
+                    } else if (vHeapArrType != null) {
+                        impl.appendLine("$ind$mutComment$qual$vHeapArrType ${s.name} = $expr;")
                     } else {
                         impl.appendLine("$ind$mutComment$qual$ct ${s.name} = $expr;")
-                    }
-                    if (vKtcCore.isArrayLike) {
-                        val lenInit = if (s.init is NullLit) "0" else "${expr}\$len"
-                        impl.appendLine("${ind}const ktc_Int ${s.name}\$len = $lenInit;")
-                    } else if (vKtcCore is KtcType.Ptr && s.init is NameExpr) {
-                        val srcName = s.init.name
-                        // Skip $len copy if source is a @Ptr RawArray<T> field (which has no $len companion)
-                        val isRawArrayField = currentClass != null &&
-                                classes[currentClass]?.props?.any { it.first == srcName && it.second.name == "RawArray" } == true
-                        if (!isRawArrayField) {
-                            impl.appendLine("${ind}ktc_Int ${s.name}\$len = ${srcName}\$len;")
-                        }
                     }
                 }
             }
@@ -316,8 +325,10 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             }
 
             isNullableArray -> {
-                impl.appendLine("$ind$mutComment${arrayElementCTypeKtc(vKtcCore)}* ${s.name} = NULL;")
-                impl.appendLine("${ind}const ktc_Int ${s.name}\$len = 0;")
+                val vElemC      = arrayElementCTypeKtc(vKtcCore)
+                val vVarArrType = varArrTypeName(vElemC)
+                impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {NULL, 0};")
+                impl.appendLine("${ind}bool ${s.name}\$has = false;")
             }
 
             else -> {

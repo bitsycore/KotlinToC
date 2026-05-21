@@ -9,7 +9,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     val lt = inferExprType(e.left)
     /* `to` infix → Pair; use stdlib path when stdlib Pair class is loaded, else intrinsic */
     if (e.op == "to") {
-        val aType = inferExprType(e.left) ?: "Int" // left operand type
+                val aType = inferExprType(e.left) ?: "Int" // left operand type
         val aTypeKtc = inferExprTypeKtc(e.left)
         val bType = inferExprType(e.right) ?: "Int" // right operand type
         val bTypeKtc = inferExprTypeKtc(e.right)
@@ -23,6 +23,8 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
                 val vRExpr = genExpr(e.right) // C expression for second
                 return "${vCi.flatName}_primaryConstructor($vLExpr, $vRExpr)"
             }
+        } else {
+            error("AAAA")
         }
     }
     // User-defined infix inline extension function dispatch
@@ -73,8 +75,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             if (thisKtc is KtcType.Nullable) {
                 // @Ptr T? → compare pointer to NULL
                 if (thisKtc.inner is KtcType.Ptr && thisKtc.inner.inner !is KtcType.Arr) {
-                    if (thisKtc.inner.inner is KtcType.User
-                        && thisKtc.inner.inner.kind == KtcType.UserKind.Interface)
+                    if (thisKtc.inner.inner is KtcType.User && thisKtc.inner.inner.kind == KtcType.UserKind.Interface)
                         return if (e.op == "==") "!\$self.vt" else "\$self.vt"
                     return if (e.op == "==") "\$self == NULL" else "\$self != NULL"
                 }

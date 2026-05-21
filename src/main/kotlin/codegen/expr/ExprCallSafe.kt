@@ -57,11 +57,10 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 	if (dot.name == "ptr" && recvType != null) {
 		val cleanType = recvType.removeSuffix("?")
 		if (recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) {
-			val t       = tmp()
-			val guard   = if (recvTypeKtc is KtcType.Nullable) "${recvName}\$has" else "true"
+			// Array?.ptr → return .ptr field directly; NULL when array is null (ptr == NULL)
+			val t        = tmp()
 			val arrCType = cTypeStr(cleanType)
-			preStmts += "$arrCType $t = $guard ? $recvName : NULL;"
-			preStmts += "ktc_Int ${t}\$len = $guard ? ${recvName}\$len : 0;"
+			preStmts += "$arrCType $t = $recvName.ptr;"
 			defineVar(t, "${cleanType}*?")
 			return t
 			}

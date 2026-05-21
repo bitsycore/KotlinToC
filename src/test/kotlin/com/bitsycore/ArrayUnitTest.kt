@@ -14,7 +14,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = intArrayOf(10, 20, 30)
             println(arr[0])
         """)
-        r.sourceContains("ktc_Int arr[] = {10, 20, 30};")
+        r.sourceContains("ktc_Int arr_data[] = {10, 20, 30};")
         r.sourceContains("arr[0]")
     }
 
@@ -23,7 +23,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = intArrayOf(10, 20, 30)
             println(arr.size)
         """)
-        r.sourceContains("arr\$len")
+        r.sourceContains("arr.len")
     }
 
     // ── arrayOf with data class ──────────────────────────────────────
@@ -37,7 +37,7 @@ class ArrayUnitTest : TranspilerTestBase() {
                 println(pts.size)
             }
         """)
-        r.sourceContains("test_Main_Vec2 pts[] =")
+        r.sourceContains("test_Main_Vec2 pts_data[] =")
     }
 
     @Test fun arrayOfStrings() {
@@ -45,7 +45,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val names = arrayOf("Alice", "Bob")
             println(names[0])
         """)
-        r.sourceContains("ktc_String names[] =")
+        r.sourceContains("ktc_String names_data[] =")
     }
 
     // ── For over array ───────────────────────────────────────────────
@@ -55,7 +55,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val arr = intArrayOf(1, 2, 3)
             for (x in arr) { println(x) }
         """)
-        r.sourceContains("arr\$len")
+        r.sourceContains("arr.len")
     }
 
     @Test fun forOverStringArray() {
@@ -63,7 +63,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             val names = arrayOf("A", "B", "C")
             for (name in names) { println(name) }
         """)
-        r.sourceContains("names\$len")
+        r.sourceContains("names.len")
     }
 
     // ── Array index write ────────────────────────────────────────────
@@ -77,7 +77,7 @@ class ArrayUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("ktc_Int\$Opt*")
         r.sourceContains("ktc_core_alloca")
-        r.sourceContains("arr\$len")
+        r.sourceContains("arr.len")
         r.sourceContainsXTime("ktc_core_alloca", 1)
     }
 
@@ -87,7 +87,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             println(arr.size)
         """)
         r.sourceContains("ktc_String\$Opt*")
-        r.sourceContains("arr\$len")
+        r.sourceContains("arr.len")
         r.sourceContainsXTime("ktc_core_alloca", 1)
     }
 
@@ -108,7 +108,7 @@ class ArrayUnitTest : TranspilerTestBase() {
             println(arr.size)
         """)
         r.sourceContains("ktc_Float\$Opt*")
-        r.sourceContains("arr\$len")
+        r.sourceContains("arr.len")
         r.sourceContainsXTime("ktc_core_alloca")
     }
 

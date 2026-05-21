@@ -97,15 +97,17 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 popScope()
                 impl.appendLine("$ind}")
             } else {
-                // Array: use $len / trampoline size and direct indexing
-                val arrExpr = genExpr(rangeExpr)
-                val idx = tmp()
-                val elemType = if (arrTypeKtc != null) arrayElementCTypeKtc(arrTypeKtc) else "ktc_Int"
+                // Array: use .len / trampoline size and direct or .ptr indexing
+                val arrExpr     = genExpr(rangeExpr)
+                val idx         = tmp()
+                val elemType    = if (arrTypeKtc != null) arrayElementCTypeKtc(arrTypeKtc) else "ktc_Int"
                 val arrOrigName = (rangeExpr as? NameExpr)?.name
-                val sizeExpr = if (arrOrigName != null && arrOrigName in trampolinedParams)
-                    "$arrOrigName.size" else "${arrExpr}\$len"
+                val vIsTrampolined = arrOrigName != null && arrOrigName in trampolinedParams // @Size trampolined: local ptr
+                val vIsSizedArr    = (arrTypeKtc as? KtcType.Arr)?.sized != null            // fixed-size C array
+                val sizeExpr    = if (vIsTrampolined) arrayParamSizeExpr(arrOrigName!!) else "${arrExpr}.len"
+                val vElemAccess = if (vIsTrampolined || vIsSizedArr) "$arrExpr[$idx]" else "$arrExpr.ptr[$idx]"
                 impl.appendLine("${ind}for (ktc_Int $idx = 0; $idx < $sizeExpr; $idx++) {")
-                impl.appendLine("$ind    $elemType ${s.varName} = ${arrExpr}[$idx];")
+                impl.appendLine("$ind    $elemType ${s.varName} = $vElemAccess;")
                 pushScope(); defineVar(s.varName, if (arrTypeKtc != null) arrayElementKtTypeKtc(arrTypeKtc) else "Int")
                 emitBlock(s.body, ind, method)
                 popScope()

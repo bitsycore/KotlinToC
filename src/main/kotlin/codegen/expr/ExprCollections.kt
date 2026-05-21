@@ -11,15 +11,17 @@ internal fun CCodeGen.genArrayOfExpr(
 ): String { // inTypeArg — explicit type argument from the call site, e.g. arrayOf<Int?>(...)
     // arrayOf<T?>(v1, null, v2) → nullable element array; each element wrapped in Optional struct
     if (name == "arrayOf" && inTypeArg?.nullable == true) {
-        val vElemName = typeSubst[inTypeArg.name] ?: inTypeArg.name
-        val vOptCType = optCTypeName("${vElemName}?")
+        val vElemName   = typeSubst[inTypeArg.name] ?: inTypeArg.name
+        val vOptCType   = optCTypeName("${vElemName}?")
+        val vVarArrType = varArrTypeName(vOptCType)
         val vVals = args.joinToString(", ") { vArg ->
             if (vArg.expr is NullLit) "($vOptCType){ktc_NONE}"
             else "($vOptCType){ktc_SOME, ${genExpr(vArg.expr)}}"
         }
-        val vTmp = tmp()
-        preStmts += "$vOptCType ${vTmp}[] = {$vVals};"
-        preStmts += "const ktc_Int ${vTmp}\$len = ${args.size};"
+        val vTmp     = tmp()
+        val vTmpData = "${vTmp}_data"
+        preStmts += "$vOptCType $vTmpData[] = {$vVals};"
+        preStmts += "$vVarArrType $vTmp = {$vTmpData, ${args.size}};"
         return vTmp
     }
     val elemType = when (name) {
@@ -49,16 +51,20 @@ internal fun CCodeGen.genArrayOfExpr(
         arrayOfSizedStructVars += t
         return t
     }
-    preStmts += "$elemType ${t}[] = {$vals};"
-    preStmts += "const ktc_Int ${t}\$len = $n;"
+    val vVarArrType = varArrTypeName(elemType)
+    val vTData      = "${t}_data"
+    preStmts += "$elemType $vTData[] = {$vals};"
+    preStmts += "$vVarArrType $t = {$vTData, $n};"
     return t
 }
 
 internal fun CCodeGen.genNewArray(elemCType: String, args: List<Arg>): String {
-    val size = if (args.isNotEmpty()) genExpr(args[0].expr) else "0"
-    val t = tmp()
-    preStmts += "$elemCType* $t = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * (size_t)($size));"
-    preStmts += "const ktc_Int ${t}\$len = $size;"
+    val size        = if (args.isNotEmpty()) genExpr(args[0].expr) else "0"
+    val vVarArrType = varArrTypeName(elemCType)
+    val t           = tmp()
+    val vTData      = "${t}_data"
+    preStmts += "$elemCType* $vTData = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * (size_t)($size));"
+    preStmts += "$vVarArrType $t = {$vTData, $size};"
     return t
 }
 
@@ -68,8 +74,9 @@ internal fun CCodeGen.genNewArrayWithLambda(elemCType: String, args: List<Arg>):
     val lambda = args[1].expr as LambdaExpr
     val itName = lambda.params.firstOrNull() ?: "it"
     val t = tmp()
-    preStmts += "$elemCType* $t = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * (size_t)($size));"
-    preStmts += "const ktc_Int ${t}\$len = $size;"
+    val vVarArrType = varArrTypeName(elemCType)
+    val vTData      = "${t}_data"
+    preStmts += "$elemCType* $vTData = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * (size_t)($size));"
     preStmts += "for (ktc_Int $itName = 0; $itName < $size; $itName++) {"
     // Lambda body: must be a single expression producing the element value
     val bodyExpr = when {
@@ -78,8 +85,9 @@ internal fun CCodeGen.genNewArrayWithLambda(elemCType: String, args: List<Arg>):
             codegenError("Array init lambda must be a single expression")
         }
     }
-    preStmts += "    $t[$itName] = ${genExpr(bodyExpr)};"
+    preStmts += "    $vTData[$itName] = ${genExpr(bodyExpr)};"
     preStmts += "}"
+    preStmts += "$vVarArrType $t = {$vTData, $size};"
     return t
 }
 
@@ -90,12 +98,14 @@ internal fun CCodeGen.genHeapArrayOfExpr(args: List<Arg>, inTypeArg: TypeRef? = 
         val inferredKtc = inferExprTypeKtc(args[0].expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
         cTypeStr(inferred)
     } else "ktc_Int"
-    val n = args.size
-    val t = tmp()
-    preStmts += "$elemType* $t = ($elemType*)${tMalloc("sizeof($elemType) * $n")};"
-    val vals = args.mapIndexed { i, arg -> "$t[$i] = ${genExpr(arg.expr)};" }.joinToString(" ")
+    val n           = args.size
+    val vVarArrType = varArrTypeName(elemType)
+    val t           = tmp()
+    val vTData      = "${t}_data"
+    preStmts += "$elemType* $vTData = ($elemType*)${tMalloc("sizeof($elemType) * $n")};"
+    val vals = args.mapIndexed { i, arg -> "$vTData[$i] = ${genExpr(arg.expr)};" }.joinToString(" ")
     if (vals.isNotEmpty()) preStmts += vals
-    preStmts += "const ktc_Int ${t}\$len = $n;"
+    preStmts += "$vVarArrType $t = {$vTData, $n};"
     return t
 }
 

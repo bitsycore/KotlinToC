@@ -126,13 +126,15 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		returnsSizedString                              -> sizedStringCTypeName(f.returnType.getSizeAnnotation()!!)
 		returnsNullable && vRetKtc is KtcType.Any      -> "ktc_Any"
 		returnsNullable                                -> optRetCType
+		returnsArray                                   -> {
+			val vArrElem = vRetKtc!!.asArr?.elem ?: ((vRetKtc as? KtcType.Ptr)?.inner as KtcType.Arr).elem
+			varArrTypeName(cTypeStr(vArrElem))
+			}
 		retResolved.isNotEmpty()                       -> cTypeStr(retResolved)
 		else                                           -> "void"
 		}
 	val cName  = funCName(baseName)
-	val base   = expandParams(f.params)
-	val extra  = if (returnsArray) "ktc_Int* \$len_out" else null
-	val params = if (extra != null) { if (base.isEmpty()) extra else "$base, $extra" } else base
+	val params = expandParams(f.params)
 
 	hdr.appendLine("$cRet $cName($params);")
 	impl.appendLine("$cRet $cName($params) {")

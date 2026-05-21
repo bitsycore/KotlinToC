@@ -27,14 +27,16 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
 			vKtc is KtcType.Func -> vParts += cFuncPtrDecl(vKtc, vName)
 			vKtc.isArrayLike     -> {
 				when {
-					vKtc is KtcType.Ptr -> {
-						// @Ptr Array<T>: keep as T* + $len companion (raw pointer ABI)
-						vParts += "${cTypeStr(vKtc)} $vName"
-						if (!vType.hasSizeAnnotation()) vParts += "ktc_Int ${vName}\$len"
-						}
 					vType.hasSizeAnnotation() -> {
-						// @Size(N) Array<T>: fixed-size struct
+						// @Size(N) Array<T>: fixed-size struct (unchanged)
 						vParts += "${cTypeStr(vKtc)} $vName"
+						}
+					vKtc is KtcType.Ptr -> {
+						// @Ptr Array<T>: treat same as regular Array<T> — ktc_VarArr_T
+						val vInnerArr  = vKtc.inner.asArr!!
+						val vElemCType = if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr)
+							else cTypeStr(vInnerArr.elem)
+						vParts += "${varArrTypeName(vElemCType)} $vName"
 						}
 					else -> {
 						// Regular Array<T>: typed VarArr struct (no companion)
@@ -59,8 +61,8 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
 		val vKtc = resolveTypeName(vP.type)
 		when {
 			vP.isVararg -> {
-				vParts += "${cTypeStr(vKtc)}* ${vP.name}"
-				vParts += "ktc_Int ${vP.name}\$len"
+				// Vararg: pack all variadic elements into a single ktc_VarArr_T
+				vParts += "${varArrTypeName(cTypeStr(vKtc))} ${vP.name}"
 				}
 			vKtc is KtcType.Func -> vParts += cFuncPtrDecl(vKtc, vP.name)
 			vP.type.isSizedString() -> {
@@ -68,10 +70,18 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
 				vParts += "${sizedStringCTypeName(vSize)} ${vP.name}"
 				}
 			vKtc is KtcType.Ptr && vP.type.annotations.any { it.name == "Ptr" } -> {
-				val vNullComment = if (vP.type.nullable) " /** nullable */" else " /** notnull */"
-				vParts += "${cTypeStr(vKtc)} ${vP.name}$vNullComment"
 				val vInnerArr = vKtc.inner.asArr
-				if (vInnerArr != null && vInnerArr.sized == null) vParts += "ktc_Int ${vP.name}\$len"
+				if (vInnerArr != null && vInnerArr.sized == null) {
+					// @Ptr Array<T>: treat same as regular ktc_VarArr_T (no raw pointer ABI)
+					val vNullComment = if (vP.type.nullable) " /** nullable */" else ""
+					val vElemCType   = if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr)
+						else cTypeStr(vInnerArr.elem)
+					vParts += "${varArrTypeName(vElemCType)} ${vP.name}$vNullComment"
+					} else {
+					// @Ptr non-array or @Ptr @Size array: keep as raw pointer
+					val vNullComment = if (vP.type.nullable) " /** nullable */" else " /** notnull */"
+					vParts += "${cTypeStr(vKtc)} ${vP.name}$vNullComment"
+					}
 				}
 			vKtc.isArrayLike -> {
 				if (vP.type.hasSizeAnnotation()) {
@@ -120,25 +130,7 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
 			sizedArrayTrampolinedParams += vP.name
 			continue
 			}
-		if (!vP.type.isRawArray()) continue
-		if (!vAny) {
-			impl.appendLine("${inInd}// ── sized param unpack start ──")
-			vAny = true
-			}
-		val vElem      = resolveTypeName(vP.type).asArr!!.elem
-		val vElemCType = if (vElem is KtcType.Nullable) optCTypeName(vElem.inner.toInternalStr)
-			else cTypeStr(vElem)
-		if (vP.type.nullable) {
-			impl.appendLine("${inInd}$vElemCType* local$${vP.name} = NULL;")
-			impl.appendLine("${inInd}if (${vP.name}.ptr != NULL) {")
-			impl.appendLine("$inInd    local$${vP.name} = ($vElemCType*)ktc_core_alloca(sizeof($vElemCType) * ${vP.name}.len);")
-			impl.appendLine("$inInd    memcpy(local$${vP.name}, ${vP.name}.ptr, sizeof($vElemCType) * ${vP.name}.len);")
-			impl.appendLine("${inInd}}")
-			} else {
-			impl.appendLine("${inInd}$vElemCType* local$${vP.name} = ($vElemCType*)ktc_core_alloca(sizeof($vElemCType) * ${vP.name}.len);")
-			impl.appendLine("${inInd}memcpy(local$${vP.name}, ${vP.name}.ptr, sizeof($vElemCType) * ${vP.name}.len);")
-			}
-		trampolinedParams += vP.name
+		// Regular Array<T> params are now ktc_VarArr_T — no trampolining needed; access via .ptr/.len
 		}
 	if (vAny) impl.appendLine("${inInd}// ── sized param unpack end ──")
 	}

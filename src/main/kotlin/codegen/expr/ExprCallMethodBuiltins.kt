@@ -188,25 +188,31 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 
 	if (vMethod == "size" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		val vDotName = (inDot.obj as? NameExpr)?.name
-		return if (vDotName != null && vDotName in trampolinedParams) arrayParamSizeExpr(vDotName) else "${inRecv}\$len"
+		return if (vDotName != null && vDotName in trampolinedParams) arrayParamSizeExpr(vDotName) else "${inRecv}.len"
 		}
 	if (vMethod == "ptr" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		return inRecv
 		}
 	if (vMethod == "copyOf" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size == 1) {
-		val vElemC   = arrayElementCTypeKtc(inRecvTypeKtc)
-		val vNewSize = genExpr(inArgs[0].expr)
-		val vSrcLen  = when {
+		val vElemC      = arrayElementCTypeKtc(inRecvTypeKtc)
+		val vVarArrType = varArrTypeName(vElemC)
+		val vNewSize    = genExpr(inArgs[0].expr)
+		val vSrcLen     = when {
 			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> arrayParamSizeExpr(inDot.obj.name)
-			else -> "${inRecv}\$len"
+			else -> "$inRecv.len"
 			}
+		val vSrcPtr     = when {
+			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> "local\$${inDot.obj.name}"
+			else -> "$inRecv.ptr"
+			}
+		val vData    = tmp()
 		val vT       = tmp()
 		val vCopyLen = tmp()
-		preStmts += "$vElemC* $vT = ($vElemC*)ktc_core_alloca(sizeof($vElemC) * (size_t)($vNewSize));"
+		preStmts += "$vElemC* $vData = ($vElemC*)ktc_core_alloca(sizeof($vElemC) * (size_t)($vNewSize));"
 		preStmts += "const ktc_Int $vCopyLen = ($vSrcLen < ($vNewSize)) ? $vSrcLen : ($vNewSize);"
-		preStmts += "memcpy($vT, $inRecv, (size_t)$vCopyLen * sizeof($vElemC));"
-		preStmts += "if ($vCopyLen < ($vNewSize)) memset($vT + $vCopyLen, 0, (size_t)(($vNewSize) - $vCopyLen) * sizeof($vElemC));"
-		preStmts += "const ktc_Int ${vT}\$len = $vNewSize;"
+		preStmts += "memcpy($vData, $vSrcPtr, (size_t)$vCopyLen * sizeof($vElemC));"
+		preStmts += "if ($vCopyLen < ($vNewSize)) memset($vData + $vCopyLen, 0, (size_t)(($vNewSize) - $vCopyLen) * sizeof($vElemC));"
+		preStmts += "$vVarArrType $vT = {$vData, $vNewSize};"
 		return vT
 		}
 	if (vMethod == "resizeWith" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size >= 2) {
@@ -228,9 +234,15 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
-		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->reallocMem($vIfExpr.obj, $inRecv, sizeof($vElemC) * (size_t)($vNewSizeExpr), ${ktSrcStr()});"
 		val vIsRawArray = inRecvTypeKtc.asArr == null && inRecvTypeKtc is KtcType.Ptr
-		if (!vIsRawArray) preStmts += "ktc_Int ${vT}_ptr\$len = $vNewSizeExpr;"
+		val vSrcPtr     = if (vIsRawArray) inRecv else "$inRecv.ptr"
+		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->reallocMem($vIfExpr.obj, $vSrcPtr, sizeof($vElemC) * (size_t)($vNewSizeExpr), ${ktSrcStr()});"
+		if (!vIsRawArray) {
+			val vVarArrType = varArrTypeName(vElemC)
+			val vResult     = tmp()
+			preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vNewSizeExpr};"
+			return vResult
+			}
 		return "${vT}_ptr"
 		}
 	if (vMethod == "copyWith" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size == 1) {
@@ -238,7 +250,11 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vAllocExpr    = genExpr(inArgs[0].expr)
 		val vSrcLen       = when {
 			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> arrayParamSizeExpr(inDot.obj.name)
-			else -> "${inRecv}\$len"
+			else -> "$inRecv.len"
+			}
+		val vSrcPtr       = when {
+			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> "local\$${inDot.obj.name}"
+			else -> "$inRecv.ptr"
 			}
 		val vT            = tmp()
 		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
@@ -255,16 +271,22 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
+		val vVarArrType = varArrTypeName(vElemC)
+		val vResult     = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSrcLen), ${ktSrcStr()});"
-		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $inRecv, (size_t)$vSrcLen * sizeof($vElemC));"
-		preStmts += "ktc_Int ${vT}_ptr\$len = $vSrcLen;"
-		return "${vT}_ptr"
+		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $vSrcPtr, (size_t)$vSrcLen * sizeof($vElemC));"
+		preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vSrcLen};"
+		return vResult
 		}
 	if ((vMethod == "get" || vMethod == "set") && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
-		val vIdx = inArgs.getOrNull(0)?.let { genExpr(it.expr) } ?: "0"
-		if (vMethod == "get") return "${inRecv}[$vIdx]"
+		val vIdx        = inArgs.getOrNull(0)?.let { genExpr(it.expr) } ?: "0"
+		val vRecvName   = (inDot.obj as? NameExpr)?.name
+		val vIsTramp    = vRecvName != null && vRecvName in trampolinedParams
+		val vIsSized    = (inRecvTypeKtc as? KtcType.Arr)?.sized != null
+		val vAccessExpr = if (vIsTramp || vIsSized) "$inRecv[$vIdx]" else "$inRecv.ptr[$vIdx]"
+		if (vMethod == "get") return vAccessExpr
 		val vValExpr = inArgs.getOrNull(1)?.let { genExpr(it.expr) } ?: "0"
-		return "(${inRecv}[$vIdx] = $vValExpr)"
+		return "($vAccessExpr = $vValExpr)"
 		}
 
 	return null

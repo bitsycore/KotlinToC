@@ -38,22 +38,20 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 		val paramType    = resolveTypeName(param.type).toInternalStr   // string type (for structural checks: endsWith, isArray, etc.)
 		val paramTypeKtc = resolveTypeName(param.type)                 // KtcType (for C type emission)
 		if (param.isVararg) {
-			// Consume remaining args for vararg
-			val remaining = args.subList(argIdx, args.size)
-			val elemCType = cTypeStr(paramTypeKtc)  // C type from KtcType
+			// Consume remaining args for vararg — packed into a single ktc_VarArr_T
+			val remaining   = args.subList(argIdx, args.size)
+			val elemCType   = cTypeStr(paramTypeKtc)                    // element C type
+			val vVarArrType = varArrTypeName(elemCType)
 			if (remaining.size == 1 && remaining[0].isSpread) {
-				val spreadExpr = genExpr(remaining[0].expr)
-				parts += spreadExpr
-				parts += "${spreadExpr}\$len"
+				// Spread arg: already a ktc_VarArr_T — pass directly
+				parts += genExpr(remaining[0].expr)
 				} else if (remaining.isEmpty()) {
-				parts += "NULL"
-				parts += "0"
+				parts += "($vVarArrType){NULL, 0}"
 				} else {
 				val t        = tmp()
 				val argExprs = remaining.map { genExpr(it.expr) }
-				preStmts += "$elemCType ${t}[] = {${argExprs.joinToString(", ")}};"
-				parts += t
-				parts += "${remaining.size}"
+				preStmts += "$elemCType ${t}_data[] = {${argExprs.joinToString(", ")}};"
+				parts += "($vVarArrType){${t}_data, ${remaining.size}}"
 				}
 			argIdx = args.size
 			} else if (argIdx < args.size) {
@@ -65,11 +63,16 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 			if (hasAtPtr || isPtrOrArrayPtr) {
 				// @Ptr-annotated type — pass raw pointer (NULL for null)
 				if (arg.expr is NullLit) {
-					if (paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.User
+					val vNullIsVarArr = paramTypeKtc is KtcType.Ptr && (paramTypeKtc.inner as? KtcType.Arr)?.sized == null
+					if (vNullIsVarArr) {
+						// @Ptr Array<T> null: emit {NULL, 0} struct (same as regular nullable array)
+						val vInner   = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
+						val vElemC   = if (vInner.elem is KtcType.Nullable) optCTypeName(vInner.elem.inner.toInternalStr) else cTypeStr(vInner.elem)
+						parts += "(${varArrTypeName(vElemC)}){NULL, 0}"
+						} else if (paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.User
 						&& paramTypeKtc.inner.kind == KtcType.UserKind.Interface)
 						parts += "(ktc_IfacePtr){0}"   // zero-init for iface trampoline
 					else parts += "NULL"
-					if (isArrayType(paramType)) parts += "0"
 					} else if ((paramTypeKtc as? KtcType.Ptr)?.inner is KtcType.Any) {
 					// @Ptr Any → wrap as ktc_Any fat pointer, pass pointer to it.
 					val argType  = inferExprType(arg.expr)?.removeSuffix("?") ?: "Int"
@@ -129,11 +132,20 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						parts += expr
 						}
 					} else {
-					parts += expr
-					if (isArrayType(paramType)) {
-						// Check if argument is a @Size array (fixed-size, no $len member)
-						val sizeFromAnn = getSizedArrayFieldSize(arg.expr)
-						parts += sizeFromAnn?.toString() ?: "${expr}\$len"
+					val vIsArrPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && (paramTypeKtc.inner as? KtcType.Arr)?.sized == null
+					if (vIsArrPtr) {
+						// @Ptr Array<T>: now ktc_VarArr_T — pass struct with .ptr cast if needed
+						val vInnerArr  = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
+						val vElemCType = if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr) else cTypeStr(vInnerArr.elem)
+						val vVarArrTp  = varArrTypeName(vElemCType)
+						val vArgName   = (arg.expr as? NameExpr)?.name
+						if (vArgName != null && vArgName in trampolinedParams) {
+							parts += "($vVarArrTp){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
+							} else {
+							parts += "($vVarArrTp){($vElemCType*)($expr).ptr, ($expr).len}"
+							}
+						} else {
+						parts += expr
 						}
 					}
 				} else if (param.type.isSizedString()) {
@@ -153,7 +165,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					val vStructType = sizedArrayCTypeRef(vElemCType, vSize)
 					val vWrap       = tmp()
 					preStmts += "$vStructType $vWrap;"
-					preStmts += "memcpy($vWrap.arr, $expr, $vSize * sizeof($vElemCType));"
+					preStmts += "memcpy($vWrap.arr, ($expr).ptr, $vSize * sizeof($vElemCType));"
 					parts += vWrap
 					} else {
 					// Variable-size array → build typed ktc_VarArr_T literal
@@ -166,10 +178,14 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					if (arg.expr is NullLit) {
 						parts += "($vVarArrType){NULL, 0}"
 						} else {
-						val vArgName  = (arg.expr as? NameExpr)?.name
-						val vSizeExpr = if (vArgName != null && vArgName in trampolinedParams) arrayParamSizeExpr(vArgName) else "${expr}\$len"
-						// Cast ptr to expected element type (may differ when passing Array<Int> to Array<Int?>)
-						parts += "($vVarArrType){($vElemCType*)$expr, $vSizeExpr}"
+						val vArgName = (arg.expr as? NameExpr)?.name
+						if (vArgName != null && vArgName in trampolinedParams) {
+							// @Size trampolined: local raw pointer + local const len
+							parts += "($vVarArrType){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
+							} else {
+							// Regular ktc_VarArr_T: cast .ptr for element-type mismatch if needed
+							parts += "($vVarArrType){($vElemCType*)($expr).ptr, ($expr).len}"
+							}
 						}
 					}
 				} else if ((param.type.nullable || paramTypeKtc is KtcType.Nullable) && isValueNullableKtc(paramTypeKtc.let {

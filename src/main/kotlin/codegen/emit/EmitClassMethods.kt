@@ -120,8 +120,9 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
 				val vElemCt = cTypeStr(vKtcField.asArr!!.elem)
 				hdr.appendLine("    $vMutComment$vElemCt $vFieldName[${vSizeAnn}];")
 				} else {
-				hdr.appendLine("    $vMutComment${cTypeStr(vKtcField)} $vFieldName;${ptrNullComment(vKtcField)}")
-				hdr.appendLine("    ktc_Int ${vFieldName}\$len;")
+				val vArrElem   = vKtcField.asArr?.elem ?: ((vKtcField as? KtcType.Ptr)?.inner as KtcType.Arr).elem
+				val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr) else cTypeStr(vArrElem)
+				hdr.appendLine("    $vMutComment${varArrTypeName(vElemCType)} $vFieldName;${ptrNullComment(vKtcField)}")
 				}
 			} else if (type.nullable) {
 			hdr.appendLine("    $vMutComment${optCTypeName(vKtcField.toInternalStr)} $vFieldName;")
@@ -154,7 +155,6 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 				impl.appendLine("    memcpy(\$self.$vFieldName, $vName, $vSizeAnn * sizeof($vElemType));")
 				} else if (vKtcProp.isArrayLike) {
 				impl.appendLine("    \$self.$vFieldName = $vName;")
-				impl.appendLine("    \$self.${vFieldName}\$len = ${vName}\$len;")
 				} else {
 				impl.appendLine("    \$self.$vFieldName = $vName;")
 				}

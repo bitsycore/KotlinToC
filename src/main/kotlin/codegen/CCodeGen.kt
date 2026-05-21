@@ -8,56 +8,6 @@ import com.bitsycore.ktc.codegen.expr.inferInitType
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.utils.wrapYellow
 
-/**
- * Translates a parsed KtFile AST into C11 source code.
- *
- * ## Pipeline
- *
- * ```
- * Kotlin source → Lexer → Parser → AST → CCodeGen → .c/.h files
- * ```
- *
- * ## Architecture (split across 8 files, all in package `com.bitsycore`)
- *
- * | File                 | Lines | Role                                             |
- * |----------------------|-------|--------------------------------------------------|
- * | `CCodeGen.kt`        | 1043  | **Orchestrator**: state, `collectDecls()`, `generate()` |
- * | `CCodeGenStructures.kt` |  60 | Data classes (ClassInfo, BodyProp, etc.)          |
- * | `CCodeGenScan.kt`    |   789 | Pre-scanning: discover generic instantiations     |
- * | `CCodeGenEmit.kt`    |  1497 | Declaration emission: classes, functions, vtables |
- * | `CCodeGenStmts.kt`   |  1351 | Statement codegen: var/if/for/return/inline        |
- * | `CCodeGenExpr.kt`    |  2124 | Expression codegen: genExpr → genCall/genDot/...  |
- * | `CCodeGenInfer.kt`   |   460 | Type inference: inferExprType → inferCallType/... |
- * | `CCodeGenCTypes.kt`  |   574 | C type mapping: resolveTypeName, cTypeStr, printf |
- *
- * ## State conventions
- *
- * All functions across all files are extension functions on `CCodeGen`.
- * State members are `internal` (not `private`) so extension functions
- * in other files can access them.
- *
- * ## Pipeline phases (called by `generate()`)
- *
- * 1. **collectDecls()** — populate symbol tables
- * 2. **scanForClassArrayTypes()** — discover class types in Array<T>
- * 3. **scanForGenericInstantiations()** — find concrete generic usage
- * 4. **materializeGenericInstantiations()** — create concrete ClassInfo
- * 5. **scanForGenericFunCalls()** — discover generic function call sites
- * 6. **scanGenericFunBodiesForInstantiations()** — transitive discovery
- * 7. **scanGenericClassMethodBodiesForInstantiations()** — from materialized
- * 8. **computeGenericFunConcreteReturns()** — interface → concrete return
- * 9. **Emit declarations** — structs, functions, vtables, methods
- * 10. **Output assembly** — .h and .c strings
- *
- * ## Symbol naming
- *
- *   package game          →  game_ClassName, game_funcName
- *   package com.foo.bar   →  com_foo_bar_ClassName
- *   (no package)          →  bare names
- *
- * `fun main()` is never prefixed — always emits `int main(void)`.
- */
-
 /* Compute a file-relative #include path.
 inFromDir: the directory of the including file, relative to outDir (e.g. "ktc/std", "com/example", "")
 inToPath:  the target path relative to outDir (e.g. "ktc/core/ktc_core.h", "ktc/std/_package_.h") */

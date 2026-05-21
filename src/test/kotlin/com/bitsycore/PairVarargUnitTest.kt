@@ -87,9 +87,8 @@ class PairVarargUnitTest : TranspilerTestBase() {
                 println(sum(1, 2, 3))
             }
         """)
-        // Function signature should have pointer + len
-        r.headerContains("ktc_Int* nums")
-        r.headerContains("ktc_Int nums\$len")
+        // Function signature should have ktc_VarArr_T struct
+        r.headerContains("ktc_VarArr_ktc_Int nums")
         // Call site should pack args into array
         r.sourceContains("ktc_Int")
         r.sourceContains("{1, 2, 3}")
@@ -105,9 +104,9 @@ class PairVarargUnitTest : TranspilerTestBase() {
                 println(count())
             }
         """)
-        // Empty vararg should pass NULL, 0
+        // Empty vararg should pass {NULL, 0} struct literal
         r.sourceContains("NULL")
-        r.sourceContains(", 0)")
+        r.sourceContains("{NULL, 0}")
     }
 
     @Test fun varargSize() {
@@ -120,8 +119,8 @@ class PairVarargUnitTest : TranspilerTestBase() {
                 println(count(10, 20))
             }
         """)
-        // .size on vararg should use $len
-        r.sourceContains("items\$len")
+        // .size on vararg should use .len field
+        r.sourceContains("items.len")
     }
 
     // ── spread: pass array to vararg ────────────────────────────────
@@ -141,8 +140,8 @@ class PairVarargUnitTest : TranspilerTestBase() {
                 println(sum(*arr))
             }
         """)
-        // Spread should pass arr, arr$len directly (no compound literal)
-        r.sourceContains("arr, arr\$len")
+        // Spread should pass ktc_VarArr_T struct directly
+        r.sourceContains("test_Main_sum(arr)")
     }
 
     // ── vararg with preceding params ────────────────────────────────
@@ -158,7 +157,6 @@ class PairVarargUnitTest : TranspilerTestBase() {
             }
         """)
         r.headerContains("ktc_Int tag")
-        r.headerContains("ktc_Int* msgs")
-        r.headerContains("ktc_Int msgs\$len")
+        r.headerContains("ktc_VarArr_ktc_Int msgs")
     }
 }
