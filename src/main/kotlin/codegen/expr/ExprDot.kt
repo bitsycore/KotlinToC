@@ -156,13 +156,13 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
     if (isFieldValueNull) {
         val optType = optCTypeName(fieldType!!)
         preStmts += "$optType $t = $guard ? $fieldAccess : ${optNone(optType)};"
-        markOptional(t)
         defineVar(t, fieldType)
+        markOptional(t)
     } else {
         val optType = if (fieldType != null) optCTypeName("${fieldType}?") else "ktc_Int\$Opt"
         preStmts += "$optType $t = $guard ? ${optSome(optType, fieldAccess)} : ${optNone(optType)};"
-        markOptional(t)
         defineVar(t, "${fieldType ?: "Int"}?")
+        markOptional(t)
     }
     return t
 }

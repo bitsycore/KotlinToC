@@ -139,8 +139,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val optType = optCTypeName("${retType}?")
 			val t       = tmp()
 			preStmts += "$optType $t = $vtAccess->$method($allArgs);"
-			markOptional(t)
 			defineVar(t, "${retType}?")
+			markOptional(t)
 			return t
 			}
 		return "$vtAccess->$method($allArgs)"
@@ -439,8 +439,8 @@ internal fun CCodeGen.genNullableMethodCall(
 	val optType = optCTypeName("${retBase}?")
 	val t       = tmp()
 	preStmts += "$optType $t = $fnExpr($allArgs);"
-	markOptional(t)
 	defineVar(t, "${retBase}?")
+	markOptional(t)
 	return t
 	}
 

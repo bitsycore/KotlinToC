@@ -173,7 +173,12 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 			}
 		if (isClassType) {
 			val ci = classes[mangledRecvName]!!
-			for ((name, type) in ci.props) defineVarKtc(name, resolveTypeName(type))
+			for ((name, type) in ci.props) {
+				val vKtc        = resolveTypeName(type)
+				val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
+				val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+				defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self->$vCFieldName"))
+				}
 			}
 		val savedTrampolined = trampolinedParams.toHashSet(); trampolinedParams.clear()
 		emitArrayParamCopies(f.params, "    ")
@@ -241,7 +246,12 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 				else                       -> vPStr
 				})
 			}
-		for ((name, type) in ci.props) defineVarKtc(name, resolveTypeName(type))
+		for ((name, type) in ci.props) {
+			val vKtc        = resolveTypeName(type)
+			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
+			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self->$vCFieldName"))
+			}
 		val savedTrampolined = trampolinedParams.toHashSet(); trampolinedParams.clear()
 		emitArrayParamCopies(f.params, "    ")
 		val savedDefers = deferStack.toList(); deferStack.clear()

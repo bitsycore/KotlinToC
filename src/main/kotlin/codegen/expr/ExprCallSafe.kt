@@ -38,8 +38,8 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 		val optType2 = optCTypeName("${retType2}?")
 		val t2       = tmp()
 		preStmts += "$optType2 $t2 = $guard2 ? ${optSome(optType2, call2)} : ${optNone(optType2)};"
-		markOptional(t2)
 		defineVar(t2, "${retType2}?")
+		markOptional(t2)
 		return t2
 		}
 
@@ -86,8 +86,8 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 	val optType = optCTypeName("${retType}?")
 	val t       = tmp()
 	preStmts += "$optType $t = $guard ? ${optSome(optType, call)} : ${optNone(optType)};"
-	markOptional(t)
 	defineVar(t, "${retType}?")
+	markOptional(t)
 	return t
 	}
 

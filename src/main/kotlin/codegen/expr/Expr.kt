@@ -138,8 +138,8 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                     val optType = optCTypeName("${retBase}?")
                     val t = tmp()
                     preStmts += "$optType $t = $recv.vt->get($vIdxSelfArg, $idx);"
-                    markOptional(t)
                     defineVar(t, "${retBase}?")
+                    markOptional(t)
                     t
                 } else {
                     "$recv.vt->get($vIdxSelfArg, $idx)"
