@@ -159,8 +159,8 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
                 val recvName = (recvObj as? NameExpr)?.name
                 val recvType = if (recvName != null) lookupVar(recvName) else null
                 val recvTypeKtc = if (recvType != null) parseResolvedTypeName(recvType) else null
-                val guard = if (recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc))
-                    "$recvExpr.tag == ktc_SOME"
+                val guard = if (recvTypeKtc is KtcType.Nullable)
+                    nullGuardExpr(recvTypeKtc, recvExpr, recvName ?: recvExpr, false)
                 else
                     "$recvExpr != NULL"
                 impl.appendLine("${ind}if ($guard) {")
@@ -205,16 +205,9 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
         if (recvType != null) {
 
             // Pointer-nullable (Heap<T>?, Ptr<T>?, Value<T>?, raw T*?) → NULL check
-            val guard = when (recvTypeKtc) {
-                is KtcType.Nullable if recvTypeKtc.inner is KtcType.Ptr ->
-                    "$recvName != NULL"
-                // Value-nullable Optional
-                is KtcType.Nullable if isValueNullableKtc(recvTypeKtc) ->
-                    "$recvName.tag == ktc_SOME"
-                // Heap<T?>/Ptr<T?>/Value<T?> or other nullable
-                is KtcType.Nullable -> "${recvName}\$has"
-                else -> null
-            }
+            val guard = if (recvTypeKtc is KtcType.Nullable && recvName != null)
+                nullGuardExpr(recvTypeKtc, recvName, recvName, false)
+            else null
 
             if (guard != null) {
                 val dotExpr = DotExpr(safe.obj, safe.name)
