@@ -59,14 +59,6 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 			return mangledGenericName(name, inferredArgs)
 			}
 		if (classes.containsKey(name)) return name
-		if (name == "heapArrayOf") {
-			val elemName = if (e.typeArgs.isNotEmpty()) {
-				typeSubst[e.typeArgs[0].name] ?: e.typeArgs[0].name
-				} else if (e.args.isNotEmpty()) {
-				inferExprType(e.args[0].expr) ?: "Int"
-				} else "Int"
-			return "${elemName}Array"
-			}
 		if (name == "HeapAlloc" || name == "HeapArrayZero" || name == "HeapArrayResize") {
 			val ta = e.typeArgs.getOrNull(0) ?: heapAllocTargetType ?: return "void*"
 			if (ta.name == "Array" && ta.typeArgs.isNotEmpty()) {

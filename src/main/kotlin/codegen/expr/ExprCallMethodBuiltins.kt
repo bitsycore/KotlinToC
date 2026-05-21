@@ -256,6 +256,15 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> "local\$${inDot.obj.name}"
 			else -> "$inRecv.ptr"
 			}
+		val vVarArrType   = varArrTypeName(vElemC)
+		val vResult       = tmp()
+		val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
+		if (vAllocObjName == "Heap") {
+			preStmts += "$vElemC* ${vResult}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSrcLen)")};"
+			preStmts += "if (${vResult}_ptr) memcpy(${vResult}_ptr, $vSrcPtr, (size_t)$vSrcLen * sizeof($vElemC));"
+			preStmts += "$vVarArrType $vResult = {${vResult}_ptr, $vSrcLen};"
+			return vResult
+			}
 		val vT            = tmp()
 		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
 		val vAllocCore    = (vAllocKtc as? KtcType.Nullable)?.inner ?: vAllocKtc
@@ -264,15 +273,12 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		if (vIsTrampoline) {
 			vIfExpr = vAllocExpr
 			} else {
-			val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
 			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
 				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
 				preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
-		val vVarArrType = varArrTypeName(vElemC)
-		val vResult     = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSrcLen), ${ktSrcStr()});"
 		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $vSrcPtr, (size_t)$vSrcLen * sizeof($vElemC));"
 		preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vSrcLen};"

@@ -26,10 +26,10 @@ fun testArrayPtr() {
 
     // HEAP ARRAY TO PTR
 
-    arrayPtrWithDispose(heapArrayOf(0,1,2,3,4,5))
-    val knownArr = heapArrayOf(10, 20, 30)
+    arrayPtrWithDispose(arrayOf(0,1,2,3,4,5).copyWith(Heap))
+    val knownArr = arrayOf(10, 20, 30).copyWith(Heap)
     arrayPtrWithDispose(knownArr)
-    val arrHeap = heapArrayOf(0,1,2,3,4,5)
+    val arrHeap = arrayOf(0,1,2,3,4,5).copyWith(Heap)
     arrayPtrWithDispose(arrHeap)
 
     // ARRAY COPY PTR
@@ -98,7 +98,7 @@ fun testArrayInt(): @Ptr Array<Int> {
 
     // arr3
 
-    val arr3: @Ptr Array<Int>? = heapArrayOf(5, 10, 15, 20)
+    val arr3: @Ptr Array<Int>? = arrayOf(5, 10, 15, 20).copyWith(Heap)
     arr3?.let { it ->
         if (it.size != 4) error("size should be 4")
         println("size = ${it.size}")

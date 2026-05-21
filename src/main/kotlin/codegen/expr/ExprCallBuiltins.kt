@@ -138,7 +138,6 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 			return genArrayOfExpr(inName, inArgs)
 
 		"arrayOf"     -> return genArrayOfExpr(inName, inArgs, inCall.typeArgs.getOrNull(0))
-		"heapArrayOf" -> return genHeapArrayOfExpr(inArgs, inCall.typeArgs.getOrNull(0))
 
 		"arrayOfNulls" -> {
 			val vTypeArg  = inCall.typeArgs.getOrNull(0)

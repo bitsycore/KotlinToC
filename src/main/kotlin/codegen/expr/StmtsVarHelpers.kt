@@ -141,24 +141,6 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 			return "${ind}$vOptCType ${vDataName}[] = {$vArgs};\n${ind}${vMutComment}$vVarArrType $varName = {$vDataName, ${init.args.size}};"
 			}
 		}
-	// heapArrayOf<T>(e1, e2, ...) → heap allocation, safe to return from functions
-	if (vCallee == "heapArrayOf") {
-		val vElemType = if (init.typeArgs.isNotEmpty()) cTypeStr(typeSubst[init.typeArgs[0].name] ?: init.typeArgs[0].name)
-			else if (init.args.isNotEmpty()) cTypeStr(inferExprType(init.args[0].expr) ?: "Int")
-			else "ktc_Int"
-		val vN  = init.args.size
-		val vSb         = StringBuilder()
-		val vDataName   = "${varName}_data"
-		val vVarArrType = varArrTypeName(vElemType)
-		flushPreStmts(ind)
-		val vInitName = "${varName}_init"
-		val vArgExprs = init.args.joinToString(", ") { genExpr(it.expr) }
-		vSb.appendLine("${ind}$vElemType ${vInitName}[] = {$vArgExprs};")
-		vSb.appendLine("${ind}$vElemType* $vDataName = ($vElemType*)${tMalloc("sizeof($vInitName)")};")
-		vSb.appendLine("${ind}memcpy($vDataName, $vInitName, sizeof($vInitName));")
-		vSb.appendLine("${ind}${vMutComment}/*@PTR*/ $vVarArrType $varName = {$vDataName, $vN};")
-		return vSb.toString().trimEnd()
-		}
 	val vElemType = when (vCallee) {
 		"byteArrayOf"   -> "ktc_Byte";    "shortArrayOf"  -> "ktc_Short"
 		"intArrayOf"    -> "ktc_Int";     "longArrayOf"   -> "ktc_Long"
@@ -213,7 +195,7 @@ internal fun CCodeGen.isArrayReturningCall(e: Expr?): Boolean {
 internal fun isAllocCall(e: Expr?): Boolean {
 	if (e !is CallExpr) return false
 	val name = (e.callee as? NameExpr)?.name ?: return false
-	return name in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize", "heapArrayOf")
+	return name in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize")
 	}
 
 /* Check if an expression is a malloc/calloc/realloc call with Array<T> type arg. */
@@ -221,9 +203,8 @@ internal fun CCodeGen.isAllocArrayCall(e: Expr?): Boolean {
 	val inner = if (e is NotNullExpr) e.expr else e
 	if (inner !is CallExpr) return false
 	val name = (inner.callee as? NameExpr)?.name ?: return false
-	if (name !in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize", "heapArrayOf")) return false
+	if (name !in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize")) return false
 	if (inner.typeArgs.isNotEmpty() && inner.typeArgs[0].name == "Array") return true
-	if (name == "heapArrayOf") return true
 	if (heapAllocTargetType != null && heapAllocTargetType!!.name == "Array" && heapAllocTargetType!!.typeArgs.isNotEmpty()) return true
 	return false
 	}
@@ -246,7 +227,6 @@ internal fun extractAllocSize(e: Expr?): Expr? {
 		"HeapAlloc"       -> inner.args.firstOrNull()?.expr
 		"HeapArrayZero"   -> inner.args.firstOrNull()?.expr
 		"HeapArrayResize" -> inner.args.getOrNull(1)?.expr
-		"heapArrayOf"     -> IntLit(inner.args.size.toLong())
 		else              -> null
 		}
 	}
@@ -256,16 +236,13 @@ internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
 	val inner = if (init is NotNullExpr) init.expr else init
 	if (inner is CallExpr) {
 		val name = (inner.callee as? NameExpr)?.name
-		if (name in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize", "heapArrayOf") && inner.typeArgs.isNotEmpty()) {
+		if (name in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize") && inner.typeArgs.isNotEmpty()) {
 			val ta = inner.typeArgs[0]
 			if (ta.name == "Array" && ta.typeArgs.isNotEmpty()) {
 				return ta.copy(annotations = ta.annotations + Annotation("Ptr"))
 				}
 			if (ta.name == "RawArray" && ta.typeArgs.isNotEmpty()) {
 				return ta.typeArgs[0].copy(annotations = ta.typeArgs[0].annotations + Annotation("Ptr"))
-				}
-			if (name == "heapArrayOf") {
-				return TypeRef("Array", nullable = true, typeArgs = listOf(ta), annotations = listOf(Annotation("Ptr")))
 				}
 			}
 		if (name == "arrayOf" && inner.typeArgs.isNotEmpty()) {

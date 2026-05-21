@@ -96,26 +96,6 @@ internal fun CCodeGen.genNewArrayWithLambda(elemCType: String, args: List<Arg>):
     return t
 }
 
-internal fun CCodeGen.genHeapArrayOfExpr(args: List<Arg>, inTypeArg: TypeRef? = null): String {
-    val elemType = if (inTypeArg != null) cTypeStr(typeSubst[inTypeArg.name] ?: inTypeArg.name)
-    else if (args.isNotEmpty()) {
-        val inferred = inferExprType(args[0].expr) ?: "Int"
-        val inferredKtc = inferExprTypeKtc(args[0].expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
-        cTypeStr(inferred)
-    } else "ktc_Int"
-    val n           = args.size
-    val vVarArrType = varArrTypeName(elemType)
-    val t           = tmp()
-    val vTData      = "${t}_data"
-    val vInitName   = "${t}_init"
-    val vArgExprs   = args.joinToString(", ") { genExpr(it.expr) }
-    preStmts += "$elemType $vInitName[] = {$vArgExprs};"
-    preStmts += "$elemType* $vTData = ($elemType*)${tMalloc("sizeof($vInitName)")};"
-    preStmts += "memcpy($vTData, $vInitName, sizeof($vInitName));"
-    preStmts += "$vVarArrType $t = {$vTData, $n};"
-    return t
-}
-
 
 // ── fill default arguments ───────────────────────────────────────
 

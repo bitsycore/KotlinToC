@@ -28,13 +28,6 @@ internal fun CCodeGen.scanForClassArrayTypes() {
 					if (argName != null && classes.containsKey(argName)) classArrayTypes.add(argName)
 					}
 				}
-			if (name == "heapArrayOf" && e.args.isNotEmpty()) {
-				val firstArg = e.args[0].expr
-				if (firstArg is CallExpr) {
-					val argName = (firstArg.callee as? NameExpr)?.name
-					if (argName != null && classes.containsKey(argName)) classArrayTypes.add(argName)
-					}
-				}
 			if (name == "arrayOfNulls" && e.typeArgs.isNotEmpty()) {
 				val elem = e.typeArgs[0].name
 				if (elem !in primitives) classArrayTypes.add(elem)
