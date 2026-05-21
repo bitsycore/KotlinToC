@@ -219,7 +219,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine("$cRet ${cName}_$fnName($params) {")
         impl.appendLine("    ${cName}_\$ensure_init();")
         val prevState = saveFunState()
-        val prevObjectM = currentObject
         currentFnReturnsArray      = returnsArray
         currentFnReturnsSizedArray = returnsSizedArray
         currentFnReturnType        = retResolved
@@ -242,18 +241,11 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val vKtcObjParam = resolveTypeName(p.type)
             defineVar(p.name, if (p.isVararg) "${vKtcObjParam.toInternalStr}Array" else vKtcObjParam.toInternalStr)
         }
-        val savedTrampolined      = trampolinedParams.toHashSet(); trampolinedParams.clear()
-        val savedSizedTrampolined = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
         emitArrayParamCopies(m.params, "    ")
-        val savedDefers = deferStack.toList(); deferStack.clear()
         if (m.body != null) for (s in m.body.stmts) emitStmt(s, "    ")
         if (m.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ")
-        deferStack.clear(); deferStack.addAll(savedDefers)
-        trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined)
-        sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined)
         popScope()
         restoreFunState(prevState)
-        currentObject = prevObjectM
         impl.appendLine("}")
         impl.appendLine()
     }

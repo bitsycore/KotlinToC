@@ -354,7 +354,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // ── Current class context (when generating methods) ──────────────
     internal var fnCtx = FunctionContext()
     internal var currentClass: String?  get() = fnCtx.klass;   set(v) { fnCtx.klass = v }
-    internal var currentObject: String? = null
+    internal var currentObject: String? get() = fnCtx.currentObject; set(v) { fnCtx.currentObject = v }
     internal var selfIsPointer: Boolean get() = fnCtx.selfPtr; set(v) { fnCtx.selfPtr = v }
     // Objects with dispose methods — called on main() exit
     internal val objectsWithDispose = mutableListOf<String>()  // cName of objects with dispose
@@ -365,7 +365,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // ── Trampolined array params (pass-by-value copy on stack) ────────
     // Names of array parameters whose data has been copied via alloca+memcpy.
     // genName redirects these to their local$name copy; .size uses the trampoline field.
-    internal val trampolinedParams = mutableSetOf<String>()
+    internal val trampolinedParams: MutableSet<String>
+        get() = fnCtx.trampolinedParams
     internal var currentExtRecvType: String? get() = fnCtx.extRecvType; set(v) { fnCtx.extRecvType = v }
     // Target type for HeapAlloc/HeapArrayZero/HeapArrayResize inference (context from LHS)
     internal var heapAllocTargetType: TypeRef? = null
@@ -600,7 +601,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Names of @Size(N) array params that arrived as ktc_Array_T_N structs and were
     unpacked to local$name pointers. Subset of trampolinedParams; checked when
     emitting .size to avoid accessing a non-existent .size field on the struct. */
-    internal val sizedArrayTrampolinedParams = mutableSetOf<String>() // sized struct param names
+    internal val sizedArrayTrampolinedParams: MutableSet<String>
+        get() = fnCtx.sizedArrayTrampolinedParams
 
     /* Tmp var names emitted as ktc_Array_T_N structs by genArrayOfExpr (rather than raw C arrays).
     Used by the return handler to emit `return tmpVar` directly without an extra memcpy. */
@@ -608,10 +610,10 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
 
     /* Snapshot type for save/restore of function context across nested emit functions. */
     internal typealias FunState = FunctionContext
-    internal fun saveFunState(): FunState = fnCtx.copy()
+    internal fun saveFunState(): FunState = fnCtx.deepCopy()
     internal fun restoreFunState(inState: FunState) { fnCtx = inState }
 
-    internal var loopDepth: Int = 0  // nesting depth of active for/while/do-while loops
+    internal var loopDepth: Int get() = fnCtx.loopDepth; set(v) { fnCtx.loopDepth = v }
 
     // ── Source location tracking for error messages ──────────────────
     internal var currentStmtLine: Int = 0
@@ -674,7 +676,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var diagnosticWarningCount: Int = 0  // total warnings emitted this file
 
     // ── Defer stack (LIFO: last deferred = first to execute) ─────────
-    internal val deferStack = mutableListOf<Block>()
+    internal val deferStack: MutableList<Block>
+        get() = fnCtx.deferStack
 
     /** Emit all deferred blocks in LIFO order (does NOT clear the stack). */
     internal fun emitDeferredBlocks(ind: String, insideMethod: Boolean = false) {

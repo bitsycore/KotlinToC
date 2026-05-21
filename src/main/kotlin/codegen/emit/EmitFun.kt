@@ -84,10 +84,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = vCName))
 			}
 		}
-	val savedTrampolined      = trampolinedParams.toHashSet();      trampolinedParams.clear()
-	val savedSizedTrampolined = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
 	emitArrayParamCopies(f.params, "    ")
-	val savedDefers = deferStack.toList(); deferStack.clear()
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
 	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
 		emitDeferredBlocks("    ", insideMethod = isClassType)
@@ -96,9 +93,6 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 			else impl.appendLine("    return ${optNone(optRetCType)};")
 			}
 		}
-	deferStack.clear();                deferStack.addAll(savedDefers)
-	trampolinedParams.clear();          trampolinedParams.addAll(savedTrampolined)
-	sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined)
 	popScope()
 	restoreFunState(prevState)
 	impl.appendLine("}")
@@ -144,7 +138,6 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 	impl.appendLine("$cRet $cName($params) {")
 
 	val prevState  = saveFunState()
-	val prevIsMain = currentFnIsMain
 	currentFnReturnsNullable    = returnsNullable
 	currentFnReturnsArray       = returnsArray
 	currentFnReturnsSizedArray  = returnsSizedArray
@@ -170,8 +163,6 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 			})
 		if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcP))) markOptional(p.name)
 		}
-	val savedTrampolined      = trampolinedParams.toHashSet();      trampolinedParams.clear()
-	val savedSizedTrampolined = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
 	if (isMain) {
 		// main's array params come from main.c already laid out — alias without copying
 		for (vP in f.params) {
@@ -185,7 +176,6 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		} else {
 		emitArrayParamCopies(f.params, "    ")
 		}
-	val savedDefers = deferStack.toList(); deferStack.clear()
 
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ")
 	val lastStmt = f.body?.stmts?.lastOrNull()
@@ -201,12 +191,8 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		if (vRetKtc is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
 		else impl.appendLine("    return ${optNone(optRetCType)};")
 		}
-	trampolinedParams.clear();          trampolinedParams.addAll(savedTrampolined)
-	sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined)
 	popScope()
-	deferStack.clear(); deferStack.addAll(savedDefers)
 	restoreFunState(prevState)
-	currentFnIsMain = prevIsMain
 	impl.appendLine("}")
 	impl.appendLine()
 	}

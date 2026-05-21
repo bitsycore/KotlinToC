@@ -111,11 +111,7 @@ internal fun CCodeGen.emitMethod(
 			defineVar(name, LocalVar(ktc = vKtc, mutable = true, optional = vIsOpt, cName = "$vParentCName.$vFn"))
 			}
 		}
-	val savedTrampolined1 = trampolinedParams.toHashSet(); trampolinedParams.clear()
-	val savedSizedTrampolined1 = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
 	emitArrayParamCopies(f.params, "    ")
-
-	val savedDefers = deferStack.toList(); deferStack.clear()
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
 	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
 		emitDeferredBlocks("    ", insideMethod = true)
@@ -124,9 +120,6 @@ internal fun CCodeGen.emitMethod(
 			else impl.appendLine("    return ${optNone(optRetCType)};")
 			}
 		}
-	deferStack.clear(); deferStack.addAll(savedDefers)
-	trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined1)
-	sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined1)
 	popScope()
 
 	restoreFunState(prevState)

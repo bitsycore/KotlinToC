@@ -99,15 +99,9 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 				})
 			if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcP))) markOptional(p.name)
 			}
-		val savedTrampolined      = trampolinedParams.toHashSet();      trampolinedParams.clear()
-		val savedSizedTrampolined = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
 		emitArrayParamCopies(f.params, "    ")
-		val savedDefers = deferStack.toList(); deferStack.clear()
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = false)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = false)
-		deferStack.clear();                deferStack.addAll(savedDefers)
-		trampolinedParams.clear();          trampolinedParams.addAll(savedTrampolined)
-		sizedArrayTrampolinedParams.clear(); sizedArrayTrampolinedParams.addAll(savedSizedTrampolined)
 		popScope()
 		restoreFunState(prevState)
 		impl.appendLine("}")
@@ -154,13 +148,11 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 		hdr.appendLine("$cRet $cFnName($allParams);")
 		impl.appendLine("$cRet $cFnName($allParams) {")
 
-		val prevClass        = currentClass
-		val prevSelfIsPtr    = selfIsPointer
-		val prevExtRecvType  = currentExtRecvType
 		currentExtRecvType = if (recvIsNullable) "$mangledRecvName?" else mangledRecvName
 		if (isClassType) { currentClass = mangledRecvName; selfIsPointer = true }
 		else             { currentClass = null;            selfIsPointer = false }
 
+		val prevState = saveFunState()
 		pushScope()
 		for (p in f.params) {
 			val vKtcP = resolveTypeName(p.type)
@@ -180,18 +172,11 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 				defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self->$vCFieldName"))
 				}
 			}
-		val savedTrampolined = trampolinedParams.toHashSet(); trampolinedParams.clear()
 		emitArrayParamCopies(f.params, "    ")
-		val savedDefers = deferStack.toList(); deferStack.clear()
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = isClassType)
-		deferStack.clear(); deferStack.addAll(savedDefers)
-		trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined)
 		popScope()
-
-		currentClass       = prevClass
-		selfIsPointer      = prevSelfIsPtr
-		currentExtRecvType = prevExtRecvType
+		restoreFunState(prevState)
 		impl.appendLine("}")
 		impl.appendLine()
 
@@ -229,13 +214,11 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 		hdr.appendLine("$cRet $cFnName($allParams);")
 		impl.appendLine("$cRet $cFnName($allParams) {")
 
-		val prevClass        = currentClass
-		val prevSelfIsPtr    = selfIsPointer
-		val prevExtRecvType  = currentExtRecvType
 		currentExtRecvType = className
 		currentClass       = className
 		selfIsPointer      = true
 
+		val prevState = saveFunState()
 		pushScope()
 		for (p in f.params) {
 			val vKtcP = resolveTypeName(p.type)
@@ -252,18 +235,11 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
 			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self->$vCFieldName"))
 			}
-		val savedTrampolined = trampolinedParams.toHashSet(); trampolinedParams.clear()
 		emitArrayParamCopies(f.params, "    ")
-		val savedDefers = deferStack.toList(); deferStack.clear()
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = true)
-		deferStack.clear(); deferStack.addAll(savedDefers)
-		trampolinedParams.clear(); trampolinedParams.addAll(savedTrampolined)
 		popScope()
-
-		currentClass       = prevClass
-		selfIsPointer      = prevSelfIsPtr
-		currentExtRecvType = prevExtRecvType
+		restoreFunState(prevState)
 		impl.appendLine("}")
 		impl.appendLine()
 

@@ -172,9 +172,10 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
 	flushPreStmts("    ")
 	impl.appendLine("    $cClass \$self = ${cClass}_primaryConstructor($delegateArgs);")
 
-	pushScope()
+	val prevState = saveFunState()
 	currentClass = className
 	selfIsPointer = false
+	pushScope()
 	for (p in sctor.params) {
 		val vKtcP = resolveTypeName(p.type)
 		defineVar(p.name, LocalVar(ktc = vKtcP, mutable = true))
@@ -192,7 +193,7 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
 
 	for (s in sctor.body.stmts) emitStmt(s, "    ", true)
 	popScope()
-	currentClass = null
+	restoreFunState(prevState)
 
 	impl.appendLine("    return \$self;")
 	impl.appendLine("}")

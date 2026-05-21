@@ -225,7 +225,21 @@ internal data class FunctionContext(
 	var klass: String?             = null,    // current class context (name of class being emitted)
 	var selfPtr: Boolean           = true,    // true when $self is a pointer
 	var extRecvType: String?       = null,    // extension receiver type name
-	)
+
+	// Per-function mutable state (formerly on CCodeGen, now auto-saved/restored)
+	var trampolinedParams: MutableSet<String>        = mutableSetOf(),  // array param names trampolined to local pointers
+	var sizedArrayTrampolinedParams: MutableSet<String> = mutableSetOf(), // @Size array param names (subset of trampolined)
+	var deferStack: MutableList<Block>               = mutableListOf(),  // LIFO stack of deferred blocks
+	var currentObject: String?                        = null,            // current object singleton context
+	var loopDepth: Int                                = 0,               // active for/while/do-while nesting depth
+	) {
+	    /** Deep-copies mutable collections so save/restore is isolated. */
+	    fun deepCopy(): FunctionContext = copy(
+	        trampolinedParams           = trampolinedParams.toMutableSet(),
+	        sizedArrayTrampolinedParams = sizedArrayTrampolinedParams.toMutableSet(),
+	        deferStack                  = deferStack.toMutableList(),
+	    )
+	}
 
 /*
 Read-only view of the symbol tables and core name-resolution helpers used across
