@@ -16,7 +16,7 @@ internal fun ptrNullComment(kt: KtcType): String = when (kt) {
 
 internal fun CCodeGen.cType(t: TypeRef): String = cTypeStr(resolveTypeName(t))
 
-/* Expand ctor props: array → (T* name, ktc_Int name$len), nullable → OptT name. */
+/* Expand ctor props: array → ktc_VarArr_T name, nullable → OptT name. */
 internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
 	val vParts = mutableListOf<String>() // accumulated C parameter declarations
 	for (vProp in inProps) {
@@ -26,8 +26,24 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
 		when {
 			vKtc is KtcType.Func -> vParts += cFuncPtrDecl(vKtc, vName)
 			vKtc.isArrayLike     -> {
-				vParts += "${cTypeStr(vKtc)} $vName"
-				if (!vType.hasSizeAnnotation()) vParts += "ktc_Int ${vName}\$len"
+				when {
+					vKtc is KtcType.Ptr -> {
+						// @Ptr Array<T>: keep as T* + $len companion (raw pointer ABI)
+						vParts += "${cTypeStr(vKtc)} $vName"
+						if (!vType.hasSizeAnnotation()) vParts += "ktc_Int ${vName}\$len"
+						}
+					vType.hasSizeAnnotation() -> {
+						// @Size(N) Array<T>: fixed-size struct
+						vParts += "${cTypeStr(vKtc)} $vName"
+						}
+					else -> {
+						// Regular Array<T>: typed VarArr struct (no companion)
+						val vArrElem   = vKtc.asArr!!.elem
+						val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr)
+							else cTypeStr(vArrElem)
+						vParts += "${varArrTypeName(vElemCType)} $vName"
+						}
+					}
 				}
 			vType.nullable       -> vParts += "${optCTypeName(vKtc.toInternalStr)} $vName"
 			else                 -> vParts += "${cTypeStr(vKtc)} $vName"
@@ -36,7 +52,7 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
 	return vParts.joinToString(", ")
 	}
 
-/* Expand a parameter list: variable array params → ktc_ArrayTrampoline, @Size arrays → struct, nullable params → OptT name. */
+/* Expand a parameter list: variable array params → ktc_VarArr_T, @Size arrays → struct, nullable params → OptT name. */
 internal fun CCodeGen.expandParams(inParams: List<Param>): String {
 	val vParts = mutableListOf<String>() // accumulated C parameter declarations
 	for (vP in inParams) {
@@ -67,7 +83,7 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
 					val vArrElem     = vKtc.asArr!!.elem
 					val vElemCType   = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr)
 						else cTypeStr(vArrElem)
-					vParts += "ktc_ArrayTrampoline ${vP.name}$vNullComment /** ${vElemCType}[] */"
+					vParts += "${varArrTypeName(vElemCType)} ${vP.name}$vNullComment /** ${vElemCType}[] */"
 					}
 				}
 			vP.type.nullable -> {
@@ -114,13 +130,13 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
 			else cTypeStr(vElem)
 		if (vP.type.nullable) {
 			impl.appendLine("${inInd}$vElemCType* local$${vP.name} = NULL;")
-			impl.appendLine("${inInd}if (${vP.name}.data != NULL) {")
-			impl.appendLine("$inInd    local$${vP.name} = ($vElemCType*)ktc_core_alloca(sizeof($vElemCType) * ${vP.name}.size);")
-			impl.appendLine("$inInd    memcpy(local$${vP.name}, ${vP.name}.data, sizeof($vElemCType) * ${vP.name}.size);")
+			impl.appendLine("${inInd}if (${vP.name}.ptr != NULL) {")
+			impl.appendLine("$inInd    local$${vP.name} = ($vElemCType*)ktc_core_alloca(sizeof($vElemCType) * ${vP.name}.len);")
+			impl.appendLine("$inInd    memcpy(local$${vP.name}, ${vP.name}.ptr, sizeof($vElemCType) * ${vP.name}.len);")
 			impl.appendLine("${inInd}}")
 			} else {
-			impl.appendLine("${inInd}$vElemCType* local$${vP.name} = ($vElemCType*)ktc_core_alloca(sizeof($vElemCType) * ${vP.name}.size);")
-			impl.appendLine("${inInd}memcpy(local$${vP.name}, ${vP.name}.data, sizeof($vElemCType) * ${vP.name}.size);")
+			impl.appendLine("${inInd}$vElemCType* local$${vP.name} = ($vElemCType*)ktc_core_alloca(sizeof($vElemCType) * ${vP.name}.len);")
+			impl.appendLine("${inInd}memcpy(local$${vP.name}, ${vP.name}.ptr, sizeof($vElemCType) * ${vP.name}.len);")
 			}
 		trampolinedParams += vP.name
 		}

@@ -108,6 +108,11 @@ ktc_UInt ktc_core_rand_range(ktc_ULong* state, ktc_ULong* inc, ktc_UInt bound);
 /** Pass-by-value for variable-size arrays; functions copy data to a local stack buffer. */
 typedef struct { ktc_Int __array_type_id; ktc_Int size; void* data; } ktc_ArrayTrampoline;
 
+/** Typed variable-size array: a ptr + len pair.
+Generated per element type via KTC_DECL_VAR_ARR.
+Replaces ktc_ArrayTrampoline in function parameter ABIs. */
+#define KTC_DECL_VAR_ARR(ElemType, Name) typedef struct { ElemType* ptr; ktc_Int len; } Name
+
 /** Base "supertype" embedded at the start of every class/object/interface struct.
  *  Mirrors Kotlin's implicit `Any` superclass.
  *  typeId is unsigned so the MSB (bit 31) can serve as a disposed flag

@@ -380,7 +380,7 @@ fun main(args: Array<String>) {
                 appendLine("    for (ktc_Int \$i = 0; \$i < \$nargs; \$i++) {")
                 appendLine("        \$args_buf[\$i] = (ktc_String){argv[\$i + 1], (ktc_Int)strlen(argv[\$i + 1])};")
                 appendLine("    }")
-                appendLine("    ktc_ArrayTrampoline \$vargs = {0, \$nargs, \$args_buf};")
+                appendLine("    ktc_VarArr_ktc_String \$vargs = {\$args_buf, \$nargs};")
                 appendLine("    ktc_core_mainInit();")
                 if (vReturnsInt)
                     appendLine("    return (int)${vCMain}(\$vargs);")

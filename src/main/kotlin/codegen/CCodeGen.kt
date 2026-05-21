@@ -598,6 +598,13 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Sizes N for KTC_DEFINE_STRING(N) emission (always guarded – String is a primitive). */
     internal val sizedStringDecls = mutableSetOf<Int>()                      // string size N
 
+    // ── VarArr (typed variable-size array) type registry ────────────
+    /* Element C type strings for KTC_DECL_VAR_ARR(T, Name) emitted WITHOUT guard.
+    Used only for user types defined in the current package. */
+    internal val varArrDecls = mutableSetOf<String>()                        // unguarded: current-pkg user types
+    /* Same but emitted WITH #ifndef guard for primitives and external types. */
+    internal val varArrGuardedDecls = mutableSetOf<String>()                 // guarded: primitives / external types
+
     // ── Sized array param tracking ────────────────────────────────────
     /* Names of @Size(N) array params that arrived as ktc_Array_T_N structs and were
     unpacked to local$name pointers. Subset of trampolinedParams; checked when

@@ -66,3 +66,18 @@ internal fun sizedArrayCTypeRef(inElemCType: String, inSize: Int): String =
 internal fun sizedStringCTypeRef(inSize: Int): String =
 	"ktc_String_$inSize"
 
+/* Sanitize a C type string into a valid C identifier suffix (replaces $, *, space). */
+internal fun sanitizeForVarArrName(inCType: String): String =
+	inCType.replace('$', '_').replace('*', 'p').replace(' ', '_')
+
+/* Registers KTC_DECL_VAR_ARR and returns the typedef name for a typed array with element type inElemCType. */
+internal fun CCodeGen.varArrTypeName(inElemCType: String): String {
+	if (isCurrentPkgUserType(inElemCType)) varArrDecls.add(inElemCType)
+	else varArrGuardedDecls.add(inElemCType)
+	return "ktc_VarArr_${sanitizeForVarArrName(inElemCType)}"
+	}
+
+/* Returns the VarArr typedef name WITHOUT registering it (for use at call sites). */
+internal fun varArrTypeRef(inElemCType: String): String =
+	"ktc_VarArr_${sanitizeForVarArrName(inElemCType)}"
+

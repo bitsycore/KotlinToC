@@ -6,9 +6,9 @@ import com.bitsycore.ktc.types.KtcType
 
 /* Returns the size expression for a trampolined param's array length.
 For sized struct params (in sizedArrayTrampolinedParams), the local$name$len constant is used.
-For regular ktc_ArrayTrampoline params, the trampoline .size field is used. */
+For regular ktc_VarArr_T params, the .len field is used. */
 internal fun CCodeGen.arrayParamSizeExpr(inName: String): String =
-	if (inName in sizedArrayTrampolinedParams) "local\$${inName}\$len" else "$inName.size"
+	if (inName in sizedArrayTrampolinedParams) "local\$${inName}\$len" else "$inName.len"
 
 /* If expr accesses a @Size(N) array field, return N. */
 private fun CCodeGen.getSizedArrayFieldSize(expr: Expr): Int? {
@@ -155,18 +155,21 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					preStmts += "$vStructType $vWrap;"
 					preStmts += "memcpy($vWrap.arr, $expr, $vSize * sizeof($vElemCType));"
 					parts += vWrap
-					} else if (arg.expr is NullLit && !isCtorCall) {
-					// Both nullable and non-nullable use ktc_ArrayTrampoline; NULL is data == NULL
-					parts += "(ktc_ArrayTrampoline){.size = 0, .data = NULL}"
 					} else {
-					// Non-null array (nullable or not): pack as ktc_ArrayTrampoline
-					val argName  = (arg.expr as? NameExpr)?.name
-					val sizeExpr = if (argName != null && argName in trampolinedParams) arrayParamSizeExpr(argName) else "${expr}\$len"
-					if (isCtorCall) {
-						parts += expr
-						parts += sizeExpr
+					// Variable-size array → build typed ktc_VarArr_T literal
+					val vElemKtc    = paramTypeKtc.asArr?.elem
+						?: (paramTypeKtc as? KtcType.Nullable)?.inner?.asArr?.elem
+						?: KtcType.Prim(KtcType.PrimKind.Int)
+					val vElemCType  = if (vElemKtc is KtcType.Nullable) optCTypeName(vElemKtc.inner.toInternalStr)
+						else cTypeStr(vElemKtc)
+					val vVarArrType = varArrTypeName(vElemCType)
+					if (arg.expr is NullLit) {
+						parts += "($vVarArrType){NULL, 0}"
 						} else {
-						parts += "(ktc_ArrayTrampoline){.size = $sizeExpr, .data = $expr}"
+						val vArgName  = (arg.expr as? NameExpr)?.name
+						val vSizeExpr = if (vArgName != null && vArgName in trampolinedParams) arrayParamSizeExpr(vArgName) else "${expr}\$len"
+						// Cast ptr to expected element type (may differ when passing Array<Int> to Array<Int?>)
+						parts += "($vVarArrType){($vElemCType*)$expr, $vSizeExpr}"
 						}
 					}
 				} else if ((param.type.nullable || paramTypeKtc is KtcType.Nullable) && isValueNullableKtc(paramTypeKtc.let {
