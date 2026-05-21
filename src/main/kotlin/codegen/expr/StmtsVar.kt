@@ -139,7 +139,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     ) "const " else ""
 
     if (s.init != null) {
-        val arrayInit = tryArrayOfInit(s.name, s.init, ct, t, ind, s.mutable)
+        val arrayInit = tryArrayOfInit(s.name, s.init, vKtc, ind, s.mutable)
         if (arrayInit != null) {
             impl.appendLine(arrayInit)
             // Emit $has for nullable array variables so safe-calls work

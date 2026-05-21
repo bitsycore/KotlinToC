@@ -9,7 +9,7 @@ import com.bitsycore.ktc.types.KtcType
 // Array-init detection, alloc introspection, and type inference
 // for emitVarDecl (StmtsVar.kt).
 
-internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t: String, ind: String, inMut: Boolean = false): String? {
+internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType, ind: String, inMut: Boolean = false): String? {
 	if (init !is CallExpr) return null
 	val vMutComment = if (inMut) "/*VAR*/ " else "/*VAL*/ " // mutability annotation for the declaration
 	// .ptr() / .copyWith() on array expression → propagate VarArr struct to the target variable
@@ -22,7 +22,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 				val vVarArrType = varArrTypeName(vElemC)
 				// .ptr() on a fresh literal-size ctor: generate static array directly, skip the call
 				if (vDot.name == "ptr" && vDot.obj is CallExpr) {
-					val vInner = tryArrayOfInit(varName, vDot.obj, cTypeStr(vRecvKtc), vRecvKtc.toInternalStr, ind, inMut)
+					val vInner = tryArrayOfInit(varName, vDot.obj, vRecvKtc, ind, inMut)
 					if (vInner != null) return vInner
 					}
 				val vExpr     = genExpr(init)
@@ -125,8 +125,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 	// arrayOf<T?>(...) or arrayOf(...) where declared type is an OptArray: wrap elements in Optional struct
 	if (vCallee == "arrayOf") {
 		val vTypeArg  = init.typeArgs.getOrNull(0)
-		val vTKtc     = parseResolvedTypeName(t)
-		val vTKtcCore = (vTKtc as? KtcType.Nullable)?.inner ?: vTKtc
+		val vTKtcCore = (inKtc as? KtcType.Nullable)?.inner ?: inKtc
 		val vIsOptArray = vTKtcCore is KtcType.Ptr && vTKtcCore.inner is KtcType.Arr
 			&& vTKtcCore.inner.elem is KtcType.Nullable
 		val vIsNullableElem = vTypeArg?.nullable == true || vIsOptArray
