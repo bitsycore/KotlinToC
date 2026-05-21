@@ -139,7 +139,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     ) "const " else ""
 
     if (s.init != null) {
-        val arrayInit = tryArrayOfInit(s.name, s.init, ct, t, ind)
+        val arrayInit = tryArrayOfInit(s.name, s.init, ct, t, ind, s.mutable)
         if (arrayInit != null) {
             impl.appendLine(arrayInit)
             // Emit $has for nullable array variables so safe-calls work
@@ -272,7 +272,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     val vVarArrType = varArrTypeName(vElemC)
                     val expr        = genExpr(s.init)
                     flushPreStmts(ind)
-                    impl.appendLine("$ind$qual$vVarArrType ${s.name} = $expr;")
+                    impl.appendLine("$ind$mutComment$qual$vVarArrType ${s.name} = $expr;")
                     return
                 }
                 if (s.type != null) heapAllocTargetType = s.type
@@ -288,13 +288,13 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                         val vSrcName = s.init.name
                         impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcName.len);")
                         impl.appendLine("${ind}memcpy($vDataName, $vSrcName.ptr, sizeof($elemCType) * $vSrcName.len);")
-                        impl.appendLine("${ind}$qual$vVarArrType ${s.name} = {$vDataName, $vSrcName.len};")
+                        impl.appendLine("${ind}$mutComment$qual$vVarArrType ${s.name} = {$vDataName, $vSrcName.len};")
                     } else {
                         val vTmpName = "${s.name}_tmp"
                         impl.appendLine("${ind}$vVarArrType $vTmpName = $expr;")
                         impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vTmpName.len);")
                         impl.appendLine("${ind}memcpy($vDataName, $vTmpName.ptr, sizeof($elemCType) * $vTmpName.len);")
-                        impl.appendLine("${ind}$qual$vVarArrType ${s.name} = {$vDataName, $vTmpName.len};")
+                        impl.appendLine("${ind}$mutComment$qual$vVarArrType ${s.name} = {$vDataName, $vTmpName.len};")
                     }
                 } else {
                     // Heap array (Ptr<Arr>): copy the ktc_VarArr_T struct (reference semantics)

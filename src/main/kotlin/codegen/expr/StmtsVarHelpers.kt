@@ -9,8 +9,9 @@ import com.bitsycore.ktc.types.KtcType
 // Array-init detection, alloc introspection, and type inference
 // for emitVarDecl (StmtsVar.kt).
 
-internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t: String, ind: String): String? {
+internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t: String, ind: String, inMut: Boolean = false): String? {
 	if (init !is CallExpr) return null
+	val vMutComment = if (inMut) "/*VAR*/ " else "/*VAL*/ " // mutability annotation for the declaration
 	// .ptr() / .copyWith() on array expression → propagate VarArr struct to the target variable
 	if (init.callee is DotExpr) {
 		val vDot = init.callee
@@ -21,12 +22,13 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 				val vVarArrType = varArrTypeName(vElemC)
 				// .ptr() on a fresh literal-size ctor: generate static array directly, skip the call
 				if (vDot.name == "ptr" && vDot.obj is CallExpr) {
-					val vInner = tryArrayOfInit(varName, vDot.obj, cTypeStr(vRecvKtc), vRecvKtc.toInternalStr, ind)
+					val vInner = tryArrayOfInit(varName, vDot.obj, cTypeStr(vRecvKtc), vRecvKtc.toInternalStr, ind, inMut)
 					if (vInner != null) return vInner
 					}
-				val vExpr       = genExpr(init)
+				val vExpr     = genExpr(init)
+				val vPtrMark  = if (vDot.name == "copyWith" && init.args.isNotEmpty()) "/*@PTR*/ " else ""
 				flushPreStmts(ind)
-				return "$ind$vVarArrType $varName = $vExpr;"
+				return "$ind$vMutComment$vPtrMark$vVarArrType $varName = $vExpr;"
 				}
 			}
 		}
@@ -41,7 +43,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 		val vDataName   = "${varName}_data"
 		return "${ind}$vOptCType* $vDataName = ($vOptCType*)ktc_core_alloca(sizeof($vOptCType) * (size_t)($vSize));\n" +
 			"${ind}memset($vDataName, 0, sizeof($vOptCType) * (size_t)($vSize));\n" +
-			"${ind}$vVarArrType $varName = {$vDataName, $vSize};"
+			"${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vSize};"
 		}
 	// Array<T>(size), IntArray(size) etc. — fresh stack allocation
 	if (vCallee in setOf(
@@ -106,7 +108,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 				}
 			vSb.appendLine("${ind}}")
 			popScope()
-			vSb.appendLine("${ind}$vVarArrType $varName = {$vDataName, $vSize};")
+			vSb.appendLine("${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vSize};")
 			return vSb.toString()
 			}
 		flushPreStmts(ind)
@@ -114,10 +116,10 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 		val vVarArrType = varArrTypeName(vElemC)
 		return if (vSizeArg.expr is IntLit || vSizeArg.expr is LongLit) {
 			"${ind}$vElemC ${vDataName}[$vSize] = {0};\n" +
-				"${ind}$vVarArrType $varName = {$vDataName, $vSize};"
+				"${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vSize};"
 			} else {
 			"${ind}$vElemC* $vDataName = ($vElemC*)ktc_core_alloca(sizeof($vElemC) * (size_t)($vSize));\n" +
-				"${ind}$vVarArrType $varName = {$vDataName, $vSize};"
+				"${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vSize};"
 			}
 		}
 	// arrayOf<T?>(...) or arrayOf(...) where declared type is an OptArray: wrap elements in Optional struct
@@ -137,7 +139,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 				}
 			val vDataName   = "${varName}_data"
 			val vVarArrType = varArrTypeName(vOptCType)
-			return "${ind}$vOptCType ${vDataName}[] = {$vArgs};\n${ind}$vVarArrType $varName = {$vDataName, ${init.args.size}};"
+			return "${ind}$vOptCType ${vDataName}[] = {$vArgs};\n${ind}${vMutComment}$vVarArrType $varName = {$vDataName, ${init.args.size}};"
 			}
 		}
 	// heapArrayOf<T>(e1, e2, ...) → heap allocation, safe to return from functions
@@ -155,7 +157,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 		vSb.appendLine("${ind}$vElemType ${vInitName}[] = {$vArgExprs};")
 		vSb.appendLine("${ind}$vElemType* $vDataName = ($vElemType*)${tMalloc("sizeof($vInitName)")};")
 		vSb.appendLine("${ind}memcpy($vDataName, $vInitName, sizeof($vInitName));")
-		vSb.appendLine("${ind}$vVarArrType $varName = {$vDataName, $vN};")
+		vSb.appendLine("${ind}${vMutComment}/*@PTR*/ $vVarArrType $varName = {$vDataName, $vN};")
 		return vSb.toString().trimEnd()
 		}
 	val vElemType = when (vCallee) {
@@ -178,7 +180,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 	val vN          = init.args.size
 	val vDataName   = "${varName}_data"
 	val vVarArrType = varArrTypeName(vElemType)
-	return "${ind}$vElemType ${vDataName}[] = {$vArgs};\n${ind}$vVarArrType $varName = {$vDataName, $vN};"
+	return "${ind}$vElemType ${vDataName}[] = {$vArgs};\n${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vN};"
 	}
 
 /* Check if an expression is a call to a function known to return nullable. */
