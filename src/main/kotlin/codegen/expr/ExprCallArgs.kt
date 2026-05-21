@@ -150,8 +150,17 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						if (vArgName != null && vArgName in trampolinedParams) {
 							parts += "($vVarArrTp){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
 							} else {
-							val vSrcKtc = inferExprTypeKtc(arg.expr)
-							parts += "($vVarArrTp){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
+							val vSrcKtc   = inferExprTypeKtc(arg.expr)
+							val vSrcCore  = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
+							val vSrcElem  = vSrcCore?.asArr?.elem
+							val vSrcElemC = vSrcElem?.let {
+								if (it is KtcType.Nullable) optCTypeName(it.inner.toInternalStr) else cTypeStr(it)
+								}
+							if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) {
+								parts += expr
+								} else {
+								parts += "($vVarArrTp){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
+								}
 							}
 						} else if (paramTypeKtc is KtcType.Ptr && (paramTypeKtc.inner is KtcType.Void || paramTypeKtc.inner is KtcType.Any)) {
 						// AnyPtr / @Ptr Any (void*): extract .ptr when arg is a VarArr
