@@ -107,9 +107,11 @@ internal fun CCodeGen.genHeapArrayOfExpr(args: List<Arg>, inTypeArg: TypeRef? = 
     val vVarArrType = varArrTypeName(elemType)
     val t           = tmp()
     val vTData      = "${t}_data"
-    preStmts += "$elemType* $vTData = ($elemType*)${tMalloc("sizeof($elemType) * $n")};"
-    val vals = args.mapIndexed { i, arg -> "$vTData[$i] = ${genExpr(arg.expr)};" }.joinToString(" ")
-    if (vals.isNotEmpty()) preStmts += vals
+    val vInitName   = "${t}_init"
+    val vArgExprs   = args.joinToString(", ") { genExpr(it.expr) }
+    preStmts += "$elemType $vInitName[] = {$vArgExprs};"
+    preStmts += "$elemType* $vTData = ($elemType*)${tMalloc("sizeof($vInitName)")};"
+    preStmts += "memcpy($vTData, $vInitName, sizeof($vInitName));"
     preStmts += "$vVarArrType $t = {$vTData, $n};"
     return t
 }
