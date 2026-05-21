@@ -107,8 +107,13 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 		flushPreStmts(ind)
 		val vDataName   = "${varName}_data"
 		val vVarArrType = varArrTypeName(vElemC)
-		return "${ind}$vElemC* $vDataName = ($vElemC*)ktc_core_alloca(sizeof($vElemC) * (size_t)($vSize));\n" +
-			"${ind}$vVarArrType $varName = {$vDataName, $vSize};"
+		return if (vSizeArg.expr is IntLit || vSizeArg.expr is LongLit) {
+			"${ind}$vElemC ${vDataName}[$vSize] = {0};\n" +
+				"${ind}$vVarArrType $varName = {$vDataName, $vSize};"
+			} else {
+			"${ind}$vElemC* $vDataName = ($vElemC*)ktc_core_alloca(sizeof($vElemC) * (size_t)($vSize));\n" +
+				"${ind}$vVarArrType $varName = {$vDataName, $vSize};"
+			}
 		}
 	// arrayOf<T?>(...) or arrayOf(...) where declared type is an OptArray: wrap elements in Optional struct
 	if (vCallee == "arrayOf") {
@@ -140,8 +145,11 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 		val vDataName   = "${varName}_data"
 		val vVarArrType = varArrTypeName(vElemType)
 		flushPreStmts(ind)
-		vSb.appendLine("${ind}$vElemType* $vDataName = ($vElemType*)${tMalloc("sizeof($vElemType) * $vN")};")
-		init.args.forEachIndexed { vI, vArg -> vSb.appendLine("${ind}$vDataName[$vI] = ${genExpr(vArg.expr)};") }
+		val vInitName = "${varName}_init"
+		val vArgExprs = init.args.joinToString(", ") { genExpr(it.expr) }
+		vSb.appendLine("${ind}$vElemType ${vInitName}[] = {$vArgExprs};")
+		vSb.appendLine("${ind}$vElemType* $vDataName = ($vElemType*)${tMalloc("sizeof($vInitName)")};")
+		vSb.appendLine("${ind}memcpy($vDataName, $vInitName, sizeof($vInitName));")
 		vSb.appendLine("${ind}$vVarArrType $varName = {$vDataName, $vN};")
 		return vSb.toString().trimEnd()
 		}

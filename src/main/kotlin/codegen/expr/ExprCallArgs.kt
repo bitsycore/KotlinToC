@@ -211,9 +211,19 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 							// @Size trampolined: local raw pointer + local const len
 							parts += "($vVarArrType){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
 							} else {
-							val vSrcKtc = inferExprTypeKtc(arg.expr)
-							// Regular ktc_VarArr_T: cast .ptr for element-type mismatch if needed
-							parts += "($vVarArrType){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
+							val vSrcKtc   = inferExprTypeKtc(arg.expr)
+							val vSrcCore  = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
+							val vSrcElem  = vSrcCore?.asArr?.elem
+							val vSrcElemC = vSrcElem?.let {
+								if (it is KtcType.Nullable) optCTypeName(it.inner.toInternalStr) else cTypeStr(it)
+								}
+							// Same-typed VarArr already in scope — pass directly without re-wrapping
+							if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) {
+								parts += expr
+								} else {
+								// Different element type — rebuild VarArr with cast
+								parts += "($vVarArrType){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
+								}
 							}
 						}
 					}
