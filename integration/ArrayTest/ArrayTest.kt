@@ -10,6 +10,8 @@ fun arrayPtrWithDispose(arr: @Ptr Array<Int>) {
 }
 
 fun testArrayPtr() {
+    // STACK ARRAY TO PTR
+
     val arr = Array<Int>(10)
     arrayPtr(arr.ptr())
 
@@ -20,13 +22,17 @@ fun testArrayPtr() {
 
     arrayPtr(Array<Int>(10).ptr())
 
+    arrayPtr(arrayOf(1,2,3,4,5).ptr())
+
+    // HEAP ARRAY TO PTR
+
     arrayPtrWithDispose(heapArrayOf(0,1,2,3,4,5))
     val knownArr = heapArrayOf(10, 20, 30)
     arrayPtrWithDispose(knownArr)
     val arrHeap = heapArrayOf(0,1,2,3,4,5)
     arrayPtrWithDispose(arrHeap)
 
-    arrayPtr(arrayOf(1,2,3,4,5).ptr())
+    // ARRAY COPY PTR
 
     val arr2 = arrayOf(1,2,3,4,5).ptr()
     val arr3 = arr2
@@ -34,6 +40,8 @@ fun testArrayPtr() {
     arrayPtr(arr2)
     arrayPtr(arr3)
     arrayPtr(arr4)
+
+    // ARRAY copyWith
 
     val arr5 = arrayOf(1,2,3,4,5).copyWith(Heap)
     defer Heap.freeMem(arr5)

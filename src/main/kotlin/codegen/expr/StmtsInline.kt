@@ -105,7 +105,6 @@ internal fun CCodeGen.emitInlineCall(
 			}
 		}
 	for (vBp in vBoundParams) {
-		if (vBp.isNullable) markOptional(vBp.paramName)
 		// If cVal equals paramName, declaring `T x = x;` in C causes self-initialization UB
 		// because the new variable's scope starts after the declarator, shadowing the outer one.
 		// Capture the outer value in a temp first.
@@ -118,6 +117,7 @@ internal fun CCodeGen.emitInlineCall(
 			}
 		impl.appendLine("$ind    ${vBp.cTypeName} ${vBp.paramName} = $vFinalVal;")
 		defineVarKtc(vBp.paramName, vBp.scopeKtc)
+		if (vBp.isNullable) markOptional(vBp.paramName)  // must come after defineVarKtc
 		}
 	activeLambdas = vNewLambdas
 
@@ -146,7 +146,7 @@ internal fun CCodeGen.emitInlineCall(
 		val vRetKtc   = decl.returnType?.let { resolveTypeName(it) }
 		if (vParam.type.nullable && vRetKtc != null
 			&& vRetKtc.toInternalStr == vParamKtc.toInternalStr) {
-			defineVar(vArgName, vRetKtc.toInternalStr)
+			narrowVarType(vArgName, vRetKtc.toInternalStr)
 			vPropCasts.add(vArgName to vRetKtc.toInternalStr)
 			}
 		}

@@ -2,11 +2,11 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
-import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.codegen.expr.emitStmt
 import com.bitsycore.ktc.codegen.expr.genExpr
 import com.bitsycore.ktc.codegen.expr.inferInitType
 import com.bitsycore.ktc.codegen.expr.toStringMaxLen
+import com.bitsycore.ktc.types.KtcType
 
 // ──────────────────────────────────────────────────────────
 // singleton object — lazy init, methods, Any vtable, as_Any
@@ -117,8 +117,11 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     currentObject = d.name
     pushScope()
     for (p in props) {
-        defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
-        if (p.mutable) markMutable(p.name)
+        val vPType = p.type ?: inferInitType(p.init)
+        val vKtcP  = resolveTypeName(vPType)
+        val vFn    = if (p.isPrivate) "PRIV_${p.name}" else p.name
+        val vIsOpt = vPType.nullable && !vPType.annotations.any { it.name == "Ptr" } && !vKtcP.isArrayLike
+        defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
     }
     impl.appendLine("static void ${cName}_init(void) {")
     impl.appendLine("    $cName.__base.typeId = ${cName}_TYPE_ID;")
@@ -229,8 +232,11 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         if (returnsSizedString) currentFnSizedStringSize = m.returnType.getSizeAnnotation()!!
         pushScope()
         for (p in props) {
-            defineVarKtc(p.name, resolveTypeName(p.type ?: inferInitType(p.init)))
-            if (p.mutable) markMutable(p.name)
+            val vPType = p.type ?: inferInitType(p.init)
+            val vKtcP  = resolveTypeName(vPType)
+            val vFn    = if (p.isPrivate) "PRIV_${p.name}" else p.name
+            val vIsOpt = vPType.nullable && !vPType.annotations.any { it.name == "Ptr" } && !vKtcP.isArrayLike
+            defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
         }
         for (p in m.params) {
             val vKtcObjParam = resolveTypeName(p.type)

@@ -1,10 +1,7 @@
 package com.bitsycore.ktc.codegen.expr
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.codegen.*
-import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
-import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.types.KtcType
 
 /* Statement dispatcher, block emitter and expression-statement emitter.
@@ -73,7 +70,7 @@ internal fun CCodeGen.applyGuardSmartCast(s: Stmt) {
     val outerInd = currentInd.removeSuffix("    ")
     for ((name, nonNullType) in casts) {
         impl.appendLine("${outerInd}// smart-cast: '$name' narrowed to '$nonNullType'")
-        defineVar(name, nonNullType)
+        narrowVarType(name, nonNullType)
     }
 }
 

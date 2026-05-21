@@ -1,7 +1,6 @@
 package com.bitsycore.ktc.codegen.expr
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.codegen.emit.ifaceDataName
@@ -81,7 +80,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         }
     }
 
-    val target = genLValue(s.target, method)
+    val target = genLValue(s.target)
     val varName = (s.target as? NameExpr)?.name
     val varType = if (varName != null) lookupVar(varName) else null
     val isAnyValNullVar = false

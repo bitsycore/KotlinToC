@@ -75,9 +75,13 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 		}
 	if (isClassType) {
 		val ci = classes[recvTypeName]!!
+		val vSelfDot = if (selfIsPointer) "\$self->" else "\$self."
 		for ((name, type) in ci.props) {
-			defineVarKtc(name, resolveTypeName(type))
-			if (!ci.isValProp(name)) markMutable(name)
+			val vKtc        = resolveTypeName(type)
+			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
+			val vCName      = "$vSelfDot$vCFieldName"
+			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = vCName))
 			}
 		}
 	val savedTrampolined      = trampolinedParams.toHashSet();      trampolinedParams.clear()

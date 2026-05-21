@@ -1,10 +1,7 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.codegen.emit.*
 import com.bitsycore.ktc.codegen.expr.emitStmt
-import com.bitsycore.ktc.codegen.expr.inferBlockType
-import com.bitsycore.ktc.codegen.expr.inferInitType
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.utils.wrapYellow
 
@@ -220,34 +217,71 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // Maps mangled concrete name → type substitution (e.g. "MyList_Int" → {T: "Int"})
     internal val genericTypeBindings = mutableMapOf<String, Map<String, String>>()
 
-    // ── Per-scope variable → type mapping ────────────────────────────
-    /* Phase 4.3: scopes store KtcType; string interface kept via toInternalStr bridge. */
-    internal val scopes = ArrayDeque<MutableMap<String, KtcType>>()  // variable name → KtcType
-    internal val arraySizeScopes = ArrayDeque<MutableMap<String, Int>>()  // variable name → inferred literal array size
-    internal fun pushScope() { scopes.addLast(mutableMapOf()); optValVarNames.addLast(mutableSetOf()); mutableVarScopes.addLast(mutableSetOf()); arraySizeScopes.addLast(mutableMapOf()) }
-    internal fun popScope()  { scopes.removeLast(); optValVarNames.removeLast(); mutableVarScopes.removeLast(); arraySizeScopes.removeLast() }
+    // ── Per-scope variable → LocalVar mapping ────────────────────────
+    /* Each scope frame maps variable name → LocalVar (type + mutability + optional + arraySize). */
+    internal val scopes = ArrayDeque<MutableMap<String, LocalVar>>()  // variable name → LocalVar
+    internal fun pushScope() { scopes.addLast(mutableMapOf()) }
+    internal fun popScope()  { scopes.removeLast() }
 
-    /* Record the compile-time-known element count for a local array variable. */
-    internal fun defineArraySize(inName: String, inSize: Int) { if (arraySizeScopes.isNotEmpty()) arraySizeScopes.last()[inName] = inSize }
-
-    /* Look up the compile-time size of a local array variable across all scopes, innermost first. */
-    internal fun lookupArraySize(inName: String): Int? = arraySizeScopes.lastOrNull { it.containsKey(inName) }?.get(inName)
-
-    /* Store a variable type using a KtcType (Phase 4.3+ primary API). */
-    internal fun defineVarKtc(inName: String, inType: KtcType) { scopes.last()[inName] = inType }
-
-    /* Store a variable type using a string (backward-compat bridge, converts via parseResolvedTypeName). */
-    internal fun defineVar(inName: String, inType: String) { scopes.last()[inName] = parseResolvedTypeName(inType) }
-
-    /* Look up a variable's KtcType (Phase 4.3+ primary API). */
-    internal fun lookupVarKtc(inName: String): KtcType?
-        {
-        for (i in scopes.indices.reversed()) { scopes[i][inName]?.let { return it } }
-        return preScanVarTypes?.get(inName)
+    /* Define a variable with a full LocalVar descriptor. Warns when a local var shadows a field. */
+    internal fun defineVar(inName: String, inVar: LocalVar) {
+        if (inVar.cName == null) {
+            for (i in 0 until scopes.size - 1) {
+                val vShadowed = scopes[i][inName]
+                if (vShadowed?.cName != null) {
+                    codegenWarning("local '$inName' shadows field '${vShadowed.cName}'")
+                    break
+                    }
+                }
+            }
+        scopes.last()[inName] = inVar
         }
 
-    /* Look up a variable's type as a string (backward-compat bridge, converts via toInternalStr). */
+    /* Define a variable by KtcType only (other fields default). */
+    internal fun defineVarKtc(inName: String, inType: KtcType) { scopes.last()[inName] = LocalVar(inType) }
+
+    /* Define a variable by string type (backward-compat bridge). */
+    internal fun defineVar(inName: String, inType: String) { scopes.last()[inName] = LocalVar(parseResolvedTypeName(inType)) }
+
+    /* Narrow a variable's KtcType for a guard smart-cast, preserving mutable/optional/arraySize. */
+    internal fun narrowVarType(inName: String, inType: String) {
+        val vNewKtc = parseResolvedTypeName(inType)
+        for (i in scopes.indices.reversed()) {
+            scopes[i][inName]?.let { scopes[i][inName] = it.copy(ktc = vNewKtc); return }
+            }
+        scopes.lastOrNull()?.set(inName, LocalVar(vNewKtc))
+        }
+
+    /* Look up the LocalVar for a variable, innermost scope first. */
+    internal fun lookupLocalVar(inName: String): LocalVar? {
+        for (i in scopes.indices.reversed()) { scopes[i][inName]?.let { return it } }
+        return preScanVarTypes?.get(inName)?.let { LocalVar(it) }
+        }
+
+    /* Return the C access expression for a variable — first non-null cName walking all scopes, else bare name.
+    Used so that smart-cast inner scopes (cName=null) don't hide an outer field's access expression. */
+    internal fun lookupCName(inName: String): String {
+        for (i in scopes.indices.reversed()) { scopes[i][inName]?.cName?.let { return it } }
+        return inName
+        }
+
+    /* Look up a variable's KtcType (primary API). */
+    internal fun lookupVarKtc(inName: String): KtcType? = lookupLocalVar(inName)?.ktc
+
+    /* Look up a variable's type as a string (backward-compat bridge). */
     internal fun lookupVar(inName: String): String? = lookupVarKtc(inName)?.toInternalStr
+
+    /* Record the compile-time-known element count for a local array variable. */
+    internal fun defineArraySize(inName: String, inSize: Int) {
+        val vScope = scopes.lastOrNull() ?: return
+        vScope[inName]?.let { vScope[inName] = it.copy(arraySize = inSize) }
+        }
+
+    /* Look up the compile-time size — searches all scopes, innermost first, skipping null. */
+    internal fun lookupArraySize(inName: String): Int? {
+        for (i in scopes.indices.reversed()) { scopes[i][inName]?.arraySize?.let { return it } }
+        return null
+        }
 
     /* Phase 4.3: preScanVarTypes stores KtcType for pre-scan inference pass. */
     internal var preScanVarTypes: MutableMap<String, KtcType>? = null  // pre-scan variable type map
@@ -297,19 +331,25 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         else -> "${recvExpr}\$has"
     }
 
-    // Track mutable (var) variables — smart casts are only valid on val, val reassignment is an error.
-    // Scoped: each pushScope() adds a new set, popScope() removes it.
-    internal val mutableVarScopes = ArrayDeque<MutableSet<String>>()
-    internal fun markMutable(name: String) { mutableVarScopes.lastOrNull()?.add(name) }
-    internal fun isMutable(name: String): Boolean = mutableVarScopes.any { name in it }
+    // mutable / optional flags live inside LocalVar — see markMutable / markOptional below.
 
-    // Track variables stored as Optional structs (value-nullable T? → OptT in C).
-    // When a variable is in this set but its current scope type is non-nullable (smart cast),
-    // genName returns name.value to unwrap the Optional.
-    // Scoped: each pushScope() adds a new set, popScope() removes it, so allocations never leak across scopes.
-    internal val optValVarNames = ArrayDeque<MutableSet<String>>()
-    internal fun markOptional(name: String) { optValVarNames.lastOrNull()?.add(name) }
-    internal fun isOptional(name: String): Boolean = optValVarNames.any { name in it }
+    /* Mark a variable as mutable (var). Updates LocalVar in the innermost scope that defines it. */
+    internal fun markMutable(name: String) {
+        val vScope = scopes.lastOrNull() ?: return
+        vScope[name]?.let { vScope[name] = it.copy(mutable = true) }
+        }
+
+    /* True if any scope has the variable marked mutable — smart-cast inner scopes don't reset it. */
+    internal fun isMutable(name: String): Boolean = scopes.any { it[name]?.mutable == true }
+
+    /* Mark a variable as stored in an Optional struct (value-nullable). */
+    internal fun markOptional(name: String) {
+        val vScope = scopes.lastOrNull() ?: return
+        vScope[name]?.let { vScope[name] = it.copy(optional = true) }
+        }
+
+    /* True if any scope has the variable marked optional — smart-cast inner scopes don't reset it. */
+    internal fun isOptional(name: String): Boolean = scopes.any { it[name]?.optional == true }
 
     // ── Current class context (when generating methods) ──────────────
     internal var fnCtx = FunctionContext()
@@ -337,7 +377,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         if (vCur is KtcType.Any) return false                // not narrowed if still Any
         for (i in scopes.size - 2 downTo 0)
             {
-            val vOuter = scopes[i][inName]                   // outer scope type as KtcType
+            val vOuter = scopes[i][inName]?.ktc              // outer scope type as KtcType
             if (vOuter is KtcType.Any || (vOuter is KtcType.Nullable && vOuter.inner is KtcType.Any)) return true
             if (vOuter != null) return false
             }
@@ -356,7 +396,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         // Walk scope stack outward to find the original interface type
         for (i in scopes.size - 2 downTo 0)
             {
-            val vOuter = scopes[i][inName]?.toInternalStr ?: continue
+            val vOuter = scopes[i][inName]?.ktc?.toInternalStr ?: continue
             return if (interfaces.containsKey(vOuter)) vOuter else null
             }
         // $self in extension function: outer scope never defines $self, use currentExtRecvType

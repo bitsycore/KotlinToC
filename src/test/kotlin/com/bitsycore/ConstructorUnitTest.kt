@@ -101,7 +101,7 @@ class ConstructorUnitTest : TranspilerTestBase() {
         )
         r.sourceContains("test_Main_Player_constructorWithString_Int")
         r.sourceContains("\$self = test_Main_Player_primaryConstructor(name);")
-        r.sourceContains("health = \$self->health;")
+        r.sourceContains("\$self.health = health;")
     }
 
     @Test
@@ -117,7 +117,7 @@ class ConstructorUnitTest : TranspilerTestBase() {
         """
         )
         r.sourceContains("test_Main_Player_constructorWithInt_String")
-        r.sourceContains($$"tag = $self->tag;")
+        r.sourceContains("\$self.tag = tag;")
     }
 
     @Test
@@ -195,7 +195,7 @@ class ConstructorUnitTest : TranspilerTestBase() {
         r.sourceContains("test_Main_Player_constructorWithString_Int")
         r.sourceContains("\$self.health = 100")
         r.sourceContains("\$self.score = 0")
-        r.sourceContains("health = \$self->health;")
+        r.sourceContains("\$self.health = health;")
     }
 
     // ── Data class constructor ─────────────────────────────────

@@ -25,6 +25,22 @@ import com.bitsycore.ktc.types.TypeDef
 
 // ═══════════════════════════════════════════════════════════════════
 
+/*
+Metadata for a single local variable in scope.
+Bundles all per-variable state that was previously tracked across four parallel scope stacks.
+arraySize: compile-time-known element count; null when dynamic or non-array.
+cName: C access expression override (e.g. "$self.fField", "Obj.fProp"); null = use bare variable name.
+*/
+internal data class LocalVar(
+	val ktc:       KtcType,        // variable's resolved type
+	val mutable:   Boolean = false, // true for var, false for val
+	val optional:  Boolean = false, // true when stored as Optional struct (value-nullable T?)
+	val arraySize: Int?    = null,  // compile-time element count for array variables
+	val cName:     String? = null   // C expression to read this symbol; null means use the variable name
+	)
+
+// ═══════════════════════════════════════════════════════════════════
+
 /**
 Unified property descriptor replacing Pair<String,TypeRef>+BodyProp.
 isConstructorParam=true for ctor val/var props; false for body props.

@@ -2,7 +2,10 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
-import com.bitsycore.ktc.codegen.expr.*
+import com.bitsycore.ktc.codegen.expr.emitBodyPropLenIfArray
+import com.bitsycore.ktc.codegen.expr.emitStmt
+import com.bitsycore.ktc.codegen.expr.genExpr
+import com.bitsycore.ktc.codegen.expr.inferBlockType
 import com.bitsycore.ktc.types.KtcType
 
 // Method emit, struct field declarations, and primary constructor body.
@@ -85,7 +88,29 @@ internal fun CCodeGen.emitMethod(
 		if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcParam))) markOptional(p.name)
 		}
 	val ci = classes[className]
-	if (ci != null) for ((name, type) in ci.props) defineVarKtc(name, resolveTypeName(type))
+	if (ci != null) {
+		val vSelfDot = if (selfIsPointer) "\$self->" else "\$self."
+		for ((name, type) in ci.props) {
+			val vKtc        = resolveTypeName(type)
+			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
+			val vCName      = "$vSelfDot$vCFieldName"
+			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = vCName))
+			}
+		}
+	// For nested classes (Obj$Inner), pre-populate parent object fields; class fields take priority
+	val vParentObjName = if ('$' in className) className.substringBefore('$') else null
+	val vParentOi = if (vParentObjName != null && currentObject == null) objects[vParentObjName] else null
+	if (vParentOi != null) {
+		val vParentCName = typeFlatName(vParentObjName!!)
+		for ((name, type) in vParentOi.props) {
+			if (scopes.last().containsKey(name)) continue // class field or param takes priority
+			val vKtc   = resolveTypeName(type)
+			val vFn    = if (name in vParentOi.privateProps) "PRIV_$name" else name
+			val vIsOpt = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			defineVar(name, LocalVar(ktc = vKtc, mutable = true, optional = vIsOpt, cName = "$vParentCName.$vFn"))
+			}
+		}
 	val savedTrampolined1 = trampolinedParams.toHashSet(); trampolinedParams.clear()
 	val savedSizedTrampolined1 = sizedArrayTrampolinedParams.toHashSet(); sizedArrayTrampolinedParams.clear()
 	emitArrayParamCopies(f.params, "    ")

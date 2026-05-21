@@ -94,7 +94,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 						vSb.appendLine("$ind    ${vMut}$vCT ${vStmt.name} = $vInitExpr;")
 						}
 					vStmt is AssignStmt -> {
-						val vLhs = genLValue(vStmt.target, false)
+						val vLhs = genLValue(vStmt.target)
 						val vRhs = genExpr(vStmt.value)
 						val vOp  = when (vStmt.op) {
 							"+=" -> "+"; "-=" -> "-"; "*=" -> "*"; "/=" -> "/"; "%=" -> "%"

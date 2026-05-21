@@ -2,7 +2,8 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
-import com.bitsycore.ktc.codegen.expr.*
+import com.bitsycore.ktc.codegen.expr.emitStmt
+import com.bitsycore.ktc.codegen.expr.genExpr
 
 // class / data class — primary class emit, secondary constructors
 
@@ -173,10 +174,21 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
 
 	pushScope()
 	currentClass = className
-	selfIsPointer = true
-	for (p in sctor.params) defineVarKtc(p.name, resolveTypeName(p.type))
+	selfIsPointer = false
+	for (p in sctor.params) {
+		val vKtcP = resolveTypeName(p.type)
+		defineVar(p.name, LocalVar(ktc = vKtcP, mutable = true))
+		}
 	val ci = classes[className]
-	if (ci != null) for ((name, type) in ci.props) defineVarKtc(name, resolveTypeName(type))
+	if (ci != null) {
+		for ((name, type) in ci.props) {
+			if (scopes.last().containsKey(name)) continue // param takes priority
+			val vKtc        = resolveTypeName(type)
+			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
+			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self.$vCFieldName"))
+			}
+		}
 
 	for (s in sctor.body.stmts) emitStmt(s, "    ", true)
 	popScope()
