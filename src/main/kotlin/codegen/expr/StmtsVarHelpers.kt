@@ -19,6 +19,11 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, ct: String, t:
 			if (vRecvKtc?.isArrayLike == true) {
 				val vElemC      = arrayElementCTypeKtc(vRecvKtc)
 				val vVarArrType = varArrTypeName(vElemC)
+				// .ptr() on a fresh literal-size ctor: generate static array directly, skip the call
+				if (vDot.name == "ptr" && vDot.obj is CallExpr) {
+					val vInner = tryArrayOfInit(varName, vDot.obj, cTypeStr(vRecvKtc), vRecvKtc.toInternalStr, ind)
+					if (vInner != null) return vInner
+					}
 				val vExpr       = genExpr(init)
 				flushPreStmts(ind)
 				return "$ind$vVarArrType $varName = $vExpr;"

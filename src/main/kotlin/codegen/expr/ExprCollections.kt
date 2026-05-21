@@ -59,11 +59,16 @@ internal fun CCodeGen.genArrayOfExpr(
 }
 
 internal fun CCodeGen.genNewArray(elemCType: String, args: List<Arg>): String {
-    val size        = if (args.isNotEmpty()) genExpr(args[0].expr) else "0"
+    val vSizeArg    = if (args.isNotEmpty()) args[0].expr else null
+    val size        = if (vSizeArg != null) genExpr(vSizeArg) else "0"
     val vVarArrType = varArrTypeName(elemCType)
     val t           = tmp()
     val vTData      = "${t}_data"
-    preStmts += "$elemCType* $vTData = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * (size_t)($size));"
+    if (vSizeArg is IntLit || vSizeArg is LongLit) {
+        preStmts += "$elemCType $vTData[$size] = {0};"
+        } else {
+        preStmts += "$elemCType* $vTData = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * (size_t)($size));"
+        }
     preStmts += "$vVarArrType $t = {$vTData, $size};"
     return t
 }
