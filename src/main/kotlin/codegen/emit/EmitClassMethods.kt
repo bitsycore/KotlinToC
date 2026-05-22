@@ -19,8 +19,7 @@ internal fun CCodeGen.emitMethod(
 	) {
 	val cClass         = typeFlatName(className)
 	val siblings       = classes[className]?.methods ?: emptyList()
-	val overloadedName = methodName(f, siblings)
-	val methodName     = if (f.isPrivate) "PRIV_$overloadedName" else overloadedName
+	val methodName     = resolvedFnName(f, siblings)
 	val selfParam      = "$cClass* \$self"
 	val extraParams    = expandParams(f.params)
 	val allParams      = if (extraParams.isNotEmpty()) "$selfParam, $extraParams" else selfParam

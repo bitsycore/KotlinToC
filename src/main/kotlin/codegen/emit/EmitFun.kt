@@ -56,8 +56,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 	impl.appendLine("// ══ fun ${f.name}($paramSig)$retSig ($currentSourceFile) ══")
 	val isMain         = f.name == "main"
 	val siblings       = file.decls.filterIsInstance<FunDecl>()
-	val overloadedName = methodName(f, siblings)
-	val baseName       = if (f.isPrivate) "PRIV_$overloadedName" else overloadedName
+	val baseName       = resolvedFnName(f, siblings)
 	val cName          = funCName(baseName)
 	val params         = expandParams(f.params)
 

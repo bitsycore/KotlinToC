@@ -238,8 +238,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			if (methodDecl != null) prepareArgs(args, methodDecl, vClassInfo.baseName) else argStr
 			}
 		val allArgs       = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
-		val overloadedName = methodDecl?.let { methodName(it, vClassInfo.methods) } ?: method
-		val fnPrefix       = if (methodDecl?.isPrivate == true) "PRIV_$overloadedName" else overloadedName
+		val fnPrefix       = methodDecl?.let { resolvedFnName(it, vClassInfo.methods) } ?: method
 		val sizedClass = tryWrapSizedReturn("${vClassInfo.flatName}_$fnPrefix($allArgs)", methodDecl?.returnType)
 		if (sizedClass != null) return sizedClass
 		if (methodDecl?.returnType?.nullable == true) {

@@ -209,8 +209,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         val vCi = classes[currentClass]
         val vMethodDecl = vCi?.let { findOverload(vName, vArgs, it.methods) }
         if (vMethodDecl != null) {
-            val vOvName    = methodName(vMethodDecl, vCi.methods)
-            val vFnName    = if (vMethodDecl.isPrivate) "PRIV_$vOvName" else vOvName
+            val vFnName    = resolvedFnName(vMethodDecl, vCi.methods)
             val vExpanded2 = prepareArgs(vArgs, vMethodDecl, currentClass!!)
             val vSelfArg   = if (selfIsPointer) "\$self" else "&\$self"
             val vAllArgs   = if (vExpanded2.isEmpty()) vSelfArg else "$vSelfArg, $vExpanded2"
@@ -224,8 +223,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         if (vParentObj != null && objects.containsKey(vParentObj)) {
             val vParentMethodDecl = objects[vParentObj]?.let { findOverload(vName, vArgs, it.methods) }
             if (vParentMethodDecl != null) {
-                val vOvName    = methodName(vParentMethodDecl, objects[vParentObj]!!.methods)
-                val vFnName    = if (vParentMethodDecl.isPrivate) "PRIV_$vOvName" else vOvName
+                val vFnName    = resolvedFnName(vParentMethodDecl, objects[vParentObj]!!.methods)
                 val vExpanded2 = prepareArgs(vArgs, vParentMethodDecl, vParentObj)
                 val vSizedP = tryWrapSizedReturn(
                     "${typeFlatName(vParentObj)}_$vFnName($vExpanded2)",
@@ -254,8 +252,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         val vOi = objects[currentObject]
         val vMethodDecl = vOi?.let { findOverload(vName, vArgs, it.methods) }
         if (vMethodDecl != null) {
-            val vOvName    = methodName(vMethodDecl, vOi.methods)
-            val vFnName    = if (vMethodDecl.isPrivate) "PRIV_$vOvName" else vOvName
+            val vFnName    = resolvedFnName(vMethodDecl, vOi.methods)
             val vExpanded2 = prepareArgs(vArgs, vMethodDecl, currentObject!!)
             val vSizedO =
                 tryWrapSizedReturn("${typeFlatName(currentObject!!)}_$vFnName($vExpanded2)", vMethodDecl.returnType)
@@ -278,8 +275,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     }
     val vTopOvr = findOverload(vName, vArgs, vTopFuns)
     if (vTopOvr != null && vIsOverloaded) {
-        val vOvName    = methodName(vTopOvr, vTopFuns)
-        val vFnName    = if (vTopOvr.isPrivate) "PRIV_$vOvName" else vOvName
+        val vFnName    = resolvedFnName(vTopOvr, vTopFuns)
         val vExpanded2 = prepareArgs(vArgs, vTopOvr)
         val vSizedOvr  = tryWrapSizedReturn("${funCName(vFnName)}($vExpanded2)", vTopOvr.returnType)
         if (vSizedOvr != null) return vSizedOvr

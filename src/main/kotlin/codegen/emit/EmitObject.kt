@@ -189,8 +189,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         if (m.isInline) return  // expanded at call sites via inlineFunDecls, not emitted as C functions
         val prevState      = saveFunState()
         val cRet           = computeReturnInfo(m)
-        val overloadedName = methodName(m, methods)
-        val fnName         = if (m.isPrivate) "PRIV_$overloadedName" else overloadedName
+        val fnName         = resolvedFnName(m, methods)
         val params         = expandParams(m.params)
         if (m.isPrivate) {
             impl.appendLine("$cRet ${cName}_$fnName($params);")

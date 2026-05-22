@@ -318,6 +318,12 @@ internal fun CCodeGen.methodName(f: FunDecl, siblings: List<FunDecl>): String {
 	return "${base}With${types.joinToString("_")}"
 	}
 
+/* Returns the overloaded method name with PRIV_ prefix for private methods. */
+internal fun CCodeGen.resolvedFnName(f: FunDecl, siblings: List<FunDecl>): String {
+	val ov = methodName(f, siblings)
+	return if (f.isPrivate) "PRIV_$ov" else ov
+	}
+
 /* Find the best-matching overloaded declaration from siblings for the given call args.
 Returns the first match by arg count, then by KtcType structural equality. */
 internal fun CCodeGen.findOverload(inName: String, inArgs: List<Arg>, inSiblings: List<FunDecl>): FunDecl? {
