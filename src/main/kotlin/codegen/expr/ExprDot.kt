@@ -5,6 +5,13 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceProperties
 import com.bitsycore.ktc.types.KtcType
 
+/* Returns the C field name for a dot access, prefixing private fields with PRIV_ when accessed via this. */
+private fun CCodeGen.thisFieldName(name: String, obj: Expr): String =
+	if (currentClass != null && obj is ThisExpr) {
+		val ci = classes[currentClass]!!
+		if (name in ci.privateProps) "PRIV_$name" else name
+		} else name
+
 internal fun CCodeGen.genDot(e: DotExpr): String {
     // C package passthrough: c.EXIT_SUCCESS → EXIT_SUCCESS, c.NULL → NULL
     if (e.obj is NameExpr && e.obj.name == "c" && lookupVar("c") == null) {
@@ -71,11 +78,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
 
     // p->field (auto-deref through pointer)
     if (recvTypeCoreKtc is KtcType.Ptr) {
-        val fieldName = if (currentClass != null && e.obj is ThisExpr) {
-            val ci = classes[currentClass]!!
-            if (e.name in ci.privateProps) "PRIV_${e.name}" else e.name
-        } else e.name
-        return "$recv->${fieldName}"
+        return "$recv->${thisFieldName(e.name, e.obj)}"
     }
 
     // Interface property access via vtable: list.size → list.vt->size(data_ptr)
@@ -93,10 +96,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         if (e.name == "len") return "$recv.len"
     }
 
-    val fieldName = if (currentClass != null && e.obj is ThisExpr) {
-        val ci = classes[currentClass]!!
-        if (e.name in ci.privateProps) "PRIV_${e.name}" else e.name
-    } else e.name
+    val fieldName = thisFieldName(e.name, e.obj)
 
     // Smart-cast from interface to class: redirect field access through union data
     if (e.obj is NameExpr) {
