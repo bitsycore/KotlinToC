@@ -119,7 +119,6 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
                 for ((i, param) in inlineDecl.params.withIndex()) {
                     if (i >= e.args.size) break
                     val argType = inferExprType(e.args[i].expr)?.removeSuffix("?") ?: continue
-                    val argTypeKtc = inferExprTypeKtc(e.args[i].expr)
                     matchTypeParam(param.type, argType, inlineDecl.typeParams.toSet(), vSubst)
                 }
                 if (vSubst.isNotEmpty()) typeSubst = vSubst
@@ -143,12 +142,10 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
             val recvObj = if (isSafe) e.callee.obj else (e.callee as DotExpr).obj
             val recvExpr = genExpr(recvObj)
             val recvKtType = inferExprType(recvObj)?.removeSuffix("?")
-            val recvKtTypeKtc = inferExprTypeKtc(recvObj)
             // Set up typeSubst for generic inline extension functions
             val vSavedSubst = typeSubst
             if (inlineExt.typeParams.isNotEmpty()) {
                 val vArgTypes = e.args.map { inferExprType(it.expr) } // concrete arg types
-                val vArgTypesKtc = e.args.map { inferExprTypeKtc(it.expr) }
                 typeSubst = inferInlineFunSubst(inlineExt, recvKtType, vArgTypes)
             }
             if (isSafe) {

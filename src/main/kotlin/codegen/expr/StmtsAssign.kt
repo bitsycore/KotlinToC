@@ -324,7 +324,6 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             } else {
                 // Auto-wrap class → interface if return type is an interface
                 val exprType = inferExprType(s.value)
-                val exprTypeKtc = inferExprTypeKtc(s.value)
                 val retIface = currentFnReturnType
                 if (retIface.isNotEmpty() && interfaces.containsKey(retIface)
                     && exprType != null && (classes.containsKey(exprType) || objects.containsKey(exprType))
