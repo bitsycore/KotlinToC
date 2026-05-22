@@ -5,6 +5,31 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 /**
+ * Execute [block] with [typeSubst] temporarily replaced by [newSubst].
+ * Restores the previous substitution afterwards.
+ * No-op (just calls block) when [newSubst] is null or empty.
+ */
+internal inline fun <T> CCodeGen.withTypeSubst(newSubst: Map<String, String>?, block: () -> T): T {
+	if (newSubst.isNullOrEmpty()) return block()
+	val saved = typeSubst
+	typeSubst = newSubst
+	val result = block()
+	typeSubst = saved
+	return result
+	}
+
+/**
+ * Fill argument defaults for [decl] then expand to a C argument string.
+ * [owner] is the declaring class/object name — used for interface-inherited defaults via [effectiveDefaults].
+ * Pass an empty owner for top-level or generic functions where params carry their own defaults.
+ */
+internal fun CCodeGen.prepareArgs(args: List<Arg>, decl: FunDecl, owner: String = ""): String {
+	val defaults = if (owner.isEmpty()) decl.params.associate { it.name to it.default }
+	               else effectiveDefaults(decl, owner)
+	return expandCallArgs(fillDefaults(args, decl.params, defaults, decl.name, strict = true), decl.params)
+	}
+
+/**
  * If [returnType] is a @Size(N) array or @Size(N) String, emits struct-unwrap preStmts and returns the temp var.
  * Returns null when [returnType] is not a sized type (caller falls through to normal codegen).
  */

@@ -5,6 +5,17 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
+/* Emit an optional iface cast preStmt and return the temp var name.
+When [ifaceConcrete] is null, returns [recv] unchanged.
+Emits: optType t = (recv.tag == ktc_SOME) ? {SOME, baseName_as_iface(&recv.value)} : {NONE}; */
+private fun CCodeGen.nullableIfaceCast(recv: String, baseName: String, ifaceConcrete: String?): String {
+	if (ifaceConcrete == null) return recv
+	val optType = optCTypeName("${ifaceConcrete}?")
+	val t = tmp()
+	preStmts += "$optType $t = ($recv.tag == ktc_SOME) ? ($optType){ktc_SOME, ${typeFlatName(baseName)}_as_$ifaceConcrete(&$recv.value)} : ($optType){ktc_NONE};"
+	return t
+	}
+
 /* Dispatch a method call on a dot receiver, handling built-ins, arrays, pointers,
 interfaces, class methods, objects, enums and extension functions. */
 internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
@@ -29,16 +40,11 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val classHasMethod = classes[pointerBase]?.methods?.any { it.name == method } == true
 		if (classHasMethod) {
 			val methodDecl     = classes[pointerBase]?.let { findOverload(method, args, it.methods) }
-			val isExt          = methodDecl?.receiver != null
-			val recvArg        = if (isExt) "(*$recv)" else recv
-			val savedSubst2    = typeSubst
-			val classBindings2 = genericTypeBindings[pointerBase]
-			if (classBindings2.isNullOrEmpty().not()) typeSubst = classBindings2
-			val expandedArgs2 = if (methodDecl != null) {
-				val filled2 = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, pointerBase), methodDecl.name, strict = true)
-				expandCallArgs(filled2, methodDecl.params)
-				} else argStr
-			if (classBindings2.isNullOrEmpty().not()) typeSubst = savedSubst2
+			val isExt         = methodDecl?.receiver != null
+			val recvArg       = if (isExt) "(*$recv)" else recv
+			val expandedArgs2 = withTypeSubst(genericTypeBindings[pointerBase]) {
+				if (methodDecl != null) prepareArgs(args, methodDecl, pointerBase) else argStr
+				}
 			val allArgs = if (expandedArgs2.isEmpty()) recvArg else "$recvArg, $expandedArgs2"
 			if (methodDecl?.returnType?.nullable == true) {
 				return genNullableMethodCall(pointerBase, "${typeFlatName(pointerBase)}_$method", allArgs, methodDecl)
@@ -129,10 +135,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val vtAccess    = if (isIfacePtr) "((${cIface}_vt*)$recv.vt)" else "$recv.vt"
 		val ifaceMethod = vIfaceInfo.methods.find { it.name == method }
 			?: collectAllIfaceMethods(vIfaceInfo).find { it.name == method }
-		val vFilledArgStr = if (ifaceMethod != null) {
-			val vFilled = fillDefaults(args, ifaceMethod.params, ifaceMethod.params.associate { it.name to it.default }, method, strict = true)
-			expandCallArgs(vFilled, ifaceMethod.params)
-			} else argStr
+		val vFilledArgStr = if (ifaceMethod != null) prepareArgs(args, ifaceMethod) else argStr
 		val allArgs = if (vFilledArgStr.isEmpty()) vSelfArg else "$vSelfArg, $vFilledArgStr"
 		if (ifaceMethod?.returnType?.nullable == true) {
 			val retType = resolveTypeName(ifaceMethod.returnType).toInternalStr
@@ -219,13 +222,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				dot.obj is ThisExpr -> "\$self"
 				recvVarKtc2 is KtcType.Nullable && isValueNullableKtc(recvVarKtc2)
 						&& recvName != null && isOptional(recvName) -> {
-					if (ifaceConcrete != null && isExtFun) {
-						val optBase  = ifaceConcrete
-						val t        = tmp()
-						val optType2 = optCTypeName("${optBase}?")
-						preStmts += "$optType2 $t = ($recv.tag == ktc_SOME) ? ($optType2){ktc_SOME, ${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv.value)} : ($optType2){ktc_NONE};"
-						t
-						} else recv
+					if (isExtFun) nullableIfaceCast(recv, vClassInfo.baseName, ifaceConcrete)
+					else recv
 					}
 
 				isExtFun -> {
@@ -233,13 +231,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 						val rName2 = (dot.obj as? NameExpr)?.name
 						val rKtc2  = if (rName2 != null) lookupVarKtc(rName2) else null
 						if (rKtc2 is KtcType.Nullable && rName2 != null && isOptional(rName2)) {
-							if (ifaceConcrete != null) {
-								val optBase  = ifaceConcrete
-								val t        = tmp()
-								val optType2 = optCTypeName("${optBase}?")
-								preStmts += "$optType2 $t = ($recv.tag == ktc_SOME) ? ($optType2){ktc_SOME, ${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv.value)} : ($optType2){ktc_NONE};"
-								t
-								} else recv
+							nullableIfaceCast(recv, vClassInfo.baseName, ifaceConcrete)
 							} else {
 							val valExpr = if (ifaceConcrete != null) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)" else recv
 							val optBase = ifaceConcrete ?: vClassInfo.baseName
@@ -256,13 +248,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				val rName = (dot.obj as? NameExpr)?.name
 				val rKtc  = if (rName != null) lookupVarKtc(rName) else null
 				if (rKtc is KtcType.Nullable && rName != null && isOptional(rName)) {
-					if (ifaceConcrete != null) {
-						val optBase  = ifaceConcrete
-						val t        = tmp()
-						val optType  = optCTypeName("${optBase}?")
-						preStmts += "$optType $t = ($recv.tag == ktc_SOME) ? ($optType){ktc_SOME, ${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv.value)} : ($optType){ktc_NONE};"
-						t
-						} else recv
+					nullableIfaceCast(recv, vClassInfo.baseName, ifaceConcrete)
 					} else {
 					val optBase = ifaceConcrete ?: vClassInfo.baseName
 					val valExpr = if (ifaceConcrete != null) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)" else recv
@@ -272,14 +258,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			else recv
 			} else "&$recv"
 
-		val savedSubst    = typeSubst
-		val classBindings = genericTypeBindings[vClassInfo.name]
-		if (classBindings != null && classBindings.isNotEmpty()) typeSubst = classBindings
-		val expandedArgs = if (methodDecl != null) {
-			val filled = fillDefaults(args, methodDecl.params, effectiveDefaults(methodDecl, vClassInfo.baseName), methodDecl.name, strict = true)
-			expandCallArgs(filled, methodDecl.params)
-			} else argStr
-		if (classBindings != null && classBindings.isNotEmpty()) typeSubst = savedSubst
+		val expandedArgs = withTypeSubst(genericTypeBindings[vClassInfo.name]) {
+			if (methodDecl != null) prepareArgs(args, methodDecl, vClassInfo.baseName) else argStr
+			}
 		val allArgs       = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
 		val overloadedName = methodDecl?.let { methodName(it, vClassInfo.methods) } ?: method
 		val fnPrefix       = if (methodDecl?.isPrivate == true) "PRIV_$overloadedName" else overloadedName
@@ -298,16 +279,13 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	if (vDotObjInfo != null && vDotObjCName != null) {
 		val vObjMethod       = findOverload(method, args, vDotObjInfo.methods)
 		val overloadedMethod = vObjMethod?.let { methodName(it, vDotObjInfo.methods) } ?: method
-		val vObjArgs = if (vObjMethod != null) {
-			val filled = fillDefaults(args, vObjMethod.params, effectiveDefaults(vObjMethod, vDotObjInfo.name), vObjMethod.name, strict = true)
-			expandCallArgs(filled, vObjMethod.params)
-			} else {
-			/* Method not found in object — try extension functions for proper arg expansion. */
-			val vExtForObj = extensionFuns[vDotObjInfo.name]?.find { it.name == method }
-			if (vExtForObj != null) {
-				val vFilled = fillDefaults(args, vExtForObj.params, effectiveDefaults(vExtForObj, vDotObjInfo.name), vExtForObj.name, strict = true)
-				expandCallArgs(vFilled, vExtForObj.params)
-				} else argStr
+		val vObjArgs = when {
+			vObjMethod != null -> prepareArgs(args, vObjMethod, vDotObjInfo.name)
+			else               -> {
+				/* Method not found in object — try extension functions for proper arg expansion. */
+				val vExtForObj = extensionFuns[vDotObjInfo.name]?.find { it.name == method }
+				if (vExtForObj != null) prepareArgs(args, vExtForObj, vDotObjInfo.name) else argStr
+				}
 			}
 		val sizedObj = tryWrapSizedReturn("${vDotObjCName}_$overloadedMethod($vObjArgs)", vObjMethod?.returnType)
 		if (sizedObj != null) return sizedObj
