@@ -283,28 +283,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val allArgs       = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
 		val overloadedName = methodDecl?.let { methodName(it, vClassInfo.methods) } ?: method
 		val fnPrefix       = if (methodDecl?.isPrivate == true) "PRIV_$overloadedName" else overloadedName
-		if (methodDecl?.returnType != null && methodDecl.returnType.isSizedArray()) {
-			val vRetKtcSz  = resolveTypeName(methodDecl.returnType)
-			val retType    = vRetKtcSz.toInternalStr
-			val elemCType  = arrayElementCTypeKtc(vRetKtcSz)
-			val size       = methodDecl.returnType.getSizeAnnotation()!!
-			val structType = sizedArrayCTypeRef(elemCType, size)
-			val tStruct = tmp(); val vT = tmp()
-			preStmts += "$structType $tStruct = ${vClassInfo.flatName}_$fnPrefix($allArgs);"
-			val vVarArrType = varArrTypeName(elemCType)
-			preStmts += "$vVarArrType $vT = {$tStruct.arr, $size};"
-			defineVar(vT, retType)
-			return vT
-			}
-		if (methodDecl?.returnType != null && methodDecl.returnType.isSizedString()) {
-			val size       = methodDecl.returnType.getSizeAnnotation()!!
-			val structType = sizedStringCTypeRef(size)
-			val tStruct = tmp(); val tStr = tmp()
-			preStmts += "$structType $tStruct = ${vClassInfo.flatName}_$fnPrefix($allArgs);"
-			preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
-			defineVar(tStr, "String")
-			return tStr
-			}
+		val sizedClass = tryWrapSizedReturn("${vClassInfo.flatName}_$fnPrefix($allArgs)", methodDecl?.returnType)
+		if (sizedClass != null) return sizedClass
 		if (methodDecl?.returnType?.nullable == true) {
 			return genNullableMethodCall(vClassInfo.baseName, "${flatBase}_$fnPrefix", allArgs, methodDecl)
 			}
@@ -329,28 +309,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				expandCallArgs(vFilled, vExtForObj.params)
 				} else argStr
 			}
-		if (vObjMethod?.returnType != null && vObjMethod.returnType.isSizedArray()) {
-			val vRetKtcObj = resolveTypeName(vObjMethod.returnType)
-			val retType    = vRetKtcObj.toInternalStr
-			val elemCType  = arrayElementCTypeKtc(vRetKtcObj)
-			val size       = vObjMethod.returnType.getSizeAnnotation()!!
-			val structType = sizedArrayCTypeRef(elemCType, size)
-			val tStruct = tmp(); val vT = tmp()
-			preStmts += "$structType $tStruct = ${vDotObjCName}_$overloadedMethod($vObjArgs);"
-			val vVarArrType = varArrTypeName(elemCType)
-			preStmts += "$vVarArrType $vT = {$tStruct.arr, $size};"
-			defineVar(vT, retType)
-			return vT
-			}
-		if (vObjMethod?.returnType != null && vObjMethod.returnType.isSizedString()) {
-			val size       = vObjMethod.returnType.getSizeAnnotation()!!
-			val structType = sizedStringCTypeRef(size)
-			val tStruct = tmp(); val tStr = tmp()
-			preStmts += "$structType $tStruct = ${vDotObjCName}_$overloadedMethod($vObjArgs);"
-			preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
-			defineVar(tStr, "String")
-			return tStr
-			}
+		val sizedObj = tryWrapSizedReturn("${vDotObjCName}_$overloadedMethod($vObjArgs)", vObjMethod?.returnType)
+		if (sizedObj != null) return sizedObj
 		return "${vDotObjCName}_$overloadedMethod($vObjArgs)"
 		}
 

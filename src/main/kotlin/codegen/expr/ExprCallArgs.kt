@@ -4,6 +4,35 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
+/**
+ * If [returnType] is a @Size(N) array or @Size(N) String, emits struct-unwrap preStmts and returns the temp var.
+ * Returns null when [returnType] is not a sized type (caller falls through to normal codegen).
+ */
+internal fun CCodeGen.tryWrapSizedReturn(callExpr: String, returnType: TypeRef?): String? {
+	if (returnType == null) return null
+	if (returnType.isSizedArray()) {
+		val retKtc    = resolveTypeName(returnType)
+		val elemCType = arrayElementCTypeKtc(retKtc)
+		val size      = returnType.getSizeAnnotation()!!
+		val tStruct   = tmp()
+		val tPtr      = tmp()
+		preStmts += "${sizedArrayCTypeRef(elemCType, size)} $tStruct = $callExpr;"
+		preStmts += "${varArrTypeName(elemCType)} $tPtr = {$tStruct.arr, $size};"
+		defineVar(tPtr, retKtc.toInternalStr)
+		return tPtr
+		}
+	if (returnType.isSizedString()) {
+		val size    = returnType.getSizeAnnotation()!!
+		val tStruct = tmp()
+		val tStr    = tmp()
+		preStmts += "${sizedStringCTypeRef(size)} $tStruct = $callExpr;"
+		preStmts += "ktc_String $tStr = {$tStruct.buf, $tStruct.len};"
+		defineVar(tStr, "String")
+		return tStr
+		}
+	return null
+	}
+
 /* Returns the size expression for a trampolined param's array length.
 For sized struct params (in sizedArrayTrampolinedParams), the local$name$len constant is used.
 For regular ktc_VarArr_T params, the .len field is used. */
