@@ -70,10 +70,7 @@ internal fun CCodeGen.emitMethod(
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
 	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
 		emitDeferredBlocks("    ", insideMethod = true)
-		if (currentFnReturnsNullable) {
-			if (currentFnReturnKtcType is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
-			else impl.appendLine("    return ${optNone(currentFnOptReturnCTypeName)};")
-			}
+		emitImplicitNullReturn("    ")
 		}
 	popScope()
 	restoreFunState(prevState)

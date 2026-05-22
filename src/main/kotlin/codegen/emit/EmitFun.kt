@@ -46,10 +46,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
 	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
 		emitDeferredBlocks("    ", insideMethod = isClassType)
-		if (currentFnReturnsNullable) {
-			if (currentFnReturnKtcType is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
-			else impl.appendLine("    return ${optNone(currentFnOptReturnCTypeName)};")
-			}
+		emitImplicitNullReturn("    ")
 		}
 	popScope()
 	restoreFunState(prevState)
@@ -105,10 +102,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		impl.appendLine("    fflush(stdout);")
 		impl.appendLine("    ktc_core_mem_report();")
 		}
-	else if (currentFnReturnsNullable && lastStmt !is ReturnStmt) {
-		if (currentFnReturnKtcType is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
-		else impl.appendLine("    return ${optNone(currentFnOptReturnCTypeName)};")
-		}
+	else if (lastStmt !is ReturnStmt) emitImplicitNullReturn("    ")
 	popScope()
 	restoreFunState(prevState)
 	impl.appendLine("}")

@@ -158,6 +158,16 @@ internal fun CCodeGen.emitClassNonAnyMethods(
  * Emits explicit overrides of Any methods (dispose / toString / hashCode) for a class.
  * Manages [currentClass], [selfIsPointer], [pushScope]/[popScope].
  */
+/**
+ * Emits `return null;` equivalent if the current function returns a nullable type and no explicit return was emitted.
+ * Call after emitting the last statement of a function body when the last statement is not a ReturnStmt.
+ */
+internal fun CCodeGen.emitImplicitNullReturn(ind: String) {
+	if (!currentFnReturnsNullable) return
+	if (currentFnReturnKtcType is KtcType.Any) impl.appendLine("${ind}return (ktc_Any){0};")
+	else impl.appendLine("${ind}return ${optNone(currentFnOptReturnCTypeName)};")
+	}
+
 internal fun CCodeGen.emitClassAnyOverrides(className: String, members: List<Decl>, ci: ClassInfo) {
 	val anyMethodNames = setOf("dispose", "toString", "hashCode")
 	currentClass  = className
