@@ -24,23 +24,8 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 		val mangledName = "${f.name}_${typeArgs.joinToString("_")}"
 
 		impl.appendLine("// ══ generic ${f.name}<${typeArgs.joinToString(", ")}> ($currentSourceFile) ══")
-		val hasReceiver        = f.receiver != null
-		val returnsSizedArray  = f.returnType != null && f.returnType.isSizedArray()
-		val returnsSizedString = f.returnType != null && f.returnType.isSizedString()
-		val vRetKtc    = if (f.returnType != null) resolveTypeName(f.returnType) else null // KtcType of return
-		val returnsArray = !returnsSizedArray && (vRetKtc?.isArrayLike ?: false)           // non-sized array return
-		val concreteRet  = genericFunConcreteReturn[mangledName]
-		val cRet = when {
-			returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtc!!.asArr!!.elem), f.returnType.getSizeAnnotation()!!)
-			returnsSizedString -> sizedStringCTypeName(f.returnType.getSizeAnnotation()!!)
-			returnsArray       -> {
-				val vArrElem = vRetKtc!!.asArr?.elem ?: ((vRetKtc as? KtcType.Ptr)?.inner as KtcType.Arr).elem
-				varArrTypeName(cTypeStr(vArrElem))
-				}
-			concreteRet != null -> typeFlatName(concreteRet)
-			f.returnType != null -> cType(f.returnType)
-			else -> "void"
-			}
+		val hasReceiver = f.receiver != null
+		val concreteRet = genericFunConcreteReturn[mangledName]
 		val cName = if (hasReceiver) {
 			val recvKtc  = resolveTypeName(f.receiver!!)
 			val recvName = (recvKtc as? KtcType.Ptr)?.inner?.let { (it as? KtcType.User)?.baseName }
@@ -59,23 +44,16 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 			} else null
 		val params = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
 
+		val prevState = saveFunState()
+		var cRet = computeReturnInfo(f)
+		if (concreteRet != null) {
+			cRet = typeFlatName(concreteRet)
+			currentFnReturnType = concreteRet
+			}
+
 		maybeEmitFunBanner(f.name)
 		hdr.appendLine("$cRet $cName($params);")
 		impl.appendLine("$cRet $cName($params) {")
-
-		val prevState = saveFunState()
-		currentFnReturnsArray       = returnsArray
-		currentFnReturnsSizedArray  = returnsSizedArray
-		if (returnsSizedArray) {
-			currentFnSizedArraySize     = f.returnType.getSizeAnnotation()!!
-			currentFnSizedArrayElemType = vRetKtc!!.asArr!!.elem
-			}
-		currentFnReturnsSizedString = returnsSizedString
-		if (returnsSizedString) currentFnSizedStringSize = f.returnType.getSizeAnnotation()!!
-		currentFnReturnType = concreteRet ?: if (f.returnType != null) {
-			currentFnReturnKtcType = if (f.returnType.nullable) KtcType.Nullable(vRetKtc!!) else vRetKtc!!
-			if (f.returnType.nullable) KtcType.Nullable(vRetKtc!!).toInternalStr else vRetKtc!!.toInternalStr
-			} else ""
 
 		pushScope()
 		if (hasReceiver) {
