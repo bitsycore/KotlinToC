@@ -75,6 +75,10 @@ private fun CCodeGen.buildVarArrArg(
 	else "($vVarArrType){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
 	}
 
+/* Return [callStr] wrapped as a sized struct if [returnType] is a sized array/string, else return [callStr] directly. */
+internal fun CCodeGen.callOrSized(callStr: String, returnType: TypeRef?): String =
+	tryWrapSizedReturn(callStr, returnType) ?: callStr
+
 /* Returns the size expression for a trampolined param's array length.
 For sized struct params (in sizedArrayTrampolinedParams), the local$name$len constant is used.
 For regular ktc_VarArr_T params, the .len field is used. */

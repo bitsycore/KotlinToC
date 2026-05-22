@@ -213,10 +213,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             val vExpanded2 = prepareArgs(vArgs, vMethodDecl, currentClass!!)
             val vSelfArg   = if (selfIsPointer) "\$self" else "&\$self"
             val vAllArgs   = if (vExpanded2.isEmpty()) vSelfArg else "$vSelfArg, $vExpanded2"
-            val vSizedM =
-                tryWrapSizedReturn("${typeFlatName(currentClass!!)}_$vFnName($vAllArgs)", vMethodDecl.returnType)
-            if (vSizedM != null) return vSizedM
-            return "${typeFlatName(currentClass!!)}_$vFnName($vAllArgs)"
+            return callOrSized("${typeFlatName(currentClass!!)}_$vFnName($vAllArgs)", vMethodDecl.returnType)
         }
         // Inside a class nested in an object: try parent object's methods
         val vParentObj = currentClass?.substringBefore('$')
@@ -225,12 +222,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             if (vParentMethodDecl != null) {
                 val vFnName    = resolvedFnName(vParentMethodDecl, objects[vParentObj]!!.methods)
                 val vExpanded2 = prepareArgs(vArgs, vParentMethodDecl, vParentObj)
-                val vSizedP = tryWrapSizedReturn(
-                    "${typeFlatName(vParentObj)}_$vFnName($vExpanded2)",
-                    vParentMethodDecl.returnType
-                )
-                if (vSizedP != null) return vSizedP
-                return "${typeFlatName(vParentObj)}_$vFnName($vExpanded2)"
+                return callOrSized("${typeFlatName(vParentObj)}_$vFnName($vExpanded2)", vParentMethodDecl.returnType)
             }
         }
     }
@@ -254,10 +246,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         if (vMethodDecl != null) {
             val vFnName    = resolvedFnName(vMethodDecl, vOi.methods)
             val vExpanded2 = prepareArgs(vArgs, vMethodDecl, currentObject!!)
-            val vSizedO =
-                tryWrapSizedReturn("${typeFlatName(currentObject!!)}_$vFnName($vExpanded2)", vMethodDecl.returnType)
-            if (vSizedO != null) return vSizedO
-            return "${typeFlatName(currentObject!!)}_$vFnName($vExpanded2)"
+            return callOrSized("${typeFlatName(currentObject!!)}_$vFnName($vExpanded2)", vMethodDecl.returnType)
         }
     }
 
@@ -277,9 +266,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     if (vTopOvr != null && vIsOverloaded) {
         val vFnName    = resolvedFnName(vTopOvr, vTopFuns)
         val vExpanded2 = prepareArgs(vArgs, vTopOvr)
-        val vSizedOvr  = tryWrapSizedReturn("${funCName(vFnName)}($vExpanded2)", vTopOvr.returnType)
-        if (vSizedOvr != null) return vSizedOvr
-        return "${funCName(vFnName)}($vExpanded2)"
+        return callOrSized("${funCName(vFnName)}($vExpanded2)", vTopOvr.returnType)
     }
 
     return "${funCName(vName)}($vExpandedArgs)"

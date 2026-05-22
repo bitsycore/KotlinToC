@@ -262,9 +262,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				if (vExtForObj != null) prepareArgs(args, vExtForObj, vDotObjInfo.name) else argStr
 				}
 			}
-		val sizedObj = tryWrapSizedReturn("${vDotObjCName}_$overloadedMethod($vObjArgs)", vObjMethod?.returnType)
-		if (sizedObj != null) return sizedObj
-		return "${vDotObjCName}_$overloadedMethod($vObjArgs)"
+		return callOrSized("${vDotObjCName}_$overloadedMethod($vObjArgs)", vObjMethod?.returnType)
 		}
 
 	// ── Enum method ───────────────────────────────────────────────────
