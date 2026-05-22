@@ -1,11 +1,27 @@
 # ktc_user.cmake — SDL3 integration for Sdl3Test
 # ─────────────────────────────────────────────────────────────────────────────
-# SDL3 is found via its CMake config package.
-# If SDL3 is not installed to a standard prefix, point CMake at it:
-#   cmake -DSDL3_DIR=/path/to/SDL3/lib/cmake/SDL3 -B out/_cmake -S out/
+# Tries find_package first (uses a locally installed SDL3 if available),
+# then falls back to FetchContent so no manual installation is needed.
+# Override the pinned tag:  cmake -DSDL3_GIT_TAG=release-3.2.14 ..
+# Override the repo:        cmake -DSDL3_GIT_REPO=https://... ..
 # ─────────────────────────────────────────────────────────────────────────────
 
-find_package(SDL3 REQUIRED CONFIG)
+set(SDL3_GIT_TAG  "release-3.2.14" CACHE STRING "SDL3 git tag used by FetchContent")
+set(SDL3_GIT_REPO "https://github.com/libsdl-org/SDL.git" CACHE STRING "SDL3 git repository")
+
+find_package(SDL3 QUIET CONFIG)
+
+if(NOT SDL3_FOUND)
+    message(STATUS "SDL3 not found locally — fetching ${SDL3_GIT_TAG} from ${SDL3_GIT_REPO}")
+    include(FetchContent)
+    FetchContent_Declare(
+        SDL3
+        GIT_REPOSITORY "${SDL3_GIT_REPO}"
+        GIT_TAG        "${SDL3_GIT_TAG}"
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(SDL3)
+endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3)
 

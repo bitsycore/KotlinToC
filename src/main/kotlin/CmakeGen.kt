@@ -112,26 +112,37 @@ private val kSdl3ExampleCmake = """
 # This file is NEVER overwritten by the transpiler — your edits are safe.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── SDL3 example ──────────────────────────────────────────────────────────────
-#
-# 1. Build & install SDL3 (or use a package manager such as vcpkg / Conan):
-#      git clone https://github.com/libsdl-org/SDL.git  &&  cd SDL
-#      cmake -B build -DCMAKE_BUILD_TYPE=Release  &&  cmake --build build --target install
-#
-# 2. If SDL3 was not installed to a standard prefix, point CMake at its config:
-#      cmake -DSDL3_DIR=/path/to/SDL3/lib/cmake/SDL3 ..
-#
-# 3. Uncomment the lines below and re-run cmake.
+# ── SDL3 example (find locally, auto-fetch if not installed) ──────────────────
 
-# find_package(SDL3 REQUIRED CONFIG)
-# target_link_libraries(${'$'}{PROJECT_NAME} PRIVATE SDL3::SDL3)
+# Uncomment to override the pinned tag or repository URL:
+# set(SDL3_GIT_TAG  "release-3.2.14" CACHE STRING "SDL3 git tag")
+# set(SDL3_GIT_REPO "https://github.com/libsdl-org/SDL.git" CACHE STRING "SDL3 repo")
+
+# find_package(SDL3 QUIET CONFIG)
+# if(NOT SDL3_FOUND)
+#     set(SDL3_GIT_TAG  "release-3.2.14")
+#     set(SDL3_GIT_REPO "https://github.com/libsdl-org/SDL.git")
+#     message(STATUS "SDL3 not found locally — fetching ${'$'}{SDL3_GIT_TAG}")
+#     include(FetchContent)
+#     FetchContent_Declare(SDL3
+#         GIT_REPOSITORY "${'$'}{SDL3_GIT_REPO}"
+#         GIT_TAG        "${'$'}{SDL3_GIT_TAG}"
+#         GIT_SHALLOW    TRUE
+#     )
+#     FetchContent_MakeAvailable(SDL3)
+# endif()
 #
-# On Windows the DLL must be next to the .exe at runtime.  A convenient way:
-# add_custom_command(TARGET ${'$'}{PROJECT_NAME} POST_BUILD
-#     COMMAND ${'$'}{CMAKE_COMMAND} -E copy_if_different
-#         $<TARGET_FILE:SDL3::SDL3>
-#         $<TARGET_FILE_DIR:${'$'}{PROJECT_NAME}>
-# )
+# target_link_libraries(${'$'}{PROJECT_NAME} PRIVATE SDL3::SDL3)
+# target_compile_definitions(${'$'}{PROJECT_NAME} PRIVATE SDL_MAIN_HANDLED)
+#
+# # Windows: copy SDL3.dll next to the exe
+# if(WIN32)
+#     add_custom_command(TARGET ${'$'}{PROJECT_NAME} POST_BUILD
+#         COMMAND ${'$'}{CMAKE_COMMAND} -E copy_if_different
+#             $<TARGET_FILE:SDL3::SDL3>
+#             $<TARGET_FILE_DIR:${'$'}{PROJECT_NAME}>
+#     )
+# endif()
 
 # ── Other library example (generic) ──────────────────────────────────────────
 # find_package(SomeLib REQUIRED)
