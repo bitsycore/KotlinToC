@@ -7,6 +7,25 @@ import com.bitsycore.ktc.types.KtcType
 // ── var / val ─────────────────────────────────────────────────────
 // Core var declaration emitter. Array-init helpers live in StmtsVarHelpers.kt.
 
+/* Emit nullable VarArr deep-copy for a general expression:
+allocas a stack buffer, memcpys from the source temp, declares the var and its $has flag. */
+private fun CCodeGen.emitNullableArrayCopyWithTmp(
+    ind:         String,
+    varName:     String,
+    srcExpr:     String,
+    vVarArrType: String,
+    elemCType:   String,
+    mutComment:  String
+    ) {
+    val vSrcTmp   = "${varName}_src"
+    val vDataName = "${varName}_data"
+    impl.appendLine("${ind}$vVarArrType $vSrcTmp = $srcExpr;")
+    impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcTmp.len);")
+    impl.appendLine("${ind}memcpy($vDataName, $vSrcTmp.ptr, sizeof($elemCType) * $vSrcTmp.len);")
+    impl.appendLine("$ind$mutComment$vVarArrType $varName = {$vDataName, $vSrcTmp.len};")
+    impl.appendLine("${ind}bool ${varName}\$has = ($vSrcTmp.ptr != NULL);")
+    }
+
 /*
 Returns the static element count of an array-init expression, or null if unknown at transpile time.
 Handles: literal arrayOf / intArrayOf / etc., function calls with a @Size(N) return type,
@@ -196,15 +215,9 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                         impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$expr, $recvExpr.cap};")
                         impl.appendLine("${ind}bool ${s.name}\$has = ($expr != NULL);")
                     } else {
-                        val expr      = genExpr(s.init)
-                        val vSrcTmp   = "${s.name}_src"
-                        val vDataName = "${s.name}_data"
+                        val expr = genExpr(s.init)
                         flushPreStmts(ind)
-                        impl.appendLine("${ind}$vVarArrType $vSrcTmp = $expr;")
-                        impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcTmp.len);")
-                        impl.appendLine("${ind}memcpy($vDataName, $vSrcTmp.ptr, sizeof($elemCType) * $vSrcTmp.len);")
-                        impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$vDataName, $vSrcTmp.len};")
-                        impl.appendLine("${ind}bool ${s.name}\$has = ($vSrcTmp.ptr != NULL);")
+                        emitNullableArrayCopyWithTmp(ind, s.name, expr, vVarArrType, elemCType, mutComment)
                     }
                 } else if (s.init is NameExpr) {
                     val vSrcName  = s.init.name
@@ -215,15 +228,9 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$vDataName, $vSrcName.len};")
                     impl.appendLine("${ind}bool ${s.name}\$has = ($vSrcName.ptr != NULL);")
                 } else {
-                    val expr      = genExpr(s.init)
-                    val vSrcTmp   = "${s.name}_src"
-                    val vDataName = "${s.name}_data"
+                    val expr = genExpr(s.init)
                     flushPreStmts(ind)
-                    impl.appendLine("${ind}$vVarArrType $vSrcTmp = $expr;")
-                    impl.appendLine("${ind}$elemCType* $vDataName = ($elemCType*)ktc_core_alloca(sizeof($elemCType) * $vSrcTmp.len);")
-                    impl.appendLine("${ind}memcpy($vDataName, $vSrcTmp.ptr, sizeof($elemCType) * $vSrcTmp.len);")
-                    impl.appendLine("$ind$mutComment$vVarArrType ${s.name} = {$vDataName, $vSrcTmp.len};")
-                    impl.appendLine("${ind}bool ${s.name}\$has = ($vSrcTmp.ptr != NULL);")
+                    emitNullableArrayCopyWithTmp(ind, s.name, expr, vVarArrType, elemCType, mutComment)
                 }
             }
             // ── Nullable Any (trampoline, null = data == NULL) ──
