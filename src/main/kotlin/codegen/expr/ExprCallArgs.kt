@@ -58,6 +58,23 @@ internal fun CCodeGen.tryWrapSizedReturn(callExpr: String, returnType: TypeRef?)
 	return null
 	}
 
+/* Build a VarArr argument expression from [expr], coercing element type to [vElemCType] if needed. */
+private fun CCodeGen.buildVarArrArg(
+	expr:        String,
+	argExpr:     Expr,
+	vVarArrType: String,
+	vElemCType:  String
+	): String {
+	val vArgName = (argExpr as? NameExpr)?.name
+	if (vArgName != null && vArgName in trampolinedParams)
+		return "($vVarArrType){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
+	val vSrcKtc  = inferExprTypeKtc(argExpr)
+	val vSrcCore = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
+	val vSrcElemC = vSrcCore?.asArr?.elem?.let { elemCTypeStr(it) }
+	return if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) expr
+	else "($vVarArrType){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
+	}
+
 /* Returns the size expression for a trampolined param's array length.
 For sized struct params (in sizedArrayTrampolinedParams), the local$name$len constant is used.
 For regular ktc_VarArr_T params, the .len field is used. */
@@ -200,20 +217,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val vInnerArr  = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
 						val vElemCType = elemCTypeStr(vInnerArr.elem)
 						val vVarArrTp  = varArrTypeName(vElemCType)
-						val vArgName   = (arg.expr as? NameExpr)?.name
-						if (vArgName != null && vArgName in trampolinedParams) {
-							parts += "($vVarArrTp){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
-							} else {
-							val vSrcKtc   = inferExprTypeKtc(arg.expr)
-							val vSrcCore  = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
-							val vSrcElem  = vSrcCore?.asArr?.elem
-							val vSrcElemC = vSrcElem?.let { elemCTypeStr(it) }
-							if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) {
-								parts += expr
-								} else {
-								parts += "($vVarArrTp){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
-								}
-							}
+						parts += buildVarArrArg(expr, arg.expr, vVarArrTp, vElemCType)
 						} else if (paramTypeKtc is KtcType.Ptr && (paramTypeKtc.inner is KtcType.Void || paramTypeKtc.inner is KtcType.Any)) {
 						// AnyPtr / @Ptr Any (void*): extract .ptr when arg is a VarArr
 						val vVoidArgKtc  = inferExprTypeKtc(arg.expr)
@@ -261,29 +265,12 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					val vElemKtc    = paramTypeKtc.asArr?.elem
 						?: (paramTypeKtc as? KtcType.Nullable)?.inner?.asArr?.elem
 						?: KtcType.Prim(KtcType.PrimKind.Int)
-					val vElemCType  = if (vElemKtc is KtcType.Nullable) optCTypeName(vElemKtc.inner.toInternalStr)
-						else cTypeStr(vElemKtc)
+					val vElemCType  = elemCTypeStr(vElemKtc)
 					val vVarArrType = varArrTypeName(vElemCType)
 					if (arg.expr is NullLit) {
 						parts += "($vVarArrType){NULL, 0}"
 						} else {
-						val vArgName = (arg.expr as? NameExpr)?.name
-						if (vArgName != null && vArgName in trampolinedParams) {
-							// @Size trampolined: local raw pointer + local const len
-							parts += "($vVarArrType){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
-							} else {
-							val vSrcKtc   = inferExprTypeKtc(arg.expr)
-							val vSrcCore  = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
-							val vSrcElem  = vSrcCore?.asArr?.elem
-							val vSrcElemC = vSrcElem?.let { elemCTypeStr(it) }
-							// Same-typed VarArr already in scope — pass directly without re-wrapping
-							if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) {
-								parts += expr
-								} else {
-								// Different element type — rebuild VarArr with cast
-								parts += "($vVarArrType){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
-								}
-							}
+						parts += buildVarArrArg(expr, arg.expr, vVarArrType, vElemCType)
 						}
 					}
 				} else if ((param.type.nullable || paramTypeKtc is KtcType.Nullable) && isValueNullableKtc(paramTypeKtc.let {
