@@ -5,6 +5,19 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
+/* Wrap a safe-call result: NULL for pointer returns, Optional for value returns. */
+private fun CCodeGen.wrapSafeCallResult(retType: String, guard: String, call: String): String {
+	val retKtc = parseResolvedTypeName(retType)
+	if (retKtc is KtcType.Ptr) {
+		val t = tmp()
+		preStmts += "${cTypeStr(retType)} $t = $guard ? $call : NULL;"
+		defineVar(t, "${retType}?")
+		return t
+		}
+	val optType = optCTypeName("${retType}?")
+	return tmpOptional(retType, "$guard ? ${optSome(optType, call)} : ${optNone(optType)}")
+	}
+
 /* Handle a safe (?.) method call, wrapping the result in Optional or NULL guard as needed. */
 internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): String {
 	val recvName         = (dot.obj as? NameExpr)?.name
@@ -28,15 +41,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 		if (retType2 == null || retType2 == "Unit") {
 			return "($guard2 ? ($call2, 0) : 0)"
 			}
-		val retKtc2 = parseResolvedTypeName(retType2)
-		if (retKtc2 is KtcType.Ptr) {
-			val t2 = tmp()
-			preStmts += "${cTypeStr(retType2)} $t2 = $guard2 ? $call2 : NULL;"
-			defineVar(t2, "${retType2}?")
-			return t2
-			}
-		val optType2 = optCTypeName("${retType2}?")
-		return tmpOptional(retType2, "$guard2 ? ${optSome(optType2, call2)} : ${optNone(optType2)}")
+		return wrapSafeCallResult(retType2, guard2, call2)
 		}
 
 	val dotExpr = DotExpr(dot.obj, dot.name)
@@ -70,17 +75,8 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 	if (retType == null || retType == "Unit") {
 		return "($guard ? ($call, 0) : 0)"
 		}
-	// Pointer return (@Ptr): use NULL for null, no Optional wrapping
-	val retKtc = parseResolvedTypeName(retType)
-	if (retKtc is KtcType.Ptr) {
-		val t = tmp()
-		preStmts += "${cTypeStr(retType)} $t = $guard ? $call : NULL;"
-		defineVar(t, "${retType}?")
-		return t
-		}
-	// Emit temp as Optional
-	val optType = optCTypeName("${retType}?")
-	return tmpOptional(retType, "$guard ? ${optSome(optType, call)} : ${optNone(optType)}")
+	// Pointer return (@Ptr): use NULL for null; value return: wrap in Optional
+	return wrapSafeCallResult(retType, guard, call)
 	}
 
 // ==================
