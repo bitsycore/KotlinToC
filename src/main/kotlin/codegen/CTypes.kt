@@ -63,6 +63,12 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 	return if (isSubstNullable && base !is KtcType.Ptr && base !is KtcType.Nullable) KtcType.Nullable(base) else base
 	}
 
+/* Resolve a TypeRef to an internal string, wrapping in nullable notation when typeRef.nullable is true. */
+internal fun CCodeGen.resolveTypeRefStr(typeRef: TypeRef): String {
+	val base = resolveTypeName(typeRef)
+	return if (typeRef.nullable) KtcType.Nullable(base).toInternalStr else base.toInternalStr
+	}
+
 /* Resolve a TypeRef to its internal string type name (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 	if (t == null) return "Int"

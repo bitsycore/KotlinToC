@@ -158,18 +158,12 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             }
         }
         activeLambdas[name]?.returnType?.let { return it.toInternalStr }
-        funSigs[name]?.returnType?.let {
-            val base = resolveTypeName(it)
-            return if (it.nullable) KtcType.Nullable(base).toInternalStr else base.toInternalStr
-        }
+        funSigs[name]?.returnType?.let { return resolveTypeRefStr(it) }
         if (currentExtRecvType != null && interfaces.containsKey(currentExtRecvType)) {
             val vIfaceInfo = interfaces[currentExtRecvType]!!
             val vIfaceMethod = vIfaceInfo.methods.find { it.name == name }
                 ?: collectAllIfaceMethods(vIfaceInfo).find { it.name == name }
-            if (vIfaceMethod?.returnType != null) {
-                val baseKtc = resolveTypeName(vIfaceMethod.returnType)
-                return if (vIfaceMethod.returnType.nullable) KtcType.Nullable(baseKtc).toInternalStr else baseKtc.toInternalStr
-            }
+            if (vIfaceMethod?.returnType != null) return resolveTypeRefStr(vIfaceMethod.returnType)
         }
     }
     if (e.callee is DotExpr) return inferMethodReturnType(e.callee, e.args)
@@ -185,8 +179,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 /* Resolve a method return type as a String, applying generic bindings for concrete generic instantiations. */
 internal fun CCodeGen.resolveMethodReturnType(className: String, returnType: TypeRef?): String {
     if (returnType == null) return "Unit"
-    val ktc = withTypeSubst(genericTypeBindings[className]) { resolveTypeName(returnType) }
-    return if (returnType.nullable) KtcType.Nullable(ktc).toInternalStr else ktc.toInternalStr
+    return withTypeSubst(genericTypeBindings[className]) { resolveTypeRefStr(returnType) }
 }
 
 /* KtcType variant — avoids the toInternalStr round-trip at call sites that already want KtcType. */
@@ -202,10 +195,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     val vCompanionName = vDotObjName?.let { classCompanions[it] }
     if (vCompanionName != null) {
         val vMethod = objects[vCompanionName]?.methods?.find { it.name == dot.name }
-        if (vMethod != null && vMethod.returnType != null) {
-            val baseKtc = resolveTypeName(vMethod.returnType)
-            return if (vMethod.returnType.nullable) KtcType.Nullable(baseKtc).toInternalStr else baseKtc.toInternalStr
-        }
+        if (vMethod?.returnType != null) return resolveTypeRefStr(vMethod.returnType)
         return null
     }
     val recvType = inferExprType(dot.obj) ?: return null
