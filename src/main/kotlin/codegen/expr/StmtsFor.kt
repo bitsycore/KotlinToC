@@ -56,7 +56,8 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
         }
         // for (item in array/collection)  — iterate over elements
         else -> {
-            val arrType = inferExprType(rangeExpr)
+            val arrType    = inferExprType(rangeExpr)
+            val arrTypeKtc = inferExprTypeKtc(rangeExpr)
             val iterInfo = findOperatorIterator(arrType)
             if (iterInfo != null) {
                 // Iterator-based: val $it = obj.iterator(); while($it.hasNext()) { val item = $it.next(); ... }
