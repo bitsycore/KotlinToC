@@ -1,11 +1,8 @@
 package com.bitsycore.ktc
 
-import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.codegen.CCodeGen
-import com.bitsycore.ktc.codegen.COutput
-import com.bitsycore.ktc.codegen.collectAndScan
-import com.bitsycore.ktc.codegen.dumpSemantics
-import com.bitsycore.ktc.codegen.generate
+import com.bitsycore.ktc.ast.FunDecl
+import com.bitsycore.ktc.ast.KtFile
+import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.parser.Lexer
 import com.bitsycore.ktc.parser.Parser
 import java.io.File
@@ -418,14 +415,21 @@ fun main(args: Array<String>) {
         }
     }
 
-    // Print compile command: core first, then other ktc/ files, then user files.
+    // Build full source lists (paths relative to outDir) for compile hints and CMake.
     // ktcOutputNames are paths relative to ktc/ (e.g. "core/ktc_core", "std/Heap").
     // userOutputNames are paths relative to outDir (e.g. "com/example/Point").
-    val ktcSources  = (listOf("core/ktc_core") + ktcOutputNames.sorted())
-        .joinToString(" ") { "ktc/$it.c" }
-    val userSources = userOutputNames.sorted().joinToString(" ") { "$it.c" }
+    val vKtcFullSrcs  = (listOf("core/ktc_core") + ktcOutputNames.sorted()).map { "ktc/$it.c" }
+    val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
+    val ktcSources    = vKtcFullSrcs.joinToString(" ")
+    val userSources   = vUserFullSrcs.joinToString(" ")
     // Derive binary name from the last path component of the first user output name
     val mainBase = userOutputNames.firstOrNull()
         ?.substringAfterLast('/')?.substringBefore('_')?.ifEmpty { "output" } ?: "output"
+
+    // ── Generate CMakeLists.txt + ktc_user.cmake.example ─────────────
+    writeCmakeFiles(outDir, mainBase, vKtcFullSrcs, vUserFullSrcs)
+    println("  wrote ${File(outDir, "CMakeLists.txt").path}")
+
     println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")
+    println("  or: cmake -B build . && cmake --build build")
 }
