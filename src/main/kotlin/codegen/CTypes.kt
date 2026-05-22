@@ -256,10 +256,7 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 		}
 	is KtcType.Ptr -> {
 		if (ktc.inner is KtcType.Arr) {
-			val vArrElem = ktc.inner.elem
-			val vElemStr = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr)
-				else cTypeStr(vArrElem)
-			"$vElemStr*"
+			"${elemCTypeStr(ktc.inner.elem)}*"
 			} else if (ktc.inner is KtcType.User && ktc.inner.kind == KtcType.UserKind.Interface) {
 			"ktc_IfacePtr"
 			} else "${cTypeStr(ktc.inner)}*"
@@ -274,6 +271,10 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 		}
 	is KtcType.Func -> "void*"
 	}
+
+/* C type string for an array element — handles nullable elements as Optional types. */
+internal fun SymbolReader.elemCTypeStr(elemKtc: KtcType): String =
+	if (elemKtc is KtcType.Nullable) optCTypeName(elemKtc.inner.toInternalStr) else cTypeStr(elemKtc)
 
 internal fun CCodeGen.defaultVal(t: KtcType): String = when (t) {
 	is KtcType.Prim -> when (t.kind) {

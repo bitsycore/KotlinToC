@@ -121,7 +121,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					if (vNullIsVarArr) {
 						// @Ptr Array<T> null: emit {NULL, 0} struct (same as regular nullable array)
 						val vInner   = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
-						val vElemC   = if (vInner.elem is KtcType.Nullable) optCTypeName(vInner.elem.inner.toInternalStr) else cTypeStr(vInner.elem)
+						val vElemC   = elemCTypeStr(vInner.elem)
 						parts += "(${varArrTypeName(vElemC)}){NULL, 0}"
 						} else if (paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.User
 						&& paramTypeKtc.inner.kind == KtcType.UserKind.Interface)
@@ -198,7 +198,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					if (vIsArrPtr) {
 						// @Ptr Array<T>: now ktc_VarArr_T — pass struct with .ptr cast if needed
 						val vInnerArr  = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
-						val vElemCType = if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr) else cTypeStr(vInnerArr.elem)
+						val vElemCType = elemCTypeStr(vInnerArr.elem)
 						val vVarArrTp  = varArrTypeName(vElemCType)
 						val vArgName   = (arg.expr as? NameExpr)?.name
 						if (vArgName != null && vArgName in trampolinedParams) {
@@ -207,9 +207,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 							val vSrcKtc   = inferExprTypeKtc(arg.expr)
 							val vSrcCore  = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
 							val vSrcElem  = vSrcCore?.asArr?.elem
-							val vSrcElemC = vSrcElem?.let {
-								if (it is KtcType.Nullable) optCTypeName(it.inner.toInternalStr) else cTypeStr(it)
-								}
+							val vSrcElemC = vSrcElem?.let { elemCTypeStr(it) }
 							if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) {
 								parts += expr
 								} else {
@@ -277,9 +275,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 							val vSrcKtc   = inferExprTypeKtc(arg.expr)
 							val vSrcCore  = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
 							val vSrcElem  = vSrcCore?.asArr?.elem
-							val vSrcElemC = vSrcElem?.let {
-								if (it is KtcType.Nullable) optCTypeName(it.inner.toInternalStr) else cTypeStr(it)
-								}
+							val vSrcElemC = vSrcElem?.let { elemCTypeStr(it) }
 							// Same-typed VarArr already in scope — pass directly without re-wrapping
 							if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) {
 								parts += expr

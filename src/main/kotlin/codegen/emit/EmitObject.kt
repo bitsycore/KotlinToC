@@ -90,7 +90,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val fn         = privPrefix(p) + p.name
             val mutComment = if (p.mutable) "/*VAR*/ " else "/*VAL*/ "
             val vArrElem   = vKtcObj.asArr?.elem ?: ((vKtcObj as? KtcType.Ptr)?.inner as KtcType.Arr).elem
-            val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr) else cTypeStr(vArrElem)
+            val vElemCType = elemCTypeStr(vArrElem)
             hdr.appendLine("    $mutComment${varArrTypeName(vElemCType)} ${fn};")
         } else {
             val fn = privPrefix(p) + p.name

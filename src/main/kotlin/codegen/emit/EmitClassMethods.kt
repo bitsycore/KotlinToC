@@ -88,7 +88,7 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
 				hdr.appendLine("    $vMutComment$vElemCt $vFieldName[${vSizeAnn}];")
 				} else {
 				val vArrElem   = vKtcField.asArr?.elem ?: ((vKtcField as? KtcType.Ptr)?.inner as KtcType.Arr).elem
-				val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr) else cTypeStr(vArrElem)
+				val vElemCType = elemCTypeStr(vArrElem)
 				hdr.appendLine("    $vMutComment${varArrTypeName(vElemCType)} $vFieldName;${ptrNullComment(vKtcField)}")
 				}
 			} else if (type.nullable) {

@@ -76,7 +76,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 			if (!vP.type.isRawArray()) continue
 			val vKtcMP   = resolveTypeName(vP.type)
 			val vArrElem = vKtcMP.asArr!!.elem
-			val vECType  = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr) else cTypeStr(vArrElem)
+			val vECType  = elemCTypeStr(vArrElem)
 			impl.appendLine("    $vECType* local\$${vP.name} = ${vP.name}.ptr;")
 			trampolinedParams += vP.name
 			}
