@@ -129,26 +129,21 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 		for (vBp in ci.bodyProps) {
 			if (vBp.initExpr != null) {
 				if (vBp.line > 0) currentStmtLine = vBp.line
-				heapAllocTargetType = vBp.typeRef
 				val vBodyFieldName = if (vBp.isPrivate) "PRIV_${vBp.name}" else vBp.name
 				val vSizeAnn = vBp.typeRef.getSizeAnnotation()
 				if (vSizeAnn != null && vBp.typeRef.isSizedArray()) {
 					val vIsZeroInit = vBp.initExpr is CallExpr && (vBp.initExpr.callee as? NameExpr)?.name?.endsWith("Array") == true &&
 						vBp.initExpr.args.size == 1 && vBp.initExpr.args[0].expr !is LambdaExpr
 					if (!vIsZeroInit) {
-						val vExpr = genExpr(vBp.initExpr)
-						heapAllocTargetType = null
+						val vExpr = genExprWithHeapTarget(vBp.initExpr, vBp.typeRef)
 						flushPreStmts("    ")
 						val vElemType = cTypeStr(resolveTypeName(vBp.typeRef).asArr!!.elem)
 						val vSrcKtc  = inferExprTypeKtc(vBp.initExpr)
 						val vSrcExpr = if (vSrcKtc != null && vSrcKtc.isArrayLike && vSrcKtc.asArr?.sized == null) "($vExpr).ptr" else vExpr
 						impl.appendLine("    memcpy(\$self.$vBodyFieldName, $vSrcExpr, $vSizeAnn * sizeof($vElemType));")
-						} else {
-						heapAllocTargetType = null
 						}
 					} else {
-					val vExpr = genExpr(vBp.initExpr)
-					heapAllocTargetType = null
+					val vExpr = genExprWithHeapTarget(vBp.initExpr, vBp.typeRef)
 					flushPreStmts("    ")
 					impl.appendLine("    \$self.$vBodyFieldName = $vExpr;")
 					}

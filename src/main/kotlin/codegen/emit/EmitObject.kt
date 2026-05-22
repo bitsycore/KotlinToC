@@ -130,9 +130,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val pType       = p.type ?: inferInitType(p.init)
             val vKtcObjInit = resolveTypeName(pType)                   // KtcType for array checks
             val sizeAnn     = pType.getSizeAnnotation()
-            heapAllocTargetType = pType
-            val expr        = genExpr(p.init)
-            heapAllocTargetType = null
+            val expr = genExprWithHeapTarget(p.init, pType)
             flushPreStmts("    ")
             if (vKtcObjInit.isArrayLike && sizeAnn != null) {
                 val vElemType = cTypeStr(vKtcObjInit.asArr!!.elem)     // element C type for sized array
@@ -215,9 +213,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         }
         registerParams(m.params)
         emitArrayParamCopies(m.params, "    ")
-        if (m.body != null) for (s in m.body.stmts) emitStmt(s, "    ")
-        if (m.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ")
-        closeFunBody(prevState)
+        emitFunBodyAndClose(m, prevState, withImplicitReturn = false)
     }
 
     for (m in vRegularMethods) emitOneObjMethod(m, null)

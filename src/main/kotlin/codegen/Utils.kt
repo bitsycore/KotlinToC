@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.Expr
+import com.bitsycore.ktc.ast.TypeRef
 import com.bitsycore.ktc.codegen.expr.genExpr
 
 /*
@@ -53,6 +54,14 @@ internal fun CCodeGen.closeFunBody(inPrevState: CCodeGen.FunState) {
     restoreFunState(inPrevState)
     impl.appendLine("}")
     impl.appendLine()
+    }
+
+/* Evaluate an expression with a heapAllocTargetType hint set, then clear the hint. */
+internal fun CCodeGen.genExprWithHeapTarget(expr: Expr, targetType: TypeRef?): String {
+    heapAllocTargetType = targetType
+    val result = genExpr(expr)
+    heapAllocTargetType = null
+    return result
     }
 
 internal fun CCodeGen.genExprFlushed(inExpr: Expr, inInd: String): String {
