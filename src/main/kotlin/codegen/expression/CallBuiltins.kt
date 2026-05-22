@@ -49,8 +49,8 @@ private fun CCodeGen.strBufCapExpr(inPtrArg: Expr, inRawPtr: String): String =
 		is NullLit -> "0"
 		is DotExpr if inPtrArg.name == "ptr" ->
 			"${genExpr(inPtrArg.obj)}.len"
-		is CallExpr if inPtrArg.callee is DotExpr && (inPtrArg.callee as DotExpr).name == "ptr" ->
-			"${genExpr((inPtrArg.callee as DotExpr).obj)}.len"
+		is CallExpr if inPtrArg.callee is DotExpr && inPtrArg.callee.name == "ptr" ->
+			"${genExpr(inPtrArg.callee.obj)}.len"
 		else -> {
 			val ktc = inferExprTypeKtc(inPtrArg)
 			// Use inRawPtr.len (the VarArr) not the extracted .ptr value
@@ -111,7 +111,7 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 
 		"HeapFree" -> {
 			val vFreeArgKtc  = inferExprTypeKtc(inArgs[0].expr)
-			val vFreeArgCore = (vFreeArgKtc as? KtcType.Nullable)?.inner ?: vFreeArgKtc
+			val vFreeArgCore = vFreeArgKtc.stripNullable
 			val vFreeExpr    = genExpr(inArgs[0].expr)
 			return if (vFreeArgCore?.isArrayLike == true) tFree("($vFreeExpr).ptr") else tFree(vFreeExpr)
 			}
@@ -181,7 +181,7 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 	) {
 		val vPtrRaw  = genExpr(inArgs[0].expr)
 		val vPtrKtc  = inferExprTypeKtc(inArgs[0].expr)
-		val vPtrCore = (vPtrKtc as? KtcType.Nullable)?.inner ?: vPtrKtc
+		val vPtrCore = vPtrKtc.stripNullable
 		val vPtrExpr = if (vPtrCore?.isArrayLike == true && vPtrCore.asArr?.sized == null) "$vPtrRaw.ptr" else vPtrRaw
 		val vLenExpr = genExpr(inArgs[1].expr)
 		val vCapExpr = if (inArgs.size == 3) genExpr(inArgs[2].expr)

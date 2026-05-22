@@ -207,7 +207,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vNewSizeExpr  = genExpr(inArgs[1].expr)
 		val vT            = tmp()
 		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
-		val vAllocCore    = (vAllocKtc as? KtcType.Nullable)?.inner ?: vAllocKtc
+		val vAllocCore    = vAllocKtc.stripNullable
 		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User && vAllocCore.inner.kind == KtcType.UserKind.Interface
 		val vIfExpr: String
 		if (vIsTrampoline) {
@@ -253,7 +253,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			}
 		val vT            = tmp()
 		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
-		val vAllocCore    = (vAllocKtc as? KtcType.Nullable)?.inner ?: vAllocKtc
+		val vAllocCore    = vAllocKtc.stripNullable
 		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User && vAllocCore.inner.kind == KtcType.UserKind.Interface
 		val vIfExpr: String
 		if (vIsTrampoline) {
@@ -274,7 +274,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vIdx        = inArgs.getOrNull(0)?.let { genExpr(it.expr) } ?: "0"
 		val vRecvName   = (inDot.obj as? NameExpr)?.name
 		val vIsTramp    = vRecvName != null && vRecvName in trampolinedParams
-		val vIsSized    = inRecvTypeKtc?.asArr?.sized != null
+		val vIsSized    = inRecvTypeKtc.asArr?.sized != null
 		val vAccessExpr = if (vIsTramp || vIsSized) "$inRecv[$vIdx]" else "$inRecv.ptr[$vIdx]"
 		if (vMethod == "get") return vAccessExpr
 		val vValExpr = inArgs.getOrNull(1)?.let { genExpr(it.expr) } ?: "0"

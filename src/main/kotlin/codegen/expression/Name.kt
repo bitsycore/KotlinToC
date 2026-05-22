@@ -7,6 +7,7 @@ import com.bitsycore.ktc.ast.NameExpr
 import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.codegen.cTypeStr
 import com.bitsycore.ktc.codegen.inferExprTypeKtc
+import com.bitsycore.ktc.codegen.stripNullable
 import com.bitsycore.ktc.types.KtcType
 
 // ── Name resolution and l-value generation ───────────────────────
@@ -64,7 +65,7 @@ internal fun CCodeGen.genLValue(e: Expr): String {
 				"${typeFlatName(vCompanionName)}.${e.name}"
 				} else {
 				val vRecvKtc     = inferExprTypeKtc(e.obj)
-				val vRecvKtcCore = (vRecvKtc as? KtcType.Nullable)?.inner ?: vRecvKtc
+				val vRecvKtcCore = vRecvKtc.stripNullable
 				val vOp          = if (vRecvKtcCore is KtcType.Ptr) "->" else "."
 				"${genExpr(e.obj)}$vOp${e.name}"
 				}
@@ -72,9 +73,9 @@ internal fun CCodeGen.genLValue(e: Expr): String {
 
 		is IndexExpr -> {
 			val vObjKtc        = inferExprTypeKtc(e.obj)
-			val vObjKtcCore    = (vObjKtc as? KtcType.Nullable)?.inner ?: vObjKtc
-			val vIsRawPtr      = vObjKtcCore is KtcType.Ptr && (vObjKtcCore as KtcType.Ptr).inner !is KtcType.Arr // raw pointer (not @Ptr Array)
-			val vIsSizedArr    = vObjKtcCore?.asArr?.sized != null                                               // fixed-size C array
+			val vObjKtcCore    = vObjKtc.stripNullable
+			val vIsRawPtr      = vObjKtcCore is KtcType.Ptr && vObjKtcCore.inner !is KtcType.Arr // raw pointer (not @Ptr Array)
+			val vIsSizedArr    = vObjKtcCore?.asArr?.sized != null                             // fixed-size C array
 			val vIsTrampolined = e.obj is NameExpr && e.obj.name in trampolinedParams                             // @Size trampolined param
 			if (vIsRawPtr || vIsSizedArr || vIsTrampolined) "${genExpr(e.obj)}[${genExpr(e.index)}]"
 			else "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"

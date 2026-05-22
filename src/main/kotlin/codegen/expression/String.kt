@@ -28,7 +28,7 @@ internal fun CCodeGen.genPrintCall(args: List<Arg>, newline: Boolean): String {
 
 	val t        = inferExprType(arg) ?: "Int"
 	val tKtc     = inferExprTypeKtc(arg) ?: KtcType.Prim(KtcType.PrimKind.Int)
-	val tKtcCore = (tKtc as? KtcType.Nullable)?.inner ?: tKtc
+	val tKtcCore = tKtc.stripNullable
 	val expr     = genExpr(arg)
 
 	if (tKtc is KtcType.Nullable) {
@@ -109,7 +109,7 @@ internal fun CCodeGen.genPrintfFromTemplate(tmpl: StrTemplateExpr, nl: String): 
 			is LitPart  -> fmt.append(escapeStr(part.text))
 			is ExprPart -> {
 				val tKtc     = inferExprTypeKtc(part.expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
-				val tKtcCore = (tKtc as? KtcType.Nullable)?.inner ?: tKtc
+				val tKtcCore = tKtc.stripNullable
 				fmt.append(printfFmt(tKtcCore))
 				val exprStr  = genExpr(part.expr)
 				when (tKtcCore) {

@@ -212,7 +212,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     if (e.op == "in" || e.op == "!in") {
         val rt = inferExprType(e.right)                                               // String? right-side type
         val rtKtc = inferExprTypeKtc(e.right)                                         // KtcType? right-side type
-        val rtCoreKtc = (rtKtc as? KtcType.Nullable)?.inner ?: rtKtc                 // KtcType? stripped Nullable
+        val rtCoreKtc = rtKtc.stripNullable                 // KtcType? stripped Nullable
         val negated = e.op == "!in"
         val vContClassInfo = classInfoFor(rtCoreKtc)                                  // non-null if right side is a class
         val vContIfaceInfo = ifaceInfoFor(rtCoreKtc)                                  // non-null if right side is an interface
@@ -226,7 +226,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             }
         }
         if (rtKtc is KtcType.Ptr || (rtKtc is KtcType.Nullable && rtKtc.inner is KtcType.Ptr)) {
-            val ptrKtc = (rtKtc as? KtcType.Nullable)?.inner ?: rtKtc
+            val ptrKtc = rtKtc.stripNullable
             val baseName = (ptrKtc as KtcType.Ptr).inner
             val baseClass = (baseName as? KtcType.User)?.baseName ?: baseName.toInternalStr
             val containsMethod = classes[baseClass]?.methods?.find { (it.name == "contains" || it.name == "containsKey") && it.isOperator }

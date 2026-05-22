@@ -184,7 +184,7 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
     // Heap/Ptr/Value .set(val) as statement — only when class has no own set() method
     if (e is CallExpr && e.callee is DotExpr && e.callee.name == "set") {
         val recvTypeKtc = inferExprTypeKtc(e.callee.obj)
-        val recvTypeCoreKtc = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc
+        val recvTypeCoreKtc = recvTypeKtc.stripNullable
         val baseClass = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
         if (baseClass != null && classes[baseClass]?.methods?.any { it.name == "set" } != true) {
             val recv = genExpr(e.callee.obj)

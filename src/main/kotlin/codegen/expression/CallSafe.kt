@@ -22,7 +22,7 @@ private fun CCodeGen.wrapSafeCallResult(retType: String, guard: String, call: St
 internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): String {
 	val recvName         = (dot.obj as? NameExpr)?.name
 	val recvTypeKtc      = if (recvName != null) lookupVarKtc(recvName) else inferExprTypeKtc(dot.obj)
-	val recvTypeCoreKtc  = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc
+	val recvTypeCoreKtc  = recvTypeKtc.stripNullable
 	val recvType         = recvTypeKtc?.toInternalStr
 	// Warn: ?. method call on a non-nullable receiver (and not a pointer)
 	if (recvTypeKtc != null && recvTypeKtc !is KtcType.Nullable && recvTypeCoreKtc !is KtcType.Ptr) {

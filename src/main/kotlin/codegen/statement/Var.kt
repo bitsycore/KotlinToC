@@ -68,7 +68,7 @@ internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
 internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val vKtc = if (s.type != null) resolveTypeName(s.type) else parseResolvedTypeName(inferExprType(s.init) ?: "Int") // KtcType (for C type emission)
     val vKtcKtc = inferExprTypeKtc(s.init)
-    val vKtcCore = (vKtc as? KtcType.Nullable)?.inner ?: vKtc
+    val vKtcCore = vKtc.stripNullable
     val tRaw = vKtc.toInternalStr                                                                    // string type (for structural checks — retained during migration)
     val inferredNullable = s.type == null && vKtc is KtcType.Nullable
     // Strip ? suffix for nullable types; it gets added back at defineVar and optCTypeName

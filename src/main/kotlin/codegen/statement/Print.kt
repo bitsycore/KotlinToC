@@ -40,7 +40,7 @@ internal fun CCodeGen.emitPrintStmtInner(args: List<Arg>, ind: String, newline: 
     }
 
     val tKtc = inferExprTypeKtc(arg) ?: KtcType.Prim(KtcType.PrimKind.Int)
-    val tKtcCore = (tKtc as? KtcType.Nullable)?.inner ?: tKtc
+    val tKtcCore = tKtc.stripNullable
     var expr = genExpr(arg)
     flushPreStmts(ind)
 

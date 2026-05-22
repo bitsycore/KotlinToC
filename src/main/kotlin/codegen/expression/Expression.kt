@@ -89,7 +89,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
     is IndexExpr -> {
         val objType = inferExprType(e.obj)                                            // String? object type
         val objTypeKtc = inferExprTypeKtc(e.obj)                                     // KtcType? object type
-        val objTypeCoreKtc = (objTypeKtc as? KtcType.Nullable)?.inner ?: objTypeKtc  // KtcType? stripped Nullable
+        val objTypeCoreKtc = objTypeKtc.stripNullable  // KtcType? stripped Nullable
         val vIdxClassInfo = classInfoFor(objTypeCoreKtc)                              // non-null if object is a class
         val vIdxIfaceInfo = ifaceInfoFor(objTypeCoreKtc)                              // non-null if object is an interface
         if (objType == "String") {
@@ -145,7 +145,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         } else if (objTypeCoreKtc != null && objTypeCoreKtc.isArrayLike) {
             val vObjName       = (e.obj as? NameExpr)?.name                             // name of array expr (if any)
             val vIsTrampolined = vObjName != null && vObjName in trampolinedParams      // @Size trampolined param
-            val vIsSizedArr    = objTypeCoreKtc?.asArr?.sized != null              // fixed-size C array
+            val vIsSizedArr    = objTypeCoreKtc.asArr?.sized != null              // fixed-size C array
             if (vIsTrampolined || vIsSizedArr) "${genExpr(e.obj)}[${genExpr(e.index)}]"
             else "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
         } else {
@@ -187,7 +187,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val target = targetKtc.toInternalStr                                             // String for fallback/array checks
         val inner = genExpr(e.expr)
         val exprKtc = inferExprTypeKtc(e.expr)
-        val exprKtcCore = (exprKtc as? KtcType.Nullable)?.inner ?: exprKtc
+        val exprKtcCore = exprKtc.stripNullable
         // ktc_IfacePtr is a value struct even though the KTC type is Ptr<Interface>
         val isIfacePtr = exprKtcCore is KtcType.Ptr && exprKtcCore.inner is KtcType.User && exprKtcCore.inner.kind == KtcType.UserKind.Interface
         val memOp = if (exprKtcCore is KtcType.Ptr && !isIfacePtr) "->" else "."
@@ -232,7 +232,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val inner = genExpr(e.expr)
         val srcType = inferExprType(e.expr)?.removeSuffix("?")
         val srcKtc = inferExprTypeKtc(e.expr)
-        val srcKtcCore = (srcKtc as? KtcType.Nullable)?.inner ?: srcKtc
+        val srcKtcCore = srcKtc.stripNullable
         val isPtr = srcKtcCore is KtcType.Ptr
         val vCastClassInfo = classInfoFor(targetKtc)                                  // non-null if target is a user class
         val vCastIfaceInfo = ifaceInfoFor(targetKtc)                                  // non-null if target is an interface

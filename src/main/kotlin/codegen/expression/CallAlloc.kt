@@ -39,7 +39,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 
 	/* Resolve allocator expression to a ktc_IfacePtr. */
 	fun resolveAllocIface(inAllocArgKtc: KtcType?): Pair<String, Boolean> {
-		val vAllocCore    = (inAllocArgKtc as? KtcType.Nullable)?.inner ?: inAllocArgKtc
+		val vAllocCore    = inAllocArgKtc.stripNullable
 		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User
 			&& vAllocCore.inner.kind == KtcType.UserKind.Interface
 		if (vIsTrampoline) return Pair(vAllocExpr, false)
@@ -79,7 +79,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val vCName    = typeFlatName(vClassName)
 		val vCtorArgs = inCall.args.drop(1).joinToString(", ") { genExpr(it.expr) }
 		val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
-		val vAllocCore = (vAllocKtc as? KtcType.Nullable)?.inner ?: vAllocKtc
+		val vAllocCore = vAllocKtc.stripNullable
 		val vAllocClassName = (vAllocCore as? KtcType.User)?.baseName
 		val vIsAllocObj = vAllocObjName != null && objects.containsKey(vAllocObjName)
 			&& classInterfaces[vAllocObjName]?.contains("Allocator") == true
@@ -112,7 +112,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 			if (classes.containsKey(vMangled)) {
 				val vCName    = typeFlatName(vMangled)
 				val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
-				val vAllocCore = (vAllocKtc as? KtcType.Nullable)?.inner ?: vAllocKtc
+				val vAllocCore = vAllocKtc.stripNullable
 				val vAllocClassName2 = (vAllocCore as? KtcType.User)?.baseName
 				val vIsAllocObj2 = vAllocObjName != null && objects.containsKey(vAllocObjName)
 					&& classInterfaces[vAllocObjName]?.contains("Allocator") == true

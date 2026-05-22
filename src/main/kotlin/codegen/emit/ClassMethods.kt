@@ -3,7 +3,6 @@ package com.bitsycore.ktc.codegen.emit
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.inferBlockType
-import com.bitsycore.ktc.codegen.statement.emitBodyPropLenIfArray
 import com.bitsycore.ktc.types.KtcType
 
 
@@ -184,7 +183,6 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 					flushPreStmts("    ")
 					impl.appendLine("    \$self.$vBodyFieldName = $vExpr;")
 					}
-				emitBodyPropLenIfArray(vBp)
 				}
 			}
 		impl.appendLine("    return \$self;")

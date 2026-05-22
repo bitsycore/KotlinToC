@@ -35,7 +35,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 		}
 	val recvType        = inferExprType(e.obj) ?: return null
 	val recvTypeKtc     = inferExprTypeKtc(e.obj)
-	val recvTypeCoreKtc = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc
+	val recvTypeCoreKtc = recvTypeKtc.stripNullable
 	if (recvType == "ktc_StrBuf" || recvType == "StringBuffer") {
 		return when (e.name) {
 			"buffer" -> parseResolvedTypeName("CharArray*?")
@@ -74,7 +74,7 @@ internal fun CCodeGen.inferDotTypeSafe(e: SafeDotExpr): String? {
 internal fun CCodeGen.inferIndexType(e: IndexExpr): String? {
 	val tRaw     = inferExprType(e.obj) ?: return null
 	val tKtc     = inferExprTypeKtc(e.obj)
-	val tKtcCore = (tKtc as? KtcType.Nullable)?.inner ?: tKtc
+	val tKtcCore = tKtc.stripNullable
 	val t = tRaw.removeSuffix("?")
 	if (t == "String") return "Char"
 	if (classes.containsKey(t)) {

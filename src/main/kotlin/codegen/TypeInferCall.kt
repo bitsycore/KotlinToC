@@ -200,7 +200,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     }
     val recvType = inferExprType(dot.obj) ?: return null
     val recvKtcPtr = inferExprTypeKtc(dot.obj)
-    val recvKtcCorePtr = (recvKtcPtr as? KtcType.Nullable)?.inner ?: recvKtcPtr
+    val recvKtcCorePtr = recvKtcPtr.stripNullable
     val method = dot.name
     if (method == "toString") return "String"
     if (method == "trimIndent") return "String"

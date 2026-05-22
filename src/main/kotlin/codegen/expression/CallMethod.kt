@@ -60,6 +60,16 @@ private fun CCodeGen.resolveExtFlatBase(base: String, flat: String, isPtrReceive
 	return if (isPtrReceiver) "${flat.removeSuffix("_$base")}_Ptr$$base" else flat
 	}
 
+/* Resolve a generic extension on an interface for [className].[method] when [knownExt] is null.
+Records the instantiation and returns (ifaceDecl, ifaceConcrete), or (null, null) when not found. */
+private fun CCodeGen.resolveIfaceExt(className: String, method: String, knownExt: FunDecl?): Pair<FunDecl?, String?> {
+	if (knownExt != null) return Pair(null, null)
+	val vResult = findGenericExtOnIfaces(className, method) ?: return Pair(null, null)
+	val (vDecl, vConcrete) = vResult
+	recordIfaceExtInstantiation(vDecl, vConcrete)
+	return Pair(vDecl, vConcrete)
+	}
+
 /* Compute the self-arg expression for an extension with a nullable receiver type declaration (isNullableRecv).
 When the receiver is already a stored Optional var: perform nullable iface cast if needed.
 Otherwise: wrap the value in optSome with optional iface conversion. */
@@ -79,7 +89,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	val rawRecvType    = inferExprType(dot.obj)                                            // String? receiver type (string-based)
 	val recvType       = rawRecvType?.removeSuffix("?")                                    // non-nullable receiver type string
 	val rawRecvTypeKtc = inferExprTypeKtc(dot.obj)                                        // KtcType? receiver (may have Nullable wrapper)
-	val recvTypeKtc    = (rawRecvTypeKtc as? KtcType.Nullable)?.inner ?: rawRecvTypeKtc   // KtcType? stripped of Nullable wrapper
+	val recvTypeKtc    = rawRecvTypeKtc.stripNullable   // KtcType? stripped of Nullable wrapper
 	val rawRecv        = genExpr(dot.obj)
 	val method         = dot.name
 	val hasNullRecv    = hasNullableReceiverExt(recvType ?: "", method)
@@ -124,11 +134,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				(genericClassDecls.containsKey(it.receiver.name) && pointerBase.startsWith("${it.receiver.name}_"))
 				)
 			}
-		var ifaceExt: FunDecl? = null
-		var ifaceExtConcrete: String? = null
-		if (genExt == null) findGenericExtOnIfaces(pointerBase, method)?.also { (d, c) -> ifaceExt = d; ifaceExtConcrete = c }
+		val (ifaceExt, ifaceExtConcrete) = resolveIfaceExt(pointerBase, method, genExt)
 		val effectiveGenExt = genExt ?: ifaceExt
-		if (ifaceExt != null && ifaceExtConcrete != null) recordIfaceExtInstantiation(ifaceExt, ifaceExtConcrete)
 		val isPtrExt      = effectiveGenExt?.receiver?.annotations?.any { it.name == "Ptr" } == true
 		val flatPtrBase   = resolveExtFlatBase(pointerBase, typeFlatName(pointerBase), isPtrExt, ifaceExtConcrete)
 		val wrappedRecv = if (ifaceExtConcrete != null && isPtrExt) {
@@ -199,9 +206,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				(genericClassDecls.containsKey(it.receiver.name) && vClassInfo.baseName.startsWith("${it.receiver.name}_"))
 				)
 			} else null
-		var ifaceConcrete: String? = null
-		if (genericExtDecl == null) findGenericExtOnIfaces(vClassInfo.baseName, method)?.also { (d, c) -> genericExtDecl = d; ifaceConcrete = c }
-		if (genericExtDecl != null && ifaceConcrete != null) recordIfaceExtInstantiation(genericExtDecl, ifaceConcrete)
+		val (vIfaceExt, ifaceConcrete) = resolveIfaceExt(vClassInfo.baseName, method, genericExtDecl)
+		if (vIfaceExt != null) genericExtDecl = vIfaceExt
 		val effectiveDecl  = methodDecl ?: genericExtDecl
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.annotations?.any { it.name == "Ptr" } == true

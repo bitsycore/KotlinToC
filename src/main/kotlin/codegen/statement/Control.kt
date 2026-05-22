@@ -150,7 +150,7 @@ internal fun CCodeGen.genWhenCond(c: WhenCond, subject: Expr?): String {
 			val targetKtc = resolveTypeName(c.type)
 			val target = targetKtc.toInternalStr
 			val exprKtc = if (subject != null) inferExprTypeKtc(subject) else null
-			val exprKtcCore = (exprKtc as? KtcType.Nullable)?.inner ?: exprKtc
+			val exprKtcCore = exprKtc.stripNullable
 			val memOp = if (exprKtcCore is KtcType.Ptr) "->" else "."
 			val check = if (classes.containsKey(target)) {
 				"KTC_GET_TYPEID($subj${memOp}__base.typeId) == ${typeFlatName(target)}_TYPE_ID"

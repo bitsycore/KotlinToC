@@ -15,7 +15,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     // safe dot assignment: this?.x = value → if ($self$has) { (*$self).x = value; }
     if (s.target is SafeDotExpr) {
         val recvTypeKtc = inferExprTypeKtc(s.target.obj)
-        val recvTypeCoreKtc = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc
+        val recvTypeCoreKtc = recvTypeKtc.stripNullable
         val recv = genExpr(s.target.obj)
         val recvName = (s.target.obj as? NameExpr)?.name ?: recv
         val isThis = s.target.obj is ThisExpr
@@ -33,7 +33,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     // operator set: a[i] = v → ClassName_set(&a, i, v)
     if (s.target is IndexExpr && s.op == "=") {
         val objTypeKtc = inferExprTypeKtc(s.target.obj)                              // KtcType? object type
-        val objTypeCoreKtc = (objTypeKtc as? KtcType.Nullable)?.inner ?: objTypeKtc  // KtcType? stripped Nullable
+        val objTypeCoreKtc = objTypeKtc.stripNullable  // KtcType? stripped Nullable
         val vSetClassInfo = classInfoFor(objTypeCoreKtc)                              // non-null if object is a class
         val vSetIfaceInfo = ifaceInfoFor(objTypeCoreKtc)                              // non-null if object is an interface
         if (vSetClassInfo != null) {
@@ -85,7 +85,6 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     val target = genLValue(s.target)
     val varName = (s.target as? NameExpr)?.name
     val varType = if (varName != null) lookupVar(varName) else null
-    val isAnyValNullVar = false
     val varKtc = if (varType != null) parseResolvedTypeName(varType) else null
     val isAnyPtrNullVar = varKtc is KtcType.Nullable && varKtc.inner is KtcType.Ptr
 
@@ -104,7 +103,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     if (s.target is DotExpr) {
         val dotTarget = s.target
         val recvTypeKtc = inferExprTypeKtc(dotTarget.obj)
-        val recvTypeCoreKtc = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc
+        val recvTypeCoreKtc = recvTypeKtc.stripNullable
         val className = (recvTypeCoreKtc as? KtcType.User)?.baseName
             ?: ((recvTypeCoreKtc as? KtcType.Ptr)?.inner as? KtcType.User)?.baseName
         if (className != null) {
@@ -122,17 +121,6 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     }
 
     when {
-        // value-nullable (*<T?> / ^<T?> / &<T?>) = null → clear value, keep pointer
-        isAnyValNullVar && s.value is NullLit -> {
-            impl.appendLine("$ind${target}\$has = false;")
-        }
-        // value-nullable = value → set value
-        isAnyValNullVar -> {
-            val value = genExpr(s.value)
-            flushPreStmts(ind)
-            impl.appendLine("$ind*$target = $value;")
-            impl.appendLine("$ind${target}\$has = true;")
-        }
         // pointer-nullable (*<T>? / ^<T>? / &<T>?) = null → NULL pointer
         isAnyPtrNullVar && s.value is NullLit -> {
             impl.appendLine("$ind$target = NULL;")

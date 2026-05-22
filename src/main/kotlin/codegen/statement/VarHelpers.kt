@@ -127,7 +127,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 	// arrayOf<T?>(...) or arrayOf(...) where declared type is an OptArray: wrap elements in Optional struct
 	if (vCallee == "arrayOf") {
 		val vTypeArg  = init.typeArgs.getOrNull(0)
-		val vTKtcCore = (inKtc as? KtcType.Nullable)?.inner ?: inKtc
+		val vTKtcCore = inKtc.stripNullable
 		val vIsOptArray = vTKtcCore is KtcType.Ptr && vTKtcCore.inner is KtcType.Arr
 			&& vTKtcCore.inner.elem is KtcType.Nullable
 		val vIsNullableElem = vTypeArg?.nullable == true || vIsOptArray
@@ -273,11 +273,3 @@ internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
 	return TypeRef(inferExprType(init) ?: "Int")
 	}
 
-/* No-op: array fields are now ktc_VarArr_T structs that carry len internally. */
-internal fun CCodeGen.emitBodyPropLenIfArray(inProp: PropertyDef) {
-	}
-
-/* Functions now return ktc_VarArr_T directly; delegate to genExpr. */
-internal fun CCodeGen.genExprWithArrayLenOut(e: Expr, varName: String): String {
-	return genExpr(e)
-	}

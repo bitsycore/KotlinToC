@@ -9,6 +9,13 @@ import com.bitsycore.ktc.types.TypeDef
 // Parameter expansion lives in CTypesParams.kt.
 // Sized-array/printf helpers live in CTypesSized.kt.
 
+// ═══════════════════════════ KtcType utilities ════════════════════
+
+/* Strip the Nullable wrapper if present; returns the inner type (or the original when not nullable). */
+internal val KtcType.stripNullable: KtcType get() = (this as? KtcType.Nullable)?.inner ?: this
+@get:JvmName("stripNullableOrNull")
+internal val KtcType?.stripNullable: KtcType? get() = (this as? KtcType.Nullable)?.inner ?: this
+
 // ═══════════════════════════ TypeRef utilities ════════════════════
 
 /* Recursively substitute type parameters throughout a TypeRef tree. */

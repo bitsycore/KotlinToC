@@ -31,7 +31,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
 
     val recvType = inferExprType(e.obj)                                               // String? receiver type (string-based)
     val recvTypeKtc = inferExprTypeKtc(e.obj)                                         // KtcType? receiver type
-    val recvTypeCoreKtc = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc   // KtcType? stripped of Nullable wrapper
+    val recvTypeCoreKtc = recvTypeKtc.stripNullable   // KtcType? stripped of Nullable wrapper
     val recv = genExpr(e.obj)
 
     // Reject non-safe access on nullable receiver (enum/object/companion are never nullable)
@@ -121,7 +121,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
 internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
     val recvType = inferExprType(e.obj)
     val recvTypeKtc = inferExprTypeKtc(e.obj)
-    val recvTypeCoreKtc = (recvTypeKtc as? KtcType.Nullable)?.inner ?: recvTypeKtc
+    val recvTypeCoreKtc = recvTypeKtc.stripNullable
     // Warn: ?. on a receiver that is already non-nullable (and not a pointer)
     if (recvTypeKtc != null && recvTypeKtc !is KtcType.Nullable && recvTypeCoreKtc !is KtcType.Ptr) {
         val vSrc = (e.obj as? NameExpr)?.name ?: "expression"
@@ -174,7 +174,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
     val inner = genExpr(e.expr)
     val innerType = inferExprType(e.expr)
     val innerKtc = inferExprTypeKtc(e.expr)
-    val innerKtcCore = (innerKtc as? KtcType.Nullable)?.inner ?: innerKtc
+    val innerKtcCore = innerKtc.stripNullable
     val loc = "$sourceFileName:$currentStmtLine"
 
     // Pointer-nullable: type ends with "*", "^", or "&"
@@ -183,11 +183,11 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
 
     if (isPtr) {
         // VarArr nullable (@Ptr Array<T>?): use .ptr field for null check
-        val isVarArr = innerKtcCore is KtcType.Ptr && (innerKtcCore as KtcType.Ptr).inner.let {
+        val isVarArr = innerKtcCore is KtcType.Ptr && innerKtcCore.inner.let {
             it is KtcType.Arr && it.sized == null
             }
         if (isVarArr) {
-            val vElemC    = arrayElementCTypeKtc(innerKtcCore!!)
+            val vElemC    = arrayElementCTypeKtc(innerKtcCore)
             val vVarArrCt = varArrTypeName(vElemC)
             if (e.expr is NameExpr) {
                 preStmts += "if (!$inner.ptr) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"

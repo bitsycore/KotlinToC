@@ -69,9 +69,9 @@ private fun CCodeGen.buildVarArrArg(
 	if (vArgName != null && vArgName in trampolinedParams)
 		return "($vVarArrType){($vElemCType*)local\$$vArgName, ${arrayParamSizeExpr(vArgName)}}"
 	val vSrcKtc  = inferExprTypeKtc(argExpr)
-	val vSrcCore = (vSrcKtc as? KtcType.Nullable)?.inner ?: vSrcKtc
+	val vSrcCore = vSrcKtc.stripNullable
 	val vSrcElemC = vSrcCore?.asArr?.elem?.let { elemCTypeStr(it) }
-	return if (vSrcElemC == vElemCType && vSrcCore?.asArr?.sized == null) expr
+	return if (vSrcElemC == vElemCType && vSrcCore.asArr?.sized == null) expr
 	else "($vVarArrType){($vElemCType*)${arrayDataPtr(expr, vSrcKtc)}, ${arrayDataLen(expr, vSrcKtc)}}"
 	}
 
@@ -138,10 +138,10 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 			if (hasAtPtr || isPtrOrArrayPtr) {
 				// @Ptr-annotated type — pass raw pointer (NULL for null)
 				if (arg.expr is NullLit) {
-					val vNullIsVarArr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && (paramTypeKtc.inner as KtcType.Arr).sized == null
+					val vNullIsVarArr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null
 					if (vNullIsVarArr) {
 						// @Ptr Array<T> null: emit {NULL, 0} struct (same as regular nullable array)
-						val vInner   = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
+						val vInner   = paramTypeKtc.inner
 						val vElemC   = elemCTypeStr(vInner.elem)
 						parts += "(${varArrTypeName(vElemC)}){NULL, 0}"
 						} else if (paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.User
@@ -151,7 +151,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					} else if ((paramTypeKtc as? KtcType.Ptr)?.inner?.let { it is KtcType.Any || (it is KtcType.User && it.baseName == "Any") } == true) {
 					// @Ptr Any → check if arg is VarArr first (extract .ptr for void* cast)
 					val vAnyArgKtc  = inferExprTypeKtc(arg.expr)
-					val vAnyArgCore = (vAnyArgKtc as? KtcType.Nullable)?.inner ?: vAnyArgKtc
+					val vAnyArgCore = vAnyArgKtc.stripNullable
 					if (vAnyArgCore?.isArrayLike == true && vAnyArgCore.asArr?.sized == null) {
 						// VarArr passed to @Ptr Any: extract raw .ptr
 						parts += "(void*)($expr).ptr"
@@ -177,7 +177,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					val ifaceName   = paramTypeKtc.inner.baseName
 					val cIface      = typeFlatName(ifaceName)
 					val argKtc      = inferExprTypeKtc(arg.expr)
-					val argKtcCore  = (argKtc as? KtcType.Nullable)?.inner ?: argKtc
+					val argKtcCore  = argKtc.stripNullable
 					val concreteName = when {
 						arg.expr is NameExpr && classes.containsKey(arg.expr.name)  -> arg.expr.name
 						arg.expr is NameExpr && objects.containsKey(arg.expr.name)  -> arg.expr.name
@@ -215,17 +215,17 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						parts += expr
 						}
 					} else {
-					val vIsArrPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && (paramTypeKtc.inner as? KtcType.Arr)?.sized == null
+					val vIsArrPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null
 					if (vIsArrPtr) {
 						// @Ptr Array<T>: now ktc_VarArr_T — pass struct with .ptr cast if needed
-						val vInnerArr  = (paramTypeKtc as KtcType.Ptr).inner as KtcType.Arr
+						val vInnerArr  = paramTypeKtc.inner
 						val vElemCType = elemCTypeStr(vInnerArr.elem)
 						val vVarArrTp  = varArrTypeName(vElemCType)
 						parts += buildVarArrArg(expr, arg.expr, vVarArrTp, vElemCType)
 						} else if (paramTypeKtc is KtcType.Ptr && (paramTypeKtc.inner is KtcType.Void || paramTypeKtc.inner is KtcType.Any)) {
 						// AnyPtr / @Ptr Any (void*): extract .ptr when arg is a VarArr
 						val vVoidArgKtc  = inferExprTypeKtc(arg.expr)
-						val vVoidArgCore = (vVoidArgKtc as? KtcType.Nullable)?.inner ?: vVoidArgKtc
+						val vVoidArgCore = vVoidArgKtc.stripNullable
 						if (vVoidArgCore?.isArrayLike == true && vVoidArgCore.asArr?.sized == null) {
 							parts += "(void*)($expr).ptr"
 							} else {
@@ -234,7 +234,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						} else if (paramTypeKtc is KtcType.Ptr) {
 						// Raw pointer param (Ptr(T) where T is not a VarArr): extract .ptr when arg is a VarArr
 						val vRawArgKtc  = inferExprTypeKtc(arg.expr)
-						val vRawArgCore = (vRawArgKtc as? KtcType.Nullable)?.inner ?: vRawArgKtc
+						val vRawArgCore = vRawArgKtc.stripNullable
 						if (vRawArgCore?.isArrayLike == true && vRawArgCore.asArr?.sized == null) {
 							parts += "($expr).ptr"
 							} else {
@@ -302,7 +302,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						// Check if needs as_Iface conversion for class→interface
 						val ifaceName  = paramType
 						val argKtc     = inferExprTypeKtc(arg.expr)
-						val argKtcCore = (argKtc as? KtcType.Nullable)?.inner ?: argKtc
+						val argKtcCore = argKtc.stripNullable
 						val baseArg    = (argKtcCore as? KtcType.User)?.baseName ?: argKtcCore?.toInternalStr
 						val isIfImpl   = baseArg != null && interfaces.containsKey(ifaceName)
 							&& (classes.containsKey(baseArg) || objects.containsKey(baseArg))
@@ -317,20 +317,15 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					}
 				} else if (interfaces.containsKey(paramType)) {
 				val argKtc      = inferExprTypeKtc(arg.expr)
-				val argKtcCore  = (argKtc as? KtcType.Nullable)?.inner ?: argKtc
+				val argKtcCore  = argKtc.stripNullable
 				val baseArgType = argKtcCore?.let {
 					if (it is KtcType.User) it.baseName else it.toInternalStr
 					}
 				val isClassImpl = baseArgType != null && classes.containsKey(baseArgType) && classInterfaces[baseArgType]?.contains(paramType) == true
 				val isObjImpl   = baseArgType != null && objects.containsKey(baseArgType) && classInterfaces[baseArgType]?.contains(paramType) == true
 				parts += if (isClassImpl || isObjImpl) {
-					if (argKtcCore is KtcType.Ptr) {
-						"${typeFlatName(baseArgType)}_as_$paramType($expr)"
-						} else if (isObjImpl) {
-						"${typeFlatName(baseArgType)}_as_$paramType(&$expr)"
-						} else {
-						"${typeFlatName(baseArgType)}_as_$paramType(&$expr)"
-						}
+					val vRef = if (argKtcCore is KtcType.Ptr) expr else "&$expr"
+					"${typeFlatName(baseArgType)}_as_$paramType($vRef)"
 					} else {
 					expr
 					}
@@ -340,7 +335,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					} else {
 					val argType    = inferExprType(arg.expr)?.removeSuffix("?") ?: "Int"
 					val argKtc     = inferExprTypeKtc(arg.expr)
-					val argKtcCore = (argKtc as? KtcType.Nullable)?.inner ?: argKtc
+					val argKtcCore = argKtc.stripNullable
 					// If already Any/Any?, pass directly (no re-wrap)
 					if (argKtcCore is KtcType.Any) {
 						parts += expr
@@ -355,7 +350,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 				} else {
 				// Auto-cast any pointer to AnyPtr / Byte* (for freeMem, reallocMem, etc.)
 				val argKtc     = inferExprTypeKtc(arg.expr)
-				val argKtcCore = (argKtc as? KtcType.Nullable)?.inner ?: argKtc
+				val argKtcCore = argKtc.stripNullable
 				if (paramType == "void*" || (paramType == "Byte*" && argKtcCore is KtcType.Ptr)) {
 					parts += "(void*)($expr)"
 					} else {
