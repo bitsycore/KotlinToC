@@ -127,41 +127,36 @@ private fun CCodeGen.emitIfaceVtableBody(
     if (!inHasDispose) hdr.appendLine("    void (*dispose)(void* \$self);")
 }
 
-/** Collect all methods for an interface, including inherited from super interfaces (depth-first). */
-internal fun CCodeGen.collectAllIfaceMethods(info: IfaceInfo): List<FunDecl> {
-    val result = mutableListOf<FunDecl>()
-    val seen = mutableSetOf<String>()
+/* Collect all items of type T from an interface hierarchy, depth-first, deduplicating by name. */
+private fun <T : Any> CCodeGen.collectAllIfaceItems(
+    info:     IfaceInfo,
+    getItems: (IfaceInfo) -> List<T>,
+    getName:  (T) -> String
+    ): List<T> {
+    val result = mutableListOf<T>()
+    val seen   = mutableSetOf<String>()
     fun collect(i: IfaceInfo) {
         for (superRef in i.superInterfaces) {
             val superName = resolveIfaceName(superRef)
             val superInfo = interfaces[superName] ?: continue
             collect(superInfo)
+            }
+        for (item in getItems(i)) {
+            val name = getName(item)
+            if (name !in seen) { result += item; seen += name }
+            }
         }
-        for (m in i.methods) {
-            if (m.name !in seen) { result += m; seen += m.name }
-        }
-    }
     collect(info)
     return result
-}
+    }
 
-/** Collect all properties for an interface, including inherited from super interfaces. */
-internal fun CCodeGen.collectAllIfaceProperties(info: IfaceInfo): List<PropDecl> {
-    val result = mutableListOf<PropDecl>()
-    val seen = mutableSetOf<String>()
-    fun collect(i: IfaceInfo) {
-        for (superRef in i.superInterfaces) {
-            val superName = resolveIfaceName(superRef)
-            val superInfo = interfaces[superName] ?: continue
-            collect(superInfo)
-        }
-        for (p in i.propDecls) {
-            if (p.name !in seen) { result += p; seen += p.name }
-        }
-    }
-    collect(info)
-    return result
-}
+/* Collect all methods for an interface, including inherited from super interfaces (depth-first). */
+internal fun CCodeGen.collectAllIfaceMethods(info: IfaceInfo): List<FunDecl> =
+    collectAllIfaceItems(info, { it.methods }, { it.name })
+
+/* Collect all properties for an interface, including inherited from super interfaces. */
+internal fun CCodeGen.collectAllIfaceProperties(info: IfaceInfo): List<PropDecl> =
+    collectAllIfaceItems(info, { it.propDecls }, { it.name })
 
 /** Data member name for a class inside a tagged union or single-field interface struct. */
 internal fun CCodeGen.ifaceDataName(className: String): String = "${typeFlatName(className)}_data"
