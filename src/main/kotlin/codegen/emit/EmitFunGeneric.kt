@@ -18,64 +18,63 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 	val prevSourceFile  = currentSourceFile
 	declSourceFile[f.name]?.let { currentSourceFile = it }
 	for (typeArgs in instantiations) {
-		val subst    = f.typeParams.zip(typeArgs).toMap()
-		val prevSubst = typeSubst
-		typeSubst = subst
-		val mangledName = "${f.name}_${typeArgs.joinToString("_")}"
+		val subst = f.typeParams.zip(typeArgs).toMap()
+		withTypeSubst(subst) {
+			val mangledName = "${f.name}_${typeArgs.joinToString("_")}"
 
-		impl.appendLine("// ══ generic ${f.name}<${typeArgs.joinToString(", ")}> ($currentSourceFile) ══")
-		val hasReceiver = f.receiver != null
-		val concreteRet = genericFunConcreteReturn[mangledName]
-		val cName = if (hasReceiver) {
-			val recvKtc  = resolveTypeName(f.receiver!!)
-			val recvName = (recvKtc as? KtcType.Ptr)?.inner?.let { (it as? KtcType.User)?.baseName }
-				?: recvKtc.toInternalStr.removeSuffix("*").removeSuffix("?")
-			if (f.receiver.annotations.any { it.name == "Ptr" }) {
-				val baseFlat = typeFlatName(recvName)
-				"${baseFlat.removeSuffix("_$recvName")}_Ptr$${recvName}_${f.name}"
-				} else "${typeFlatName(recvName)}_${f.name}"
-			} else funCName(mangledName)
-		val baseParams = expandParams(f.params)
-		val selfParam  = if (hasReceiver) {
-			val selfRecvKtc = resolveTypeName(f.receiver!!)
-			val ct = if (f.receiver.nullable && selfRecvKtc !is KtcType.Ptr && selfRecvKtc !is KtcType.Nullable)
-				optCTypeName(selfRecvKtc.toInternalStr) else cType(f.receiver)
-			"$ct \$self"
-			} else null
-		val params = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
+			impl.appendLine("// ══ generic ${f.name}<${typeArgs.joinToString(", ")}> ($currentSourceFile) ══")
+			val hasReceiver = f.receiver != null
+			val concreteRet = genericFunConcreteReturn[mangledName]
+			val cName = if (hasReceiver) {
+				val recvKtc  = resolveTypeName(f.receiver!!)
+				val recvName = (recvKtc as? KtcType.Ptr)?.inner?.let { (it as? KtcType.User)?.baseName }
+					?: recvKtc.toInternalStr.removeSuffix("*").removeSuffix("?")
+				if (f.receiver.annotations.any { it.name == "Ptr" }) {
+					val baseFlat = typeFlatName(recvName)
+					"${baseFlat.removeSuffix("_$recvName")}_Ptr$${recvName}_${f.name}"
+					} else "${typeFlatName(recvName)}_${f.name}"
+				} else funCName(mangledName)
+			val baseParams = expandParams(f.params)
+			val selfParam  = if (hasReceiver) {
+				val selfRecvKtc = resolveTypeName(f.receiver!!)
+				val ct = if (f.receiver.nullable && selfRecvKtc !is KtcType.Ptr && selfRecvKtc !is KtcType.Nullable)
+					optCTypeName(selfRecvKtc.toInternalStr) else cType(f.receiver)
+				"$ct \$self"
+				} else null
+			val params = if (selfParam != null && baseParams.isNotEmpty()) "$selfParam, $baseParams" else selfParam ?: baseParams
 
-		val prevState = saveFunState()
-		var cRet = computeReturnInfo(f)
-		if (concreteRet != null) {
-			cRet = typeFlatName(concreteRet)
-			currentFnReturnType = concreteRet
+			val prevState = saveFunState()
+			var cRet = computeReturnInfo(f)
+			if (concreteRet != null) {
+				cRet = typeFlatName(concreteRet)
+				currentFnReturnType = concreteRet
+				}
+
+			maybeEmitFunBanner(f.name)
+			hdr.appendLine("$cRet $cName($params);")
+			impl.appendLine("$cRet $cName($params) {")
+
+			pushScope()
+			if (hasReceiver) {
+				val recvResolved = resolveTypeName(f.receiver!!)
+				val recvFull     = recvResolved.toInternalStr
+				val recvName     = recvFull.removeSuffix("?")
+				val isClassType  = classes.containsKey(recvName)
+				currentExtRecvType = if (f.receiver.nullable) "${recvName}?" else recvName
+				defineVar("\$self", if (f.receiver.nullable) "${recvName}?" else recvName)
+				if (f.receiver.nullable && isValueNullableKtc(recvResolved as? KtcType.Nullable ?: KtcType.Nullable(recvResolved))) markOptional("\$self")
+				if (isClassType) { currentClass = recvName; selfIsPointer = f.receiver.annotations.any { it.name == "Ptr" } }
+				else             { currentClass = null;     selfIsPointer = false }
+				}
+			registerParams(f.params)
+			emitArrayParamCopies(f.params, "    ")
+			if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = false)
+			if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = false)
+			popScope()
+			restoreFunState(prevState)
+			impl.appendLine("}")
+			impl.appendLine()
 			}
-
-		maybeEmitFunBanner(f.name)
-		hdr.appendLine("$cRet $cName($params);")
-		impl.appendLine("$cRet $cName($params) {")
-
-		pushScope()
-		if (hasReceiver) {
-			val recvResolved = resolveTypeName(f.receiver!!)
-			val recvFull     = recvResolved.toInternalStr
-			val recvName     = recvFull.removeSuffix("?")
-			val isClassType  = classes.containsKey(recvName)
-			currentExtRecvType = if (f.receiver.nullable) "${recvName}?" else recvName
-			defineVar("\$self", if (f.receiver.nullable) "${recvName}?" else recvName)
-			if (f.receiver.nullable && isValueNullableKtc(recvResolved as? KtcType.Nullable ?: KtcType.Nullable(recvResolved))) markOptional("\$self")
-			if (isClassType) { currentClass = recvName; selfIsPointer = f.receiver.annotations.any { it.name == "Ptr" } }
-			else             { currentClass = null;     selfIsPointer = false }
-			}
-		registerParams(f.params)
-		emitArrayParamCopies(f.params, "    ")
-		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = false)
-		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = false)
-		popScope()
-		restoreFunState(prevState)
-		impl.appendLine("}")
-		impl.appendLine()
-		typeSubst = prevSubst
 		}
 	currentSourceFile = prevSourceFile
 	}
@@ -114,44 +113,42 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 		if (!emitted.add(key)) continue
 		val concreteReceiver = TypeRef(mangledRecvName, f.receiver.nullable)
 		val templateCi       = classes[recvBaseName] ?: continue
-		val subst            = templateCi.typeParams.zip(typeArgs).toMap()
-		val prevSubst        = typeSubst
-		typeSubst = subst
+		val subst = templateCi.typeParams.zip(typeArgs).toMap()
+		withTypeSubst(subst) {
+			val recvIsNullable = concreteReceiver.nullable
+			val cRet        = if (f.returnType != null) cType(f.returnType) else "void"
+			val isClassType = classes.containsKey(mangledRecvName)
+			val cRecvType   = typeFlatName(mangledRecvName)
+			val selfParam   = if (isClassType) "$cRecvType* \$self" else "$cRecvType \$self"
+			val nullableExtra = if (recvIsNullable) ", ktc_Bool \$self\$has" else ""
+			val extraParams   = expandParams(f.params)
+			val allParams     = if (extraParams.isEmpty()) "$selfParam$nullableExtra" else "$selfParam$nullableExtra, $extraParams"
+			val cFnName       = "${typeFlatName(mangledRecvName)}_${f.name}"
 
-		val recvIsNullable = concreteReceiver.nullable
-		val cRet        = if (f.returnType != null) cType(f.returnType) else "void"
-		val isClassType = classes.containsKey(mangledRecvName)
-		val cRecvType   = typeFlatName(mangledRecvName)
-		val selfParam   = if (isClassType) "$cRecvType* \$self" else "$cRecvType \$self"
-		val nullableExtra = if (recvIsNullable) ", ktc_Bool \$self\$has" else ""
-		val extraParams   = expandParams(f.params)
-		val allParams     = if (extraParams.isEmpty()) "$selfParam$nullableExtra" else "$selfParam$nullableExtra, $extraParams"
-		val cFnName       = "${typeFlatName(mangledRecvName)}_${f.name}"
+			hdr.appendLine("$cRet $cFnName($allParams);")
+			impl.appendLine("$cRet $cFnName($allParams) {")
 
-		hdr.appendLine("$cRet $cFnName($allParams);")
-		impl.appendLine("$cRet $cFnName($allParams) {")
+			currentExtRecvType = if (recvIsNullable) "$mangledRecvName?" else mangledRecvName
+			if (isClassType) { currentClass = mangledRecvName; selfIsPointer = true }
+			else             { currentClass = null;            selfIsPointer = false }
 
-		currentExtRecvType = if (recvIsNullable) "$mangledRecvName?" else mangledRecvName
-		if (isClassType) { currentClass = mangledRecvName; selfIsPointer = true }
-		else             { currentClass = null;            selfIsPointer = false }
+			val prevState = saveFunState()
+			pushScope()
+			registerStarExtParams(f.params)
+			if (isClassType) registerClassFields(classes[mangledRecvName]!!, "\$self->")
+			emitArrayParamCopies(f.params, "    ")
+			if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
+			if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = isClassType)
+			popScope()
+			restoreFunState(prevState)
+			impl.appendLine("}")
+			impl.appendLine()
 
-		val prevState = saveFunState()
-		pushScope()
-		registerStarExtParams(f.params)
-		if (isClassType) registerClassFields(classes[mangledRecvName]!!, "\$self->")
-		emitArrayParamCopies(f.params, "    ")
-		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
-		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = isClassType)
-		popScope()
-		restoreFunState(prevState)
-		impl.appendLine("}")
-		impl.appendLine()
-
-		extensionFuns.getOrPut(mangledRecvName) { mutableListOf() }
-			.add(FunDecl(f.name, f.params, f.returnType, f.body, concreteReceiver))
-		classes[mangledRecvName]?.methods?.add(
-			FunDecl(f.name, f.params, f.returnType, f.body, concreteReceiver))
-		typeSubst = prevSubst
+			extensionFuns.getOrPut(mangledRecvName) { mutableListOf() }
+				.add(FunDecl(f.name, f.params, f.returnType, f.body, concreteReceiver))
+			classes[mangledRecvName]?.methods?.add(
+				FunDecl(f.name, f.params, f.returnType, f.body, concreteReceiver))
+			}
 		}
 	}
 
