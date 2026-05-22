@@ -217,10 +217,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         emitArrayParamCopies(m.params, "    ")
         if (m.body != null) for (s in m.body.stmts) emitStmt(s, "    ")
         if (m.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ")
-        popScope()
-        restoreFunState(prevState)
-        impl.appendLine("}")
-        impl.appendLine()
+        closeFunBody(prevState)
     }
 
     for (m in vRegularMethods) emitOneObjMethod(m, null)

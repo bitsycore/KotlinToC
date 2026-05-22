@@ -70,10 +70,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 			emitArrayParamCopies(f.params, "    ")
 			if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = false)
 			if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = false)
-			popScope()
-			restoreFunState(prevState)
-			impl.appendLine("}")
-			impl.appendLine()
+			closeFunBody(prevState)
 			}
 		}
 	currentSourceFile = prevSourceFile
@@ -139,10 +136,7 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 			emitArrayParamCopies(f.params, "    ")
 			if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
 			if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = isClassType)
-			popScope()
-			restoreFunState(prevState)
-			impl.appendLine("}")
-			impl.appendLine()
+			closeFunBody(prevState)
 
 			extensionFuns.getOrPut(mangledRecvName) { mutableListOf() }
 				.add(FunDecl(f.name, f.params, f.returnType, f.body, concreteReceiver))
@@ -189,10 +183,7 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 		emitArrayParamCopies(f.params, "    ")
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = true)
-		popScope()
-		restoreFunState(prevState)
-		impl.appendLine("}")
-		impl.appendLine()
+		closeFunBody(prevState)
 
 		val concreteReceiver = TypeRef(className, f.receiver!!.nullable)
 		extensionFuns.getOrPut(className) { mutableListOf() }

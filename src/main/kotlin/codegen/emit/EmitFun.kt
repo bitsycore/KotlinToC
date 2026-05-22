@@ -48,10 +48,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 		emitDeferredBlocks("    ", insideMethod = isClassType)
 		emitImplicitNullReturn("    ")
 		}
-	popScope()
-	restoreFunState(prevState)
-	impl.appendLine("}")
-	impl.appendLine()
+	closeFunBody(prevState)
 	}
 
 internal fun CCodeGen.emitFun(f: FunDecl) {
@@ -103,10 +100,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		impl.appendLine("    ktc_core_mem_report();")
 		}
 	else if (lastStmt !is ReturnStmt) emitImplicitNullReturn("    ")
-	popScope()
-	restoreFunState(prevState)
-	impl.appendLine("}")
-	impl.appendLine()
+	closeFunBody(prevState)
 	}
 
 internal fun CCodeGen.emitTopProp(d: PropDecl) {

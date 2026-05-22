@@ -72,10 +72,7 @@ internal fun CCodeGen.emitMethod(
 		emitDeferredBlocks("    ", insideMethod = true)
 		emitImplicitNullReturn("    ")
 		}
-	popScope()
-	restoreFunState(prevState)
-	impl.appendLine("}")
-	impl.appendLine()
+	closeFunBody(prevState)
 	}
 
 /** Emit struct field declarations (shared by emitClass and emitGenericClass). */

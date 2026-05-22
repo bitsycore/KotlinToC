@@ -47,6 +47,14 @@ internal inline fun <T> CCodeGen.withTypeSubst(newSubst: Map<String, String>?, b
     return result
     }
 
+/* Finish a C function body: pop scope, restore function state, emit closing brace and blank line. */
+internal fun CCodeGen.closeFunBody(inPrevState: CCodeGen.FunState) {
+    popScope()
+    restoreFunState(inPrevState)
+    impl.appendLine("}")
+    impl.appendLine()
+    }
+
 internal fun CCodeGen.genExprFlushed(inExpr: Expr, inInd: String): String {
     val vResult = genExpr(inExpr) // evaluate — may populate preStmts
     flushPreStmts(inInd)          // emit any hoisted declarations before the keyword
