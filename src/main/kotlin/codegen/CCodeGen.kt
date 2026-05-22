@@ -1,7 +1,7 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.codegen.expr.emitStmt
+import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.utils.wrapYellow
 

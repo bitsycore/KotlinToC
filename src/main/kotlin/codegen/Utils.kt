@@ -2,7 +2,7 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.Expr
 import com.bitsycore.ktc.ast.TypeRef
-import com.bitsycore.ktc.codegen.expr.genExpr
+import com.bitsycore.ktc.codegen.expression.genExpr
 
 /*
 Miscellaneous pure utilities used throughout C code emission.

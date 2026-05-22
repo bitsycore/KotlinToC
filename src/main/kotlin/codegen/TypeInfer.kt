@@ -1,9 +1,9 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.codegen.expr.inferIfExprType
-import com.bitsycore.ktc.codegen.expr.inferInlineFunSubst
-import com.bitsycore.ktc.codegen.expr.inferWhenExprType
+import com.bitsycore.ktc.codegen.expression.inferIfExprType
+import com.bitsycore.ktc.codegen.expression.inferInlineFunSubst
+import com.bitsycore.ktc.codegen.expression.inferWhenExprType
 import com.bitsycore.ktc.types.KtcType
 
 // Expression type inference — main dispatcher and KtcType entry point.

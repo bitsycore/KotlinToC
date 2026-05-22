@@ -2,7 +2,6 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.emit.*
-import com.bitsycore.ktc.codegen.expr.emitStmt
 
 // The main code-generation pipeline: collectAndScan() + generate().
 // Class state and utilities live in CCodeGen.kt.

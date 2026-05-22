@@ -3,7 +3,7 @@ package com.bitsycore.ktc.codegen
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
-import com.bitsycore.ktc.codegen.expr.inferInlineFunSubst
+import com.bitsycore.ktc.codegen.expression.inferInlineFunSubst
 import com.bitsycore.ktc.types.KtcType
 
 // Return-type inference for function calls and method calls.

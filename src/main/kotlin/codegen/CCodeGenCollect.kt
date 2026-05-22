@@ -2,8 +2,8 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
-import com.bitsycore.ktc.codegen.expr.inferBlockType
-import com.bitsycore.ktc.codegen.expr.inferInitType
+import com.bitsycore.ktc.codegen.expression.inferBlockType
+import com.bitsycore.ktc.codegen.statement.inferInitType
 import com.bitsycore.ktc.types.KtcType
 
 /* Populate all symbol tables from allFiles (cross-reference pass) then from

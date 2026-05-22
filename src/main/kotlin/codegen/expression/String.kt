@@ -1,0 +1,191 @@
+package com.bitsycore.ktc.codegen.expression
+
+import com.bitsycore.ktc.ast.Arg
+import com.bitsycore.ktc.ast.ExprPart
+import com.bitsycore.ktc.ast.LitPart
+import com.bitsycore.ktc.ast.StrTemplateExpr
+import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.types.KtcType
+
+// Print helpers and string template expression codegen.
+// toString/StringBuffer append helpers are in StringToString.kt.
+
+internal fun CCodeGen.genPrintln(args: List<Arg>): String {
+	if (args.isEmpty()) return "printf(\"\\n\")"
+	return genPrintCall(args, newline = true)
+	}
+
+internal fun CCodeGen.genPrint(args: List<Arg>): String {
+	if (args.isEmpty()) return "(void)0"
+	return genPrintCall(args, newline = false)
+	}
+
+internal fun CCodeGen.genPrintCall(args: List<Arg>, newline: Boolean): String {
+	val arg = args[0].expr
+	val nl  = if (newline) "\\n" else ""
+
+	if (arg is StrTemplateExpr) return genPrintfFromTemplate(arg, nl)
+
+	val t        = inferExprType(arg) ?: "Int"
+	val tKtc     = inferExprTypeKtc(arg) ?: KtcType.Prim(KtcType.PrimKind.Int)
+	val tKtcCore = (tKtc as? KtcType.Nullable)?.inner ?: tKtc
+	val expr     = genExpr(arg)
+
+	if (tKtc is KtcType.Nullable) {
+		val safeExpr = if (!isSimpleCExpr(expr)) {
+			val vTmp = tmp(); preStmts += "${cTypeStr(t)} $vTmp = ($expr);"; vTmp
+			} else expr
+		val isPtrNull = tKtc.inner is KtcType.Ptr && !isValueNullableKtc(tKtc)
+		val hasExpr   = if (isPtrNull) "$safeExpr != NULL"
+			else if (isValueNullableKtc(tKtc)) "$safeExpr.tag == ktc_SOME"
+			else "${safeExpr}\$has"
+		val fmt = printfFmt(tKtcCore) + nl
+		val a   = printfArg(safeExpr, tKtcCore)
+		return "($hasExpr ? printf(\"$fmt\", $a) : printf(\"null$nl\"))"
+		}
+
+	if (classes.containsKey(t) && classes[t]!!.isData) {
+		val maxLen = toStringMaxLen(t)
+		if (maxLen != null && maxLen <= 512) {
+			val buf = tmp(); val vTmp = tmp()
+			preStmts += "${cTypeStr(t)} $vTmp = ($expr);"
+			preStmts += "ktc_Char ${buf}[$maxLen];"
+			preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
+			preStmts += "${typeFlatName(t)}_toString(&$vTmp, &${buf}_sb);"
+			return "printf(\"%.*s$nl\", (ktc_Int)${buf}_sb.len, ${buf}_sb.ptr)"
+			}
+		val buf = tmp(); val vTmp = tmp()
+		preStmts += "${cTypeStr(t)} $vTmp = ($expr);"
+		preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
+		preStmts += "${typeFlatName(t)}_toString(&$vTmp, &${buf}_sb);"
+		preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
+		preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
+		preStmts += "${typeFlatName(t)}_toString(&$vTmp, &${buf}_sb);"
+		return "printf(\"%.*s$nl\", (ktc_Int)${buf}_sb.len, ${buf}_sb.ptr)"
+		}
+	if (classes.containsKey(t) || objects.containsKey(t) || interfaces.containsKey(t)) {
+		val str    = genToString(expr, t)
+		val tmpStr = tmp()
+		preStmts += "ktc_String $tmpStr = $str;"
+		return "printf(\"%.*s$nl\", (ktc_Int)${tmpStr}.len, ${tmpStr}.ptr)"
+		}
+	val indirectBase = (tKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
+	if (indirectBase != null && classes[indirectBase]?.isData == true) {
+		val maxLen = toStringMaxLen(indirectBase)
+		if (maxLen != null && maxLen <= 512) {
+			val buf = tmp()
+			preStmts += "ktc_Char ${buf}[$maxLen];"
+			preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
+			preStmts += "${typeFlatName(indirectBase)}_toString($expr, &${buf}_sb);"
+			return "printf(\"%.*s$nl\", (ktc_Int)${buf}_sb.len, ${buf}_sb.ptr)"
+			}
+		val buf = tmp()
+		preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
+		preStmts += "${typeFlatName(indirectBase)}_toString($expr, &${buf}_sb);"
+		preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
+		preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
+		preStmts += "${typeFlatName(indirectBase)}_toString($expr, &${buf}_sb);"
+		return "printf(\"%.*s$nl\", (ktc_Int)${buf}_sb.len, ${buf}_sb.ptr)"
+		}
+	if (t == "String") {
+		val safeExpr = if (!isSimpleCExpr(expr)) { val vTmp = tmp(); preStmts += "ktc_String $vTmp = ($expr);"; vTmp } else expr
+		return "printf(\"%.*s$nl\", (ktc_Int)($safeExpr).len, ($safeExpr).ptr)"
+		}
+	if (t in enums) {
+		val cName    = typeFlatName(t)
+		val safeExpr = if (!isSimpleCExpr(expr)) { val vTmp = tmp(); preStmts += "$cName $vTmp = ($expr);"; vTmp } else expr
+		return "printf(\"%.*s$nl\", (ktc_Int)${cName}_names[$safeExpr].len, ${cName}_names[$safeExpr].ptr)"
+		}
+	val fmt = printfFmt(tKtcCore) + nl
+	val a   = printfArg(expr, tKtcCore)
+	return "printf(\"$fmt\", $a)"
+	}
+
+internal fun CCodeGen.genPrintfFromTemplate(tmpl: StrTemplateExpr, nl: String): String {
+	val fmt      = StringBuilder()
+	val argsList = mutableListOf<String>()
+	for (part in tmpl.parts) {
+		when (part) {
+			is LitPart  -> fmt.append(escapeStr(part.text))
+			is ExprPart -> {
+				val tKtc     = inferExprTypeKtc(part.expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
+				val tKtcCore = (tKtc as? KtcType.Nullable)?.inner ?: tKtc
+				fmt.append(printfFmt(tKtcCore))
+				val exprStr  = genExpr(part.expr)
+				when (tKtcCore) {
+					is KtcType.Str -> {
+						val s = if (!isSimpleCExpr(exprStr)) {
+							val v = tmp(); preStmts += "ktc_String $v = ($exprStr);"; v
+							} else exprStr
+						argsList += "(ktc_Int)($s).len, ($s).ptr"
+						}
+					is KtcType.User if tKtcCore.kind == KtcType.UserKind.Enum -> {
+						val cName = typeFlatName(tKtcCore.baseName)
+						val s = if (!isSimpleCExpr(exprStr)) {
+							val v = tmp(); preStmts += "$cName $v = ($exprStr);"; v
+							} else exprStr
+						argsList += "(ktc_Int)${cName}_names[$s].len, ${cName}_names[$s].ptr"
+						}
+					else -> argsList += printfArg(exprStr, tKtcCore)
+					}
+				}
+			}
+		}
+	fmt.append(nl)
+	val argsStr = if (argsList.isNotEmpty()) ", " + argsList.joinToString(", ") else ""
+	return "printf(\"$fmt\"$argsStr)"
+	}
+
+// ── string template (returns ktc_String via preStmts) ──────────────────
+
+internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
+	val buf = tmp()
+
+	data class PartData(val lit: String? = null, val sbAppend: String? = null)
+
+	val parts = mutableListOf<PartData>()
+	for (part in e.parts) {
+		when (part) {
+			is LitPart -> {
+				val last = parts.lastOrNull()
+				if (last?.lit != null) parts[parts.lastIndex] = PartData(lit = last.lit + part.text)
+				else parts += PartData(lit = part.text)
+				}
+			is ExprPart -> {
+				val tKtc = inferExprTypeKtc(part.expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
+				val expr = genExpr(part.expr)
+				parts += PartData(sbAppend = genSbAppendKtc("&${buf}_sb", expr, tKtc))
+				}
+			}
+		}
+	val maxLen = templateMaxLen(e)
+	if (maxLen != null && maxLen <= 512) {
+		preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca($maxLen);"
+		preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
+		for (p in parts) {
+			when {
+				p.lit      != null -> preStmts += "ktc_core_sb_append_str(&${buf}_sb, ktc_core_str(\"${escapeStr(p.lit)}\"));"
+				p.sbAppend != null -> preStmts += p.sbAppend
+				}
+			}
+		return "ktc_core_sb_to_string(&${buf}_sb)"
+		}
+	// First pass: count length with NULL buffer
+	preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
+	for (p in parts) {
+		when {
+			p.lit      != null -> preStmts += "ktc_core_sb_append_str(&${buf}_sb, ktc_core_str(\"${escapeStr(p.lit)}\"));"
+			p.sbAppend != null -> preStmts += p.sbAppend
+			}
+		}
+	preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
+	preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
+	// Second pass: write to real buffer
+	for (p in parts) {
+		when {
+			p.lit      != null -> preStmts += "ktc_core_sb_append_str(&${buf}_sb, ktc_core_str(\"${escapeStr(p.lit)}\"));"
+			p.sbAppend != null -> preStmts += p.sbAppend
+			}
+		}
+	return "ktc_core_sb_to_string(&${buf}_sb)"
+	}

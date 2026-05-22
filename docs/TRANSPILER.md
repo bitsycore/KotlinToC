@@ -72,7 +72,7 @@ Source files live in `src/main/kotlin/` organized by sub-package:
 | `EmitObject.kt`         | Object/singleton emission                             |
 | `EmitVtable.kt`         | Vtable instance generation for interface implementors  |
 
-**`com.bitsycore.codegen.expr`** — `codegen/expr/`
+**`com.bitsycore.codegen.expression`** — `codegen/expr/`
 
 | File                       | Role                                               |
 |----------------------------|----------------------------------------------------|
