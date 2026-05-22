@@ -226,7 +226,6 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 impl.appendLine("${ind}return (ktc_Any){0};")
             } else {
                 val srcType = inferExprType(s.value)?.removeSuffix("?") ?: "Int"
-                val srcTypeKtc = inferExprTypeKtc(s.value)
                 val typeId = getTypeId(srcType)
                 val ct = cTypeStr(srcType)
                 val expr = genExpr(s.value)
@@ -344,8 +343,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 } else {
                     // Auto-wrap Any return → ktc_Any trampoline
                     if (currentFnReturnKtcType is KtcType.Any) {
-                        val srcTy = inferExprType(s.value)?.removeSuffix("?") ?: "Int"
-                        val srcTyKtc = inferExprTypeKtc(s.value)
+                        val srcTy  = inferExprType(s.value)?.removeSuffix("?") ?: "Int"
                         val typeId = getTypeId(srcTy)
                         val ct = cTypeStr(srcTy)
                         val tVal = tmp()
