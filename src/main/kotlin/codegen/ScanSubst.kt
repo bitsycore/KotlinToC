@@ -177,9 +177,7 @@ internal fun CCodeGen.computeGenericFunConcreteReturns() {
 		if (funDecl.returnType == null) continue
 		for (typeArgs in instantiations) {
 			val subst = funDecl.typeParams.zip(typeArgs).toMap()
-			val prevSubst = typeSubst
-			typeSubst = subst
-			val resolvedReturn = resolveTypeName(funDecl.returnType).toInternalStr
+			val resolvedReturn = withTypeSubst(subst) { resolveTypeName(funDecl.returnType).toInternalStr }
 			if (interfaces.containsKey(resolvedReturn)) {
 				val concrete = inferConcreteReturnClass(funDecl.body, subst)
 				if (concrete != null) {
@@ -187,7 +185,6 @@ internal fun CCodeGen.computeGenericFunConcreteReturns() {
 					genericFunConcreteReturn[mangledName] = concrete
 					}
 				}
-			typeSubst = prevSubst
 			}
 		}
 	}

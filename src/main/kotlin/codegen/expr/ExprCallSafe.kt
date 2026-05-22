@@ -84,11 +84,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 		}
 	// Emit temp as Optional
 	val optType = optCTypeName("${retType}?")
-	val t       = tmp()
-	preStmts += "$optType $t = $guard ? ${optSome(optType, call)} : ${optNone(optType)};"
-	defineVar(t, "${retType}?")
-	markOptional(t)
-	return t
+	return tmpOptional(retType, "$guard ? ${optSome(optType, call)} : ${optNone(optType)}")
 	}
 
 // ==================

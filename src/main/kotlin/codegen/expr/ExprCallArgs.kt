@@ -5,6 +5,20 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 /**
+ * Allocate a temp var of Optional type for [ktcType], assign [initExpr] to it,
+ * register it in scope as nullable and mark it optional.  Returns the temp var name.
+ * Use when a call returns a nullable value that must be stored before use.
+ */
+internal fun CCodeGen.tmpOptional(ktcType: String, initExpr: String): String {
+	val optType = optCTypeName("${ktcType}?")
+	val t = tmp()
+	preStmts += "$optType $t = $initExpr;"
+	defineVar(t, "${ktcType}?")
+	markOptional(t)
+	return t
+	}
+
+/**
  * Fill argument defaults for [decl] then expand to a C argument string.
  * [owner] is the declaring class/object name — used for interface-inherited defaults via [effectiveDefaults].
  * Pass an empty owner for top-level or generic functions where params carry their own defaults.

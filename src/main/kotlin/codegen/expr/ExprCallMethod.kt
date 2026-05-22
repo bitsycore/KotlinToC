@@ -152,12 +152,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val allArgs = if (vFilledArgStr.isEmpty()) vSelfArg else "$vSelfArg, $vFilledArgStr"
 		if (ifaceMethod?.returnType?.nullable == true) {
 			val retType = resolveTypeName(ifaceMethod.returnType).toInternalStr
-			val optType = optCTypeName("${retType}?")
-			val t       = tmp()
-			preStmts += "$optType $t = $vtAccess->$method($allArgs);"
-			defineVar(t, "${retType}?")
-			markOptional(t)
-			return t
+			return tmpOptional(retType, "$vtAccess->$method($allArgs)")
 			}
 		return "$vtAccess->$method($allArgs)"
 		}
@@ -369,12 +364,7 @@ internal fun CCodeGen.genNullableMethodCall(
 	methodDecl: FunDecl
 	): String {
 	val retBase = resolveMethodReturnType(className, methodDecl.returnType).removeSuffix("?")
-	val optType = optCTypeName("${retBase}?")
-	val t       = tmp()
-	preStmts += "$optType $t = $fnExpr($allArgs);"
-	defineVar(t, "${retBase}?")
-	markOptional(t)
-	return t
+	return tmpOptional(retBase, "$fnExpr($allArgs)")
 	}
 
 /* Generate data class copy. heap = true when receiver is a heap pointer. */
