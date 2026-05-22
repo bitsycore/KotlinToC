@@ -67,12 +67,7 @@ internal fun CCodeGen.emitMethod(
 			}
 		}
 	emitArrayParamCopies(f.params, "    ")
-	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
-	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
-		emitDeferredBlocks("    ", insideMethod = true)
-		emitImplicitNullReturn("    ")
-		}
-	closeFunBody(prevState)
+	emitFunBodyAndClose(f, prevState, insideMethod = true)
 	}
 
 /** Emit struct field declarations (shared by emitClass and emitGenericClass). */

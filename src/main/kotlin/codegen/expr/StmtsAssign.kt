@@ -178,6 +178,14 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
 
 // ── return ───────────────────────────────────────────────────────
 
+/* Store initExpr in a temp, run deferred blocks, then return the temp. */
+private fun CCodeGen.emitDeferredReturn(ind: String, varType: String, initExpr: String) {
+    val t = tmp()
+    impl.appendLine("$ind$varType $t = $initExpr;")
+    emitDeferredBlocks(ind)
+    impl.appendLine("${ind}return $t;")
+}
+
 internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
     val endLabel = inlineEndLabel
     if (endLabel == null) {
@@ -268,10 +276,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 if (expr in arrayOfSizedStructVars) {
                     // Optimization: genArrayOfExpr already emitted a ktc_Array_T_N struct — return it directly.
                     if (deferStack.isNotEmpty()) {
-                        val vT = tmp()
-                        impl.appendLine("${ind}$vStructType $vT = $expr;")
-                        emitDeferredBlocks(ind)
-                        impl.appendLine("${ind}return $vT;")
+                        emitDeferredReturn(ind, vStructType, expr)
                     } else {
                         impl.appendLine("${ind}return $expr;")
                     }
@@ -309,21 +314,14 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     val vArrKtc  = currentFnReturnKtcType
                     val vArrElem = vArrKtc?.asArr?.elem ?: ((vArrKtc as? KtcType.Ptr)?.inner as? KtcType.Arr)?.elem
                     val vRetType = if (vArrElem != null) varArrTypeName(cTypeStr(vArrElem)) else cTypeStr(currentFnReturnType)
-                    val t = tmp()
-                    impl.appendLine("$ind$vRetType $t = $expr;")
-                    emitDeferredBlocks(ind)
-                    impl.appendLine("${ind}return $t;")
+                    emitDeferredReturn(ind, vRetType, expr)
                 } else {
                     impl.appendLine("${ind}return $expr;")
                 }
             } else if (deferStack.isNotEmpty()) {
                 // Evaluate return value into temp, run defers, then return
                 val retType = currentFnReturnType.ifEmpty { inferExprType(s.value) ?: "Int" }
-                val retTypeKtc = inferExprTypeKtc(s.value)
-                val t = tmp()
-                impl.appendLine("$ind${cTypeStr(retType)} $t = $expr;")
-                emitDeferredBlocks(ind)
-                impl.appendLine("${ind}return $t;")
+                emitDeferredReturn(ind, cTypeStr(retType), expr)
             } else {
                 // Auto-wrap class → interface if return type is an interface
                 val exprType = inferExprType(s.value)

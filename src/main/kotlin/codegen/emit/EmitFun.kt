@@ -43,12 +43,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	registerParams(f.params)
 	if (isClassType) registerClassFields(classes[recvTypeName]!!, "\$self.")
 	emitArrayParamCopies(f.params, "    ")
-	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
-	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
-		emitDeferredBlocks("    ", insideMethod = isClassType)
-		emitImplicitNullReturn("    ")
-		}
-	closeFunBody(prevState)
+	emitFunBodyAndClose(f, prevState, insideMethod = isClassType)
 	}
 
 internal fun CCodeGen.emitFun(f: FunDecl) {
@@ -100,6 +95,21 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		impl.appendLine("    ktc_core_mem_report();")
 		}
 	else if (lastStmt !is ReturnStmt) emitImplicitNullReturn("    ")
+	closeFunBody(prevState)
+	}
+
+/* Emit function body statements, trailing deferred blocks, optional implicit return, then close the function. */
+internal fun CCodeGen.emitFunBodyAndClose(
+	f:                  FunDecl,
+	prevState:          CCodeGen.FunState,
+	insideMethod:       Boolean = false,
+	withImplicitReturn: Boolean = true
+	) {
+	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = insideMethod)
+	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
+		emitDeferredBlocks("    ", insideMethod = insideMethod)
+		if (withImplicitReturn) emitImplicitNullReturn("    ")
+		}
 	closeFunBody(prevState)
 	}
 
