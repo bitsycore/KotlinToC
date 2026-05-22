@@ -239,7 +239,6 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     impl.appendLine("$ind$mutComment$ct ${s.name} = (ktc_Any){0};")
                 } else {
                     val initType = inferExprType(s.init)?.removeSuffix("?") ?: "Int"
-                    val initTypeKtc = inferExprTypeKtc(s.init)
                     val typeId = getTypeId(initType)
                     val initCT = cTypeStr(initType)
                     val expr = genExpr(s.init)
@@ -254,7 +253,6 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                 // Interface variable initialized from implementing class → auto-wrap
                 if (interfaces.containsKey(t)) {
                     val initType = inferExprType(s.init)
-                    val initTypeKtc = inferExprTypeKtc(s.init)
                     if (initType != null && (classes.containsKey(initType) || objects.containsKey(initType)) && classInterfaces[initType]?.contains(t) == true) {
                         val isObj = objects.containsKey(initType)
                         if (isObj && (s.type == null || s.type.annotations.none { it.name == "Ptr" })) {
@@ -308,9 +306,8 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     } else null
                     // Auto-wrap init into ktc_Any trampoline when variable is typed Any
                     if (vKtc is KtcType.Any && s.init !is NullLit) {
-                        val initType    = inferExprType(s.init)?.removeSuffix("?") ?: "Int"
-                        val initTypeKtc = inferExprTypeKtc(s.init)
-                        val typeId      = getTypeId(initType)
+                        val initType = inferExprType(s.init)?.removeSuffix("?") ?: "Int"
+                        val typeId   = getTypeId(initType)
                         val initCT      = cTypeStr(initType)
                         val tVal        = tmp()
                         impl.appendLine("$ind$initCT $tVal = $expr;")
