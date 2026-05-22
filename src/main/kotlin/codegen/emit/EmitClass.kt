@@ -36,27 +36,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 
 	val vHasMethodSection = emitClassNonAnyMethods(d.name, d.superInterfaces, d.members, ci)
 
-	val vDeferredLines = deferredHdrLines.remove(d.name)
-	if (d.superInterfaces.isNotEmpty()) {
-		val vByIface = vDeferredLines?.groupBy { it.first } ?: emptyMap()
-		for (vIfaceRef in d.superInterfaces) {
-			val vIfaceName = resolveIfaceName(vIfaceRef)
-			val vIface = interfaces[vIfaceName] ?: continue
-			val vIfaceStr = typeRefToStr(vIfaceRef)
-			val cIface = typeFlatName(vIfaceName)
-			hdr.appendLine()
-			hdr.appendLine("// ════ implements $vIfaceStr ════")
-			val vLines = vByIface[vIfaceStr]
-			if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
-			for (vProp in vIface.propDecls) {
-				val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
-				hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(KTC_TYPE_NAME* \$self);")
-				}
-			hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
-			hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(KTC_TYPE_NAME* \$self);")
-			emitTransitiveIfaceHdrDecls(vIface, vByIface)
-			}
-		}
+	emitSuperInterfaceHdrDecls(d.superInterfaces, deferredHdrLines.remove(d.name))
 
 	hdr.appendLine()
 	hdr.appendLine("// ════ implements Any (implicit) ════")
@@ -65,16 +45,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 	impl.appendLine()
 	emitClassEquals(cName, ci)
 	if (d.isData) emitDataClassToString(d.name, cName, ci)
-	if (d.members.none { it is FunDecl && it.name == "dispose" }) {
-		if (disposedMode != "NO" || doubleDisposeMode != "NO") {
-			hdr.appendLine("KTC_METHOD(void, dispose)(KTC_TYPE_NAME* \$self);")
-			impl.appendLine("// ══ fun dispose() ══")
-			impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
-			impl.appendLine()
-			} else {
-			hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
-			}
-		}
+	emitImplicitDispose(cName, d.members)
 	emitImplicitHashCode(cName, ci, d.isData, isGenericClass = false, d.members)
 	if (!d.isData && d.members.none { it is FunDecl && it.name == "toString" }) {
 		emitDefaultToString(d.name, cName, ci)

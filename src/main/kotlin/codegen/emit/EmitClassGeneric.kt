@@ -38,43 +38,14 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
 
 	val vHasMethodSectionGen = emitClassNonAnyMethods(mangledName, templateDecl.superInterfaces, templateDecl.members, ci)
 
-	val vGenDeferredLines = deferredHdrLines.remove(mangledName)
-	if (templateDecl.superInterfaces.isNotEmpty()) {
-		val vByIface = vGenDeferredLines?.groupBy { it.first } ?: emptyMap()
-		for (vIfaceRef in templateDecl.superInterfaces) {
-			val vIfaceName = resolveIfaceName(vIfaceRef)
-			val vIface = interfaces[vIfaceName] ?: continue
-			val vIfaceStr = typeRefToStr(vIfaceRef)
-			val cIface = typeFlatName(vIfaceName)
-			hdr.appendLine()
-			hdr.appendLine("// ════ implements $vIfaceStr ════")
-			val vLines = vByIface[vIfaceStr]
-			if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
-			for (vProp in vIface.propDecls) {
-				val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
-				hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(KTC_TYPE_NAME* \$self);")
-				}
-			hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
-			hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(KTC_TYPE_NAME* \$self);")
-			emitTransitiveIfaceHdrDecls(vIface, vByIface)
-			}
-		}
+	emitSuperInterfaceHdrDecls(templateDecl.superInterfaces, deferredHdrLines.remove(mangledName))
 
 	hdr.appendLine()
 	hdr.appendLine("// ════ implements Any (implicit) ════")
 	if (!vHasMethodSectionGen) impl.appendLine()
 	impl.appendLine(boxSection("implements Any"))
 	impl.appendLine()
-	if (templateDecl.members.none { it is FunDecl && it.name == "dispose" }) {
-		if (disposedMode != "NO" || doubleDisposeMode != "NO") {
-			hdr.appendLine("KTC_METHOD(void, dispose)(KTC_TYPE_NAME* \$self);")
-			impl.appendLine("// ══ fun dispose() ══")
-			impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
-			impl.appendLine()
-			} else {
-			hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
-			}
-		}
+	emitImplicitDispose(cName, templateDecl.members)
 	emitImplicitHashCode(cName, ci, templateDecl.isData, isGenericClass = true, templateDecl.members)
 	if (templateDecl.members.none { it is FunDecl && it.name == "equals" }) emitClassEquals(cName, ci)
 	if (templateDecl.isData && templateDecl.members.none { it is FunDecl && it.name == "toString" }) {

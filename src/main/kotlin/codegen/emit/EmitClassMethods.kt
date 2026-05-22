@@ -9,7 +9,47 @@ import com.bitsycore.ktc.codegen.expr.inferBlockType
 import com.bitsycore.ktc.types.KtcType
 
 
-// Method emit, struct field declarations, and primary constructor body.
+// Method emit, struct field declarations, primary constructor body, and shared class emit helpers.
+
+/* Emit implicit dispose declaration/stub if the class declares no explicit dispose. */
+internal fun CCodeGen.emitImplicitDispose(cName: String, members: List<Decl>) {
+	if (members.none { it is FunDecl && it.name == "dispose" }) {
+		if (disposedMode != "NO" || doubleDisposeMode != "NO") {
+			hdr.appendLine("KTC_METHOD(void, dispose)(KTC_TYPE_NAME* \$self);")
+			impl.appendLine("// ══ fun dispose() ══")
+			impl.appendLine("void ${cName}_dispose($cName* \$self) { KTC_MARK_DISPOSED(\$self); }")
+			impl.appendLine()
+			} else {
+			hdr.appendLine("#define ${cName}_dispose(self) ((void)(self))")
+			}
+		}
+	}
+
+/* Emit header declarations for each super interface a class implements. */
+internal fun CCodeGen.emitSuperInterfaceHdrDecls(
+	superInterfaces: List<TypeRef>,
+	deferredLines:   List<Pair<String, String>>?
+	) {
+	if (superInterfaces.isEmpty()) return
+	val vByIface = deferredLines?.groupBy { it.first } ?: emptyMap()
+	for (vIfaceRef in superInterfaces) {
+		val vIfaceName = resolveIfaceName(vIfaceRef)
+		val vIface     = interfaces[vIfaceName] ?: continue
+		val vIfaceStr  = typeRefToStr(vIfaceRef)
+		val cIface     = typeFlatName(vIfaceName)
+		hdr.appendLine()
+		hdr.appendLine("// ════ implements $vIfaceStr ════")
+		val vLines = vByIface[vIfaceStr]
+		if (vLines != null) for ((_, vLine) in vLines) hdr.appendLine(vLine)
+		for (vProp in vIface.propDecls) {
+			val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
+			hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(KTC_TYPE_NAME* \$self);")
+			}
+		hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
+		hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(KTC_TYPE_NAME* \$self);")
+		emitTransitiveIfaceHdrDecls(vIface, vByIface)
+		}
+	}
 
 internal fun CCodeGen.emitMethod(
 	className:   String,
