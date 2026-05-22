@@ -290,14 +290,10 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						) {
 						// Already an Optional var — check if needs interface conversion
 						val ifaceName2 = paramType.removeSuffix("?")
-						if (interfaces.containsKey(ifaceName2) && classes.containsKey(argVarKtc.inner.toInternalStr)
-							&& classInterfaces[argVarKtc.inner.toInternalStr]?.contains(ifaceName2) == true) {
-							val baseFlat = typeFlatName(argVarKtc.inner.toInternalStr)
-							val t        = tmp()
-							val optType2 = optCTypeName("${paramType}?")
-							preStmts += "$optType2 $t = ($expr.tag == ktc_SOME) ? ($optType2){ktc_SOME, ${baseFlat}_as_$ifaceName2(&$expr.value)} : ($optType2){ktc_NONE};"
-							t
-							} else expr
+						val needsIfaceConv = interfaces.containsKey(ifaceName2)
+							&& classes.containsKey(argVarKtc.inner.toInternalStr)
+							&& classInterfaces[argVarKtc.inner.toInternalStr]?.contains(ifaceName2) == true
+						nullableIfaceCast(expr, argVarKtc.inner.toInternalStr, if (needsIfaceConv) ifaceName2 else null)
 						} else {
 						// Check if needs as_Iface conversion for class→interface
 						val ifaceName  = paramType

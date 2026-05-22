@@ -41,7 +41,7 @@ private fun CCodeGen.findGenericExtOnIfaces(className: String, method: String): 
 /* Emit an optional iface cast preStmt and return the temp var name.
 When [ifaceConcrete] is null, returns [recv] unchanged.
 Emits: optType t = (recv.tag == ktc_SOME) ? {SOME, baseName_as_iface(&recv.value)} : {NONE}; */
-private fun CCodeGen.nullableIfaceCast(recv: String, baseName: String, ifaceConcrete: String?): String {
+internal fun CCodeGen.nullableIfaceCast(recv: String, baseName: String, ifaceConcrete: String?): String {
 	if (ifaceConcrete == null) return recv
 	val optType = optCTypeName("${ifaceConcrete}?")
 	val t = tmp()
