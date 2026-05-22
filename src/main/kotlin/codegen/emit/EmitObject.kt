@@ -189,24 +189,11 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     inHdrLines: if non-null, collect hdr declaration strings instead of writing to hdr directly. */
     fun emitOneObjMethod(m: FunDecl, inHdrLines: MutableList<String>?) {
         if (m.isInline) return  // expanded at call sites via inlineFunDecls, not emitted as C functions
-        val returnsSizedArray  = m.returnType != null && m.returnType.isSizedArray()
-        val returnsSizedString = m.returnType != null && m.returnType.isSizedString()
-        val vRetKtcM           = if (m.returnType != null) resolveTypeName(m.returnType) else null
-        val returnsArray       = !returnsSizedArray && (vRetKtcM?.isArrayLike ?: false)
-        val retResolved        = vRetKtcM?.toInternalStr ?: ""
-        val cRet = when {
-            returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtcM!!.asArr!!.elem), m.returnType.getSizeAnnotation()!!)
-            returnsSizedString -> sizedStringCTypeName(m.returnType.getSizeAnnotation()!!)
-            returnsArray       -> {
-                val vArrElem = vRetKtcM!!.asArr?.elem ?: ((vRetKtcM as? KtcType.Ptr)?.inner as KtcType.Arr).elem
-                varArrTypeName(cTypeStr(vArrElem))
-                }
-            retResolved.isNotEmpty() -> cTypeStr(retResolved)
-            else -> "void"
-        }
+        val prevState      = saveFunState()
+        val cRet           = computeReturnInfo(m)
         val overloadedName = methodName(m, methods)
-        val fnName = if (m.isPrivate) "PRIV_$overloadedName" else overloadedName
-        val params = expandParams(m.params)
+        val fnName         = if (m.isPrivate) "PRIV_$overloadedName" else overloadedName
+        val params         = expandParams(m.params)
         if (m.isPrivate) {
             impl.appendLine("$cRet ${cName}_$fnName($params);")
         } else {
@@ -218,17 +205,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine("// ══ fun ${m.name}()$vRetSuffix ══")
         impl.appendLine("$cRet ${cName}_$fnName($params) {")
         impl.appendLine("    ${cName}_\$ensure_init();")
-        val prevState = saveFunState()
-        currentFnReturnsArray      = returnsArray
-        currentFnReturnsSizedArray = returnsSizedArray
-        currentFnReturnType        = retResolved
-        currentFnReturnKtcType     = vRetKtcM
-        if (returnsSizedArray) {
-            currentFnSizedArraySize     = m.returnType.getSizeAnnotation()!!
-            currentFnSizedArrayElemType = vRetKtcM!!.asArr!!.elem
-        }
-        currentFnReturnsSizedString = returnsSizedString
-        if (returnsSizedString) currentFnSizedStringSize = m.returnType.getSizeAnnotation()!!
         pushScope()
         for (p in props) {
             val vPType = p.type ?: inferInitType(p.init)
@@ -237,10 +213,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val vIsOpt = vPType.nullable && !vPType.annotations.any { it.name == "Ptr" } && !vKtcP.isArrayLike
             defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
         }
-        for (p in m.params) {
-            val vKtcObjParam = resolveTypeName(p.type)
-            defineVar(p.name, if (p.isVararg) "${vKtcObjParam.toInternalStr}Array" else vKtcObjParam.toInternalStr)
-        }
+        registerParams(m.params)
         emitArrayParamCopies(m.params, "    ")
         if (m.body != null) for (s in m.body.stmts) emitStmt(s, "    ")
         if (m.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ")
