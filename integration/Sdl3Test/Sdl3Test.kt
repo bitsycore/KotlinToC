@@ -1,3 +1,4 @@
+@file:cInclude("SDL3/SDL.h")
 package Sdl3Test
 
 // Minimal SDL3 integration test.
@@ -7,18 +8,14 @@ package Sdl3Test
 fun main() {
     c.SDL_SetMainReady()
 
-    val vOk: Int = c.SDL_Init(c.SDL_INIT_EVENTS)
-    if (vOk == 0) {
-        c.printf("SDL_Init failed: %s\n", c.SDL_GetError())
-        c.exit(1)
+    val ok: Int = c.SDL_Init(c.SDL_INIT_EVENTS)
+    if (ok == 0) {
+        error("SDL_Init failed: ${c.SDL_GetError()}")
     }
 
-    val vVersion: Int = c.SDL_GetVersion()
-    val vMajor: Int = vVersion / 1000000
-    val vMinor: Int = (vVersion / 1000) % 1000
-    val vPatch: Int = vVersion % 1000
-    c.printf("SDL3 %d.%d.%d initialized OK\n", vMajor, vMinor, vPatch)
+    val version = c.SDL_GetVersion()
+    println("SDL3 ${version} initialized OK")
 
     c.SDL_Quit()
-    c.printf("SDL3 quit OK\n")
+    println("SDL3 quit OK")
 }

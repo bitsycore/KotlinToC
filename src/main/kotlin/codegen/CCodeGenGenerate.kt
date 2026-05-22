@@ -276,6 +276,7 @@ internal fun CCodeGen.generate(): COutput {
 			appendLine(funBlockHeader(vPkg, vSrcFull))
 			appendLine()
 			appendLine("#include \"_package_.h\"")
+			for (vInc in file.cIncludes) appendLine(vInc.toCDirective())
 			appendLine()
 			if (vTopImplFwd != null && vTopImplFwd.isNotEmpty()) {
 				append(vTopImplFwd)
@@ -333,6 +334,7 @@ internal fun CCodeGen.generate(): COutput {
 			else "$vSrcName/_package_.h"
 		val vSrc = buildString {
 			appendLine("#include \"${relIncludePath(vFileDir, vHdrAbsPath)}\"")
+			for (vInc in file.cIncludes) appendLine(vInc.toCDirective())
 			appendLine()
 			appendLine(cSourceFileHeader(vKind, vKtName, vRoutingPkg, vCName, vSrcFile, vInstFrom))
 			appendLine()

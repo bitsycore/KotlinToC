@@ -202,9 +202,10 @@ fun main(args: Array<String>) {
         // Merge all files in the same package into one KtFile — skip documentation-only files entirely
         val realGroup = group.filter { !it.ast.documentationOnly }
         if (realGroup.isEmpty()) continue
-        val mergedImports = realGroup.flatMap { it.ast.imports }.distinct()
-        val mergedDecls = realGroup.flatMap { it.ast.decls }
-        val mergedFile = KtFile(realGroup.first().ast.pkg, mergedImports, mergedDecls)
+        val mergedImports  = realGroup.flatMap { it.ast.imports }.distinct()
+        val mergedDecls    = realGroup.flatMap { it.ast.decls }
+        val mergedIncludes = realGroup.flatMap { it.ast.cIncludes }.distinct()
+        val mergedFile     = KtFile(realGroup.first().ast.pkg, mergedImports, mergedDecls, cIncludes = mergedIncludes)
         val mergedSourceLines = realGroup.flatMap { it.sourceLines }
 
         val srcName = if (realGroup.size == 1) realGroup.first().file.name else "$pkg.kt"

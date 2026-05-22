@@ -12,16 +12,32 @@ class Parser(private val tokens: List<Token>) {
 
     fun parseFile(): KtFile {
         skipNL()
-        /* @file:DocumentationOnly — must be the first thing in the file.
-        Marks the file as documentation-only: declarations are visible to other files
-        but no C code is generated for this file. Consumes the 4-token sequence and
-        sets documentationOnly = true on the resulting KtFile. */
-        val documentationOnly = pos + 3 < tokens.size
+        /* Consume recognized @file: annotations at the top of the file.
+        Supported:
+          @file:DocumentationOnly          — no C output, decls still visible to other files
+          @file:cInclude("path")           — emits #include <path> in every generated .c
+          @file:cIncludeRelative("path")   — emits #include "path" in every generated .c
+        Unknown @file: names stop the loop and are left for normal declaration parsing. */
+        val vCIncludes = mutableListOf<CInclude>()
+        while (pos + 3 < tokens.size
             && tokens[pos].type     == TokenType.AT
             && tokens[pos + 1].type == TokenType.IDENT && tokens[pos + 1].value == "file"
             && tokens[pos + 2].type == TokenType.COLON
-            && tokens[pos + 3].type == TokenType.IDENT && tokens[pos + 3].value == "DocumentationOnly"
-        if (documentationOnly) return KtFile(null, emptyList(), emptyList(), documentationOnly = true)
+            && tokens[pos + 3].type == TokenType.IDENT) {
+            when (tokens[pos + 3].value) {
+                "DocumentationOnly" -> return KtFile(null, emptyList(), emptyList(), documentationOnly = true)
+                "cInclude", "cIncludeRelative" -> {
+                    val vAngle = tokens[pos + 3].value == "cInclude"
+                    pos += 4
+                    expect(TokenType.LPAREN)
+                    val vPath = expect(TokenType.STRING_LIT).value
+                    expect(TokenType.RPAREN)
+                    skipTerminator(); skipNL()
+                    vCIncludes += CInclude(vPath, vAngle)
+                }
+                else -> break
+            }
+        }
         val pkg = if (at(TokenType.PACKAGE)) { advance(); parseQualifiedName().also { skipTerminator() } } else null
         val imports = mutableListOf<String>()
         while (at(TokenType.IMPORT)) { advance(); imports += parseQualifiedName(); skipTerminator() }
@@ -32,7 +48,7 @@ class Parser(private val tokens: List<Token>) {
             if (at(TokenType.COMMENT)) { advance(); skipTerminator(); continue }
             decls += parseDecl()
         }
-        return KtFile(pkg, imports, decls, documentationOnly = documentationOnly)
+        return KtFile(pkg, imports, decls, cIncludes = vCIncludes)
     }
 
     // ═══════════════════════════ Declarations ═════════════════════════

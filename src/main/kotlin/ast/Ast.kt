@@ -14,12 +14,20 @@ data class TypeRef(
 
 // ═══════════════════════════ File ═══════════════════════════
 
+/* A C #include directive emitted at the top of every .c file generated from the annotated .kt file.
+angle = true  → #include <path>   (@file:cInclude)
+angle = false → #include "path"   (@file:cIncludeRelative) */
+data class CInclude(val path: String, val angle: Boolean) {
+    fun toCDirective(): String = if (angle) "#include <$path>" else "#include \"$path\""
+    }
+
 data class KtFile(
     val pkg: String?,
     val imports: List<String>,
     val decls: List<Decl>,
     val sourceFile: String = "",
-    val documentationOnly: Boolean = false  // true when file starts with @file:DocumentationOnly
+    val documentationOnly: Boolean = false,  // true when file starts with @file:DocumentationOnly
+    val cIncludes: List<CInclude> = emptyList()  // from @file:cInclude / @file:cIncludeRelative
 )
 
 // ═══════════════════════════ Declarations ═══════════════════════════
