@@ -8,6 +8,25 @@ import com.bitsycore.ktc.types.KtcType
 // genAllocWithCallOrNull: handles Foo.allocWith(alloc, ...) / Array.allocWith(alloc, n)
 // genCtorCallOrNull:      handles Foo(...) constructor calls for known and generic classes
 
+/* Emit a preStmt that wraps [allocExpr] in a ktc_IfacePtr for the Allocator vtable of [name]. */
+private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: String) {
+	val vConcrete = typeFlatName(name)
+	val vTypeId   = getTypeId(name)
+	preStmts += "ktc_IfacePtr $t = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$allocExpr};"
+	}
+
+/* Emit alloc+ctor preStmts for an allocator-based object construction and return the pointer expr. */
+private fun CCodeGen.emitAllocWithConstruct(cName: String, ifExpr: String, ifaceCreated: Boolean, isTrampoline: Boolean, ctorArgs: String): String {
+	val vTPtr = tmp()
+	if (ifaceCreated || isTrampoline) {
+		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)((ktc_std_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
+		} else {
+		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)$ifExpr.vt->allocMem((void*)&$ifExpr.data, sizeof($cName), ${ktSrcStr()});"
+		}
+	preStmts += "if (${vTPtr}_ptr) *${vTPtr}_ptr = ${cName}_primaryConstructor($ctorArgs);"
+	return "${vTPtr}_ptr"
+	}
+
 /*
 Handles ClassName.allocWith(allocator, ...) calls.
 Returns the allocated pointer expression, or null if className is not a recognized type.
@@ -25,10 +44,8 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 			&& vAllocCore.inner.kind == KtcType.UserKind.Interface
 		if (vIsTrampoline) return Pair(vAllocExpr, false)
 		if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
-			val vConcrete = typeFlatName(vAllocObjName)
-			val vTypeId   = getTypeId(vAllocObjName)
-			val vT        = tmp()
-			preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
+			val vT = tmp()
+			emitAllocatorIfacePtr(vAllocObjName, vT, vAllocExpr)
 			return Pair(vT, true)
 			}
 		return Pair(vAllocExpr, false)
@@ -76,26 +93,11 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val vIfaceCreated: Boolean
 		val vIfExpr: String
 		when {
-			vIsAllocObj -> {
-				val vConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
-				vIfaceCreated = true; vIfExpr = vT
-				}
-			vIsAllocClass -> {
-				val vConcrete = typeFlatName(vAllocClassName); val vTypeId = getTypeId(vAllocClassName)
-				preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
-				vIfaceCreated = true; vIfExpr = vT
-				}
-			else -> { vIfaceCreated = false; vIfExpr = vAllocExpr }
+			vIsAllocObj   -> { emitAllocatorIfacePtr(vAllocObjName, vT, vAllocExpr);   vIfaceCreated = true; vIfExpr = vT }
+			vIsAllocClass -> { emitAllocatorIfacePtr(vAllocClassName, vT, vAllocExpr); vIfaceCreated = true; vIfExpr = vT }
+			else          -> { vIfaceCreated = false; vIfExpr = vAllocExpr }
 			}
-		val vTPtr = tmp()
-		if (vIfaceCreated || vIsTrampoline) {
-			preStmts += "$vCName* ${vTPtr}_ptr = ($vCName*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vCName), ${ktSrcStr()});"
-			} else {
-			preStmts += "$vCName* ${vTPtr}_ptr = ($vCName*)$vIfExpr.vt->allocMem((void*)&$vIfExpr.data, sizeof($vCName), ${ktSrcStr()});"
-			}
-		preStmts += "if (${vTPtr}_ptr) *${vTPtr}_ptr = ${vCName}_primaryConstructor($vCtorArgs);"
-		return "${vTPtr}_ptr"
+		return emitAllocWithConstruct(vCName, vIfExpr, vIfaceCreated, vIsTrampoline, vCtorArgs)
 		}
 
 	// Generic class: Foo<T>.allocWith(allocator, ctorArgs...)
@@ -127,33 +129,17 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 					val vArgExpr  = genExpr(vArg.expr)
 					val vArgVarName = (vArg.expr as? NameExpr)?.name
 					if (vArgVarName != null && objects.containsKey(vArgVarName)) {
-						val vConcrete = typeFlatName(vArgVarName); val vTypeId = getTypeId(vArgVarName)
 						val vTCtor = tmp()
-						preStmts += "ktc_IfacePtr $vTCtor = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$vArgExpr};"
+						emitAllocatorIfacePtr(vArgVarName, vTCtor, vArgExpr)
 						vTCtor
 						} else vArgExpr
 					}
 				when {
-					vIsAllocObj2 -> {
-						val vConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-						preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
-						vIfaceCreated2 = true; vIfExpr2 = vT
-						}
-					vIsAllocClass2 -> {
-						val vConcrete = typeFlatName(vAllocClassName2); val vTypeId = getTypeId(vAllocClassName2)
-						preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
-						vIfaceCreated2 = true; vIfExpr2 = vT
-						}
-					else -> { vIfaceCreated2 = false; vIfExpr2 = vAllocExpr }
+					vIsAllocObj2   -> { emitAllocatorIfacePtr(vAllocObjName, vT, vAllocExpr);    vIfaceCreated2 = true; vIfExpr2 = vT }
+					vIsAllocClass2 -> { emitAllocatorIfacePtr(vAllocClassName2, vT, vAllocExpr); vIfaceCreated2 = true; vIfExpr2 = vT }
+					else           -> { vIfaceCreated2 = false; vIfExpr2 = vAllocExpr }
 					}
-				val vTPtr2 = tmp()
-				if (vIfaceCreated2 || vIsTrampoline2) {
-					preStmts += "$vCName* ${vTPtr2}_ptr = ($vCName*)((ktc_std_Allocator_vt*)$vIfExpr2.vt)->allocMem($vIfExpr2.obj, sizeof($vCName), ${ktSrcStr()});"
-					} else {
-					preStmts += "$vCName* ${vTPtr2}_ptr = ($vCName*)$vIfExpr2.vt->allocMem((void*)&$vIfExpr2.data, sizeof($vCName), ${ktSrcStr()});"
-					}
-				preStmts += "if (${vTPtr2}_ptr) *${vTPtr2}_ptr = ${vCName}_primaryConstructor($vCtorArgs2);"
-				return "${vTPtr2}_ptr"
+				return emitAllocWithConstruct(vCName, vIfExpr2, vIfaceCreated2, vIsTrampoline2, vCtorArgs2)
 				}
 			}
 		}
