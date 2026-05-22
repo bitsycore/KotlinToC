@@ -5,6 +5,14 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
+/* Record a generic extension function instantiation derived from a concrete interface name.
+Resolves type args from mangledComponents and inserts them into genericFunInstantiations. */
+private fun CCodeGen.recordIfaceExtInstantiation(decl: FunDecl, concrete: String) {
+	val components = mangledComponents[concrete]?.second
+	val tArgs = List(decl.typeParams.size) { i -> components?.getOrNull(i) ?: "Int" }
+	genericFunInstantiations.getOrPut(decl.name) { mutableSetOf() }.add(tArgs)
+	}
+
 /* Search the interfaces implemented by [className] for a generic extension function named [method].
 Returns (FunDecl, concreteIfaceName) if found, null otherwise.
 The concrete interface name is resolved via genericTypeBindings when needed. */
@@ -109,11 +117,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		var ifaceExtConcrete: String? = null
 		if (genExt == null) findGenericExtOnIfaces(pointerBase, method)?.also { (d, c) -> ifaceExt = d; ifaceExtConcrete = c }
 		val effectiveGenExt = genExt ?: ifaceExt
-		if (ifaceExt != null && ifaceExtConcrete != null) {
-			val tArgComponents = mangledComponents[ifaceExtConcrete]?.second
-			val tArgs          = ifaceExt.typeParams.mapIndexed { i, _ -> tArgComponents?.getOrNull(i) ?: "Int" }
-			genericFunInstantiations.getOrPut(ifaceExt.name) { mutableSetOf() }.add(tArgs)
-			}
+		if (ifaceExt != null && ifaceExtConcrete != null) recordIfaceExtInstantiation(ifaceExt, ifaceExtConcrete)
 		val isPtrExt      = effectiveGenExt?.receiver?.annotations?.any { it.name == "Ptr" } == true
 		val flatPtrBase   = if (ifaceExtConcrete != null) {
 			val f = typeFlatName(ifaceExtConcrete)
@@ -189,11 +193,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			} else null
 		var ifaceConcrete: String? = null
 		if (genericExtDecl == null) findGenericExtOnIfaces(vClassInfo.baseName, method)?.also { (d, c) -> genericExtDecl = d; ifaceConcrete = c }
-		if (genericExtDecl != null && ifaceConcrete != null) {
-			val ifaceComponents = mangledComponents[ifaceConcrete]?.second
-			val tArgs           = List(genericExtDecl.typeParams.size) { i -> ifaceComponents?.getOrNull(i) ?: "Int" }
-			genericFunInstantiations.getOrPut(genericExtDecl.name) { mutableSetOf() }.add(tArgs)
-			}
+		if (genericExtDecl != null && ifaceConcrete != null) recordIfaceExtInstantiation(genericExtDecl, ifaceConcrete)
 		val effectiveDecl  = methodDecl ?: genericExtDecl
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.annotations?.any { it.name == "Ptr" } == true
