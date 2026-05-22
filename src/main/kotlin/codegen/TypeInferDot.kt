@@ -4,10 +4,18 @@ import com.bitsycore.ktc.ast.DotExpr
 import com.bitsycore.ktc.ast.IndexExpr
 import com.bitsycore.ktc.ast.NameExpr
 import com.bitsycore.ktc.ast.SafeDotExpr
+import com.bitsycore.ktc.ast.TypeRef
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
 // Type inference for dot-access (field/property) and index expressions.
+
+/* Resolve a named property's KtcType from a props list, wrapping nullable properties in KtcType.Nullable. */
+private fun CCodeGen.resolvePropTypeKtc(props: List<Pair<String, TypeRef>>, name: String): KtcType? {
+	val prop = props.find { it.first == name }
+	val base = if (prop != null) resolveTypeName(prop.second) else null
+	return if (base != null && prop!!.second.nullable) KtcType.Nullable(base) else base
+	}
 
 internal fun CCodeGen.inferDotType(e: DotExpr): String? = inferDotTypeKtc(e)?.toInternalStr
 
@@ -23,9 +31,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	if (e.obj is NameExpr && enums.containsKey(e.obj.name)) return parseResolvedTypeName(e.obj.name)
 	val vDotObjInfo = resolveDotObjInfo(e)
 	if (vDotObjInfo != null) {
-		val prop = vDotObjInfo.props.find { it.first == e.name }
-		val base = if (prop != null) resolveTypeName(prop.second) else null
-		return if (base != null && prop!!.second.nullable) KtcType.Nullable(base) else base
+		return resolvePropTypeKtc(vDotObjInfo.props, e.name)
 		}
 	val recvType        = inferExprType(e.obj) ?: return null
 	val recvTypeKtc     = inferExprTypeKtc(e.obj)
@@ -53,15 +59,11 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	if (e.name == "ordinal" && recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) return KtcType.Prim(KtcType.PrimKind.Int)
 	val indirectBase = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
 	if (indirectBase != null) {
-		val ci   = classes[indirectBase] ?: return null
-		val prop = ci.props.find { it.first == e.name }
-		val base = if (prop != null) resolveTypeName(prop.second) else null
-		return if (base != null && prop!!.second.nullable) KtcType.Nullable(base) else base
+		val ci = classes[indirectBase] ?: return null
+		return resolvePropTypeKtc(ci.props, e.name)
 		}
-	val ci   = classes[recvType] ?: return null
-	val prop = ci.props.find { it.first == e.name }
-	val base = if (prop != null) resolveTypeName(prop.second) else null
-	return if (base != null && prop!!.second.nullable) KtcType.Nullable(base) else base
+	val ci = classes[recvType] ?: return null
+	return resolvePropTypeKtc(ci.props, e.name)
 	}
 
 internal fun CCodeGen.inferDotTypeSafe(e: SafeDotExpr): String? {
