@@ -142,6 +142,14 @@ internal sealed class KtcType {
         override fun toCType() = "void*"
     }
 
+    // ── C interop external type ───────────────────────────────────────
+    /* Opaque external C type referenced via 'c.TypeName' syntax.
+    The cName is emitted verbatim as the C type (e.g. "SDL_Window", "SDL_FRect").
+    Use @Ptr c.TypeName to get a pointer: SDL_Window*. */
+    data class COpaque(val cName: String) : KtcType() {
+        override fun toCType() = cName
+    }
+
     // ── Abstract methods ─────────────────────────────────────────────
 
     abstract fun toCType(): String
@@ -191,6 +199,7 @@ internal sealed class KtcType {
             }
 
             is Nullable -> "${inner.toInternalStr}?"             // "Int?", "Vec2?", "Vec2*?"
+            is COpaque  -> "c:$cName"                             // "c:SDL_Window", "c:SDL_FRect"
         }
 
     val nullable: KtcType get() = Nullable(this)

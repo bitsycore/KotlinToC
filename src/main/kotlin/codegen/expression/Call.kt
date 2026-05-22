@@ -49,6 +49,10 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 memTrack && vCFnName == "realloc" -> "ktc_core_realloc"
                 else -> vCFnName
             }
+            // c.addr(x) → &x (address-of for passing pointers to C functions)
+            if (vCFnName == "addr" && e.args.size == 1) return "&${genCArg(e.args[0].expr)}"
+            // c.zeroed() → {0} (zero-initialise a C struct in variable init context)
+            if (vCFnName == "zeroed") return "{0}"
             val vArgStr = e.args.joinToString(", ") { genCArg(it.expr) }
             val vExtra = if (memTrack && vCFnName in setOf("malloc", "free", "realloc")) ", ${ktSrc()}" else ""
             return "$vFnName($vArgStr$vExtra)"

@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.ast.TypeRef
+import com.bitsycore.ktc.ast.getSizeAnnotation
 import com.bitsycore.ktc.types.BuiltinTypeDef
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.types.TypeDef
@@ -98,6 +99,8 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 
 /* Internal string-based type resolution after @Ptr stripping (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
+	// c.SDL_Window → "c:SDL_Window" (C interop external type passthrough)
+	if (t.name.startsWith("c.")) return "c:${t.name.removePrefix("c.")}"
 	// Function type: (P1, P2) -> R → "Fun(P1,P2)->R"
 	if (t.funcParams != null) {
 		val vReceiver = t.funcReceiver?.let { resolveTypeNameStr(it) + "|" } ?: ""
@@ -203,6 +206,8 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		}
 	if (resolved.endsWith("?")) return KtcType.Nullable(parseResolvedTypeName(resolved.dropLast(1)))
 	if (resolved.startsWith("Fun(")) return KtcType.Func(emptyList(), KtcType.Void)
+	// "c:SDL_Window" → COpaque (produced by resolveTypeNameInnerStr for c.* type refs)
+	if (resolved.startsWith("c:")) return KtcType.COpaque(resolved.removePrefix("c:"))
 	for (kind in KtcType.PrimKind.entries) {
 		if (resolved == kind.name) return KtcType.Prim(kind)
 		}
@@ -277,6 +282,7 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 		if (inner is KtcType.Ptr) cTypeStr(inner) else optCTypeName(inner.toInternalStr)
 		}
 	is KtcType.Func -> "void*"
+	is KtcType.COpaque -> ktc.cName
 	}
 
 /* C type string for an array element — handles nullable elements as Optional types. */
@@ -293,7 +299,8 @@ internal fun CCodeGen.defaultVal(t: KtcType): String = when (t) {
 		else                     -> "0"
 		}
 	is KtcType.Str  -> "ktc_core_str(\"\")"
-	is KtcType.Ptr  -> "NULL"
+	is KtcType.Ptr    -> "NULL"
+	is KtcType.COpaque -> "(${t.cName}){0}"
 	else -> {
 		val ct = cTypeStr(t.toInternalStr.removeSuffix("?"))
 		"($ct){0}"
@@ -323,6 +330,7 @@ internal fun SymbolReader.printfFmt(ktc: KtcType): String = when (ktc) {
 	is KtcType.Ptr      -> "%p"
 	is KtcType.Nullable -> if (ktc.inner is KtcType.Ptr) "%p" else printfFmt(ktc.inner)
 	is KtcType.User     -> "%.*s"
+	is KtcType.COpaque  -> "%p"
 	else                -> "%.*s"
 	}
 

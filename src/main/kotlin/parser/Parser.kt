@@ -913,6 +913,7 @@ class Parser(private val tokens: List<Token>) {
         val annotations = parseAnnotations()
         // Receiver function type: T.(params) -> R or T.() -> R
         if (at(TokenType.IDENT) && peek().type == TokenType.DOT) {
+            val savedForReceiver = pos  // save before consuming — qualified names like c.SDL_Window must not be eaten here
             val recvName = expectIdent()
             expect(TokenType.DOT)
             if (at(TokenType.LPAREN)) {
@@ -933,6 +934,8 @@ class Parser(private val tokens: List<Token>) {
                     }
                 } catch (_: Exception) { }
                 pos = saved
+            } else {
+                pos = savedForReceiver  // not a receiver function type — let parseQualifiedName handle it
             }
         }
         // Function type: (T, T, ...) -> R
