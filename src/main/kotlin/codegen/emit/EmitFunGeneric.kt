@@ -102,6 +102,20 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 	currentSourceFile = prevSourceFile
 	}
 
+/* Register params for a star-projection extension function.
+Class types are registered as pointer types ("Type*") since they are stack-value receivers. */
+private fun CCodeGen.registerStarExtParams(params: List<Param>) {
+	for (p in params) {
+		val ktc = resolveTypeName(p.type)
+		val str = ktc.toInternalStr
+		defineVar(p.name, when {
+			p.type.nullable          -> "${str}?"
+			classes.containsKey(str) -> "${str}*"
+			else                     -> str
+			})
+		}
+	}
+
 /*
 Emit star-projection extension functions — one per known generic instantiation.
 For `fun MutableList<*>.sizeOf()`, if MutableList<Int> is known, emits
@@ -145,15 +159,7 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 
 		val prevState = saveFunState()
 		pushScope()
-		for (p in f.params) {
-			val vKtcP = resolveTypeName(p.type)
-			val vPStr = vKtcP.toInternalStr
-			defineVar(p.name, when {
-				p.type.nullable              -> "${vPStr}?"
-				classes.containsKey(vPStr)   -> "${vPStr}*"
-				else                         -> vPStr
-				})
-			}
+		registerStarExtParams(f.params)
 		if (isClassType) registerClassFields(classes[mangledRecvName]!!, "\$self->")
 		emitArrayParamCopies(f.params, "    ")
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
@@ -203,15 +209,7 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 
 		val prevState = saveFunState()
 		pushScope()
-		for (p in f.params) {
-			val vKtcP = resolveTypeName(p.type)
-			val vPStr = vKtcP.toInternalStr
-			defineVar(p.name, when {
-				p.type.nullable            -> "${vPStr}?"
-				classes.containsKey(vPStr) -> "${vPStr}*"
-				else                       -> vPStr
-				})
-			}
+		registerStarExtParams(f.params)
 		registerClassFields(ci, "\$self->")
 		emitArrayParamCopies(f.params, "    ")
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
