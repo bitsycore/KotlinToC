@@ -34,29 +34,26 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         val vRecvTypeKtc = inferExprTypeKtc(e.left)
         val vArgType = inferExprType(e.right) // single argument type string
         val vArgTypeKtc = inferExprTypeKtc(e.right)
-        val vSavedSubst = typeSubst // save outer typeSubst
-        if (vInfixDecl.typeParams.isNotEmpty()) {
-            typeSubst = inferInlineFunSubst(vInfixDecl, vRecvType, listOf(vArgType))
-        }
+        val vSubst   = if (vInfixDecl.typeParams.isNotEmpty()) inferInlineFunSubst(vInfixDecl, vRecvType, listOf(vArgType)) else null
         val vRetType = vInfixDecl.returnType // declared return TypeRef
-        if (vRetType != null) {
-            val vResultName = "\$ir${inlineCounter++}" // temp var for inline result
-            impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-            val vRecvExpr = genExpr(e.left) // C expression for receiver
-            emitInlineCall(
-                vInfixDecl, listOf(Arg(expr = e.right)), currentInd, false,
-                receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?"), resultVar = vResultName
-            )
-            typeSubst = vSavedSubst
-            return vResultName
-        } else {
-            val vRecvExpr = genExpr(e.left)
-            emitInlineCall(
-                vInfixDecl, listOf(Arg(expr = e.right)), currentInd, false,
-                receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?")
-            )
-            typeSubst = vSavedSubst
-            return ""
+        return withTypeSubst(vSubst) {
+            if (vRetType != null) {
+                val vResultName = "\$ir${inlineCounter++}" // temp var for inline result
+                impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
+                val vRecvExpr = genExpr(e.left) // C expression for receiver
+                emitInlineCall(
+                    vInfixDecl, listOf(Arg(expr = e.right)), currentInd, false,
+                    receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?"), resultVar = vResultName
+                )
+                vResultName
+            } else {
+                val vRecvExpr = genExpr(e.left)
+                emitInlineCall(
+                    vInfixDecl, listOf(Arg(expr = e.right)), currentInd, false,
+                    receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?")
+                )
+                ""
+            }
         }
     }
     // null comparison

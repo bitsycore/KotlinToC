@@ -8,6 +8,36 @@ import com.bitsycore.ktc.types.KtcType
 // Handles println, print, HeapAlloc family, arrayOf family, Array, StringBuffer.
 // Returns null when inName is not a recognised built-in (caller continues dispatch).
 
+/* Emit heap-allocation code for a single TypeRef (array or class or raw pointer).
+Shared by the explicit-type-arg branch and the target-type-inference branch of HeapAlloc. */
+private fun CCodeGen.genHeapAllocForTypeRef(inTa: TypeRef, inArgs: List<Arg>): String {
+	if ((inTa.name == "RawArray" || inTa.name == "Array") && inTa.typeArgs.isNotEmpty()) {
+		val vElemName = typeSubst[inTa.typeArgs[0].name] ?: inTa.typeArgs[0].name
+		val vElemC    = cTypeStr(vElemName)
+		val vSizeExpr = genExpr(inArgs[0].expr)
+		val vT        = tmp()
+		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
+		if (inTa.name == "Array") {
+			preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
+			} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
+		return vT
+		}
+	var vTypeName = typeSubst[inTa.name] ?: inTa.name
+	if (inTa.typeArgs.isNotEmpty() && classes.containsKey(vTypeName) && classes[vTypeName]!!.isGeneric)
+		vTypeName = mangledGenericName(vTypeName, inTa.typeArgs.map { it.name })
+	if (classes.containsKey(vTypeName)) {
+		val vCName  = typeFlatName(vTypeName)
+		val vArgStr = inArgs.joinToString(", ") { genExpr(it.expr) }
+		val vT      = tmp()
+		preStmts += "$vCName* $vT = ($vCName*)${tMalloc("sizeof($vCName)")};"
+		preStmts += "if ($vT) *$vT = ${vCName}_primaryConstructor($vArgStr);"
+		return vT
+		}
+	val vElemC = cTypeStr(vTypeName)
+	if (inArgs.isEmpty()) return "($vElemC*)${tMalloc("sizeof($vElemC)")}"
+	return "($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)(${genExpr(inArgs[0].expr)})")}"
+	}
+
 internal fun CCodeGen.genBuiltinCallOrNull(
 	inName:  String,
 	inArgs:  List<Arg>,
@@ -18,68 +48,8 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 		"print"   -> return genPrint(inArgs)
 
 		"HeapAlloc" -> {
-			if (inCall.typeArgs.isNotEmpty()) {
-				val vTa = inCall.typeArgs[0]
-				if (vTa.name == "RawArray" && vTa.typeArgs.isNotEmpty() ||
-					vTa.name == "Array"    && vTa.typeArgs.isNotEmpty()
-				) {
-					val vElemName = typeSubst[vTa.typeArgs[0].name] ?: vTa.typeArgs[0].name
-					val vElemC    = cTypeStr(vElemName)
-					val vSizeExpr = genExpr(inArgs[0].expr)
-					val vT        = tmp()
-					preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-					if (vTa.name == "Array") {
-						preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
-						} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
-					return vT
-					}
-				var vTypeName = typeSubst[vTa.name] ?: vTa.name
-				if (vTa.typeArgs.isNotEmpty() && classes.containsKey(vTypeName) && classes[vTypeName]!!.isGeneric) {
-					vTypeName = mangledGenericName(vTypeName, vTa.typeArgs.map { it.name })
-					}
-				if (classes.containsKey(vTypeName)) {
-					val vCName   = typeFlatName(vTypeName)
-					val vArgStr  = inArgs.joinToString(", ") { genExpr(it.expr) }
-					val vT       = tmp()
-					preStmts += "$vCName* $vT = ($vCName*)${tMalloc("sizeof($vCName)")};"
-					preStmts += "if ($vT) *$vT = ${vCName}_primaryConstructor($vArgStr);"
-					return vT
-					}
-				val vElemC = cTypeStr(vTypeName)
-				if (inArgs.isEmpty()) return "($vElemC*)${tMalloc("sizeof($vElemC)")}"
-				return "($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)(${genExpr(inArgs[0].expr)})")}"
-				}
-			if (heapAllocTargetType != null) {
-				val vTt = heapAllocTargetType!!
-				if (vTt.name == "RawArray" && vTt.typeArgs.isNotEmpty() ||
-					vTt.name == "Array"    && vTt.typeArgs.isNotEmpty()
-				) {
-					val vElemName = typeSubst[vTt.typeArgs[0].name] ?: vTt.typeArgs[0].name
-					val vElemC    = cTypeStr(vElemName)
-					val vSizeExpr = genExpr(inArgs[0].expr)
-					val vT        = tmp()
-					preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-					if (vTt.name == "Array") {
-						preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
-						} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
-					return vT
-					}
-				var vTypeName = typeSubst[vTt.name] ?: vTt.name
-				if (vTt.typeArgs.isNotEmpty() && classes.containsKey(vTypeName) && classes[vTypeName]!!.isGeneric) {
-					vTypeName = mangledGenericName(vTypeName, vTt.typeArgs.map { it.name })
-					}
-				if (classes.containsKey(vTypeName)) {
-					val vCName  = typeFlatName(vTypeName)
-					val vArgStr = inArgs.joinToString(", ") { genExpr(it.expr) }
-					val vT      = tmp()
-					preStmts += "$vCName* $vT = ($vCName*)${tMalloc("sizeof($vCName)")};"
-					preStmts += "if ($vT) *$vT = ${vCName}_primaryConstructor($vArgStr);"
-					return vT
-					}
-				val vElemC = cTypeStr(vTypeName)
-				if (inArgs.isEmpty()) return "($vElemC*)${tMalloc("sizeof($vElemC)")}"
-				return "($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)(${genExpr(inArgs[0].expr)})")}"
-				}
+			if (inCall.typeArgs.isNotEmpty()) return genHeapAllocForTypeRef(inCall.typeArgs[0], inArgs)
+			if (heapAllocTargetType != null)  return genHeapAllocForTypeRef(heapAllocTargetType!!, inArgs)
 			return tMalloc("(size_t)(${genExpr(inArgs[0].expr)})")
 			}
 

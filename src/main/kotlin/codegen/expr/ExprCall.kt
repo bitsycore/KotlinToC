@@ -18,36 +18,18 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             val vRecvExpr = genExpr(e.callee.obj)
             val vRecvKtType = inferExprType(e.callee.obj)?.removeSuffix("?")
             val vRetType = vInlineExt.returnType
-            val vSavedSubst = typeSubst
-            if (vInlineExt.typeParams.isNotEmpty()) {
-                val vArgTypes = e.args.map { inferExprType(it.expr) }
-                typeSubst = inferInlineFunSubst(vInlineExt, vRecvKtType, vArgTypes)
+            val vSubst = if (vInlineExt.typeParams.isNotEmpty()) inferInlineFunSubst(vInlineExt, vRecvKtType, e.args.map { inferExprType(it.expr) }) else null
+            return withTypeSubst(vSubst) {
+                if (vRetType == null) {
+                    emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType)
+                    ""
+                } else {
+                    val vResultName = "\$ir${inlineCounter++}"
+                    impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
+                    emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType, resultVar = vResultName)
+                    vResultName
+                }
             }
-            if (vRetType == null) {
-                emitInlineCall(
-                    vInlineExt,
-                    e.args,
-                    currentInd,
-                    false,
-                    receiverExpr = vRecvExpr,
-                    receiverType = vRecvKtType
-                )
-                typeSubst = vSavedSubst
-                return ""
-            }
-            val vResultName = "\$ir${inlineCounter++}"
-            impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-            emitInlineCall(
-                vInlineExt,
-                e.args,
-                currentInd,
-                false,
-                receiverExpr = vRecvExpr,
-                receiverType = vRecvKtType,
-                resultVar = vResultName
-            )
-            typeSubst = vSavedSubst
-            return vResultName
         }
 
         // ClassName.allocWith(allocator, ...) — allocator-based heap construction
@@ -122,27 +104,27 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         }
     }
     if (vInlineDecl != null) {
-        val vSavedSubst = typeSubst
-        if (vInlineDecl.typeParams.isNotEmpty()) {
-            val vSubst = mutableMapOf<String, String>()
+        val vSubst = if (vInlineDecl.typeParams.isNotEmpty()) {
+            val s = mutableMapOf<String, String>()
             for ((vI, vParam) in vInlineDecl.params.withIndex()) {
                 if (vI >= vArgs.size) break
                 val vArgType = inferExprType(vArgs[vI].expr)?.removeSuffix("?") ?: continue
-                matchTypeParam(vParam.type, vArgType, vInlineDecl.typeParams.toSet(), vSubst)
+                matchTypeParam(vParam.type, vArgType, vInlineDecl.typeParams.toSet(), s)
             }
-            if (vSubst.isNotEmpty()) typeSubst = vSubst
-        }
+            s.ifEmpty { null }
+        } else null
         val vRetType = vInlineDecl.returnType
-        if (vRetType == null) {
-            emitInlineCall(vInlineDecl, e.args, currentInd, false)
-            typeSubst = vSavedSubst
-            return ""
+        return withTypeSubst(vSubst) {
+            if (vRetType == null) {
+                emitInlineCall(vInlineDecl, e.args, currentInd, false)
+                ""
+            } else {
+                val vResultName = "\$ir${inlineCounter++}"
+                impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
+                emitInlineCall(vInlineDecl, e.args, currentInd, false, resultVar = vResultName)
+                vResultName
+            }
         }
-        val vResultName = "\$ir${inlineCounter++}"
-        impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-        emitInlineCall(vInlineDecl, e.args, currentInd, false, resultVar = vResultName)
-        typeSubst = vSavedSubst
-        return vResultName
     }
 
     // ── Active lambda call ────────────────────────────────────────
@@ -206,11 +188,11 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         if (vTypeArgNames != null) {
             val vMangled   = "${vName}_${vTypeArgNames.joinToString("_")}"
             genericFunInstantiations.getOrPut(vName) { mutableSetOf() }.add(vTypeArgNames)
-            val vPrevSubst = typeSubst
-            typeSubst      = vGenFun.typeParams.zip(vTypeArgNames).toMap()
-            val vExpandedArgs = prepareArgs(vArgs, vGenFun)
-            val vSized        = tryWrapSizedReturn("${funCName(vMangled)}($vExpandedArgs)", vGenFun.returnType)
-            typeSubst = vPrevSubst
+            val vNewSubst = vGenFun.typeParams.zip(vTypeArgNames).toMap()
+            val (vExpandedArgs, vSized) = withTypeSubst(vNewSubst) {
+                val ea = prepareArgs(vArgs, vGenFun)
+                Pair(ea, tryWrapSizedReturn("${funCName(vMangled)}($ea)", vGenFun.returnType))
+            }
             if (vSized != null) return vSized
             return "${funCName(vMangled)}($vExpandedArgs)"
         }

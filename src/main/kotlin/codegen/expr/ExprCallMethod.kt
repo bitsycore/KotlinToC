@@ -49,6 +49,17 @@ private fun CCodeGen.nullableIfaceCast(recv: String, baseName: String, ifaceConc
 	return t
 	}
 
+/* Compute the flat C name prefix for an extension function dispatch.
+When [concrete] is set (iface extension), the prefix is based on the concrete iface name.
+When [isPtrReceiver] is true, inserts _Ptr$ into the mangled name. */
+private fun CCodeGen.resolveExtFlatBase(base: String, flat: String, isPtrReceiver: Boolean, concrete: String?): String {
+	if (concrete != null) {
+		val f = typeFlatName(concrete)
+		return if (isPtrReceiver) "${f.removeSuffix("_$concrete")}_Ptr$$concrete" else f
+		}
+	return if (isPtrReceiver) "${flat.removeSuffix("_$base")}_Ptr$$base" else flat
+	}
+
 /* Compute the self-arg expression for an extension with a nullable receiver type declaration (isNullableRecv).
 When the receiver is already a stored Optional var: perform nullable iface cast if needed.
 Otherwise: wrap the value in optSome with optional iface conversion. */
@@ -119,10 +130,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val effectiveGenExt = genExt ?: ifaceExt
 		if (ifaceExt != null && ifaceExtConcrete != null) recordIfaceExtInstantiation(ifaceExt, ifaceExtConcrete)
 		val isPtrExt      = effectiveGenExt?.receiver?.annotations?.any { it.name == "Ptr" } == true
-		val flatPtrBase   = if (ifaceExtConcrete != null) {
-			val f = typeFlatName(ifaceExtConcrete)
-			if (isPtrExt) "${f.removeSuffix("_$ifaceExtConcrete")}_Ptr$${ifaceExtConcrete}" else f
-			} else if (isPtrExt) "${typeFlatName(pointerBase).removeSuffix("_$pointerBase")}_Ptr$${pointerBase}" else typeFlatName(pointerBase)
+		val flatPtrBase   = resolveExtFlatBase(pointerBase, typeFlatName(pointerBase), isPtrExt, ifaceExtConcrete)
 		val wrappedRecv = if (ifaceExtConcrete != null && isPtrExt) {
 			val cConcrete  = typeFlatName(pointerBase)
 			val typeId     = getTypeId(pointerBase)
@@ -198,10 +206,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.annotations?.any { it.name == "Ptr" } == true
 		val isNullableRecv = effectiveDecl?.receiver?.nullable == true
-		val flatBase       = if (ifaceConcrete != null) {
-			val f = typeFlatName(ifaceConcrete)
-			if (isPtrRecv) "${f.removeSuffix("_$ifaceConcrete")}_Ptr$${ifaceConcrete}" else f
-			} else if (isPtrRecv) "${vClassInfo.flatName.removeSuffix("_${vClassInfo.baseName}")}_Ptr$${vClassInfo.baseName}" else vClassInfo.flatName
+		val flatBase       = resolveExtFlatBase(vClassInfo.baseName, vClassInfo.flatName, isPtrRecv, ifaceConcrete)
 		val nullableRecv = hasNullableReceiverExt(recvType ?: "", method)
 		val selfArg = if (nullableRecv) {
 			val recvName    = (dot.obj as? NameExpr)?.name
