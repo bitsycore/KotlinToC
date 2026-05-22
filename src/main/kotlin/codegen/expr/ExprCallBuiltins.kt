@@ -8,6 +8,14 @@ import com.bitsycore.ktc.types.KtcType
 // Handles println, print, HeapAlloc family, arrayOf family, Array, StringBuffer.
 // Returns null when inName is not a recognised built-in (caller continues dispatch).
 
+/* Emit the final two preStmts that either build a VarArr or a raw pointer local,
+then return the tmp name. Shared by HeapAlloc, HeapArrayZero and HeapArrayResize. */
+private fun CCodeGen.finishHeapArrayVar(inT: String, inElemC: String, inSizeExpr: String, inIsArray: Boolean): String {
+	if (inIsArray) preStmts += "${varArrTypeName(inElemC)} $inT = {${inT}_ptr, $inSizeExpr};"
+	else           preStmts += "$inElemC* $inT = ${inT}_ptr;"
+	return inT
+	}
+
 /* Emit heap-allocation code for a single TypeRef (array or class or raw pointer).
 Shared by the explicit-type-arg branch and the target-type-inference branch of HeapAlloc. */
 private fun CCodeGen.genHeapAllocForTypeRef(inTa: TypeRef, inArgs: List<Arg>): String {
@@ -17,10 +25,7 @@ private fun CCodeGen.genHeapAllocForTypeRef(inTa: TypeRef, inArgs: List<Arg>): S
 		val vSizeExpr = genExpr(inArgs[0].expr)
 		val vT        = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-		if (inTa.name == "Array") {
-			preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
-			} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
-		return vT
+		return finishHeapArrayVar(vT, vElemC, vSizeExpr, inTa.name == "Array")
 		}
 	var vTypeName = typeSubst[inTa.name] ?: inTa.name
 	if (inTa.typeArgs.isNotEmpty() && classes.containsKey(vTypeName) && classes[vTypeName]!!.isGeneric)
@@ -37,6 +42,21 @@ private fun CCodeGen.genHeapAllocForTypeRef(inTa: TypeRef, inArgs: List<Arg>): S
 	if (inArgs.isEmpty()) return "($vElemC*)${tMalloc("sizeof($vElemC)")}"
 	return "($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)(${genExpr(inArgs[0].expr)})")}"
 	}
+
+/* Infer the capacity expression for the 2-arg StringBuffer constructor from the ptr argument. */
+private fun CCodeGen.strBufCapExpr(inPtrArg: Expr, inRawPtr: String): String =
+	when (inPtrArg) {
+		is NullLit -> "0"
+		is DotExpr if inPtrArg.name == "ptr" ->
+			"${genExpr(inPtrArg.obj)}.len"
+		is CallExpr if inPtrArg.callee is DotExpr && (inPtrArg.callee as DotExpr).name == "ptr" ->
+			"${genExpr((inPtrArg.callee as DotExpr).obj)}.len"
+		else -> {
+			val ktc = inferExprTypeKtc(inPtrArg)
+			// Use inRawPtr.len (the VarArr) not the extracted .ptr value
+			if (ktc is KtcType.Ptr && ktc.inner is KtcType.Arr) "$inRawPtr.len" else "0x7FFFFFFF"
+			}
+		}
 
 internal fun CCodeGen.genBuiltinCallOrNull(
 	inName:  String,
@@ -64,10 +84,7 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				val vSizeExpr = genExpr(inArgs[0].expr)
 				val vT        = tmp()
 				preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tCalloc("(size_t)($vSizeExpr)", "sizeof($vElemC)")};"
-				if (vIsArray) {
-					preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
-					} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
-				return vT
+				return finishHeapArrayVar(vT, vElemC, vSizeExpr, vIsArray)
 				}
 			if (inCall.typeArgs.isNotEmpty()) return genBranch(inCall.typeArgs[0])
 			if (heapAllocTargetType != null)  return genBranch(heapAllocTargetType!!)
@@ -85,10 +102,7 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				val vT        = tmp()
 				val vRawPtrExpr = if (vIsArray) "($vPtrExpr).ptr" else vPtrExpr
 				preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tRealloc(vRawPtrExpr, "sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-				if (vIsArray) {
-					preStmts += "${varArrTypeName(vElemC)} $vT = {${vT}_ptr, $vSizeExpr};"
-					} else { preStmts += "$vElemC* $vT = ${vT}_ptr;" }
-				return vT
+				return finishHeapArrayVar(vT, vElemC, vSizeExpr, vIsArray)
 				}
 			if (inCall.typeArgs.isNotEmpty()) return genBranch(inCall.typeArgs[0])
 			if (heapAllocTargetType != null)  return genBranch(heapAllocTargetType!!)
@@ -161,46 +175,17 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 			}
 		}
 
-	// StringBuffer(ptr, len, cap)
-	if (inName == "StringBuffer" && inArgs.size == 3
+	// StringBuffer(ptr, len[, cap])
+	if (inName == "StringBuffer" && inArgs.size in 2..3
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")
 	) {
 		val vPtrRaw  = genExpr(inArgs[0].expr)
-		val vPtrKtc3 = inferExprTypeKtc(inArgs[0].expr)
-		val vPtrCore = (vPtrKtc3 as? KtcType.Nullable)?.inner ?: vPtrKtc3
+		val vPtrKtc  = inferExprTypeKtc(inArgs[0].expr)
+		val vPtrCore = (vPtrKtc as? KtcType.Nullable)?.inner ?: vPtrKtc
 		val vPtrExpr = if (vPtrCore?.isArrayLike == true && vPtrCore.asArr?.sized == null) "$vPtrRaw.ptr" else vPtrRaw
 		val vLenExpr = genExpr(inArgs[1].expr)
-		val vCapExpr = genExpr(inArgs[2].expr)
-		return "(ktc_StrBuf){$vPtrExpr, $vLenExpr, $vCapExpr}"
-		}
-	// StringBuffer(ptr, len)
-	if (inName == "StringBuffer" && inArgs.size == 2
-		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")
-	) {
-		val vPtrRaw  = genExpr(inArgs[0].expr)
-		val vPtrKtc2 = inferExprTypeKtc(inArgs[0].expr)
-		val vPtrCore = (vPtrKtc2 as? KtcType.Nullable)?.inner ?: vPtrKtc2
-		val vPtrExpr = if (vPtrCore?.isArrayLike == true && vPtrCore.asArr?.sized == null) "$vPtrRaw.ptr" else vPtrRaw
-		val vLenExpr = genExpr(inArgs[1].expr)
-		val vCapExpr = when (inArgs[0].expr) {
-			is NullLit -> "0"
-			is DotExpr if (inArgs[0].expr as DotExpr).name == "ptr" -> {
-				val vArrExpr = genExpr((inArgs[0].expr as DotExpr).obj)
-				"$vArrExpr.len"
-				}
-			is CallExpr if (inArgs[0].expr as CallExpr).callee is DotExpr
-					&& ((inArgs[0].expr as CallExpr).callee as DotExpr).name == "ptr" -> {
-				val vDot     = (inArgs[0].expr as CallExpr).callee as DotExpr
-				val vArrExpr = genExpr(vDot.obj)
-				"$vArrExpr.len"
-				}
-			else -> {
-				val vPtrKtc = inferExprTypeKtc(inArgs[0].expr)
-				// Use vPtrRaw.len (the VarArr) not vPtrExpr.len (the extracted pointer)
-				if (vPtrKtc is KtcType.Ptr && vPtrKtc.inner is KtcType.Arr) "${vPtrRaw}.len"
-				else "0x7FFFFFFF"
-				}
-			}
+		val vCapExpr = if (inArgs.size == 3) genExpr(inArgs[2].expr)
+			else strBufCapExpr(inArgs[0].expr, vPtrRaw)
 		return "(ktc_StrBuf){$vPtrExpr, $vLenExpr, $vCapExpr}"
 		}
 
