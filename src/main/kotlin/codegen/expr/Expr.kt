@@ -160,7 +160,6 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val lt = inferExprType(e.left)
         val l = genExpr(e.left)
         val rt = inferExprType(e.right)
-        val rtKtc = inferExprTypeKtc(e.right)
         // If right side returns Nothing or Unit/void (e.g., error("msg")), emit non-null assertion
         if (rt != null && (rt == "Nothing" || rt == "Unit" || rt.removeSuffix("?") == "Nothing")) {
             val baseType = lt?.removeSuffix("?") ?: "void*"
