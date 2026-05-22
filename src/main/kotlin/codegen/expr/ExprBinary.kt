@@ -10,9 +10,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     /* `to` infix → Pair; use stdlib path when stdlib Pair class is loaded, else intrinsic */
     if (e.op == "to") {
                 val aType = inferExprType(e.left) ?: "Int" // left operand type
-        val aTypeKtc = inferExprTypeKtc(e.left)
         val bType = inferExprType(e.right) ?: "Int" // right operand type
-        val bTypeKtc = inferExprTypeKtc(e.right)
         if (genericClassDecls.containsKey("Pair")) {
             // stdlib Pair<A,B> is active — emit primaryConstructor call
             val vMangledName = recordGenericInstantiation("Pair", listOf(aType, bType)) // e.g. "Pair$2_Int_String"
@@ -31,9 +29,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     val vInfixDecl = inlineExtFunDecls[e.op]
     if (vInfixDecl != null) {
         val vRecvType = inferExprType(e.left) // receiver type string
-        val vRecvTypeKtc = inferExprTypeKtc(e.left)
-        val vArgType = inferExprType(e.right) // single argument type string
-        val vArgTypeKtc = inferExprTypeKtc(e.right)
+        val vArgType  = inferExprType(e.right) // single argument type string
         val vSubst   = if (vInfixDecl.typeParams.isNotEmpty()) inferInlineFunSubst(vInfixDecl, vRecvType, listOf(vArgType)) else null
         val vRetType = vInfixDecl.returnType // declared return TypeRef
         return withTypeSubst(vSubst) {
@@ -266,7 +262,6 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     if (e.op == "shr") return "(${genExpr(e.left)} >> ${genExpr(e.right)})"
     if (e.op == "ushr") {
         val leftType = inferExprType(e.left)
-        val leftTypeKtc = inferExprTypeKtc(e.left)
         val l = genExpr(e.left)
         val r = genExpr(e.right)
         // For unsigned types, >> is already unsigned; for signed, cast to unsigned first
