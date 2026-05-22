@@ -66,7 +66,7 @@ internal fun CCodeGen.applyGuardSmartCast(s: Stmt) {
     // Body must end with an early-exit statement
     val lastStmt = ifExpr.then.stmts.lastOrNull() ?: return
     if (lastStmt !is ReturnStmt && lastStmt !is BreakStmt && lastStmt !is ContinueStmt) return
-    val casts = extractElseSmartCasts(ifExpr.cond)
+    val casts = extractSmartCasts(ifExpr.cond, forElse = true)
     val outerInd = currentInd.removeSuffix("    ")
     for ((name, nonNullType) in casts) {
         impl.appendLine("${outerInd}// smart-cast: '$name' narrowed to '$nonNullType'")

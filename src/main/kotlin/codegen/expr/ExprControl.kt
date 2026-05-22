@@ -13,31 +13,34 @@ internal fun CCodeGen.findCommonInterface(type1: String?, type2: String?): Strin
     return common.firstOrNull()
 }
 
-/** Emit block statements into preStmts, wrapping the last expression into an interface struct. */
-internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concreteType: String, ifaceName: String, indent: String) {
-    val cConcrete = typeFlatName(concreteType)
-    val impls = interfaceImplementors[ifaceName] ?: emptyList()
-    val dataName = ifaceDataName(concreteType)
-    val fieldPath = if (impls.isEmpty()) ".$dataName" else ".data.$dataName"
+/** Emit block statements into preStmts, delegating the last expression to [assignLast]. */
+private fun CCodeGen.emitBlockIntoTempBase(b: Block, indent: String, assignLast: (Expr) -> Unit) {
     for ((i, s) in b.stmts.withIndex()) {
         if (i == b.stmts.lastIndex) {
             val expr = when (s) {
-                is ExprStmt -> s.expr
+                is ExprStmt   -> s.expr
                 is ReturnStmt -> s.value
-                else -> null
-            }
-            if (expr != null) {
-                val valExpr = genExpr(expr)
-                preStmts += "$indent$tempVar$fieldPath = $valExpr;"
-                preStmts += "$indent$tempVar.vt = &${cConcrete}_${ifaceName}_vt;"
+                else          -> null
+                }
+            if (expr != null) assignLast(expr) else emitStmtToPreStmts(s, indent)
             } else {
-                emitStmtToPreStmts(s, indent)
-            }
-        } else {
             emitStmtToPreStmts(s, indent)
+            }
         }
     }
-}
+
+/** Emit block statements into preStmts, wrapping the last expression into an interface struct. */
+internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concreteType: String, ifaceName: String, indent: String) {
+    val cConcrete = typeFlatName(concreteType)
+    val impls     = interfaceImplementors[ifaceName] ?: emptyList()
+    val dataName  = ifaceDataName(concreteType)
+    val fieldPath = if (impls.isEmpty()) ".$dataName" else ".data.$dataName"
+    emitBlockIntoTempBase(b, indent) { expr ->
+        val valExpr = genExpr(expr)
+        preStmts += "$indent$tempVar$fieldPath = $valExpr;"
+        preStmts += "$indent$tempVar.vt = &${cConcrete}_${ifaceName}_vt;"
+        }
+    }
 
 // ── if expression (as C ternary or temp) ─────────────────────────
 
@@ -94,27 +97,9 @@ internal fun blockAsSingleExpr(b: Block): Expr? {
     return null
 }
 
-/** Emit block statements into preStmts, assigning last expression to tempVar. */
-internal fun CCodeGen.emitBlockIntoTemp(b: Block, tempVar: String, indent: String) {
-    for ((i, s) in b.stmts.withIndex()) {
-        if (i == b.stmts.lastIndex) {
-            // Last statement: assign its value to temp
-            val expr = when (s) {
-                is ExprStmt -> s.expr
-                is ReturnStmt -> s.value
-                else -> null
-            }
-            if (expr != null) {
-                preStmts += "$indent$tempVar = ${genExpr(expr)};"
-            } else {
-                // Non-expression last statement — just emit it
-                emitStmtToPreStmts(s, indent)
-            }
-        } else {
-            emitStmtToPreStmts(s, indent)
-        }
-    }
-}
+/** Emit block statements into preStmts, assigning the last expression to [tempVar]. */
+internal fun CCodeGen.emitBlockIntoTemp(b: Block, tempVar: String, indent: String) =
+    emitBlockIntoTempBase(b, indent) { expr -> preStmts += "$indent$tempVar = ${genExpr(expr)};" }
 
 /** Emit a statement into preStmts (for hoisting into if/when expression bodies). */
 internal fun CCodeGen.emitStmtToPreStmts(s: Stmt, indent: String) {

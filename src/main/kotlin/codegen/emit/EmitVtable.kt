@@ -7,6 +7,27 @@ import com.bitsycore.ktc.codegen.*
 
 // ── Vtable struct + cast function emission ────────────────────────
 
+/* C return type string for a vtable method (handles nullable and plain returns). */
+private fun CCodeGen.vtableMethodCRet(m: FunDecl): String {
+	val nullable = m.returnType != null && m.returnType.nullable
+	val retKtc   = m.returnType?.let { resolveTypeName(it) }
+	val resolved = retKtc?.toInternalStr ?: ""
+	return when {
+		nullable            -> optCTypeName(resolved)
+		m.returnType != null -> cType(m.returnType)
+		else                -> "void"
+		}
+	}
+
+/* Comma-prefixed param type list for vtable function pointer cast.
+Pass [withNames] = true to include parameter names (for wrapper bodies), false for casts only. */
+private fun CCodeGen.vtableMethodParamCast(m: FunDecl, withNames: Boolean): String =
+	m.params.joinToString("") { p ->
+		val ktc  = resolveTypeName(p.type)
+		val type = if (p.type.nullable) optCTypeName(ktc.toInternalStr) else cType(p.type)
+		if (withNames) ", $type ${p.name}" else ", $type"
+		}
+
 /* Emit a vtable struct for a class implementing an interface.
 Shared by emitInterfaceVtablesForClass and emitTransitiveInterfaceVtables. */
 internal fun CCodeGen.emitVtable(
@@ -17,33 +38,26 @@ internal fun CCodeGen.emitVtable(
 	props:     List<PropDecl>,
 	methods:   List<FunDecl>
 	) {
-	val vIsObject = objects.containsKey(className)
+	val isObject = objects.containsKey(className)
 
 	// For objects, emit thin wrapper functions matching vtable signatures.
 	// Object methods have no $self param but vtables require void* $self first.
-	if (vIsObject) {
+	if (isObject) {
 		if (methods.none { it.name == "dispose" } && !hasDisposeOverride(className)) {
 			impl.appendLine("static void ${cClass}_${ifaceName}_dispose_vt(void* \$self) { (void)\$self; }")
 			impl.appendLine()
 			}
 		for (m in methods) {
-			val vMReturnsNullable = m.returnType != null && m.returnType.nullable
-			val vMRetKtc          = if (m.returnType != null) resolveTypeName(m.returnType) else null
-			val vMRetResolved     = vMRetKtc?.toInternalStr ?: ""
-			val vCRet             = if (vMReturnsNullable) optCTypeName(vMRetResolved) else if (m.returnType != null) cType(m.returnType) else "void"
-			val vCastExtra        = m.params.joinToString("") { p ->
-				val vKtcParam = resolveTypeName(p.type); val vPStr = vKtcParam.toInternalStr
-				if (p.type.nullable) ", ${optCTypeName(vPStr)} ${p.name}" else ", ${cType(p.type)} ${p.name}"
-				}
-			val vExtraArgs = m.params.joinToString(", ") { it.name }
-			val vVtName    = "${cClass}_${ifaceName}_${m.name}_vt"
-			val vTargetFn  = if (m.name == "dispose" && !hasDisposeOverride(className)) null
-				else "${cClass}_${m.name}"
-			impl.appendLine("static $vCRet $vVtName(void* \$self$vCastExtra) {")
+			val cRet      = vtableMethodCRet(m)
+			val castExtra = vtableMethodParamCast(m, withNames = true)
+			val extraArgs = m.params.joinToString(", ") { it.name }
+			val vtName    = "${cClass}_${ifaceName}_${m.name}_vt"
+			val targetFn  = if (m.name == "dispose" && !hasDisposeOverride(className)) null else "${cClass}_${m.name}"
+			impl.appendLine("static $cRet $vtName(void* \$self$castExtra) {")
 			impl.appendLine("    (void)\$self;")
-			if (vTargetFn != null) {
-				if (vCRet != "void") impl.appendLine("    return $vTargetFn($vExtraArgs);")
-				else impl.appendLine("    $vTargetFn($vExtraArgs);")
+			if (targetFn != null) {
+				if (cRet != "void") impl.appendLine("    return $targetFn($extraArgs);")
+				else impl.appendLine("    $targetFn($extraArgs);")
 				}
 			impl.appendLine("}")
 			impl.appendLine()
@@ -52,28 +66,22 @@ internal fun CCodeGen.emitVtable(
 
 	impl.appendLine("const ${cIface}_vt ${cClass}_${ifaceName}_vt = {")
 	for (p in props) {
-		val vCt = if (p.type != null) cType(p.type) else "ktc_Int"
-		impl.appendLine("    ($vCt (*)(void*)) ${cClass}_${p.name}_get,")
+		val ct = if (p.type != null) cType(p.type) else "ktc_Int"
+		impl.appendLine("    ($ct (*)(void*)) ${cClass}_${p.name}_get,")
 		}
 	for (m in methods) {
-		val vMReturnsNullable = m.returnType != null && m.returnType.nullable
-		val vMRetKtc          = if (m.returnType != null) resolveTypeName(m.returnType) else null
-		val vMRetResolved     = vMRetKtc?.toInternalStr ?: ""
-		val vCRet             = if (vMReturnsNullable) optCTypeName(vMRetResolved) else if (m.returnType != null) cType(m.returnType) else "void"
-		val vExtraCast        = m.params.joinToString("") { p ->
-			val vKtcParam = resolveTypeName(p.type); val vPStr = vKtcParam.toInternalStr
-			if (p.type.nullable) ", ${optCTypeName(vPStr)}" else ", ${cType(p.type)}"
-			}
-		val vFn = if (vIsObject) "${cClass}_${ifaceName}_${m.name}_vt"
+		val cRet      = vtableMethodCRet(m)
+		val extraCast = vtableMethodParamCast(m, withNames = false)
+		val fn = if (isObject) "${cClass}_${ifaceName}_${m.name}_vt"
 			else if (m.name == "dispose" && !hasDisposeOverride(className)) "ktc_core_noop_dispose"
 			else "${cClass}_${m.name}"
-		impl.appendLine("    ($vCRet (*)(void*$vExtraCast)) $vFn,")
+		impl.appendLine("    ($cRet (*)(void*$extraCast)) $fn,")
 		}
 	if (methods.none { it.name == "dispose" }) {
-		val vFnDispose = if (vIsObject) "${cClass}_${ifaceName}_dispose_vt"
+		val fnDispose = if (isObject) "${cClass}_${ifaceName}_dispose_vt"
 			else if (!hasDisposeOverride(className)) "ktc_core_noop_dispose"
 			else "${cClass}_dispose"
-		impl.appendLine("    (void (*)(void*)) $vFnDispose,")
+		impl.appendLine("    (void (*)(void*)) $fnDispose,")
 		}
 	impl.appendLine("};")
 	impl.appendLine()
