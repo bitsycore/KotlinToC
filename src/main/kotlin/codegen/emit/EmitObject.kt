@@ -225,7 +225,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         currentFnReturnKtcType     = vRetKtcM
         if (returnsSizedArray) {
             currentFnSizedArraySize     = m.returnType.getSizeAnnotation()!!
-            currentFnSizedArrayElemType = cTypeStr(vRetKtcM!!.asArr!!.elem)
+            currentFnSizedArrayElemType = vRetKtcM!!.asArr!!.elem
         }
         currentFnReturnsSizedString = returnsSizedString
         if (returnsSizedString) currentFnSizedStringSize = m.returnType.getSizeAnnotation()!!

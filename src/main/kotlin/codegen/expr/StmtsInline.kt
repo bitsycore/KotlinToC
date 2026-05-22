@@ -87,8 +87,8 @@ internal fun CCodeGen.emitInlineCall(
 		val vExpr  = vArg.expr
 		if (vExpr is LambdaExpr) {
 			val vFuncParams = vParam.type.funcParams ?: emptyList()
-			val vParamTypes = vFuncParams.map { resolveTypeName(it).toInternalStr }
-			val vRetType    = vParam.type.funcReturn?.let { resolveTypeName(it).toInternalStr }
+			val vParamTypes = vFuncParams.map { resolveTypeName(it) }
+			val vRetType    = vParam.type.funcReturn?.let { resolveTypeName(it) }
 			vNewLambdas[vParam.name] = ActiveLambda(vExpr, vParamTypes, vRetType)
 			} else {
 			val vResolvedKtc    = resolveTypeName(vParam.type)
@@ -170,7 +170,7 @@ internal fun CCodeGen.emitLambdaCall(active: ActiveLambda, callArgs: List<Arg>, 
 			// fall back to lambdaParamTypes["\$this"] which was set by emitInlineCall's receiverType
 			val vT = (if (vArg.expr is ThisExpr) lambdaParamTypes["\$this"] else null)
 				?: inferExprType(vArg.expr)
-				?: active.paramTypes.getOrElse(i) { "" }
+				?: active.paramTypes.getOrNull(i)?.toInternalStr ?: ""
 			if (vT.isNotEmpty()) lambdaParamTypes[pName] = vT
 			}
 		}

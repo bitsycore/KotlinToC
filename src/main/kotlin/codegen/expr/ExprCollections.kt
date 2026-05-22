@@ -2,7 +2,6 @@ package com.bitsycore.ktc.codegen.expr
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
-import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.genArrayOfExpr(
     name: String,
@@ -45,7 +44,7 @@ internal fun CCodeGen.genArrayOfExpr(
     val t = tmp()
     /* Optimization: when this call is the direct return value of a @Size(N) function whose element
     type and count match, emit the ktc_Array_T_N struct inline — no raw array + memcpy needed. */
-    if (currentFnReturnsSizedArray && n == currentFnSizedArraySize && elemType == currentFnSizedArrayElemType) {
+    if (currentFnReturnsSizedArray && n == currentFnSizedArraySize && elemType == currentFnSizedArrayElemType?.let { cTypeStr(it) }) {
         val vStructType = sizedArrayCTypeName(elemType, n)
         preStmts += "$vStructType $t = {{$vals}};"  // struct has only arr[N], no len field
         arrayOfSizedStructVars += t

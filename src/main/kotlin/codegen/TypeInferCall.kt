@@ -154,7 +154,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 				return if (genFun.returnType.nullable) KtcType.Nullable(result).toInternalStr else result.toInternalStr
 				}
 			}
-		activeLambdas[name]?.returnType?.let { return it }
+		activeLambdas[name]?.returnType?.let { return it.toInternalStr }
 		funSigs[name]?.returnType?.let {
 			val base = resolveTypeName(it)
 			return if (it.nullable) KtcType.Nullable(base).toInternalStr else base.toInternalStr
@@ -179,7 +179,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 	return null
 	}
 
-/** Resolve a method return type, applying generic bindings if the class is a concrete generic instantiation. */
+/* Resolve a method return type as a String, applying generic bindings for concrete generic instantiations. */
 internal fun CCodeGen.resolveMethodReturnType(className: String, returnType: TypeRef?): String {
 	if (returnType == null) return "Unit"
 	val bindings = genericTypeBindings[className]
@@ -191,6 +191,20 @@ internal fun CCodeGen.resolveMethodReturnType(className: String, returnType: Typ
 		result
 		} else resolveTypeName(returnType)
 	return if (returnType.nullable) KtcType.Nullable(ktc).toInternalStr else ktc.toInternalStr
+	}
+
+/* KtcType variant — avoids the toInternalStr round-trip at call sites that already want KtcType. */
+internal fun CCodeGen.resolveMethodReturnTypeKtc(inClassName: String, inReturnType: TypeRef?): KtcType {
+	if (inReturnType == null) return KtcType.Void
+	val vBindings = genericTypeBindings[inClassName]
+	val vKtc = if (vBindings != null) {
+		val vSaved = typeSubst
+		typeSubst = vBindings
+		val vResult = resolveTypeName(inReturnType)
+		typeSubst = vSaved
+		vResult
+		} else resolveTypeName(inReturnType)
+	return if (inReturnType.nullable) KtcType.Nullable(vKtc) else vKtc
 	}
 
 internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): String? {

@@ -263,7 +263,8 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             val expr = genExpr(s.value)
             flushPreStmts(ind)
             if (currentFnReturnsSizedArray) {
-                val vStructType = sizedArrayCTypeName(currentFnSizedArrayElemType, currentFnSizedArraySize)
+                val vElemCStr   = cTypeStr(currentFnSizedArrayElemType!!)
+                val vStructType = sizedArrayCTypeName(vElemCStr, currentFnSizedArraySize)
                 if (expr in arrayOfSizedStructVars) {
                     // Optimization: genArrayOfExpr already emitted a ktc_Array_T_N struct — return it directly.
                     if (deferStack.isNotEmpty()) {
@@ -283,11 +284,11 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     if (deferStack.isNotEmpty()) {
                         val vT = tmp()
                         impl.appendLine("${ind}$vStructType $vT;")
-                        impl.appendLine("${ind}memcpy($vT.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType));")
+                        impl.appendLine("${ind}memcpy($vT.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($vElemCStr));")
                         emitDeferredBlocks(ind)
                         impl.appendLine("${ind}return $vT;")
                     } else {
-                        impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($currentFnSizedArrayElemType)); return \$r; }")
+                        impl.appendLine("${ind}{ $vStructType \$r; memcpy(\$r.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($vElemCStr)); return \$r; }")
                     }
                 }
             } else if (currentFnReturnsSizedString) {

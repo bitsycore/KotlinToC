@@ -1,10 +1,11 @@
 package com.bitsycore.ktc.codegen.expr
 
-import com.bitsycore.ktc.ast.*
-import com.bitsycore.ktc.ast.Annotation
+import com.bitsycore.ktc.ast.BinExpr
+import com.bitsycore.ktc.ast.Expr
+import com.bitsycore.ktc.ast.ForStmt
+import com.bitsycore.ktc.ast.NameExpr
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
-import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.types.KtcType
 
 // ── for ──────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
         is BinExpr if rangeExpr.op == ".." -> {
             val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
             impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} <= ${genExpr(rangeExpr.right)}; $inc) {")
-            pushScope(); defineVar(s.varName, "Int")
+            pushScope(); defineVarKtc(s.varName, KtcType.Prim(KtcType.PrimKind.Int))
             emitBlock(s.body, ind, method)
             popScope()
             impl.appendLine("$ind}")
@@ -36,7 +37,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
         is BinExpr if (rangeExpr.op == "until" || rangeExpr.op == "..<") -> {
             val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
             impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} < ${genExpr(rangeExpr.right)}; $inc) {")
-            pushScope(); defineVar(s.varName, "Int")
+            pushScope(); defineVarKtc(s.varName, KtcType.Prim(KtcType.PrimKind.Int))
             emitBlock(s.body, ind, method)
             popScope()
             impl.appendLine("$ind}")
@@ -45,7 +46,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
         is BinExpr if rangeExpr.op == "downTo" -> {
             val dec = if (step != null) "${s.varName} -= $step" else "${s.varName}--"
             impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} >= ${genExpr(rangeExpr.right)}; $dec) {")
-            pushScope(); defineVar(s.varName, "Int")
+            pushScope(); defineVarKtc(s.varName, KtcType.Prim(KtcType.PrimKind.Int))
             emitBlock(s.body, ind, method)
             popScope()
             impl.appendLine("$ind}")
@@ -92,7 +93,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                     val elemCType = cTypeStr(elemKtType)
                     impl.appendLine("$ind    $elemCType ${s.varName} = ${typeFlatName(iterClass)}_next(&$iterVar);")
                 }
-                pushScope(); defineVar(s.varName, elemKtType)
+                pushScope(); defineVarKtc(s.varName, elemKtType)
                 emitBlock(s.body, ind, method)
                 popScope()
                 impl.appendLine("$ind}")
@@ -108,7 +109,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 val vElemAccess = if (vIsTrampolined || vIsSizedArr) "$arrExpr[$idx]" else "$arrExpr.ptr[$idx]"
                 impl.appendLine("${ind}for (ktc_Int $idx = 0; $idx < $sizeExpr; $idx++) {")
                 impl.appendLine("$ind    $elemType ${s.varName} = $vElemAccess;")
-                pushScope(); defineVar(s.varName, if (arrTypeKtc != null) arrayElementKtTypeKtc(arrTypeKtc) else "Int")
+                pushScope(); defineVarKtc(s.varName, arrTypeKtc?.asArr?.elem ?: KtcType.Prim(KtcType.PrimKind.Int))
                 emitBlock(s.body, ind, method)
                 popScope()
                 impl.appendLine("$ind}")
@@ -134,7 +135,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                 val vIterTypeCI = classes[iterType]!!                                  // ClassInfo for the iterator type
                 val nextMethod = vIterTypeCI.methods.find { it.name == "next" }
                 if (nextMethod?.returnType != null) {
-                    val elemType = resolveMethodReturnType(iterType, nextMethod.returnType)
+                    val elemType = resolveMethodReturnTypeKtc(iterType, nextMethod.returnType)
                     return IteratorInfo(iterType, vIterTypeCI.flatName, elemType, false)
                 }
             } else if (interfaces.containsKey(iterType)) {
@@ -143,7 +144,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                 val allMethods = collectAllIfaceMethods(vIterTypeII)
                 val nextMethod = allMethods.find { it.name == "next" && it.isOperator }
                 if (nextMethod?.returnType != null) {
-                    val elemType = resolveMethodReturnType(iterType, nextMethod.returnType)
+                    val elemType = resolveMethodReturnTypeKtc(iterType, nextMethod.returnType)
                     return IteratorInfo(iterType, vIterTypeII.flatName, elemType, false)
                 }
             }
@@ -160,7 +161,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                 val vIndirectIterCI = classes[iterType]!!                              // ClassInfo for the iterator type
                 val nextMethod = vIndirectIterCI.methods.find { it.name == "next" }
                 if (nextMethod?.returnType != null) {
-                    val elemType = resolveMethodReturnType(iterType, nextMethod.returnType)
+                    val elemType = resolveMethodReturnTypeKtc(iterType, nextMethod.returnType)
                     return IteratorInfo(iterType, vIndirectIterCI.flatName, elemType, true)
                 }
             }
@@ -185,7 +186,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                 val vIndirectIterCI = classes[iterType]!!
                 val nextMethod = vIndirectIterCI.methods.find { it.name == "next" }
                 if (nextMethod?.returnType != null) {
-                    val elemType = resolveMethodReturnType(iterType, nextMethod.returnType)
+                    val elemType = resolveMethodReturnTypeKtc(iterType, nextMethod.returnType)
                     return IteratorInfo(iterType, vIndirectIterCI.flatName, elemType, true)
                 }
             } else if (interfaces.containsKey(iterType)) {
@@ -193,7 +194,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                 val allIterMethods = collectAllIfaceMethods(vIndirectIterII)
                 val nextMethod = allIterMethods.find { it.name == "next" && it.isOperator }
                 if (nextMethod?.returnType != null) {
-                    val elemType = resolveMethodReturnType(iterType, nextMethod.returnType)
+                    val elemType = resolveMethodReturnTypeKtc(iterType, nextMethod.returnType)
                     return IteratorInfo(iterType, vIndirectIterII.flatName, elemType, true)
                 }
             }
@@ -210,7 +211,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                 val vIfaceIterCI = classes[iterType]!!                                 // ClassInfo for the iterator type
                 val nextMethod = vIfaceIterCI.methods.find { it.name == "next" }
                 if (nextMethod?.returnType != null) {
-                    val elemType = resolveMethodReturnType(iterType, nextMethod.returnType)
+                    val elemType = resolveMethodReturnTypeKtc(iterType, nextMethod.returnType)
                     return IteratorInfo(iterType, vIfaceIterCI.flatName, elemType, false)
                 }
             }

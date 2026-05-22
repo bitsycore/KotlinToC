@@ -50,7 +50,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	currentFnOptReturnCTypeName = optRetCType
 	if (returnsSizedArray) {
 		currentFnSizedArraySize     = f.returnType.getSizeAnnotation()!!
-		currentFnSizedArrayElemType = cTypeStr(vRetKtc!!.asArr!!.elem)
+		currentFnSizedArrayElemType = vRetKtc!!.asArr!!.elem
 		}
 	currentFnReturnsSizedString = returnsSizedString
 	if (returnsSizedString) currentFnSizedStringSize = f.returnType.getSizeAnnotation()!!
@@ -144,7 +144,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 	currentFnOptReturnCTypeName = optRetCType
 	if (returnsSizedArray) {
 		currentFnSizedArraySize     = f.returnType.getSizeAnnotation()!!
-		currentFnSizedArrayElemType = cTypeStr(vRetKtc!!.asArr!!.elem)
+		currentFnSizedArrayElemType = vRetKtc!!.asArr!!.elem
 		}
 	currentFnReturnsSizedString = returnsSizedString
 	if (returnsSizedString) currentFnSizedStringSize = f.returnType.getSizeAnnotation()!!

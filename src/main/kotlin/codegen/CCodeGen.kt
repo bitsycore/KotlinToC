@@ -571,7 +571,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var currentFnReturnsArray: Boolean      get() = fnCtx.returnsArray;       set(v) { fnCtx.returnsArray = v }
     internal var currentFnReturnsSizedArray: Boolean get() = fnCtx.returnsSizedArray;  set(v) { fnCtx.returnsSizedArray = v }
     internal var currentFnSizedArraySize: Int        get() = fnCtx.sizedArraySize;     set(v) { fnCtx.sizedArraySize = v }
-    internal var currentFnSizedArrayElemType: String get() = fnCtx.sizedArrayElemType; set(v) { fnCtx.sizedArrayElemType = v }
+    internal var currentFnSizedArrayElemType: KtcType? get() = fnCtx.sizedArrayElemType; set(v) { fnCtx.sizedArrayElemType = v }
     internal var currentFnReturnsSizedString: Boolean get() = fnCtx.returnsSizedString; set(v) { fnCtx.returnsSizedString = v }
     internal var currentFnSizedStringSize: Int       get() = fnCtx.sizedStringSize;    set(v) { fnCtx.sizedStringSize = v }
     internal var currentFnReturnType: String         get() = fnCtx.returnType;         set(v) { fnCtx.returnType = v }

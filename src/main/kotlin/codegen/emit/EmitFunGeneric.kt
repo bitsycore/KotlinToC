@@ -68,7 +68,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 		currentFnReturnsSizedArray  = returnsSizedArray
 		if (returnsSizedArray) {
 			currentFnSizedArraySize     = f.returnType.getSizeAnnotation()!!
-			currentFnSizedArrayElemType = cTypeStr(vRetKtc!!.asArr!!.elem)
+			currentFnSizedArrayElemType = vRetKtc!!.asArr!!.elem
 			}
 		currentFnReturnsSizedString = returnsSizedString
 		if (returnsSizedString) currentFnSizedStringSize = f.returnType.getSizeAnnotation()!!

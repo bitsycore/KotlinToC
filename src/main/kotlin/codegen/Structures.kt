@@ -145,10 +145,10 @@ internal data class IfaceInfo(
     override val properties: List<PropertyDef> get() = emptyList()
 }
 
-/** active inline lambda */
-internal data class ActiveLambda(val expr: LambdaExpr, val paramTypes: List<String>, val returnType: String? = null)
-/** iterator dispatch info */
-internal data class IteratorInfo(val iterClass: String, val iterCType: String, val elemKtType: String, val isPointer: Boolean)
+/* Active inline lambda being expanded at a call site. */
+internal data class ActiveLambda(val expr: LambdaExpr, val paramTypes: List<KtcType>, val returnType: KtcType? = null)
+/* Iterator dispatch info resolved for a collection type. */
+internal data class IteratorInfo(val iterClass: String, val iterCType: String, val elemKtType: KtcType, val isPointer: Boolean)
 /*
 A single generated .c file: its text content and the routing package that
 determines which output subdirectory it goes into.
@@ -215,7 +215,7 @@ internal data class FunctionContext(
 	var returnsArray: Boolean      = false,   // true when function returns a variable-length array
 	var returnsSizedArray: Boolean = false,   // true when function returns @Size(N) array struct
 	var sizedArraySize: Int        = 0,       // N for @Size(N) array return
-	var sizedArrayElemType: String = "",      // element C type for @Size(N) array return
+	var sizedArrayElemType: KtcType? = null,  // element KtcType for @Size(N) array return (null when not a sized-array return)
 	var returnsSizedString: Boolean = false,  // true when function returns @Size(N) String struct
 	var sizedStringSize: Int       = 0,       // N for @Size(N) String return
 	var returnType: String         = "",      // C return type string

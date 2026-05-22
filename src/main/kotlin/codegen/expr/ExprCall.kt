@@ -136,7 +136,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 				lambdaParamSubst[vPName] = genExpr(vArg.expr)
 				val vT = (if (vArg.expr is ThisExpr) lambdaParamTypes["\$this"] else null)
 					?: inferExprType(vArg.expr)
-					?: vActiveLambda.paramTypes.getOrElse(vI) { "" }
+					?: vActiveLambda.paramTypes.getOrNull(vI)?.toInternalStr ?: ""
 				if (vT.isNotEmpty()) lambdaParamTypes[vPName] = vT
 				}
 			}
