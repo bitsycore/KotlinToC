@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen.expr
 
 import com.bitsycore.ktc.ast.BinExpr
+import com.bitsycore.ktc.ast.Block
 import com.bitsycore.ktc.ast.Expr
 import com.bitsycore.ktc.ast.ForStmt
 import com.bitsycore.ktc.ast.NameExpr
@@ -9,6 +10,14 @@ import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
 // ── for ──────────────────────────────────────────────────────────
+
+/* Push a scope for a for-loop variable, emit the loop body, then pop. */
+private fun CCodeGen.emitForVarBlock(varName: String, varKtcType: KtcType, body: Block, ind: String, method: Boolean) {
+    pushScope()
+    defineVarKtc(varName, varKtcType)
+    emitBlock(body, ind, method)
+    popScope()
+    }
 
 internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
     loopDepth++
@@ -28,27 +37,21 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
         is BinExpr if rangeExpr.op == ".." -> {
             val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
             impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} <= ${genExpr(rangeExpr.right)}; $inc) {")
-            pushScope(); defineVarKtc(s.varName, KtcType.Prim(KtcType.PrimKind.Int))
-            emitBlock(s.body, ind, method)
-            popScope()
+            emitForVarBlock(s.varName, KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
             impl.appendLine("$ind}")
         }
         // for (i in a until b)  or  for (i in a..<b)
         is BinExpr if (rangeExpr.op == "until" || rangeExpr.op == "..<") -> {
             val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
             impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} < ${genExpr(rangeExpr.right)}; $inc) {")
-            pushScope(); defineVarKtc(s.varName, KtcType.Prim(KtcType.PrimKind.Int))
-            emitBlock(s.body, ind, method)
-            popScope()
+            emitForVarBlock(s.varName, KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
             impl.appendLine("$ind}")
         }
         // for (i in a downTo b)
         is BinExpr if rangeExpr.op == "downTo" -> {
             val dec = if (step != null) "${s.varName} -= $step" else "${s.varName}--"
             impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} >= ${genExpr(rangeExpr.right)}; $dec) {")
-            pushScope(); defineVarKtc(s.varName, KtcType.Prim(KtcType.PrimKind.Int))
-            emitBlock(s.body, ind, method)
-            popScope()
+            emitForVarBlock(s.varName, KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
             impl.appendLine("$ind}")
         }
         // for (item in array/collection)  — iterate over elements
@@ -93,9 +96,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                     val elemCType = cTypeStr(elemKtType)
                     impl.appendLine("$ind    $elemCType ${s.varName} = ${typeFlatName(iterClass)}_next(&$iterVar);")
                 }
-                pushScope(); defineVarKtc(s.varName, elemKtType)
-                emitBlock(s.body, ind, method)
-                popScope()
+                emitForVarBlock(s.varName, elemKtType, s.body, ind, method)
                 impl.appendLine("$ind}")
             } else {
                 // Array: use .len / trampoline size and direct or .ptr indexing
@@ -109,9 +110,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 val vElemAccess = if (vIsTrampolined || vIsSizedArr) "$arrExpr[$idx]" else "$arrExpr.ptr[$idx]"
                 impl.appendLine("${ind}for (ktc_Int $idx = 0; $idx < $sizeExpr; $idx++) {")
                 impl.appendLine("$ind    $elemType ${s.varName} = $vElemAccess;")
-                pushScope(); defineVarKtc(s.varName, arrTypeKtc?.asArr?.elem ?: KtcType.Prim(KtcType.PrimKind.Int))
-                emitBlock(s.body, ind, method)
-                popScope()
+                emitForVarBlock(s.varName, arrTypeKtc?.asArr?.elem ?: KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
                 impl.appendLine("$ind}")
             }
         }
