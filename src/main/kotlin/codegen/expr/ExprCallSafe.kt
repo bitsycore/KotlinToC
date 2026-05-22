@@ -36,11 +36,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 			return t2
 			}
 		val optType2 = optCTypeName("${retType2}?")
-		val t2       = tmp()
-		preStmts += "$optType2 $t2 = $guard2 ? ${optSome(optType2, call2)} : ${optNone(optType2)};"
-		defineVar(t2, "${retType2}?")
-		markOptional(t2)
-		return t2
+		return tmpOptional(retType2, "$guard2 ? ${optSome(optType2, call2)} : ${optNone(optType2)}")
 		}
 
 	val dotExpr = DotExpr(dot.obj, dot.name)

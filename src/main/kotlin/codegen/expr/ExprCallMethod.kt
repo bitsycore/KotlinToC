@@ -5,6 +5,31 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
+/* Search the interfaces implemented by [className] for a generic extension function named [method].
+Returns (FunDecl, concreteIfaceName) if found, null otherwise.
+The concrete interface name is resolved via genericTypeBindings when needed. */
+private fun CCodeGen.findGenericExtOnIfaces(className: String, method: String): Pair<FunDecl, String>? {
+	val ifaces = classInterfaces[className] ?: return null
+	for (iface in ifaces) {
+		val decl = genericFunDecls.find {
+			it.name == method && it.receiver != null && (
+				it.receiver.name == iface ||
+				(genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
+				)
+			} ?: continue
+		val concrete = if (iface.startsWith("${decl.receiver!!.name}_")) iface
+		else {
+			val binding = genericTypeBindings[className]
+			if (binding != null) {
+				val tArgs = decl.typeParams.map { binding[it] ?: "Int" }
+				mangledGenericName(decl.receiver.name, tArgs)
+				} else iface
+			}
+		return Pair(decl, concrete)
+		}
+	return null
+	}
+
 /* Emit an optional iface cast preStmt and return the temp var name.
 When [ifaceConcrete] is null, returns [recv] unchanged.
 Emits: optType t = (recv.tag == ktc_SOME) ? {SOME, baseName_as_iface(&recv.value)} : {NONE}; */
@@ -82,29 +107,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			}
 		var ifaceExt: FunDecl? = null
 		var ifaceExtConcrete: String? = null
-		if (genExt == null) {
-			val ifaces = classInterfaces[pointerBase] ?: emptyList()
-			for (iface in ifaces) {
-				val m = genericFunDecls.find {
-					it.name == method && it.receiver != null && (
-						it.receiver.name == iface ||
-						(genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
-						)
-					}
-				if (m != null) {
-					ifaceExt         = m
-					ifaceExtConcrete = if (iface.startsWith("${m.receiver!!.name}_")) iface
-					else {
-						val binding = genericTypeBindings[pointerBase]
-						if (binding != null) {
-							val tArgs = m.typeParams.map { binding[it] ?: "Int" }
-							mangledGenericName(m.receiver.name, tArgs)
-							} else iface
-						}
-					break
-					}
-				}
-			}
+		if (genExt == null) findGenericExtOnIfaces(pointerBase, method)?.also { (d, c) -> ifaceExt = d; ifaceExtConcrete = c }
 		val effectiveGenExt = genExt ?: ifaceExt
 		if (ifaceExt != null && ifaceExtConcrete != null) {
 			val tArgComponents = mangledComponents[ifaceExtConcrete]?.second
@@ -185,29 +188,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				)
 			} else null
 		var ifaceConcrete: String? = null
-		if (genericExtDecl == null) {
-			val ifaces = classInterfaces[vClassInfo.baseName] ?: emptyList()
-			for (iface in ifaces) {
-				val match = genericFunDecls.find {
-					it.name == method && it.receiver != null && (
-						it.receiver.name == iface ||
-						(genericIfaceDecls.containsKey(it.receiver.name) && iface.startsWith("${it.receiver.name}_"))
-						)
-					}
-				if (match != null) {
-					genericExtDecl = match
-					ifaceConcrete  = if (iface.startsWith("${match.receiver!!.name}_")) iface
-					else {
-						val binding = genericTypeBindings[vClassInfo.baseName]
-						if (binding != null) {
-							val tArgs = match.typeParams.map { binding[it] ?: "Int" }
-							mangledGenericName(match.receiver.name, tArgs)
-							} else iface
-						}
-					break
-					}
-				}
-			}
+		if (genericExtDecl == null) findGenericExtOnIfaces(vClassInfo.baseName, method)?.also { (d, c) -> genericExtDecl = d; ifaceConcrete = c }
 		if (genericExtDecl != null && ifaceConcrete != null) {
 			val ifaceComponents = mangledComponents[ifaceConcrete]?.second
 			val tArgs           = List(genericExtDecl.typeParams.size) { i -> ifaceComponents?.getOrNull(i) ?: "Int" }
