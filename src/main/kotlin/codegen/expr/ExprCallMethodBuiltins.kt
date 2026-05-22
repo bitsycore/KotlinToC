@@ -10,6 +10,27 @@ import com.bitsycore.ktc.types.KtcType
 // ── Built-in and array method dispatch ───────────────────────────
 // Returns null when method is not a recognised built-in (caller continues dispatch).
 
+/* Emit a ktc_core_str_xOrNull → Optional conversion.
+inOptCType: C type for the Optional struct (e.g. "ktc_Int").
+inFuncName: the ktc_core_str_* function suffix (e.g. "toIntOrNull").
+inIntCType: intermediate parse-target type — defaults to inOptCType, differs only for Float (uses Double).
+inCast:     optional cast expression prepended to the value assignment (e.g. "(ktc_Float)"). */
+private fun CCodeGen.tmpStrToNumOptional(
+	inRecv:     String,
+	inOptCType: String,
+	inFuncName: String,
+	inIntCType: String = inOptCType,
+	inCast:     String = ""
+	): String {
+	val vT = tmp()
+	preStmts += "$inIntCType ${vT}_val;"
+	preStmts += "$inOptCType\$Opt $vT;"
+	preStmts += "$vT.tag = ktc_core_str_$inFuncName($inRecv, &${vT}_val) ? ktc_SOME : ktc_NONE;"
+	preStmts += "$vT.value = $inCast${vT}_val;"
+	markOptional(vT)
+	return vT
+	}
+
 /* Handles built-in String/primitive methods and array methods.
 Returns the expression string, or null if not a recognised built-in. */
 internal fun CCodeGen.genBuiltinMethodCallOrNull(
@@ -76,45 +97,10 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		"inv"      -> return "(~($inRecv))"
 
 		// Nullable string-to-number conversions — result is an Optional struct in vT
-		"toIntOrNull" -> if (inRecvTypeKtc is KtcType.Str) {
-			val vT = tmp()
-			preStmts += "ktc_Int ${vT}_val;"
-			preStmts += "ktc_Int\$Opt $vT;"
-			preStmts += "$vT.tag = ktc_core_str_toIntOrNull($inRecv, &${vT}_val) ? ktc_SOME : ktc_NONE;"
-			preStmts += "$vT.value = ${vT}_val;"
-			markOptional(vT)
-			return vT
-			}
-
-		"toLongOrNull" -> if (inRecvTypeKtc is KtcType.Str) {
-			val vT = tmp()
-			preStmts += "ktc_Long ${vT}_val;"
-			preStmts += "ktc_Long\$Opt $vT;"
-			preStmts += "$vT.tag = ktc_core_str_toLongOrNull($inRecv, &${vT}_val) ? ktc_SOME : ktc_NONE;"
-			preStmts += "$vT.value = ${vT}_val;"
-			markOptional(vT)
-			return vT
-			}
-
-		"toDoubleOrNull" -> if (inRecvTypeKtc is KtcType.Str) {
-			val vT = tmp()
-			preStmts += "ktc_Double ${vT}_val;"
-			preStmts += "ktc_Double\$Opt $vT;"
-			preStmts += "$vT.tag = ktc_core_str_toDoubleOrNull($inRecv, &${vT}_val) ? ktc_SOME : ktc_NONE;"
-			preStmts += "$vT.value = ${vT}_val;"
-			markOptional(vT)
-			return vT
-			}
-
-		"toFloatOrNull" -> if (inRecvTypeKtc is KtcType.Str) {
-			val vT = tmp()
-			preStmts += "ktc_Double ${vT}_d;"
-			preStmts += "ktc_Float\$Opt $vT;"
-			preStmts += "$vT.tag = ktc_core_str_toDoubleOrNull($inRecv, &${vT}_d) ? ktc_SOME : ktc_NONE;"
-			preStmts += "$vT.value = (ktc_Float)${vT}_d;"
-			markOptional(vT)
-			return vT
-			}
+		"toIntOrNull"    -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Int",    "toIntOrNull")
+		"toLongOrNull"   -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Long",   "toLongOrNull")
+		"toDoubleOrNull" -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Double", "toDoubleOrNull")
+		"toFloatOrNull"  -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Float",  "toDoubleOrNull", inIntCType = "ktc_Double", inCast = "(ktc_Float)")
 
 		"substring" -> if (inRecvTypeKtc is KtcType.Str) {
 			val vFrom = genExpr(inArgs[0].expr)
