@@ -135,6 +135,14 @@ function Find-CCompiler {
 	return $null
 }
 
+<#
+Returns "cmake" if cmake is on PATH, otherwise $null.
+#>
+function Find-CMake {
+	if (Get-Command cmake -ErrorAction SilentlyContinue) { return "cmake" }
+	return $null
+}
+
 # ==================
 # MARK: Build
 # ==================
@@ -183,7 +191,7 @@ function Invoke-Test {
 
 	# Collect .kt sources
 	$vKtFiles = @(Get-ChildItem "$inSrcDir\*.kt" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
-	if ($vKtFiles.Count -eq 0) { Write-Fail "$inName — no .kt files in $inSrcDir"; return $false }
+	if ($vKtFiles.Count -eq 0) { Write-Fail "$inName — no .kt files in $inSrcDir"; return "fail" }
 	if (Test-Path $inOutDir) { Remove-Item $inOutDir -Recurse -Force }
 	New-Item $inOutDir -ItemType Directory -Force | Out-Null
 	Write-Info "Input:      $(($vKtFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' ')"
@@ -212,9 +220,13 @@ function Invoke-Test {
 		else                            { Write-Host "  $vLine" }
 	}
 	Write-Host ""
-	if ($vTExit -ne 0) { Write-Fail "Transpilation failed (exit $vTExit)"; return $false }
+	if ($vTExit -ne 0) { Write-Fail "Transpilation failed (exit $vTExit)"; return "fail" }
 	Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "Transpilation succeeded  " -NoNewline
 	Write-Host "(ktc: $(Format-Ms $vTMs))" -ForegroundColor DarkGray
+
+	# Copy ktc_user.cmake from source dir if present — src dir is not wiped on rebuild
+	$vUserCmakeSrc = "$inSrcDir\ktc_user.cmake"
+	if (Test-Path $vUserCmakeSrc) { Copy-Item $vUserCmakeSrc "$inOutDir\ktc_user.cmake" -Force }
 
 	# ── Discover .c files ────────────────────────────────────────
 	$vKtcDir  = "$inOutDir\ktc"
@@ -230,22 +242,71 @@ function Invoke-Test {
 	Get-ChildItem "$inOutDir" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
 		Where-Object { $_.FullName -notlike "$vKtcDir*" } | Sort-Object FullName |
 		ForEach-Object { $vCSrcs += $_.FullName }
-	if ($vCSrcs.Count -eq 0) { Write-Fail "No .c files generated"; return $false }
+	if ($vCSrcs.Count -eq 0) { Write-Fail "No .c files generated"; return "fail" }
 
-	# ── Compile ──────────────────────────────────────────────────
-	Write-Sec "Compile"
-	$vExe   = "$inOutDir\$inName.exe"
-	$vCArgs = @("-std=c11", "-iquote", $inOutDir, "-o", $vExe)
-	if ($CCArgs) { $vCArgs += ($CCArgs -split '\s+') }
-	$vCArgs += $vCSrcs
-	Write-Cmd "$vCC -std=c11$(if ($CCArgs) { " $CCArgs" }) -o $vExe $($vCSrcs -join ' ')"
-	Write-Host ""
-	$vCOut  = & $vCC @vCArgs 2>&1
-	$vCExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
-	if ($vCOut) { foreach ($vLine in $vCOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }; Write-Host "" }
-	if ($vCExit -ne 0) { Write-Fail "Compilation failed (exit $vCExit)"; return $false }
-	Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "Compilation succeeded -> $vExe  " -NoNewline
-	Write-Host "(comp: $(Format-Ms $vCMs))" -ForegroundColor DarkGray
+	# ── Compile (cmake if ktc_user.cmake present, direct gcc otherwise) ──
+	$vExe         = "$inOutDir\$inName.exe"
+	$vHasUserCmake = Test-Path "$inOutDir\ktc_user.cmake"
+	if ($vHasUserCmake -and -not $vCmake) {
+		Write-Host "  SKIP " -ForegroundColor Yellow -NoNewline
+		Write-Host "$inName — ktc_user.cmake requires cmake, but cmake was not found on PATH (skipped)"
+		return "skip"
+	}
+	$vUseCmake = $vHasUserCmake
+
+	if ($vUseCmake) {
+		# ── CMake configure ──────────────────────────────────────
+		Write-Sec "CMake Configure"
+		$vCmakeBuildDir = "$inOutDir\_cmake"
+		Write-Cmd "cmake -B _cmake -S . -DCMAKE_BUILD_TYPE=Release"
+		Write-Host ""
+		$vCfgOut  = & $vCmake -B $vCmakeBuildDir -S $inOutDir -DCMAKE_BUILD_TYPE=Release 2>&1
+		$vCfgExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
+		foreach ($vLine in $vCfgOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }
+		Write-Host ""
+		if ($vCfgExit -ne 0) {
+			$vNotFound = ($vCfgOut | Where-Object { "$_" -match 'Could not find|not found|NOTFOUND' }).Count -gt 0
+			if ($vNotFound) {
+				Write-Host "  SKIP " -ForegroundColor Yellow -NoNewline
+				Write-Host "$inName — required library not found (skipped)"
+				return "skip"
+			}
+			Write-Fail "CMake configure failed (exit $vCfgExit)"; return "fail"
+		}
+		Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "CMake configure OK  " -NoNewline
+		Write-Host "(cfg: $(Format-Ms $vCMs))" -ForegroundColor DarkGray
+
+		# ── CMake build ───────────────────────────────────────────
+		Write-Sec "CMake Build"
+		Write-Cmd "cmake --build _cmake --config Release"
+		Write-Host ""
+		$vBldOut  = & $vCmake --build $vCmakeBuildDir --config Release 2>&1
+		$vBldExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
+		if ($vBldOut) { foreach ($vLine in $vBldOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }; Write-Host "" }
+		if ($vBldExit -ne 0) { Write-Fail "CMake build failed (exit $vBldExit)"; return "fail" }
+		# CMakeLists.txt sets CMAKE_RUNTIME_OUTPUT_DIRECTORY to CMAKE_SOURCE_DIR (= $inOutDir)
+		$vFoundExe = Get-ChildItem $inOutDir -Filter "*.exe" -ErrorAction SilentlyContinue |
+			Where-Object { $_.FullName -notlike "*\_cmake*" } | Select-Object -First 1
+		if (-not $vFoundExe) { Write-Fail "No .exe found after cmake build"; return "fail" }
+		$vExe = $vFoundExe.FullName
+		Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "CMake build OK -> $vExe  " -NoNewline
+		Write-Host "(build: $(Format-Ms $vCMs))" -ForegroundColor DarkGray
+
+	} else {
+		# ── Direct compile ────────────────────────────────────────
+		Write-Sec "Compile"
+		$vCArgs = @("-std=c11", "-iquote", $inOutDir, "-o", $vExe)
+		if ($CCArgs) { $vCArgs += ($CCArgs -split '\s+') }
+		$vCArgs += $vCSrcs
+		Write-Cmd "$vCC -std=c11$(if ($CCArgs) { " $CCArgs" }) -o $vExe $($vCSrcs -join ' ')"
+		Write-Host ""
+		$vCOut  = & $vCC @vCArgs 2>&1
+		$vCExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
+		if ($vCOut) { foreach ($vLine in $vCOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }; Write-Host "" }
+		if ($vCExit -ne 0) { Write-Fail "Compilation failed (exit $vCExit)"; return "fail" }
+		Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "Compilation succeeded -> $vExe  " -NoNewline
+		Write-Host "(comp: $(Format-Ms $vCMs))" -ForegroundColor DarkGray
+	}
 
 	# Generated files listing
 	Write-Sec "Generated Files"
@@ -275,7 +336,7 @@ function Invoke-Test {
 	$vCaptured = (($vRawOut + $vRawErr) -split "`r?`n")
 	$vCaptured | ForEach-Object { Write-Host "  $_" }
 	Write-Host ""
-	if ($vRExit -ne 0) { Write-Fail "Runtime error (exit $vRExit)"; return $false }
+	if ($vRExit -ne 0) { Write-Fail "Runtime error (exit $vRExit)"; return "fail" }
 
 	$vLeak = ($vCaptured | Where-Object { "$_" -match 'leaked\s+:' }).Count -gt 0
 	if ($vLeak) {
@@ -287,7 +348,7 @@ function Invoke-Test {
 		Write-Host "Program exited successfully (code 0)  " -NoNewline
 	}
 	Write-Host "(run: $(Format-Ms $vRMs))" -ForegroundColor DarkGray
-	return $true
+	return "pass"
 }
 
 # ==================
@@ -306,9 +367,11 @@ function Run-Suite {
 		[bool]$inSkipUnit     = $false
 	)
 
-	$vPassed = 0           # number of passing integration tests
-	$vFailed = 0           # number of failing tests (unit + integration)
-	$vFailedNames = @()    # names of all failed tests
+	$vPassed      = 0   # number of passing integration tests
+	$vFailed      = 0   # number of failing tests (unit + integration)
+	$vSkipped     = 0   # number of skipped tests (missing external library)
+	$vFailedNames  = @()
+	$vSkippedNames = @()
 
 	# Unit tests
 	if (-not $inSkipUnit) {
@@ -326,16 +389,17 @@ function Run-Suite {
 	$vThrottle = [Math]::Max(1, [Environment]::ProcessorCount)
 
 	$vResults = $vDirs | ForEach-Object -Parallel {
-		$vDir  = $_                  # current test directory
-		$vName = $vDir.Name          # test name
-		$vOut  = "$($vDir.FullName)\out"
-		$vBm   = $using:vBuildMode
-		$vJar  = $using:vJar
-		$vRJ   = $using:vReleaseJar
-		$vRt   = $using:vRoot
-		$vCC   = $using:vCC
-		$vCCa  = $using:CCArgs
-		$vExA  = $using:inExtraArgs
+		$vDir   = $_                  # current test directory
+		$vName  = $vDir.Name          # test name
+		$vOut   = "$($vDir.FullName)\out"
+		$vBm    = $using:vBuildMode
+		$vJar   = $using:vJar
+		$vRJ    = $using:vReleaseJar
+		$vRt    = $using:vRoot
+		$vCC    = $using:vCC
+		$vCmk   = $using:vCmake
+		$vCCa   = $using:CCArgs
+		$vExA   = $using:inExtraArgs
 
 		function fmtMs([long]$ms) {
 			if ($ms -lt 1000) { "${ms}ms" } else { "{0:N2}s" -f ($ms / 1000.0) }
@@ -367,8 +431,12 @@ function Run-Suite {
 		$vWrn = @($vTO | Where-Object { "$_" -match 'warning:' })
 		if ($vTEx -ne 0) {
 			Write-Host "  FAIL $vName (transpile failed)" -ForegroundColor Red
-			return @{ Name = $vName; Passed = $false }
+			return @{ Name = $vName; Passed = $false; Skipped = $false }
 		}
+
+		# Copy ktc_user.cmake from source dir if present
+		$vUCmakeSrc = "$($vDir.FullName)\ktc_user.cmake"
+		if (Test-Path $vUCmakeSrc) { Copy-Item $vUCmakeSrc "$vOut\ktc_user.cmake" -Force }
 
 		# Discover .c files
 		$vKD  = "$vOut\ktc";  $vCS = @()
@@ -384,19 +452,54 @@ function Run-Suite {
 			ForEach-Object { $vCS += $_.FullName }
 		if ($vCS.Count -eq 0) {
 			Write-Host "  FAIL $vName (no .c files generated)" -ForegroundColor Red
-			return @{ Name = $vName; Passed = $false }
+			return @{ Name = $vName; Passed = $false; Skipped = $false }
 		}
 
-		# Compile
-		$vExe = "$vOut\$vName.exe"
-		$vCA  = @("-std=c11", "-iquote", $vOut, "-o", $vExe)
-		if ($vCCa) { $vCA += $vCCa -split '\s+' }
-		$vCA += $vCS
-		& $vCC @vCA 2>&1 | Out-Null
-		$vCEx = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
-		if ($vCEx -ne 0) {
-			Write-Host "  FAIL $vName (compile failed)" -ForegroundColor Red
-			return @{ Name = $vName; Passed = $false }
+		# Compile — cmake if ktc_user.cmake present, direct gcc otherwise
+		$vExe       = "$vOut\$vName.exe"
+		$vHasUCmake = Test-Path "$vOut\ktc_user.cmake"
+		if ($vHasUCmake -and -not $vCmk) {
+			$e = [char]27
+			Write-Host "  ${e}[33mSKIP $vName${e}[0m  (ktc_user.cmake present but cmake not found)"
+			return @{ Name = $vName; Passed = $false; Skipped = $true }
+		}
+		if ($vHasUCmake) {
+			$vCmkBld = "$vOut\_cmake"
+			$vCfgOut = & $vCmk -B $vCmkBld -S $vOut -DCMAKE_BUILD_TYPE=Release 2>&1
+			$vCfgEx  = $LASTEXITCODE
+			if ($vCfgEx -ne 0) {
+				$e  = [char]27
+				$vNF = ($vCfgOut | Where-Object { "$_" -match 'Could not find|not found|NOTFOUND' }).Count -gt 0
+				if ($vNF) {
+					Write-Host "  ${e}[33mSKIP $vName${e}[0m  (required library not found)"
+					return @{ Name = $vName; Passed = $false; Skipped = $true }
+				}
+				Write-Host "  FAIL $vName (cmake configure failed)" -ForegroundColor Red
+				return @{ Name = $vName; Passed = $false; Skipped = $false }
+			}
+			& $vCmk --build $vCmkBld --config Release 2>&1 | Out-Null
+			$vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
+			if ($LASTEXITCODE -ne 0) {
+				Write-Host "  FAIL $vName (cmake build failed)" -ForegroundColor Red
+				return @{ Name = $vName; Passed = $false; Skipped = $false }
+			}
+			$vFound = Get-ChildItem $vOut -Filter "*.exe" -ErrorAction SilentlyContinue |
+				Where-Object { $_.FullName -notlike "*\_cmake*" } | Select-Object -First 1
+			if (-not $vFound) {
+				Write-Host "  FAIL $vName (no .exe after cmake build)" -ForegroundColor Red
+				return @{ Name = $vName; Passed = $false; Skipped = $false }
+			}
+			$vExe = $vFound.FullName
+		} else {
+			$vCA  = @("-std=c11", "-iquote", $vOut, "-o", $vExe)
+			if ($vCCa) { $vCA += $vCCa -split '\s+' }
+			$vCA += $vCS
+			& $vCC @vCA 2>&1 | Out-Null
+			$vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
+			if ($LASTEXITCODE -ne 0) {
+				Write-Host "  FAIL $vName (compile failed)" -ForegroundColor Red
+				return @{ Name = $vName; Passed = $false; Skipped = $false }
+			}
 		}
 
 		# Run
@@ -415,7 +518,7 @@ function Run-Suite {
 		$vCapt = (($vRawOut + $vRawErr) -split "`r?`n")
 		if ($vREx -ne 0) {
 			Write-Host "  FAIL $vName (runtime error, exit $vREx)" -ForegroundColor Red
-			return @{ Name = $vName; Passed = $false }
+			return @{ Name = $vName; Passed = $false; Skipped = $false }
 		}
 
 		$vLk  = @($vCapt | Where-Object { "$_" -match 'leaked\s+:' }).Count -gt 0
@@ -424,15 +527,23 @@ function Run-Suite {
 		if ($vLk) { Write-Host "  ${e}[33mPASS $vName${e}[0m  ${e}[31mLEAK${e}[0m  $vTim" }
 		else      { Write-Host "  ${e}[32mPASS $vName${e}[0m  $vTim" }
 		foreach ($vW in $vWrn) { Write-Host "       $vW" -ForegroundColor Yellow }
-		return @{ Name = $vName; Passed = $true }
+		return @{ Name = $vName; Passed = $true; Skipped = $false }
 
 	} -ThrottleLimit $vThrottle
 
 	foreach ($vR in $vResults) {
-		if ($vR.Passed) { $vPassed++ } else { $vFailed++; $vFailedNames += $vR.Name }
+		if     ($vR.Skipped) { $vSkipped++; $vSkippedNames += $vR.Name }
+		elseif ($vR.Passed)  { $vPassed++ }
+		else                 { $vFailed++;  $vFailedNames  += $vR.Name }
 	}
 
-	return [PSCustomObject]@{ Passed = $vPassed; Failed = $vFailed; FailedNames = $vFailedNames }
+	return [PSCustomObject]@{
+		Passed       = $vPassed
+		Failed       = $vFailed
+		Skipped      = $vSkipped
+		FailedNames  = $vFailedNames
+		SkippedNames = $vSkippedNames
+	}
 }
 
 <#
@@ -441,18 +552,32 @@ Prints the final pass/fail summary and exits with the appropriate code.
 function Show-Summary {
 	param([PSCustomObject]$inResult)
 	Write-Sec "Summary"
-	$vTotal = $inResult.Passed + $inResult.Failed
+	$vTotal = $inResult.Passed + $inResult.Failed + $inResult.Skipped
 	Write-Host "  Total: $vTotal  |  " -NoNewline
 	Write-Host "Passed: $($inResult.Passed)" -ForegroundColor Green -NoNewline
 	Write-Host "  |  " -NoNewline
+	if ($inResult.Skipped -gt 0) {
+		Write-Host "Skipped: $($inResult.Skipped)" -ForegroundColor Yellow -NoNewline
+		Write-Host "  |  " -NoNewline
+	}
 	if ($inResult.Failed -gt 0) {
 		Write-Host "Failed: $($inResult.Failed)" -ForegroundColor Red
 		Write-Host ""
 		Write-Host "  Failed tests:" -ForegroundColor Red
 		foreach ($vName in $inResult.FailedNames) { Write-Host "    - $vName" -ForegroundColor Red }
+		if ($inResult.Skipped -gt 0) {
+			Write-Host ""
+			Write-Host "  Skipped tests (missing library):" -ForegroundColor Yellow
+			foreach ($vName in $inResult.SkippedNames) { Write-Host "    - $vName" -ForegroundColor Yellow }
+		}
 		exit 1
 	} else {
 		Write-Host "Failed: 0" -ForegroundColor Green
+		if ($inResult.Skipped -gt 0) {
+			Write-Host ""
+			Write-Host "  Skipped tests (missing library):" -ForegroundColor Yellow
+			foreach ($vName in $inResult.SkippedNames) { Write-Host "    - $vName" -ForegroundColor Yellow }
+		}
 		exit 0
 	}
 }
@@ -841,7 +966,8 @@ class TuiRunner {
 # MARK: Entry point
 # ==================
 
-$vCC = Find-CCompiler $Compiler
+$vCC    = Find-CCompiler $Compiler
+$vCmake = Find-CMake
 if (-not $vCC) {
 	Write-Host "ERROR: No C compiler found (tried gcc, clang, cl). Install one and add it to PATH." -ForegroundColor Red
 	exit 1
@@ -877,8 +1003,8 @@ if ($Interactive) {
 		if (-not (Test-Path $vSrc -PathType Container)) {
 			Write-Host "ERROR: test directory not found: $vSrc" -ForegroundColor Red; exit 1
 		}
-		$vOk = Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr
-		exit ([int](-not $vOk))
+		$vRes = Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr
+		exit $(if ($vRes -eq "fail") { 1 } else { 0 })
 	}
 
 	$vResult = Run-Suite -inTestNames $vSel.Tests -inExtraArgs $vArgsStr -inSkipUnit $vSel.SkipUnit
@@ -909,7 +1035,7 @@ if ($Run -ne "") {
 			Get-ChildItem $vTestsDir -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
 			$vAnyFailed = $true; continue
 		}
-		if (-not (Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr)) {
+		if ((Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr) -eq "fail") {
 			$vAnyFailed = $true
 		}
 	}

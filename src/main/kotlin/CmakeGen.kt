@@ -57,6 +57,16 @@ private fun buildCmakeLists(
 	appendLine(")")
 	appendLine()
 
+	// ── Output directory ────────────────────────────────────────────────
+	// Place the exe in the source dir (= out/) so test runners can find it predictably,
+	// regardless of generator (multi-config generators would otherwise add a subdir).
+	appendLine("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"\${CMAKE_SOURCE_DIR}\")")
+	appendLine("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG \"\${CMAKE_SOURCE_DIR}\")")
+	appendLine("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE \"\${CMAKE_SOURCE_DIR}\")")
+	appendLine("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO \"\${CMAKE_SOURCE_DIR}\")")
+	appendLine("set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL \"\${CMAKE_SOURCE_DIR}\")")
+	appendLine()
+
 	// ── Target ───────────────────────────────────────────────────────────
 	appendLine("add_executable(\${PROJECT_NAME} \${KTC_SOURCES})")
 	appendLine()
