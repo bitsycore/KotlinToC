@@ -5,20 +5,6 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 /**
- * Execute [block] with [typeSubst] temporarily replaced by [newSubst].
- * Restores the previous substitution afterwards.
- * No-op (just calls block) when [newSubst] is null or empty.
- */
-internal inline fun <T> CCodeGen.withTypeSubst(newSubst: Map<String, String>?, block: () -> T): T {
-	if (newSubst.isNullOrEmpty()) return block()
-	val saved = typeSubst
-	typeSubst = newSubst
-	val result = block()
-	typeSubst = saved
-	return result
-	}
-
-/**
  * Fill argument defaults for [decl] then expand to a C argument string.
  * [owner] is the declaring class/object name — used for interface-inherited defaults via [effectiveDefaults].
  * Pass an empty owner for top-level or generic functions where params carry their own defaults.

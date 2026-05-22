@@ -16,6 +16,19 @@ private fun CCodeGen.nullableIfaceCast(recv: String, baseName: String, ifaceConc
 	return t
 	}
 
+/* Compute the self-arg expression for an extension with a nullable receiver type declaration (isNullableRecv).
+When the receiver is already a stored Optional var: perform nullable iface cast if needed.
+Otherwise: wrap the value in optSome with optional iface conversion. */
+private fun CCodeGen.genExtSelfArgForNullableRecv(recv: String, baseName: String, ifaceConcrete: String?, dotObj: Expr): String {
+	val rName = (dotObj as? NameExpr)?.name
+	val rKtc  = if (rName != null) lookupVarKtc(rName) else null
+	if (rKtc is KtcType.Nullable && rName != null && isOptional(rName))
+		return nullableIfaceCast(recv, baseName, ifaceConcrete)
+	val optBase = ifaceConcrete ?: baseName
+	val valExpr = if (ifaceConcrete != null) "${typeFlatName(baseName)}_as_$ifaceConcrete(&$recv)" else recv
+	return optSome(optCTypeName("${optBase}?"), valExpr)
+	}
+
 /* Dispatch a method call on a dot receiver, handling built-ins, arrays, pointers,
 interfaces, class methods, objects, enums and extension functions. */
 internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
@@ -227,34 +240,16 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 					}
 
 				isExtFun -> {
-					if (isNullableRecv && !isPtrRecv) {
-						val rName2 = (dot.obj as? NameExpr)?.name
-						val rKtc2  = if (rName2 != null) lookupVarKtc(rName2) else null
-						if (rKtc2 is KtcType.Nullable && rName2 != null && isOptional(rName2)) {
-							nullableIfaceCast(recv, vClassInfo.baseName, ifaceConcrete)
-							} else {
-							val valExpr = if (ifaceConcrete != null) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)" else recv
-							val optBase = ifaceConcrete ?: vClassInfo.baseName
-							optSome(optCTypeName("${optBase}?"), valExpr)
-							}
-						} else if (ifaceConcrete != null && !isPtrRecv) optSome(optSelfType, "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)")
+					if (isNullableRecv && !isPtrRecv) genExtSelfArgForNullableRecv(recv, vClassInfo.baseName, ifaceConcrete, dot.obj)
+					else if (ifaceConcrete != null && !isPtrRecv) optSome(optSelfType, "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)")
 					else optSome(optSelfType, recv)
 					}
 
 				else -> optSome(optSelfType, "&$recv")
 				}
 			} else if (isExtFun) {
-			if (isNullableRecv && !isPtrRecv) {
-				val rName = (dot.obj as? NameExpr)?.name
-				val rKtc  = if (rName != null) lookupVarKtc(rName) else null
-				if (rKtc is KtcType.Nullable && rName != null && isOptional(rName)) {
-					nullableIfaceCast(recv, vClassInfo.baseName, ifaceConcrete)
-					} else {
-					val optBase = ifaceConcrete ?: vClassInfo.baseName
-					val valExpr = if (ifaceConcrete != null) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)" else recv
-					optSome(optCTypeName("${optBase}?"), valExpr)
-					}
-				} else if (ifaceConcrete != null && !isPtrRecv) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)"
+			if (isNullableRecv && !isPtrRecv) genExtSelfArgForNullableRecv(recv, vClassInfo.baseName, ifaceConcrete, dot.obj)
+			else if (ifaceConcrete != null && !isPtrRecv) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)"
 			else recv
 			} else "&$recv"
 

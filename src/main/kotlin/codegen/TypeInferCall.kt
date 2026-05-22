@@ -152,11 +152,8 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 val mangledName = "${name}_${typeArgNames.joinToString("_")}"
                 val concreteRet = genericFunConcreteReturn[mangledName]
                 if (concreteRet != null) return concreteRet
-                val subst = genFun.typeParams.zip(typeArgNames).toMap()
-                val saved = typeSubst
-                typeSubst = subst
-                val result = resolveTypeName(genFun.returnType)
-                typeSubst = saved
+                val subst  = genFun.typeParams.zip(typeArgNames).toMap()
+                val result = withTypeSubst(subst) { resolveTypeName(genFun.returnType) }
                 return if (genFun.returnType.nullable) KtcType.Nullable(result).toInternalStr else result.toInternalStr
             }
         }
@@ -188,28 +185,14 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 /* Resolve a method return type as a String, applying generic bindings for concrete generic instantiations. */
 internal fun CCodeGen.resolveMethodReturnType(className: String, returnType: TypeRef?): String {
     if (returnType == null) return "Unit"
-    val bindings = genericTypeBindings[className]
-    val ktc = if (bindings != null) {
-        val saved = typeSubst
-        typeSubst = bindings
-        val result = resolveTypeName(returnType)
-        typeSubst = saved
-        result
-    } else resolveTypeName(returnType)
+    val ktc = withTypeSubst(genericTypeBindings[className]) { resolveTypeName(returnType) }
     return if (returnType.nullable) KtcType.Nullable(ktc).toInternalStr else ktc.toInternalStr
 }
 
 /* KtcType variant — avoids the toInternalStr round-trip at call sites that already want KtcType. */
 internal fun CCodeGen.resolveMethodReturnTypeKtc(inClassName: String, inReturnType: TypeRef?): KtcType {
     if (inReturnType == null) return KtcType.Void
-    val vBindings = genericTypeBindings[inClassName]
-    val vKtc = if (vBindings != null) {
-        val vSaved = typeSubst
-        typeSubst = vBindings
-        val vResult = resolveTypeName(inReturnType)
-        typeSubst = vSaved
-        vResult
-    } else resolveTypeName(inReturnType)
+    val vKtc = withTypeSubst(genericTypeBindings[inClassName]) { resolveTypeName(inReturnType) }
     return if (inReturnType.nullable) KtcType.Nullable(vKtc) else vKtc
 }
 
@@ -303,11 +286,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     if (extFun != null) {
         if (extFun.typeParams.isNotEmpty() && extFun.returnType != null) {
             val vArgTypes = args.map { inferExprType(it.expr) }
-            val vSavedSubst = typeSubst
-            typeSubst = inferInlineFunSubst(extFun, recvType, vArgTypes)
-            val vResult = resolveTypeName(extFun.returnType).toInternalStr
-            typeSubst = vSavedSubst
-            return vResult
+            return withTypeSubst(inferInlineFunSubst(extFun, recvType, vArgTypes)) { resolveTypeName(extFun.returnType).toInternalStr }
         }
         return if (extFun.returnType != null) resolveTypeName(extFun.returnType).toInternalStr else "Unit"
     }

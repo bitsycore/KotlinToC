@@ -179,10 +179,8 @@ internal fun CCodeGen.isArrayReturningCall(e: Expr?): Boolean {
 	if (genFun != null && genFun.returnType != null) {
 		val typeArgNames = if (e.typeArgs.isNotEmpty()) e.typeArgs.map { resolveTypeName(it).toInternalStr }
 		else return false
-		val subst = genFun.typeParams.zip(typeArgNames).toMap()
-		val saved = typeSubst; typeSubst = subst
-		val retType = resolveTypeName(genFun.returnType).toInternalStr
-		typeSubst = saved
+		val subst   = genFun.typeParams.zip(typeArgNames).toMap()
+		val retType = withTypeSubst(subst) { resolveTypeName(genFun.returnType).toInternalStr }
 		return isArrayType(retType)
 		}
 	val sig = funSigs[name] ?: return false

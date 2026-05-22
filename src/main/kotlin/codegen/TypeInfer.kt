@@ -61,11 +61,8 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 			if (vInfixDecl != null && vInfixDecl.returnType != null) {
 				val vRecvType   = inferExprType(e.left)
 				val vArgType    = inferExprType(e.right)
-				val vSavedSubst = typeSubst
-				if (vInfixDecl.typeParams.isNotEmpty()) typeSubst = inferInlineFunSubst(vInfixDecl, vRecvType, listOf(vArgType))
-				val vResult = resolveTypeName(vInfixDecl.returnType).toInternalStr
-				typeSubst = vSavedSubst
-				vResult
+				val vSubst  = if (vInfixDecl.typeParams.isNotEmpty()) inferInlineFunSubst(vInfixDecl, vRecvType, listOf(vArgType)) else null
+				withTypeSubst(vSubst) { resolveTypeName(vInfixDecl.returnType).toInternalStr }
 				} else inferExprType(e.left)
 			}
 		}
