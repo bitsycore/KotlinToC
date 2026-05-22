@@ -34,55 +34,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 	emitConstructorBody(cName, ci)
 	for (vSctor in d.secondaryCtors) emitSecondaryCtor(d.name, cName, vSctor)
 
-	val vAnyMethodNames = setOf("dispose", "toString", "hashCode")
-
-	// Build method → interface display string map and ordered interface list
-	val vIfaceMethodToStr = mutableMapOf<String, String>()
-	val vIfaceOrder = mutableListOf<String>()
-	fun collectMethodsPerIface(ifaceRef: TypeRef) {
-		val vIfaceName = resolveIfaceName(ifaceRef)
-		val vIface = interfaces[vIfaceName] ?: return
-		val vIfaceStr = typeRefToStr(ifaceRef)
-		if (vIfaceStr !in vIfaceOrder) vIfaceOrder += vIfaceStr
-		for (m in vIface.methods) if (m.name !in vIfaceMethodToStr) vIfaceMethodToStr[m.name] = vIfaceStr
-		for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStr) vIfaceMethodToStr[p.name] = vIfaceStr
-		for (superRef in vIface.superInterfaces) collectMethodsPerIface(superRef)
-		}
-	for (vIfaceRef in d.superInterfaces) collectMethodsPerIface(vIfaceRef)
-
-	val vMethodsByIface = linkedMapOf<String, MutableList<FunDecl>>()
-	for (m in d.members) {
-		if (m is FunDecl && m.receiver == null && m.name !in vAnyMethodNames)
-			vMethodsByIface.getOrPut(vIfaceMethodToStr[m.name] ?: "") { mutableListOf() } += m
-		}
-
-	currentClass = d.name
-	selfIsPointer = true
-	pushScope()
-	for ((name, type) in ci.props) {
-		defineVarKtc(name, resolveTypeName(type))
-		if (!ci.isValProp(name)) markMutable(name)
-		}
-
-	var vHasMethodSection = false
-	for (vIfaceStr in vIfaceOrder) {
-		val vMethods = vMethodsByIface[vIfaceStr] ?: continue
-		if (!vHasMethodSection) impl.appendLine()
-		impl.appendLine(boxSection("implements $vIfaceStr"))
-		impl.appendLine()
-		for (m in vMethods) emitMethod(d.name, m, suppressHdr = true, ifaceName = vIfaceStr)
-		vHasMethodSection = true
-		}
-	val vOtherMethods = vMethodsByIface[""] ?: emptyList()
-	if (vOtherMethods.isNotEmpty()) {
-		if (!vHasMethodSection) impl.appendLine()
-		impl.appendLine(boxSection("methods"))
-		impl.appendLine()
-		for (m in vOtherMethods) emitMethod(d.name, m, suppressHdr = false, ifaceName = "")
-		vHasMethodSection = true
-		}
-	popScope()
-	currentClass = null
+	val vHasMethodSection = emitClassNonAnyMethods(d.name, d.superInterfaces, d.members, ci)
 
 	val vDeferredLines = deferredHdrLines.remove(d.name)
 	if (d.superInterfaces.isNotEmpty()) {
@@ -128,20 +80,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 		emitDefaultToString(d.name, cName, ci)
 		}
 	// Emit explicit overrides of Any methods (dispose/toString/hashCode)
-	pushScope()
-	for ((name, type) in ci.props) {
-		defineVarKtc(name, resolveTypeName(type))
-		if (!ci.isValProp(name)) markMutable(name)
-		}
-	currentClass = d.name
-	selfIsPointer = true
-	for (m in d.members) {
-		if (m is FunDecl && m.receiver == null && m.name in vAnyMethodNames) {
-			emitMethod(d.name, m, suppressHdr = false, ifaceName = "")
-			}
-		}
-	currentClass = null
-	popScope()
+	emitClassAnyOverrides(d.name, d.members, ci)
 
 	hdr.appendLine()
 	hdr.appendLine("// ════ Any cast ════")

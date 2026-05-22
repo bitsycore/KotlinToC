@@ -36,54 +36,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
 	emitConstructorBody(cName, ci)
 	for (vSctor in templateDecl.secondaryCtors) emitSecondaryCtor(mangledName, cName, vSctor)
 
-	val vAnyMethodNamesGen = setOf("dispose", "toString", "hashCode")
-
-	val vIfaceMethodToStrGen = mutableMapOf<String, String>()
-	val vIfaceOrderGen = mutableListOf<String>()
-	fun collectMethodsPerIfaceGen(ifaceRef: TypeRef) {
-		val vIfaceName = resolveIfaceName(ifaceRef)
-		val vIface = interfaces[vIfaceName] ?: return
-		val vIfaceStr = typeRefToStr(ifaceRef)
-		if (vIfaceStr !in vIfaceOrderGen) vIfaceOrderGen += vIfaceStr
-		for (m in vIface.methods) if (m.name !in vIfaceMethodToStrGen) vIfaceMethodToStrGen[m.name] = vIfaceStr
-		for (p in vIface.propDecls) if (p.name !in vIfaceMethodToStrGen) vIfaceMethodToStrGen[p.name] = vIfaceStr
-		for (superRef in vIface.superInterfaces) collectMethodsPerIfaceGen(superRef)
-		}
-	for (vIfaceRef in templateDecl.superInterfaces) collectMethodsPerIfaceGen(vIfaceRef)
-
-	val vMethodsByIfaceGen = linkedMapOf<String, MutableList<FunDecl>>()
-	for (m in templateDecl.members) {
-		if (m is FunDecl && m.receiver == null && m.name !in vAnyMethodNamesGen)
-			vMethodsByIfaceGen.getOrPut(vIfaceMethodToStrGen[m.name] ?: "") { mutableListOf() } += m
-		}
-
-	currentClass = mangledName
-	selfIsPointer = true
-	pushScope()
-	for ((name, type) in ci.props) {
-		defineVarKtc(name, resolveTypeName(type))
-		if (!ci.isValProp(name)) markMutable(name)
-		}
-
-	var vHasMethodSectionGen = false
-	for (vIfaceStr in vIfaceOrderGen) {
-		val vMethods = vMethodsByIfaceGen[vIfaceStr] ?: continue
-		if (!vHasMethodSectionGen) impl.appendLine()
-		impl.appendLine(boxSection("implements $vIfaceStr"))
-		impl.appendLine()
-		for (m in vMethods) emitMethod(mangledName, m, suppressHdr = true, ifaceName = vIfaceStr)
-		vHasMethodSectionGen = true
-		}
-	val vOtherMethodsGen = vMethodsByIfaceGen[""] ?: emptyList()
-	if (vOtherMethodsGen.isNotEmpty()) {
-		if (!vHasMethodSectionGen) impl.appendLine()
-		impl.appendLine(boxSection("methods"))
-		impl.appendLine()
-		for (m in vOtherMethodsGen) emitMethod(mangledName, m, suppressHdr = false, ifaceName = "")
-		vHasMethodSectionGen = true
-		}
-	popScope()
-	currentClass = null
+	val vHasMethodSectionGen = emitClassNonAnyMethods(mangledName, templateDecl.superInterfaces, templateDecl.members, ci)
 
 	val vGenDeferredLines = deferredHdrLines.remove(mangledName)
 	if (templateDecl.superInterfaces.isNotEmpty()) {
@@ -131,20 +84,7 @@ internal fun CCodeGen.emitGenericClass(templateDecl: ClassDecl, mangledName: Str
 		emitDefaultToString(ci.name, cName, ci)
 		}
 	// Emit explicit overrides of Any methods (dispose/toString/hashCode)
-	pushScope()
-	for ((name, type) in ci.props) {
-		defineVarKtc(name, resolveTypeName(type))
-		if (!ci.isValProp(name)) markMutable(name)
-		}
-	currentClass = mangledName
-	selfIsPointer = true
-	for (m in templateDecl.members) {
-		if (m is FunDecl && m.receiver == null && m.name in vAnyMethodNamesGen) {
-			emitMethod(mangledName, m, suppressHdr = false, ifaceName = "")
-			}
-		}
-	currentClass = null
-	popScope()
+	emitClassAnyOverrides(mangledName, templateDecl.members, ci)
 
 	hdr.appendLine()
 	hdr.appendLine("// ════ Any cast ════")

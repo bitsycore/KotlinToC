@@ -8,6 +8,7 @@ import com.bitsycore.ktc.codegen.expr.genExpr
 import com.bitsycore.ktc.codegen.expr.inferBlockType
 import com.bitsycore.ktc.types.KtcType
 
+
 // Method emit, struct field declarations, and primary constructor body.
 
 internal fun CCodeGen.emitMethod(
@@ -16,39 +17,21 @@ internal fun CCodeGen.emitMethod(
 	suppressHdr: Boolean = false,
 	ifaceName:   String  = ""
 	) {
-	val cClass = typeFlatName(className)
-	val siblings = classes[className]?.methods ?: emptyList()
+	val cClass         = typeFlatName(className)
+	val siblings       = classes[className]?.methods ?: emptyList()
 	val overloadedName = methodName(f, siblings)
-	val methodName = if (f.isPrivate) "PRIV_$overloadedName" else overloadedName
+	val methodName     = if (f.isPrivate) "PRIV_$overloadedName" else overloadedName
+	val selfParam      = "$cClass* \$self"
+	val extraParams    = expandParams(f.params)
+	val allParams      = if (extraParams.isNotEmpty()) "$selfParam, $extraParams" else selfParam
 
 	val paramSig = f.params.joinToString(", ") { p -> "${p.name}: ${typeRefToStr(p.type)}" }
-	val retSig = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
-	val priv = if (f.isPrivate) "private " else ""
+	val retSig   = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
+	val priv     = if (f.isPrivate) "private " else ""
 	impl.appendLine("// ══ ${priv}fun ${f.name}($paramSig)$retSig ══")
-	val returnsNullable    = f.returnType != null && f.returnType.nullable
-	val returnsSizedArray  = !returnsNullable && f.returnType != null && f.returnType.isSizedArray()
-	val returnsSizedString = !returnsNullable && f.returnType != null && f.returnType.isSizedString()
-	val vRetKtc      = if (f.returnType != null) resolveTypeName(f.returnType) else null // KtcType of return, or null
-	val returnsArray       = !returnsNullable && !returnsSizedArray && (vRetKtc?.isArrayLike ?: false) // non-sized array return
-	val retResolved  = vRetKtc?.toInternalStr ?: f.body?.let { inferBlockType(it) } ?: "" // string for legacy helpers
-	val optRetCType  = if (returnsNullable) optCTypeName(retResolved) else ""
-	val cRet = when {
-		returnsSizedArray  -> sizedArrayCTypeName(cTypeStr(vRetKtc!!.asArr!!.elem), f.returnType.getSizeAnnotation()!!)
-		returnsSizedString -> sizedStringCTypeName(f.returnType.getSizeAnnotation()!!)
-		returnsNullable && vRetKtc is KtcType.Any -> "ktc_Any"
-		returnsNullable    -> optRetCType
-		returnsArray       -> {
-			val vArrElem = vRetKtc!!.asArr?.elem ?: ((vRetKtc as? KtcType.Ptr)?.inner as KtcType.Arr).elem
-			varArrTypeName(cTypeStr(vArrElem))
-			}
-		retResolved.isNotEmpty() -> cTypeStr(retResolved)
-		else -> "void"
-		}
-	val selfParam   = "$cClass* \$self"
-	val extraParams = expandParams(f.params)
-	val allParts    = mutableListOf(selfParam)
-	if (extraParams.isNotEmpty()) allParts += extraParams
-	val allParams   = allParts.joinToString(", ")
+
+	val prevState = saveFunState()
+	val cRet = computeReturnInfo(f, f.body?.let { inferBlockType(it) })
 
 	val vHdrSig = "KTC_METHOD($cRet, $methodName)(${allParams.replace(cClass, "KTC_TYPE_NAME")});"
 	if (f.isPrivate) {
@@ -63,40 +46,12 @@ internal fun CCodeGen.emitMethod(
 	if (vTrackDispose && f.name == "dispose") impl.appendLine("    KTC_MARK_DISPOSED(\$self);")
 	else if (disposedMode != "NO") impl.appendLine("    KTC_ASSERT_NOT_DISPOSED(\$self);")
 
-	val prevState = saveFunState()
-	currentFnReturnsNullable    = returnsNullable
-	currentFnReturnsArray       = returnsArray
-	currentFnReturnsSizedArray  = returnsSizedArray
-	currentFnOptReturnCTypeName = optRetCType
-	if (returnsSizedArray) {
-		currentFnSizedArraySize     = f.returnType.getSizeAnnotation()!!
-		currentFnSizedArrayElemType = vRetKtc!!.asArr!!.elem
-		}
-	currentFnReturnsSizedString = returnsSizedString
-	if (returnsSizedString) currentFnSizedStringSize = f.returnType.getSizeAnnotation()!!
-	currentFnReturnType    = retResolved
-	currentFnReturnKtcType = vRetKtc
-
 	pushScope()
-	for (p in f.params) {
-		val vKtcParam = resolveTypeName(p.type)
-		val vPStr     = vKtcParam.toInternalStr
-		defineVar(p.name, when {
-			p.type.nullable -> "${vPStr}?"
-			else -> vPStr
-			})
-		if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcParam))) markOptional(p.name)
-		}
+	registerParams(f.params)
 	val ci = classes[className]
 	if (ci != null) {
-		val vSelfDot = if (selfIsPointer) "\$self->" else "\$self."
-		for ((name, type) in ci.props) {
-			val vKtc        = resolveTypeName(type)
-			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
-			val vCName      = "$vSelfDot$vCFieldName"
-			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
-			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = vCName))
-			}
+		val selfDot = if (selfIsPointer) "\$self->" else "\$self."
+		registerClassFields(ci, selfDot)
 		}
 	// For nested classes (Obj$Inner), pre-populate parent object fields; class fields take priority
 	val vParentObjName = if ('$' in className) className.substringBefore('$') else null
@@ -115,13 +70,12 @@ internal fun CCodeGen.emitMethod(
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
 	if (f.body?.stmts?.lastOrNull() !is ReturnStmt) {
 		emitDeferredBlocks("    ", insideMethod = true)
-		if (returnsNullable) {
-			if (vRetKtc is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
-			else impl.appendLine("    return ${optNone(optRetCType)};")
+		if (currentFnReturnsNullable) {
+			if (currentFnReturnKtcType is KtcType.Any) impl.appendLine("    return (ktc_Any){0};")
+			else impl.appendLine("    return ${optNone(currentFnOptReturnCTypeName)};")
 			}
 		}
 	popScope()
-
 	restoreFunState(prevState)
 	impl.appendLine("}")
 	impl.appendLine()

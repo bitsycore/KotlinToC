@@ -89,16 +89,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 			if (isClassType) { currentClass = recvName; selfIsPointer = f.receiver.annotations.any { it.name == "Ptr" } }
 			else             { currentClass = null;     selfIsPointer = false }
 			}
-		for (p in f.params) {
-			val vKtcP = resolveTypeName(p.type)
-			val vPStr = vKtcP.toInternalStr
-			defineVar(p.name, when {
-				p.isVararg      -> "${vPStr}Array"
-				p.type.nullable -> "${vPStr}?"
-				else            -> vPStr
-				})
-			if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(vKtcP))) markOptional(p.name)
-			}
+		registerParams(f.params)
 		emitArrayParamCopies(f.params, "    ")
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = false)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = false)
@@ -163,15 +154,7 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 				else                         -> vPStr
 				})
 			}
-		if (isClassType) {
-			val ci = classes[mangledRecvName]!!
-			for ((name, type) in ci.props) {
-				val vKtc        = resolveTypeName(type)
-				val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
-				val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
-				defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self->$vCFieldName"))
-				}
-			}
+		if (isClassType) registerClassFields(classes[mangledRecvName]!!, "\$self->")
 		emitArrayParamCopies(f.params, "    ")
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = isClassType)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = isClassType)
@@ -229,12 +212,7 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 				else                       -> vPStr
 				})
 			}
-		for ((name, type) in ci.props) {
-			val vKtc        = resolveTypeName(type)
-			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
-			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
-			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self->$vCFieldName"))
-			}
+		registerClassFields(ci, "\$self->")
 		emitArrayParamCopies(f.params, "    ")
 		if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ", insideMethod = true)
 		if (f.body?.stmts?.lastOrNull() !is ReturnStmt) emitDeferredBlocks("    ", insideMethod = true)
