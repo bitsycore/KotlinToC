@@ -36,6 +36,10 @@ object SDL3 {
 
     class FRect(val sdl: c.SDL_FRect) {
         constructor(x: Float, y: Float, w: Float, h: Float) : this(c.SDL_FRect(x, y, w, h))
+
+        override fun toString(): String {
+            return "FRect(x=${sdl.x}, y=${sdl.y}, w=${sdl.w}, h=${sdl.h})"
+        }
     }
 
     // ==================
@@ -63,6 +67,7 @@ fun SDL3.Window.destroy() {
 // MARK: Renderer
 // ==================
 
+/** Cleanup SDL_Window handle */
 fun SDL3.Renderer.destroy() {
     c.SDL_DestroyRenderer(this.handle)
 }
