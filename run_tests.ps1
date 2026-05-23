@@ -31,6 +31,7 @@ param(
 	[string]$Compiler       = "",
 	[string]$CCArgs         = "",
 	[string]$Build          = "Jar",
+	[string]$Cfg            = "Release",  # CMake build type (Debug, Release, RelWithDebInfo, MinSizeRel)
 	[switch]$Interactive,
 	[switch]$MemTrack,
 	[switch]$Ast,
@@ -262,9 +263,9 @@ function Invoke-Test {
 		# ── CMake configure ──────────────────────────────────────
 		Write-Sec "CMake Configure"
 		$vCmakeBuildDir = "$inOutDir\_cmake"
-		Write-Cmd "cmake -B _cmake -S . -DCMAKE_BUILD_TYPE=Release"
+		if ($Compiler) { Write-Cmd "cmake -B _cmake -S . -DCMAKE_BUILD_TYPE=$Cfg -DCMAKE_C_COMPILER=$Compiler" } else { Write-Cmd "cmake -B _cmake -S . -DCMAKE_BUILD_TYPE=$Cfg" }
 		Write-Host ""
-		$vCfgOut  = & $vCmake -B $vCmakeBuildDir -S $inOutDir -DCMAKE_BUILD_TYPE=Release 2>&1
+		$vCfgArgs = @("-B", $vCmakeBuildDir, "-S", $inOutDir, "-DCMAKE_BUILD_TYPE=$Cfg"); if ($Compiler) { $vCfgArgs += "-DCMAKE_C_COMPILER=$Compiler" }; $vCfgOut  = & $vCmake @vCfgArgs 2>&1
 		$vCfgExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
 		foreach ($vLine in $vCfgOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }
 		Write-Host ""
@@ -282,9 +283,9 @@ function Invoke-Test {
 
 		# ── CMake build ───────────────────────────────────────────
 		Write-Sec "CMake Build"
-		Write-Cmd "cmake --build _cmake --config Release"
+		Write-Cmd "cmake --build _cmake --config $Cfg"
 		Write-Host ""
-		$vBldOut  = & $vCmake --build $vCmakeBuildDir --config Release 2>&1
+		$vBldOut  = & $vCmake --build $vCmakeBuildDir --config $Cfg 2>&1
 		$vBldExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
 		if ($vBldOut) { foreach ($vLine in $vBldOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }; Write-Host "" }
 		if ($vBldExit -ne 0) { Write-Fail "CMake build failed (exit $vBldExit)"; return "fail" }
@@ -472,7 +473,7 @@ function Run-Suite {
 		}
 		if ($vHasUCmake) {
 			$vCmkBld = "$vOut\_cmake"
-			$vCfgOut = & $vCmk -B $vCmkBld -S $vOut -DCMAKE_BUILD_TYPE=Release 2>&1
+			$vCfgArgs = @("-B", $vCmkBld, "-S", $vOut, "-DCMAKE_BUILD_TYPE=$using:Cfg"); if ($using:Compiler) { $vCfgArgs += "-DCMAKE_C_COMPILER=$using:Compiler" }; $vCfgOut = & $vCmk @vCfgArgs 2>&1
 			$vCfgEx  = $LASTEXITCODE
 			if ($vCfgEx -ne 0) {
 				$e  = [char]27
@@ -484,7 +485,7 @@ function Run-Suite {
 				Write-Host "  FAIL $vName (cmake configure failed)" -ForegroundColor Red
 				return @{ Name = $vName; Passed = $false; Skipped = $false }
 			}
-			& $vCmk --build $vCmkBld --config Release 2>&1 | Out-Null
+			& $vCmk --build $vCmkBld --config $using:Cfg 2>&1 | Out-Null
 			$vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
 			if ($LASTEXITCODE -ne 0) {
 				Write-Host "  FAIL $vName (cmake build failed)" -ForegroundColor Red
