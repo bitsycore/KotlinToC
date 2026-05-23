@@ -441,8 +441,28 @@ class Parser(private val tokens: List<Token>) {
                 }
             }
         }
+        // Custom accessors: get() = expr, set(value) { body }
+        var vGetter: Expr? = null
+        var vSetterParam: String? = null
+        var vSetterBody: Block? = null
+        if (at(TokenType.NEWLINE)) advance()
+        if (at(TokenType.IDENT) && cur().value == "get") {
+            advance() // skip 'get'
+            expect(TokenType.LPAREN); expect(TokenType.RPAREN)
+            if (at(TokenType.EQ)) { advance(); skipNL(); vGetter = parseExpr() }
+            if (at(TokenType.NEWLINE)) advance()
+            }
+        if (at(TokenType.IDENT) && cur().value == "set") {
+            advance() // skip 'set'
+            expect(TokenType.LPAREN)
+            vSetterParam = expectIdent()
+            expect(TokenType.RPAREN)
+            skipNL()
+            vSetterBody = parseBlock()
+            }
         skipTerminator()
-        return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations)
+        return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations,
+            getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody)
     }
 
     // ═══════════════════════════ Statements ═══════════════════════════

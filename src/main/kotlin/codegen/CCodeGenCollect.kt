@@ -135,7 +135,10 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					isPrivate = vP.isPrivate,
 					isPrivateSet = vP.isPrivateSet,
 					initExpr = vP.init,
-					line = vP.line
+					line = vP.line,
+					getter = vP.getter,
+					setterParam = vP.setterParam,
+					setterBody = vP.setterBody
 					)
 				}
 			val vAllProps = vCtorProps + vBodyProps  // combined property list

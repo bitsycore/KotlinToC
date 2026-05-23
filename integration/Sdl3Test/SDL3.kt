@@ -35,6 +35,16 @@ object SDL3 {
     // FRect
 
     class FRect(val sdl: c.SDL_FRect) {
+
+        var x get() = sdl.x
+            set(value) { sdl.x = value }
+        var y get() = sdl.y
+            set(value) { sdl.y = value }
+        var w get() = sdl.w
+            set(value) { sdl.w = value }
+        var h get() = sdl.h
+            set(value) { sdl.h = value }
+
         constructor(x: Float, y: Float, w: Float, h: Float) : this(c.SDL_FRect(x, y, w, h))
 
         override fun toString(): String {
@@ -48,6 +58,14 @@ object SDL3 {
                     && sdl.y == other.sdl.y
                     && sdl.w == other.sdl.w
                     && sdl.h == other.sdl.h
+        }
+
+        override fun hashCode(): Int {
+            var result = sdl.x.hashCode()
+            result = 31 * result + sdl.y.hashCode()
+            result = 31 * result + sdl.w.hashCode()
+            result = 31 * result + sdl.h.hashCode()
+            return result
         }
     }
 
@@ -93,8 +111,8 @@ fun SDL3.Renderer.clear() {
 
 /** Fill a rectangle on the render target.
 inRect must be a c.SDL_FRect variable so its address can be taken. */
-fun SDL3.Renderer.fillRect(inRect: c.SDL_FRect) {
-    c.SDL_RenderFillRect(this.handle, c.addr(inRect))
+fun SDL3.Renderer.fillRect(inRect: SDL3.FRect) {
+    c.SDL_RenderFillRect(this.handle, c.addr(inRect.sdl))
 }
 
 /** Present the rendered frame to the screen. */

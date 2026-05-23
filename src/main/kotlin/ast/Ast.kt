@@ -89,7 +89,10 @@ data class PropDecl(
     val line: Int = 0,
     val isPrivate: Boolean = false,
     val isPrivateSet: Boolean = false,
-    val annotations: List<Annotation> = emptyList()
+    val annotations: List<Annotation> = emptyList(),
+    val getter: Expr? = null,          // get() = expr
+    val setterParam: String? = null,   // set(param)
+    val setterBody: Block? = null      // set(param) { body }
 ) : Decl()
 
 // ═══════════════════════════ Parameters ═══════════════════════════

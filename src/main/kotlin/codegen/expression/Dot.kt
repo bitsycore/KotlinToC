@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.expression
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceProperties
+import com.bitsycore.ktc.codegen.emit.registerClassFields
 import com.bitsycore.ktc.codegen.statement.isAllocCall
 import com.bitsycore.ktc.types.KtcType
 
@@ -114,6 +115,26 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
             return "${ifaceUnionAccess(currentExtRecvType!!, vNarrowedSelf, "\$self")}.$fieldName"
         }
     }
+
+    // Computed property with custom getter: inline the getter expression
+    val vDotClassInfo = classInfoFor(recvTypeCoreKtc)
+    if (vDotClassInfo != null) {
+        val vGetterProp = vDotClassInfo.properties.find { it.name == e.name && it.getter != null }
+        if (vGetterProp != null) {
+            // Emit getter in class context with $self bound to receiver
+            val vPrevClass = currentClass
+            val vPrevSelfPtr = selfIsPointer
+            currentClass = vDotClassInfo.name
+            selfIsPointer = recvTypeCoreKtc is KtcType.Ptr
+            pushScope()
+            registerClassFields(vDotClassInfo, if (selfIsPointer) "$recv->" else "$recv.")
+            val vResult = genExpr(vGetterProp.getter!!)
+            popScope()
+            currentClass = vPrevClass
+            selfIsPointer = vPrevSelfPtr
+            return vResult
+            }
+        }
 
     return "$recv.${fieldName}"
 }

@@ -18,11 +18,7 @@ fun main() {
     val renderer = SDL3.Renderer(window)
     defer window.destroy()
 
-    var box: c.SDL_FRect = c.zeroed()
-    box.x = 300.0f
-    box.y = 225.0f
-    box.w = 200.0f
-    box.h = 150.0f
+    var box = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
 
     var event: c.SDL_Event = c.zeroed()
     var running = true

@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.codegen.emit.ifaceDataName
+import com.bitsycore.ktc.codegen.emit.registerClassFields
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.genLValue
 import com.bitsycore.ktc.types.KtcType
@@ -110,6 +111,28 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
             val ci = classes[className]
             if (ci != null) {
                 val propName = dotTarget.name
+                // Computed property with custom setter: inline the setter body
+                val vSetterProp = ci.properties.find { it.name == propName && it.setterBody != null }
+                if (vSetterProp != null) {
+                    val vRecv = genExpr(dotTarget.obj)
+                    val vPrevClass = currentClass; val vPrevSelfPtr = selfIsPointer
+                    currentClass = className; selfIsPointer = recvTypeCoreKtc is KtcType.Ptr
+                    pushScope()
+                    registerClassFields(ci, if (selfIsPointer) "$vRecv->" else "$vRecv.")
+                    defineVar(vSetterProp.setterParam!!, vSetterProp.typeRef.name)
+                    val vVal = genExpr(s.value)
+                    val vValKtc = inferExprTypeKtc(s.value)
+                    if (vValKtc != null) defineVar(vSetterProp.setterParam!!, LocalVar(ktc = vValKtc))
+                    val vValExpr = lookupCName(vSetterProp.setterParam!!)
+                    // Emit setter body statements, replacing 'value' with the actual value
+                    val vPrevSubst = lambdaParamSubst.toMap()
+                    lambdaParamSubst[vSetterProp.setterParam!!] = vVal
+                    for (vStmt in vSetterProp.setterBody!!.stmts) emitStmt(vStmt, ind)
+                    lambdaParamSubst.clear(); lambdaParamSubst.putAll(vPrevSubst)
+                    popScope()
+                    currentClass = vPrevClass; selfIsPointer = vPrevSelfPtr
+                    return
+                    }
                 if (propName in ci.privateSetProps) {
                     codegenError("Var with private set cannot be reassigned outside its class: '$propName'")
                 }

@@ -54,7 +54,10 @@ internal data class PropertyDef(
     val isOverride: Boolean = false,         // override modifier
     val isConstructorParam: Boolean = false, // true = declared in primary ctor
     val initExpr: Expr? = null,              // initializer expression (body props)
-    val line: Int = 0                        // source line for error reporting
+    val line: Int = 0,                       // source line for error reporting
+    val getter: Expr? = null,                // custom get() = expr
+    val setterParam: String? = null,         // set(param) param name
+    val setterBody: Block? = null            // set(param) { body }
 )
 
 internal data class ClassInfo(

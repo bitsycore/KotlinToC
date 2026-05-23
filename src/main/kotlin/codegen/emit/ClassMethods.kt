@@ -111,6 +111,8 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
 	hdr.appendLine("    ktc_core_AnyData __base;")
 	for ((name, type) in ci.props) {
 		val vFieldName = if (name in ci.privateProps) "PRIV_$name" else name
+		// Computed property with getter: no backing field needed
+		if (ci.properties.any { it.name == name && it.getter != null }) continue
 		val vKtcField = if (type.name == "RawArray" && type.typeArgs.isNotEmpty())
 			KtcType.Ptr(resolveTypeName(type.typeArgs[0]))
 		else resolveTypeName(type)
