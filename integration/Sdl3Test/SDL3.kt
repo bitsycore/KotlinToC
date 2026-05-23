@@ -93,6 +93,15 @@ object SDL3 {
 
         constructor(r: UByte, g: UByte, b: UByte, a: UByte) : this(c.SDL_Color(r, g, b, a))
 
+        constructor(color: UInt) : this(
+            c.SDL_Color(
+                ((color shr 24) and 0xFFu).toUByte(),
+                ((color shr 16) and 0xFFu).toUByte(),
+                ((color shr 8) and 0xFFu).toUByte(),
+                (color and 0xFFu).toUByte()
+            )
+        )
+
         override fun toString(): String {
             return "Color(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
         }
@@ -135,8 +144,17 @@ object SDL3 {
 
         constructor(r: Float, g: Float, b: Float, a: Float) : this(c.SDL_FColor(r, g, b, a))
 
+        constructor(color: UInt) : this(
+            c.SDL_FColor(
+                ((color shr 24) and 0xFFu).toUByte() / 255.0f,
+                ((color shr 16) and 0xFFu).toUByte() / 255.0f,
+                ((color shr 8) and 0xFFu).toUByte() / 255.0f,
+                (color and 0xFFu).toUByte() / 255.0f
+            )
+        )
+
         override fun toString(): String {
-            return "Color(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
+            return "FColor(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
         }
 
         override fun equals(other: @Ptr Any?): Boolean {
