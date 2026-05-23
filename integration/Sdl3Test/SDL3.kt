@@ -42,6 +42,7 @@ object SDL3 {
         }
 
         override fun equals(other: @Ptr Any?): Boolean {
+            if (this === other) return true
             if (other !is FRect) return false
             return sdl.x == other.sdl.x
                     && sdl.y == other.sdl.y
