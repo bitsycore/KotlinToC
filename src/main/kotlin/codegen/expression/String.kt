@@ -148,6 +148,25 @@ internal fun CCodeGen.genPrintfFromTemplate(tmpl: StrTemplateExpr, nl: String): 
 
 // ── string template (returns ktc_String via preStmts) ──────────────────
 
+/* Append a string template directly to an external StrBuf (e.g. sb parameter in toString).
+No local allocation — the caller provides the buffer. */
+internal fun CCodeGen.genStrTemplateToSb(e: StrTemplateExpr, sbExpr: String) {
+    for (part in e.parts) {
+        when (part) {
+            is LitPart  -> preStmts += "ktc_core_sb_append_str($sbExpr, ktc_core_str(\"${escapeStr(part.text)}\"));"
+            is ExprPart -> {
+                val isCPassthroughS = isCPassthroughCall(part.expr)
+                val tKtc = inferExprTypeKtc(part.expr) ?: if (isCPassthroughS) KtcType.Str else KtcType.Prim(KtcType.PrimKind.Int)
+                val expr = genExpr(part.expr)
+                val append = if (isCPassthroughS && inferExprTypeKtc(part.expr) == null)
+                    "ktc_core_sb_append_cstr($sbExpr, $expr);"
+                else genSbAppendKtc(sbExpr, expr, tKtc)
+                preStmts += append
+                }
+            }
+        }
+    }
+
 internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 	val buf = tmp()
 

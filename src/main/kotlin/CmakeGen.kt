@@ -14,8 +14,6 @@ internal fun writeCmakeFiles(
 	inUserSources: List<String>,  // paths relative to inOutDir, e.g. "com/example/Point.c"
 	) {
 	File(inOutDir, "CMakeLists.txt").writeText(buildCmakeLists(inExeName, inKtcSources, inUserSources))
-	val vExample = File(inOutDir, "ktc_user.cmake.example")
-	if (!vExample.exists()) vExample.writeText(kSdl3ExampleCmake)
 	}
 
 /* Build the CMakeLists.txt content. */

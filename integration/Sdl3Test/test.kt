@@ -34,6 +34,7 @@ fun main() {
                     my >= box.y && my <= box.y + box.h) {
                     box.x = mx - box.w / 2.0f
                     box.y = my - box.h / 2.0f
+                    println(box)
                 }
             }
         }

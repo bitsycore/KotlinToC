@@ -74,7 +74,7 @@ object SDL3 {
     }
 
     // ===================
-    // FRect
+    // Color
 
     class Color(val sdl: c.SDL_Color) {
 
@@ -92,6 +92,48 @@ object SDL3 {
             set(value) { sdl.a = value }
 
         constructor(r: UByte, g: UByte, b: UByte, a: UByte) : this(c.SDL_Color(r, g, b, a))
+
+        override fun toString(): String {
+            return "Color(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
+        }
+
+        override fun equals(other: @Ptr Any?): Boolean {
+            if (this === other) return true
+            if (other !is Color) return false
+            return sdl.r == other.sdl.r
+                    && sdl.g == other.sdl.g
+                    && sdl.b == other.sdl.b
+                    && sdl.a == other.sdl.a
+        }
+
+        override fun hashCode(): Int {
+            var result = sdl.r.hashCode()
+            result = 31 * result + sdl.g.hashCode()
+            result = 31 * result + sdl.b.hashCode()
+            result = 31 * result + sdl.a.hashCode()
+            return result
+        }
+    }
+
+    // ===================
+    // FColor
+
+    class FColor(val sdl: c.SDL_FColor) {
+
+        var r
+            get() = sdl.r
+            set(value) { sdl.r = value }
+        var g
+            get() = sdl.g
+            set(value) { sdl.g = value }
+        var b
+            get() = sdl.b
+            set(value) { sdl.b = value }
+        var a
+            get() = sdl.a
+            set(value) { sdl.a = value }
+
+        constructor(r: Float, g: Float, b: Float, a: Float) : this(c.SDL_FColor(r, g, b, a))
 
         override fun toString(): String {
             return "Color(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"

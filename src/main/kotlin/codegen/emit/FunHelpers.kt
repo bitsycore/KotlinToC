@@ -2,6 +2,9 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.expression.genExpr
+import com.bitsycore.ktc.codegen.expression.genStrTemplateToSb
+import com.bitsycore.ktc.codegen.expression.toStringMaxLen
 import com.bitsycore.ktc.types.KtcType
 
 // Shared helpers for function/method emit — return-type analysis, scope registration,
@@ -174,9 +177,51 @@ internal fun CCodeGen.emitClassAnyOverrides(className: String, members: List<Dec
 	pushScope()
 	registerClassFields(ci, "\$self->")
 	for (m in members) {
-		if (m is FunDecl && m.receiver == null && m.name in anyMethodNames)
-			emitMethod(className, m, suppressHdr = false, ifaceName = "")
+		if (m is FunDecl && m.receiver == null && m.name in anyMethodNames) {
+			// Emit custom toString as (self, sb) to avoid per-call allocation
+			if (m.name == "toString" && m.returnType != null) {
+				emitToStringOverride(className, m, ci)
+				} else {
+				emitMethod(className, m, suppressHdr = false, ifaceName = "")
+				}
+			}
 		}
 	popScope()
 	currentClass = null
+	}
+
+/** Emit a custom toString() override in the standard (Foo* self, ktc_StrBuf* sb) form. */
+private fun CCodeGen.emitToStringOverride(className: String, f: FunDecl, ci: ClassInfo) {
+	val cName   = ci.flatName
+	val maxLen  = toStringMaxLen(className)
+	val maxCmnt = if (maxLen != null) " // max output: $maxLen chars" else ""
+	hdr.appendLine("KTC_METHOD(void, toString)(KTC_TYPE_NAME* \$self, ktc_StrBuf* sb);${maxCmnt}")
+	impl.appendLine("// ══ override fun toString() ══")
+	impl.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb) {")
+
+	val prevState = saveFunState()
+	currentClass = className
+	selfIsPointer = true
+	pushScope()
+	registerClassFields(ci, "\$self->")
+
+	// Emit the body's return expression directly into sb
+	val vLast = f.body?.stmts?.lastOrNull()
+	val vRetExpr = when (vLast) {
+		is ReturnStmt -> vLast.value
+		is ExprStmt  -> vLast.expr
+		else         -> null
+		}
+	if (vRetExpr is StrTemplateExpr) {
+		genStrTemplateToSb(vRetExpr, "sb")
+		} else if (vRetExpr != null) {
+		val vStr = genExpr(vRetExpr)
+		preStmts += "ktc_core_sb_append_str(sb, $vStr);"
+		}
+	flushPreStmts("    ")
+
+	popScope()
+	restoreFunState(prevState)
+	impl.appendLine("}")
+	impl.appendLine()
 	}

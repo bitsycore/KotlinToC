@@ -140,17 +140,9 @@ internal fun CCodeGen.emitAnyVtable(
 	) {
 	impl.appendLine(boxSection("cast to Any"))
 	impl.appendLine()
-		val vHasToStringOverride = members.any { it is FunDecl && it.name == "toString" }
-		if (!isData && vHasToStringOverride) {
-			impl.appendLine("static void ${cName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
-			impl.appendLine("    ktc_String s = ${cName}_toString(($cName*)\$self);")
-			impl.appendLine("    ktc_core_sb_append_str(sb, s);")
-			impl.appendLine("}")
-			} else {
-			impl.appendLine("static void ${cName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
-			impl.appendLine("    ${cName}_toString(($cName*)\$self, sb);")
-			impl.appendLine("}")
-			}
+		impl.appendLine("static void ${cName}_toString_any(void* \$self, ktc_StrBuf* sb) {")
+		impl.appendLine("    ${cName}_toString(($cName*)\$self, sb);")
+		impl.appendLine("}")
 	impl.appendLine()
 	impl.appendLine("static ktc_Int ${cName}_hashCode_any(void* \$self) {")
 	impl.appendLine("    return ${cName}_hashCode(($cName*)\$self);")
