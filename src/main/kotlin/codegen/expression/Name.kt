@@ -25,7 +25,10 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 			// Any trampoline smart-cast: narrowed from Any, dereference .data
 			if (vCurKtc !is KtcType.Any && isAnySmartCastVar(e.name) && vCurKtc !is KtcType.Ptr) {
 				val vCt = cTypeStr(vCurType)
-				return "(*(($vCt*)(${e.name}.data)))"
+				// Outer-scope type before narrowing: Ptr(Any) → use ->data
+					val vOuterKtc = scopes.getOrNull(scopes.size - 2)?.get(e.name)?.ktc
+					val vMemOp = if (vOuterKtc is KtcType.Ptr) "->" else "."
+				return "(*(($vCt*)(${e.name}${vMemOp}data)))"
 				}
 			// @Ptr Any narrowed to @Ptr Concrete: cast the pointer
 			if (vCurKtc is KtcType.Ptr && isAnySmartCastVar(e.name)) {

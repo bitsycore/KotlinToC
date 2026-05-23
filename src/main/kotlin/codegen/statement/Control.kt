@@ -32,16 +32,18 @@ internal fun CCodeGen.extractSmartCasts(cond: Expr, forElse: Boolean = false): L
 		if (isMutable(name)) return
 		val ktc = lookupVarKtc(name)
 		// Allow narrowing for trampoline Any, and for @Ptr Any → @Ptr Concrete
-		if (ktc != null && ktc.toInternalStr != target) {
-			val vNarrowed: String? = when {
-				ktc is KtcType.Ptr && ktc.inner is KtcType.Any -> "${target}*"
-				ktc is KtcType.Nullable && ktc.inner is KtcType.Ptr && ktc.inner.inner is KtcType.Any -> "${target}*"
-				ktc !is KtcType.Ptr -> target
-				else -> null
-				}
+			if (ktc != null && ktc.toInternalStr != target) {
+				val vNarrowed: String? = when {
+					// Ptr(Any) → value type (goes through .data deref in genName)
+					ktc is KtcType.Ptr && ktc.inner is KtcType.Any -> target
+					// Nullable(Ptr(Any)) → pointer type (guard pattern, points to object)
+					ktc is KtcType.Nullable && ktc.inner is KtcType.Ptr && ktc.inner.inner is KtcType.Any -> "${target}*"
+					ktc !is KtcType.Ptr -> target
+					else -> null
+					}
 			if (vNarrowed != null) casts.add(name to vNarrowed)
 			}
-	}
+		}
 	fun tryThisCastTo(target: String) {
 		val current = currentExtRecvType ?: return
 		if (current != target) casts.add("\$self" to target)

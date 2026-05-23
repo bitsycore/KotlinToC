@@ -273,13 +273,16 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Narrow a variable's KtcType for a guard smart-cast, preserving mutable/optional/arraySize. */
     internal fun narrowVarType(inName: String, inType: String) {
         val vNewKtc = parseResolvedTypeName(inType)
-        // Emit a C cast when narrowing to a different pointer type (e.g. @Ptr Any? → @Ptr Concrete)
+        // Emit a C cast only for guard-pattern narrows on @Ptr Any? (equals case).
+        // The old type is Nullable(Ptr(Any)) → points to the actual object, safe to cast.
+        // Skip for plain Ptr(Any) → points to a ktc_Any trampoline, must use .data.
         var vCName: String? = null
-        if (vNewKtc is KtcType.Ptr) {
+        if (vNewKtc is KtcType.Ptr && vNewKtc.inner is KtcType.User) {
             for (i in scopes.indices.reversed()) {
                 val vOldKtc = scopes[i][inName]?.ktc
                 if (vOldKtc != null) {
-                    if (vOldKtc.toCType() != vNewKtc.toCType()) vCName = "((${vNewKtc.toCType()})${inName})"
+                    val vIsGuardPattern = vOldKtc is KtcType.Nullable && vOldKtc.inner is KtcType.Ptr && vOldKtc.inner.inner is KtcType.Any
+                    if (vIsGuardPattern && vOldKtc.toCType() != vNewKtc.toCType()) vCName = "((${vNewKtc.toCType()})${inName})"
                     break
                     }
                 }
@@ -417,7 +420,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         for (i in scopes.size - 2 downTo 0)
             {
             val vOuter = scopes[i][inName]?.ktc              // outer scope type as KtcType
-            if (vOuter is KtcType.Any || (vOuter is KtcType.Nullable && vOuter.inner is KtcType.Any)) return true
+            if (vOuter is KtcType.Any || (vOuter is KtcType.Nullable && vOuter.inner is KtcType.Any)
+            || (vOuter is KtcType.Ptr && vOuter.inner is KtcType.Any)) return true
             if (vOuter != null) return false
             }
         return false

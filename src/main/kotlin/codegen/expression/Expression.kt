@@ -277,6 +277,9 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         } else if (srcKtc is KtcType.Any || (srcKtcCore is KtcType.Ptr && srcKtcCore.inner is KtcType.Any)) {
             val memOp = if (isPtr) "->" else "."
             "(*(${cTypeStr(target)}*)(${inner}${memOp}data))"
+        } else if (srcKtcCore is KtcType.Ptr && srcKtcCore.inner.toInternalStr == target) {
+            // Already a pointer to target: just dereference
+            "(*($inner))"
         } else {
             "(${cType(e.type)})($inner)"
         }
