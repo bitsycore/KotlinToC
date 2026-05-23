@@ -36,13 +36,17 @@ object SDL3 {
 
     class FRect(val sdl: c.SDL_FRect) {
 
-        var x get() = sdl.x
+        var x
+            get() = sdl.x
             set(value) { sdl.x = value }
-        var y get() = sdl.y
+        var y
+            get() = sdl.y
             set(value) { sdl.y = value }
-        var w get() = sdl.w
+        var w
+            get() = sdl.w
             set(value) { sdl.w = value }
-        var h get() = sdl.h
+        var h
+            get() = sdl.h
             set(value) { sdl.h = value }
 
         constructor(x: Float, y: Float, w: Float, h: Float) : this(c.SDL_FRect(x, y, w, h))
@@ -65,6 +69,48 @@ object SDL3 {
             result = 31 * result + sdl.y.hashCode()
             result = 31 * result + sdl.w.hashCode()
             result = 31 * result + sdl.h.hashCode()
+            return result
+        }
+    }
+
+    // ===================
+    // FRect
+
+    class Color(val sdl: c.SDL_Color) {
+
+        var r
+            get() = sdl.r
+            set(value) { sdl.r = value }
+        var g
+            get() = sdl.g
+            set(value) { sdl.g = value }
+        var b
+            get() = sdl.b
+            set(value) { sdl.b = value }
+        var a
+            get() = sdl.a
+            set(value) { sdl.a = value }
+
+        constructor(r: UByte, g: UByte, b: UByte, a: UByte) : this(c.SDL_Color(r, g, b, a))
+
+        override fun toString(): String {
+            return "Color(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
+        }
+
+        override fun equals(other: @Ptr Any?): Boolean {
+            if (this === other) return true
+            if (other !is Color) return false
+            return sdl.r == other.sdl.r
+                    && sdl.g == other.sdl.g
+                    && sdl.b == other.sdl.b
+                    && sdl.a == other.sdl.a
+        }
+
+        override fun hashCode(): Int {
+            var result = sdl.r.hashCode()
+            result = 31 * result + sdl.g.hashCode()
+            result = 31 * result + sdl.b.hashCode()
+            result = 31 * result + sdl.a.hashCode()
             return result
         }
     }
@@ -106,6 +152,10 @@ fun SDL3.Renderer.destroy() {
 /** Set the draw colour for subsequent rendering calls. */
 fun SDL3.Renderer.setDrawColor(r: Int, g: Int, b: Int, a: Int) {
     c.SDL_SetRenderDrawColor(this.handle, r, g, b, a)
+}
+
+fun SDL3.Renderer.setDrawColor(color: SDL3.Color) {
+    c.SDL_SetRenderDrawColor(this.handle, color.r, color.g, color.b, color.a)
 }
 
 /** Clear the render target with the current draw colour. */

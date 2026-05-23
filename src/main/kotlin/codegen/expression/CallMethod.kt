@@ -319,7 +319,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 					}
 				} else recv
 			val allArgs = if (argStr.isEmpty()) recvArg else "$recvArg, $argStr"
-			return "${typeFlatName(extFunOwner)}_$method($allArgs)"
+			val vExtSiblings = extensionFuns[extFunOwner]?.filter { it.name == extFun.name }?.distinctBy { it.params.map { p -> resolveTypeName(p.type).toInternalStr } } ?: listOf(extFun)
+			val vExtFnName = resolvedFnName(extFun, vExtSiblings)
+			return "${typeFlatName(extFunOwner)}_$vExtFnName($allArgs)"
 			}
 		if (method == "dispose" && (classes.containsKey(recvType) || enums.containsKey(recvType) || objects.containsKey(recvType))) {
 			val selfExpr = if (recvTypeKtc is KtcType.Ptr) recv else "&$recv"

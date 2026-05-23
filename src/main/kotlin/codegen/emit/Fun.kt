@@ -25,7 +25,10 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	val selfParam   = if (recvIsNullable) "${optCTypeName(recvTypeName)} \$self" else "$cRecvType \$self"
 	val extraParams = expandParams(f.params)
 	val allParams   = if (extraParams.isNotEmpty()) "$selfParam, $extraParams" else selfParam
-	val cFnName     = "${typeFlatName(recvTypeName)}_${f.name}"
+	// Overload resolution for extension functions
+		val vExtSiblings = extensionFuns[recvTypeName]?.filter { it.name == f.name }?.distinctBy { it.params.map { p -> resolveTypeName(p.type).toInternalStr } } ?: listOf(f)
+		val vCName       = resolvedFnName(f, vExtSiblings)
+		val cFnName     = "${typeFlatName(recvTypeName)}_$vCName"
 
 	val prevState = saveFunState()
 	val cRet = computeReturnInfo(f)

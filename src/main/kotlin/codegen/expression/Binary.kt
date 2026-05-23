@@ -125,9 +125,15 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     // Nullable T? vs non-null value: generate Optional-aware comparison
     // === → pointer comparison in C (referential equality)
     if (e.op == "===") {
-        val l = if (e.left is ThisExpr) "(void*)\$self" else genExpr(e.left)
-        val r = if (e.right is ThisExpr) "(void*)\$self" else genExpr(e.right)
-        return "($l == $r)"
+        fun genPtr(e2: Expr): String {
+            if (e2 is ThisExpr) return "(void*)\$self"
+            val s = genExpr(e2)
+            // Trampoline Any: extract .data pointer
+            val t = inferExprTypeKtc(e2)
+            if (t is KtcType.Any || (t is KtcType.Nullable && t.inner is KtcType.Any)) return "$s.data"
+            return s
+            }
+        return "(${genPtr(e.left)} == ${genPtr(e.right)})"
         }
     if (e.op in setOf("==", "!=", "<", ">", "<=", ">=")) {
         val ltKtc = inferExprTypeKtc(e.left)

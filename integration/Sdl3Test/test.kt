@@ -4,7 +4,7 @@ package test
 import sdl3.*
 
 inline fun handleEvent(block: (@Ptr c.SDL_Event) -> Unit) {
-    var event: c.SDL_Event = c.zeroed()
+    var event: c.SDL_Event = c.init()
     while (c.SDL_PollEvent(c.addr(event))) {
         block(c.addr(event))
     }
@@ -21,9 +21,9 @@ fun main() {
     defer window.destroy()
 
     var box = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
-
+    val background = SDL3.Color(30, 30, 30, 255)
+    val boxColor = SDL3.Color(0, 128, 255, 255)
     var running = true
-
     while (running) {
         handleEvent() { event ->
             if (event.type == SDL3.Event.Quit) running = false
@@ -37,9 +37,9 @@ fun main() {
                 }
             }
         }
-        renderer.setDrawColor(30, 30, 30, 255)
+        renderer.setDrawColor(background)
         renderer.clear()
-        renderer.setDrawColor(0, 128, 255, 255)
+        renderer.setDrawColor(boxColor)
         renderer.fillRect(box)
         renderer.present()
     }
