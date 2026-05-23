@@ -35,6 +35,7 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
 			vTStr == "String" -> "ktc_core_string_eq(a.$fieldName, b.$fieldName)"
 			classes[vTStr]?.isData == true -> "${typeFlatName(vTStr)}_equals(a.$fieldName, b.$fieldName)"
 			vKtcEq.isArrayLike && vKtcEq.asArr?.sized == null -> "a.$fieldName.ptr == b.$fieldName.ptr"
+			vKtcEq is KtcType.COpaque -> "memcmp(&a.$fieldName, &b.$fieldName, sizeof(${vKtcEq.toCType()})) == 0"
 			else -> "a.$fieldName == b.$fieldName"
 			}
 		}

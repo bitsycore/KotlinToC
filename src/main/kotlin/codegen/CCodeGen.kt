@@ -57,6 +57,32 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         return pfx(inName)
         }
 
+    /* Find a top-level (no receiver) FunDecl in a named package and return (decl, C-function-name) or null.
+    Used for cross-package qualified calls like sdl3.initialize() → sdl3_initialize(). */
+    internal fun findCrossPackageFun(inPkgName: String, inFnName: String): Pair<FunDecl, String>? {
+        if (lookupVar(inPkgName) != null) return null  // shadowed by a local variable
+        if (classes.containsKey(inPkgName) || objects.containsKey(inPkgName)) return null  // is a type, not a package
+        for (vFile in allFiles) {
+            if ((vFile.pkg ?: "") != inPkgName) continue
+            val vDecl = vFile.decls.filterIsInstance<FunDecl>()
+                .firstOrNull { it.receiver == null && it.name == inFnName }
+            if (vDecl != null) {
+                val vCFnName = "${inPkgName.replace('.', '_')}_$inFnName"
+                return Pair(vDecl, vCFnName)
+                }
+            }
+        return null
+        }
+
+    /* Resolve a type name that may be a nested class inside an object.
+    e.g. resolveNestedObjName("Window", "SDL3") → "SDL3$Window" if that class exists. */
+    internal fun resolveNestedObjName(inName: String, inObjName: String): String {
+        if (classes.containsKey(inName)) return inName
+        val vNested = "${inObjName}\$$inName"
+        if (classes.containsKey(vNested)) return vNested
+        return inName
+        }
+
     internal fun inferredTypeRef(typeName: String?): TypeRef? {
         if (typeName == null) return null
         return TypeRef(typeName)
@@ -97,6 +123,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var inlineEndLabel: String? = null   // goto label after the inline block to handle early return
     internal var currentInd: String = "    "  // current emit indentation, kept in sync by emitStmt
     internal var inlineCounter: Int = 0  // counter for unique inline temp variable names and end labels
+    internal val cOpaqueTypes = mutableSetOf<String>()  // c.* names used as types → compound literal ctor
     internal val topProps = mutableSetOf<String>()  // top-level property names (need pfx)
     internal val valTopProps = mutableSetOf<String>()  // top-level val properties (cannot be reassigned)
     internal val extensionFuns = mutableMapOf<String, MutableList<FunDecl>>()

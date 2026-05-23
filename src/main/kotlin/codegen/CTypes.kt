@@ -207,7 +207,11 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 	if (resolved.endsWith("?")) return KtcType.Nullable(parseResolvedTypeName(resolved.dropLast(1)))
 	if (resolved.startsWith("Fun(")) return KtcType.Func(emptyList(), KtcType.Void)
 	// "c:SDL_Window" → COpaque (produced by resolveTypeNameInnerStr for c.* type refs)
-	if (resolved.startsWith("c:")) return KtcType.COpaque(resolved.removePrefix("c:"))
+	if (resolved.startsWith("c:")) {
+			val vCName = resolved.removePrefix("c:")
+			cOpaqueTypes += vCName
+			return KtcType.COpaque(vCName)
+			}
 	for (kind in KtcType.PrimKind.entries) {
 		if (resolved == kind.name) return KtcType.Prim(kind)
 		}

@@ -192,7 +192,11 @@ function Invoke-Test {
 	# Collect .kt sources
 	$vKtFiles = @(Get-ChildItem "$inSrcDir\*.kt" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
 	if ($vKtFiles.Count -eq 0) { Write-Fail "$inName — no .kt files in $inSrcDir"; return "fail" }
-	if (Test-Path $inOutDir) { Remove-Item $inOutDir -Recurse -Force }
+	# Preserve _cmake/ build cache, ktc_user.cmake and *.dll across runs
+	if (Test-Path $inOutDir) {
+		Get-ChildItem $inOutDir -Directory -Exclude "_cmake" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+		Get-ChildItem $inOutDir -File -Exclude "ktc_user.cmake", "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
+	}
 	New-Item $inOutDir -ItemType Directory -Force | Out-Null
 	Write-Info "Input:      $(($vKtFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' ')"
 	Write-Info "Output dir: $inOutDir"
@@ -413,7 +417,10 @@ function Run-Suite {
 			Write-Host "  FAIL $vName (no .kt files)" -ForegroundColor Red
 			return @{ Name = $vName; Passed = $false }
 		}
-		if (Test-Path $vOut) { Remove-Item $vOut -Recurse -Force -ErrorAction SilentlyContinue }
+		if (Test-Path $vOut) {
+			Get-ChildItem $vOut -Directory -Exclude "_cmake" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force
+			Get-ChildItem $vOut -File -Exclude "ktc_user.cmake", "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
+		}
 		New-Item $vOut -ItemType Directory -Force | Out-Null
 
 		# Transpile

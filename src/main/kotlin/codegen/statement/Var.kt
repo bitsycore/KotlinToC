@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.statement
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genExpr
+import com.bitsycore.ktc.codegen.expression.isCPassthroughCall
 import com.bitsycore.ktc.types.KtcType
 
 // ── var / val ─────────────────────────────────────────────────────
@@ -66,6 +67,18 @@ internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
 }
 
 internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
+    // c.init() or c.SDL_FRect() → bare C declaration, no initializer
+    if (s.init != null && isCPassthroughCall(s.init) && s.init is CallExpr && s.init.args.isEmpty()) {
+        val vName = (s.init.callee as DotExpr).name
+        if (vName == "init" || vName in cOpaqueTypes) {
+            val vKtc = if (s.type != null) resolveTypeName(s.type) else KtcType.Prim(KtcType.PrimKind.Int)
+            val ct = cTypeStr(vKtc.toInternalStr)
+            val mut = if (s.mutable) "" else "const "
+            defineVar(s.name, LocalVar(ktc = vKtc, mutable = s.mutable))
+            impl.appendLine("$ind$mut$ct ${s.name};")
+            return
+        }
+    }
     val vKtc = if (s.type != null) resolveTypeName(s.type) else parseResolvedTypeName(inferExprType(s.init) ?: "Int") // KtcType (for C type emission)
     val vKtcKtc = inferExprTypeKtc(s.init)
     val vKtcCore = vKtc.stripNullable

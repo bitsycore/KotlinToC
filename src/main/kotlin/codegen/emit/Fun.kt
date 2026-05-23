@@ -12,7 +12,9 @@ import com.bitsycore.ktc.codegen.statement.emitStmt
 // Enum emit lives in Enum.kt.
 
 internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
-	val recvTypeName   = f.receiver!!.name
+	val vRawRecvName        = f.receiver!!.name
+		// Resolve dotted receiver (e.g. "SDL3.Window" → "SDL3$Window")
+		val recvTypeName        = vRawRecvName.replace('.', '$').let { if (classes.containsKey(it)) it else vRawRecvName }
 	val recvIsNullable = f.receiver.nullable
 	val paramSig = f.params.joinToString(", ") { p -> "${p.name}: ${typeRefToStr(p.type)}" }
 	val retSig   = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""

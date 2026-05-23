@@ -53,6 +53,17 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             if (vCFnName == "addr" && e.args.size == 1) return "&${genCArg(e.args[0].expr)}"
             // c.zeroed() → {0} (zero-initialise a C struct in variable init context)
             if (vCFnName == "zeroed") return "{0}"
+            // c.init(x, y, z) → {x, y, z} (positional struct initializer)
+            // c.init() → __KTC_NO_INIT (sentinel: bare C declaration, no init)
+            if (vCFnName == "init") {
+                val vArgStr = e.args.joinToString(", ") { genCArg(it.expr) }
+                return if (vArgStr.isEmpty()) "__KTC_NO_INIT" else "{$vArgStr}"
+            }
+            // c.SDL_FRect(x, y, w, h) → (SDL_FRect){x, y, w, h} (compound literal)
+            if (vCFnName in cOpaqueTypes) {
+                val vArgStr = e.args.joinToString(", ") { genCArg(it.expr) }
+                val vCont = if (vArgStr.isEmpty()) "0" else vArgStr; return "($vCFnName){$vCont}"
+            }
             val vArgStr = e.args.joinToString(", ") { genCArg(it.expr) }
             val vExtra = if (memTrack && vCFnName in setOf("malloc", "free", "realloc")) ", ${ktSrc()}" else ""
             return "$vFnName($vArgStr$vExtra)"
@@ -73,6 +84,16 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         if (vFlatCallee != null && (classes.containsKey(vFlatCallee) || genericClassDecls.containsKey(vFlatCallee))) {
             return genCall(CallExpr(NameExpr(vFlatCallee), e.args, e.typeArgs))
         }
+
+        // Package-qualified call: sdl3.initialize() → sdl3_initialize()
+        if (e.callee.obj is NameExpr) {
+            val vPkgFun = findCrossPackageFun(e.callee.obj.name, e.callee.name)
+            if (vPkgFun != null) {
+                val (vDecl, vCFnName) = vPkgFun
+                val vExpandedArgs = prepareArgs(e.args, vDecl)
+                return "$vCFnName($vExpandedArgs)"
+                }
+            }
 
         // Reject non-safe call on nullable receiver
         val vRecvKtc = inferExprTypeKtc(e.callee.obj)
@@ -257,7 +278,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     }
 
     // Object method with name registered in funSigs (private/internal call)
-    if (currentObject != null && funSigs.containsKey(vName)) {
+    if (currentObject != null && objects[currentObject]?.methods?.any { it.name == vName } == true) {
         return "${typeFlatName(currentObject!!)}_${vName}($vExpandedArgs)"
     }
 

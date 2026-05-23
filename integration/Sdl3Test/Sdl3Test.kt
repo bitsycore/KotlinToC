@@ -1,28 +1,22 @@
 @file:cInclude("SDL3/SDL.h")
 package Sdl3Test
 
-fun errorSdl(inStr: String) {
-    c.SDL_Quit()
-    error("$inStr: ${c.SDL_GetError()}")
-}
+import sdl3.*
+
+/*
+SDL3 click-box example using the sdl3 Kotlin wrapper.
+Click inside the blue box to re-centre it on the mouse cursor.
+*/
 
 fun main() {
-    c.SDL_SetMainReady()
-    if (c.SDL_Init(c.SDL_INIT_VIDEO) < 0) errorSdl("SDL_Init failed")
+    SDL3.initialize()
+    defer SDL3.quit()
 
-    val window: @Ptr c.SDL_Window = c.SDL_CreateWindow(
-        "SDL3 Click Box Example",
-        800,
-        600,
-        0
-    )
-    if (!window) errorSdl("Window creation failed")
+    val window = SDL3.Window("SDL3 Click Box Example", 800, 600)
+    defer renderer.destroy()
 
-    val renderer: @Ptr c.SDL_Renderer = c.SDL_CreateRenderer(window, c.NULL)
-    if (!renderer) {
-        c.SDL_DestroyWindow(window)
-        errorSdl("Renderer creation failed")
-    }
+    val renderer = SDL3.Renderer(window)
+    defer window.destroy()
 
     var box: c.SDL_FRect = c.zeroed()
     box.x = 300.0f
@@ -35,9 +29,7 @@ fun main() {
 
     while (running) {
         while (c.SDL_PollEvent(c.addr(event))) {
-            if (event.type == c.SDL_EVENT_QUIT) {
-                running = false
-            }
+            if (event.type == c.SDL_EVENT_QUIT) running = false
             if (event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN) {
                 val mx = event.button.x
                 val my = event.button.y
@@ -49,15 +41,11 @@ fun main() {
             }
         }
 
-        c.SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255)
-        c.SDL_RenderClear(renderer)
-        c.SDL_SetRenderDrawColor(renderer, 0, 128, 255, 255)
-        c.SDL_RenderFillRect(renderer, c.addr(box))
-        c.SDL_RenderPresent(renderer)
+        renderer.setDrawColor(30, 30, 30, 255)
+        renderer.clear()
+        renderer.setDrawColor(0, 128, 255, 255)
+        renderer.fillRect(box)
+        renderer.present()
         Time.sleepMs(16)
     }
-
-    c.SDL_DestroyRenderer(renderer)
-    c.SDL_DestroyWindow(window)
-    c.SDL_Quit()
 }

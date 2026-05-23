@@ -237,6 +237,14 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				oi.methods += m
 				if (funSigs[m.name] == null) funSigs[m.name] = FunSig(m.params, m.returnType)
 				if (m.isInline) inlineFunDecls.getOrPut(m.name) { mutableListOf() }.add(m)
+				// Register extension functions declared inside object
+				if (m.receiver != null) {
+					val vRecv = resolveNestedObjName(m.receiver.name, d.name)
+					extensionFuns.getOrPut(vRecv) { mutableListOf() }.add(m)
+					classes[vRecv]?.methods?.add(m)
+					funSigs["${vRecv}.${m.name}"] = FunSig(m.params, m.returnType)
+					if (m.isInline || m.isInfix) inlineExtFunDecls[m.name] = m
+					}
 				}
 			objects[d.name] = oi
 			if (d.superInterfaces.isNotEmpty()) classInterfaces[d.name] = d.superInterfaces.map { it.name }
@@ -287,11 +295,13 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					if (starExtFunDecls.none { it === d }) starExtFunDecls += d
 					}
 				d.receiver != null -> {
-					val recvName = d.receiver.name
+					// Resolve dotted receiver (e.g. "SDL3.Window" → "SDL3$Window")
+					val vFlatRecv = d.receiver.name.replace('.', '$')
+					val recvName  = if (classes.containsKey(vFlatRecv)) vFlatRecv else d.receiver.name
 					extensionFuns.getOrPut(recvName) { mutableListOf() }.add(d)
 					classes[recvName]?.methods?.add(d)
 					funSigs["${recvName}.${d.name}"] = FunSig(d.params, effectiveReturnType)
-					if (d.isInfix) inlineExtFunDecls[d.name] = d
+					if (d.isInline || d.isInfix) inlineExtFunDecls[d.name] = d
 					}
 				else -> {
 					funSigs[d.name] = FunSig(d.params, effectiveReturnType)

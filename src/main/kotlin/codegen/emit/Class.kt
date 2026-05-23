@@ -81,10 +81,8 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
 	hdr.appendLine("$cClass $ctorName($extraParams);")
 	impl.appendLine("$cClass $ctorName($extraParams) {")
 
-	val delegateArgs = sctor.delegation.args.joinToString(", ") { a -> genExpr(a.expr) }
-	flushPreStmts("    ")
-	impl.appendLine("    $cClass \$self = ${cClass}_primaryConstructor($delegateArgs);")
-
+	// Params must be in scope before evaluating delegation args so
+	// expressions like `this(window.createRenderer())` can resolve types.
 	val prevState = saveFunState()
 	currentClass = className
 	selfIsPointer = false
@@ -93,6 +91,10 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
 		val vKtcP = resolveTypeName(p.type)
 		defineVar(p.name, LocalVar(ktc = vKtcP, mutable = true))
 		}
+
+	val delegateArgs = sctor.delegation.args.joinToString(", ") { a -> genExpr(a.expr) }
+	flushPreStmts("    ")
+	impl.appendLine("    $cClass \$self = ${cClass}_primaryConstructor($delegateArgs);")
 	val ci = classes[className]
 	if (ci != null) {
 		for ((name, type) in ci.props) {

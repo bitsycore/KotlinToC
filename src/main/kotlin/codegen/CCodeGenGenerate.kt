@@ -41,6 +41,8 @@ internal fun CCodeGen.generate(): COutput {
 	hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/core/ktc_core.h")}\"")
 	hdr.appendLine()
 
+	for (vInc in file.cIncludes) hdr.appendLine(vInc.toCDirective())
+
 	for (imp in file.imports) {
 		if (imp.startsWith("ktc.std") || imp.startsWith("ktc_std")) continue
 		val parts = imp.removeSuffix(".*").split('.')

@@ -166,7 +166,15 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             if (vIfaceMethod?.returnType != null) return resolveTypeRefStr(vIfaceMethod.returnType)
         }
     }
-    if (e.callee is DotExpr) return inferMethodReturnType(e.callee, e.args)
+    if (e.callee is DotExpr) {
+        // Package-qualified call: infer return type from cross-package function
+        if (e.callee.obj is NameExpr) {
+            val vPkgFun = findCrossPackageFun(e.callee.obj.name, e.callee.name)
+            if (vPkgFun != null && vPkgFun.first.returnType != null)
+                return resolveTypeRefStr(vPkgFun.first.returnType!!)
+            }
+        return inferMethodReturnType(e.callee, e.args)
+        }
     if (e.callee is SafeDotExpr) {
         val retType = inferMethodReturnType(DotExpr(e.callee.obj, e.callee.name), e.args) ?: return null
         if (retType == "Unit") return retType

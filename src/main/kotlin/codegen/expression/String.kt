@@ -1,14 +1,21 @@
 package com.bitsycore.ktc.codegen.expression
 
-import com.bitsycore.ktc.ast.Arg
-import com.bitsycore.ktc.ast.ExprPart
-import com.bitsycore.ktc.ast.LitPart
-import com.bitsycore.ktc.ast.StrTemplateExpr
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 // Print helpers and string template expression codegen.
 // toString/StringBuffer append helpers are in StringToString.kt.
+
+/* True when expr is a c.fnName(...) passthrough call whose return type is unknown. */
+internal fun CCodeGen.isCPassthroughCall(expr: Expr): Boolean {
+    if (expr !is CallExpr) return false
+    val callee = expr.callee
+    if (callee !is DotExpr) return false
+    val obj = callee.obj
+    if (obj !is NameExpr) return false
+    return obj.name == "c" && lookupVar("c") == null
+}
 
 internal fun CCodeGen.genPrintln(args: List<Arg>): String {
 	if (args.isEmpty()) return "printf(\"\\n\")"
@@ -108,11 +115,14 @@ internal fun CCodeGen.genPrintfFromTemplate(tmpl: StrTemplateExpr, nl: String): 
 		when (part) {
 			is LitPart  -> fmt.append(escapeStr(part.text))
 			is ExprPart -> {
-				val tKtc     = inferExprTypeKtc(part.expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
+				val isCPassthroughP = isCPassthroughCall(part.expr)
+				val tKtc     = inferExprTypeKtc(part.expr) ?: if (isCPassthroughP) KtcType.Str else KtcType.Prim(KtcType.PrimKind.Int)
 				val tKtcCore = tKtc.stripNullable
 				fmt.append(printfFmt(tKtcCore))
 				val exprStr  = genExpr(part.expr)
-				when (tKtcCore) {
+				if (isCPassthroughP && inferExprTypeKtc(part.expr) == null) {
+					argsList += exprStr
+				} else when (tKtcCore) {
 					is KtcType.Str -> {
 						val s = if (!isSimpleCExpr(exprStr)) {
 							val v = tmp(); preStmts += "ktc_String $v = ($exprStr);"; v
@@ -152,9 +162,13 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 				else parts += PartData(lit = part.text)
 				}
 			is ExprPart -> {
-				val tKtc = inferExprTypeKtc(part.expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
+				val isCPassthroughS = isCPassthroughCall(part.expr)
+				val tKtc = inferExprTypeKtc(part.expr) ?: if (isCPassthroughS) KtcType.Str else KtcType.Prim(KtcType.PrimKind.Int)
 				val expr = genExpr(part.expr)
-				parts += PartData(sbAppend = genSbAppendKtc("&${buf}_sb", expr, tKtc))
+				val append = if (isCPassthroughS && inferExprTypeKtc(part.expr) == null)
+					"ktc_core_sb_append_cstr(&${buf}_sb, $expr);"
+				else genSbAppendKtc("&${buf}_sb", expr, tKtc)
+				parts += PartData(sbAppend = append)
 				}
 			}
 		}

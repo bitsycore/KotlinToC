@@ -164,6 +164,19 @@ internal fun CCodeGen.genCtorCallOrNull(
 			val vNested = "$vParent$${inName}"
 			if (classes.containsKey(vNested)) vResolvedName = vNested
 			}
+			// Also try parent object of a nested class (e.g. SDL3 for SDL3$Window)
+			if (vResolvedName == inName && currentClass != null && '$' in currentClass!!) {
+				val vObjParent = currentClass!!.substringBefore('$')
+				val vNested = "$vObjParent$${inName}"
+				if (classes.containsKey(vNested)) vResolvedName = vNested
+				}
+			// Fallback: scan all objects for a nested class with this name
+			if (vResolvedName == inName) {
+				for (vObj in objects.keys) {
+					val vNested = "$vObj$${inName}"
+					if (classes.containsKey(vNested)) { vResolvedName = vNested; break }
+					}
+				}
 		}
 
 	val vEffectiveTypeArgs = inCall.typeArgs.ifEmpty { heapAllocTargetType?.typeArgs ?: emptyList() }
@@ -205,21 +218,30 @@ internal fun CCodeGen.genCtorCallOrNull(
 			}
 		}
 
-	// Known concrete class constructor
-	if (classes.containsKey(vResolvedName)) {
-		val vCi        = classes[vResolvedName]!!
-		val vDeclClass = allClassDecls[vResolvedName]
-		val vPrimaryParamCount = vCi.ctorProps.size + vCi.ctorPlainParams.size
-		val vSctor = vDeclClass?.secondaryCtors?.find {
-			it.params.size == inArgs.size && it.params.size != vPrimaryParamCount
-			}
-		if (vSctor != null) {
-			val vTypes  = vSctor.params.map { resolveTypeName(it.type).toInternalStr.removeSuffix("*") }
-			val vSuffix = if (vTypes.isEmpty()) "emptyConstructor"
-				else "constructorWith${vTypes.joinToString("_")}"
-			val vArgStr = inArgs.joinToString(", ") { genExpr(it.expr) }
-			return "${vCi.flatName}_$vSuffix($vArgStr)"
-			}
+		// Known concrete class constructor
+		if (classes.containsKey(vResolvedName)) {
+			val vCi        = classes[vResolvedName]!!
+			val vDeclClass = allClassDecls[vResolvedName]
+			val vPrimaryParamCount = vCi.ctorProps.size + vCi.ctorPlainParams.size
+			// Match secondary ctor by arg-count range (required..total → fills defaults)
+			val vSctor = vDeclClass?.secondaryCtors?.find { vSc ->
+				val vMin = vSc.params.count { it.default == null }
+				if (inArgs.size !in vMin..vSc.params.size) return@find false
+				if (vSc.params.size != vPrimaryParamCount) return@find true
+				// Same count: disambiguate by first-arg type vs secondary param
+				val vFirstArg = inArgs.firstOrNull() ?: return@find false
+				val vArgKtc = inferExprTypeKtc(vFirstArg.expr)
+				val vScParamKtc = resolveTypeName(vSc.params[0].type)
+				vArgKtc?.toInternalStr == vScParamKtc.toInternalStr
+				}
+			if (vSctor != null) {
+				val vTypes  = vSctor.params.map { resolveTypeName(it.type).toInternalStr.removeSuffix("*") }
+				val vSuffix = if (vTypes.isEmpty()) "emptyConstructor"
+					else "constructorWith${vTypes.joinToString("_")}"
+				val vFilledSctorArgs = fillDefaults(inArgs, vSctor.params, vSctor.params.associate { it.name to it.default }, vResolvedName, strict = true)
+				val vArgStr = vFilledSctorArgs.joinToString(", ") { genExpr(it.expr) }
+				return "${vCi.flatName}_$vSuffix($vArgStr)"
+				}
 		val vAllParams3  = vCi.ctorProps + vCi.ctorPlainParams
 		val vCtorParams3 = vAllParams3.map { Param(it.name, it.typeRef) }
 		val vFilledArgs3 = fillDefaults(inArgs, vCtorParams3, vAllParams3.associate {

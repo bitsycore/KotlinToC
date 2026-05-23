@@ -1,10 +1,6 @@
 package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.DotExpr
-import com.bitsycore.ktc.ast.IndexExpr
-import com.bitsycore.ktc.ast.NameExpr
-import com.bitsycore.ktc.ast.SafeDotExpr
-import com.bitsycore.ktc.ast.TypeRef
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.types.KtcType
 
@@ -36,6 +32,9 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	val recvType        = inferExprType(e.obj) ?: return null
 	val recvTypeKtc     = inferExprTypeKtc(e.obj)
 	val recvTypeCoreKtc = recvTypeKtc.stripNullable
+	// COpaque field access: we don't know the struct layout, default to Float
+	// (fields like x/y/w/h on SDL_FRect). C code emits correct member access.
+	if (recvTypeCoreKtc is KtcType.COpaque) return KtcType.Prim(KtcType.PrimKind.Float)
 	if (recvType == "ktc_StrBuf" || recvType == "StringBuffer") {
 		return when (e.name) {
 			"buffer" -> parseResolvedTypeName("CharArray*?")

@@ -138,17 +138,21 @@ class Parser(private val tokens: List<Token>) {
             args
         } else emptyList()
         // Extension function: fun ReceiverType.name(...) or fun ReceiverType?.name(...)
+        // Also supports nested receivers: fun SDL3.Window.destroy()
         val receiver: TypeRef?
         val name: String
-        if (at(TokenType.DOT)) {
-            advance()  // skip dot
-            val nullable = false
-            receiver = TypeRef(firstName, nullable, receiverTypeArgs, annotations = firstAnnotations)
-            name = expectIdent()
-        } else if (at(TokenType.QUESTION_DOT)) {
-            advance()  // skip ?.
-            receiver = TypeRef(firstName, nullable = true, receiverTypeArgs, annotations = firstAnnotations)
-            name = expectIdent()
+        if (at(TokenType.DOT) || at(TokenType.QUESTION_DOT)) {
+            val nullable = at(TokenType.QUESTION_DOT)
+            advance()  // skip . or ?.
+            // Build up the full receiver qualified name, e.g. "SDL3.Window"
+            val vReceiverParts = mutableListOf(firstName, expectIdent())
+            while (at(TokenType.DOT)) {
+                advance()
+                vReceiverParts += expectIdent()
+            }
+            val vRecvName = vReceiverParts.dropLast(1).joinToString(".")  // "SDL3"
+            name = vReceiverParts.last()  // "destroy" (the actual function name)
+            receiver = TypeRef(vRecvName, nullable, receiverTypeArgs, annotations = firstAnnotations)
         } else {
             receiver = null
             name = firstName
@@ -1046,7 +1050,7 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun expectIdent(): String {
-        if (!at(TokenType.IDENT)) error("Expected identifier but got ${cur()}")
+        if (!at(TokenType.IDENT) && !at(TokenType.INIT)) error("Expected identifier but got ${cur()}")
         return advance().value
     }
 
