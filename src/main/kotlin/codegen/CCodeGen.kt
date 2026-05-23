@@ -356,9 +356,30 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     }
     /** Returns the C flat name for a DotExpr receiver (object or companion). Null if not an object/companion. */
     internal fun resolveDotObjCName(dot: DotExpr): String? {
-        val name = (dot.obj as? NameExpr)?.name ?: return null
-        return objects[name]?.flatName
-            ?: classCompanions[name]?.let { objects[it]?.flatName ?: typeFlatName(it) }
+        val name = (dot.obj as? NameExpr)?.name
+        if (name != null) {
+            // Check for nested object: Parent.Child → flat name Parent$Child
+            val vNestedName = "$name\$${dot.name}"
+            if (vNestedName in objects) return objects[vNestedName]!!.flatName
+            return objects[name]?.flatName
+                ?: classCompanions[name]?.let { objects[it]?.flatName ?: typeFlatName(it) }
+            }
+        // Recurse into chained dots: A.B.C
+        if (dot.obj is DotExpr) {
+            val vParent = resolveDotObjCName(dot.obj as DotExpr) ?: return null
+            // Check if this is a property access on a nested object
+            val vParentBase = vParent.substringAfterLast('$').ifEmpty { vParent }
+            for ((vObjName, vOi) in objects) {
+                if (vObjName.endsWith("\$$vParentBase") || vObjName == vParent) {
+                    val vProp = vOi.properties.find { it.name == dot.name && it.getter != null }
+                    if (vProp != null) return null  // signal: this is a getter, not a field
+                    }
+                }
+            val vNestedName = "${vParent.replace('.', '$')}\$${dot.name}"
+            if (objects.containsKey(vNestedName)) return objects[vNestedName]!!.flatName
+            return "$vParent.${dot.name}"
+            }
+        return null
     }
 
     /** Shared null-guard expression for safe-call dispatch. */

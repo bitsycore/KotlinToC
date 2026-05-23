@@ -52,6 +52,23 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         val vDotEnumInfo = enums[e.obj.name]!!                                        // EnumInfo for C name
         return "${vDotEnumInfo.flatName}_${e.name}"
     }
+    // Resolve nested object property chain (e.g. SDL3.Event.Quit → getter value)
+    if (e.obj is DotExpr) {
+        var vCur2: DotExpr = e.obj as DotExpr
+        val vParts2 = mutableListOf(vCur2.name)
+        while (vCur2.obj is DotExpr) { vCur2 = vCur2.obj as DotExpr; vParts2.add(vCur2.name) }
+        if (vCur2.obj is NameExpr) {
+            vParts2.add((vCur2.obj as NameExpr).name)
+            vParts2.reverse()
+            val vFullObj = vParts2.joinToString("$")
+            val vOi = objects[vFullObj]
+            if (vOi != null) {
+                val vProp2 = vOi.properties.find { it.name == e.name && it.getter != null }
+                if (vProp2 != null) return genExpr(vProp2.getter!!)
+                }
+            }
+        }
+
     // Object / Companion field: ensure lazy init, then return flatName.field
     val vDotObjCName = resolveDotObjCName(e)
     if (vDotObjCName != null) {

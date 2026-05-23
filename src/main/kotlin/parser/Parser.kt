@@ -68,7 +68,7 @@ class Parser(private val tokens: List<Token>) {
         if (isInfix) advance()
         val isPrivate = at(TokenType.PRIVATE)
         if (isPrivate) advance()
-        val isInlineExplicit = at(TokenType.IDENT) && cur().value == "inline" && peek().type == TokenType.FUN
+        val isInlineExplicit = at(TokenType.IDENT) && cur().value == "inline" && peek().type in setOf(TokenType.FUN, TokenType.VAL, TokenType.VAR)
         if (isInlineExplicit) advance()
         val isInline = isInlineExplicit || isInfix
         return when {
@@ -424,7 +424,30 @@ class Parser(private val tokens: List<Token>) {
             val t = parseTypeRef()
             if (typeAnnotations.isEmpty()) t else t.copy(annotations = t.annotations + typeAnnotations)
         } else null
-        val init = if (at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
+        // Peek ahead to check for custom accessors (get/set) before parsing init
+        var vGetter: Expr? = null
+        var vSetterParam: String? = null
+        var vSetterBody: Block? = null
+        val vSaved = pos
+        if (at(TokenType.NEWLINE)) advance()
+        if (at(TokenType.IDENT) && cur().value == "get") {
+            advance()
+            expect(TokenType.LPAREN); expect(TokenType.RPAREN)
+            if (at(TokenType.EQ)) { advance(); skipNL(); vGetter = parseExpr() }
+            if (at(TokenType.NEWLINE)) advance()
+            }
+        if (at(TokenType.IDENT) && cur().value == "set") {
+            advance()
+            expect(TokenType.LPAREN)
+            vSetterParam = expectIdent()
+            expect(TokenType.RPAREN)
+            skipNL()
+            vSetterBody = parseBlock()
+            }
+        val vHasAccessor = vGetter != null || vSetterBody != null
+        if (!vHasAccessor) pos = vSaved  // rollback if no getter/setter found
+
+        val init = if (!vHasAccessor && at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
         var isPrivateSet = false
         if (!isPrivate) {
             if (at(TokenType.NEWLINE)) advance()
@@ -441,25 +464,6 @@ class Parser(private val tokens: List<Token>) {
                 }
             }
         }
-        // Custom accessors: get() = expr, set(value) { body }
-        var vGetter: Expr? = null
-        var vSetterParam: String? = null
-        var vSetterBody: Block? = null
-        if (at(TokenType.NEWLINE)) advance()
-        if (at(TokenType.IDENT) && cur().value == "get") {
-            advance() // skip 'get'
-            expect(TokenType.LPAREN); expect(TokenType.RPAREN)
-            if (at(TokenType.EQ)) { advance(); skipNL(); vGetter = parseExpr() }
-            if (at(TokenType.NEWLINE)) advance()
-            }
-        if (at(TokenType.IDENT) && cur().value == "set") {
-            advance() // skip 'set'
-            expect(TokenType.LPAREN)
-            vSetterParam = expectIdent()
-            expect(TokenType.RPAREN)
-            skipNL()
-            vSetterBody = parseBlock()
-            }
         skipTerminator()
         return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations,
             getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody)

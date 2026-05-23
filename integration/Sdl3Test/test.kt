@@ -1,12 +1,7 @@
 @file:cInclude("SDL3/SDL.h")
-package Sdl3Test
+package test
 
 import sdl3.*
-
-/*
-SDL3 click-box example using the sdl3 Kotlin wrapper.
-Click inside the blue box to re-centre it on the mouse cursor.
-*/
 
 inline fun handleEvent(block: (@Ptr c.SDL_Event) -> Unit) {
     var event: c.SDL_Event = c.zeroed()

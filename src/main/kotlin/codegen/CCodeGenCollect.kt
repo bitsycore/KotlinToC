@@ -229,7 +229,10 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					isPrivate = vP.isPrivate,
 					isPrivateSet = vP.isPrivateSet,
 					initExpr = vP.init,
-					line = vP.line
+					line = vP.line,
+					getter = vP.getter,
+					setterParam = vP.setterParam,
+					setterBody = vP.setterBody
 					)
 				}
 			val oi = ObjInfo(d.name, vObjProps)
@@ -270,6 +273,11 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				collectDecl(ClassDecl(nestedName, nested.isData, nested.ctorParams, nested.members,
 					nested.initBlocks, nested.superInterfaces, nested.typeParams, nested.secondaryCtors))
 				}
+				// Collect nested objects (e.g. object Event inside SDL3)
+				for (nested in d.members.filterIsInstance<ObjectDecl>()) {
+					val nestedName = "${d.name}$${nested.name}"
+					collectDecl(ObjectDecl(nestedName, nested.members, nested.annotations, nested.superInterfaces))
+					}
 			}
 
 		is FunDecl -> {

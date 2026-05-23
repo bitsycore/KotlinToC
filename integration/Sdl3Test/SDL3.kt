@@ -7,9 +7,9 @@ object SDL3 {
     // ==================
     // Window
 
-    data class Window(val handle: @Ptr c.SDL_Window) {
-        constructor(title: String, width: Int, height: Int, flags: Int = 0) :
-                this(createWindow(title, width, height, flags))
+    class Window(val handle: @Ptr c.SDL_Window) {
+        constructor(title: String, width: Int, height: Int, flags: Int = 0)
+                : this(createWindow(title, width, height, flags))
     }
 
     private inline fun createWindow(title: String, width: Int, height: Int, flags: Int = 0): @Ptr c.SDL_Window {
@@ -81,8 +81,8 @@ object SDL3 {
     }
 
     object Event {
-        inline val Quit get() = c.SDL_EVENT_QUIT
-        inline val MouseButtonDown get() = c.SDL_EVENT_MOUSE_BUTTON_DOWN
+        val Quit get() = c.SDL_EVENT_QUIT
+        val MouseButtonDown get() = c.SDL_EVENT_MOUSE_BUTTON_DOWN
     }
 }
 

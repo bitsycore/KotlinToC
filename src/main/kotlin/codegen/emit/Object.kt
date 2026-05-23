@@ -43,26 +43,29 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         }
     }
 
-    // Emit nested classes BEFORE the object block so they don't conflict with #define KTC_TYPE_NAME.
+    // Emit nested classes/objects BEFORE the object block so they don't conflict with #define KTC_TYPE_NAME.
     // Their impl output is captured separately so it appears after the object's own body in the .c file.
-    val vNestedClassImpl = StringBuilder()
+    val vNestedImpl = StringBuilder()
     val vSavedImplForNested = impl
-    impl = vNestedClassImpl
+    impl = vNestedImpl
     for (nested in d.members.filterIsInstance<ClassDecl>()) {
         if (nested.typeParams.isEmpty()) {
-            val vNestedFlatName = "${d.name}$${nested.name}" // mangled nested class name
-            emitClass(
-                ClassDecl(
-                    vNestedFlatName, nested.isData,
-                    nested.ctorParams, nested.members, nested.initBlocks,
-                    nested.superInterfaces, nested.typeParams, nested.secondaryCtors
-                )
-            )
+            val vNestedFlatName = "${d.name}$${nested.name}"
+            emitClass(ClassDecl(vNestedFlatName, nested.isData, nested.ctorParams, nested.members,
+                nested.initBlocks, nested.superInterfaces, nested.typeParams, nested.secondaryCtors))
             hdr.appendLine()
-            val vNestedKind = if (nested.isData) "data class" else "class" // kind label for footer
+            val vNestedKind = if (nested.isData) "data class" else "class"
             impl.appendLine(classBlockFooter(vNestedKind, vNestedFlatName.replace('$', '.'), emptyList()))
             impl.appendLine()
         }
+    }
+    // Nested objects (e.g. object Event inside SDL3)
+    for (nested in d.members.filterIsInstance<ObjectDecl>()) {
+        val vNestedFlatName = "${d.name}$${nested.name}"
+        emitObject(ObjectDecl(vNestedFlatName, nested.members, nested.annotations, nested.superInterfaces))
+        hdr.appendLine()
+        impl.appendLine(classBlockFooter("object", vNestedFlatName.replace('$', '.'), emptyList()))
+        impl.appendLine()
     }
     impl = vSavedImplForNested
 
@@ -77,6 +80,8 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     hdr.appendLine("    ktc_core_AnyData __base;")
     if (props.isEmpty()) hdr.appendLine("    ktc_Char _dummy;")
     for (p in props) {
+        // Computed property with getter: no backing field
+        if (p.getter != null) continue
         val pType     = p.type ?: inferInitType(p.init)
         val vKtcObj   = resolveTypeName(pType)                          // KtcType for struct field
         val sizeAnn   = pType.getSizeAnnotation()
@@ -375,5 +380,5 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl.appendLine()
 
     // Nested class implementations follow the object's own body
-    if (vNestedClassImpl.isNotEmpty()) impl.append(vNestedClassImpl)
+    if (vNestedImpl.isNotEmpty()) impl.append(vNestedImpl)
 }
