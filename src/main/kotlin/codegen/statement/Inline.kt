@@ -163,18 +163,22 @@ avoiding name-collision issues when lambda params shadow enclosing inline params
 internal fun CCodeGen.emitLambdaCall(active: ActiveLambda, callArgs: List<Arg>, ind: String) {
 	val vSavedSubst = lambdaParamSubst.toMap()
 	val vSavedTypes = lambdaParamTypes.toMap()
-	active.expr.params.forEachIndexed { i, pName ->
-		val vArg = callArgs.getOrNull(i)
-		if (vArg != null) {
-			lambdaParamSubst[pName] = genExpr(vArg.expr)
-			// For ThisExpr args inside inline bodies, inferExprType returns null (no C $self scope);
-			// fall back to lambdaParamTypes["\$this"] which was set by emitInlineCall's receiverType
-			val vT = (if (vArg.expr is ThisExpr) lambdaParamTypes["\$this"] else null)
-				?: inferExprType(vArg.expr)
-				?: active.paramTypes.getOrNull(i)?.toInternalStr ?: ""
-			if (vT.isNotEmpty()) lambdaParamTypes[pName] = vT
+		active.expr.params.forEachIndexed { i, pName ->
+			val vArg = callArgs.getOrNull(i)
+			if (vArg != null) {
+				var vSubst = genExpr(vArg.expr)
+				val vParamKtc = active.paramTypes.getOrNull(i)
+				// Unwrap c.addr(x) → &x when param is @Ptr: use x directly
+				if (vParamKtc is KtcType.Ptr && vSubst.startsWith("&")) {
+					vSubst = vSubst.removePrefix("&")
+					}
+				lambdaParamSubst[pName] = vSubst
+				val vT = (if (vArg.expr is ThisExpr) lambdaParamTypes["\$this"] else null)
+					?: inferExprType(vArg.expr)
+					?: active.paramTypes.getOrNull(i)?.toInternalStr ?: ""
+				if (vT.isNotEmpty()) lambdaParamTypes[pName] = vT
+				}
 			}
-		}
 	for (stmt in active.expr.body) emitStmt(stmt, ind)
 	lambdaParamSubst.clear(); lambdaParamSubst.putAll(vSavedSubst)
 	lambdaParamTypes.clear(); lambdaParamTypes.putAll(vSavedTypes)

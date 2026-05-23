@@ -80,6 +80,10 @@ object SDL3 {
         c.SDL_Quit()
     }
 
+    object Event {
+        inline val Quit get() = c.SDL_EVENT_QUIT
+        inline val MouseButtonDown get() = c.SDL_EVENT_MOUSE_BUTTON_DOWN
+    }
 }
 
 // ==================

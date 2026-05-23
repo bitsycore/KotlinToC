@@ -8,6 +8,13 @@ SDL3 click-box example using the sdl3 Kotlin wrapper.
 Click inside the blue box to re-centre it on the mouse cursor.
 */
 
+inline fun handleEvent(block: (@Ptr c.SDL_Event) -> Unit) {
+    var event: c.SDL_Event = c.zeroed()
+    while (c.SDL_PollEvent(c.addr(event))) {
+        block(c.addr(event))
+    }
+}
+
 fun main() {
     SDL3.initialize()
     defer SDL3.quit()
@@ -20,13 +27,12 @@ fun main() {
 
     var box = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
 
-    var event: c.SDL_Event = c.zeroed()
     var running = true
 
     while (running) {
-        while (c.SDL_PollEvent(c.addr(event))) {
-            if (event.type == c.SDL_EVENT_QUIT) running = false
-            if (event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        handleEvent() { event ->
+            if (event.type == SDL3.Event.Quit) running = false
+            if (event.type == SDL3.Event.MouseButtonDown) {
                 val mx = event.button.x
                 val my = event.button.y
                 if (mx >= box.x && mx <= box.x + box.w &&
@@ -36,12 +42,10 @@ fun main() {
                 }
             }
         }
-
         renderer.setDrawColor(30, 30, 30, 255)
         renderer.clear()
         renderer.setDrawColor(0, 128, 255, 255)
         renderer.fillRect(box)
         renderer.present()
-        Time.sleepMs(16)
     }
 }
