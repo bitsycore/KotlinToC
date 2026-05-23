@@ -31,11 +31,17 @@ internal fun CCodeGen.extractSmartCasts(cond: Expr, forElse: Boolean = false): L
 	fun tryCastTo(name: String, target: String) {
 		if (isMutable(name)) return
 		val ktc = lookupVarKtc(name)
-		// Don't narrow pointer types (Any* etc.) — they need original type for ->data dereference.
-		// DO narrow trampoline types (Any) — genName handles .data dereference after narrowing.
-		if (ktc != null && ktc.toInternalStr != target && ktc !is KtcType.Ptr)
-			casts.add(name to target)
-		}
+		// Allow narrowing for trampoline Any, and for @Ptr Any → @Ptr Concrete
+		if (ktc != null && ktc.toInternalStr != target) {
+			val vNarrowed: String? = when {
+				ktc is KtcType.Ptr && ktc.inner is KtcType.Any -> "${target}*"
+				ktc is KtcType.Nullable && ktc.inner is KtcType.Ptr && ktc.inner.inner is KtcType.Any -> "${target}*"
+				ktc !is KtcType.Ptr -> target
+				else -> null
+				}
+			if (vNarrowed != null) casts.add(name to vNarrowed)
+			}
+	}
 	fun tryThisCastTo(target: String) {
 		val current = currentExtRecvType ?: return
 		if (current != target) casts.add("\$self" to target)
@@ -69,7 +75,13 @@ internal fun CCodeGen.pushSmartCasts(casts: List<Pair<String, String>>, ind: Str
 	if (casts.isEmpty()) return
 	for ((name, type) in casts) impl.appendLine("$ind    // smart-cast: '$name' narrowed to '$type'")
 	pushScope()
-	for ((name, type) in casts) defineVar(name, type)
+		for ((name, type) in casts) {
+			val vKtc = parseResolvedTypeName(type)
+			// For pointer narrows (@Ptr Any → @Ptr Concrete), emit a C cast
+			val vCName = if (vKtc is KtcType.Ptr) "((${vKtc.toCType()})${name})" else null
+			if (vCName != null) defineVar(name, LocalVar(ktc = vKtc, mutable = false, cName = vCName))
+			else defineVar(name, type)
+			}
 	}
 
 /** Pop the scope pushed by [pushSmartCasts]. No-op when [casts] is empty. */

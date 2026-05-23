@@ -22,11 +22,16 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 	if (vCurType != null) {
 		// Trampolined array param: redirect to local stack copy
 		if (e.name in trampolinedParams) return "local$${e.name}"
-		// Any trampoline smart-cast: narrowed from Any, dereference .data
-		if (vCurKtc !is KtcType.Any && isAnySmartCastVar(e.name)) {
-			val vCt = cTypeStr(vCurType)
-			return "(*(($vCt*)(${e.name}.data)))"
-			}
+			// Any trampoline smart-cast: narrowed from Any, dereference .data
+			if (vCurKtc !is KtcType.Any && isAnySmartCastVar(e.name) && vCurKtc !is KtcType.Ptr) {
+				val vCt = cTypeStr(vCurType)
+				return "(*(($vCt*)(${e.name}.data)))"
+				}
+			// @Ptr Any narrowed to @Ptr Concrete: cast the pointer
+			if (vCurKtc is KtcType.Ptr && isAnySmartCastVar(e.name)) {
+				val vCt = vCurKtc.toCType()
+				return "(($vCt)${e.name})"
+				}
 		val vCExpr = lookupCName(e.name)
 		// Optional var smart-casted to non-nullable: unwrap
 		if (isOptional(e.name) && vCurKtc !is KtcType.Nullable) {

@@ -123,6 +123,8 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         }
     }
     // Nullable T? vs non-null value: generate Optional-aware comparison
+    // === → pointer comparison in C (referential equality)
+    if (e.op == "===") return "(${genExpr(e.left)} == ${genExpr(e.right)})"
     if (e.op in setOf("==", "!=", "<", ">", "<=", ">=")) {
         val ltKtc = inferExprTypeKtc(e.left)
         val rtKtc = inferExprTypeKtc(e.right)

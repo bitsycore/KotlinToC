@@ -294,6 +294,7 @@ class Lexer(private val src: String) {
             '/' -> { advance(); emit(TokenType.SLASH, "/") }
             '%' if nc == '=' -> { advance(); advance(); emit(TokenType.PERCENT_EQ, "%=") }
             '%' -> { advance(); emit(TokenType.PERCENT, "%") }
+            '=' if nc == '=' && nnc == '=' -> { advance(); advance(); advance(); emit(TokenType.REF_EQ, "===") }
             '=' if nc == '=' -> { advance(); advance(); emit(TokenType.EQ_EQ, "==") }
             '=' -> { advance(); emit(TokenType.EQ, "=") }
             '!' if nc == '=' -> { advance(); advance(); emit(TokenType.EXCL_EQ, "!=") }

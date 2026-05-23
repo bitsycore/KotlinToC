@@ -46,7 +46,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 	if (!vHasMethodSection) impl.appendLine()
 	impl.appendLine(boxSection("implements Any (implicit)"))
 	impl.appendLine()
-	emitClassEquals(cName, ci)
+	if (d.members.none { it is FunDecl && it.name == "equals" }) emitClassEquals(cName, ci)
 	if (d.isData) emitDataClassToString(d.name, cName, ci)
 	emitImplicitDispose(cName, d.members)
 	emitImplicitHashCode(cName, ci, d.isData, isGenericClass = false, d.members)

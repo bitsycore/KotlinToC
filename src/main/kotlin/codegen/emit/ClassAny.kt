@@ -156,9 +156,23 @@ internal fun CCodeGen.emitAnyVtable(
 	impl.appendLine("    return ${cName}_hashCode(($cName*)\$self);")
 	impl.appendLine("}")
 	impl.appendLine()
-	impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
-	impl.appendLine("    return ${cName}_equals(*($cName*)\$self, *($cName*)other);")
-	impl.appendLine("}")
+		val vHasEqualsOverride = members.any { it is FunDecl && it.name == "equals" }
+		if (vHasEqualsOverride) {
+			val vIsPtr = members.any { it is FunDecl && it.name == "equals" && it.params.isNotEmpty() && it.params[0].type.annotations.any { a -> a.name == "Ptr" } }
+			if (vIsPtr) {
+				impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
+				impl.appendLine("    return ${cName}_equals(($cName*)\$self, (ktc_Any*)other);")
+				impl.appendLine("}")
+				} else {
+				impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
+				impl.appendLine("    return ${cName}_equals(*($cName*)\$self, *(ktc_Any*)other);")
+				impl.appendLine("}")
+				}
+			} else {
+			impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
+			impl.appendLine("    return ${cName}_equals(*($cName*)\$self, *($cName*)other);")
+			impl.appendLine("}")
+			}
 	impl.appendLine()
 	if (members.none { it is FunDecl && it.name == "dispose" }) {
 		impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")

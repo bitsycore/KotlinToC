@@ -273,10 +273,21 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Narrow a variable's KtcType for a guard smart-cast, preserving mutable/optional/arraySize. */
     internal fun narrowVarType(inName: String, inType: String) {
         val vNewKtc = parseResolvedTypeName(inType)
-        for (i in scopes.indices.reversed()) {
-            scopes[i][inName]?.let { scopes[i][inName] = it.copy(ktc = vNewKtc); return }
+        // Emit a C cast when narrowing to a different pointer type (e.g. @Ptr Any? → @Ptr Concrete)
+        var vCName: String? = null
+        if (vNewKtc is KtcType.Ptr) {
+            for (i in scopes.indices.reversed()) {
+                val vOldKtc = scopes[i][inName]?.ktc
+                if (vOldKtc != null) {
+                    if (vOldKtc.toCType() != vNewKtc.toCType()) vCName = "((${vNewKtc.toCType()})${inName})"
+                    break
+                    }
+                }
             }
-        scopes.lastOrNull()?.set(inName, LocalVar(vNewKtc))
+        for (i in scopes.indices.reversed()) {
+            scopes[i][inName]?.let { scopes[i][inName] = it.copy(ktc = vNewKtc, cName = vCName ?: it.cName); return }
+            }
+        scopes.lastOrNull()?.set(inName, LocalVar(vNewKtc, cName = vCName))
         }
 
     /* Look up the LocalVar for a variable, innermost scope first. */

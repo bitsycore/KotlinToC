@@ -40,6 +40,14 @@ object SDL3 {
         override fun toString(): String {
             return "FRect(x=${sdl.x}, y=${sdl.y}, w=${sdl.w}, h=${sdl.h})"
         }
+
+        override fun equals(other: @Ptr Any?): Boolean {
+            if (other !is FRect) return false
+            return sdl.x == other.sdl.x
+                    && sdl.y == other.sdl.y
+                    && sdl.w == other.sdl.w
+                    && sdl.h == other.sdl.h
+        }
     }
 
     // ==================

@@ -1023,7 +1023,7 @@ class Parser(private val tokens: List<Token>) {
     private fun binaryPrec(): Int = when (cur().type) {
         TokenType.PIPE_PIPE     -> PREC_DISJUNCTION
         TokenType.AMP_AMP       -> PREC_CONJUNCTION
-        TokenType.EQ_EQ, TokenType.EXCL_EQ -> PREC_EQUALITY
+        TokenType.EQ_EQ, TokenType.REF_EQ, TokenType.EXCL_EQ -> PREC_EQUALITY
         TokenType.LT, TokenType.GT, TokenType.LT_EQ, TokenType.GT_EQ -> PREC_COMPARISON
         TokenType.IN            -> PREC_NAMED
         TokenType.IS            -> PREC_NAMED
