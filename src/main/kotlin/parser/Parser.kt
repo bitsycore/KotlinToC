@@ -669,6 +669,10 @@ class Parser(private val tokens: List<Token>) {
                     if (at(TokenType.LBRACE)) CallExpr(safeDotExpr, listOf(Arg(null, parseLambdaExpr())))
                     else safeDotExpr
                 }
+                at(TokenType.LBRACE) -> {
+                    // No-paren trailing lambda: handleEvent { event -> ... }
+                    CallExpr(e, listOf(Arg(null, parseLambdaExpr())))
+                    }
                 at(TokenType.LPAREN) -> {
                     advance(); nesting++; skipNL()
                     val args = parseArgList()

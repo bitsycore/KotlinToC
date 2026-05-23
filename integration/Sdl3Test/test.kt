@@ -25,7 +25,7 @@ fun main() {
     val boxColor = SDL3.Color(0, 128, 255, 255)
     var running = true
     while (running) {
-        handleEvent() { event ->
+        handleEvent { event ->
             if (event.type == SDL3.Event.Quit) running = false
             if (event.type == SDL3.Event.MouseButtonDown) {
                 val mx = event.button.x
