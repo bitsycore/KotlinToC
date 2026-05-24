@@ -111,12 +111,17 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine()
     }
 
-    // global instance (zero-initialized), thread-once control block
+    // Determine if this object actually requires lazy initialization.
+    // Objects with no property initializers and no init blocks have an empty _init() body
+    // and don't need the $once / ensure_init machinery at all.
+    val vHasInit = props.any { it.init != null && it.getter == null } ||
+                   initBlocks.any { it.body?.stmts?.isNotEmpty() == true }
+
+    // global instance (zero-initialized)
     impl.appendLine("${vTls}${cName}_t $cName = {0};")
-    impl.appendLine("static ktc_thread_once_t ${cName}\$once = KTC_THREAD_ONCE_INIT;")
+    if (vHasInit) impl.appendLine("static ktc_thread_once_t ${cName}\$once = KTC_THREAD_ONCE_INIT;")
     impl.appendLine()
 
-    // static init function — body run exactly once across all threads
     val prevObject = currentObject
     currentObject = d.name
     pushScope()
@@ -127,40 +132,44 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         val vIsOpt = vPType.nullable && !vPType.annotations.any { it.name == "Ptr" } && !vKtcP.isArrayLike
         defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
     }
-    impl.appendLine("static void ${cName}_init(void) {")
-    for (p in props) {
-        if (p.init != null) {
-            val pType       = p.type ?: inferInitType(p.init)
-            val vKtcObjInit = resolveTypeName(pType)                   // KtcType for array checks
-            val sizeAnn     = pType.getSizeAnnotation()
-            val expr = genExprWithHeapTarget(p.init, pType)
-            flushPreStmts("    ")
-            if (vKtcObjInit.isArrayLike && sizeAnn != null) {
-                val vElemType = cTypeStr(vKtcObjInit.asArr!!.elem)     // element C type for sized array
-                val fn = privPrefix(p) + p.name
-                val vSrcKtc = inferExprTypeKtc(p.init)
-                val vSrcExpr = if (vSrcKtc != null && vSrcKtc.isArrayLike && vSrcKtc.asArr?.sized == null) "($expr).ptr" else expr
-                impl.appendLine("    memcpy($cName.$fn, $vSrcExpr, $sizeAnn * sizeof($vElemType));")
-            } else {
-                val fn = privPrefix(p) + p.name
-                impl.appendLine("    $cName.$fn = $expr;")
+
+    if (vHasInit) {
+        // static init function — body run exactly once across all threads
+        impl.appendLine("static void ${cName}_init(void) {")
+        for (p in props) {
+            if (p.init != null) {
+                val pType       = p.type ?: inferInitType(p.init)
+                val vKtcObjInit = resolveTypeName(pType)
+                val sizeAnn     = pType.getSizeAnnotation()
+                val expr = genExprWithHeapTarget(p.init, pType)
+                flushPreStmts("    ")
+                if (vKtcObjInit.isArrayLike && sizeAnn != null) {
+                    val vElemType = cTypeStr(vKtcObjInit.asArr!!.elem)
+                    val fn = privPrefix(p) + p.name
+                    val vSrcKtc = inferExprTypeKtc(p.init)
+                    val vSrcExpr = if (vSrcKtc != null && vSrcKtc.isArrayLike && vSrcKtc.asArr?.sized == null) "($expr).ptr" else expr
+                    impl.appendLine("    memcpy($cName.$fn, $vSrcExpr, $sizeAnn * sizeof($vElemType));")
+                } else {
+                    val fn = privPrefix(p) + p.name
+                    impl.appendLine("    $cName.$fn = $expr;")
+                }
             }
         }
+        for (ib in initBlocks) {
+            if (ib.body != null) for (s in ib.body.stmts) emitStmt(s, "    ")
+        }
+        impl.appendLine("}")
+        impl.appendLine()
+
+        hdr.appendLine("void ${cName}_\$ensure_init(void);")
+        impl.appendLine("void ${cName}_\$ensure_init(void) {")
+        impl.appendLine("    ktc_thread_call_once(&${cName}\$once, ${cName}_init);")
+        impl.appendLine("}")
+        impl.appendLine()
     }
-    for (ib in initBlocks) {
-        if (ib.body != null) for (s in ib.body.stmts) emitStmt(s, "    ")
-    }
+
     popScope()
     currentObject = prevObject
-    impl.appendLine("}")
-    impl.appendLine()
-
-    // $ensure_init: thread-safe lazy initializer — declared in header so other TUs can call it
-    hdr.appendLine("void ${cName}_\$ensure_init(void);")
-    impl.appendLine("void ${cName}_\$ensure_init(void) {")
-    impl.appendLine("    ktc_thread_call_once(&${cName}\$once, ${cName}_init);")
-    impl.appendLine("}")
-    impl.appendLine()
 
     // Methods are split into three groups, each landing in its own source section:
     //   - interface overrides  → "implements X" section (one per interface)
@@ -204,7 +213,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         val vRetSuffix = if (m.returnType != null) ": ${typeRefToStr(m.returnType)}" else ""
         impl.appendLine("// ══ fun ${m.name}()$vRetSuffix ══")
         impl.appendLine("$cRet ${cName}_$fnName($params) {")
-        impl.appendLine("    ${cName}_\$ensure_init();")
+        if (vHasInit) impl.appendLine("    ${cName}_\$ensure_init();")
         pushScope()
         for (p in props) {
             val vPType = p.type ?: inferInitType(p.init)
@@ -290,7 +299,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         impl.appendLine("// ══ fun toString() ══")
         impl.appendLine("void ${cName}_toString(${cName}_t* \$self, ktc_StrBuf* sb) {")
         impl.appendLine("    (void)\$self;")
-        impl.appendLine("    ${cName}_\$ensure_init();")
+        if (vHasInit) impl.appendLine("    ${cName}_\$ensure_init();")
         val vMaxLen = toStringMaxLen(d.name)
         if (vMaxLen != null) {
             impl.appendLine("    ktc_Char buf[$vMaxLen];")
@@ -307,7 +316,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     if (!vHasHashCode) {
         impl.appendLine("// ══ fun hashCode(): Int ══")
         impl.appendLine("ktc_Int ${cName}_hashCode() {")
-        impl.appendLine("    ${cName}_\$ensure_init();")
+        if (vHasInit) impl.appendLine("    ${cName}_\$ensure_init();")
         impl.appendLine("    return (ktc_Int)${cName}_TYPE_ID;")
         impl.appendLine("}")
         impl.appendLine()
@@ -315,7 +324,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     if (!vHasDispose && (disposedMode != "NO" || doubleDisposeMode != "NO")) {
         impl.appendLine("// ══ fun dispose() ══")
         impl.appendLine("void ${cName}_dispose() {")
-        impl.appendLine("    ${cName}_\$ensure_init();")
+        if (vHasInit) impl.appendLine("    ${cName}_\$ensure_init();")
         impl.appendLine("    KTC_MARK_DISPOSED(&$cName);")
         impl.appendLine("}")
         impl.appendLine()
