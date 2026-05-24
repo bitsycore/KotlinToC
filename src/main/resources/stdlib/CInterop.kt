@@ -1,5 +1,5 @@
 @file:DocumentationOnly
-package ktc.std
+package ktc
 
 /**
 C interop for KotlinToC.

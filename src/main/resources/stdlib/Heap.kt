@@ -1,5 +1,5 @@
 @file:DocumentationOnly
-package ktc.std
+package ktc
 
 /**
 Allocate a single heap instance of T and call its primary constructor.

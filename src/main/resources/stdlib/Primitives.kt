@@ -1,4 +1,5 @@
 @file:DocumentationOnly
+package ktc
 
 // ==================
 // MARK: Boolean

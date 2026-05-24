@@ -1,5 +1,5 @@
 @file:DocumentationOnly
-package ktc.std
+package ktc
 
 /**
 Mark a type parameter, type property, or return type as a raw C pointer.

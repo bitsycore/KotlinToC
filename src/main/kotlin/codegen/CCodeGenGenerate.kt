@@ -43,14 +43,18 @@ internal fun CCodeGen.generate(): COutput {
 
 	for (vInc in file.cIncludes) hdr.appendLine(vInc.toCDirective())
 
+	// Always include the ktc intrinsic header (except for ktc itself, which IS that header).
+	val hasKtc = allFiles.any { it.pkg == "ktc" }
+	if (hasKtc && file.pkg != "ktc")
+		hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/_package_.h")}\"")
+
+	// Explicit imports (e.g. "ktc.std.*") → C #include directives.
+	// Skip pure "ktc" imports — the intrinsic header is already included above.
 	for (imp in file.imports) {
-		if (imp.startsWith("ktc.std") || imp.startsWith("ktc_std")) continue
+		if (imp == "ktc" || imp == "ktc.*") continue
 		val parts = imp.removeSuffix(".*").split('.')
 		hdr.appendLine("#include \"${relIncludePath(vFromDir, "${parts.joinToString("/")}/_package_.h")}\"")
 		}
-	val hasStdlib = allFiles.any { it.pkg == "ktc.std" }
-	if (hasStdlib && file.pkg != "ktc.std")
-		hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/std/_package_.h")}\"")
 	hdr.appendLine()
 
 	// Placeholder for primitive/external/string KTC_DEFINE_ARRAY|STRING — replaced after emission.

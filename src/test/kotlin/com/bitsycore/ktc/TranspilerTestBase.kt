@@ -168,7 +168,9 @@ open class TranspilerTestBase {
         val vStdlibAsts = loadStdlibAsts()  // prescans stdlib infix names into Parser.INFIX_IDS
         prescanInfix(vSource)                // also prescan user source for any user-defined infix
         val vTokens = Lexer(vSource).tokenize()
+        // Inject "ktc.std.*" so the codegen emits the #include for the std package header.
         val vAst = Parser(vTokens).parseFile()
+            .let { it.copy(imports = (it.imports + "ktc.std.*").distinct()) }
         val vAllAsts = vStdlibAsts + vAst
         val vOutput = CCodeGen(vAst, vAllAsts, vSource.lines()).generate()
         val result = TranspileResult(

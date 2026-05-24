@@ -52,6 +52,14 @@ private fun parseModuleDeps(moduleName: String, aClass: Class<*>): List<String> 
     return parseTomlStringArray(match.groupValues[1])
 }
 
+/** Parse `autoImport = "ktc.std.*"` from a module.toml resource. Returns null if absent. */
+private fun parseModuleAutoImport(moduleName: String, aClass: Class<*>): String? {
+    val res = aClass.getResourceAsStream("/modules/$moduleName/module.toml") ?: return null
+    val content = res.bufferedReader().readText()
+    return Regex("""^\s*autoImport\s*=\s*"([^"]+)"""", RegexOption.MULTILINE)
+        .find(content)?.groupValues?.get(1)
+}
+
 /** Expand [seeds] into a full ordered load list by following module `dependencies`, BFS, no duplicates. */
 private fun resolveModules(seeds: List<String>, aClass: Class<*>): List<String> {
     val result = mutableListOf<String>()
@@ -168,6 +176,7 @@ fun main(args: Array<String>) {
         if (depsFile.exists()) moduleNames += parseDepsToml(depsFile.readText())
     }
     val resolvedModules = resolveModules(moduleNames.distinct(), aClass)
+    val moduleAutoImports = resolvedModules.mapNotNull { parseModuleAutoImport(it, aClass) }.distinct()
 
     // Collect stdlib .kt files from resources
     val stdlibDir = aClass.getResource("/stdlib") ?: aClass.getResource("/stdlib/")
@@ -237,6 +246,17 @@ fun main(args: Array<String>) {
             val vPrefix = if (vRaw.vIsStdlib) "Stdlib error" else "Error" // error origin label
             System.err.println("$vPrefix in ${vRaw.vName}: ${e.message}")
             exitProcess(1)
+        }
+    }
+
+    // Inject module auto-imports (e.g. "ktc.std.*") into user source files.
+    // Module/stdlib files (package starts with "ktc") are skipped — they don't need their own auto-import.
+    if (moduleAutoImports.isNotEmpty()) {
+        for (i in parsedFiles.indices) {
+            val ps = parsedFiles[i]
+            if (ps.ast.pkg?.startsWith("ktc") == true) continue
+            val newImports = (ps.ast.imports + moduleAutoImports).distinct()
+            parsedFiles[i] = ps.copy(ast = ps.ast.copy(imports = newImports))
         }
     }
 
@@ -317,13 +337,13 @@ fun main(args: Array<String>) {
         }
 
         val baseName    = mergedFile.pkg?.replace('.', '_') ?: pkg  // mangled pkg (e.g. "com_example")
-        val isKtcPkg    = baseName.startsWith("ktc_")               // is this a ktc.* stdlib package?
-        val vPkgPath    = mergedFile.pkg?.replace('.', '/') ?: pkg  // e.g. "com/example", "ktc/std", or pkg key
+        val isKtcPkg    = baseName == "ktc" || baseName.startsWith("ktc_") // ktc or ktc.* packages
+        val vPkgPath    = mergedFile.pkg?.replace('.', '/') ?: pkg  // e.g. "com/example", "ktc/std", "ktc"
         // Package header goes in the package subdirectory as _package_.h (alphabetically first in dir).
         // ktc packages: ktc/<subpath>/_package_.h;  user packages: outDir/<pkgPath>/_package_.h
         val pkgHdrDir   = when {
             isKtcPkg -> {
-                val vSubPath = vPkgPath.removePrefix("ktc/")        // e.g. "std" from "ktc/std"
+                val vSubPath = vPkgPath.removePrefix("ktc").removePrefix("/") // "ktc/std"→"std", "ktc"→""
                 if (vSubPath.isNotEmpty()) File(ktcDir, vSubPath).also { it.mkdirs() } else ktcDir
                 }
             vPkgPath.isNotEmpty() -> File(outDir, vPkgPath).also { it.mkdirs() }
@@ -335,15 +355,14 @@ fun main(args: Array<String>) {
 
         // Write each .c file to the directory determined by its routingPkg
         for ((vFileName, vSourceFile) in output.sources) {
-            val vRoutingPkg  = vSourceFile.routingPkg                    // dot-separated, e.g. "ktc.std"
-            val vRoutingPath = vRoutingPkg.replace('.', '/')             // e.g. "ktc/std"
-            val vIsKtcFile   = vRoutingPkg.startsWith("ktc.")            // true for all ktc.* packages
-                            || vRoutingPkg == "ktc_std"                  // legacy fallback
+            val vRoutingPkg  = vSourceFile.routingPkg                    // dot-separated, e.g. "ktc.std", "ktc"
+            val vRoutingPath = vRoutingPkg.replace('.', '/')             // e.g. "ktc/std", "ktc"
+            val vIsKtcFile   = vRoutingPkg == "ktc" || vRoutingPkg.startsWith("ktc.") // ktc or ktc.* packages
             val vFileSrcDir: File
             val vRelBase: String                                          // path for compile command
             if (vIsKtcFile) {
-                // Strip the "ktc/" prefix to get the subpath within ktcDir
-                val vSubPath = vRoutingPath.removePrefix("ktc/")         // e.g. "std" from "ktc/std"
+                // Strip "ktc" prefix to get the subpath within ktcDir ("ktc/std"→"std", "ktc"→"")
+                val vSubPath = vRoutingPath.removePrefix("ktc").removePrefix("/")
                 vFileSrcDir = if (vSubPath.isNotEmpty()) File(ktcDir, vSubPath).also { it.mkdirs() } else ktcDir
                 val vBase   = vFileName.removeSuffix(".c")               // e.g. "Heap"
                 vRelBase    = if (vSubPath.isNotEmpty()) "$vSubPath/$vBase" else vBase

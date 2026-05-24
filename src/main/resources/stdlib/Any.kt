@@ -1,4 +1,5 @@
 @file:DocumentationOnly
+package ktc
 
 /** Base class of all Kotlin classes. Every class implicitly extends Any. */
 open class Any {
