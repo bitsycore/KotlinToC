@@ -20,3 +20,24 @@ fun SDL3.Window.getSize(): SDL3.FPoint {
 inline fun SDL3.Window.setResizable(resizable: Boolean) {
     c.SDL_SetWindowResizable(this.handle, resizable)
 }
+
+inline fun SDL3.Window.show()     { c.SDL_ShowWindow(this.handle) }
+inline fun SDL3.Window.hide()     { c.SDL_HideWindow(this.handle) }
+inline fun SDL3.Window.raise()    { c.SDL_RaiseWindow(this.handle) }
+inline fun SDL3.Window.minimize() { c.SDL_MinimizeWindow(this.handle) }
+inline fun SDL3.Window.maximize() { c.SDL_MaximizeWindow(this.handle) }
+inline fun SDL3.Window.restore()  { c.SDL_RestoreWindow(this.handle) }
+
+inline fun SDL3.Window.setPosition(x: Int, y: Int) {
+    c.SDL_SetWindowPosition(this.handle, x, y)
+}
+
+fun SDL3.Window.getPosition(): SDL3.FPoint {
+    var x = 0
+    var y = 0
+    c.SDL_GetWindowPosition(this.handle, c.addr(x), c.addr(y))
+    return SDL3.FPoint(x.toFloat(), y.toFloat())
+}
+
+/** Flags bitmask for the window (SDL_WindowFlags). */
+fun SDL3.Window.getFlags(): Int = c.SDL_GetWindowFlags(this.handle)

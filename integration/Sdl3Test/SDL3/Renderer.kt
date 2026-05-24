@@ -78,3 +78,8 @@ inline fun SDL3.Renderer.setClipRect(rect: SDL3.Rect) {
 inline fun SDL3.Renderer.clearClipRect() {
     c.SDL_SetRenderClipRect(this.handle, c.NULL)
 }
+
+/** Set the logical presentation size for scaling. */
+inline fun SDL3.Renderer.setLogicalSize(w: Int, h: Int) {
+    c.SDL_SetRenderLogicalPresentation(this.handle, w, h, c.SDL_LOGICAL_PRESENTATION_LETTERBOX)
+}

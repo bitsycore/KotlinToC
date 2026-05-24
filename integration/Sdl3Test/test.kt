@@ -10,7 +10,7 @@ fun main(args: Array<String>) {
     SDL3.initialize()
     defer SDL3.quit()
 
-    val window   = SDL3.Window("SDL3 Click Box Example", 800, 600)
+    val window   = SDL3.Window("SDL3 Click Box Example", 800, 600, SDL3.WindowFlags.Resizable)
     defer window.destroy()
 
     val renderer = SDL3.Renderer(window)
@@ -92,8 +92,7 @@ fun main(args: Array<String>) {
         if (moveDown)  dy += speed * dt
         if (dx != 0.0f || dy != 0.0f) box = box.copy(x = box.x + dx, y = box.y + dy)
 
-        val hovering = mouseX >= box.x && mouseX <= box.x + box.w &&
-                       mouseY >= box.y && mouseY <= box.y + box.h
+        val hovering = box.contains(SDL3.FPoint(mouseX, mouseY))
 
         renderer.setDrawColor(background)
         renderer.clear()

@@ -247,5 +247,10 @@ object SDL3 {
     object TextureAccess
     object PixelFormat
     object Flip
+    object WindowFlags
+    object InitFlags
+    object SystemCursor
+
+    class Cursor(val handle: @Ptr c.SDL_Cursor)
 }
 
