@@ -50,15 +50,24 @@ internal fun CCodeGen.collectDecls() {
 				}
 			}
 		}
-	// Re-key extension props from dotted receiver names to dollar form where objects now exist.
-	// Needed when extension prop files (e.g. Event.kt) are processed before the object definition
-	// file (e.g. SDL3.kt): "SDL3.Event" → "SDL3$Event" once objects["SDL3$Event"] is populated.
-	val vDottedKeys = extensionProps.keys.filter { '.' in it }
-	for (key in vDottedKeys) {
+	// Re-key extension props and extension funs from dotted receiver names to dollar form.
+	// Needed when the extension file is processed before its receiver's definition file in the
+	// cross-reference pass: e.g. "SDL3.Renderer" → "SDL3$Renderer" once classes["SDL3$Renderer"]
+	// is populated, or "SDL3.Event" → "SDL3$Event" once objects["SDL3$Event"] is populated.
+	val vDottedPropKeys = extensionProps.keys.filter { '.' in it }.toList()
+	for (key in vDottedPropKeys) {
 		val dollarKey = key.replace('.', '$')
-		if (objects.containsKey(dollarKey)) {
+		if (classes.containsKey(dollarKey) || objects.containsKey(dollarKey)) {
 			extensionProps.getOrPut(dollarKey) { mutableListOf() }.addAll(extensionProps[key]!!)
 			extensionProps.remove(key)
+			}
+		}
+	val vDottedFunKeys = extensionFuns.keys.filter { '.' in it }.toList()
+	for (key in vDottedFunKeys) {
+		val dollarKey = key.replace('.', '$')
+		if (classes.containsKey(dollarKey) || objects.containsKey(dollarKey)) {
+			extensionFuns.getOrPut(dollarKey) { mutableListOf() }.addAll(extensionFuns[key]!!)
+			extensionFuns.remove(key)
 			}
 		}
 	// Set pkg for nested classes whose pkg wasn't explicitly set
