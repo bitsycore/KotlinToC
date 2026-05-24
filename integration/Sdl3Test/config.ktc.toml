@@ -1,0 +1,6 @@
+name       = "SDL3 Sprite Demo"
+author     = "Bitsy"
+version    = "1.0"
+info       = "Bouncing sprite with keyboard movement, rendered with SDL3"
+executable = "sdl3demo"
+gui        = true

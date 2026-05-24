@@ -43,18 +43,18 @@ private fun parseDepsToml(content: String): List<String> {
     return parseTomlStringArray(match.groupValues[1])
 }
 
-/** Parse `dependencies = ["A", "B"]` from a module.toml resource. Returns empty list if absent. */
+/** Parse `dependencies = ["A", "B"]` from a module.ktc.toml resource. Returns empty list if absent. */
 private fun parseModuleDeps(moduleName: String, aClass: Class<*>): List<String> {
-    val res = aClass.getResourceAsStream("/modules/$moduleName/module.toml") ?: return emptyList()
+    val res = aClass.getResourceAsStream("/modules/$moduleName/module.ktc.toml") ?: return emptyList()
     val content = res.bufferedReader().readText()
     val match = Regex("""^\s*dependencies\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
         ?: return emptyList()
     return parseTomlStringArray(match.groupValues[1])
 }
 
-/** Parse `autoImport = "ktc.std.*"` from a module.toml resource. Returns null if absent. */
+/** Parse `autoImport = "ktc.std.*"` from a module.ktc.toml resource. Returns null if absent. */
 private fun parseModuleAutoImport(moduleName: String, aClass: Class<*>): String? {
-    val res = aClass.getResourceAsStream("/modules/$moduleName/module.toml") ?: return null
+    val res = aClass.getResourceAsStream("/modules/$moduleName/module.ktc.toml") ?: return null
     val content = res.bufferedReader().readText()
     return Regex("""^\s*autoImport\s*=\s*"([^"]+)"""", RegexOption.MULTILINE)
         .find(content)?.groupValues?.get(1)

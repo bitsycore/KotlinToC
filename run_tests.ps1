@@ -8,7 +8,7 @@
 #   .\run_tests.ps1 -Run HashMapTest           # Run a single test (verbose)
 #   .\run_tests.ps1 -Run "Test1,Test2"         # Run multiple tests
 #   .\run_tests.ps1 -Skip unit                 # Skip unit tests
-#   .\run_tests.ps1 -Run game -Gui                # Run with GUI window open (real-time output)
+#   .\run_tests.ps1 -Run game -Gui                # Run with GUI window open (config.ktc.toml: gui=true)
 #   .\run_tests.ps1 -Run game -MemTrack           # With --mem-track
 #   .\run_tests.ps1 -Run game -Ast                # With --ast
 #   .\run_tests.ps1 -Run game -DumpSemantics      # With --dump-semantics
@@ -105,6 +105,29 @@ function Format-Ms {
 	param([long]$inMs)
 	if ($inMs -lt 1000) { return "${inMs}ms" }
 	return ("{0:N2}s" -f ($inMs / 1000.0))
+}
+
+<#
+Parses a config.ktc.toml file and returns a hashtable with fields:
+  name, author, version, info, executable, gui (bool), args, timeout (int seconds).
+Returns defaults for any missing field.
+#>
+function Read-ConfigToml {
+	param([string]$inPath)
+	$vCfg = @{ name = ""; author = ""; version = ""; info = ""; executable = ""; gui = $false; args = ""; timeout = 0 }
+	if (-not (Test-Path $inPath)) { return $vCfg }
+	foreach ($vLine in (Get-Content $inPath)) {
+		$vLine = $vLine.Trim()
+		if     ($vLine -match '^\s*gui\s*=\s*true')              { $vCfg.gui        = $true }
+		elseif ($vLine -match '^\s*name\s*=\s*"([^"]*)"')        { $vCfg.name       = $Matches[1] }
+		elseif ($vLine -match '^\s*author\s*=\s*"([^"]*)"')      { $vCfg.author     = $Matches[1] }
+		elseif ($vLine -match '^\s*version\s*=\s*"([^"]*)"')     { $vCfg.version    = $Matches[1] }
+		elseif ($vLine -match '^\s*info\s*=\s*"([^"]*)"')        { $vCfg.info       = $Matches[1] }
+		elseif ($vLine -match '^\s*executable\s*=\s*"([^"]*)"')  { $vCfg.executable = $Matches[1] }
+		elseif ($vLine -match '^\s*args\s*=\s*"([^"]*)"')        { $vCfg.args       = $Matches[1] }
+		elseif ($vLine -match '^\s*timeout\s*=\s*(\d+)')         { $vCfg.timeout    = [int]$Matches[1] }
+	}
+	return $vCfg
 }
 
 # ==================
@@ -335,17 +358,11 @@ function Invoke-Test {
 	# ── Run ──────────────────────────────────────────────────────
 	Write-Sec "Run"
 	Write-Cmd $vExe; Write-Host ""
-	# _test_args.txt: "gui" marks a test that opens a window.
+	# config.ktc.toml: gui=true marks a windowed test.
 	# In automated mode the script injects --skip-gui; with -Gui the window opens for real.
-	$vTestArgsFile = "$inSrcDir\_test_args.txt"
-	$vIsGuiTest    = $false
-	$vRunArgs      = ""
-	if (Test-Path $vTestArgsFile) {
-		$vFileContent = ((Get-Content $vTestArgsFile) -join ' ').Trim()
-		if ($vFileContent -eq "gui") { $vIsGuiTest = $true }
-		else                         { $vRunArgs = $vFileContent }
-	}
-	if ($vIsGuiTest -and -not $inGuiMode) { $vRunArgs = "--skip-gui" }
+	$vCfg       = Read-ConfigToml "$inSrcDir\config.ktc.toml"
+	$vIsGuiTest = $vCfg.gui
+	$vRunArgs   = if ($vIsGuiTest -and -not $inGuiMode) { "--skip-gui" } else { $vCfg.args }
 	if ($vRunArgs) { Write-Info "Test args: $vRunArgs" }
 
 	# UseShellExecute=false uses CreateProcess — no Windows auto-elevation.
@@ -547,13 +564,16 @@ function Run-Suite {
 			}
 		}
 
-		# Run — "gui" in _test_args.txt marks a windowed test; always headless in suite mode.
-		$vTAFile  = "$($vDir.FullName)\_test_args.txt"
-		$vRunArgs = ""
-		if (Test-Path $vTAFile) {
-			$vFC = ((Get-Content $vTAFile) -join ' ').Trim()
-			if ($vFC -eq "gui") { $vRunArgs = "--skip-gui" } else { $vRunArgs = $vFC }
+		# Run — config.ktc.toml: gui=true marks a windowed test; always headless in suite mode.
+		$vCfgPath = "$($vDir.FullName)\config.ktc.toml"
+		$vRunArgs = ""; $vIsGui = $false
+		if (Test-Path $vCfgPath) {
+			foreach ($vL in (Get-Content $vCfgPath)) {
+				if     ($vL -match '^\s*gui\s*=\s*true')             { $vIsGui = $true }
+				elseif ($vL -match '^\s*args\s*=\s*"([^"]*)"')       { $vRunArgs = $Matches[1] }
+			}
 		}
+		if ($vIsGui) { $vRunArgs = "--skip-gui" }
 		$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
 		if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
 		$vPsi.RedirectStandardOutput = $true
