@@ -166,6 +166,7 @@ object SDL3 {
     }
 
     object Event
+    object Scancode
 }
 
 // ==================
@@ -199,10 +200,19 @@ fun SDL3.Renderer.clear() {
     c.SDL_RenderClear(this.handle)
 }
 
-/** Fill a rectangle on the render target.
-inRect must be a c.SDL_FRect variable so its address can be taken. */
+/** Fill a rectangle on the render target. */
 fun SDL3.Renderer.fillRect(inRect: SDL3.FRect) {
     c.SDL_RenderFillRect(this.handle, c.addr(inRect.sdl))
+}
+
+/** Draw the outline of a rectangle on the render target. */
+fun SDL3.Renderer.drawRect(inRect: SDL3.FRect) {
+    c.SDL_RenderRect(this.handle, c.addr(inRect.sdl))
+}
+
+/** Draw a line segment on the render target. */
+fun SDL3.Renderer.drawLine(x1: Float, y1: Float, x2: Float, y2: Float) {
+    c.SDL_RenderLine(this.handle, x1, y1, x2, y2)
 }
 
 /** Present the rendered frame to the screen. */
