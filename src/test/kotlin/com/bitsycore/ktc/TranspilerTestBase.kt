@@ -116,30 +116,39 @@ open class TranspilerTestBase {
     }
 
     /*
-    Loads and parses all stdlib .kt files by scanning the /stdlib/ resource directory.
+    Loads and parses all stdlib .kt files by scanning the /stdlib/ resource directory,
+    plus the /modules/std/ module (mirrors what the transpiler does when std is active).
     Also prescans each file for infix function names. Returns ASTs for CCodeGen context.
     */
     protected fun loadStdlibAsts(): List<KtFile> {
         val cls = this.javaClass
-        val stdlibDir = cls.getResource("/stdlib") ?: cls.getResource("/stdlib/") ?: return emptyList()
-        val names = when (stdlibDir.protocol) {
-            "jar" -> {
-                val conn = stdlibDir.openConnection() as java.net.JarURLConnection
-                conn.jarFile.entries().asSequence()
-                    .filter { !it.isDirectory && it.name.startsWith("stdlib/") && it.name.endsWith(".kt") }
-                    .map { it.name.removePrefix("stdlib/") }
-                    .toList()
+        val vSources = mutableListOf<Pair<String, String>>()
+
+        fun collectDir(resourcePath: String, prefix: String) {
+            val dir = cls.getResource(resourcePath) ?: cls.getResource("$resourcePath/") ?: return
+            val names = when (dir.protocol) {
+                "jar" -> {
+                    val conn = dir.openConnection() as java.net.JarURLConnection
+                    conn.jarFile.entries().asSequence()
+                        .filter { !it.isDirectory && it.name.startsWith("$prefix/") && it.name.endsWith(".kt") && !it.name.removePrefix("$prefix/").contains('/') }
+                        .map { it.name.removePrefix("$prefix/") }
+                        .toList()
+                }
+                "file" -> java.io.File(dir.toURI()).listFiles()
+                    ?.filter { it.name.endsWith(".kt") }
+                    ?.map { it.name } ?: emptyList()
+                else -> emptyList()
             }
-            "file" -> java.io.File(stdlibDir.toURI()).listFiles()
-                ?.filter { it.name.endsWith(".kt") }
-                ?.map { it.name } ?: emptyList()
-            else -> emptyList()
+            names.sorted().mapNotNullTo(vSources) { name ->
+                val res = cls.getResourceAsStream("/$prefix/$name") ?: return@mapNotNullTo null
+                name to res.bufferedReader().readText()
+            }
         }
-        val vSources = names.sorted().mapNotNull { name ->
-            val res = cls.getResourceAsStream("/stdlib/$name") ?: return@mapNotNull null
-            name to res.bufferedReader().readText()
-        }
-        // Prescan all stdlib sources for infix names before any parsing
+
+        collectDir("/stdlib", "stdlib")
+        collectDir("/modules/std", "modules/std")
+
+        // Prescan all sources for infix names before any parsing
         vSources.forEach { (_, src) -> prescanInfix(src) }
         return vSources.mapNotNull { (name, src) ->
             val tokens = Lexer(src).tokenize()
@@ -178,6 +187,7 @@ open class TranspilerTestBase {
     */
     protected fun transpileStdlibFile(vFileName: String): TranspileResult {
         val vRes = this.javaClass.getResourceAsStream("/stdlib/$vFileName")
+            ?: this.javaClass.getResourceAsStream("/modules/std/$vFileName")
             ?: error("stdlib file not found: $vFileName")
         val vSource = vRes.bufferedReader().readText()
         val vTokens = Lexer(vSource).tokenize()

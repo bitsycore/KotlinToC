@@ -1,0 +1,3 @@
+name = "std"
+version = "1.0"
+description = "Standard library utilities: error handling, collections, arena allocator, I/O helpers, and more."
