@@ -3,13 +3,6 @@ package test
 
 import sdl3.*
 
-inline fun handleEvent(block: (@Ptr c.SDL_Event) -> Unit) {
-    var event: c.SDL_Event = c.init()
-    while (c.SDL_PollEvent(c.addr(event))) {
-        block(c.addr(event))
-    }
-}
-
 fun main(args: Array<String>) {
     var testMode = false
     for (arg in args) { if (arg == "--test") testMode = true }
@@ -17,7 +10,7 @@ fun main(args: Array<String>) {
     SDL3.initialize()
     defer SDL3.quit()
 
-    val window = SDL3.Window("SDL3 Click Box Example", 800, 600)
+    val window   = SDL3.Window("SDL3 Click Box Example", 800, 600)
     defer window.destroy()
 
     val renderer = SDL3.Renderer(window)
@@ -29,33 +22,26 @@ fun main(args: Array<String>) {
     val outlineColor = SDL3.Color(255, 255, 255, 128)
     val crosshairCol = SDL3.Color(180, 180, 180, 200)
 
-    var box     = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
-    var mouseX  = 0.0f
-    var mouseY  = 0.0f
-    var running = true
+    var box    = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
+    var mouseX = 0.0f
+    var mouseY = 0.0f
+    var quit   = false
 
-    // Held-key state — movement is continuous and delta-scaled
+    // Held-key state
     var moveLeft  = false
     var moveRight = false
     var moveUp    = false
     var moveDown  = false
 
-    val frameMs = 1000L / 60L   // target frame budget: ~16 ms
-    val speed   = 200.0f        // pixels per second
+    val speed = 200.0f   // pixels per second
 
-    var lastTick = SDL3.ticks()
-
-    while (running) {
-        val now = SDL3.ticks()
-        val dt  = (now - lastTick).toFloat() / 1000.0f
-        lastTick = now
-
-        handleEvent { event ->
+    gameLoop(60) { dt ->
+        pollEvents { event ->
             when (event.type) {
-                SDL3.Event.Quit -> running = false
+                SDL3.Event.Quit -> quit = true
 
                 SDL3.Event.KeyDown -> when (event.key.scancode) {
-                    SDL3.Scancode.Escape                  -> running   = false
+                    SDL3.Scancode.Escape                  -> quit      = true
                     SDL3.Scancode.Left,  SDL3.Scancode.A -> moveLeft  = true
                     SDL3.Scancode.Right, SDL3.Scancode.D -> moveRight = true
                     SDL3.Scancode.Up,    SDL3.Scancode.W -> moveUp    = true
@@ -86,7 +72,7 @@ fun main(args: Array<String>) {
             }
         }
 
-        // Apply continuous movement, dt-scaled so speed is frame-rate independent
+        // Delta-scaled movement
         var dx = 0.0f
         var dy = 0.0f
         if (moveLeft)  dx -= speed * dt
@@ -113,10 +99,6 @@ fun main(args: Array<String>) {
 
         renderer.present()
 
-        // Sleep the remainder of the frame budget to hold ~60 FPS
-        val elapsed = SDL3.ticks() - now
-        if (elapsed < frameMs) SDL3.delay((frameMs - elapsed).toInt())
-
-        if (testMode) running = false
+        !quit && !testMode
     }
 }

@@ -42,6 +42,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         objects[inName]?.let { return it.flatName }
         enums[inName]?.let { return it.flatName }
         interfaces[inName]?.let { return it.flatName }
+        // Resolve dotted nested names (e.g. "SDL3.Mouse" → "SDL3$Mouse") not yet in map
+        if (inName.contains('.')) {
+            val vFlat = inName.replace('.', '$')
+            classes[vFlat]?.let { return it.flatName }
+            objects[vFlat]?.let { return it.flatName }
+            }
         return pfx(inName)
         }
 

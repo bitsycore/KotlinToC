@@ -317,9 +317,9 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					if (starExtFunDecls.none { it === d }) starExtFunDecls += d
 					}
 				d.receiver != null -> {
-					// Resolve dotted receiver (e.g. "SDL3.Window" → "SDL3$Window")
+					// Resolve dotted receiver (e.g. "SDL3.Window" → "SDL3$Window", also for nested objects)
 					val vFlatRecv = d.receiver.name.replace('.', '$')
-					val recvName  = if (classes.containsKey(vFlatRecv)) vFlatRecv else d.receiver.name
+					val recvName  = if (classes.containsKey(vFlatRecv) || objects.containsKey(vFlatRecv)) vFlatRecv else d.receiver.name
 					extensionFuns.getOrPut(recvName) { mutableListOf() }.add(d)
 					classes[recvName]?.methods?.add(d)
 					funSigs["${recvName}.${d.name}"] = FunSig(d.params, effectiveReturnType)

@@ -108,10 +108,10 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 		val vRet      = resolveTypeNameStr(t.funcReturn)
 		return "Fun($vReceiver$vParams)->$vRet"
 		}
-	// Nested class: Outer.Inner → Outer$Inner
+	// Nested class/object: Outer.Inner → Outer$Inner
 	if (t.name.contains('.') && !t.name.startsWith("ktc_")) {
 		val vFlatName = t.name.replace('.', '$')
-		if (classes.containsKey(vFlatName) || genericClassDecls.containsKey(vFlatName) || interfaces.containsKey(vFlatName)) {
+		if (classes.containsKey(vFlatName) || genericClassDecls.containsKey(vFlatName) || interfaces.containsKey(vFlatName) || objects.containsKey(vFlatName)) {
 			val vSynthetic = TypeRef(vFlatName, t.nullable, t.typeArgs, t.funcParams, t.funcReturn, t.funcReceiver, t.annotations)
 			return resolveTypeNameInnerStr(vSynthetic)
 			}

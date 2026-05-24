@@ -197,6 +197,7 @@ object SDL3 {
     object Event
     object Scancode
     object BlendMode
+    object Mouse
 }
 
 // ==================
