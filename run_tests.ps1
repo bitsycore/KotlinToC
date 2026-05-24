@@ -20,6 +20,8 @@
 #   .\run_tests.ps1 -Rebuild                   # Force clean rebuild of JAR
 #   .\run_tests.ps1 -Compiler clang            # Override C compiler
 #   .\run_tests.ps1 -CCArgs "-j14 -O2"         # Extra C compiler flags
+#   .\run_tests.ps1 -StaticLibc                # Link C runtime statically (KTC_STATIC_LIBC=ON)
+#   .\run_tests.ps1 -CMakeArgs "-DFOO=BAR"     # Extra CMake configure flags
 #   .\run_tests.ps1 -Build Jar                 # Build fat JAR (default)
 #   .\run_tests.ps1 -Build Gradle              # Use gradle run (no JAR)
 #   .\run_tests.ps1 -Build Proguard            # ProGuard-optimized JAR
@@ -31,6 +33,7 @@ param(
 	[string]$TranspilerArgs = "",
 	[string]$Compiler       = "",
 	[string]$CCArgs         = "",
+	[string]$CMakeArgs      = "",  # extra cmake -D flags, e.g. "-DFOO=BAR -DBAZ=ON"
 	[string]$Build          = "Jar",
 	[string]$Cfg            = "Release",  # CMake build type (Debug, Release, RelWithDebInfo, MinSizeRel)
 	[switch]$Interactive,
@@ -38,6 +41,7 @@ param(
 	[switch]$MemTrack,
 	[switch]$Ast,
 	[switch]$DumpSemantics,
+	[switch]$StaticLibc,           # pass -DKTC_STATIC_LIBC=ON to cmake
 	[string]$Disposed      = "NO",   # ASSERT | LOG | NO
 	[string]$DoubleDispose = "NO",   # ASSERT | LOG | NO
 	[switch]$Clean,
@@ -268,7 +272,11 @@ function Invoke-Test {
 		$vCmakeBuildDir = "$inOutDir\_cmake"
 		if ($Compiler) { Write-Cmd "cmake -B _cmake -S . -DCMAKE_BUILD_TYPE=$Cfg -DCMAKE_C_COMPILER=$Compiler" } else { Write-Cmd "cmake -B _cmake -S . -DCMAKE_BUILD_TYPE=$Cfg" }
 		Write-Host ""
-		$vCfgArgs = @("-B", $vCmakeBuildDir, "-S", $inOutDir, "-DCMAKE_BUILD_TYPE=$Cfg"); if ($Compiler) { $vCfgArgs += "-DCMAKE_C_COMPILER=$Compiler" }; $vCfgOut  = & $vCmake @vCfgArgs 2>&1
+		$vCfgArgs = @("-B", $vCmakeBuildDir, "-S", $inOutDir, "-DCMAKE_BUILD_TYPE=$Cfg")
+		if ($Compiler)   { $vCfgArgs += "-DCMAKE_C_COMPILER=$Compiler" }
+		if ($StaticLibc) { $vCfgArgs += "-DKTC_STATIC_LIBC=ON" }
+		if ($CMakeArgs)  { $vCfgArgs += ($CMakeArgs -split '\s+') }
+		$vCfgOut  = & $vCmake @vCfgArgs 2>&1
 		$vCfgExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
 		foreach ($vLine in $vCfgOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }
 		Write-Host ""
@@ -427,6 +435,8 @@ function Run-Suite {
 		$vCC    = $using:vCC
 		$vCmk   = $using:vCmake
 		$vCCa   = $using:CCArgs
+		$vCMA   = $using:CMakeArgs
+		$vSL    = $using:StaticLibc
 		$vExA   = $using:inExtraArgs
 
 		function fmtMs([long]$ms) {
@@ -496,7 +506,11 @@ function Run-Suite {
 		}
 		if ($vHasUCmake) {
 			$vCmkBld = "$vOut\_cmake"
-			$vCfgArgs = @("-B", $vCmkBld, "-S", $vOut, "-DCMAKE_BUILD_TYPE=$using:Cfg"); if ($using:Compiler) { $vCfgArgs += "-DCMAKE_C_COMPILER=$using:Compiler" }; $vCfgOut = & $vCmk @vCfgArgs 2>&1
+			$vCfgArgs = @("-B", $vCmkBld, "-S", $vOut, "-DCMAKE_BUILD_TYPE=$using:Cfg")
+			if ($using:Compiler) { $vCfgArgs += "-DCMAKE_C_COMPILER=$using:Compiler" }
+			if ($vSL)            { $vCfgArgs += "-DKTC_STATIC_LIBC=ON" }
+			if ($vCMA)           { $vCfgArgs += ($vCMA -split '\s+') }
+			$vCfgOut = & $vCmk @vCfgArgs 2>&1
 			$vCfgEx  = $LASTEXITCODE
 			if ($vCfgEx -ne 0) {
 				$e  = [char]27
@@ -644,6 +658,7 @@ class TuiRunner {
 			[PSCustomObject]@{ Label = "Memory Tracking      (--mem-track)";       Key = "MemTrack";            On = $false },
 			[PSCustomObject]@{ Label = "Dump AST             (--ast)";             Key = "Ast";                 On = $false },
 			[PSCustomObject]@{ Label = "Dump Semantics       (--dump-semantics)";  Key = "DumpSemantics";       On = $false },
+			[PSCustomObject]@{ Label = "Static LibC          (-StaticLibc)";        Key = "StaticLibc";          On = $false },
 			[PSCustomObject]@{ Label = "Disposed ASSERT      (--disposed=ASSERT)"; Key = "DisposedAssert";      On = $false },
 			[PSCustomObject]@{ Label = "Disposed LOG         (--disposed=LOG)";    Key = "DisposedLog";         On = $false },
 			[PSCustomObject]@{ Label = "Double-Dispose ASSERT  (--double-dispose=ASSERT)"; Key = "DoubleDisposeAssert"; On = $false },
@@ -988,6 +1003,7 @@ class TuiRunner {
 			MemTrack      = ($this.Opts   | Where-Object { $_.Key -eq "MemTrack"      }).On
 			Ast           = ($this.Opts   | Where-Object { $_.Key -eq "Ast"           }).On
 			DumpSemantics = ($this.Opts   | Where-Object { $_.Key -eq "DumpSemantics" }).On
+			StaticLibc    = ($this.Opts   | Where-Object { $_.Key -eq "StaticLibc"    }).On
 			Disposed      = if ($vDispAssert) { "ASSERT" } elseif ($vDispLog) { "LOG" } else { "NO" }
 			DoubleDispose = if ($vDDAssert)   { "ASSERT" } elseif ($vDDLog)   { "LOG" } else { "NO" }
 			Build         = ($this.Builds | Where-Object { $_.On                      }).Value
@@ -1019,8 +1035,9 @@ if ($Interactive) {
 	}
 
 	$script:vBuildMode = $vSel.Build
-	$vCC    = $vSel.Compiler
-	$CCArgs = $vSel.CcArgs
+	$vCC        = $vSel.Compiler
+	$CCArgs     = $vSel.CcArgs
+	$StaticLibc = $vSel.StaticLibc
 	$vArgsStr = (@(
 		if ($vSel.MemTrack)                    { "--mem-track" }
 		if ($vSel.Ast)                         { "--ast" }
