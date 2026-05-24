@@ -50,6 +50,17 @@ internal fun CCodeGen.collectDecls() {
 				}
 			}
 		}
+	// Re-key extension props from dotted receiver names to dollar form where objects now exist.
+	// Needed when extension prop files (e.g. Event.kt) are processed before the object definition
+	// file (e.g. SDL3.kt): "SDL3.Event" → "SDL3$Event" once objects["SDL3$Event"] is populated.
+	val vDottedKeys = extensionProps.keys.filter { '.' in it }
+	for (key in vDottedKeys) {
+		val dollarKey = key.replace('.', '$')
+		if (objects.containsKey(dollarKey)) {
+			extensionProps.getOrPut(dollarKey) { mutableListOf() }.addAll(extensionProps[key]!!)
+			extensionProps.remove(key)
+			}
+		}
 	// Set pkg for nested classes whose pkg wasn't explicitly set
 	for ((name, ci) in classes) {
 		if ('$' in name && ci.pkg.isEmpty()) {

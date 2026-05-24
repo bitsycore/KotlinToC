@@ -85,13 +85,13 @@ class Parser(private val tokens: List<Token>) {
                 parseCompanionObjectDecl()
             }
             at(TokenType.OBJECT) -> parseObjectDecl()
-            at(TokenType.VAL)    -> parsePropDecl(mutable = false, isPrivate = isPrivate)
-            at(TokenType.VAR)    -> parsePropDecl(mutable = true, isPrivate = isPrivate)
+            at(TokenType.VAL)    -> parsePropDecl(mutable = false, isPrivate = isPrivate, isInline = isInlineExplicit)
+            at(TokenType.VAR)    -> parsePropDecl(mutable = true, isPrivate = isPrivate, isInline = isInlineExplicit)
             at(TokenType.AT) -> {
                 val anns = parseAnnotations()
                 when {
-                    at(TokenType.VAL)    -> parsePropDecl(mutable = false, preAnnotations = anns, isPrivate = isPrivate)
-                    at(TokenType.VAR)    -> parsePropDecl(mutable = true, preAnnotations = anns, isPrivate = isPrivate)
+                    at(TokenType.VAL)    -> parsePropDecl(mutable = false, preAnnotations = anns, isPrivate = isPrivate, isInline = isInlineExplicit)
+                    at(TokenType.VAR)    -> parsePropDecl(mutable = true, preAnnotations = anns, isPrivate = isPrivate, isInline = isInlineExplicit)
                     at(TokenType.OBJECT) -> parseObjectDecl(anns)
                     at(TokenType.IDENT) && cur().value == "companion" && peek().type == TokenType.OBJECT -> {
                         advance()
@@ -414,7 +414,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── val / var (top-level or class-level property) ────────────────
 
-    private fun parsePropDecl(mutable: Boolean, preAnnotations: List<Annotation> = emptyList(), isPrivate: Boolean = false): PropDecl {
+    private fun parsePropDecl(mutable: Boolean, preAnnotations: List<Annotation> = emptyList(), isPrivate: Boolean = false, isInline: Boolean = false): PropDecl {
         val line = cur().line
         val typeAnnotations = if (preAnnotations.isEmpty()) parseAnnotations() else emptyList()
         advance()   // skip val/var
@@ -481,7 +481,7 @@ class Parser(private val tokens: List<Token>) {
         }
         skipTerminator()
         return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations,
-            receiver = receiver, getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody)
+            receiver = receiver, getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody, isInline = isInline)
     }
 
     // ═══════════════════════════ Statements ═══════════════════════════

@@ -93,7 +93,8 @@ data class PropDecl(
     val receiver: TypeRef? = null,     // extension property: val Receiver.name
     val getter: Expr? = null,          // get() = expr
     val setterParam: String? = null,   // set(param)
-    val setterBody: Block? = null      // set(param) { body }
+    val setterBody: Block? = null,     // set(param) { body }
+    val isInline: Boolean = false      // inline val: getter expanded at access site (extension props only)
 ) : Decl()
 
 // ═══════════════════════════ Parameters ═══════════════════════════

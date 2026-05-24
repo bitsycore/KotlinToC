@@ -78,6 +78,11 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Object / Companion field: ensure lazy init, then return flatName.field
     val vDotObjCName = resolveDotObjCName(e)
     if (vDotObjCName != null) {
+        // Nested object reference (e.g. SDL3.Event → sdl3_SDL3$Event): e.name IS the object, not a field.
+        val vParentName = (e.obj as? NameExpr)?.name
+        if (vParentName != null && objects.containsKey("$vParentName\$${e.name}")) {
+            return vDotObjCName
+        }
         // Visibility check: can't access private props from outside the object
         val objInfo = resolveDotObjInfo(e)
         if (objInfo != null && objInfo.name != currentObject && objInfo.privateProps.contains(e.name)) {

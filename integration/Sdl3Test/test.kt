@@ -10,7 +10,10 @@ inline fun handleEvent(block: (@Ptr c.SDL_Event) -> Unit) {
     }
 }
 
-fun main() {
+fun main(args: Array<String>) {
+    var testMode = false
+    for (arg in args) { if (arg == "--test") testMode = true }
+
     SDL3.initialize()
     defer SDL3.quit()
 
@@ -46,5 +49,6 @@ fun main() {
         renderer.setDrawColor(boxColor)
         renderer.fillRect(box)
         renderer.present()
+        if (testMode) running = false
     }
 }

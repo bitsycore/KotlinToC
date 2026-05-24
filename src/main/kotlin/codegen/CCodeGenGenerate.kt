@@ -244,6 +244,7 @@ internal fun CCodeGen.generate(): COutput {
 				}
 			}
 		is PropDecl -> {
+			if (d.receiver != null) continue  // extension props: getter inlined at access site via genDot
 			val vSrcKey = "|${declSourceFile[d.name] ?: sourceFileName}"
 			captureForDecl(vSrcKey) { emitTopProp(d) }
 			}

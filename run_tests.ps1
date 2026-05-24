@@ -291,7 +291,7 @@ function Invoke-Test {
 		if ($vBldExit -ne 0) { Write-Fail "CMake build failed (exit $vBldExit)"; return "fail" }
 		# CMakeLists.txt sets CMAKE_RUNTIME_OUTPUT_DIRECTORY to CMAKE_SOURCE_DIR (= $inOutDir)
 		$vFoundExe = Get-ChildItem $inOutDir -Filter "*.exe" -ErrorAction SilentlyContinue |
-			Where-Object { $_.FullName -notlike "*\_cmake*" } | Select-Object -First 1
+			Where-Object { $_.FullName -notlike "*\_cmake*" -and $_.Name -ne "_ktcrun.exe" } | Select-Object -First 1
 		if (-not $vFoundExe) { Write-Fail "No .exe found after cmake build"; return "fail" }
 		$vExe = $vFoundExe.FullName
 		Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "CMake build OK -> $vExe  " -NoNewline
@@ -324,11 +324,14 @@ function Invoke-Test {
 	# ── Run ──────────────────────────────────────────────────────
 	Write-Sec "Run"
 	Write-Cmd $vExe; Write-Host ""
-	# Copy to a neutral name to bypass Windows installer-detection heuristic
-	# (exe names containing "update/install/setup" trigger auto-elevation)
-	$vExeRun = "$inOutDir\_ktcrun.exe"
-	Copy-Item $vExe $vExeRun -Force
-	$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExeRun)
+	# Read optional test args from _test_args.txt in the source directory
+	$vTestArgsFile = "$inSrcDir\_test_args.txt"
+	$vRunArgs = if (Test-Path $vTestArgsFile) { (Get-Content $vTestArgsFile) -join ' ' } else { "" }
+	if ($vRunArgs) { Write-Info "Test args: $vRunArgs" }
+	# UseShellExecute=false uses CreateProcess, not ShellExecute, so Windows installer-detection
+	# auto-elevation does not apply — no need to copy to a neutral exe name.
+	$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
+	if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
 	$vPsi.RedirectStandardOutput = $true
 	$vPsi.RedirectStandardError  = $true
 	$vPsi.UseShellExecute        = $false
@@ -337,7 +340,6 @@ function Invoke-Test {
 	$vRawErr = $vP.StandardError.ReadToEnd()
 	$vP.WaitForExit()
 	$vRExit = $vP.ExitCode;  $vRMs = $vSw.ElapsedMilliseconds;  $vSw.Stop()
-	Remove-Item $vExeRun -ErrorAction SilentlyContinue
 	$vCaptured = (($vRawOut + $vRawErr) -split "`r?`n")
 	$vCaptured | ForEach-Object { Write-Host "  $_" }
 	Write-Host ""
@@ -492,7 +494,7 @@ function Run-Suite {
 				return @{ Name = $vName; Passed = $false; Skipped = $false }
 			}
 			$vFound = Get-ChildItem $vOut -Filter "*.exe" -ErrorAction SilentlyContinue |
-				Where-Object { $_.FullName -notlike "*\_cmake*" } | Select-Object -First 1
+				Where-Object { $_.FullName -notlike "*\_cmake*" -and $_.Name -ne "_ktcrun.exe" } | Select-Object -First 1
 			if (-not $vFound) {
 				Write-Host "  FAIL $vName (no .exe after cmake build)" -ForegroundColor Red
 				return @{ Name = $vName; Passed = $false; Skipped = $false }
@@ -511,9 +513,10 @@ function Run-Suite {
 		}
 
 		# Run
-		$vExeRun = "$vOut\_ktcrun.exe"
-		Copy-Item $vExe $vExeRun -Force
-		$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExeRun)
+		$vTAFile = "$($vDir.FullName)\_test_args.txt"
+		$vRunArgs = if (Test-Path $vTAFile) { (Get-Content $vTAFile) -join ' ' } else { "" }
+		$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
+		if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
 		$vPsi.RedirectStandardOutput = $true
 		$vPsi.RedirectStandardError  = $true
 		$vPsi.UseShellExecute        = $false
@@ -522,7 +525,6 @@ function Run-Suite {
 		$vRawErr = $vP.StandardError.ReadToEnd()
 		$vP.WaitForExit()
 		$vREx = $vP.ExitCode;  $vRMs = $vSw.ElapsedMilliseconds;  $vSw.Stop()
-		Remove-Item $vExeRun -ErrorAction SilentlyContinue
 		$vCapt = (($vRawOut + $vRawErr) -split "`r?`n")
 		if ($vREx -ne 0) {
 			Write-Host "  FAIL $vName (runtime error, exit $vREx)" -ForegroundColor Red
