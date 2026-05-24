@@ -5,7 +5,7 @@ import sdl3.*
 
 fun main(args: Array<String>) {
     var testMode = false
-    for (arg in args) { if (arg == "--test") testMode = true }
+    for (arg in args) { if (arg == "--skip-gui") testMode = true }
 
     SDL3.initialize()
     defer SDL3.quit()

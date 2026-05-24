@@ -8,6 +8,7 @@
 #   .\run_tests.ps1 -Run HashMapTest           # Run a single test (verbose)
 #   .\run_tests.ps1 -Run "Test1,Test2"         # Run multiple tests
 #   .\run_tests.ps1 -Skip unit                 # Skip unit tests
+#   .\run_tests.ps1 -Run game -Gui                # Run with GUI window open (real-time output)
 #   .\run_tests.ps1 -Run game -MemTrack           # With --mem-track
 #   .\run_tests.ps1 -Run game -Ast                # With --ast
 #   .\run_tests.ps1 -Run game -DumpSemantics      # With --dump-semantics
@@ -33,6 +34,7 @@ param(
 	[string]$Build          = "Jar",
 	[string]$Cfg            = "Release",  # CMake build type (Debug, Release, RelWithDebInfo, MinSizeRel)
 	[switch]$Interactive,
+	[switch]$Gui,
 	[switch]$MemTrack,
 	[switch]$Ast,
 	[switch]$DumpSemantics,
@@ -185,7 +187,8 @@ function Invoke-Test {
 		[string]$inName,
 		[string]$inSrcDir,
 		[string]$inOutDir,
-		[string]$inExtraArgs = ""
+		[string]$inExtraArgs = "",
+		[bool]$inGuiMode = $false
 	)
 
 	$vSw = [Diagnostics.Stopwatch]::StartNew()
@@ -324,25 +327,43 @@ function Invoke-Test {
 	# ── Run ──────────────────────────────────────────────────────
 	Write-Sec "Run"
 	Write-Cmd $vExe; Write-Host ""
-	# Read optional test args from _test_args.txt in the source directory
+	# _test_args.txt: "gui" marks a test that opens a window.
+	# In automated mode the script injects --skip-gui; with -Gui the window opens for real.
 	$vTestArgsFile = "$inSrcDir\_test_args.txt"
-	$vRunArgs = if (Test-Path $vTestArgsFile) { (Get-Content $vTestArgsFile) -join ' ' } else { "" }
+	$vIsGuiTest    = $false
+	$vRunArgs      = ""
+	if (Test-Path $vTestArgsFile) {
+		$vFileContent = ((Get-Content $vTestArgsFile) -join ' ').Trim()
+		if ($vFileContent -eq "gui") { $vIsGuiTest = $true }
+		else                         { $vRunArgs = $vFileContent }
+	}
+	if ($vIsGuiTest -and -not $inGuiMode) { $vRunArgs = "--skip-gui" }
 	if ($vRunArgs) { Write-Info "Test args: $vRunArgs" }
-	# UseShellExecute=false uses CreateProcess, not ShellExecute, so Windows installer-detection
-	# auto-elevation does not apply — no need to copy to a neutral exe name.
+
+	# UseShellExecute=false uses CreateProcess — no Windows auto-elevation.
 	$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
 	if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
-	$vPsi.RedirectStandardOutput = $true
-	$vPsi.RedirectStandardError  = $true
-	$vPsi.UseShellExecute        = $false
-	$vP = [System.Diagnostics.Process]::Start($vPsi)
-	$vRawOut = $vP.StandardOutput.ReadToEnd()
-	$vRawErr = $vP.StandardError.ReadToEnd()
-	$vP.WaitForExit()
-	$vRExit = $vP.ExitCode;  $vRMs = $vSw.ElapsedMilliseconds;  $vSw.Stop()
-	$vCaptured = (($vRawOut + $vRawErr) -split "`r?`n")
-	$vCaptured | ForEach-Object { Write-Host "  $_" }
-	Write-Host ""
+	$vPsi.UseShellExecute = $false
+
+	$vCaptured = @()
+	if ($inGuiMode -and $vIsGuiTest) {
+		# GUI mode: stdout flows directly to the console in real time — no redirect.
+		$vP = [System.Diagnostics.Process]::Start($vPsi)
+		$vP.WaitForExit()
+		$vRExit = $vP.ExitCode;  $vRMs = $vSw.ElapsedMilliseconds;  $vSw.Stop()
+	} else {
+		# Headless mode: capture output, print after exit.
+		$vPsi.RedirectStandardOutput = $true
+		$vPsi.RedirectStandardError  = $true
+		$vP = [System.Diagnostics.Process]::Start($vPsi)
+		$vRawOut = $vP.StandardOutput.ReadToEnd()
+		$vRawErr = $vP.StandardError.ReadToEnd()
+		$vP.WaitForExit()
+		$vRExit = $vP.ExitCode;  $vRMs = $vSw.ElapsedMilliseconds;  $vSw.Stop()
+		$vCaptured = (($vRawOut + $vRawErr) -split "`r?`n")
+		$vCaptured | ForEach-Object { Write-Host "  $_" }
+		Write-Host ""
+	}
 	if ($vRExit -ne 0) { Write-Fail "Runtime error (exit $vRExit)"; return "fail" }
 
 	$vLeak = ($vCaptured | Where-Object { "$_" -match 'leaked\s+:' }).Count -gt 0
@@ -512,9 +533,13 @@ function Run-Suite {
 			}
 		}
 
-		# Run
-		$vTAFile = "$($vDir.FullName)\_test_args.txt"
-		$vRunArgs = if (Test-Path $vTAFile) { (Get-Content $vTAFile) -join ' ' } else { "" }
+		# Run — "gui" in _test_args.txt marks a windowed test; always headless in suite mode.
+		$vTAFile  = "$($vDir.FullName)\_test_args.txt"
+		$vRunArgs = ""
+		if (Test-Path $vTAFile) {
+			$vFC = ((Get-Content $vTAFile) -join ' ').Trim()
+			if ($vFC -eq "gui") { $vRunArgs = "--skip-gui" } else { $vRunArgs = $vFC }
+		}
 		$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
 		if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
 		$vPsi.RedirectStandardOutput = $true
@@ -1045,7 +1070,7 @@ if ($Run -ne "") {
 			Get-ChildItem $vTestsDir -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
 			$vAnyFailed = $true; continue
 		}
-		if ((Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr) -eq "fail") {
+		if ((Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr -inGuiMode $Gui) -eq "fail") {
 			$vAnyFailed = $true
 		}
 	}
