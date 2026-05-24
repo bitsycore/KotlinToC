@@ -59,10 +59,12 @@ internal fun CCodeGen.emitInlineCall(
 	pushScope()
 	val vSavedLambdas  = activeLambdas
 	val vNewLambdas    = activeLambdas.toMutableMap()
-	val vSavedRetVar   = inlineReturnVar
-	val vSavedEndLabel = inlineEndLabel
-	inlineReturnVar = resultVar ?: ""
-	inlineEndLabel  = vLabelName
+	val vSavedRetVar    = inlineReturnVar
+	val vSavedEndLabel  = inlineEndLabel
+	val vSavedLabelUsed = inlineLabelUsed
+	inlineReturnVar  = resultVar ?: ""
+	inlineEndLabel   = vLabelName
+	inlineLabelUsed  = false
 
 	// Set up `this` substitution for extension function receivers
 	val vSavedThis     = lambdaParamSubst["\$this"]
@@ -124,10 +126,11 @@ internal fun CCodeGen.emitInlineCall(
 
 	emitBlock(body, ind, method)
 
-	impl.appendLine("$ind$vLabelName:;")
-	activeLambdas = vSavedLambdas
-	inlineReturnVar = vSavedRetVar
-	inlineEndLabel  = vSavedEndLabel
+	if (inlineLabelUsed) impl.appendLine("$ind$vLabelName:;")
+	activeLambdas   = vSavedLambdas
+	inlineReturnVar  = vSavedRetVar
+	inlineEndLabel   = vSavedEndLabel
+	inlineLabelUsed  = vSavedLabelUsed
 	if (receiverExpr != null) {
 		if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
 		}

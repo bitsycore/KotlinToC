@@ -229,6 +229,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             }
         }
         impl.appendLine("${ind}goto $endLabel;")
+        inlineLabelUsed = true
         return
     }
     if (currentFnReturnsNullable) {

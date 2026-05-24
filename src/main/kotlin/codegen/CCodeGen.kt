@@ -121,6 +121,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val lambdaParamTypes = mutableMapOf<String, String>()  // lambda param name → Kotlin type, used by inferExprType so .size etc. resolve correctly
     internal var inlineReturnVar: String? = null  // result var name (value pos), "" (stmt pos), null (not inside inline)
     internal var inlineEndLabel: String? = null   // goto label after the inline block to handle early return
+    internal var inlineLabelUsed: Boolean = false // true if at least one goto to inlineEndLabel was emitted
     internal var currentInd: String = "    "  // current emit indentation, kept in sync by emitStmt
     internal var inlineCounter: Int = 0  // counter for unique inline temp variable names and end labels
     internal val cOpaqueTypes = mutableSetOf<String>()  // c.* names used as types → compound literal ctor

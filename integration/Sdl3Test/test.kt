@@ -75,8 +75,8 @@ fun main(args: Array<String>) {
                 }
 
                 SDL3.Event.MouseButtonDown -> {
-                    val mx = event.button.x
-                    val my = event.button.y
+                    val mx: Float = event.button.x
+                    val my: Float = event.button.y
                     if (mx >= box.x && mx <= box.x + box.w &&
                         my >= box.y && my <= box.y + box.h) {
                         box = box.copy(x = mx - box.w / 2.0f, y = my - box.h / 2.0f)

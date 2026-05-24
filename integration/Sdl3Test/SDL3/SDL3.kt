@@ -158,7 +158,7 @@ object SDL3 {
     // Lib init
 
     fun initialize(flags: Int = c.SDL_INIT_VIDEO) {
-        if (c.SDL_Init(flags) < 0) error("SDL_Init failed: ${c.SDL_GetError()}")
+        if (!c.SDL_Init(flags)) error("SDL_Init failed: ${c.SDL_GetError()}")
     }
 
     fun quit() {
