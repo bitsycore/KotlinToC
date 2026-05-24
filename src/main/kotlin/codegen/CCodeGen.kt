@@ -366,20 +366,13 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
             return objects[name]?.flatName
                 ?: classCompanions[name]?.let { objects[it]?.flatName ?: typeFlatName(it) }
             }
-        // Recurse into chained dots: A.B.C
+        // Recurse into chained dots: only for nested objects (A.B where B is an object)
         if (dot.obj is DotExpr) {
             val vParent = resolveDotObjCName(dot.obj as DotExpr) ?: return null
-            // Check if this is a property access on a nested object
-            val vParentBase = vParent.substringAfterLast('$').ifEmpty { vParent }
-            for ((vObjName, vOi) in objects) {
-                if (vObjName.endsWith("\$$vParentBase") || vObjName == vParent) {
-                    val vProp = vOi.properties.find { it.name == dot.name && it.getter != null }
-                    if (vProp != null) return null  // signal: this is a getter, not a field
-                    }
-                }
             val vNestedName = "${vParent.replace('.', '$')}\$${dot.name}"
             if (objects.containsKey(vNestedName)) return objects[vNestedName]!!.flatName
-            return "$vParent.${dot.name}"
+            // Not a nested object — let genDot handle it as a regular property access
+            return null
             }
         return null
     }
