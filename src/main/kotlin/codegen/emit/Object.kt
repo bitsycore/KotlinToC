@@ -78,7 +78,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     val vTls = if (d.name in tlsObjects) "ktc_core_tls " else ""  // TLS qualifier string for .c file
     hdr.appendLine(if (vTls.isNotEmpty()) "KTC_TLS_OBJECT(" else "KTC_OBJECT(")
     hdr.appendLine("    KTC_OBJ_BASE")
-    if (props.isEmpty()) hdr.appendLine("    ktc_Char _dummy;")
+    if (props.isEmpty()) hdr.appendLine("    KTC_EMPTY_OBJ_BODY")
     for (p in props) {
         // Computed property with getter: no backing field
         if (p.getter != null) continue
@@ -117,8 +117,9 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     val vHasInit = props.any { it.init != null && it.getter == null } ||
                    initBlocks.any { it.body?.stmts?.isNotEmpty() == true }
 
-    // global instance (zero-initialized)
-    impl.appendLine("${vTls}${cName}_t $cName = {0};")
+    // global instance; empty objects use KTC_EMPTY_OBJ_INIT (= {0} on MSVC, nothing on GCC)
+    val vHasBackingFields = props.any { it.getter == null }
+    impl.appendLine(if (vHasBackingFields) "${vTls}${cName}_t $cName = {0};" else "${vTls}${cName}_t $cName KTC_EMPTY_OBJ_INIT;")
     if (vHasInit) impl.appendLine("static ktc_thread_once_t ${cName}\$once = KTC_THREAD_ONCE_INIT;")
     impl.appendLine()
 

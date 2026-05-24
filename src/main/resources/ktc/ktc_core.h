@@ -128,6 +128,17 @@ typedef struct { ktc_UInt flags; } ktc_core_ObjFlags;
 #define KTC_OBJ_BASE_INIT
 #endif
 
+/** KTC_EMPTY_OBJ_BODY / KTC_EMPTY_OBJ_INIT: used for objects with no fields.
+ *  C requires at least one struct member (MSVC enforces this; GCC allows empty structs).
+ *  On MSVC: insert a char placeholder and initialise it; on GCC: omit both. */
+#if defined(_MSC_VER)
+#define KTC_EMPTY_OBJ_BODY  char _empty;
+#define KTC_EMPTY_OBJ_INIT  = {0}
+#else
+#define KTC_EMPTY_OBJ_BODY
+#define KTC_EMPTY_OBJ_INIT
+#endif
+
 /** @Ptr interface trampoline — fat pointer for interface references.
  *  typeId holds the concrete type ID for is-checks; vt for dispatch; obj for data.
  *  One unified struct for all @Ptr InterfaceType regardless of which interface. */
