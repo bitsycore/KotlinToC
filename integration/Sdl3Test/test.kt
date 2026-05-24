@@ -1,4 +1,3 @@
-@file:cInclude("SDL3/SDL.h")
 package test
 
 import sdl3.*

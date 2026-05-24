@@ -56,6 +56,33 @@ Struct instances: `c.SDL_FRect(x, y, w, h)` — a compound literal.
 Field access on a C struct value: `.field`.
 Pass a struct by pointer: `c.addr(myRect)`.
 
+==============
+Initialization
+==============
+
+These forms control how variables and struct values are initialized:
+
+    Syntax                    C output               Context
+    c.zeroed()                {0}                    var decl only (type inferred from LHS)
+    c.init()                  (bare declaration)     var decl only, no initializer
+    c.SDL_FRect()             (SDL_FRect){0}         works everywhere
+    c.SDL_FRect(x, y, w, h)  (SDL_FRect){x, y, w, h}  works everywhere
+    c.init(x, y, w, h)       {x, y, w, h}           var decl only (type inferred from LHS)
+
+`c.zeroed()` zero-initializes using the LHS type — equivalent to `= {0}` in C.
+`c.init()` emits a bare declaration with NO initializer (uninitialized memory).
+`c.init(x, y, z)` emits a brace-initializer list `{x, y, z}` using the LHS type.
+`c.SDL_FRect(args)` is a typed compound literal and works in any expression context.
+`c.SDL_FRect()` with no args is a zero compound literal `(SDL_FRect){0}`.
+
+Examples:
+
+    var rect: c.SDL_FRect = c.zeroed()     →  SDL_FRect rect = {0};
+    var buf: c.SDL_FRect = c.init()        →  SDL_FRect buf;          // uninitialized
+    var p: c.SDL_FPoint = c.init(1f, 2f)   →  SDL_FPoint p = {1, 2};
+    val r = c.SDL_FRect(0f, 0f, 10f, 10f) →  SDL_FRect r = (SDL_FRect){0, 0, 10, 10};
+    val z = c.SDL_FRect()                  →  SDL_FRect z = (SDL_FRect){0};
+
 ==========
 Strings
 ==========
@@ -66,19 +93,10 @@ Use when passing Kotlin strings to C functions expecting `const char*`.
     c.SDL_SetWindowTitle(window.handle, title.ptr)
 
 ==========
-Sized arrays
-==========
-
-`@Size(N) Array<T>` maps to `T[N]` as a fixed-size stack array (no length companion).
-
-    data class Header(val fDigest: @Size(32) ByteArray)
-
-==========
 File-level annotations
 ==========
 
     @file:cInclude("SDL3/SDL.h")        →  #include <SDL3/SDL.h> in every .c of this package
     @file:cIncludeRelative("util.h")    →  #include "util.h"
-    @file:DocumentationOnly             →  this file is type-info only; no .c output is emitted
 */
-object CInterop
+object c

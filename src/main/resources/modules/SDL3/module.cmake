@@ -1,9 +1,10 @@
-# ktc_user.cmake — SDL3 integration for Sdl3Test
+# SDL3 KotlinToC module — cmake injected automatically when SDL3 module is active.
 # ─────────────────────────────────────────────────────────────────────────────
 # Tries find_package first (uses a locally installed SDL3 if available),
 # then falls back to FetchContent so no manual installation is needed.
-# Override the pinned tag:  cmake -DSDL3_GIT_TAG=release-3.2.14 ..
-# Override the repo:        cmake -DSDL3_GIT_REPO=https://... ..
+# To override the git tag or repo, set the cache variables in your ktc_user.cmake:
+#   set(SDL3_GIT_TAG  "release-3.x.y" CACHE STRING "SDL3 git tag" FORCE)
+#   set(SDL3_GIT_REPO "https://..." CACHE STRING "SDL3 repo" FORCE)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set(SDL3_GIT_TAG  "release-3.2.14" CACHE STRING "SDL3 git tag used by FetchContent")

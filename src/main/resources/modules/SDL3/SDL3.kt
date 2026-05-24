@@ -226,6 +226,11 @@ object SDL3 {
     }
 
     // ==================
+    // Cursor
+
+    class Cursor(val handle: @Ptr c.SDL_Cursor)
+
+    // ==================
     // Lib init
 
     fun initialize(flags: Int = c.SDL_INIT_VIDEO) {
@@ -250,7 +255,4 @@ object SDL3 {
     @Namespace object WindowFlags
     @Namespace object InitFlags
     @Namespace object SystemCursor
-
-    class Cursor(val handle: @Ptr c.SDL_Cursor)
 }
-

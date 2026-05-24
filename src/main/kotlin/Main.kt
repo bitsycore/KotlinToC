@@ -10,9 +10,38 @@ import kotlin.system.exitProcess
 
 val aClass = object {}.javaClass
 
+/** Lists resource file names (leaf only) inside resourcePath that end with extension. */
+private fun discoverResourceFiles(resourcePath: String, extension: String): List<String> {
+    val url = aClass.getResource(resourcePath) ?: return emptyList()
+    return when (url.protocol) {
+        "jar" -> {
+            val conn   = url.openConnection() as java.net.JarURLConnection
+            val prefix = resourcePath.removePrefix("/") + "/"
+            conn.jarFile.entries().asSequence()
+                .filter { !it.isDirectory && it.name.startsWith(prefix) && it.name.endsWith(extension) && !it.name.removePrefix(prefix).contains('/') }
+                .map { it.name.removePrefix(prefix) }
+                .toList()
+        }
+        "file" -> File(url.toURI()).listFiles()
+            ?.filter { it.name.endsWith(extension) }
+            ?.map { it.name }
+            ?: emptyList()
+        else -> emptyList()
+    }
+}
+
+/** Parse `modules = ["A", "B"]` from a deps.ktc.toml string. */
+private fun parseDepsToml(content: String): List<String> {
+    val match = Regex("""^\s*modules\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
+        ?: return emptyList()
+    return match.groupValues[1].split(',')
+        .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
+        .filter { it.isNotEmpty() }
+}
+
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
+        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--module <name>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
         System.err.println("  Transpiles Kotlin subset files to C11.")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
@@ -29,6 +58,7 @@ fun main(args: Array<String>) {
 
     // Parse args: collect .kt files and flags
     val inputPaths = mutableListOf<String>()
+    val moduleNames = mutableListOf<String>()
     var outputDir = "."
     var memTrack = false
     var disposedMode = "NO"        // ASSERT | LOG | NO
@@ -40,6 +70,9 @@ fun main(args: Array<String>) {
     while (i < args.size) {
         if (args[i] == "-o" && i + 1 < args.size) {
             outputDir = args[i + 1]
+            i += 2
+        } else if (args[i] == "--module" && i + 1 < args.size) {
+            moduleNames += args[i + 1]
             i += 2
         } else if (args[i] == "--mem-track") {
             memTrack = true
@@ -97,6 +130,16 @@ fun main(args: Array<String>) {
 
     val vRawSources = mutableListOf<RawSource>() // all sources before parsing
 
+    // Discover deps.ktc.toml in the source directories and merge with --module args
+    val seenDirs = mutableSetOf<File>()
+    for (f in inputFiles) {
+        val dir = f.parentFile ?: continue
+        if (!seenDirs.add(dir)) continue
+        val depsFile = File(dir, "deps.ktc.toml")
+        if (depsFile.exists()) moduleNames += parseDepsToml(depsFile.readText())
+    }
+    val resolvedModules = moduleNames.distinct()
+
     // Collect stdlib .kt files from resources
     val stdlibDir = aClass.getResource("/stdlib") ?: aClass.getResource("/stdlib/")
     if (stdlibDir != null) {
@@ -123,6 +166,23 @@ fun main(args: Array<String>) {
             val res = aClass.getResourceAsStream("/stdlib/$name")
             if (res != null) vRawSources += RawSource(File("stdlib/$name"), name, res.bufferedReader().readText(), true)
         }
+    }
+
+    // Load module .kt files from embedded resources (modules/ in JAR)
+    val moduleCmakes = mutableListOf<String>()
+    for (moduleName in resolvedModules) {
+        val modulePath = "/modules/$moduleName"
+        val moduleKtFiles = discoverResourceFiles(modulePath, ".kt")
+        if (moduleKtFiles.isEmpty()) {
+            System.err.println("Warning: module '$moduleName' not found in bundled modules.")
+            continue
+        }
+        for (name in moduleKtFiles.sorted()) {
+            val res = aClass.getResourceAsStream("$modulePath/$name") ?: continue
+            vRawSources += RawSource(File("modules/$moduleName/$name"), name, res.bufferedReader().readText(), false)
+        }
+        val cmakeRes = aClass.getResourceAsStream("$modulePath/module.cmake")
+        if (cmakeRes != null) moduleCmakes += cmakeRes.bufferedReader().readText()
     }
 
     // Collect user sources
@@ -427,8 +487,8 @@ fun main(args: Array<String>) {
     val mainBase = userOutputNames.firstOrNull()
         ?.substringAfterLast('/')?.substringBefore('_')?.ifEmpty { "output" } ?: "output"
 
-    // ── Generate CMakeLists.txt + ktc_user.cmake.example ─────────────
-    writeCmakeFiles(outDir, mainBase, vKtcFullSrcs, vUserFullSrcs)
+    // ── Generate CMakeLists.txt (+ ktc_modules.cmake if modules active) ─────────
+    writeCmakeFiles(outDir, mainBase, vKtcFullSrcs, vUserFullSrcs, moduleCmakes)
     println("  wrote ${File(outDir, "CMakeLists.txt").path}")
 
     println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")

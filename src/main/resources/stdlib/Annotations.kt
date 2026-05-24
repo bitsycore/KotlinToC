@@ -39,7 +39,7 @@ Usage:
 annotation class Tls
 
 /**
-Mark a top-level object as a pure Kotlin namespace with no C representation.
+Mark a top-level object as a pure namespace with no object instance representation.
 The object struct, singleton instance, and Any vtable are not emitted.
 Extension functions and properties on a @Namespace object become free C functions
 (no $self parameter). Use this for objects that exist only to group related constants

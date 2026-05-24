@@ -254,7 +254,7 @@ function Invoke-Test {
 
 	# ── Compile (cmake if ktc_user.cmake present, direct gcc otherwise) ──
 	$vExe         = "$inOutDir\$inName.exe"
-	$vHasUserCmake = Test-Path "$inOutDir\ktc_user.cmake"
+	$vHasUserCmake = (Test-Path "$inOutDir\ktc_user.cmake") -or (Test-Path "$inOutDir\ktc_modules.cmake")
 	if ($vHasUserCmake -and -not $vCmake) {
 		Write-Host "  SKIP " -ForegroundColor Yellow -NoNewline
 		Write-Host "$inName — ktc_user.cmake requires cmake, but cmake was not found on PATH (skipped)"
@@ -488,7 +488,7 @@ function Run-Suite {
 
 		# Compile — cmake if ktc_user.cmake present, direct gcc otherwise
 		$vExe       = "$vOut\$vName.exe"
-		$vHasUCmake = Test-Path "$vOut\ktc_user.cmake"
+		$vHasUCmake = (Test-Path "$vOut\ktc_user.cmake") -or (Test-Path "$vOut\ktc_modules.cmake")
 		if ($vHasUCmake -and -not $vCmk) {
 			$e = [char]27
 			Write-Host "  ${e}[33mSKIP $vName${e}[0m  (ktc_user.cmake present but cmake not found)"
