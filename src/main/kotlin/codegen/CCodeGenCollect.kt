@@ -260,7 +260,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					extensionFuns.getOrPut(vRecv) { mutableListOf() }.add(m)
 					classes[vRecv]?.methods?.add(m)
 					funSigs["${vRecv}.${m.name}"] = FunSig(m.params, m.returnType)
-					if (m.isInline || m.isInfix) inlineExtFunDecls[m.name] = m
+					if (m.isInline || m.isInfix) inlineExtFunDecls.getOrPut(m.name) { mutableListOf() }.add(m)
 					}
 				}
 			objects[d.name] = oi
@@ -306,7 +306,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					if (genericFunDecls.none { it === d }) genericFunDecls += d
 					funSigs[d.name] = FunSig(d.params, effectiveReturnType)
 					allGenericTypeParamNames += d.typeParams
-					if (d.isInline && d.receiver != null) inlineExtFunDecls[d.name] = d
+					if (d.isInline && d.receiver != null) inlineExtFunDecls.getOrPut(d.name) { mutableListOf() }.add(d)
 					if (d.isInline) inlineFunDecls.getOrPut(d.name) { mutableListOf() }.add(d)
 					}
 				d.receiver != null && d.receiver.typeArgs.any { it.name == "*" } -> {
@@ -323,7 +323,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					extensionFuns.getOrPut(recvName) { mutableListOf() }.add(d)
 					classes[recvName]?.methods?.add(d)
 					funSigs["${recvName}.${d.name}"] = FunSig(d.params, effectiveReturnType)
-					if (d.isInline || d.isInfix) inlineExtFunDecls[d.name] = d
+					if (d.isInline || d.isInfix) inlineExtFunDecls.getOrPut(d.name) { mutableListOf() }.add(d)
 					}
 				else -> {
 					funSigs[d.name] = FunSig(d.params, effectiveReturnType)

@@ -27,7 +27,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         }
     }
     // User-defined infix inline extension function dispatch
-    val vInfixDecl = inlineExtFunDecls[e.op]
+    val vInfixDecl = inlineExtFunDecls[e.op]?.firstOrNull()
     if (vInfixDecl != null) {
         val vRecvType = inferExprType(e.left) // receiver type string
         val vArgType  = inferExprType(e.right) // single argument type string

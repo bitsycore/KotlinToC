@@ -57,7 +57,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 				} else "Pair_${a}_${b}"
 			}
 		else {
-			val vInfixDecl = inlineExtFunDecls[e.op]
+			val vInfixDecl = inlineExtFunDecls[e.op]?.firstOrNull()
 			if (vInfixDecl != null && vInfixDecl.returnType != null) {
 				val vRecvType   = inferExprType(e.left)
 				val vArgType    = inferExprType(e.right)

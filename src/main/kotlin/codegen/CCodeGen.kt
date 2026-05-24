@@ -111,7 +111,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val funSigs  = mutableMapOf<String, FunSig>()
     internal val funNames = mutableMapOf<String, String>()  // top-level function name → C name
     internal val inlineFunDecls = mutableMapOf<String, MutableList<FunDecl>>()
-    internal val inlineExtFunDecls = mutableMapOf<String, FunDecl>()  // inline generic extension funs, keyed by method name
+    internal val inlineExtFunDecls = mutableMapOf<String, MutableList<FunDecl>>()  // inline extension funs, keyed by method name; multiple overloads by receiver type
     internal var activeLambdas: Map<String, ActiveLambda> = emptyMap()
     internal val lambdaParamSubst = mutableMapOf<String, String>()  // also stores "\$this" → receiver C expr during inline ext expansion
     // Deferred hdr declarations: className → list of hdr lines (for methods moved to implements section)
@@ -844,6 +844,28 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         if (sized != null) return "$sized"
         return if (srcKtc != null && srcKtc.isArrayLike) "($expr).len" else "0"
     }
+
+    /** Resolve the best inline extension function overload for a call.
+     *  Disambiguates first by receiver type, then by argument count. */
+    internal fun findInlineExtFun(name: String, receiverType: String?, argCount: Int = -1): FunDecl? {
+        val vCandidates = inlineExtFunDecls[name] ?: return null
+        if (vCandidates.size == 1) return vCandidates[0]
+        val vFlat = receiverType?.replace('.', '$')
+        val vByReceiver = if (vFlat != null) {
+            vCandidates.filter { decl ->
+                val vRecv = decl.receiver ?: return@filter true
+                val vRecvFlat = vRecv.name.replace('.', '$')
+                vRecvFlat == vFlat || vRecv.name == receiverType
+            }
+        } else vCandidates
+        val vPool = vByReceiver.ifEmpty { vCandidates }
+        if (vPool.size == 1) return vPool[0]
+        if (argCount >= 0) {
+            val vExact = vPool.find { it.params.size == argCount }
+            if (vExact != null) return vExact
+        }
+        return vPool[0]
+        }
 
     // ═══════════════════════════ Public entry ═════════════════════════
     // collectAndScan() and generate() are extension functions in CCodeGenGenerate.kt.

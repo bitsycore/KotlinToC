@@ -69,6 +69,31 @@ object SDL3 {
     }
 
     // ===================
+    // FPoint
+
+    class FPoint(val sdl: c.SDL_FPoint) {
+
+        val x get() = sdl.x
+        val y get() = sdl.y
+
+        constructor(x: Float, y: Float) : this(c.SDL_FPoint(x, y))
+
+        override fun toString(): String = "FPoint(x=${sdl.x}, y=${sdl.y})"
+
+        override fun equals(other: @Ptr Any?): Boolean {
+            if (this === other) return true
+            if (other !is FPoint) return false
+            return sdl.x == other.sdl.x && sdl.y == other.sdl.y
+        }
+
+        override fun hashCode(): Int {
+            var result = sdl.x.hashCode()
+            result = 31 * result + sdl.y.hashCode()
+            return result
+        }
+    }
+
+    // ===================
     // Color
 
     class Color(val sdl: c.SDL_Color) {
@@ -138,7 +163,7 @@ object SDL3 {
 
         override fun equals(other: @Ptr Any?): Boolean {
             if (this === other) return true
-            if (other !is Color) return false
+            if (other !is FColor) return false
             return sdl.r == other.sdl.r
                     && sdl.g == other.sdl.g
                     && sdl.b == other.sdl.b
@@ -161,9 +186,7 @@ object SDL3 {
         if (!c.SDL_Init(flags)) error("SDL_Init failed: ${c.SDL_GetError()}")
     }
 
-    fun quit() {
-        c.SDL_Quit()
-    }
+    fun quit() { c.SDL_Quit() }
 
     /** Milliseconds elapsed since SDL_Init. */
     fun ticks(): Long = c.SDL_GetTicks()
@@ -173,55 +196,68 @@ object SDL3 {
 
     object Event
     object Scancode
+    object BlendMode
 }
 
 // ==================
 // MARK: Window
 // ==================
 
-fun SDL3.Window.destroy() {
-    c.SDL_DestroyWindow(this.handle)
-}
+inline fun SDL3.Window.destroy() { c.SDL_DestroyWindow(this.handle) }
+
+inline fun SDL3.Window.setTitle(title: String) { c.SDL_SetWindowTitle(this.handle, title.ptr) }
 
 // ==================
 // MARK: Renderer
 // ==================
 
-/** Cleanup SDL_Window handle */
-fun SDL3.Renderer.destroy() {
-    c.SDL_DestroyRenderer(this.handle)
-}
+inline fun SDL3.Renderer.destroy() { c.SDL_DestroyRenderer(this.handle) }
 
 /** Set the draw colour for subsequent rendering calls. */
-fun SDL3.Renderer.setDrawColor(r: Int, g: Int, b: Int, a: Int) {
+inline fun SDL3.Renderer.setDrawColor(r: Int, g: Int, b: Int, a: Int) {
     c.SDL_SetRenderDrawColor(this.handle, r, g, b, a)
 }
 
-fun SDL3.Renderer.setDrawColor(color: SDL3.Color) {
+inline fun SDL3.Renderer.setDrawColor(color: SDL3.Color) {
     c.SDL_SetRenderDrawColor(this.handle, color.r, color.g, color.b, color.a)
 }
 
 /** Clear the render target with the current draw colour. */
-fun SDL3.Renderer.clear() {
-    c.SDL_RenderClear(this.handle)
-}
+inline fun SDL3.Renderer.clear() { c.SDL_RenderClear(this.handle) }
 
 /** Fill a rectangle on the render target. */
-fun SDL3.Renderer.fillRect(inRect: SDL3.FRect) {
+inline fun SDL3.Renderer.fillRect(inRect: SDL3.FRect) {
     c.SDL_RenderFillRect(this.handle, c.addr(inRect.sdl))
 }
 
 /** Draw the outline of a rectangle on the render target. */
-fun SDL3.Renderer.drawRect(inRect: SDL3.FRect) {
+inline fun SDL3.Renderer.drawRect(inRect: SDL3.FRect) {
     c.SDL_RenderRect(this.handle, c.addr(inRect.sdl))
 }
 
 /** Draw a line segment on the render target. */
-fun SDL3.Renderer.drawLine(x1: Float, y1: Float, x2: Float, y2: Float) {
+inline fun SDL3.Renderer.drawLine(x1: Float, y1: Float, x2: Float, y2: Float) {
     c.SDL_RenderLine(this.handle, x1, y1, x2, y2)
 }
 
-/** Present the rendered frame to the screen. */
-fun SDL3.Renderer.present() {
-    c.SDL_RenderPresent(this.handle)
+/** Draw a single point on the render target. */
+inline fun SDL3.Renderer.drawPoint(x: Float, y: Float) {
+    c.SDL_RenderPoint(this.handle, x, y)
 }
+
+inline fun SDL3.Renderer.drawPoint(point: SDL3.FPoint) {
+    c.SDL_RenderPoint(this.handle, point.x, point.y)
+}
+
+/** Set blend mode for subsequent draw calls. */
+inline fun SDL3.Renderer.setBlendMode(mode: Int) {
+    c.SDL_SetRenderDrawBlendMode(this.handle, mode)
+}
+
+/** Set the drawing scale (zoom) factor. */
+inline fun SDL3.Renderer.setScale(scaleX: Float, scaleY: Float) {
+    c.SDL_SetRenderScale(this.handle, scaleX, scaleY)
+}
+
+/** Present the rendered frame to the screen. */
+inline fun SDL3.Renderer.present() { c.SDL_RenderPresent(this.handle) }

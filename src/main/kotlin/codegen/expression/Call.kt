@@ -15,10 +15,11 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // ── Method call: DotExpr receiver ────────────────────────────
     if (e.callee is DotExpr) {
         // Inline extension function call in value position
-        val vInlineExt = inlineExtFunDecls[e.callee.name]
+        val vRecvKtTypeForLookup = inferExprType(e.callee.obj)?.removeSuffix("?")
+        val vInlineExt = findInlineExtFun(e.callee.name, vRecvKtTypeForLookup, e.args.size)
         if (vInlineExt != null) {
             val vRecvExpr = genExpr(e.callee.obj)
-            val vRecvKtType = inferExprType(e.callee.obj)?.removeSuffix("?")
+            val vRecvKtType = vRecvKtTypeForLookup
             val vRetType = vInlineExt.returnType
             val vSubst = if (vInlineExt.typeParams.isNotEmpty()) inferInlineFunSubst(vInlineExt, vRecvKtType, e.args.map { inferExprType(it.expr) }) else null
             return withTypeSubst(vSubst) {

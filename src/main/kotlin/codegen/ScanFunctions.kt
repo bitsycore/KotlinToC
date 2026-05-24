@@ -81,7 +81,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 					scanExpr(e.callee)
 					}
 				is BinExpr -> {
-					val vInfixDecl = inlineExtFunDecls[e.op]
+					val vInfixDecl = inlineExtFunDecls[e.op]?.firstOrNull()
 					if (vInfixDecl != null && vInfixDecl.typeParams.isNotEmpty()) {
 						val vRecvType = inferExprType(e.left)
 						inferExprTypeKtc(e.left)

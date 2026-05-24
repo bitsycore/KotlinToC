@@ -141,11 +141,11 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
     if (e is CallExpr && (e.callee is DotExpr || e.callee is SafeDotExpr)) {
         val isSafe = e.callee is SafeDotExpr
         val methodName = if (isSafe) e.callee.name else (e.callee as DotExpr).name
-        val inlineExt = inlineExtFunDecls[methodName]
+        val recvObj = if (isSafe) e.callee.obj else (e.callee as DotExpr).obj
+        val recvKtType = inferExprType(recvObj)?.removeSuffix("?")
+        val inlineExt = findInlineExtFun(methodName, recvKtType, e.args.size)
         if (inlineExt != null) {
-            val recvObj = if (isSafe) e.callee.obj else (e.callee as DotExpr).obj
             val recvExpr = genExpr(recvObj)
-            val recvKtType = inferExprType(recvObj)?.removeSuffix("?")
             // Set up typeSubst for generic inline extension functions
             val vSavedSubst = typeSubst
             if (inlineExt.typeParams.isNotEmpty()) {
