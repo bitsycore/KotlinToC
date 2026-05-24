@@ -127,6 +127,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val topProps = mutableSetOf<String>()  // top-level property names (need pfx)
     internal val valTopProps = mutableSetOf<String>()  // top-level val properties (cannot be reassigned)
     internal val extensionFuns = mutableMapOf<String, MutableList<FunDecl>>()
+    internal val extensionProps = mutableMapOf<String, MutableList<PropDecl>>()  // extension properties: recvName → props
     override val interfaces = mutableMapOf<String, IfaceInfo>()
     // Type ID registry: each class/interface gets an incrementing integer ID for is/as checks
     internal val typeIds = mutableMapOf<String, Int>()

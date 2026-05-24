@@ -90,6 +90,7 @@ data class PropDecl(
     val isPrivate: Boolean = false,
     val isPrivateSet: Boolean = false,
     val annotations: List<Annotation> = emptyList(),
+    val receiver: TypeRef? = null,     // extension property: val Receiver.name
     val getter: Expr? = null,          // get() = expr
     val setterParam: String? = null,   // set(param)
     val setterBody: Block? = null      // set(param) { body }

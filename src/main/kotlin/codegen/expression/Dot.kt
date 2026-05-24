@@ -66,6 +66,12 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
                 val vProp2 = vOi.properties.find { it.name == e.name && it.getter != null }
                 if (vProp2 != null) return genExpr(vProp2.getter!!)
                 }
+            // Also check extension properties on the resolved object
+            val vExtProps = extensionProps[vFullObj]
+            if (vExtProps != null) {
+                val vExtP = vExtProps.find { it.name == e.name && it.getter != null }
+                if (vExtP != null) return genExpr(vExtP.getter!!)
+                }
             }
         }
 

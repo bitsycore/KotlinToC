@@ -191,7 +191,7 @@ function Invoke-Test {
 	$vSw = [Diagnostics.Stopwatch]::StartNew()
 
 	# Collect .kt sources
-	$vKtFiles = @(Get-ChildItem "$inSrcDir\*.kt" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+	$vKtFiles = @(Get-ChildItem "$inSrcDir\*.kt" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
 	if ($vKtFiles.Count -eq 0) { Write-Fail "$inName — no .kt files in $inSrcDir"; return "fail" }
 	# Preserve _cmake/ build cache, ktc_user.cmake and *.dll across runs
 	if (Test-Path $inOutDir) {
@@ -413,7 +413,7 @@ function Run-Suite {
 		$vSw  = [Diagnostics.Stopwatch]::StartNew()
 
 		# Collect .kt files
-		$vKts = @(Get-ChildItem "$($vDir.FullName)\*.kt" -ErrorAction SilentlyContinue | ForEach-Object FullName)
+		$vKts = @(Get-ChildItem "$($vDir.FullName)\*.kt" -Recurse -ErrorAction SilentlyContinue | ForEach-Object FullName)
 		if ($vKts.Count -eq 0) {
 			Write-Host "  FAIL $vName (no .kt files)" -ForegroundColor Red
 			return @{ Name = $vName; Passed = $false }

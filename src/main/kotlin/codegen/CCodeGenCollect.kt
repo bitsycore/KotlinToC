@@ -322,9 +322,15 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			}
 
 		is PropDecl -> {
-			topProps.add(d.name)
-			if (!d.mutable) valTopProps.add(d.name)
-			if (d.annotations.any { it.name == "Tls" }) tlsProps.add(d.name)
+			if (d.receiver != null) {
+				val vFlatRecv = d.receiver.name.replace('.', '$')
+				val recvName = if (classes.containsKey(vFlatRecv) || objects.containsKey(vFlatRecv)) vFlatRecv else d.receiver.name
+				extensionProps.getOrPut(recvName) { mutableListOf() }.add(d)
+				} else {
+				topProps.add(d.name)
+				if (!d.mutable) valTopProps.add(d.name)
+				if (d.annotations.any { it.name == "Tls" }) tlsProps.add(d.name)
+				}
 			}
 		}
 	}

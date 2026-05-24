@@ -418,7 +418,22 @@ class Parser(private val tokens: List<Token>) {
         val line = cur().line
         val typeAnnotations = if (preAnnotations.isEmpty()) parseAnnotations() else emptyList()
         advance()   // skip val/var
-        val name = expectIdent()
+        // Extension property: val Receiver.name get() = expr
+        val receiver: TypeRef?
+        val name: String
+        val vFirstName = expectIdent()
+        if (at(TokenType.DOT)) {
+            advance()
+            // Build full receiver name chain (e.g. SDL3.Event)
+            val vParts = mutableListOf(vFirstName, expectIdent())
+            while (at(TokenType.DOT)) { advance(); vParts += expectIdent() }
+            val vRecvName = vParts.dropLast(1).joinToString(".")
+            name = vParts.last()
+            receiver = TypeRef(vRecvName)
+        } else {
+            receiver = null
+            name = vFirstName
+        }
         val type = if (at(TokenType.COLON)) {
             advance(); skipNL()
             val t = parseTypeRef()
@@ -466,7 +481,7 @@ class Parser(private val tokens: List<Token>) {
         }
         skipTerminator()
         return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations,
-            getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody)
+            receiver = receiver, getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody)
     }
 
     // ═══════════════════════════ Statements ═══════════════════════════
