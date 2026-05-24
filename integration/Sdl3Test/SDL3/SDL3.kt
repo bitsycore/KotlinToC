@@ -69,6 +69,40 @@ object SDL3 {
     }
 
     // ===================
+    // Rect (integer)
+
+    class Rect(val sdl: c.SDL_Rect) {
+
+        val x get() = sdl.x
+        val y get() = sdl.y
+        val w get() = sdl.w
+        val h get() = sdl.h
+
+        constructor(x: Int, y: Int, w: Int, h: Int) : this(c.SDL_Rect(x, y, w, h))
+
+        override fun toString(): String = "Rect(x=${sdl.x}, y=${sdl.y}, w=${sdl.w}, h=${sdl.h})"
+
+        fun toFRect(): FRect = FRect(sdl.x.toFloat(), sdl.y.toFloat(), sdl.w.toFloat(), sdl.h.toFloat())
+
+        override fun equals(other: @Ptr Any?): Boolean {
+            if (this === other) return true
+            if (other !is Rect) return false
+            return sdl.x == other.sdl.x
+                    && sdl.y == other.sdl.y
+                    && sdl.w == other.sdl.w
+                    && sdl.h == other.sdl.h
+        }
+
+        override fun hashCode(): Int {
+            var result = sdl.x.hashCode()
+            result = 31 * result + sdl.y.hashCode()
+            result = 31 * result + sdl.w.hashCode()
+            result = 31 * result + sdl.h.hashCode()
+            return result
+        }
+    }
+
+    // ===================
     // FPoint
 
     class FPoint(val sdl: c.SDL_FPoint) {
@@ -179,6 +213,18 @@ object SDL3 {
         }
     }
 
+    // ===================
+    // Texture
+
+    class Texture(val handle: @Ptr c.SDL_Texture) {
+        fun size(): FPoint {
+            var w = 0.0f
+            var h = 0.0f
+            c.SDL_GetTextureSize(this.handle, c.addr(w), c.addr(h))
+            return FPoint(w, h)
+        }
+    }
+
     // ==================
     // Lib init
 
@@ -198,6 +244,9 @@ object SDL3 {
     object Scancode
     object BlendMode
     object Mouse
+    object TextureAccess
+    object PixelFormat
+    object Flip
 }
 
 // ==================
@@ -207,6 +256,21 @@ object SDL3 {
 inline fun SDL3.Window.destroy() { c.SDL_DestroyWindow(this.handle) }
 
 inline fun SDL3.Window.setTitle(title: String) { c.SDL_SetWindowTitle(this.handle, title.ptr) }
+
+inline fun SDL3.Window.setFullscreen(fullscreen: Boolean) {
+    c.SDL_SetWindowFullscreen(this.handle, fullscreen)
+}
+
+fun SDL3.Window.getSize(): SDL3.FPoint {
+    var w = 0
+    var h = 0
+    c.SDL_GetWindowSize(this.handle, c.addr(w), c.addr(h))
+    return SDL3.FPoint(w.toFloat(), h.toFloat())
+}
+
+inline fun SDL3.Window.setResizable(resizable: Boolean) {
+    c.SDL_SetWindowResizable(this.handle, resizable)
+}
 
 // ==================
 // MARK: Renderer
@@ -262,3 +326,29 @@ inline fun SDL3.Renderer.setScale(scaleX: Float, scaleY: Float) {
 
 /** Present the rendered frame to the screen. */
 inline fun SDL3.Renderer.present() { c.SDL_RenderPresent(this.handle) }
+
+/** Pixel dimensions of the render output (window or render target). */
+fun SDL3.Renderer.outputSize(): SDL3.FPoint {
+    var w = 0
+    var h = 0
+    c.SDL_GetRenderOutputSize(this.handle, c.addr(w), c.addr(h))
+    return SDL3.FPoint(w.toFloat(), h.toFloat())
+}
+
+/** Restrict rendering to a sub-rectangle of the target (integer coords). */
+inline fun SDL3.Renderer.setViewport(rect: SDL3.Rect) {
+    c.SDL_SetRenderViewport(this.handle, c.addr(rect.sdl))
+}
+
+inline fun SDL3.Renderer.clearViewport() {
+    c.SDL_SetRenderViewport(this.handle, c.NULL)
+}
+
+/** Restrict rendering to a clip rectangle. */
+inline fun SDL3.Renderer.setClipRect(rect: SDL3.Rect) {
+    c.SDL_SetRenderClipRect(this.handle, c.addr(rect.sdl))
+}
+
+inline fun SDL3.Renderer.clearClipRect() {
+    c.SDL_SetRenderClipRect(this.handle, c.NULL)
+}

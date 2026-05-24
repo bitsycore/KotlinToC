@@ -16,16 +16,27 @@ fun main(args: Array<String>) {
     val renderer = SDL3.Renderer(window)
     defer renderer.destroy()
 
+    // Build a 64×64 sprite as a render-target texture (orange frame with yellow fill)
+    val sprite = renderer.createTexture(64, 64, SDL3.PixelFormat.RGBA8888, SDL3.TextureAccess.Target)
+    defer sprite.destroy()
+    renderer.setTarget(sprite)
+    renderer.setDrawColor(255, 80, 0, 255)
+    renderer.clear()
+    renderer.setDrawColor(255, 220, 0, 255)
+    renderer.fillRect(SDL3.FRect(8.0f, 8.0f, 48.0f, 48.0f))
+    renderer.clearTarget()
+
     val background   = SDL3.Color(30,  30,  30,  255)
     val boxColor     = SDL3.Color(0,   128, 255, 255)
     val hoverColor   = SDL3.Color(255, 200, 0,   255)
     val outlineColor = SDL3.Color(255, 255, 255, 128)
     val crosshairCol = SDL3.Color(180, 180, 180, 200)
 
-    var box    = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
-    var mouseX = 0.0f
-    var mouseY = 0.0f
-    var quit   = false
+    var box      = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
+    var mouseX   = 0.0f
+    var mouseY   = 0.0f
+    var spriteAngle = 0.0f
+    var quit     = false
 
     // Held-key state
     var moveLeft  = false
@@ -96,6 +107,11 @@ fun main(args: Array<String>) {
         renderer.setDrawColor(crosshairCol)
         renderer.drawLine(mouseX - 10.0f, mouseY, mouseX + 10.0f, mouseY)
         renderer.drawLine(mouseX, mouseY - 10.0f, mouseX, mouseY + 10.0f)
+
+        // Rotating sprite centered on the cursor
+        spriteAngle += 90.0f * dt
+        val spriteDst = SDL3.FRect(mouseX - 32.0f, mouseY - 32.0f, 64.0f, 64.0f)
+        renderer.renderTextureRotated(sprite, spriteDst, spriteAngle, SDL3.Flip.None)
 
         renderer.present()
 
