@@ -240,9 +240,15 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			else recv
 			} else "&$recv"
 
-		val expandedArgs = withTypeSubst(genericTypeBindings[vClassInfo.name]) {
-			if (methodDecl != null) prepareArgs(args, methodDecl, vClassInfo.baseName) else argStr
-			}
+			// Let default values (e.g. this.x) resolve to the call-site receiver
+			val vSavedThis = lambdaParamSubst["\$this"]
+			if (methodDecl != null && methodDecl.params.any { it.default != null }) {
+				lambdaParamSubst["\$this"] = recv
+				}
+			val expandedArgs = withTypeSubst(genericTypeBindings[vClassInfo.name]) {
+				if (methodDecl != null) prepareArgs(args, methodDecl, vClassInfo.baseName) else argStr
+				}
+			if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
 		val allArgs       = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
 		val fnPrefix       = methodDecl?.let { resolvedFnName(it, vClassInfo.methods) } ?: method
 		val sizedClass = tryWrapSizedReturn("${vClassInfo.flatName}_$fnPrefix($allArgs)", methodDecl?.returnType)

@@ -36,18 +36,10 @@ object SDL3 {
 
     class FRect(val sdl: c.SDL_FRect) {
 
-        var x
-            get() = sdl.x
-            set(value) { sdl.x = value }
-        var y
-            get() = sdl.y
-            set(value) { sdl.y = value }
-        var w
-            get() = sdl.w
-            set(value) { sdl.w = value }
-        var h
-            get() = sdl.h
-            set(value) { sdl.h = value }
+        val x get() = sdl.x
+        val y get() = sdl.y
+        val w get() = sdl.w
+        val h get() = sdl.h
 
         constructor(x: Float, y: Float, w: Float, h: Float) : this(c.SDL_FRect(x, y, w, h))
 
@@ -71,6 +63,9 @@ object SDL3 {
             result = 31 * result + sdl.h.hashCode()
             return result
         }
+
+        fun copy(x: Float = this.sdl.x, y: Float = this.sdl.y, w: Float = this.sdl.w, h: Float = this.sdl.h): FRect =
+            FRect(x, y, w, h)
     }
 
     // ===================
@@ -78,18 +73,10 @@ object SDL3 {
 
     class Color(val sdl: c.SDL_Color) {
 
-        var r
-            get() = sdl.r
-            set(value) { sdl.r = value }
-        var g
-            get() = sdl.g
-            set(value) { sdl.g = value }
-        var b
-            get() = sdl.b
-            set(value) { sdl.b = value }
-        var a
-            get() = sdl.a
-            set(value) { sdl.a = value }
+        val r get() = sdl.r
+        val g get() = sdl.g
+        val b get() = sdl.b
+        val a get() = sdl.a
 
         constructor(r: UByte, g: UByte, b: UByte, a: UByte) : this(c.SDL_Color(r, g, b, a))
 
@@ -129,18 +116,10 @@ object SDL3 {
 
     class FColor(val sdl: c.SDL_FColor) {
 
-        var r
-            get() = sdl.r
-            set(value) { sdl.r = value }
-        var g
-            get() = sdl.g
-            set(value) { sdl.g = value }
-        var b
-            get() = sdl.b
-            set(value) { sdl.b = value }
-        var a
-            get() = sdl.a
-            set(value) { sdl.a = value }
+        val r get() = sdl.r
+        val g get() = sdl.g
+        val b get() = sdl.b
+        val a get() = sdl.a
 
         constructor(r: Float, g: Float, b: Float, a: Float) : this(c.SDL_FColor(r, g, b, a))
 

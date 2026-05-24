@@ -299,10 +299,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         return preScanVarTypes?.get(inName)?.let { LocalVar(it) }
         }
 
-    /* Return the C access expression for a variable — first non-null cName walking all scopes, else bare name.
-    Used so that smart-cast inner scopes (cName=null) don't hide an outer field's access expression. */
+    /* Return the C access expression for a variable. Stops at the first scope that defines the name:
+    returns its cName if set, otherwise the bare name (even if an outer scope has a cName). */
     internal fun lookupCName(inName: String): String {
-        for (i in scopes.indices.reversed()) { scopes[i][inName]?.cName?.let { return it } }
+        for (i in scopes.indices.reversed()) {
+            scopes[i][inName]?.let { return it.cName ?: inName }
+            }
         return inName
         }
 

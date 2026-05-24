@@ -26,15 +26,18 @@ fun main() {
     var running = true
     while (running) {
         handleEvent { event ->
-            if (event.type == SDL3.Event.Quit) running = false
-            if (event.type == SDL3.Event.MouseButtonDown) {
-                val mx = event.button.x
-                val my = event.button.y
-                if (mx >= box.x && mx <= box.x + box.w &&
-                    my >= box.y && my <= box.y + box.h) {
-                    box.x = mx - box.w / 2.0f
-                    box.y = my - box.h / 2.0f
-                    println(box)
+            when(event.type) {
+                SDL3.Event.Quit -> running = false
+                SDL3.Event.MouseButtonDown -> {
+                    val mx = event.button.x
+                    val my = event.button.y
+                    if (mx >= box.x && mx <= box.x + box.w &&
+                        my >= box.y && my <= box.y + box.h) {
+                        val newX = mx - box.w / 2.0f
+                        val newY = my - box.h / 2.0f
+                        box = box.copy(newX, newY)
+                        println(box)
+                    }
                 }
             }
         }

@@ -79,6 +79,7 @@ internal fun CCodeGen.registerParams(params: List<Param>) {
 internal fun CCodeGen.registerClassFields(ci: ClassInfo, selfPrefix: String) {
 	for ((name, type) in ci.props) {
 		val ktc        = resolveTypeName(type)
+		if (scopes.last().containsKey(name)) continue  // don't shadow params
 		val cFieldName = if (name in ci.privateProps) "PRIV_$name" else name
 		val isOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !ktc.isArrayLike
 		defineVar(name, LocalVar(ktc = ktc, mutable = !ci.isValProp(name), optional = isOpt, cName = "$selfPrefix$cFieldName"))
