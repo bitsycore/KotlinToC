@@ -69,6 +69,49 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     }
     impl = vSavedImplForNested
 
+    val vIsNamespace = d.name in namespaceObjects
+
+    // ── @Namespace: pure C namespace — no struct, no instance, no vtable ──────────────────────
+
+    if (vIsNamespace) {
+        hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
+
+        if (d.name.contains('$')) {
+            impl.appendLine(cSourceFileHeader(vKind, vDisplayName, vPkg, cName, currentSourceFile))
+            impl.appendLine()
+        }
+
+        val vNsMethods = methods.filter { !it.isInline }
+        if (vNsMethods.isNotEmpty()) {
+            impl.appendLine(boxSection("methods"))
+            impl.appendLine()
+        }
+        val prevObjectNs = currentObject
+        currentObject = d.name
+        for (m in vNsMethods) {
+            val prevState = saveFunState()
+            val cRet      = computeReturnInfo(m)
+            val fnName    = resolvedFnName(m, methods)
+            val params    = expandParams(m.params)
+            val paramsOrVoid = params.ifEmpty { "void" }
+            hdr.appendLine("$cRet ${cName}_$fnName($paramsOrVoid);")
+            val vRetSuffix = if (m.returnType != null) ": ${typeRefToStr(m.returnType)}" else ""
+            impl.appendLine("// ══ fun ${m.name}()$vRetSuffix ══")
+            impl.appendLine("$cRet ${cName}_$fnName($paramsOrVoid) {")
+            pushScope()
+            registerParams(m.params)
+            emitArrayParamCopies(m.params, "    ")
+            emitFunBodyAndClose(m, prevState, withImplicitReturn = false)
+        }
+        currentObject = prevObjectNs
+
+        hdr.appendLine(classBlockFooter(vKind, vDisplayName, emptyList()))
+        if (vNestedImpl.isNotEmpty()) impl.append(vNestedImpl)
+        return
+    }
+
+    // ── Normal singleton object ───────────────────────────────────────────────────────────────
+
     hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
     hdr.appendLine("#define KTC_TYPE_NAME $cName")
     val typeIdValue = typeIds.getOrPut(d.name) { nextTypeId++ }

@@ -240,16 +240,16 @@ object SDL3 {
     /** Sleep for at least ms milliseconds. */
     fun delay(ms: Int) { c.SDL_Delay(ms) }
 
-    object Event
-    object Scancode
-    object BlendMode
-    object Mouse
-    object TextureAccess
-    object PixelFormat
-    object Flip
-    object WindowFlags
-    object InitFlags
-    object SystemCursor
+    @Namespace object Event
+    @Namespace object Scancode
+    @Namespace object BlendMode
+    @Namespace object Mouse
+    @Namespace object TextureAccess
+    @Namespace object PixelFormat
+    @Namespace object Flip
+    @Namespace object WindowFlags
+    @Namespace object InitFlags
+    @Namespace object SystemCursor
 
     class Cursor(val handle: @Ptr c.SDL_Cursor)
 }

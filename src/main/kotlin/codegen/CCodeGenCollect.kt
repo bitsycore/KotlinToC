@@ -233,7 +233,8 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			}
 
 		is ObjectDecl -> {
-			if (d.annotations.any { it.name == "Tls" }) tlsObjects.add(d.name)
+			if (d.annotations.any { it.name == "Tls" })       tlsObjects.add(d.name)
+			if (d.annotations.any { it.name == "Namespace" }) namespaceObjects.add(d.name)
 			for (p in d.members.filterIsInstance<PropDecl>()) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {

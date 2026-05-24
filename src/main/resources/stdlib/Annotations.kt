@@ -37,3 +37,22 @@ Usage:
     var threadId: Int = 0
 */
 annotation class Tls
+
+/**
+Mark a top-level object as a pure Kotlin namespace with no C representation.
+The object struct, singleton instance, and Any vtable are not emitted.
+Extension functions and properties on a @Namespace object become free C functions
+(no $self parameter). Use this for objects that exist only to group related constants
+or functions under a common name.
+
+Usage:
+    object SDL3 {
+        @Namespace object Event
+        @Namespace object Scancode
+    }
+
+    // These become plain C constants — no object instance in C:
+    inline val SDL3.Event.Quit    get() = c.SDL_EVENT_QUIT
+    inline val SDL3.Scancode.Left get() = c.SDL_SCANCODE_LEFT
+*/
+annotation class Namespace

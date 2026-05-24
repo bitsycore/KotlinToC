@@ -435,7 +435,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // Objects with dispose methods — called on main() exit
     internal val objectsWithDispose = mutableListOf<String>()  // cName of objects with dispose
     // @Tls-annotated objects and top-level properties → emit ktc_core_tls specifier
-    internal val tlsObjects = mutableSetOf<String>()  // object names
+    internal val tlsObjects       = mutableSetOf<String>()  // object names
+    internal val namespaceObjects = mutableSetOf<String>()  // @Namespace object names
     internal val tlsProps = mutableSetOf<String>()    // top-level property names
 
     // ── Trampolined array params (pass-by-value copy on stack) ────────

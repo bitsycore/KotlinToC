@@ -20,13 +20,19 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	val retSig   = f.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
 	maybeEmitFunBanner(f.name)
 	impl.appendLine("// ══ ext fun ${recvTypeName}.${f.name}($paramSig)$retSig ($currentSourceFile) ══")
-	val isClassType  = classes.containsKey(recvTypeName)
-	val isObjectType = objects.containsKey(recvTypeName)
-	val cRecvType    = cType(f.receiver)
-	val cSelfType    = if (isObjectType) "${cRecvType}_t" else cRecvType
-	val selfParam    = if (recvIsNullable) "${optCTypeName(recvTypeName)} \$self" else "$cSelfType \$self"
-	val extraParams = expandParams(f.params)
-	val allParams   = if (extraParams.isNotEmpty()) "$selfParam, $extraParams" else selfParam
+	val isClassType    = classes.containsKey(recvTypeName)
+	val isObjectType   = objects.containsKey(recvTypeName)
+	val isNamespaceObj = namespaceObjects.contains(recvTypeName)
+	val cRecvType      = cType(f.receiver)
+	val cSelfType      = if (isObjectType) "${cRecvType}_t" else cRecvType
+	val selfParam      = if (recvIsNullable) "${optCTypeName(recvTypeName)} \$self" else "$cSelfType \$self"
+	val extraParams    = expandParams(f.params)
+	// @Namespace objects have no C representation — extension functions become free functions (no $self)
+	val allParams = when {
+		isNamespaceObj              -> extraParams.ifEmpty { "void" }
+		extraParams.isNotEmpty()    -> "$selfParam, $extraParams"
+		else                        -> selfParam
+	}
 	// Overload resolution for extension functions
 		val vExtSiblings = extensionFuns[recvTypeName]?.filter { it.name == f.name }?.distinctBy { it.params.map { p -> resolveTypeName(p.type).toInternalStr } } ?: listOf(f)
 		val vCName       = resolvedFnName(f, vExtSiblings)
