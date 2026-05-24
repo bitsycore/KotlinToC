@@ -165,6 +165,12 @@ object SDL3 {
         c.SDL_Quit()
     }
 
+    /** Milliseconds elapsed since SDL_Init. */
+    fun ticks(): Long = c.SDL_GetTicks()
+
+    /** Sleep for at least ms milliseconds. */
+    fun delay(ms: Int) { c.SDL_Delay(ms) }
+
     object Event
     object Scancode
 }

@@ -23,32 +23,50 @@ fun main(args: Array<String>) {
     val renderer = SDL3.Renderer(window)
     defer renderer.destroy()
 
-    // Colours
-    val background  = SDL3.Color(30,  30,  30,  255)
-    val boxColor    = SDL3.Color(0,   128, 255, 255)
-    val hoverColor  = SDL3.Color(255, 200, 0,   255)
-    val outlineColor= SDL3.Color(255, 255, 255, 128)
-    val crosshair   = SDL3.Color(180, 180, 180, 200)
+    val background   = SDL3.Color(30,  30,  30,  255)
+    val boxColor     = SDL3.Color(0,   128, 255, 255)
+    val hoverColor   = SDL3.Color(255, 200, 0,   255)
+    val outlineColor = SDL3.Color(255, 255, 255, 128)
+    val crosshairCol = SDL3.Color(180, 180, 180, 200)
 
     var box     = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
     var mouseX  = 0.0f
     var mouseY  = 0.0f
     var running = true
 
+    // Held-key state — movement is continuous and delta-scaled
+    var moveLeft  = false
+    var moveRight = false
+    var moveUp    = false
+    var moveDown  = false
+
+    val frameMs = 1000L / 60L   // target frame budget: ~16 ms
+    val speed   = 200.0f        // pixels per second
+
+    var lastTick = SDL3.ticks()
+
     while (running) {
+        val now = SDL3.ticks()
+        val dt  = (now - lastTick).toFloat() / 1000.0f
+        lastTick = now
+
         handleEvent { event ->
             when (event.type) {
                 SDL3.Event.Quit -> running = false
 
-                SDL3.Event.KeyDown -> {
-                    val sc = event.key.scancode
-                    when (sc) {
-                        SDL3.Scancode.Escape -> running = false
-                        SDL3.Scancode.Left,  SDL3.Scancode.A -> box = box.copy(x = box.x - 10.0f)
-                        SDL3.Scancode.Right, SDL3.Scancode.D -> box = box.copy(x = box.x + 10.0f)
-                        SDL3.Scancode.Up,    SDL3.Scancode.W -> box = box.copy(y = box.y - 10.0f)
-                        SDL3.Scancode.Down,  SDL3.Scancode.S -> box = box.copy(y = box.y + 10.0f)
-                    }
+                SDL3.Event.KeyDown -> when (event.key.scancode) {
+                    SDL3.Scancode.Escape                  -> running   = false
+                    SDL3.Scancode.Left,  SDL3.Scancode.A -> moveLeft  = true
+                    SDL3.Scancode.Right, SDL3.Scancode.D -> moveRight = true
+                    SDL3.Scancode.Up,    SDL3.Scancode.W -> moveUp    = true
+                    SDL3.Scancode.Down,  SDL3.Scancode.S -> moveDown  = true
+                }
+
+                SDL3.Event.KeyUp -> when (event.key.scancode) {
+                    SDL3.Scancode.Left,  SDL3.Scancode.A -> moveLeft  = false
+                    SDL3.Scancode.Right, SDL3.Scancode.D -> moveRight = false
+                    SDL3.Scancode.Up,    SDL3.Scancode.W -> moveUp    = false
+                    SDL3.Scancode.Down,  SDL3.Scancode.S -> moveDown  = false
                 }
 
                 SDL3.Event.MouseMotion -> {
@@ -68,27 +86,37 @@ fun main(args: Array<String>) {
             }
         }
 
+        // Apply continuous movement, dt-scaled so speed is frame-rate independent
+        var dx = 0.0f
+        var dy = 0.0f
+        if (moveLeft)  dx -= speed * dt
+        if (moveRight) dx += speed * dt
+        if (moveUp)    dy -= speed * dt
+        if (moveDown)  dy += speed * dt
+        if (dx != 0.0f || dy != 0.0f) box = box.copy(x = box.x + dx, y = box.y + dy)
+
         val hovering = mouseX >= box.x && mouseX <= box.x + box.w &&
                        mouseY >= box.y && mouseY <= box.y + box.h
 
-        // Draw background
         renderer.setDrawColor(background)
         renderer.clear()
 
-        // Draw box (yellow when hovered, blue otherwise)
         if (hovering) renderer.setDrawColor(hoverColor) else renderer.setDrawColor(boxColor)
         renderer.fillRect(box)
 
-        // Draw white outline around box
         renderer.setDrawColor(outlineColor)
         renderer.drawRect(box)
 
-        // Draw crosshair at mouse position
-        renderer.setDrawColor(crosshair)
+        renderer.setDrawColor(crosshairCol)
         renderer.drawLine(mouseX - 10.0f, mouseY, mouseX + 10.0f, mouseY)
         renderer.drawLine(mouseX, mouseY - 10.0f, mouseX, mouseY + 10.0f)
 
         renderer.present()
+
+        // Sleep the remainder of the frame budget to hold ~60 FPS
+        val elapsed = SDL3.ticks() - now
+        if (elapsed < frameMs) SDL3.delay((frameMs - elapsed).toInt())
+
         if (testMode) running = false
     }
 }
