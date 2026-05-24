@@ -1,8 +1,6 @@
 package com.bitsycore.ktc.codegen.expression
 
-import com.bitsycore.ktc.ast.ExprPart
-import com.bitsycore.ktc.ast.LitPart
-import com.bitsycore.ktc.ast.StrTemplateExpr
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
@@ -44,6 +42,23 @@ internal fun CCodeGen.toStringMaxLen(baseType: String, visited: MutableSet<Strin
 			}
 		visited.remove(t); return total
 		}
+		// Non-data class with custom toString: inspect the return template
+		if (ci != null && !ci.isData) {
+			val vDecl = allClassDecls[t] ?: allClassDecls[ci.name]
+			val vToString = vDecl?.members?.filterIsInstance<FunDecl>()?.find { it.name == "toString" }
+			if (vToString != null) {
+				val vLast = vToString.body?.stmts?.lastOrNull()
+				val vRet = when (vLast) {
+					is ReturnStmt -> vLast.value
+					is ExprStmt  -> vLast.expr
+					else         -> null
+					}
+				if (vRet is StrTemplateExpr) {
+					val vTmplMax = templateMaxLen(vRet)
+					if (vTmplMax != null) { visited.remove(t); return vTmplMax }
+					}
+				}
+			}
 	if (classes.containsKey(t) || objects.containsKey(t) || interfaces.containsKey(t)) {
 		visited.remove(t); return ktDisplayName(t).length + 10
 		}
