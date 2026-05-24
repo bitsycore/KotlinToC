@@ -1,1 +1,1 @@
-modules = ["std", "SDL3"]
+modules = ["SDL3"]

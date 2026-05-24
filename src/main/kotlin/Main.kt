@@ -30,13 +30,42 @@ private fun discoverResourceFiles(resourcePath: String, extension: String): List
     }
 }
 
+/** Parse a TOML array value like `["A", "B"]` into a list of strings. */
+private fun parseTomlStringArray(arrayContent: String): List<String> =
+    arrayContent.split(',')
+        .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
+        .filter { it.isNotEmpty() }
+
 /** Parse `modules = ["A", "B"]` from a deps.ktc.toml string. */
 private fun parseDepsToml(content: String): List<String> {
     val match = Regex("""^\s*modules\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
         ?: return emptyList()
-    return match.groupValues[1].split(',')
-        .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
-        .filter { it.isNotEmpty() }
+    return parseTomlStringArray(match.groupValues[1])
+}
+
+/** Parse `dependencies = ["A", "B"]` from a module.toml resource. Returns empty list if absent. */
+private fun parseModuleDeps(moduleName: String, aClass: Class<*>): List<String> {
+    val res = aClass.getResourceAsStream("/modules/$moduleName/module.toml") ?: return emptyList()
+    val content = res.bufferedReader().readText()
+    val match = Regex("""^\s*dependencies\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
+        ?: return emptyList()
+    return parseTomlStringArray(match.groupValues[1])
+}
+
+/** Expand [seeds] into a full ordered load list by following module `dependencies`, BFS, no duplicates. */
+private fun resolveModules(seeds: List<String>, aClass: Class<*>): List<String> {
+    val result = mutableListOf<String>()
+    val seen = mutableSetOf<String>()
+    val queue = ArrayDeque(seeds)
+    while (queue.isNotEmpty()) {
+        val name = queue.removeFirst()
+        if (!seen.add(name)) continue
+        val deps = parseModuleDeps(name, aClass)
+        // Insert deps before the module itself so dependencies come first
+        for (dep in deps.reversed()) queue.addFirst(dep)
+        result += name
+    }
+    return result
 }
 
 fun main(args: Array<String>) {
@@ -138,7 +167,7 @@ fun main(args: Array<String>) {
         val depsFile = File(dir, "deps.ktc.toml")
         if (depsFile.exists()) moduleNames += parseDepsToml(depsFile.readText())
     }
-    val resolvedModules = moduleNames.distinct()
+    val resolvedModules = resolveModules(moduleNames.distinct(), aClass)
 
     // Collect stdlib .kt files from resources
     val stdlibDir = aClass.getResource("/stdlib") ?: aClass.getResource("/stdlib/")
