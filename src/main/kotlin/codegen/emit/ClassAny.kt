@@ -90,11 +90,15 @@ internal fun CCodeGen.emitImplicitHashCode(
 			impl.appendLine("    h = h * 31 + $hashExpr;")
 			}
 		impl.appendLine("    return h;")
+		} else if (isData) {
+		// Data class with no stored properties: all instances are equal, constant hash per class.
+		impl.appendLine("    (void)\$self;")
+		impl.appendLine("    return (ktc_Int)${cName}_TYPE_ID;")
 		} else if (isGenericClass) {
 		impl.appendLine("    uintptr_t p = (uintptr_t)\$self; p >>= 4;")
 		impl.appendLine("    ktc_UInt lo = (ktc_UInt)p;")
 		impl.appendLine("    ktc_UInt hi = (ktc_UInt)(p >> 32);")
-		impl.appendLine("    ktc_UInt t = (ktc_UInt)\$self->__base.typeId * 0x9e3779b1U;")
+		impl.appendLine("    ktc_UInt t = ${cName}_TYPE_ID * 0x9e3779b1U;")
 		impl.appendLine("    ktc_UInt h = lo ^ hi ^ t;")
 		impl.appendLine("    h = ktc_core_fmix32(h);")
 		impl.appendLine("    return (ktc_Int)h;")
@@ -197,7 +201,7 @@ internal fun CCodeGen.emitAnyVtable(
 	impl.appendLine()
 	hdr.appendLine("KTC_METHOD(ktc_Any, as_Any)(KTC_TYPE_NAME* \$self);")
 	impl.appendLine("ktc_Any ${cName}_as_Any($cName* \$self) {")
-	impl.appendLine("    return (ktc_Any){{.typeId = ${cName}_TYPE_ID}, (void*)\$self, &${cName}_AnyVt};")
+	impl.appendLine("    return (ktc_Any){${cName}_TYPE_ID, (void*)\$self, &${cName}_AnyVt};")
 	impl.appendLine("}")
 	impl.appendLine()
 	}
@@ -222,6 +226,8 @@ internal fun CCodeGen.hashFieldExprKtc(ktc: KtcType, valueExpr: String): String 
 		}
 	is KtcType.Str -> "ktc_core_hash_str($valueExpr)"
 	is KtcType.Ptr -> "((ktc_Int)(uintptr_t)($valueExpr))"
-	is KtcType.User, is KtcType.Arr, is KtcType.Nullable -> "($valueExpr).__base.typeId"
-	else -> "($valueExpr).__base.typeId"
+	is KtcType.User -> if (ktc.kind == KtcType.UserKind.Interface) "($valueExpr).__typeId"
+	                   else "(ktc_Int)${typeFlatName(ktc.baseName)}_TYPE_ID"
+	is KtcType.Arr, is KtcType.Nullable -> "(ktc_Int)0"
+	else -> "(ktc_Int)0"
 	}

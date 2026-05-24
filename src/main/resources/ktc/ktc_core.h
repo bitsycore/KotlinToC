@@ -113,18 +113,25 @@ Generated per element type via KTC_DECL_VAR_ARR.
 Replaces ktc_ArrayTrampoline in function parameter ABIs. */
 #define KTC_DECL_VAR_ARR(ElemType, Name) typedef struct { ElemType* ptr; ktc_Int len; } Name
 
-/** Base "supertype" embedded at the start of every class/object/interface struct.
- *  Mirrors Kotlin's implicit `Any` superclass.
- *  typeId is unsigned so the MSB (bit 31) can serve as a disposed flag
- *  without introducing negative values or sign-bit ambiguity. */
-typedef struct {
-    ktc_UInt typeId;
-} ktc_core_AnyData;
+/** Dispose-tracking flags embedded at the start of every class/object struct.
+ *  Only compiled in when at least one dispose-check mode is active.
+ *  The MSB (bit 31) of flags is the disposed flag; lower bits are unused. */
+#if defined(KTC_DISPOSED_ASSERT) || defined(KTC_DISPOSED_LOG) || \
+    defined(KTC_DOUBLE_DISPOSE_ASSERT) || defined(KTC_DOUBLE_DISPOSE_LOG)
+typedef struct { ktc_UInt flags; } ktc_core_ObjFlags;
+/** Embeds ktc_core_ObjFlags __base in class/object structs (dispose tracking on). */
+#define KTC_OBJ_BASE       ktc_core_ObjFlags __base;
+/** Positional initialiser token for __base in struct literals (expands to {0},). */
+#define KTC_OBJ_BASE_INIT  {0},
+#else
+#define KTC_OBJ_BASE
+#define KTC_OBJ_BASE_INIT
+#endif
 
 /** @Ptr interface trampoline — fat pointer for interface references.
- *  Uses __base.typeId for is-checks, vt for dispatch, obj for concrete data.
+ *  typeId holds the concrete type ID for is-checks; vt for dispatch; obj for data.
  *  One unified struct for all @Ptr InterfaceType regardless of which interface. */
-typedef struct { ktc_core_AnyData __base; const void* vt; void* obj; } ktc_IfacePtr;
+typedef struct { ktc_UInt typeId; const void* vt; void* obj; } ktc_IfacePtr;
 
 /** Vtable for Any methods — one static instance per class.
  *  All methods take void* for type-erased dispatch. */
@@ -137,7 +144,7 @@ typedef struct ktc_core_AnyVt {
 } ktc_core_AnyVt;
 
 /** Type-erased fat pointer for `Any` — identity checks + vtable dispatch. */
-typedef struct { ktc_core_AnyData __base; void* data; const ktc_core_AnyVt* vt; } ktc_Any;
+typedef struct { ktc_UInt typeId; void* data; const ktc_core_AnyVt* vt; } ktc_Any;
 
 typedef enum { ktc_NONE = 0, ktc_SOME = 1 } ktc_OptionalTag;
 

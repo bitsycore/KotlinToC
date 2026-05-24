@@ -193,12 +193,15 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val memOp = if (exprKtcCore is KtcType.Ptr && !isIfacePtr) "->" else "."
         val vIsClassInfo = classInfoFor(targetKtc)                                    // non-null if target is a user class
         val vIsIfaceInfo = ifaceInfoFor(targetKtc)                                    // non-null if target is an interface
+        val vTypeIdRef   = typeIdExpr(exprKtcCore, inner, memOp)                      // null → concrete class (static type)
         val check = if (vIsClassInfo != null) {
-            "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${vIsClassInfo.flatName}_TYPE_ID"
+            if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == ${vIsClassInfo.flatName}_TYPE_ID"
+            else "${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${vIsClassInfo.flatName}_TYPE_ID"
         } else if (vIsIfaceInfo != null) {
             val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
             if (impls.isEmpty()) "false"
-            else impls.joinToString(" || ") { "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${typeFlatName(it)}_TYPE_ID" }
+            else if (vTypeIdRef != null) impls.joinToString(" || ") { "KTC_GET_TYPEID($vTypeIdRef) == ${typeFlatName(it)}_TYPE_ID" }
+            else "${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${typeFlatName(impls.first())}_TYPE_ID"
         } else if (targetKtc.isArrayLike) {
             if (exprKtcCore != null && exprKtcCore.isArrayLike) {
                 if (exprKtcCore.toInternalStr == target) "true" else "false"
@@ -218,7 +221,8 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                 } else "false"
             } else {
                 val typeId = getTypeId(target)
-                    "(KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == $typeId)"
+                if (vTypeIdRef != null) "(KTC_GET_TYPEID($vTypeIdRef) == $typeId)"
+                else "(${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == $typeId)"
             }
         } else {
             "/* is-check: unknown type '${target}' */ true"
@@ -239,15 +243,19 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         if (e.safe) {
             val optCType = optCTypeName("$target?")
             val memOp = if (isPtr) "->" else "."
+            val vTypeIdRef = typeIdExpr(srcKtcCore, inner, memOp)
             val check = if (vCastClassInfo != null) {
-                "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${vCastClassInfo.flatName}_TYPE_ID"
+                if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == ${vCastClassInfo.flatName}_TYPE_ID"
+                else "${typeFlatName((srcKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${vCastClassInfo.flatName}_TYPE_ID"
             } else if (vCastIfaceInfo != null) {
                 val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
                 if (impls.isEmpty()) "false"
-                else impls.joinToString(" || ") { "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == ${typeFlatName(it)}_TYPE_ID" }
+                else if (vTypeIdRef != null) impls.joinToString(" || ") { "KTC_GET_TYPEID($vTypeIdRef) == ${typeFlatName(it)}_TYPE_ID" }
+                else impls.joinToString(" || ") { "${typeFlatName((srcKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${typeFlatName(it)}_TYPE_ID" }
             } else if (targetKtc !is KtcType.User || targetKtc.kind != KtcType.UserKind.Class) {
                 val typeId = getTypeId(target)
-                "KTC_GET_TYPEID(${inner}${memOp}__base.typeId) == $typeId"
+                if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == $typeId"
+                else "${typeFlatName((srcKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == $typeId"
             } else {
                 "true"
             }

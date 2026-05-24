@@ -54,12 +54,12 @@ class ObjectUnitTest : TranspilerTestBase() {
 
     @Test fun objectHasBaseField() {
         val r = transpileMain("Config.maxRetries", decls = configDecl)
-        r.headerContains("ktc_core_AnyData __base;")
+        r.headerContains("KTC_OBJ_BASE")
     }
 
-    @Test fun objectBaseTypeIdInit() {
+    @Test fun objectNoTypeIdInInit() {
         val r = transpileMain("Config.maxRetries", decls = configDecl)
-        r.sourceContains("test_Main_Config.__base.typeId = test_Main_Config_TYPE_ID;")
+        r.sourceNotContains("__base.typeId = test_Main_Config_TYPE_ID;")
     }
 
     @Test fun objectHasToString() {

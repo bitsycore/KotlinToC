@@ -19,7 +19,8 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c is Circle
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
+        // Concrete class: type is statically known, generates a constant comparison
+        r.sourceContains("(test_Main_Circle_TYPE_ID == test_Main_Circle_TYPE_ID)")
     }
 
     @Test fun isCheckNegated() {
@@ -32,7 +33,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c !is Circle
             }
         """)
-        r.sourceContains("!(KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID)")
+        r.sourceContains("!(test_Main_Circle_TYPE_ID == test_Main_Circle_TYPE_ID)")
     }
 
     @Test fun isCheckOnInterface() {
@@ -46,8 +47,8 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c is Circle
             }
         """)
-        // Interface is-check enumerates implementing classes
-        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
+        // Interface is-check uses __typeId from the interface stack union
+        r.sourceContains("KTC_GET_TYPEID(c.__typeId) == test_Main_Circle_TYPE_ID")
     }
 
     @Test fun isCheckOnInterfaceMultipleImpls() {
@@ -61,7 +62,7 @@ class CastUnitTest : TranspilerTestBase() {
                 val ok = c is Drawable
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID || KTC_GET_TYPEID(c.__base.typeId) == test_Main_Square_TYPE_ID")
+        r.sourceContains("KTC_GET_TYPEID(c.__typeId) == test_Main_Circle_TYPE_ID || KTC_GET_TYPEID(c.__typeId) == test_Main_Square_TYPE_ID")
     }
 
     @Test fun asCastNonInterface() {
@@ -105,7 +106,8 @@ class CastUnitTest : TranspilerTestBase() {
                 val c = (s as? Circle)
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Main_Circle_TYPE_ID")
+        // Concrete class source: static comparison (Shape_TYPE_ID vs Circle_TYPE_ID)
+        r.sourceContains("test_Main_Shape_TYPE_ID == test_Main_Circle_TYPE_ID")
         r.sourceContains("KTC_SOME")
         r.sourceContains("KTC_NONE")
     }
@@ -122,7 +124,8 @@ class CastUnitTest : TranspilerTestBase() {
                 val d = (c as? Drawable)
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
+        // Concrete class source: static comparison (Circle_TYPE_ID vs Circle_TYPE_ID)
+        r.sourceContains("test_Main_Circle_TYPE_ID == test_Main_Circle_TYPE_ID")
     }
 
     @Test fun isCheckInWhen() {
@@ -140,7 +143,8 @@ class CastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Circle_TYPE_ID")
-        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Square_TYPE_ID")
+        // Concrete class source: static comparisons
+        r.sourceContains("test_Shape_TYPE_ID == test_Circle_TYPE_ID")
+        r.sourceContains("test_Shape_TYPE_ID == test_Square_TYPE_ID")
     }
 }

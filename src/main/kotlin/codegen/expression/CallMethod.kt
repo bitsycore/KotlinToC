@@ -144,9 +144,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val t          = tmp()
 			val isNullable = rawRecvTypeKtc is KtcType.Nullable
 			if (isNullable) {
-				preStmts += "ktc_IfacePtr $t = ($recv) ? ((ktc_IfacePtr){{$typeId}, (const void*)&${cConcrete}_${ifaceExtConcrete}_vt, (void*)($recv)}) : ((ktc_IfacePtr){0});"
+				preStmts += "ktc_IfacePtr $t = ($recv) ? ((ktc_IfacePtr){$typeId, (const void*)&${cConcrete}_${ifaceExtConcrete}_vt, (void*)($recv)}) : ((ktc_IfacePtr){0});"
 				} else {
-				preStmts += "ktc_IfacePtr $t = {{$typeId}, (const void*)&${cConcrete}_${ifaceExtConcrete}_vt, (void*)$recv};"
+				preStmts += "ktc_IfacePtr $t = {$typeId, (const void*)&${cConcrete}_${ifaceExtConcrete}_vt, (void*)$recv};"
 				}
 			t
 			} else recv

@@ -77,7 +77,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
 
     val vTls = if (d.name in tlsObjects) "ktc_core_tls " else ""  // TLS qualifier string for .c file
     hdr.appendLine(if (vTls.isNotEmpty()) "KTC_TLS_OBJECT(" else "KTC_OBJECT(")
-    hdr.appendLine("    ktc_core_AnyData __base;")
+    hdr.appendLine("    KTC_OBJ_BASE")
     if (props.isEmpty()) hdr.appendLine("    ktc_Char _dummy;")
     for (p in props) {
         // Computed property with getter: no backing field
@@ -128,7 +128,6 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
     }
     impl.appendLine("static void ${cName}_init(void) {")
-    impl.appendLine("    $cName.__base.typeId = ${cName}_TYPE_ID;")
     for (p in props) {
         if (p.init != null) {
             val pType       = p.type ?: inferInitType(p.init)
@@ -375,7 +374,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl.appendLine("};")
     impl.appendLine()
     impl.appendLine("ktc_Any ${cName}_as_Any(${cName}_t* \$self) {")
-    impl.appendLine("    return (ktc_Any){{.typeId = ${cName}_TYPE_ID}, (void*)\$self, &${cName}_AnyVt};")
+    impl.appendLine("    return (ktc_Any){${cName}_TYPE_ID, (void*)\$self, &${cName}_AnyVt};")
     impl.appendLine("}")
     impl.appendLine()
 

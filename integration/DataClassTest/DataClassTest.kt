@@ -186,9 +186,9 @@ fun main() {
     val pl2 = PlainParams("test", 42)
     val pl3 = PlainParams("other", 99)
 
-    // hashCode: without properties, falls back to identity hash (pointer-based)
-    if (pl1.hashCode() == pl2.hashCode()) error("FAIL PlainParams hashCode should differ by identity")
-    println("PlainParams identity hashCode: ok")
+    // hashCode: no stored properties -> constant per class (all instances equal, same hash)
+    if (pl1.hashCode() != pl2.hashCode()) error("FAIL PlainParams hashCode should be equal (no stored props)")
+    println("PlainParams constant hashCode: ok")
 
     // equals: empty props -> always true
     if (pl1 != pl2) error("FAIL PlainParams equals (empty props = always equal)")

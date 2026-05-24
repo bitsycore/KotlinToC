@@ -130,12 +130,12 @@ class InterfaceUnitTest : TranspilerTestBase() {
 
     @Test fun typeIdFieldInStruct() {
         val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls)
-        r.headerContains("ktc_core_AnyData __base;")
+        r.headerContains("KTC_OBJ_BASE")
     }
 
     @Test fun typeIdInConstructor() {
-        // Classes with all ctor props use compound literal: return (Circle){TYPE_ID, radius};
-        val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls) 
+        // Constructor uses compound literal; TYPE_ID appears in as_Any / vtable
+        val r = transpileMain("val c = Circle(5.0f)", decls = shapeDecls)
         r.sourceContains("return (test_Main_Circle){")
         r.sourceContains("test_Main_Circle_TYPE_ID")
     }
@@ -150,7 +150,7 @@ class InterfaceUnitTest : TranspilerTestBase() {
                 if (c is Circle) println("yes")
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(c.__base.typeId) == test_Main_Circle_TYPE_ID")
+        r.sourceContains("(test_Main_Circle_TYPE_ID == test_Main_Circle_TYPE_ID)")
     }
 
     @Test fun isCheckInterface() {
@@ -162,7 +162,7 @@ class InterfaceUnitTest : TranspilerTestBase() {
                 if (s is Shape) println("yes")
             }
         """)
-        r.sourceContains("KTC_GET_TYPEID(s.__base.typeId) == test_Main_Circle_TYPE_ID ||")
+        r.sourceContains("KTC_GET_TYPEID(s.__typeId) == test_Main_Circle_TYPE_ID")
     }
 
     @Test fun negatedIsCheck() {
@@ -175,7 +175,7 @@ class InterfaceUnitTest : TranspilerTestBase() {
                 if (b !is Circle) println("no")
             }
         """)
-        r.sourceContains("!(KTC_GET_TYPEID(b.__base.typeId) == test_Main_Circle_TYPE_ID)")
+        r.sourceContains("!(test_Main_Box_TYPE_ID == test_Main_Circle_TYPE_ID)")
     }
 
     // ── Override enforcement ──────────────────────────────────────────

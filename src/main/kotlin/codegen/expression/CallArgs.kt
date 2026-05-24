@@ -169,7 +169,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						dataRef = "&$tVal"
 						}
 					val tAny = tmp()
-					preStmts += "ktc_Any $tAny = {{$typeId}, (void*)$dataRef};"
+					preStmts += "ktc_Any $tAny = {$typeId, (void*)$dataRef};"
 					parts += "&$tAny"
 					}
 					} else if ((paramTypeKtc as? KtcType.Ptr)?.inner is KtcType.User && interfaces.containsKey((paramTypeKtc.inner as KtcType.User).baseName)) {
@@ -206,9 +206,9 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val tIface         = tmp()
 						val argIsNullable  = argKtc is KtcType.Nullable || inferExprTypeKtc(arg.expr) is KtcType.Nullable
 						preStmts += if (argIsNullable) {
-							"ktc_IfacePtr $tIface = ($expr) ? ((ktc_IfacePtr){{$typeId}, (const void*)&${cConcrete}_${ifaceName}_vt, (void*)($expr)}) : ((ktc_IfacePtr){0});"
+							"ktc_IfacePtr $tIface = ($expr) ? ((ktc_IfacePtr){$typeId, (const void*)&${cConcrete}_${ifaceName}_vt, (void*)($expr)}) : ((ktc_IfacePtr){0});"
 							} else {
-							"ktc_IfacePtr $tIface = {{$typeId}, (const void*)&${cConcrete}_${ifaceName}_vt, $objPtr};"
+							"ktc_IfacePtr $tIface = {$typeId, (const void*)&${cConcrete}_${ifaceName}_vt, $objPtr};"
 							}
 						parts += tIface
 						} else {
@@ -344,7 +344,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val ct     = cTypeStr(argType)
 						val tVal   = tmp()
 						preStmts += "$ct $tVal = $expr;"
-						parts += "(ktc_Any){{$typeId}, (void*)&$tVal}"
+						parts += "(ktc_Any){$typeId, (void*)&$tVal}"
 						}
 					}
 				} else {

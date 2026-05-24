@@ -144,6 +144,17 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     }
 
     internal fun getTypeId(name: String): Int = typeIds.getOrPut(name) { nextTypeId++ }
+
+    /** Returns the C expression for reading the runtime typeId from [inner] given its KtcType.
+     *  Returns null when the type is statically known (concrete class) — caller emits true/false. */
+    internal fun typeIdExpr(exprKtcCore: KtcType?, inner: String, memOp: String): String? = when {
+        exprKtcCore is KtcType.Any -> "${inner}.typeId"
+        exprKtcCore is KtcType.User && exprKtcCore.kind == KtcType.UserKind.Interface -> "${inner}.__typeId"
+        exprKtcCore is KtcType.Ptr && (exprKtcCore.inner as? KtcType.User)?.kind == KtcType.UserKind.Interface -> "${inner}.typeId"
+        exprKtcCore is KtcType.Ptr && exprKtcCore.inner is KtcType.Any -> "${inner}${memOp}typeId"
+        else -> null  // concrete class or unknown — type is statically known
+    }
+
     // Maps class name → synthetic companion object name (e.g. "Foo" → "Foo$Companion")
     internal val classCompanions = mutableMapOf<String, String>()
 

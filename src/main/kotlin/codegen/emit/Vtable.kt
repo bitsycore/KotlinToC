@@ -107,7 +107,7 @@ internal fun CCodeGen.ifaceAsInit(
 	): String {
 	val vImpls    = interfaceImplementors[ifaceName]
 	val vDataName = ifaceDataName(className)
-	val vTypeIdField = ".__base.typeId = ${cClass}_TYPE_ID"
+	val vTypeIdField = ".__typeId = ${cClass}_TYPE_ID"
 	return when {
 		vImpls.isNullOrEmpty() -> "($cIface){(void*)\$self, &${cClass}_${ifaceName}_vt}"
 		else -> "($cIface){$vTypeIdField, .data.$vDataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"

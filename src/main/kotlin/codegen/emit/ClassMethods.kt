@@ -108,7 +108,7 @@ internal fun CCodeGen.emitMethod(
 
 /** Emit struct field declarations (shared by emitClass and emitGenericClass). */
 internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
-	hdr.appendLine("    ktc_core_AnyData __base;")
+	hdr.appendLine("    KTC_OBJ_BASE")
 	for ((name, type) in ci.props) {
 		val vFieldName = if (name in ci.privateProps) "PRIV_$name" else name
 		// Computed property with getter: no backing field needed
@@ -145,10 +145,9 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 	hdr.appendLine("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)($vParamDecl);")
 	impl.appendLine("$cName ${cName}_primaryConstructor($vParamDecl) {")
 	if (ci.bodyProps.isEmpty() && ci.ctorPlainParams.isEmpty() && ci.ctorProps.none { resolveTypeName(it.typeRef).isArrayLike || it.typeRef.nullable }) {
-		impl.appendLine("    return ($cName){{${cName}_TYPE_ID}, ${ci.ctorProps.joinToString(", ") { it.name }}};")
+		impl.appendLine("    return ($cName){KTC_OBJ_BASE_INIT ${ci.ctorProps.joinToString(", ") { it.name }}};")
 		} else {
 		impl.appendLine("    $cName \$self = {0};")
-		impl.appendLine("    \$self.__base.typeId = ${cName}_TYPE_ID;")
 		for (vProp in ci.ctorProps) {
 			val vName      = vProp.name
 			val vType      = vProp.typeRef

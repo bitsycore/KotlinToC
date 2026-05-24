@@ -259,7 +259,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     flushPreStmts(ind)
                     val tVal = tmp()
                     impl.appendLine("$ind$initCT $tVal = $expr;")
-                    impl.appendLine("$ind$mutComment$ct ${s.name} = (ktc_Any){{$typeId}, (void*)&$tVal};")
+                    impl.appendLine("$ind$mutComment$ct ${s.name} = (ktc_Any){$typeId, (void*)&$tVal};")
                 }
             }
             // ── Non-nullable ──
@@ -325,7 +325,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                         val initCT      = cTypeStr(initType)
                         val tVal        = tmp()
                         impl.appendLine("$ind$initCT $tVal = $expr;")
-                        impl.appendLine("$ind$mutComment$qual$ct ${s.name} = (ktc_Any){{$typeId}, (void*)&$tVal};")
+                        impl.appendLine("$ind$mutComment$qual$ct ${s.name} = (ktc_Any){$typeId, (void*)&$tVal};")
                     } else if (vHeapArrType != null) {
                         impl.appendLine("$ind$mutComment$qual$vHeapArrType ${s.name} = $expr;")
                     } else {

@@ -110,7 +110,7 @@
 #define __KTC_INTERFACE_IMPL(CLS_, CLS_OPT_, VTABLE_BODY, CONCRETE_TYPES) \
 	typedef struct __KTC_IFACE_VT(CLS_) VTABLE_BODY __KTC_IFACE_VT(CLS_); \
 	typedef struct CLS_ { \
-		ktc_core_AnyData __base; \
+		ktc_UInt __typeId; \
 		union { CONCRETE_TYPES(KTC_UNION_MEMBER) } data; \
 		const __KTC_IFACE_VT(CLS_)* vt; \
 	} CLS_; \
@@ -235,15 +235,15 @@
 /* =========================================================
  * Type-ID constants and read helper
  *
- * typeId is ktc_UInt (uint32_t) so bit 31 is the disposed flag
- * and all valid IDs fit cleanly in bits 0-30.
+ * typeId in ktc_Any / ktc_IfacePtr / interface union __typeId is
+ * ktc_UInt (uint32_t); all valid IDs fit in bits 0-30.
+ * Bit 31 is reserved for the dispose flag in ktc_core_ObjFlags.
  *
  * KTC_UNDEFINED_TYPE_ID — sentinel for uninitialized instances.
- *   Value 0xFFFFFFFE (UINT32_MAX-1) is outside the valid ID range
- *   and outside any disposed-flag combination.
+ *   Value 0xFFFFFFFE (UINT32_MAX-1) is outside the valid ID range.
  *
- * KTC_GET_TYPEID — strips bit 31 before comparisons so is/as
- *   checks work even on disposed objects if needed.
+ * KTC_GET_TYPEID — strips bit 31 before comparisons (safe even if
+ *   the value happens to carry the disposed flag in old code).
  * ========================================================= */
 #define KTC_UNDEFINED_TYPE_ID ((ktc_UInt)0xFFFFFFFEU)
 #define KTC_GET_TYPEID(x)     ((ktc_UInt)(x) & (ktc_UInt)0x7FFFFFFFU)
@@ -252,8 +252,8 @@
  * Dispose-tracking helpers
  *
  * Define one or both mode flags before the generated header to
- * activate runtime dispose tracking.  The MSB of typeId (bit 31)
- * is the disposed flag; KTC_GET_TYPEID strips it for type checks.
+ * activate runtime dispose tracking.  The MSB of __base.flags (bit 31)
+ * is the disposed flag; ktc_core_ObjFlags is compiled in only when needed.
  *
  * Use-after-dispose — controls KTC_ASSERT_NOT_DISPOSED:
  *   KTC_DISPOSED_ASSERT  abort with stacktrace (ASSERT mode)
@@ -277,7 +277,7 @@
 #if defined(KTC_DISPOSED_ASSERT)
 #define KTC_ASSERT_NOT_DISPOSED(self) \
     do { \
-        if ((self)->__base.typeId & KTC_DISPOSED_FLAG) { \
+        if ((self)->__base.flags & KTC_DISPOSED_FLAG) { \
             static const char _ktc_msg[] = "This instance is already disposed"; \
             ktc_core_stacktrace_print(_ktc_msg, (int)(sizeof(_ktc_msg) - 1)); \
             exit(1); \
@@ -286,7 +286,7 @@
 #elif defined(KTC_DISPOSED_LOG)
 #define KTC_ASSERT_NOT_DISPOSED(self) \
     do { \
-        if ((self)->__base.typeId & KTC_DISPOSED_FLAG) { \
+        if ((self)->__base.flags & KTC_DISPOSED_FLAG) { \
             static const char _ktc_msg[] = "Warning: method called on disposed instance"; \
             ktc_core_stacktrace_print(_ktc_msg, (int)(sizeof(_ktc_msg) - 1)); \
         } \
@@ -313,13 +313,13 @@
 #define _KTC_DOUBLE_DISPOSE_HANDLE do { (void)0; } while (0)
 #endif
 
-/* KTC_MARK_DISPOSED — inserted at the top of dispose(); sets bit 31 */
+/* KTC_MARK_DISPOSED — inserted at the top of dispose(); sets bit 31 of flags */
 #define KTC_MARK_DISPOSED(self) \
     do { \
-        if ((self)->__base.typeId & KTC_DISPOSED_FLAG) { \
+        if ((self)->__base.flags & KTC_DISPOSED_FLAG) { \
             _KTC_DOUBLE_DISPOSE_HANDLE; \
         } \
-        (self)->__base.typeId |= KTC_DISPOSED_FLAG; \
+        (self)->__base.flags |= KTC_DISPOSED_FLAG; \
     } while (0)
 
 #else
