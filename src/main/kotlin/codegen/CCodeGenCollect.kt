@@ -176,7 +176,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			if (d.typeParams.isNotEmpty()) genericClassDecls[d.name] = d
 			if (d.superInterfaces.isNotEmpty()) classInterfaces[d.name] = d.superInterfaces.map { it.name }
 			// Verify all interface methods are implemented with override (current file, non-stdlib)
-			if (validate && file.pkg != "ktc.std" && file.pkg != "ktc") {
+			if (validate && file.pkg != "ktc.std" && file.pkg != "ktc.core") {
 				val classMethodNames = ci.methods.associateBy { it.name }
 				for (ifaceRef in d.superInterfaces) {
 					val ifaceName = resolveIfaceName(ifaceRef)
@@ -276,7 +276,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			objects[d.name] = oi
 			if (d.superInterfaces.isNotEmpty()) classInterfaces[d.name] = d.superInterfaces.map { it.name }
 			// dispose()/hashCode() are implicitly overrides — require the keyword (current file, non-stdlib)
-			if (validate && file.pkg != "ktc.std" && file.pkg != "ktc") {
+			if (validate && file.pkg != "ktc.std" && file.pkg != "ktc.core") {
 				for (m in d.members) if (m is FunDecl && (m.name == "dispose" || m.name == "hashCode") && !m.isOverride) {
 					codegenError("Method '${m.name}' in object '${d.name}' must be marked 'override'")
 					}

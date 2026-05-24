@@ -179,15 +179,15 @@ fun main(args: Array<String>) {
     val moduleAutoImports = resolvedModules.mapNotNull { parseModuleAutoImport(it, aClass) }.distinct()
 
     // Collect stdlib .kt files from resources
-    val stdlibDir = aClass.getResource("/stdlib") ?: aClass.getResource("/stdlib/")
+    val stdlibDir = aClass.getResource("/ktc") ?: aClass.getResource("/ktc/")
     if (stdlibDir != null) {
         val stdlibFiles = when (stdlibDir.protocol) { // discover stdlib file names
             "jar" -> {
                 val connection = stdlibDir.openConnection()
                 val jarFile = (connection as java.net.JarURLConnection).jarFile
                 jarFile.entries().asSequence()
-                    .filter { !it.isDirectory && it.name.startsWith("stdlib/") && it.name.endsWith(".kt") }
-                    .map { it.name.removePrefix("stdlib/") }
+                    .filter { !it.isDirectory && it.name.startsWith("ktc/") && it.name.endsWith(".kt") }
+                    .map { it.name.removePrefix("ktc/") }
                     .toList()
             }
 
@@ -201,8 +201,8 @@ fun main(args: Array<String>) {
             else -> emptyList()
         }
         for (name in stdlibFiles.sorted()) {
-            val res = aClass.getResourceAsStream("/stdlib/$name")
-            if (res != null) vRawSources += RawSource(File("stdlib/$name"), name, res.bufferedReader().readText(), true)
+            val res = aClass.getResourceAsStream("/ktc/$name")
+            if (res != null) vRawSources += RawSource(File("ktc/$name"), name, res.bufferedReader().readText(), true)
         }
     }
 
@@ -254,7 +254,7 @@ fun main(args: Array<String>) {
     if (moduleAutoImports.isNotEmpty()) {
         for (i in parsedFiles.indices) {
             val ps = parsedFiles[i]
-            if (ps.ast.pkg?.startsWith("ktc") == true) continue
+            if (ps.ast.pkg?.let { it == "ktc" || it.startsWith("ktc.") } == true) continue
             val newImports = (ps.ast.imports + moduleAutoImports).distinct()
             parsedFiles[i] = ps.copy(ast = ps.ast.copy(imports = newImports))
         }
@@ -299,8 +299,9 @@ fun main(args: Array<String>) {
 
     val outDir = File(outputDir)
     outDir.mkdirs()
-    val ktcDir = File(outDir, "ktc")          // root ktc/ subdir for all intrinsic + stdlib output
-    val ktcCoreDir = File(ktcDir, "core")     // ktc/core/ for ktc_core.h / ktc_macro.h / ktc_core.c
+    val ktcDir = File(outDir, "ktc")           // ktc/ for intrinsic + std package output
+    val ktcCoreDir = File(outDir, "ktc.core") // ktc.core/ for C runtime files
+    ktcDir.mkdirs()
     ktcCoreDir.mkdirs()
 
     val allAsts = parsedFiles.map { it.ast }.filter { !it.documentationOnly }
@@ -516,7 +517,7 @@ fun main(args: Array<String>) {
     // ── Copy intrinsic files to ktc/core/ ───────────────────────
     for (vName in listOf("ktc_macro.h", "ktc_thread.h", "ktc_thread.c", "ktc_core.h", "ktc_core.c")) {
         val vDst = File(ktcCoreDir, vName)
-        val vSrc = aClass.getResourceAsStream("/ktc/$vName")
+        val vSrc = aClass.getResourceAsStream("/ktc.core/$vName")
         if (vSrc != null) {
             vDst.writeText(vSrc.bufferedReader().readText())
         } else {
@@ -525,18 +526,19 @@ fun main(args: Array<String>) {
     }
 
     // Build full source lists (paths relative to outDir) for compile hints and CMake.
-    // ktcOutputNames are paths relative to ktc/ (e.g. "core/ktc_core", "std/Heap").
+    // ktcOutputNames are paths relative to ktc/ (e.g. "std/Heap").
     // userOutputNames are paths relative to outDir (e.g. "com/example/Point").
-    val vKtcFullSrcs  = (listOf("core/ktc_core") + ktcOutputNames.sorted()).map { "ktc/$it.c" }
+    val vCoreFullSrcs = listOf("ktc.core/ktc_core.c")
+    val vKtcFullSrcs  = ktcOutputNames.sorted().map { "ktc/$it.c" }
     val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
-    val ktcSources    = vKtcFullSrcs.joinToString(" ")
+    val ktcSources    = (vCoreFullSrcs + vKtcFullSrcs).joinToString(" ")
     val userSources   = vUserFullSrcs.joinToString(" ")
     // Derive binary name from the last path component of the first user output name
     val mainBase = userOutputNames.firstOrNull()
         ?.substringAfterLast('/')?.substringBefore('_')?.ifEmpty { "output" } ?: "output"
 
     // ── Generate CMakeLists.txt (+ ktc_modules.cmake if modules active) ─────────
-    writeCmakeFiles(outDir, mainBase, vKtcFullSrcs, vUserFullSrcs, moduleCmakes)
+    writeCmakeFiles(outDir, mainBase, vCoreFullSrcs + vKtcFullSrcs, vUserFullSrcs, moduleCmakes)
     println("  wrote ${File(outDir, "CMakeLists.txt").path}")
 
     println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")

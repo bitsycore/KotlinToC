@@ -1,1 +1,1 @@
-modules = ["std"]
+modules = ["ktc.std"]

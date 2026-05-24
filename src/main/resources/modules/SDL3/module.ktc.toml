@@ -1,4 +1,4 @@
 name         = "SDL3"
 version      = "3.x"
 description  = "SDL3 (Simple DirectMedia Layer 3) Kotlin bindings for KotlinToC"
-dependencies = ["std"]
+dependencies = ["ktc.std"]

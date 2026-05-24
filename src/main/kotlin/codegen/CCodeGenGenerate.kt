@@ -38,7 +38,7 @@ internal fun CCodeGen.generate(): COutput {
 		"LOG"    -> hdr.appendLine("#define KTC_DOUBLE_DISPOSE_LOG")
 		}
 	val vFromDir = file.pkg?.replace('.', '/') ?: ""  // directory of _package_.h, relative to outDir
-	hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/core/ktc_core.h")}\"")
+	hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc.core/ktc_core.h")}\"")
 	hdr.appendLine()
 
 	for (vInc in file.cIncludes) hdr.appendLine(vInc.toCDirective())

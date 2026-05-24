@@ -145,8 +145,8 @@ open class TranspilerTestBase {
             }
         }
 
-        collectDir("/stdlib", "stdlib")
-        collectDir("/modules/std", "modules/std")
+        collectDir("/ktc", "ktc")
+        collectDir("/modules/ktc.std", "modules/ktc.std")
 
         // Prescan all sources for infix names before any parsing
         vSources.forEach { (_, src) -> prescanInfix(src) }
@@ -188,8 +188,8 @@ open class TranspilerTestBase {
     Use this to verify declarations emitted by the stdlib itself.
     */
     protected fun transpileStdlibFile(vFileName: String): TranspileResult {
-        val vRes = this.javaClass.getResourceAsStream("/stdlib/$vFileName")
-            ?: this.javaClass.getResourceAsStream("/modules/std/$vFileName")
+        val vRes = this.javaClass.getResourceAsStream("/ktc/$vFileName")
+            ?: this.javaClass.getResourceAsStream("/modules/ktc.std/$vFileName")
             ?: error("stdlib file not found: $vFileName")
         val vSource = vRes.bufferedReader().readText()
         val vTokens = Lexer(vSource).tokenize()
@@ -278,9 +278,9 @@ open class TranspilerTestBase {
         val dir = verifyTempDir.resolve("test_$idx").toFile()
         dir.mkdirs()
 
-        val intrinsicH = javaClass.getResourceAsStream("/ktc/ktc_core.h")
+        val intrinsicH = javaClass.getResourceAsStream("/ktc.core/ktc_core.h")
             ?.bufferedReader()?.readText() ?: error("ktc_core.h not found")
-        val intrinsicC = javaClass.getResourceAsStream("/ktc/ktc_core.c")
+        val intrinsicC = javaClass.getResourceAsStream("/ktc.core/ktc_core.c")
             ?.bufferedReader()?.readText() ?: error("ktc_core.c not found")
         java.io.File(dir, "ktc_core.h").writeText(intrinsicH)
         java.io.File(dir, "ktc_core.c").writeText(intrinsicC)

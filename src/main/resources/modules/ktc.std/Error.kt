@@ -1,6 +1,5 @@
 package ktc.std
 
-
 /**
  * [error] if the [value] is false.
  */

@@ -265,17 +265,17 @@ function Invoke-Test {
 
 	# ── Discover .c files ────────────────────────────────────────
 	$vKtcDir  = "$inOutDir\ktc"
-	$vCoreDir = "$vKtcDir\core"
+	$vCoreDir = "$inOutDir\ktc.core"
 	$vCSrcs   = @()
+	$vCore = "$vCoreDir\ktc_core.c"
+	if (Test-Path $vCore) { $vCSrcs += $vCore }
 	if (Test-Path $vKtcDir -PathType Container) {
-		$vCore = "$vCoreDir\ktc_core.c"
-		if (Test-Path $vCore) { $vCSrcs += $vCore }
 		Get-ChildItem "$vKtcDir" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
-			Where-Object { $_.Name -ne "ktc_core.c" } | Sort-Object FullName |
+			Sort-Object FullName |
 			ForEach-Object { $vCSrcs += $_.FullName }
 	}
 	Get-ChildItem "$inOutDir" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
-		Where-Object { $_.FullName -notlike "$vKtcDir*" } | Sort-Object FullName |
+		Where-Object { $_.FullName -notlike "$vKtcDir*" -and $_.FullName -notlike "$vCoreDir*" } | Sort-Object FullName |
 		ForEach-Object { $vCSrcs += $_.FullName }
 	if ($vCSrcs.Count -eq 0) { Write-Fail "No .c files generated"; return "fail" }
 
@@ -497,16 +497,16 @@ function Run-Suite {
 		if (Test-Path $vUCmakeSrc) { Copy-Item $vUCmakeSrc "$vOut\ktc_user.cmake" -Force }
 
 		# Discover .c files
-		$vKD  = "$vOut\ktc";  $vCS = @()
+		$vKD  = "$vOut\ktc";  $vCD = "$vOut\ktc.core";  $vCS = @()
+		$vCr = "$vCD\ktc_core.c"
+		if (Test-Path $vCr) { $vCS += $vCr }
 		if (Test-Path $vKD -PathType Container) {
-			$vCr = "$vKD\core\ktc_core.c"
-			if (Test-Path $vCr) { $vCS += $vCr }
 			Get-ChildItem "$vKD" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
-				Where-Object { $_.Name -ne "ktc_core.c" } | Sort-Object FullName |
+				Sort-Object FullName |
 				ForEach-Object { $vCS += $_.FullName }
 		}
 		Get-ChildItem "$vOut" -Recurse -Filter "*.c" -ErrorAction SilentlyContinue |
-			Where-Object { $_.FullName -notlike "$vKD*" } | Sort-Object FullName |
+			Where-Object { $_.FullName -notlike "$vKD*" -and $_.FullName -notlike "$vCD*" } | Sort-Object FullName |
 			ForEach-Object { $vCS += $_.FullName }
 		if ($vCS.Count -eq 0) {
 			Write-Host "  FAIL $vName (no .c files generated)" -ForegroundColor Red

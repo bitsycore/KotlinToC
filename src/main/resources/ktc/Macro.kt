@@ -9,7 +9,7 @@ object Macro
  * On default arguments, it always captures the callsite file, not the callee file.
  * Usage: fun foo(file: String = Macro.FILE) { ... }
  */
-val Macro.FILE: String
+inline val Macro.FILE: String
     get() = error("Transpiler intrinsic")
 
 /**
@@ -18,19 +18,19 @@ val Macro.FILE: String
  * On default arguments, it always captures the callsite line, not the callee line.
  * Usage: fun foo(line: Int = Macro.LINE) { ... }
  */
-val Macro.LINE: Int
+inline val Macro.LINE: Int
     get() = error("Transpiler intrinsic")
 
 /**
  * Get the current file in C code.
  * Emited as a ktc_core_str(__FILE__)
  */
-val Macro.C_FILE: String
+inline val Macro.C_FILE: String
     get() = error("Transpiler intrinsic")
 
 /**
  * Get the current line number in C code.
  * Emited as a ktc_Int
  */
-val Macro.C_LINE: Int
+inline val Macro.C_LINE: Int
     get() = error("Transpiler intrinsic")
