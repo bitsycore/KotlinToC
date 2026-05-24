@@ -78,7 +78,10 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
             val displayName = objInfo.name.replace('$', '.')
             codegenError("Cannot access '${e.name}': it is private in object '$displayName'")
         }
-        preStmts += "${vDotObjCName}_\$ensure_init();"
+        // Skip ensure_init for objects with only computed getters (no mutable state)
+        val vObjInfo2 = resolveDotObjInfo(e)
+        val vNeedsInit = vObjInfo2?.properties?.any { it.getter == null } ?: true
+        if (vNeedsInit) preStmts += "${vDotObjCName}_\$ensure_init();"
         val fieldName = if (objInfo != null && objInfo.privateProps.contains(e.name)) "PRIV_${e.name}" else e.name
         return "${vDotObjCName}.${fieldName}"
     }
