@@ -78,7 +78,7 @@ private fun resolveModules(seeds: List<String>, aClass: Class<*>): List<String> 
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--module <name>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
+        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
         System.err.println("  Transpiles Kotlin subset files to C11.")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
@@ -101,6 +101,7 @@ fun main(args: Array<String>) {
     var disposedMode = "NO"        // ASSERT | LOG | NO
     var doubleDisposeMode = "NO"   // ASSERT | LOG | NO
     var mainOverride: String? = null  // --main qualified.name
+    var nameOverride: String? = null  // --name exe-name
     var dumpAst = false
     var dumpSemantics = false
     var i = 0
@@ -122,6 +123,9 @@ fun main(args: Array<String>) {
             i++
         } else if (args[i] == "--main" && i + 1 < args.size) {
             mainOverride = args[i + 1]
+            i += 2
+        } else if (args[i] == "--name" && i + 1 < args.size) {
+            nameOverride = args[i + 1]
             i += 2
         } else if (args[i] == "--ast") {
             dumpAst = true
@@ -533,9 +537,11 @@ fun main(args: Array<String>) {
     val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
     val ktcSources    = (vCoreFullSrcs + vKtcFullSrcs).joinToString(" ")
     val userSources   = vUserFullSrcs.joinToString(" ")
-    // Derive binary name from the last path component of the first user output name
-    val mainBase = userOutputNames.firstOrNull()
-        ?.substringAfterLast('/')?.substringBefore('_')?.ifEmpty { "output" } ?: "output"
+    // Derive binary name: --name override, else heuristic from first user output
+    val mainBase = nameOverride
+        ?: userOutputNames.firstOrNull()
+            ?.substringAfterLast('/')?.substringBefore('_')?.ifEmpty { "output" }
+        ?: "output"
 
     // ── Generate CMakeLists.txt (+ ktc_modules.cmake if modules active) ─────────
     writeCmakeFiles(outDir, mainBase, vCoreFullSrcs + vKtcFullSrcs, vUserFullSrcs, moduleCmakes)

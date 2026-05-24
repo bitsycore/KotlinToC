@@ -229,6 +229,8 @@ function Invoke-Test {
 		Get-ChildItem $inOutDir -File -Exclude "ktc_user.cmake", "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
 	}
 	New-Item $inOutDir -ItemType Directory -Force | Out-Null
+	$vCfgEarly = Read-ConfigToml "$inSrcDir\config.ktc.toml"
+	$vExeName  = if ($vCfgEarly.executable) { $vCfgEarly.executable } else { $inName }
 	Write-Info "Input:      $(($vKtFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' ')"
 	Write-Info "Output dir: $inOutDir"
 
@@ -237,15 +239,15 @@ function Invoke-Test {
 	$vKtNames = ($vKtFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' '
 	$vSuffix  = if ($inExtraArgs) { " $inExtraArgs" } else { "" }
 	if ($vBuildMode -eq "gradle") {
-		$vKtStr = ($vKtFiles -join " ") + " -o $inOutDir$vSuffix"
-		Write-Cmd "gradlew run --args=`"$vKtNames -o $inOutDir$vSuffix`""
+		$vKtStr = ($vKtFiles -join " ") + " -o $inOutDir --name $vExeName$vSuffix"
+		Write-Cmd "gradlew run --args=`"$vKtNames -o $inOutDir --name $vExeName$vSuffix`""
 		$vTOut  = & "$vRoot\gradlew.bat" run --quiet --args="$vKtStr" 2>&1
 	} else {
 		$vActive = if ($vBuildMode -eq "proguard") { $vReleaseJar } else { $vJar }
-		$vTArgs  = @("-jar", $vActive) + $vKtFiles + @("-o", $inOutDir)
+		$vTArgs  = @("-jar", $vActive) + $vKtFiles + @("-o", $inOutDir, "--name", $vExeName)
 		if ($inExtraArgs) { $vTArgs += ($inExtraArgs -split '\s+') }
 		$vLabel  = if ($vBuildMode -eq "proguard") { "KotlinToC-release.jar" } else { "KotlinToC.jar" }
-		Write-Cmd "java -jar $vLabel $vKtNames -o $inOutDir$vSuffix"
+		Write-Cmd "java -jar $vLabel $vKtNames -o $inOutDir --name $vExeName$vSuffix"
 		$vTOut  = & java @vTArgs 2>&1
 	}
 	$vTExit = $LASTEXITCODE;  $vTMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
@@ -280,7 +282,7 @@ function Invoke-Test {
 	if ($vCSrcs.Count -eq 0) { Write-Fail "No .c files generated"; return "fail" }
 
 	# ── Compile (cmake if ktc_user.cmake present, direct gcc otherwise) ──
-	$vExe         = "$inOutDir\$inName.exe"
+	$vExe         = "$inOutDir\$vExeName.exe"
 	$vHasUserCmake = (Test-Path "$inOutDir\ktc_user.cmake") -or (Test-Path "$inOutDir\ktc_modules.cmake")
 	if ($vHasUserCmake -and -not $vCmake) {
 		Write-Host "  SKIP " -ForegroundColor Yellow -NoNewline
@@ -323,11 +325,14 @@ function Invoke-Test {
 		$vBldExit = $LASTEXITCODE;  $vCMs = $vSw.ElapsedMilliseconds;  $vSw.Restart()
 		if ($vBldOut) { foreach ($vLine in $vBldOut) { Write-Host "  $vLine" -ForegroundColor DarkGray }; Write-Host "" }
 		if ($vBldExit -ne 0) { Write-Fail "CMake build failed (exit $vBldExit)"; return "fail" }
-		# CMakeLists.txt sets CMAKE_RUNTIME_OUTPUT_DIRECTORY to CMAKE_SOURCE_DIR (= $inOutDir)
-		$vFoundExe = Get-ChildItem $inOutDir -Filter "*.exe" -ErrorAction SilentlyContinue |
-			Where-Object { $_.FullName -notlike "*\_cmake*" -and $_.Name -ne "_ktcrun.exe" } | Select-Object -First 1
-		if (-not $vFoundExe) { Write-Fail "No .exe found after cmake build"; return "fail" }
-		$vExe = $vFoundExe.FullName
+		# Prefer the expected exe name; fall back to any .exe in case cmake renamed it
+		$vExpected = "$inOutDir\$vExeName.exe"
+		if (Test-Path $vExpected) { $vExe = $vExpected } else {
+			$vFoundExe = Get-ChildItem $inOutDir -Filter "*.exe" -ErrorAction SilentlyContinue |
+				Where-Object { $_.FullName -notlike "*\_cmake*" -and $_.Name -ne "_ktcrun.exe" } | Select-Object -First 1
+			if (-not $vFoundExe) { Write-Fail "No .exe found after cmake build"; return "fail" }
+			$vExe = $vFoundExe.FullName
+		}
 		Write-Host "  PASS " -ForegroundColor Green -NoNewline; Write-Host "CMake build OK -> $vExe  " -NoNewline
 		Write-Host "(build: $(Format-Ms $vCMs))" -ForegroundColor DarkGray
 
@@ -360,9 +365,8 @@ function Invoke-Test {
 	Write-Cmd $vExe; Write-Host ""
 	# config.ktc.toml: gui=true marks a windowed test.
 	# In automated mode the script injects --skip-gui; with -Gui the window opens for real.
-	$vCfg       = Read-ConfigToml "$inSrcDir\config.ktc.toml"
-	$vIsGuiTest = $vCfg.gui
-	$vRunArgs   = if ($vIsGuiTest -and -not $inGuiMode) { "--skip-gui" } else { $vCfg.args }
+	$vIsGuiTest = $vCfgEarly.gui
+	$vRunArgs   = if ($vIsGuiTest -and -not $inGuiMode) { "--skip-gui" } else { $vCfgEarly.args }
 	if ($vRunArgs) { Write-Info "Test args: $vRunArgs" }
 
 	# UseShellExecute=false uses CreateProcess — no Windows auto-elevation.
@@ -474,14 +478,23 @@ function Run-Suite {
 		}
 		New-Item $vOut -ItemType Directory -Force | Out-Null
 
+		# Read config.ktc.toml for exe name
+		$vCfgP0 = "$($vDir.FullName)\config.ktc.toml"
+		$vExeN  = $vName
+		if (Test-Path $vCfgP0) {
+			foreach ($vL in (Get-Content $vCfgP0)) {
+				if ($vL -match '^\s*executable\s*=\s*"([^"]*)"' -and $Matches[1]) { $vExeN = $Matches[1] }
+			}
+		}
+
 		# Transpile
 		if ($vBm -eq "gradle") {
 			$vExAStr = if ($vExA) { " $vExA" } else { "" }
-			$vAs  = ($vKts -join " ") + " -o $vOut$vExAStr"
+			$vAs  = ($vKts -join " ") + " -o $vOut --name $vExeN$vExAStr"
 			$vTO  = & "$vRt\gradlew.bat" run --quiet --args="$vAs" 2>&1
 		} else {
 			$vAJ  = if ($vBm -eq "proguard") { $vRJ } else { $vJar }
-			$vTA  = @("-jar", $vAJ) + $vKts + @("-o", $vOut)
+			$vTA  = @("-jar", $vAJ) + $vKts + @("-o", $vOut, "--name", $vExeN)
 			if ($vExA) { $vTA += $vExA -split '\s+' }
 			$vTO  = & java @vTA 2>&1
 		}
@@ -514,7 +527,7 @@ function Run-Suite {
 		}
 
 		# Compile — cmake if ktc_user.cmake present, direct gcc otherwise
-		$vExe       = "$vOut\$vName.exe"
+		$vExe       = "$vOut\$vExeN.exe"
 		$vHasUCmake = (Test-Path "$vOut\ktc_user.cmake") -or (Test-Path "$vOut\ktc_modules.cmake")
 		if ($vHasUCmake -and -not $vCmk) {
 			$e = [char]27
@@ -545,13 +558,16 @@ function Run-Suite {
 				Write-Host "  FAIL $vName (cmake build failed)" -ForegroundColor Red
 				return @{ Name = $vName; Passed = $false; Skipped = $false }
 			}
-			$vFound = Get-ChildItem $vOut -Filter "*.exe" -ErrorAction SilentlyContinue |
-				Where-Object { $_.FullName -notlike "*\_cmake*" -and $_.Name -ne "_ktcrun.exe" } | Select-Object -First 1
-			if (-not $vFound) {
-				Write-Host "  FAIL $vName (no .exe after cmake build)" -ForegroundColor Red
-				return @{ Name = $vName; Passed = $false; Skipped = $false }
+			$vExpN = "$vOut\$vExeN.exe"
+			if (Test-Path $vExpN) { $vExe = $vExpN } else {
+				$vFound = Get-ChildItem $vOut -Filter "*.exe" -ErrorAction SilentlyContinue |
+					Where-Object { $_.FullName -notlike "*\_cmake*" -and $_.Name -ne "_ktcrun.exe" } | Select-Object -First 1
+				if (-not $vFound) {
+					Write-Host "  FAIL $vName (no .exe after cmake build)" -ForegroundColor Red
+					return @{ Name = $vName; Passed = $false; Skipped = $false }
+				}
+				$vExe = $vFound.FullName
 			}
-			$vExe = $vFound.FullName
 		} else {
 			$vCA  = @("-std=c11", "-iquote", $vOut, "-o", $vExe)
 			if ($vCCa) { $vCA += $vCCa -split '\s+' }
