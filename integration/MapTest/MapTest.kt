@@ -2,7 +2,7 @@ package MapTest
 
 fun main() {
     // Setup
-    val map = HashMap<Int, String>(16)
+    val map = HashMap<Int, String>(Heap, 16)
 
     // Test put via operator set
     map[1] = "hello"
@@ -70,7 +70,7 @@ fun main() {
     println("100 in map = ${100 in map}")
 
     // Test for-in iteration over map
-    val iterMap = HashMap<Int, String>(8)
+    val iterMap = HashMap<Int, String>(Heap, 8)
     iterMap[10] = "ten"
     iterMap[20] = "twenty"
     iterMap[30] = "thirty"

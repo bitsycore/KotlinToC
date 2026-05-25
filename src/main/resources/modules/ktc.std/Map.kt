@@ -43,14 +43,14 @@ interface MutableMap<K, V> : Map<K, V> {
 	fun clear()
 }
 
-class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
+class HashMap<K, V>(private val allocator: @Ptr Allocator, private var capacity: Int) : MutableMap<K, V> {
 
 	override var size: Int = 0
 		private set
 
-	private var keys: @Ptr RawArray<K> = RawArray<K>.allocWith(Heap, capacity) ?: error("Could allocate keys")
-	private var vals: @Ptr RawArray<V> = RawArray<V>.allocWith(Heap, capacity) ?: error("Could allocate vals")
-	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>.allocWith(Heap, capacity) ?: error("Could allocate occ")
+	private var keys: @Ptr RawArray<K> = RawArray<K>.allocWith(allocator, capacity) ?: error("Could allocate keys")
+	private var vals: @Ptr RawArray<V> = RawArray<V>.allocWith(allocator, capacity) ?: error("Could allocate vals")
+	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>.allocWith(allocator, capacity) ?: error("Could allocate occ")
 
 	init {
 		occ.fill(capacity, false)
@@ -143,12 +143,10 @@ class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
 		val oldOcc = occ
 		val oldCap = capacity
 		val newCapacity = capacity * 2
-		keys = RawArray<K>.allocWith(Heap, newCapacity)!!
-		vals = RawArray<V>.allocWith(Heap, newCapacity)!!
-		occ = RawArray<Boolean>.allocWith(Heap, newCapacity)!!
-		for (i in 0 until newCapacity) {
-			occ[i] = false
-		}
+		keys = RawArray<K>.allocWith(allocator, newCapacity)!!
+		vals = RawArray<V>.allocWith(allocator, newCapacity)!!
+		occ = RawArray<Boolean>.allocWith(allocator, newCapacity)!!
+		occ.fill(newCapacity, false)
 		capacity = newCapacity
 		size = 0
 		for (i in 0 until oldCap) {
@@ -156,9 +154,9 @@ class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
 				this.put(oldKeys[i], oldVals[i])
 			}
 		}
-		Heap.freeMem(oldKeys)
-		Heap.freeMem(oldVals)
-		Heap.freeMem(oldOcc)
+		allocator.freeMem(oldKeys)
+		allocator.freeMem(oldVals)
+		allocator.freeMem(oldOcc)
 	}
 
 	override operator fun iterator(): Iterator<Pair<K, V>> {
@@ -166,15 +164,15 @@ class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
 	}
 
 	override fun dispose() {
-		Heap.freeMem(keys)
-		Heap.freeMem(vals)
-		Heap.freeMem(occ)
+		allocator.freeMem(keys)
+		allocator.freeMem(vals)
+		allocator.freeMem(occ)
 	}
 
 }
 
 fun <K,V> mapOf(vararg pairs: Pair<K, V>): Map<K, V> {
-	val map = HashMap<K, V>(pairs.size)
+	val map = HashMap<K, V>(Heap, pairs.size)
 	for (p in pairs) {
 		map.put(p.first, p.second)
 	}
@@ -183,7 +181,7 @@ fun <K,V> mapOf(vararg pairs: Pair<K, V>): Map<K, V> {
 
 fun <K,V> mutableMapOf(vararg pairs: Pair<K, V>): MutableMap<K, V> {
 	val notZero = if (pairs.size == 0) 8 else pairs.size * 2
-	val map = HashMap<K, V>(notZero)
+	val map = HashMap<K, V>(Heap, notZero)
 	for (p in pairs) {
 		map.put(p.first, p.second)
 	}

@@ -50,7 +50,7 @@ fun main() {
     println("list dispose ok")
 
     // Test 7: HashMap has dispose (from Disposable interface)
-    val map = HashMap<Int, String>(4)
+    val map = HashMap<Int, String>(Heap, 4)
     map[1] = "one"
     defer map.tryDispose()
     println("map dispose ok")

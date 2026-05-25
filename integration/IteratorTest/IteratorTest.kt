@@ -26,7 +26,7 @@ fun main() {
     if (fixedSum != 60) error("FAIL fixedList sum=$fixedSum")  // 10+20+30
 
     // Test MapIterator via HashMap
-    val map = HashMap<String, Int>(8)
+    val map = HashMap<String, Int>(Heap, 8)
     map["Alice"] = 30
     map["Bob"] = 25
     map["Charlie"] = 35
