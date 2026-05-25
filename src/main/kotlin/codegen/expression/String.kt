@@ -193,7 +193,7 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 		}
 	val maxLen = templateMaxLen(e)
 	if (maxLen != null && maxLen <= 512) {
-		preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca($maxLen);"
+		preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca($maxLen + 1);"
 		preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
 		for (p in parts) {
 			when {

@@ -16,8 +16,8 @@ private val kToStringPrimitiveMaxLen = mapOf(
 	"UInt"    to 10,  // "4294967295"
 	"Long"    to 20,  // "-9223372036854775808"
 	"ULong"   to 20,  // "18446744073709551615"
-	"Float"   to 64,  // %f via ktc_core_sb_append_double
-	"Double"  to 64,  // %f via ktc_core_sb_append_double
+	"Float"   to 24,  // sb_append_float uses 24-byte buffer
+	"Double"  to 32,  // sb_append_double uses 32-byte buffer
 	"Char"    to 8    // %c format buffer
 	)
 
@@ -94,7 +94,7 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 		if (maxLen != null && maxLen <= 512) {
 			val buf = tmp(); val vTmp = tmp()
 			preStmts += "${cTypeStr(base)} $vTmp = ($recv);"
-			preStmts += "ktc_Char ${buf}[$maxLen];"
+			preStmts += "ktc_Char ${buf}[${maxLen + 1}];"
 			preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
 			preStmts += "${cName}_toString(&$vTmp, &${buf}_sb);"
 			return "ktc_core_sb_to_string(&${buf}_sb)"
@@ -126,7 +126,7 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 		val buf      = tmp()
 		val selfExpr = if (isPtr) recv else "&$recv"
 		if (maxLen != null) {
-			preStmts += "ktc_Char ${buf}[$maxLen];"
+			preStmts += "ktc_Char ${buf}[${maxLen + 1}];"
 			preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $maxLen};"
 			preStmts += "${cName}_toString($selfExpr, &${buf}_sb);"
 			} else {
@@ -189,27 +189,22 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 			}
 		"Float" -> {
 			val buf = tmp()
-			preStmts += "ktc_Char ${buf}[32];"
-			preStmts += "snprintf($buf, 32, \"%g\", (ktc_Double)($recv));"
-			"ktc_core_str($buf)"
+			preStmts += "ktc_Char ${buf}[24];"
+			"ktc_core_float_to_string($buf, 24, $recv)"
 			}
 		"Double" -> {
 			val buf = tmp()
 			preStmts += "ktc_Char ${buf}[32];"
-			preStmts += "snprintf($buf, 32, \"%g\", $recv);"
-			"ktc_core_str($buf)"
+			"ktc_core_double_to_string($buf, 32, $recv)"
 			}
 		"Boolean" -> {
-			val buf = tmp(); val sz = 6
-			preStmts += "ktc_Char ${buf}[$sz];"
-			preStmts += "snprintf($buf, $sz, \"%s\", ($recv) ? \"true\" : \"false\");"
-			"ktc_core_str($buf)"
+			"(($recv) ? ktc_core_str(\"true\") : ktc_core_str(\"false\"))"
 			}
 		"Char" -> {
-			val buf = tmp()
+			val buf = tmp(); val lenVar = tmp()
 			preStmts += "ktc_Char ${buf}[8];"
-			preStmts += "snprintf($buf, 8, \"%c\", (ktc_Char)($recv));"
-			"ktc_core_str($buf)"
+			preStmts += "ktc_Int $lenVar = snprintf($buf, 8, \"%c\", (ktc_Char)($recv));"
+			"ktc_core_string_wrap($buf, $lenVar)"
 			}
 		"String" -> recv
 		else -> {

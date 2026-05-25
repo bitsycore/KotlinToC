@@ -283,8 +283,8 @@ typedef struct {
  * Counting mode: {NULL, 0, 0} — counts required length without writing.
  */
 
-/** View of current buffer contents — no copy. */
-#define ktc_core_sb_to_string(sb) ((ktc_String){(sb)->ptr, (sb)->len})
+/** View of current buffer contents — null-terminates, no copy. */
+#define ktc_core_sb_to_string(sb) ((sb)->ptr ? ((sb)->ptr[(sb)->len] = '\0') : (void)0, (ktc_String){(sb)->ptr, (sb)->len})
 
 static inline void ktc_core_sb_append_char(ktc_StrBuf* sb, ktc_Char c) {
     if (!sb->ptr) { sb->len++; return; }

@@ -23,7 +23,8 @@ internal fun CCodeGen.emitInlineCall(
 	resultVar: String? = null
 	) {
 	val body = decl.body ?: return
-	val vLabelName = "\$end_ir_${inlineCounter++}"
+	val vInlineId  = inlineCounter++
+	val vLabelName = "\$end_ir_$vInlineId"
 	// Build comment with template types (clear typeSubst so type params appear unsubstituted)
 	val vSavedSubstForComment = typeSubst
 	typeSubst = emptyMap()
@@ -108,19 +109,10 @@ internal fun CCodeGen.emitInlineCall(
 			}
 		}
 	for (vBp in vBoundParams) {
-		// If cVal equals paramName, declaring `T x = x;` in C causes self-initialization UB
-		// because the new variable's scope starts after the declarator, shadowing the outer one.
-		// Capture the outer value in a temp first.
-		val vFinalVal = if (vBp.cVal == vBp.paramName) {
-			val vTmp = "\$ptmp_${vBp.paramName}"
-			impl.appendLine("$ind    ${vBp.cTypeName} $vTmp = ${vBp.cVal};")
-			vTmp
-			} else {
-			vBp.cVal
-			}
-		impl.appendLine("$ind    ${vBp.cTypeName} ${vBp.paramName} = $vFinalVal;")
-		defineVarKtc(vBp.paramName, vBp.scopeKtc)
-		if (vBp.isNullable) markOptional(vBp.paramName)  // must come after defineVarKtc
+		val vCName = "\$il${vInlineId}_${vBp.paramName}"
+		impl.appendLine("$ind    ${vBp.cTypeName} $vCName = ${vBp.cVal};")
+		defineVar(vBp.paramName, LocalVar(vBp.scopeKtc, cName = vCName))
+		if (vBp.isNullable) markOptional(vBp.paramName)
 		}
 	activeLambdas = vNewLambdas
 

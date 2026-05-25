@@ -401,10 +401,12 @@ ktc_String ktc_core_string_cat(
     ktc_String a,
     ktc_String b
 ) {
+    bufsz--;
     ktc_Int vALen = a.len < bufsz     ? a.len     : bufsz;
     ktc_Int vBLen = b.len < bufsz - vALen ? b.len : bufsz - vALen;
     memcpy(buf,          a.ptr, (size_t)vALen);
     memcpy(buf + vALen,  b.ptr, (size_t)vBLen);
+    buf[vALen + vBLen] = '\0';
     return (ktc_String){buf, vALen + vBLen};
 }
 
