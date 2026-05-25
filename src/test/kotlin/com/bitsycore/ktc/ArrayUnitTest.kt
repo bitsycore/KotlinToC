@@ -152,4 +152,26 @@ class ArrayUnitTest : TranspilerTestBase() {
         r.sourceContains("memset(raw, 0, sizeof(ktc_Byte) * (size_t)(8));")
     }
 
+    // ── asRaw / asArray ──────────────────────────────────────────────
+
+    @Test fun asRawExtractsBarePointer() {
+        val r = transpileMain("""
+            val arr = IntArray(4)
+            val raw: @Ptr RawArray<Int> = arr.asRaw()
+        """)
+        r.sourceContains("ktc_Int* raw")
+        r.sourceContains("(arr).ptr;")
+    }
+
+    @Test fun asArrayBuildsVarArrOverSameData() {
+        val r = transpileMain("""
+            val src = IntArray(4)
+            val raw: @Ptr RawArray<Int> = src.asRaw()
+            val view: @Ptr Array<Int> = raw.asArray(4)
+            println(view.size)
+        """)
+        r.sourceContains("(ktc_VarArr_ktc_Int){raw, 4}")
+        r.sourceContains("view.len")
+    }
+
 }

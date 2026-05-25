@@ -53,9 +53,7 @@ class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
 	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>.allocWith(Heap, capacity) ?: error("Could allocate occ")
 
 	init {
-		for (i in 0 until capacity) {
-			occ[i] = false
-		}
+		occ.fill(capacity, false)
 	}
 
 	private fun findSlot(key: K): Int {

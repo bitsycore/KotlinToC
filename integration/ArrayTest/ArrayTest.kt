@@ -158,9 +158,28 @@ fun testFill() {
     println("fill ok")
 }
 
+fun testAliasing() {
+    val arr = IntArray(4)
+    arr.fill(3)
+
+    // asRaw() aliases the same data (no copy).
+    val raw: @Ptr RawArray<Int> = arr.asRaw()
+    raw[0] = 100
+    if (arr[0] != 100) error("asRaw should alias the array data")
+
+    // asArray(n) re-views the raw pointer with a length, sharing the same memory.
+    val view: @Ptr Array<Int> = raw.asArray(4)
+    if (view.size != 4) error("asArray size should be 4")
+    view[1] = 200
+    if (arr[1] != 200) error("asArray should alias the same memory")
+
+    println("alias ok")
+}
+
 fun main() {
     testArrayPtr()
     testFill()
+    testAliasing()
 
 
 

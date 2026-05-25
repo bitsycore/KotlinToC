@@ -223,6 +223,21 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 	if (vMethod == "ptr" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		return inRecv
 		}
+	// Array<T>.asRaw() → bare @Ptr RawArray<T> pointing at the array data (no length).
+	if (vMethod == "asRaw" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
+		val vObjName = (inDot.obj as? NameExpr)?.name
+		return when {
+			vObjName != null && vObjName in trampolinedParams -> "local\$$vObjName"
+			inRecvTypeKtc.asArr?.sized != null                -> inRecv
+			else                                              -> "($inRecv).ptr"
+			}
+		}
+	// RawArray<T>.asArray(n) → @Ptr Array<T> (VarArr) over the same data with length n.
+	if (vMethod == "asArray" && inRecvTypeKtc is KtcType.Ptr && inRecvTypeKtc.inner !is KtcType.Arr && inArgs.size == 1) {
+		val vElemC      = inRecvTypeKtc.inner.toCType()
+		val vVarArrType = varArrTypeName(vElemC)
+		return "($vVarArrType){$inRecv, ${genExpr(inArgs[0].expr)}}"
+		}
 	if (vMethod == "copyOf" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size == 1) {
 		val vElemC      = arrayElementCTypeKtc(inRecvTypeKtc)
 		val vVarArrType = varArrTypeName(vElemC)

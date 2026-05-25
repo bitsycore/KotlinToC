@@ -155,6 +155,14 @@ Usage: vArr.fill(0)
 @DocumentationOnly
 fun <T> Array<T>.fill(inValue: T): Unit = error("Transpiler intrinsic")
 
+/**
+Returns a @Ptr RawArray<T> aliasing this array's data (no copy, no length).
+The caller is responsible for tracking the element count.
+Usage: val vRaw: @Ptr RawArray<Int> = vArr.asRaw()
+*/
+@DocumentationOnly
+fun <T> Array<T>.asRaw(): @Ptr RawArray<T> = error("Transpiler intrinsic")
+
 // ==================================================
 // MARK: RawArray
 // ==================================================
@@ -187,3 +195,11 @@ Usage: vRaw.fill(n, 0)
 */
 @DocumentationOnly
 fun <T> RawArray<T>.fill(inCount: Int, inValue: T): Unit = error("Transpiler intrinsic")
+
+/**
+Returns a @Ptr Array<T> (length-tracked) aliasing this raw array's data with length [inCount].
+No copy is made — both views share the same underlying memory.
+Usage: val vArr: @Ptr Array<Int> = vRaw.asArray(n)
+*/
+@DocumentationOnly
+fun <T> RawArray<T>.asArray(inCount: Int): @Ptr Array<T> = error("Transpiler intrinsic")
