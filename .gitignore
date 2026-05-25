@@ -57,3 +57,5 @@ ktc_std.h
 
 /.idea/
 /test_out/
+/gradle/gradle-daemon-jvm.properties
+/local.properties
