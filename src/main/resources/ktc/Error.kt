@@ -1,4 +1,4 @@
-package ktc.std
+package ktc
 
 /**
  * [error] if the [value] is false.

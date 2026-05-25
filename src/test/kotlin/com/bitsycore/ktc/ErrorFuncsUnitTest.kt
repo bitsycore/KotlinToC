@@ -48,7 +48,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
 
     @Test fun checkFalseWithStdlib() {
         val r = transpileMainWithStdlib("check(false)")
-        r.sourceContains("ktc_std_error")
+        r.sourceContains("ktc_error")
     }
 
     @Test fun checkWithLazyMessageWithStdlib() {
@@ -64,7 +64,7 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
 
     @Test fun requireFalseWithStdlib() {
         val r = transpileMainWithStdlib("""require(1 > 999) { "custom" }""")
-        r.sourceContains("ktc_std_error")
+        r.sourceContains("ktc_error")
     }
 
     // ── checkNotNull / requireNotNull (generic inline) with stdlib ───
