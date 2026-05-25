@@ -71,7 +71,7 @@ int main(void) {
 - All types are **by value** on the stack by default — no hidden allocations
 - `@Ptr T` for pointer semantics; `@Ptr T?` for nullable pointers (NULL)
 - `T?` value-nullable via `ktc_T$Optional { tag, value }` struct
-- Heap allocation via `HeapAlloc`, `HeapArrayZero`, `heapArrayOf` (explicit, no GC)
+- Heap allocation via `T.allocWith(Heap, ...)` (explicit, allocator-based, no GC)
 
 **Classes and interfaces**
 - `class`, `data class`, `object`, `companion object`, `enum class`

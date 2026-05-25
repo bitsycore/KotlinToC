@@ -68,7 +68,7 @@ fun main() {
 
     // 8. Heap-allocated buffer
     val p8 = Point(7)
-    val bufHeap = HeapAlloc<Array<Char>>(256)
+    val bufHeap = Array<Char>.allocWith(Heap, 256)
     var sb8 = StringBuffer(bufHeap, 0)
     val s8 = p8.toString(sb8)
     if (s8 != "Point(x=7)") error("FAIL 8: heapBufferToString")

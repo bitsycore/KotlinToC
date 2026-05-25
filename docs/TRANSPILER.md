@@ -80,12 +80,12 @@ Source files live in `src/main/kotlin/` organized by sub-package:
 | `ExprBinary.kt`            | Binary/arithmetic expressions                      |
 | `ExprCall.kt`              | Function call dispatch                             |
 | `ExprCallArgs.kt`          | Argument expansion (array/nullable/vararg/ptr)     |
-| `ExprCallBuiltins.kt`      | Built-in calls (HeapAlloc, arrayOf, StringBuffer)  |
+| `ExprCallBuiltins.kt`      | Built-in calls (arrayOf, StringBuffer)             |
 | `ExprCallMethod.kt`        | Method/extension call dispatch                     |
 | `ExprCallMethodBuiltins.kt`| Built-in method calls (size, get, set, ptr, etc.)  |
 | `ExprCallSafe.kt`          | Safe call (?.) generation                          |
 | `ExprCallAlloc.kt`         | allocWith generation                               |
-| `ExprCollections.kt`       | arrayOf/heapArrayOf generation                     |
+| `ExprCollections.kt`       | arrayOf generation                                 |
 | `ExprControl.kt`           | if/when/for/while/return generation                |
 | `ExprDot.kt`               | Dot expression, not-null assertion, etc.           |
 | `ExprName.kt`              | Name expression (variable reference)               |

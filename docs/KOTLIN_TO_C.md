@@ -47,7 +47,7 @@ All primitives have `ktc_T$Optional` and `ktc_hash_*` support.
 | `@Size(N) Array<T>`          | `T[N]` (out-pointer for return)    | Fixed-size, **can be returned** via out-ptr |
 | `@Ptr Array<T>`              | `ktc_VarArr_T`                     | Same VarArr struct, passed by value      |
 | `RawArray<T>` + `@Ptr`       | `T*`                               | Raw pointer, no length tracking          |
-| `heapArrayOf<T>(...)`        | Heap-allocated `ktc_VarArr_T`      | Safe to return from functions            |
+| `Array<T>.allocWith(Heap,n)` | Heap-allocated `ktc_VarArr_T`      | Safe to return from functions            |
 
 **Array factories:**
 
@@ -56,9 +56,7 @@ ByteArray(n)          // zero-filled stack array
 byteArrayOf(v1,...)   // compound literal
 intArrayOf(1, 2, 3)   // typed compound literal
 arrayOf("a", "b")     // generic compound literal
-heapArrayOf<T>(v1,...)  // heap-allocated, safe to return
-HeapAlloc<Array<T>>(n)  // uninitialized heap
-HeapArrayZero<Array<T>>(n)  // zero-initialized heap
+Array<T>.allocWith(Heap, n)  // allocator-backed heap array, safe to return
 ```
 
 **All type aliases exist for every built-in type:** `ByteArray`, `ShortArray`, `IntArray`, `LongArray`, `FloatArray`, `DoubleArray`, `BooleanArray`, `CharArray`, `UByteArray`, `UShortArray`, `UIntArray`, `ULongArray`, `StringArray` and corresponding `xxxArrayOf`.
