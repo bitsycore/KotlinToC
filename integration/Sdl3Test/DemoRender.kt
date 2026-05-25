@@ -176,7 +176,7 @@ fun SDL3.Renderer.renderMinimap(
 
 fun SDL3.Renderer.renderHelpOverlay(ws: SDL3.FPoint) {
 	val panelW = 270.0f
-	val panelH = 207.0f
+	val panelH = 220.0f
 	val px = (ws.x - panelW) / 2.0f
 	val py = (ws.y - panelH) / 2.0f
 
@@ -216,6 +216,8 @@ fun SDL3.Renderer.renderHelpOverlay(ws: SDL3.FPoint) {
 	this.drawDebugText(lx, ly, "T            Toggle HUD")
 	ly += lineH
 	this.drawDebugText(lx, ly, "I            Toggle tooltips")
+	ly += lineH
+	this.drawDebugText(lx, ly, "E            Toggle event log")
 	ly += lineH
 	this.drawDebugText(lx, ly, "Ctrl+C       Copy positions")
 	ly += lineH

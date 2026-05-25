@@ -30,6 +30,9 @@ fun main(args: Array<String>) {
 	val atlas = createAtlasTexture(renderer)
 	defer { atlas.destroy() }
 
+	val logBuf = ByteArray(4096)
+	var logArena = Arena(logBuf.ptr(), logBuf.size)
+
 	val app = DemoApp(
 		window        = window,
 		renderer      = renderer,
@@ -43,7 +46,8 @@ fun main(args: Array<String>) {
 		outlineColor  = SDL3.Color(255, 255, 255, 128),
 		crosshairCol  = SDL3.Color(180, 180, 180, 200),
 		leashColor    = SDL3.Color(100, 100, 220, 120),
-		box           = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f)
+		box           = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f),
+		logArena      = logArena.ptr()
 	)
 
 	// Sprite angle trail — kept local to avoid FloatArray-in-struct issues

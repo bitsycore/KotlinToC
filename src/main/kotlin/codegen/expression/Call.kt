@@ -195,6 +195,20 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         return "$vName(${vArgs.joinToString(", ") { genExpr(it.expr) }})"
     }
 
+    // ── StringBuffer invoke: sb("template $x") ───────────────────
+    if (vVarType != null && (vVarType == "ktc_StrBuf" || vVarType == "StringBuffer") && vArgs.size == 1) {
+        val vArg = vArgs[0].expr
+        val vSbRef = "&$vName"
+        if (vArg is StrTemplateExpr) {
+            genStrTemplateToSb(vArg, vSbRef)
+            return ""
+        }
+        val vArgKtc = inferExprTypeKtc(vArg) ?: KtcType.Str
+        val vExpr = genExpr(vArg)
+        preStmts += genSbAppendKtc(vSbRef, vExpr, vArgKtc)
+        return ""
+    }
+
     // ── Constructor dispatch ──────────────────────────────────────
     genCtorCallOrNull(vName, vArgs, e)?.let { return it }
 

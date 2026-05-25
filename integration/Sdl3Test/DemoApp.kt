@@ -24,6 +24,7 @@ class DemoApp(
 	val crosshairCol:  SDL3.Color,
 	val leashColor:    SDL3.Color,
 	var box:           SDL3.FRect,
+	val logArena:      @Ptr Arena,
 	var mouseX:        Float        = 0.0f,
 	var mouseY:        Float        = 0.0f,
 	var hoverPulse:    Float        = 0.0f,
@@ -40,11 +41,21 @@ class DemoApp(
 	var showHud:       Boolean      = true,
 	var showTooltips:  Boolean      = true,
 	var lastFps:       Int          = 0,
-	var clipboardMsg:  String       = "",
+	var clipboardSprX: Int          = 0,
+	var clipboardSprY: Int          = 0,
+	var clipboardBoxX: Int          = 0,
+	var clipboardBoxY: Int          = 0,
 	var clipboardTimer: Float       = 0.0f,
-	var tooltipLine1:  String       = "",
-	var tooltipLine2:  String       = "",
-	var tooltipActive: Boolean      = false,
+	var tooltipKind:   Int          = 0,
+	var showLog:       Boolean      = true,
+	var logLine0:      String       = "",
+	var logLine1:      String       = "",
+	var logLine2:      String       = "",
+	var logLine3:      String       = "",
+	var logLine4:      String       = "",
+	var logLine5:      String       = "",
+	var logCount:      Int          = 0,
+	var statsLine:     String       = "",
 	var movState:      MovementState = MovementState(),
 	var pulse:         PulseState    = PulseState(),
 	var spriteState:   SpriteState   = SpriteState()
@@ -54,6 +65,16 @@ class DemoApp(
 	// ══════════════════════════════════════════════════════════
 
 	fun onQuit() { quit = true }
+
+	fun logEvent(msg: String) {
+		logLine5 = logLine4
+		logLine4 = logLine3
+		logLine3 = logLine2
+		logLine2 = logLine1
+		logLine1 = logLine0
+		logLine0 = msg
+		logCount++
+	}
 
 	fun onKeyDown(scancode: Int) {
 		when (scancode) {
@@ -65,20 +86,63 @@ class DemoApp(
 			SDL3.Scancode.F -> {
 				fullscreen = !fullscreen
 				window.setFullscreen(fullscreen)
+				val sb = logArena.stringBuffer(64)
+				sb.append("Fullscreen: ")
+				sb.appendBool(fullscreen)
+				logEvent(sb.toString())
 			}
 			SDL3.Scancode.L -> {
 				logicalMode = !logicalMode
 				if (logicalMode) renderer.setLogicalSize(800, 600) else renderer.clearLogicalSize()
+				val sb = logArena.stringBuffer(64)
+				sb.append("Logical mode: ")
+				sb.appendBool(logicalMode)
+				logEvent(sb.toString())
 			}
-			SDL3.Scancode.H -> showHelp = !showHelp
-			SDL3.Scancode.T -> showHud = !showHud
-			SDL3.Scancode.I -> showTooltips = !showTooltips
+			SDL3.Scancode.H -> {
+				showHelp = !showHelp
+				val sb = logArena.stringBuffer(32)
+				sb.append("Help: ")
+				sb.appendBool(showHelp)
+				logEvent(sb.toString())
+			}
+			SDL3.Scancode.T -> {
+				showHud = !showHud
+				val sb = logArena.stringBuffer(32)
+				sb.append("HUD: ")
+				sb.appendBool(showHud)
+				logEvent(sb.toString())
+			}
+			SDL3.Scancode.I -> {
+				showTooltips = !showTooltips
+				val sb = logArena.stringBuffer(32)
+				sb.append("Tooltips: ")
+				sb.appendBool(showTooltips)
+				logEvent(sb.toString())
+			}
+			SDL3.Scancode.E -> {
+				showLog = !showLog
+			}
 			SDL3.Scancode.C -> {
 				if (isKeyDown(SDL3.Scancode.LCtrl) || isKeyDown(SDL3.Scancode.RCtrl)) {
-					val text = "sprite(${spriteState.posX.toInt()}, ${spriteState.posY.toInt()}) box(${box.x.toInt()}, ${box.y.toInt()})"
+					clipboardSprX = spriteState.posX.toInt()
+					clipboardSprY = spriteState.posY.toInt()
+					clipboardBoxX = box.x.toInt()
+					clipboardBoxY = box.y.toInt()
+					val text = "sprite($clipboardSprX, $clipboardSprY) box($clipboardBoxX, $clipboardBoxY)"
 					SDL3.setClipboardText(text)
-					clipboardMsg = "Copied: $text"
 					clipboardTimer = 2.0f
+					val sb = logArena.stringBuffer(80)
+					sb.append("Clipboard: sprite(")
+					sb.appendInt(clipboardSprX)
+					sb.append(", ")
+					sb.appendInt(clipboardSprY)
+					sb.append(") box(")
+					sb.appendInt(clipboardBoxX)
+					sb.append(", ")
+					sb.appendInt(clipboardBoxY)
+					sb.append(")")
+					logEvent(sb.toString())
 				}
 			}
 		}
@@ -104,9 +168,23 @@ class DemoApp(
 				if (box.contains(SDL3.FPoint(mx, my))) {
 					box = box.copy(x = mx - box.w / 2.0f, y = my - box.h / 2.0f)
 					println(box)
+					val sb = logArena.stringBuffer(48)
+					sb.append("Box drag: ")
+					sb.appendInt(mx.toInt())
+					sb.append(",")
+					sb.appendInt(my.toInt())
+					logEvent(sb.toString())
 				}
 			}
-			SDL3.Mouse.Right -> pulse.spawn(mx, my)
+			SDL3.Mouse.Right -> {
+				pulse.spawn(mx, my)
+				val sb = logArena.stringBuffer(48)
+				sb.append("Pulse: ")
+				sb.appendInt(mx.toInt())
+				sb.append(",")
+				sb.appendInt(my.toInt())
+				logEvent(sb.toString())
+			}
 		}
 	}
 
@@ -119,6 +197,12 @@ class DemoApp(
 		val cx    = box.x + box.w / 2.0f
 		val cy    = box.y + box.h / 2.0f
 		box       = SDL3.FRect(cx - cw / 2.0f, cy - ch / 2.0f, cw, ch)
+		val sb = logArena.stringBuffer(48)
+		sb.append("Resize: ")
+		sb.appendInt(cw.toInt())
+		sb.append("x")
+		sb.appendInt(ch.toInt())
+		logEvent(sb.toString())
 	}
 
 	// ══════════════════════════════════════════════════════════
@@ -145,6 +229,18 @@ class DemoApp(
 			lastFps = (frameCount.toFloat() / titleTimer).toInt()
 			val wsize = window.getSize()
 			window.setTitle("SDL3 Demo | FPS: $lastFps | ${wsize.x.toInt()}x${wsize.y.toInt()} | H=help")
+
+			// Build persistent stats line via arena — displayed every frame until next update
+			val sb = logArena.stringBuffer(80)
+			sb.append("FPS:")
+			sb.appendInt(lastFps)
+			sb.append(" Arena:")
+			sb.appendInt(logArena.used())
+			sb.append("/")
+			sb.appendInt(logArena.remaining() + logArena.used())
+			sb.append("b")
+			statsLine = sb.toString()
+
 			titleTimer = 0.0f
 			frameCount = 0
 		}
@@ -195,52 +291,27 @@ class DemoApp(
 	}
 
 	private fun updateTooltip() {
-		tooltipActive = false
+		tooltipKind = 0
 		if (!showTooltips || showHelp) return
 
 		val mp = SDL3.FPoint(mouseX, mouseY)
 
-		if (box.contains(mp)) {
-			tooltipLine1 = "Box ${box.w.toInt()}x${box.h.toInt()}"
-			tooltipLine2 = "LClick=drag  Scroll=resize"
-			tooltipActive = true
-			return
-		}
+		if (box.contains(mp)) { tooltipKind = 1; return }
 
 		val spriteDst = SDL3.FRect(spriteState.posX - 32.0f, spriteState.posY - 32.0f, 64.0f, 64.0f)
-		if (spriteDst.contains(mp)) {
-			tooltipLine1 = "Sprite a=${spriteState.angle.toInt()}"
-			tooltipLine2 = "Space=fast spin"
-			tooltipActive = true
-			return
-		}
+		if (spriteDst.contains(mp)) { tooltipKind = 2; return }
 
 		val ws = renderer.outputSize()
 		val atlasHud = SDL3.FRect(10.0f, ws.y - 58.0f, 48.0f, 48.0f)
-		if (atlasHud.contains(mp)) {
-			tooltipLine1 = "Atlas tile ${atlasTileIdx + 1}/4"
-			tooltipLine2 = "Animated at 0.5s/frame"
-			tooltipActive = true
-			return
-		}
+		if (atlasHud.contains(mp)) { tooltipKind = 3; return }
 
 		val mmVpX = ws.x - 160.0f
 		val miniRect = SDL3.FRect(mmVpX, 10.0f, 150.0f, 100.0f)
-		if (miniRect.contains(mp)) {
-			tooltipLine1 = "Minimap"
-			tooltipLine2 = "Shows box, cursor, sprite"
-			tooltipActive = true
-			return
-		}
+		if (miniRect.contains(mp)) { tooltipKind = 4; return }
 
 		if (pulse.active) {
 			val pdist = SDL3.FPoint(mouseX - pulse.x, mouseY - pulse.y).length()
-			if (pdist < pulse.radius + 10.0f) {
-				tooltipLine1 = "Pulse r=${pulse.radius.toInt()}"
-				tooltipLine2 = "RClick to spawn"
-				tooltipActive = true
-				return
-			}
+			if (pdist < pulse.radius + 10.0f) { tooltipKind = 5; return }
 		}
 	}
 
@@ -275,11 +346,68 @@ class DemoApp(
 		renderer.renderMinimap(ws, box, spriteState.posX, spriteState.posY, mouseX, mouseY, hovering, boxColor, hoverColor)
 
 		if (showHud) renderHud(ws)
-		if (tooltipActive) renderer.renderTooltip(mouseX, mouseY, tooltipLine1, tooltipLine2, ws)
+		if (showLog) renderEventLog(ws)
+		renderTooltipForKind(ws)
 		if (showHelp) renderer.renderHelpOverlay(ws)
-		if (clipboardTimer > 0.0f) renderer.renderClipboardToast(clipboardMsg, ws)
+		if (clipboardTimer > 0.0f) {
+			val msg = "Copied: sprite($clipboardSprX, $clipboardSprY) box($clipboardBoxX, $clipboardBoxY)"
+			renderer.renderClipboardToast(msg, ws)
+		}
 
 		renderer.present()
+	}
+
+	private fun renderEventLog(ws: SDL3.FPoint) {
+		val charH = renderer.debugTextCharSize().toFloat()
+		val lineH = charH + 2.0f
+		val panelW = 240.0f
+		val panelH = lineH * 7.0f + 8.0f
+		val px = ws.x - panelW - 10.0f
+		val py = ws.y - panelH - 10.0f
+
+		renderer.setBlendMode(SDL3.BlendMode.Blend)
+		renderer.setDrawColor(0, 0, 0, 160)
+		renderer.fillRect(SDL3.FRect(px, py, panelW, panelH))
+		renderer.setBlendMode(SDL3.BlendMode.None)
+
+		var ly = py + 4.0f
+
+		// Stats line (persistent from arena, updated once per second)
+		renderer.setDrawColor(SDL3.Color(100, 200, 255, 255))
+		if (statsLine.length > 0) {
+			renderer.drawDebugText(px + 6.0f, ly, statsLine)
+		}
+		ly += lineH
+
+		// Event log lines (persistent strings from arena)
+		renderer.setDrawColor(SDL3.Color(180, 180, 160, 255))
+		if (logLine5.length > 0) { renderer.drawDebugText(px + 6.0f, ly, logLine5) }
+		ly += lineH
+		if (logLine4.length > 0) { renderer.drawDebugText(px + 6.0f, ly, logLine4) }
+		ly += lineH
+		if (logLine3.length > 0) { renderer.drawDebugText(px + 6.0f, ly, logLine3) }
+		ly += lineH
+		if (logLine2.length > 0) { renderer.drawDebugText(px + 6.0f, ly, logLine2) }
+		ly += lineH
+		if (logLine1.length > 0) { renderer.drawDebugText(px + 6.0f, ly, logLine1) }
+		ly += lineH
+		renderer.setDrawColor(SDL3.Color(220, 220, 200, 255))
+		if (logLine0.length > 0) { renderer.drawDebugText(px + 6.0f, ly, logLine0) }
+	}
+
+	private fun renderTooltipForKind(ws: SDL3.FPoint) {
+		when (tooltipKind) {
+			1 -> renderer.renderTooltip(mouseX, mouseY,
+				"Box ${box.w.toInt()}x${box.h.toInt()}", "LClick=drag  Scroll=resize", ws)
+			2 -> renderer.renderTooltip(mouseX, mouseY,
+				"Sprite a=${spriteState.angle.toInt()}", "Space=fast spin", ws)
+			3 -> renderer.renderTooltip(mouseX, mouseY,
+				"Atlas tile ${atlasTileIdx + 1}/4", "Animated at 0.5s/frame", ws)
+			4 -> renderer.renderTooltip(mouseX, mouseY,
+				"Minimap", "Shows box, cursor, sprite", ws)
+			5 -> renderer.renderTooltip(mouseX, mouseY,
+				"Pulse r=${pulse.radius.toInt()}", "RClick to spawn", ws)
+		}
 	}
 
 	private fun renderHud(ws: SDL3.FPoint) {

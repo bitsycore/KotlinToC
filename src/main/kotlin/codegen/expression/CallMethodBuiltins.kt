@@ -42,6 +42,21 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 ): String? {
 	val vMethod = inDot.name  // method name
 
+	// ── StringBuffer method intrinsics ───────────────────────────────
+	if (inRecvType == "ktc_StrBuf" || inRecvType == "StringBuffer") {
+		val vSbRef = "&($inRecv)"
+		when (vMethod) {
+			"append"       -> if (inArgs.size == 1) return "ktc_core_sb_append_str($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"appendInt"    -> if (inArgs.size == 1) return "ktc_core_sb_append_int($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"appendLong"   -> if (inArgs.size == 1) return "ktc_core_sb_append_long($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"appendFloat"  -> if (inArgs.size == 1) return "ktc_core_sb_append_float($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"appendDouble" -> if (inArgs.size == 1) return "ktc_core_sb_append_double($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"appendBool"   -> if (inArgs.size == 1) return "ktc_core_sb_append_bool($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"appendChar"   -> if (inArgs.size == 1) return "ktc_core_sb_append_char($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"toString"     -> if (inArgs.isEmpty()) return "ktc_core_sb_to_string($vSbRef)"
+		}
+	}
+
 	// ── Built-in methods ──────────────────────────────────────────────
 	when (vMethod) {
 		"trimIndent" -> {
