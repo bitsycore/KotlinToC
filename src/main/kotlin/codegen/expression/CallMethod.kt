@@ -254,7 +254,17 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				}
 			if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
 		val allArgs       = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
-		val fnPrefix       = methodDecl?.let { resolvedFnName(it, vClassInfo.methods) } ?: method
+		val fnPrefix       = when {
+			methodDecl != null && isExtFun -> {
+				val extSiblings = extensionFuns[vClassInfo.baseName]
+					?.filter { it.name == method }
+					?.distinctBy { it.params.map { p -> resolveTypeName(p.type).toInternalStr } }
+					?: listOf(methodDecl)
+				resolvedFnName(methodDecl, extSiblings)
+				}
+			methodDecl != null -> resolvedFnName(methodDecl, vClassInfo.methods)
+			else               -> method
+			}
 		val sizedClass = tryWrapSizedReturn("${vClassInfo.flatName}_$fnPrefix($allArgs)", methodDecl?.returnType)
 		if (sizedClass != null) return sizedClass
 		if (methodDecl?.returnType?.nullable == true) {
