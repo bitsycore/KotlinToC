@@ -11,13 +11,13 @@ object Config {
 
 class SubConfig {
 
-    private val buffer: @Ptr Array<Int> = Array.allocWith(Heap, 128)
-    private val buffer2: @Ptr Array<Int> = Array<Int>.allocWith(Heap, 128)
-    private val buffer3 = Array<Int>.allocWith(Heap, 128)
+    private val buffer: @Ptr Array<Int> = Array(128).allocWith(Heap)
+    private val buffer2: @Ptr Array<Int> = Array<Int>(128).allocWith(Heap)
+    private val buffer3 = Array<Int>(128).allocWith(Heap)
 
-    private val rawBuffer: @Ptr RawArray<Float> = RawArray.allocWith(Heap, 128)
-    private val rawBuffer2: @Ptr RawArray<Float> = RawArray<Float>.allocWith(Heap, 128)
-    private val rawBuffer3 = RawArray<Float>.allocWith(Heap, 128)
+    private val rawBuffer: @Ptr RawArray<Float> = RawArray(128).allocWith(Heap)
+    private val rawBuffer2: @Ptr RawArray<Float> = RawArray<Float>(128).allocWith(Heap)
+    private val rawBuffer3 = RawArray<Float>(128).allocWith(Heap)
 
     override fun dispose() {
         println("AutoFreeing SubConfig")
@@ -35,13 +35,13 @@ object Config2 {
 
     val sub = SubConfig()
 
-    val buffer: @Ptr Array<Int> = Array.allocWith(Heap, 128)
-    val buffer2: @Ptr Array<Int> = Array<Int>.allocWith(Heap, 128)
-    val buffer3 = Array<Int>.allocWith(Heap, 128)
+    val buffer: @Ptr Array<Int> = Array(128).allocWith(Heap)
+    val buffer2: @Ptr Array<Int> = Array<Int>(128).allocWith(Heap)
+    val buffer3 = Array<Int>(128).allocWith(Heap)
 
-    val rawBuffer: @Ptr RawArray<Float> = RawArray.allocWith(Heap, 128)
-    val rawBuffer2: @Ptr RawArray<Float> = RawArray<Float>.allocWith(Heap, 128)
-    val rawBuffer3 = RawArray<Float>.allocWith(Heap, 128)
+    val rawBuffer: @Ptr RawArray<Float> = RawArray(128).allocWith(Heap)
+    val rawBuffer2: @Ptr RawArray<Float> = RawArray<Float>(128).allocWith(Heap)
+    val rawBuffer3 = RawArray<Float>(128).allocWith(Heap)
 
     override fun dispose() {
         println("AutoFreeing Config2")

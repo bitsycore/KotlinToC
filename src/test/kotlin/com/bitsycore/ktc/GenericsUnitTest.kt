@@ -156,10 +156,10 @@ class GenericsUnitTest : TranspilerTestBase() {
             package test.Main
             class Box<T>(val item: T)
             fun main(args: Array<String>) {
-                val b = Box<Int>.allocWith(Heap, 42)
+                val b = Box<Int>(42).allocWith(Heap)
             }
         """)
-        // Box<Int>.allocWith(Heap, 42) → allocMem + primaryConstructor
+        // Box<Int>(42).allocWith(Heap) → allocMem + primaryConstructor
         r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
     }
 

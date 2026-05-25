@@ -21,8 +21,8 @@ Targets embedded/game/systems code.
 ## Memory model
 - Values are by-value on the stack by default. `@Ptr T` = pointer, `@Ptr T?` = nullable pointer (NULL).
 - Heap allocation is allocator-based (no GC):
-  - `T.allocWith(Heap, ctorArgs...)` → `@Ptr T`
-  - `Array<T>.allocWith(Heap, n)` / `RawArray<T>.allocWith(Heap, n)`
+  - `T(ctorArgs...).allocWith(Heap)` → `@Ptr T` (fused alloc + ctor, no stack temp)
+  - `Array<T>(n).allocWith(Heap)` / `RawArray<T>(n).allocWith(Heap)`
   - `arr.resizeWith(allocator, n)`, `arr.copyWith(allocator)`, `dataClass.copyWith(...)`
   - `Array<T>.fill(value)` / `RawArray<T>.fill(count, value)` → memset when byte-sized or zero-literal, else loop
   - `Array<T>.asRaw()` → `@Ptr RawArray<T>` (bare data ptr); `RawArray<T>.asArray(n)` → `@Ptr Array<T>` (VarArr) — both alias, no copy

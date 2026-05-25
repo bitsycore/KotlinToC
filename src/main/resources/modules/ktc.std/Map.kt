@@ -48,9 +48,9 @@ class HashMap<K, V>(private val allocator: @Ptr Allocator, private var capacity:
 	override var size: Int = 0
 		private set
 
-	private var keys: @Ptr RawArray<K> = RawArray<K>.allocWith(allocator, capacity) ?: error("Could allocate keys")
-	private var vals: @Ptr RawArray<V> = RawArray<V>.allocWith(allocator, capacity) ?: error("Could allocate vals")
-	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>.allocWith(allocator, capacity) ?: error("Could allocate occ")
+	private var keys: @Ptr RawArray<K> = RawArray<K>(capacity).allocWith(allocator) ?: error("Could allocate keys")
+	private var vals: @Ptr RawArray<V> = RawArray<V>(capacity).allocWith(allocator) ?: error("Could allocate vals")
+	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>(capacity).allocWith(allocator) ?: error("Could allocate occ")
 
 	init {
 		occ.fill(capacity, false)
@@ -143,9 +143,9 @@ class HashMap<K, V>(private val allocator: @Ptr Allocator, private var capacity:
 		val oldOcc = occ
 		val oldCap = capacity
 		val newCapacity = capacity * 2
-		keys = RawArray<K>.allocWith(allocator, newCapacity)!!
-		vals = RawArray<V>.allocWith(allocator, newCapacity)!!
-		occ = RawArray<Boolean>.allocWith(allocator, newCapacity)!!
+		keys = RawArray<K>(newCapacity).allocWith(allocator)!!
+		vals = RawArray<V>(newCapacity).allocWith(allocator)!!
+		occ = RawArray<Boolean>(newCapacity).allocWith(allocator)!!
 		occ.fill(newCapacity, false)
 		capacity = newCapacity
 		size = 0

@@ -50,7 +50,7 @@ class DeferUnitTest : TranspilerTestBase() {
             package test.Main
             $decls
             fun deferredReturn(): Int {
-                val p = Vec2.allocWith(Heap, 1.0f, 2.0f)!!
+                val p = Vec2(1.0f, 2.0f).allocWith(Heap)!!
                 defer Heap.freeMem(p)
                 p.x = 42.0f
                 return p.x.toInt()

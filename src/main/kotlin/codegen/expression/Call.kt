@@ -35,8 +35,9 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             }
         }
 
-        // ClassName.allocWith(allocator, ...) — allocator-based heap construction
-        if (e.callee.name == "allocWith" && e.callee.obj is NameExpr && e.args.isNotEmpty()) {
+        // Class(args).allocWith(allocator) — allocator-based heap construction.
+        // The receiver is a constructor call; the transpiler allocates and constructs in place.
+        if (e.callee.name == "allocWith" && e.callee.obj is CallExpr && e.args.isNotEmpty()) {
             val vResult = genAllocWithCallOrNull(e)
             if (vResult != null) return vResult
         }

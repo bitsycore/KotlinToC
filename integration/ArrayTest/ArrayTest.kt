@@ -157,7 +157,7 @@ fun testFill() {
     }
 
     // RawArray needs an explicit count.
-    val raw: @Ptr RawArray<Int> = RawArray<Int>.allocWith(Heap, 4)!!
+    val raw: @Ptr RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
     raw.fill(4, 9)
     for (i in 0 until 4) {
         if (raw[i] != 9) error("raw fill failed at $i")

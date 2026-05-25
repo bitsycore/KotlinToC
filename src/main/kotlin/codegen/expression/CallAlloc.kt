@@ -5,7 +5,7 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 // ── Allocator-based construction + constructor dispatch ───────────
-// genAllocWithCallOrNull: handles Foo.allocWith(alloc, ...) / Array.allocWith(alloc, n)
+// genAllocWithCallOrNull: handles Foo(ctorArgs...).allocWith(alloc) / Array<T>(n).allocWith(alloc)
 // genCtorCallOrNull:      handles Foo(...) constructor calls for known and generic classes
 
 /* Emit a preStmt that wraps [allocExpr] in a ktc_IfacePtr for the Allocator vtable of [name]. */
@@ -28,12 +28,17 @@ private fun CCodeGen.emitAllocWithConstruct(cName: String, ifExpr: String, iface
 	}
 
 /*
-Handles ClassName.allocWith(allocator, ...) calls.
-Returns the allocated pointer expression, or null if className is not a recognized type.
-Only called when callee is DotExpr named "allocWith" with a NameExpr object and at least one arg.
+Handles Class(ctorArgs...).allocWith(allocator) calls.
+The receiver is a constructor call (the construction is fused with the allocation, so the
+object is built directly in the allocated storage). Returns the allocated pointer expression,
+or null if the receiver is not a recognized type.
+Only called when callee is DotExpr named "allocWith" with a CallExpr object and at least one arg.
 */
 internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
-	val vClassName  = ((inCall.callee as DotExpr).obj as NameExpr).name
+	val vRecvCall   = (inCall.callee as DotExpr).obj as? CallExpr ?: return null
+	val vClassName  = (vRecvCall.callee as? NameExpr)?.name ?: return null
+	val vTypeArgs   = vRecvCall.typeArgs
+	val vCtorArgs   = vRecvCall.args
 	val vAllocExpr  = genExpr(inCall.args[0].expr)
 	val vAllocObjName = (inCall.args[0].expr as? NameExpr)?.name
 
@@ -51,17 +56,17 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		return Pair(vAllocExpr, false)
 		}
 
-	// Array.allocWith(allocator, size) or RawArray.allocWith(allocator, size)
+	// Array<T>(size).allocWith(allocator) or RawArray<T>(size).allocWith(allocator)
 	if (vClassName == "Array" || vClassName == "RawArray") {
 		val vElemName = when {
-			inCall.typeArgs.isNotEmpty() ->
-				typeSubst[inCall.typeArgs[0].name] ?: inCall.typeArgs[0].name
+			vTypeArgs.isNotEmpty() ->
+				typeSubst[vTypeArgs[0].name] ?: vTypeArgs[0].name
 			heapAllocTargetType != null && heapAllocTargetType!!.typeArgs.isNotEmpty() ->
 				typeSubst[heapAllocTargetType!!.typeArgs[0].name] ?: heapAllocTargetType!!.typeArgs[0].name
 			else -> "Int"
 			}
 		val vElemC    = cTypeStr(vElemName)
-		val vSizeExpr = genExpr(inCall.args[1].expr)
+		val vSizeExpr = genExpr(vCtorArgs[0].expr)
 		val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
 		val (vIfExpr, _) = resolveAllocIface(vAllocKtc)
 		val vT = tmp()
@@ -74,10 +79,10 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		return "${vT}_ptr"
 		}
 
-	// Concrete class: Foo.allocWith(allocator, ctorArgs...)
+	// Concrete class: Foo(ctorArgs...).allocWith(allocator)
 	if (classes.containsKey(vClassName) && !classes[vClassName]!!.isGeneric) {
 		val vCName    = typeFlatName(vClassName)
-		val vCtorArgs = inCall.args.drop(1).joinToString(", ") { genExpr(it.expr) }
+		val vCtorArgsStr = vCtorArgs.joinToString(", ") { genExpr(it.expr) }
 		val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
 		val vAllocCore = vAllocKtc.stripNullable
 		val vAllocClassName = (vAllocCore as? KtcType.User)?.baseName
@@ -97,14 +102,14 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 			vIsAllocClass -> { emitAllocatorIfacePtr(vAllocClassName, vT, vAllocExpr); vIfaceCreated = true; vIfExpr = vT }
 			else          -> { vIfaceCreated = false; vIfExpr = vAllocExpr }
 			}
-		return emitAllocWithConstruct(vCName, vIfExpr, vIfaceCreated, vIsTrampoline, vCtorArgs)
+		return emitAllocWithConstruct(vCName, vIfExpr, vIfaceCreated, vIsTrampoline, vCtorArgsStr)
 		}
 
-	// Generic class: Foo<T>.allocWith(allocator, ctorArgs...)
+	// Generic class: Foo<T>(ctorArgs...).allocWith(allocator)
 	if (genericClassDecls.containsKey(vClassName)) {
-		val vTypeArgs = inCall.typeArgs.ifEmpty { heapAllocTargetType?.typeArgs ?: emptyList() }
-		if (vTypeArgs.isNotEmpty()) {
-			val vResolvedArgs = vTypeArgs.map { vTa ->
+		val vEffectiveTypeArgs = vTypeArgs.ifEmpty { heapAllocTargetType?.typeArgs ?: emptyList() }
+		if (vEffectiveTypeArgs.isNotEmpty()) {
+			val vResolvedArgs = vEffectiveTypeArgs.map { vTa ->
 				val vSub = substituteTypeParams(vTa)
 				if (vSub.nullable) "${resolveTypeNameStr(vSub)}?" else resolveTypeNameStr(vSub)
 				}
@@ -125,7 +130,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 				val vT = tmp()
 				val vIfaceCreated2: Boolean
 				val vIfExpr2: String
-				val vCtorArgs2 = inCall.args.drop(1).joinToString(", ") { vArg ->
+				val vCtorArgs2 = vCtorArgs.joinToString(", ") { vArg ->
 					val vArgExpr  = genExpr(vArg.expr)
 					val vArgVarName = (vArg.expr as? NameExpr)?.name
 					if (vArgVarName != null && objects.containsKey(vArgVarName)) {

@@ -27,7 +27,7 @@ fun testStackArena() {
     assertEq(vArena.used(), 0)
     assertEq(vArena.remaining(), 512)
 
-    val pVec: @Ptr Vec2 = Vec2.allocWith(vArena, 3.0f, 4.0f)
+    val pVec: @Ptr Vec2 = Vec2(3.0f, 4.0f).allocWith(vArena)
     assertEqF(pVec.x, 3.0f)
     assertEqF(pVec.y, 4.0f)
 
@@ -50,7 +50,7 @@ fun testHeapArena() {
     val vArena = Arena(256)
     defer vArena.free()
 
-    val pVec: @Ptr Vec2 = Vec2.allocWith(vArena, 7.0f, 8.0f)
+    val pVec: @Ptr Vec2 = Vec2(7.0f, 8.0f).allocWith(vArena)
     assertEqF(pVec.x, 7.0f)
     assertEqF(pVec.y, 8.0f)
 
@@ -63,7 +63,7 @@ fun testHeapArena() {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun allocVec(inAlloc: Allocator, inX: Float, inY: Float): @Ptr Vec2 {
-    return Vec2.allocWith(inAlloc, inX, inY)
+    return Vec2(inX, inY).allocWith(inAlloc)
 }
 
 fun testInterfaceDispatch() {
@@ -109,9 +109,9 @@ fun testMultipleAllocs() {
     val vBuf = ByteArray(1024)
     val vArena = Arena(vBuf.ptr(), vBuf.size)
 
-    val pA: @Ptr Vec2 = Vec2.allocWith(vArena, 1.0f, 2.0f)
-    val pB: @Ptr Vec2 = Vec2.allocWith(vArena, 3.0f, 4.0f)
-    val pC: @Ptr Vec2 = Vec2.allocWith(vArena, 5.0f, 6.0f)
+    val pA: @Ptr Vec2 = Vec2(1.0f, 2.0f).allocWith(vArena)
+    val pB: @Ptr Vec2 = Vec2(3.0f, 4.0f).allocWith(vArena)
+    val pC: @Ptr Vec2 = Vec2(5.0f, 6.0f).allocWith(vArena)
 
     assertEqF(pA.x, 1.0f); assertEqF(pA.y, 2.0f)
     assertEqF(pB.x, 3.0f); assertEqF(pB.y, 4.0f)
@@ -121,7 +121,7 @@ fun testMultipleAllocs() {
     vArena.reset()
     assertEq(vArena.used(), 0)
 
-    val pD: @Ptr Vec2 = Vec2.allocWith(vArena, 9.0f, 10.0f)
+    val pD: @Ptr Vec2 = Vec2(9.0f, 10.0f).allocWith(vArena)
     assertEqF(pD.x, 9.0f); assertEqF(pD.y, 10.0f)
     println("OK")
 }

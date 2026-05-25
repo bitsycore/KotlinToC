@@ -7,7 +7,7 @@ class Test {
 }
 
 fun main() {
-    val a: @Ptr Test? = Test.allocWith(Heap)
+    val a: @Ptr Test? = Test().allocWith(Heap)
     if (a == null) return
     defer Heap.freeMem(a)
     println(a)

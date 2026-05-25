@@ -38,7 +38,7 @@ fun main() {
 
     println()
     println("=== allocWith constructor ===")
-    val pv: @Ptr Vec2 = Vec2.allocWith(Heap, 10.0f, 20.0f)
+    val pv: @Ptr Vec2 = Vec2(10.0f, 20.0f).allocWith(Heap)
     defer Heap.freeMem(pv)
     println("allocWith Vec2 x=" + pv.x.toString() + " y=" + pv.y.toString())
     if (pv.x != 10.0f || pv.y != 20.0f) error("FAIL allocWith values")

@@ -205,17 +205,17 @@ internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
 				}
 			return TypeRef(ta.name, typeArgs = ta.typeArgs, annotations = listOf(sizeAnn))
 			}
-		if (inner.callee is DotExpr && inner.callee.name == "allocWith") {
-			val obj     = inner.callee.obj
-			val objName = (obj as? NameExpr)?.name ?: ""
+		if (inner.callee is DotExpr && inner.callee.name == "allocWith" && inner.callee.obj is CallExpr) {
+			val recv     = inner.callee.obj
+			val objName  = (recv.callee as? NameExpr)?.name ?: ""
+			val recvArgs = recv.typeArgs
 			if (objName == "Array" || objName == "RawArray") {
-				val elem = inner.typeArgs.getOrNull(0) ?: TypeRef("Int")
+				val elem = recvArgs.getOrNull(0) ?: TypeRef("Int")
 				if (objName == "RawArray") return elem.copy(annotations = listOf(Annotation("Ptr")))
 				return TypeRef(objName, typeArgs = listOf(elem), annotations = listOf(Annotation("Ptr")))
 				}
 			if (classes.containsKey(objName) || genericClassDecls.containsKey(objName)) {
-				val typeArgs = if (inner.typeArgs.isNotEmpty()) inner.typeArgs else emptyList()
-				return TypeRef(objName, typeArgs = typeArgs, annotations = listOf(Annotation("Ptr")))
+				return TypeRef(objName, typeArgs = recvArgs, annotations = listOf(Annotation("Ptr")))
 				}
 			}
 		}

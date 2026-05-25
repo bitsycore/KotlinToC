@@ -8,7 +8,7 @@ package ktc
 /**
 A length-tracked array of T elements. In C this is a VarArr struct `{ T* ptr; ktc_Int len; }`,
 passed by value. Stack-allocated by default (the factory functions below); heap-allocate via
-`Array<T>.allocWith(allocator, n)`.
+`Array<T>(n).allocWith(allocator)`.
 
 A bare `Array<T>` field cannot be stored in a class/object — use `@Size(N) Array<T>` (fixed,
 becomes `T[N]`) or `@Ptr Array<T>` (the same VarArr, but safe to pass and return).
@@ -30,7 +30,7 @@ class Array<T>(val size: Int) {
 
 }
 
-/** Returns a copy resized to [newSize]; grown slots are zero-filled, shrunk ones truncated. */
+/** Returns a stack copy resized to [newSize]; grown slots are zero-filled, shrunk ones truncated. */
 fun <T> Array<T>.copyOf(newSize: Int): Array<T>
 
 /** Fills [fromIndex, toIndex) with [value] (whole array by default). memset when byte-sized / zero, else loop. */
@@ -103,7 +103,7 @@ for keeping track of the element count. Use this only when interfacing with
 C APIs that expect a bare pointer or for optimizing class like HashMap implementation.
 
 Heap-allocating a RawArray:
-val vRaw: @Ptr RawArray<Byte> = RawArray<Byte>.allocWith(Heap, n)
+val vRaw: @Ptr RawArray<Byte> = RawArray<Byte>(n).allocWith(Heap)
 
 Getting a raw pointer from a regular stack Array<T>:
 val vArr = ByteArray(n)

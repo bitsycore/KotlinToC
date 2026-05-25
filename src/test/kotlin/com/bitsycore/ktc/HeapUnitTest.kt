@@ -10,10 +10,10 @@ class HeapUnitTest : TranspilerTestBase() {
 
     private val vec2Decl = "data class Vec2(var x: Float, var y: Float)"
 
-    // ── Class.allocWith(Heap, ...) → heap constructor ───────────────────
+    // ── Class(...).allocWith(Heap) → heap constructor ───────────────────
 
     @Test fun heapAllocClass() {
-        val r = transpileMainWithStdlib("val p = Vec2.allocWith(Heap, 10.0f, 20.0f)", decls = vec2Decl)
+        val r = transpileMainWithStdlib("val p = Vec2(10.0f, 20.0f).allocWith(Heap)", decls = vec2Decl)
         r.sourceContains("test_Main_Vec2_primaryConstructor(10.0f, 20.0f)")
     }
 
@@ -21,7 +21,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun heapFieldRead() {
         val r = transpileMainWithStdlib(
-            "val p = Vec2.allocWith(Heap, 10.0f, 20.0f)!!\nprintln(p.x)",
+            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\nprintln(p.x)",
             decls = vec2Decl
         )
         r.sourceContains("p->x")
@@ -29,7 +29,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun heapFieldWrite() {
         val r = transpileMainWithStdlib(
-            "val p = Vec2.allocWith(Heap, 10.0f, 20.0f)!!\np.x = 99.0f",
+            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\np.x = 99.0f",
             decls = vec2Decl
         )
         r.sourceContains("p->x = 99.0f;")
@@ -40,7 +40,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun heapValue() {
         val r = transpileMainWithStdlib(
             """
-            val p = Vec2.allocWith(Heap, 10.0f, 20.0f)!!
+            val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!
             val v = p
             """.trimIndent(),
             decls = vec2Decl
@@ -53,7 +53,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun heapSet() {
         val r = transpileMainWithStdlib(
-            "val p = Vec2.allocWith(Heap, 10.0f, 20.0f)!!\np.set(Vec2(1.0f, 2.0f))",
+            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\np.set(Vec2(1.0f, 2.0f))",
             decls = vec2Decl
         )
         r.sourceContains("*p =")
@@ -63,7 +63,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun freeHeapPointer() {
         val r = transpileMainWithStdlib(
-            "val p = Vec2.allocWith(Heap, 10.0f, 20.0f)!!\nHeap.freeMem(p)",
+            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\nHeap.freeMem(p)",
             decls = vec2Decl
         )
         r.sourceContains("freeMem")
@@ -74,7 +74,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun heapAllocNullCheckSmartCast() {
         // After null check, smart cast should allow access
         val r = transpileMainWithStdlib("""
-            val p: @Ptr Vec2? = Vec2.allocWith(Heap, 10.0f, 20.0f)
+            val p: @Ptr Vec2? = Vec2(10.0f, 20.0f).allocWith(Heap)
             if (p == null) return
             println(p.x)
         """, decls = vec2Decl)
@@ -85,7 +85,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun notNullAssertionEmitsCrash() {
         // !! on a nullable @Ptr should emit a NullPointerException check
         val r = transpileMainWithStdlib(
-            "val p: @Ptr Vec2? = Vec2.allocWith(Heap, 10.0f, 20.0f)\nval q = p!!",
+            "val p: @Ptr Vec2? = Vec2(10.0f, 20.0f).allocWith(Heap)\nval q = p!!",
             decls = vec2Decl
         )
         r.sourceContains("NullPointerException")
@@ -95,7 +95,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun notNullAssertionOnVariable() {
         // !! on nullable variable should emit check
         val r = transpileMainWithStdlib("""
-            var p: @Ptr Vec2? = Vec2.allocWith(Heap, 1.0f, 2.0f)
+            var p: @Ptr Vec2? = Vec2(1.0f, 2.0f).allocWith(Heap)
             val q = p!!
         """, decls = vec2Decl)
         r.sourceContains("NullPointerException")
@@ -104,7 +104,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun heapPtrNullable() {
         val r = transpileMainWithStdlib(
             """
-                var q: @Ptr Vec2? = Vec2.allocWith(Heap, 3.0f, 4.0f)
+                var q: @Ptr Vec2? = Vec2(3.0f, 4.0f).allocWith(Heap)
                 q = null
             """.trimIndent(),
             decls = vec2Decl
@@ -116,7 +116,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun heapPtrNullCheck() {
         val r = transpileMainWithStdlib(
             """
-            var q: @Ptr Vec2? = Vec2.allocWith(Heap, 3.0f, 4.0f)
+            var q: @Ptr Vec2? = Vec2(3.0f, 4.0f).allocWith(Heap)
             if (q != null) {
                 println(q?.x)
             }
@@ -130,7 +130,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun heapptr() {
         val r = transpileMainWithStdlib(
-            "val h = Vec2.allocWith(Heap, 1.0f, 2.0f)!!\nval p = h.ptr()",
+            "val h = Vec2(1.0f, 2.0f).allocWith(Heap)!!\nval p = h.ptr()",
             decls = vec2Decl
         )
         // ptr() is identity — same pointer, just changes type
@@ -204,7 +204,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun valueFieldAccess() {
         val r = transpileMainWithStdlib(
             """
-            val h = Vec2.allocWith(Heap, 10.0f, 20.0f)!!
+            val h = Vec2(10.0f, 20.0f).allocWith(Heap)!!
             val v = h.value()
             Heap.freeMem(h)
             println(v.x)
@@ -219,7 +219,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun valueFieldWrite() {
         val r = transpileMainWithStdlib(
             """
-            val h = Vec2.allocWith(Heap, 10.0f, 20.0f)!!
+            val h = Vec2(10.0f, 20.0f).allocWith(Heap)!!
             val v = h.value()
             v.x = 99.0f
             """.trimIndent(),
@@ -233,7 +233,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun valueDeref() {
         val r = transpileMainWithStdlib(
             """
-            val h = Vec2.allocWith(Heap, 10.0f, 20.0f)!!
+            val h = Vec2(10.0f, 20.0f).allocWith(Heap)!!
             val v = h.value()
             """,
             decls = vec2Decl
@@ -245,7 +245,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     @Test fun valueMethodCall() {
         val r = transpileMainWithStdlib("""
-            val h = Counter.allocWith(Heap, 0)!!
+            val h = Counter(0).allocWith(Heap)!!
             val v = h.value()
             v.inc()
         """, decls = "class Counter(var count: Int) {\n    fun inc() { count = count + 1 }\n}")
@@ -257,7 +257,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun explicitValueType() {
         val r = transpileMainWithStdlib(
             """
-            val h = Vec2.allocWith(Heap, 1.0f, 2.0f)!!
+            val h = Vec2(1.0f, 2.0f).allocWith(Heap)!!
             val v: Vec2 = h.value()
             println(v.x)
             """.trimIndent(),
@@ -266,10 +266,10 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("v.x")
     }
 
-    // ── Array<T>.allocWith(Heap, n) → heap array allocation ─────────────
+    // ── Array<T>(n).allocWith(Heap) → heap array allocation ─────────────
 
     @Test fun heapAllocArrayInt() {
-        val r = transpileMainWithStdlib("val buf = Array<Int>.allocWith(Heap, 10)")
+        val r = transpileMainWithStdlib("val buf = Array<Int>(10).allocWith(Heap)")
         r.sourceContains("sizeof(ktc_Int) * (size_t)(10)")
     }
 
@@ -278,7 +278,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun bodyPropInitFromCtorParam() {
         val decl = """
             class Buf(var capacity: Int) {
-                var buf: @Ptr Array<Int> = Array<Int>.allocWith(Heap, capacity)
+                var buf: @Ptr Array<Int> = Array<Int>(capacity).allocWith(Heap)
             }
         """
         val r = transpileMainWithStdlib("val b = Buf(16)", decls = decl)

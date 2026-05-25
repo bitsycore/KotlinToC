@@ -32,17 +32,19 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 return mangledGenericName(flatCallee, resolvedArgs)
             }
         }
-        // allocWith → @Ptr ClassType
-        if (e.callee.name == "allocWith" && e.callee.obj is NameExpr) {
-            val objName = e.callee.obj.name
-            val typeArgs = e.typeArgs
-            val t = if (typeArgs.isNotEmpty()) TypeRef(
-                objName,
-                typeArgs = typeArgs,
-                annotations = listOf(Annotation("Ptr"))
-            )
-            else TypeRef(objName, annotations = listOf(Annotation("Ptr")))
-            return resolveTypeName(t).toInternalStr
+        // Class(args).allocWith(allocator) → @Ptr ClassType (type/args come from the receiver ctor call)
+        if (e.callee.name == "allocWith" && e.callee.obj is CallExpr) {
+            val objName = (e.callee.obj.callee as? NameExpr)?.name
+            if (objName != null) {
+                val typeArgs = e.callee.obj.typeArgs
+                val t = if (typeArgs.isNotEmpty()) TypeRef(
+                    objName,
+                    typeArgs = typeArgs,
+                    annotations = listOf(Annotation("Ptr"))
+                )
+                else TypeRef(objName, annotations = listOf(Annotation("Ptr")))
+                return resolveTypeName(t).toInternalStr
+            }
         }
     }
     val name = (e.callee as? NameExpr)?.name

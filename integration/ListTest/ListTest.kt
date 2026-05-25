@@ -7,7 +7,7 @@ data class Vec2(val x: Int, val y: Int)
 // ── main ─────────────────────────────────────────────────────────────
 
 fun <T> newArray(size: Int = 100) : @Ptr Array<T> {
-	return Array<T>.allocWith(Heap, size)!!
+	return Array<T>(size).allocWith(Heap)!!
 }
 
 fun main(args: Array<String>) {
@@ -26,7 +26,7 @@ fun main(args: Array<String>) {
 	println("Sizeof array3: ${array3.size}")
 	if (array3.size != 180) error("FAIL array3.size=${array3.size}")
 
-	val listVec = ArrayList<Vec2>.allocWith(Heap, Heap, 8)
+	val listVec = ArrayList<Vec2>(Heap, 8).allocWith(Heap)
 	defer Heap.freeMem(listVec)
 	defer listVec.dispose()
 
@@ -46,7 +46,7 @@ fun main(args: Array<String>) {
 	}
 	if (listVec.size != 10) error("FAIL v2.size=${listVec.size}")
 
-	val list = ArrayList<Int>.allocWith(Heap, Heap, 8)
+	val list = ArrayList<Int>(Heap, 8).allocWith(Heap)
 
 	list.add(10)
 	list.add(20)

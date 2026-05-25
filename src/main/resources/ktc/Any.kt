@@ -20,4 +20,10 @@ open class Any {
     open fun dispose() = error("Transpiler intrinsic")
 }
 
-fun Any.Companion.allocWith(allocator: Allocator, vararg args: Any?): @Ptr Any = error("Transpiler intrinsic")
+/**
+Heap-allocates the constructed receiver via [allocator] and returns an owning `@Ptr` to it.
+The construction is fused with the allocation — the object is built directly in the allocated
+storage (no stack temporary).
+Usage: val p = Vec2(1.0f, 2.0f).allocWith(Heap)   /   val a = Array<Int>(n).allocWith(Heap)
+*/
+fun <T> T.allocWith(allocator: Allocator): @Ptr T = error("Transpiler intrinsic")

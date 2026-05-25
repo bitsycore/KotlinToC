@@ -32,7 +32,7 @@ interface MutableList<T> : List<T> {
 
 class ArrayList<T>(private val allocator: @Ptr Allocator, capacity: Int) : MutableList<T> {
 
-	private var buf: @Ptr Array<T> = Array<T>.allocWith(allocator, if (capacity > 0) capacity else 4)!!
+	private var buf: @Ptr Array<T> = Array<T>(if (capacity > 0) capacity else 4).allocWith(allocator)!!
 
 	override var size: Int = 0
 		private set

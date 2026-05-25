@@ -205,7 +205,7 @@ class ArrayUnitTest : TranspilerTestBase() {
     // resizeWith on a RawArray reallocs the bare pointer (no VarArr) with the right element size.
     @Test fun resizeWithRawArrayReallocsBarePointer() {
         val r = transpileMainWithStdlib("""
-            var raw: @Ptr RawArray<Int> = RawArray<Int>.allocWith(Heap, 4)!!
+            var raw: @Ptr RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
             raw = raw.resizeWith(Heap, 8)
         """)
         r.sourceContains("reallocMem")

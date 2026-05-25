@@ -10,13 +10,13 @@ fun arrayListAllocTest() {
     val stack2: ArrayList<Float> = ArrayList(Heap, 8)
     defer { stack2.dispose() }
     // alloc ArrayList on heap, right infered
-    val heap1 = ArrayList<Int>.allocWith(Heap, Heap, 2)
+    val heap1 = ArrayList<Int>(Heap, 2).allocWith(Heap)
     defer {
         heap1.dispose()
         Heap.freeMem(heap1)
     }
     // alloc ArrayList on heap, left infered
-    val heap2: @Ptr ArrayList<Float> = ArrayList.allocWith(Heap, Heap, 1)
+    val heap2: @Ptr ArrayList<Float> = ArrayList(Heap, 1).allocWith(Heap)
     defer {
         heap2.dispose()
         Heap.freeMem(heap2)
@@ -250,13 +250,13 @@ fun arrayListWithNullableAllocTest() {
     val stack2: ArrayList<Float?> = ArrayList(Heap, 2)
     defer { stack2.dispose() }
     // alloc ArrayList on heap, right infered
-    val heap1 = ArrayList<Int?>.allocWith(Heap, Heap, 2)
+    val heap1 = ArrayList<Int?>(Heap, 2).allocWith(Heap)
     defer {
         heap1.dispose()
         Heap.freeMem(heap1)
     }
     // alloc ArrayList on heap, left infered
-    val heap2: @Ptr ArrayList<Float?> = ArrayList.allocWith(Heap, Heap, 4)
+    val heap2: @Ptr ArrayList<Float?> = ArrayList(Heap, 4).allocWith(Heap)
     defer {
         heap2.dispose()
         Heap.freeMem(heap2)
@@ -351,13 +351,13 @@ fun arrayListDataClassAllocTest() {
     val stack2: ArrayList<Vec2> = ArrayList(Heap, 8)
     defer { stack2.dispose() }
     // alloc ArrayList on heap, right infered
-    val heap1 = ArrayList<Vec3>.allocWith(Heap, Heap, 2)
+    val heap1 = ArrayList<Vec3>(Heap, 2).allocWith(Heap)
     defer {
         heap1.dispose()
         Heap.freeMem(heap1)
     }
     // alloc ArrayList on heap, left infered
-    val heap2: @Ptr ArrayList<Vec3> = ArrayList.allocWith(Heap, Heap, 1)
+    val heap2: @Ptr ArrayList<Vec3> = ArrayList(Heap, 1).allocWith(Heap)
     defer {
         heap2.dispose()
         Heap.freeMem(heap2)
