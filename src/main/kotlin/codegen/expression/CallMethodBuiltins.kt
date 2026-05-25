@@ -1,9 +1,6 @@
 package com.bitsycore.ktc.codegen.expression
 
-import com.bitsycore.ktc.ast.Arg
-import com.bitsycore.ktc.ast.DotExpr
-import com.bitsycore.ktc.ast.NameExpr
-import com.bitsycore.ktc.ast.StrLit
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
@@ -46,7 +43,17 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 	if (inRecvType == "ktc_StrBuf" || inRecvType == "StringBuffer") {
 		val vSbRef = "&($inRecv)"
 		when (vMethod) {
-			"append"       -> if (inArgs.size == 1) return "ktc_core_sb_append_str($vSbRef, ${genExpr(inArgs[0].expr)})"
+			"append"       -> if (inArgs.size == 1) {
+					val vArg = inArgs[0].expr
+					if (vArg is StrTemplateExpr) {
+						genStrTemplateToSb(vArg, vSbRef)
+						return ""
+					}
+					val vArgKtc = inferExprTypeKtc(vArg) ?: KtcType.Str
+					val vExpr = genExpr(vArg)
+					preStmts += genSbAppendKtc(vSbRef, vExpr, vArgKtc)
+					return ""
+				}
 			"appendInt"    -> if (inArgs.size == 1) return "ktc_core_sb_append_int($vSbRef, ${genExpr(inArgs[0].expr)})"
 			"appendLong"   -> if (inArgs.size == 1) return "ktc_core_sb_append_long($vSbRef, ${genExpr(inArgs[0].expr)})"
 			"appendFloat"  -> if (inArgs.size == 1) return "ktc_core_sb_append_float($vSbRef, ${genExpr(inArgs[0].expr)})"

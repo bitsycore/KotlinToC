@@ -24,7 +24,9 @@ class DemoApp(
 	val crosshairCol:  SDL3.Color,
 	val leashColor:    SDL3.Color,
 	var box:           SDL3.FRect,
-	val logArena:      @Ptr Arena,
+	val logArena1:     @Ptr Arena,
+	val logArena2:     @Ptr Arena,
+	val frameArena:    @Ptr Arena,
 	var mouseX:        Float        = 0.0f,
 	var mouseY:        Float        = 0.0f,
 	var hoverPulse:    Float        = 0.0f,
@@ -55,7 +57,7 @@ class DemoApp(
 	var logLine4:      String       = "",
 	var logLine5:      String       = "",
 	var logCount:      Int          = 0,
-	var statsLine:     String       = "",
+	var arenaFlip:     Boolean      = false,
 	var movState:      MovementState = MovementState(),
 	var pulse:         PulseState    = PulseState(),
 	var spriteState:   SpriteState   = SpriteState()
@@ -65,6 +67,15 @@ class DemoApp(
 	// ══════════════════════════════════════════════════════════
 
 	fun onQuit() { quit = true }
+
+	fun logBuffer(cap: Int): StringBuffer {
+		val current = if (arenaFlip) logArena2 else logArena1
+		if (current.remaining() >= cap) return current.stringBuffer(cap)
+		val other = if (arenaFlip) logArena1 else logArena2
+		other.reset()
+		arenaFlip = !arenaFlip
+		return other.stringBuffer(cap)
+	}
 
 	fun logEvent(msg: String) {
 		logLine5 = logLine4
@@ -86,38 +97,33 @@ class DemoApp(
 			SDL3.Scancode.F -> {
 				fullscreen = !fullscreen
 				window.setFullscreen(fullscreen)
-				val sb = logArena.stringBuffer(64)
-				sb.append("Fullscreen: ")
-				sb.appendBool(fullscreen)
+				val sb = logBuffer(64)
+				sb("Fullscreen: $fullscreen")
 				logEvent(sb.toString())
 			}
 			SDL3.Scancode.L -> {
 				logicalMode = !logicalMode
 				if (logicalMode) renderer.setLogicalSize(800, 600) else renderer.clearLogicalSize()
-				val sb = logArena.stringBuffer(64)
-				sb.append("Logical mode: ")
-				sb.appendBool(logicalMode)
+				val sb = logBuffer(64)
+				sb("Logical mode: $logicalMode")
 				logEvent(sb.toString())
 			}
 			SDL3.Scancode.H -> {
 				showHelp = !showHelp
-				val sb = logArena.stringBuffer(32)
-				sb.append("Help: ")
-				sb.appendBool(showHelp)
+				val sb = logBuffer(32)
+				sb("Help: $showHelp")
 				logEvent(sb.toString())
 			}
 			SDL3.Scancode.T -> {
 				showHud = !showHud
-				val sb = logArena.stringBuffer(32)
-				sb.append("HUD: ")
-				sb.appendBool(showHud)
+				val sb = logBuffer(32)
+				sb("HUD: $showHud")
 				logEvent(sb.toString())
 			}
 			SDL3.Scancode.I -> {
 				showTooltips = !showTooltips
-				val sb = logArena.stringBuffer(32)
-				sb.append("Tooltips: ")
-				sb.appendBool(showTooltips)
+				val sb = logBuffer(32)
+				sb("Tooltips: $showTooltips")
 				logEvent(sb.toString())
 			}
 			SDL3.Scancode.E -> {
@@ -132,16 +138,8 @@ class DemoApp(
 					val text = "sprite($clipboardSprX, $clipboardSprY) box($clipboardBoxX, $clipboardBoxY)"
 					SDL3.setClipboardText(text)
 					clipboardTimer = 2.0f
-					val sb = logArena.stringBuffer(80)
-					sb.append("Clipboard: sprite(")
-					sb.appendInt(clipboardSprX)
-					sb.append(", ")
-					sb.appendInt(clipboardSprY)
-					sb.append(") box(")
-					sb.appendInt(clipboardBoxX)
-					sb.append(", ")
-					sb.appendInt(clipboardBoxY)
-					sb.append(")")
+					val sb = logBuffer(80)
+					sb("Clipboard: sprite($clipboardSprX, $clipboardSprY) box($clipboardBoxX, $clipboardBoxY)")
 					logEvent(sb.toString())
 				}
 			}
@@ -168,21 +166,15 @@ class DemoApp(
 				if (box.contains(SDL3.FPoint(mx, my))) {
 					box = box.copy(x = mx - box.w / 2.0f, y = my - box.h / 2.0f)
 					println(box)
-					val sb = logArena.stringBuffer(48)
-					sb.append("Box drag: ")
-					sb.appendInt(mx.toInt())
-					sb.append(",")
-					sb.appendInt(my.toInt())
+					val sb = logBuffer(48)
+					sb("Box drag: ${mx.toInt()},${my.toInt()}")
 					logEvent(sb.toString())
 				}
 			}
 			SDL3.Mouse.Right -> {
 				pulse.spawn(mx, my)
-				val sb = logArena.stringBuffer(48)
-				sb.append("Pulse: ")
-				sb.appendInt(mx.toInt())
-				sb.append(",")
-				sb.appendInt(my.toInt())
+				val sb = logBuffer(48)
+				sb("Pulse: ${mx.toInt()},${my.toInt()}")
 				logEvent(sb.toString())
 			}
 		}
@@ -197,11 +189,8 @@ class DemoApp(
 		val cx    = box.x + box.w / 2.0f
 		val cy    = box.y + box.h / 2.0f
 		box       = SDL3.FRect(cx - cw / 2.0f, cy - ch / 2.0f, cw, ch)
-		val sb = logArena.stringBuffer(48)
-		sb.append("Resize: ")
-		sb.appendInt(cw.toInt())
-		sb.append("x")
-		sb.appendInt(ch.toInt())
+		val sb = logBuffer(48)
+		sb("Resize: ${cw.toInt()}x${ch.toInt()}")
 		logEvent(sb.toString())
 	}
 
@@ -210,6 +199,7 @@ class DemoApp(
 	// ══════════════════════════════════════════════════════════
 
 	fun update(dt: Float) {
+		frameArena.reset()
 		updateFpsTitle(dt)
 		moveBox(dt)
 		if (SDL3.Mouse.isButtonDown(SDL3.Mouse.Right)) pulse.spawn(mouseX, mouseY)
@@ -229,17 +219,6 @@ class DemoApp(
 			lastFps = (frameCount.toFloat() / titleTimer).toInt()
 			val wsize = window.getSize()
 			window.setTitle("SDL3 Demo | FPS: $lastFps | ${wsize.x.toInt()}x${wsize.y.toInt()} | H=help")
-
-			// Build persistent stats line via arena — displayed every frame until next update
-			val sb = logArena.stringBuffer(80)
-			sb.append("FPS:")
-			sb.appendInt(lastFps)
-			sb.append(" Arena:")
-			sb.appendInt(logArena.used())
-			sb.append("/")
-			sb.appendInt(logArena.remaining() + logArena.used())
-			sb.append("b")
-			statsLine = sb.toString()
 
 			titleTimer = 0.0f
 			frameCount = 0
@@ -360,7 +339,7 @@ class DemoApp(
 	private fun renderEventLog(ws: SDL3.FPoint) {
 		val charH = renderer.debugTextCharSize().toFloat()
 		val lineH = charH + 2.0f
-		val panelW = 240.0f
+		val panelW = 310.0f
 		val panelH = lineH * 7.0f + 8.0f
 		val px = ws.x - panelW - 10.0f
 		val py = ws.y - panelH - 10.0f
@@ -372,11 +351,10 @@ class DemoApp(
 
 		var ly = py + 4.0f
 
-		// Stats line (persistent from arena, updated once per second)
 		renderer.setDrawColor(SDL3.Color(100, 200, 255, 255))
-		if (statsLine.length > 0) {
-			renderer.drawDebugText(px + 6.0f, ly, statsLine)
-		}
+		val statsSb = frameArena.stringBuffer(80)
+		statsSb("FPS:$lastFps A1:${logArena1.used()}/${logArena1.remaining() + logArena1.used()}b A2:${logArena2.used()}/${logArena2.remaining() + logArena2.used()}b")
+		renderer.drawDebugText(px + 6.0f, ly, statsSb.toString())
 		ly += lineH
 
 		// Event log lines (persistent strings from arena)

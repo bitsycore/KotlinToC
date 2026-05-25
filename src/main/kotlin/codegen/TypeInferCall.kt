@@ -175,6 +175,10 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 ?: collectAllIfaceMethods(vIfaceInfo).find { it.name == name }
             if (vIfaceMethod?.returnType != null) return resolveTypeRefStr(vIfaceMethod.returnType)
         }
+        if (currentClass != null) {
+            val vClassMethod = classes[currentClass]?.methods?.find { it.name == name }
+            if (vClassMethod?.returnType != null) return resolveMethodReturnType(currentClass!!, vClassMethod.returnType)
+        }
     }
     if (e.callee is DotExpr) {
         // Package-qualified call: infer return type from cross-package function
