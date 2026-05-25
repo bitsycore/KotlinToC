@@ -158,6 +158,16 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             }
         }
         activeLambdas[name]?.returnType?.let { return it.toInternalStr }
+        val vInlineCandidates = inlineFunDecls[name]
+        if (!vInlineCandidates.isNullOrEmpty()) {
+            val vArgTypes = e.args.map { inferExprType(it.expr) }
+            val vMatch = vInlineCandidates.find { decl ->
+                decl.returnType != null && decl.receiver == null &&
+                decl.params.size == vArgTypes.size &&
+                decl.params.indices.all { i -> vArgTypes[i] == decl.params[i].type.name }
+            } ?: vInlineCandidates.firstOrNull { it.returnType != null && it.receiver == null }
+            if (vMatch?.returnType != null) return resolveTypeRefStr(vMatch.returnType)
+        }
         funSigs[name]?.returnType?.let { return resolveTypeRefStr(it) }
         if (currentExtRecvType != null && interfaces.containsKey(currentExtRecvType)) {
             val vIfaceInfo = interfaces[currentExtRecvType]!!

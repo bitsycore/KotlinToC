@@ -94,10 +94,11 @@ fun main(args: Array<String>) {
 	val movState = MovementState()
 	val speed    = 200.0f
 
-	// Sprite position trail (circular buffer of 24 past positions)
-	val trailX    = FloatArray(24)
-	val trailY    = FloatArray(24)
-	var trailHead = 0
+	// Sprite position + angle trail (circular buffer of 24 past states)
+	val trailX     = FloatArray(24)
+	val trailY     = FloatArray(24)
+	val trailAngle = FloatArray(24)
+	var trailHead  = 0
 
 	// Tile cycling state
 	var atlasTileTimer = 0.0f
@@ -245,9 +246,10 @@ fun main(args: Array<String>) {
 		val lerpT = clamp(dt * 8.0f, 0.0f, 1.0f)
 		spritePos = spritePos.lerpTo(SDL3.FPoint(mouseX, mouseY), lerpT)
 
-		// Record sprite position in trail circular buffer
-		trailX[trailHead] = spritePos.x
-		trailY[trailHead] = spritePos.y
+		// Record sprite position + angle in trail circular buffer
+		trailX[trailHead]     = spritePos.x
+		trailY[tdrailHead]     = spritePos.y
+		trailAngle[trailHead] = spriteAngle
 		trailHead = (trailHead + 1) % 24
 
 		// Cycle atlas tile every 0.5 s
@@ -364,14 +366,14 @@ fun main(args: Array<String>) {
 			renderer.setBlendMode(SDL3.BlendMode.None)
 		}
 
-		// Ghost sprite trail: fading echoes of past sprite positions
+		// Ghost sprite trail: fading echoes of past sprite positions, rotated at recorded angle
 		sprite.setColorMod(255, 255, 255)
 		for (i in 0 until 24) {
 			val tidx   = (trailHead + i) % 24
 			val talpha = (i + 1) * 10
 			sprite.setAlphaMod(talpha)
 			val ghostDst = SDL3.FRect(trailX[tidx] - 16.0f, trailY[tidx] - 16.0f, 32.0f, 32.0f)
-			renderer.renderTexture(sprite, ghostDst)
+			renderer.renderTextureRotated(sprite, ghostDst, trailAngle[tidx], SDL3.Flip.None)
 		}
 		sprite.setColorMod(cModR, cModG, cModB)
 		sprite.setAlphaMod(spriteAlpha.toInt())

@@ -18,7 +18,7 @@ inline fun SDL3.FPoint.length(): Float = c.sqrtf(this.x * this.x + this.y * this
 
 /** Unit vector in the same direction; returns zero-vector if length is zero. */
 inline fun SDL3.FPoint.normalized(): SDL3.FPoint {
-    val len = c.sqrtf(this.x * this.x + this.y * this.y)
+    val len: Float = c.sqrtf(this.x * this.x + this.y * this.y)
     if (len == 0.0f) return SDL3.FPoint(0.0f, 0.0f)
     return SDL3.FPoint(this.x / len, this.y / len)
 }
