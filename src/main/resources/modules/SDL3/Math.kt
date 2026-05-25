@@ -70,3 +70,33 @@ inline fun SDL3.FRect.center(): SDL3.FPoint = SDL3.FPoint(this.x + this.w / 2.0f
 /** Move rect so that its center is at the given point. */
 inline fun SDL3.FRect.centerOn(cx: Float, cy: Float): SDL3.FRect =
     SDL3.FRect(cx - this.w / 2.0f, cy - this.h / 2.0f, this.w, this.h)
+
+// ==================
+// MARK: Scalar helpers
+// ==================
+
+/** Linear interpolation between a and b by t (0..1). */
+inline fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+/** Clamp value to [lo, hi]. */
+inline fun clamp(value: Float, lo: Float, hi: Float): Float =
+    if (value < lo) lo else if (value > hi) hi else value
+
+/** Clamp value to [lo, hi]. */
+inline fun clamp(value: Int, lo: Int, hi: Int): Int =
+    if (value < lo) lo else if (value > hi) hi else value
+
+// ==================
+// MARK: FPoint lerp / clamp
+// ==================
+
+/** Linearly interpolate between two points. */
+inline fun SDL3.FPoint.lerpTo(other: SDL3.FPoint, t: Float): SDL3.FPoint =
+    SDL3.FPoint(lerp(this.x, other.x, t), lerp(this.y, other.y, t))
+
+/** Clamp point so that it stays inside the given rect. */
+inline fun SDL3.FPoint.clampTo(rect: SDL3.FRect): SDL3.FPoint =
+    SDL3.FPoint(
+        clamp(this.x, rect.x, rect.x + rect.w),
+        clamp(this.y, rect.y, rect.y + rect.h)
+    )

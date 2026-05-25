@@ -40,4 +40,37 @@ fun SDL3.Window.getPosition(): SDL3.FPoint {
 }
 
 /** Flags bitmask for the window (SDL_WindowFlags). */
-fun SDL3.Window.getFlags(): Int = c.SDL_GetWindowFlags(this.handle)
+inline fun SDL3.Window.getFlags(): Int = c.SDL_GetWindowFlags(this.handle)
+
+/** Set minimum window size for resizable windows. */
+inline fun SDL3.Window.setMinimumSize(w: Int, h: Int) {
+    c.SDL_SetWindowMinimumSize(this.handle, w, h)
+}
+
+/** Set maximum window size for resizable windows. */
+inline fun SDL3.Window.setMaximumSize(w: Int, h: Int) {
+    c.SDL_SetWindowMaximumSize(this.handle, w, h)
+}
+
+/** Center the window on its current display. */
+inline fun SDL3.Window.centerOnScreen() {
+    c.SDL_SetWindowPosition(this.handle, 0x2FFF0000, 0x2FFF0000)
+}
+
+/** Set the window border/decoration state. */
+inline fun SDL3.Window.setBordered(bordered: Boolean) {
+    c.SDL_SetWindowBordered(this.handle, bordered)
+}
+
+/** Set window always-on-top. */
+inline fun SDL3.Window.setAlwaysOnTop(onTop: Boolean) {
+    c.SDL_SetWindowAlwaysOnTop(this.handle, onTop)
+}
+
+/** Current pixel size of the window (after scaling / HiDPI). */
+inline fun SDL3.Window.getSizeInPixels(): SDL3.FPoint {
+    var w = 0
+    var h = 0
+    c.SDL_GetWindowSizeInPixels(this.handle, c.addr(w), c.addr(h))
+    return SDL3.FPoint(w.toFloat(), h.toFloat())
+}

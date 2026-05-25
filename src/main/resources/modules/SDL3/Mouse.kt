@@ -14,15 +14,15 @@ inline val SDL3.Mouse.WheelNormal  get() = c.SDL_MOUSEWHEEL_NORMAL
 inline val SDL3.Mouse.WheelFlipped get() = c.SDL_MOUSEWHEEL_FLIPPED
 
 /** Query current mouse position. Snapshot at call time. */
-fun SDL3.Mouse.position(): SDL3.FPoint {
+inline fun SDL3.Mouse.position(): SDL3.FPoint {
     var mx: Float = 0.0f
     var my: Float = 0.0f
     c.SDL_GetMouseState(c.addr(mx), c.addr(my))
     return SDL3.FPoint(mx, my)
 }
 
-/** True if the given mouse button is currently held down. */
-fun SDL3.Mouse.isButtonDown(button: Int): Boolean {
+/** True if the given mouse button is currently held down (polled, not event-based). */
+inline fun SDL3.Mouse.isButtonDown(button: Int): Boolean {
     var mx: Float = 0.0f
     var my: Float = 0.0f
     val mask = c.SDL_GetMouseState(c.addr(mx), c.addr(my))

@@ -54,7 +54,7 @@ inline fun SDL3.Renderer.setScale(scaleX: Float, scaleY: Float) {
 inline fun SDL3.Renderer.present() { c.SDL_RenderPresent(this.handle) }
 
 /** Pixel dimensions of the render output (window or render target). */
-fun SDL3.Renderer.outputSize(): SDL3.FPoint {
+inline fun SDL3.Renderer.outputSize(): SDL3.FPoint {
     var w = 0
     var h = 0
     c.SDL_GetRenderOutputSize(this.handle, c.addr(w), c.addr(h))
@@ -82,4 +82,9 @@ inline fun SDL3.Renderer.clearClipRect() {
 /** Set the logical presentation size for scaling. */
 inline fun SDL3.Renderer.setLogicalSize(w: Int, h: Int) {
     c.SDL_SetRenderLogicalPresentation(this.handle, w, h, c.SDL_LOGICAL_PRESENTATION_LETTERBOX)
+}
+
+/** Reset logical presentation back to native window resolution. */
+inline fun SDL3.Renderer.clearLogicalSize() {
+    c.SDL_SetRenderLogicalPresentation(this.handle, 0, 0, c.SDL_LOGICAL_PRESENTATION_DISABLED)
 }

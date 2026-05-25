@@ -208,7 +208,11 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			} else null
 		val (vIfaceExt, ifaceConcrete) = resolveIfaceExt(vClassInfo.baseName, method, genericExtDecl)
 		if (vIfaceExt != null) genericExtDecl = vIfaceExt
-		val effectiveDecl  = methodDecl ?: genericExtDecl
+		val regularExtDecl = if (methodDecl == null && genericExtDecl == null)
+			extensionFuns[vClassInfo.baseName]?.find { it.name == method }
+				?: extensionFuns[vClassInfo.flatName]?.find { it.name == method }
+			else null
+		val effectiveDecl  = methodDecl ?: genericExtDecl ?: regularExtDecl
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.annotations?.any { it.name == "Ptr" } == true
 		val isNullableRecv = effectiveDecl?.receiver?.nullable == true
