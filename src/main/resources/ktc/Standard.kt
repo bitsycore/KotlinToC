@@ -1,4 +1,4 @@
-package ktc.std
+package ktc
 
 /**
  * Always Exit with [NotImplementedError] stating that operation is not implemented.
