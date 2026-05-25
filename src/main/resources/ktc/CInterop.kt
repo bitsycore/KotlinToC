@@ -100,3 +100,7 @@ File-level annotations
     @file:cIncludeRelative("util.h")    →  #include "util.h"
 */
 object c
+
+inline fun <T> c.zeroed(vararg params: Any): T
+inline fun <T> c.init(vararg params: Any): T
+inline fun <T> c.addr(value: T): @Ptr T
