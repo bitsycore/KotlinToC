@@ -5,6 +5,29 @@ package ktc
 // ==================================================
 
 /**
+A length-tracked array of T elements. In C this is a VarArr struct `{ T* ptr; ktc_Int len; }`,
+passed by value. Stack-allocated by default (the factory functions below); heap-allocate via
+`Array<T>.allocWith(allocator, n)`.
+
+A bare `Array<T>` field cannot be stored in a class/object — use `@Size(N) Array<T>` (fixed,
+becomes `T[N]`) or `@Ptr Array<T>` (the same VarArr, but safe to pass and return).
+
+Element access uses `arr[i]`; `size` returns the element count. Related views:
+`asRaw()` → `@Ptr RawArray<T>` (bare data pointer), and `RawArray<T>.asArray(n)` back to a VarArr.
+ */
+@DocumentationOnly
+class Array<T> {
+    /** Number of elements in the array. */
+    val size: Int = error("Transpiler intrinsic")
+
+    /** Returns the element at [inIndex]. */
+    operator fun get(inIndex: Int): T = error("Transpiler intrinsic")
+
+    /** Sets the element at [inIndex] to [inValue]. */
+    operator fun set(inIndex: Int, inValue: T): Unit = error("Transpiler intrinsic")
+}
+
+/**
 Construct a stack array from a fixed list of values.
 Usage: val arr = arrayOf(1, 2, 3)
 */
