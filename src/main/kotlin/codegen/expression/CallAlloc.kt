@@ -8,6 +8,36 @@ import com.bitsycore.ktc.types.KtcType
 // genAllocWithCallOrNull: handles Foo(ctorArgs...).allocWith(alloc) / Array<T>(n).allocWith(alloc)
 // genCtorCallOrNull:      handles Foo(...) constructor calls for known and generic classes
 
+/* Emit `for (it=0; it<size; it++) dataPtr[it] = <lambda body>;` into preStmts.
+Mirrors tryArrayOfInit's stack-array lambda-init loop, for the heap-allocated path. */
+private fun CCodeGen.emitArrayInitLambda(dataPtr: String, sizeExpr: String, lambda: LambdaExpr) {
+	val vItName = lambda.params.firstOrNull() ?: "it"
+	preStmts += "for (ktc_Int $vItName = 0; $vItName < ($sizeExpr); $vItName++) {"
+	pushScope()
+	defineVar(vItName, "Int")
+	for ((vIdx, vStmt) in lambda.body.withIndex()) {
+		val vIsLast = vIdx == lambda.body.lastIndex
+		when {
+			vIsLast && vStmt is ExprStmt ->
+				preStmts += "    $dataPtr[$vItName] = ${genExpr(vStmt.expr)};"
+			vStmt is ExprStmt ->
+				preStmts += "    (void)${genExpr(vStmt.expr)};"
+			vStmt is VarDeclStmt -> {
+				val vTypeKtc  = vStmt.type?.let { resolveTypeName(it) }
+					?: parseResolvedTypeName(inferExprType(vStmt.init) ?: "Int")
+				defineVarKtc(vStmt.name, vTypeKtc)
+				val vCT       = cTypeStr(vTypeKtc)
+				val vMut      = if (vStmt.mutable) "" else "const "
+				val vInitExpr = vStmt.init?.let { genExpr(it) } ?: "0"
+				preStmts += "    ${vMut}$vCT ${vStmt.name} = $vInitExpr;"
+				}
+			else -> codegenError("Unsupported statement in Array init lambda body (heap path)")
+			}
+		}
+	popScope()
+	preStmts += "}"
+	}
+
 /* Emit a preStmt that wraps [allocExpr] in a ktc_IfacePtr for the Allocator vtable of [name]. */
 private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: String) {
 	val vConcrete = typeFlatName(name)
@@ -84,7 +114,8 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		return Pair(vAllocExpr, false)
 		}
 
-	// Array<T>(size).allocWith(allocator) or RawArray<T>(size).allocWith(allocator)
+	// Array<T>(size).allocWith(allocator), Array<T>(size) { init }.allocWith(allocator),
+	// or RawArray<T>(size).allocWith(allocator)
 	if (vClassName == "Array" || vClassName == "RawArray") {
 		val vElemName = when {
 			vTypeArgs.isNotEmpty() ->
@@ -99,6 +130,11 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val (vIfExpr, _) = resolveAllocIface(vAllocKtc)
 		val vT = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSizeExpr), ${ktSrcStr()});"
+		// Array<T>(size) { init } — run the init lambda over the freshly allocated slots.
+		// (RawArray has no lambda-init form.)
+		if (vClassName == "Array" && vCtorArgs.size >= 2 && vCtorArgs[1].expr is LambdaExpr) {
+			emitArrayInitLambda("${vT}_ptr", vSizeExpr, vCtorArgs[1].expr as LambdaExpr)
+			}
 		if (vClassName == "Array") {
 				val vVarArrType = varArrTypeName(vElemC)
 				preStmts += "$vVarArrType $vT = {${vT}_ptr, $vSizeExpr};"

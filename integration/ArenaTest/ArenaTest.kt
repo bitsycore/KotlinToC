@@ -127,6 +127,34 @@ fun testMultipleAllocs() {
     println("OK")
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * 6. used() / remaining() invariants across allocations
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+fun testCapacityInvariants() {
+    println("--- testCapacityInvariants ---")
+    val vBuf = ByteArray(256)
+    val vArena = Arena(vBuf.ptr(), vBuf.size)
+
+    // After every alloc: used + remaining must equal the original capacity.
+    val total = 256
+    var prevUsed = 0
+    for (i in 0 until 4) {
+        Vec2(i.toFloat(), (i * 2).toFloat()).allocWith(vArena)
+        val u = vArena.used()
+        val r = vArena.remaining()
+        if (u + r != total) error("invariant broken at $i: used=$u remaining=$r")
+        if (u <= prevUsed) error("used didn't grow at $i: prev=$prevUsed now=$u")
+        prevUsed = u
+    }
+
+    // After reset(): used == 0, remaining == cap.
+    vArena.reset()
+    if (vArena.used() != 0) error("after reset used=${vArena.used()}")
+    if (vArena.remaining() != total) error("after reset remaining=${vArena.remaining()}")
+    println("OK")
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * main
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -137,5 +165,6 @@ fun main(args: Array<String>) {
     testInterfaceDispatch()
     testArenaStringBuffer()
     testMultipleAllocs()
+    testCapacityInvariants()
     println("All tests passed!")
 }

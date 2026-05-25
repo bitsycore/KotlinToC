@@ -191,10 +191,109 @@ fun testAliasing() {
     println("alias ok")
 }
 
+fun testRawResize() {
+    // Grow: first N elements must survive the realloc.
+    var raw: @Ptr RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
+    for (i in 0 until 4) {
+        raw[i] = (i + 1) * 10           // 10, 20, 30, 40
+    }
+    raw = raw.resizeWith(Heap, 8)
+    for (i in 0 until 4) {
+        if (raw[i] != (i + 1) * 10) error("raw grow lost data at $i: got ${raw[i]}")
+    }
+    // The tail past old size is uninitialized — just write through it to prove it's addressable.
+    for (i in 4 until 8) {
+        raw[i] = i * 100
+    }
+    for (i in 4 until 8) {
+        if (raw[i] != i * 100) error("raw grow tail write failed at $i")
+    }
+
+    // Shrink: first M elements still readable, tail is gone (we can't reach it safely).
+    raw = raw.resizeWith(Heap, 2)
+    if (raw[0] != 10 || raw[1] != 20) error("raw shrink lost head data: ${raw[0]}, ${raw[1]}")
+
+    Heap.freeMem(raw)
+    println("raw resize ok")
+}
+
+fun testHeapArrayInitLambda() {
+    // Array<T>(n) { init }.allocWith(allocator) — lambda must run over the freshly allocated slots.
+    val squares: @Ptr Array<Int> = Array<Int>(8) { it -> it * it }.allocWith(Heap)
+    defer Heap.freeMem(squares)
+    for (i in 0 until 8) {
+        if (squares[i] != i * i) error("heap init lambda failed at $i: expected ${i * i}, got ${squares[i]}")
+    }
+
+    // Zero-init form (no lambda) — slots are uninitialized memory, but the size is correct.
+    val raw: @Ptr Array<Int> = Array<Int>(4).allocWith(Heap)
+    defer Heap.freeMem(raw)
+    if (raw.size != 4) error("alloc size wrong: ${raw.size}")
+    // Write something to prove the buffer is addressable.
+    raw[0] = 7; raw[3] = 11
+    if (raw[0] != 7 || raw[3] != 11) error("alloc writes failed")
+
+    println("heap init lambda ok")
+}
+
+fun testArrayResize() {
+    // Array<T> grown via resizeWith preserves the original contents.
+    var arr: @Ptr Array<Int> = Array<Int>(4) { it -> it + 1 }.allocWith(Heap)
+    if (arr.size != 4) error("array size wrong: ${arr.size}")
+
+    arr = arr.resizeWith(Heap, 8)
+    if (arr.size != 8) error("after grow size wrong: ${arr.size}")
+    for (i in 0 until 4) {
+        if (arr[i] != i + 1) error("Array.resizeWith lost data at $i: got ${arr[i]}")
+    }
+    // Tail past old size: write to prove it's reachable.
+    for (i in 4 until 8) {
+        arr[i] = i + 100
+    }
+    for (i in 4 until 8) {
+        if (arr[i] != i + 100) error("Array.resizeWith tail unwritable at $i")
+    }
+
+    // Shrink: head must survive.
+    arr = arr.resizeWith(Heap, 2)
+    if (arr.size != 2) error("after shrink size wrong: ${arr.size}")
+    if (arr[0] != 1 || arr[1] != 2) error("Array.resizeWith shrink head: ${arr[0]}, ${arr[1]}")
+
+    Heap.freeMem(arr)
+    println("array resize ok")
+}
+
+fun testArrayCopyWith() {
+    // copyWith allocates a new buffer with the same data — modifying the copy must not touch the original.
+    val src: @Ptr Array<Int> = Array<Int>(4) { it -> it * 10 }.allocWith(Heap)
+    defer Heap.freeMem(src)
+    val dst: @Ptr Array<Int> = src.copyWith(Heap)
+    defer Heap.freeMem(dst)
+
+    if (dst.size != src.size) error("copy size mismatch")
+    for (i in 0 until 4) {
+        if (dst[i] != src[i]) error("copy content mismatch at $i")
+    }
+    // Mutate the copy and verify isolation.
+    dst[0] = 999
+    if (src[0] != 0) error("copyWith aliased the source! src[0]=${src[0]}")
+
+    println("array copyWith ok")
+}
+
+// NOTE: Pair<T,T>.toList(allocator) / Triple<T,T,T>.toList(allocator) are defined
+// in stdlib Tuples.kt but their codegen has multiple bugs (receiver fields not
+// $self-qualified, wrong namespace for the generic List<T> return, broken vararg
+// packing through listOf). Filed as a known limitation — see Tuples.kt.
+
 fun main() {
     testArrayPtr()
     testFill()
     testAliasing()
+    testRawResize()
+    testHeapArrayInitLambda()
+    testArrayResize()
+    testArrayCopyWith()
 
 
 

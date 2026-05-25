@@ -297,4 +297,96 @@ class HeapUnitTest : TranspilerTestBase() {
         val r = transpileMain("val c = Counter(\"hello\")", decls = decl)
         r.sourceContains("\$self.count = 0;")
     }
+
+    // ── @Ptr Allocator forwarding (regression for CallArgs trampoline-rewrap bug) ────
+
+    // When a function takes @Ptr Allocator and forwards it to another @Ptr-Allocator
+    // call site (here: allocWith), the codegen must forward the existing IfacePtr
+    // directly — NOT wrap it again with a bogus ktc_std_Allocator_Allocator_vt.
+    @Test fun ptrAllocatorForwardedToAllocWith() {
+        val r = transpileMainWithStdlib(
+            body  = "val p = mk(Heap)!!",
+            decls = "$vec2Decl\nfun mk(a: @Ptr Allocator): @Ptr Vec2 = Vec2(1.0f, 2.0f).allocWith(a)"
+        )
+        // The bug emitted a reference to a non-existent vtable; ensure it's gone.
+        r.sourceNotContains("ktc_std_Allocator_Allocator_vt")
+        // And the trampoline path through the allocator's vtable is emitted.
+        r.sourceContains("(ktc_std_Allocator_vt*)")
+    }
+
+    // Same forwarding pattern through ArrayList<T>(allocator, n) — exercises the
+    // generic-class ctor arg path in CallArgs.
+    @Test fun ptrAllocatorForwardedToGenericCtor() {
+        val r = transpileMainWithStdlib(
+            body  = "val list = mk(Heap)",
+            decls = "fun mk(a: @Ptr Allocator): ArrayList<Int> = ArrayList<Int>(a, 4)"
+        )
+        r.sourceNotContains("ktc_std_Allocator_Allocator_vt")
+    }
+
+    // Two-level forwarding: the inner function takes @Ptr Allocator from the outer,
+    // which itself got it from the call site. Trampoline must survive both hops.
+    @Test fun ptrAllocatorForwardedTwoLevels() {
+        val r = transpileMainWithStdlib(
+            body  = "val p = outer(Heap)!!",
+            decls = """
+                $vec2Decl
+                fun inner(a: @Ptr Allocator): @Ptr Vec2 = Vec2(1.0f, 2.0f).allocWith(a)
+                fun outer(a: @Ptr Allocator): @Ptr Vec2 = inner(a)
+            """.trimIndent()
+        )
+        r.sourceNotContains("ktc_std_Allocator_Allocator_vt")
+    }
+
+    // Heap-allocated Array<T>(size) { init } via allocWith — the lambda init must
+    // actually run (was silently dropped before the fix).
+    @Test fun heapArrayInitLambdaRuns() {
+        val r = transpileMainWithStdlib(
+            "val sq = Array<Int>(4) { it -> it * it }.allocWith(Heap)"
+        )
+        // Loop variable + array-element assignment must be present.
+        r.sourceContains("for (ktc_Int it = 0; it < (4); it++)")
+        r.sourceMatches(Regex("""\$\d+_ptr\[it\] = \(it \* it\);"""))
+    }
+
+    // Sanity: the no-lambda heap form does NOT emit an init loop.
+    @Test fun heapArrayNoLambdaSkipsLoop() {
+        val r = transpileMainWithStdlib(
+            "val a = Array<Int>(8).allocWith(Heap)"
+        )
+        r.sourceNotContains("for (ktc_Int it = 0;")
+    }
+
+    // ── Known limitations (notYetImpl) ───────────────────────────────────
+
+    // User-package class implementing a stdlib interface (Allocator) injects the
+    // user type into the stdlib package header's CLS_TYPES macro before the user
+    // type is declared, producing 'unknown type name' compile errors. Existing
+    // Allocator impls in stdlib (Heap object, Arena class) work; user classes do not.
+    @Test fun userClassImplementingStdlibAllocator_brokenCrossPackage() {
+        notYetImpl("user-package class : Allocator triggers cross-package CLS_TYPES forward-decl bug")
+    }
+
+    // Pair<T,T>.toList(allocator) / Triple<T,T,T>.toList(allocator) — defined in
+    // stdlib Tuples.kt but never tested. Codegen has multiple bugs: receiver fields
+    // aren't $self-qualified, the generic List<T> return type is placed in the
+    // calling package's namespace, and vararg packing through listOf is broken.
+    @Test fun pairToListWithAllocator_brokenCodegen() {
+        notYetImpl("Pair/Triple.toList(allocator) generic-extension codegen is broken")
+    }
+
+    // Multi-statement lambda body: a VarDeclStmt + tail expression. The emitArrayInitLambda
+    // helper must handle non-trivial bodies (mirrors the stack-array form).
+    @Test fun heapArrayInitLambdaMultiStmt() {
+        val r = transpileMainWithStdlib("""
+            val a = Array<Int>(4) { i ->
+                val doubled = i * 2
+                doubled + 1
+            }.allocWith(Heap)
+        """)
+        r.sourceContains("for (ktc_Int i = 0; i < (4); i++)")
+        r.sourceContains("doubled =")
+        // The final expression is what writes the slot.
+        r.sourceMatches(Regex("""_ptr\[i\] = \(doubled \+ 1\);"""))
+    }
 }
