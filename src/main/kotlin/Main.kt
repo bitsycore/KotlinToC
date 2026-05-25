@@ -303,8 +303,8 @@ fun main(args: Array<String>) {
 
     val outDir = File(outputDir)
     outDir.mkdirs()
-    val ktcDir = File(outDir, "ktc")           // ktc/ for intrinsic + std package output
-    val ktcCoreDir = File(outDir, "ktc.core") // ktc.core/ for C runtime files
+    val ktcDir = File(outDir, "ktc")                  // ktc/ for intrinsic + std package output
+    val ktcCoreDir = File(ktcDir, "core")             // ktc/core/ for C runtime files
     ktcDir.mkdirs()
     ktcCoreDir.mkdirs()
 
@@ -521,7 +521,7 @@ fun main(args: Array<String>) {
     // ── Copy intrinsic files to ktc/core/ ───────────────────────
     for (vName in listOf("ktc_macro.h", "ktc_thread.h", "ktc_thread.c", "ktc_core.h", "ktc_core.c")) {
         val vDst = File(ktcCoreDir, vName)
-        val vSrc = aClass.getResourceAsStream("/ktc.core/$vName")
+        val vSrc = aClass.getResourceAsStream("/ktc/core/$vName")
         if (vSrc != null) {
             vDst.writeText(vSrc.bufferedReader().readText())
         } else {
@@ -532,7 +532,7 @@ fun main(args: Array<String>) {
     // Build full source lists (paths relative to outDir) for compile hints and CMake.
     // ktcOutputNames are paths relative to ktc/ (e.g. "std/Heap").
     // userOutputNames are paths relative to outDir (e.g. "com/example/Point").
-    val vCoreFullSrcs = listOf("ktc.core/ktc_core.c")
+    val vCoreFullSrcs = listOf("ktc/core/ktc_core.c")
     val vKtcFullSrcs  = ktcOutputNames.sorted().map { "ktc/$it.c" }
     val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
     val ktcSources    = (vCoreFullSrcs + vKtcFullSrcs).joinToString(" ")
