@@ -30,6 +30,6 @@ Targets embedded/game/systems code.
 - Note: `allocWith` returns a non-null `@Ptr`. To null-check, declare the var `@Ptr T?` explicitly.
 
 ## Conventions
-- Generated C: K&R style. Doc comments `/** */` with Spirtech prefix convention (`fField` fields, SCREAMING_SNAKE constants).
+- Generated C: K&R style. Doc comments `/** */`.
 - Kotlin codegen source: section markers `// ====` + `// MARK: Name` between major groups; concise comments only when non-obvious.
 - Commits: no Co-Authored-By / AI attribution.

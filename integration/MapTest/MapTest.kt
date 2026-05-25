@@ -1,8 +1,10 @@
 package MapTest
 
 fun main() {
+    println("Hello")
     // Setup
     val map = HashMap<Int, String>(16)
+    println("Hello")
 
     // Test put via operator set
     map[1] = "hello"
@@ -33,6 +35,7 @@ fun main() {
     if (map.size != 3) error("FAIL size after overwrite=${map.size}")
     println("get(1) after overwrite = ${map[1]}")
     println("size after overwrite = ${map.size}")
+
 
     // Test remove
     val removed = map.remove(2)
@@ -74,6 +77,7 @@ fun main() {
     iterMap[20] = "twenty"
     iterMap[30] = "thirty"
     println("iterating map:")
+
     for (entry in iterMap) {
         println("  ${entry.first} -> ${entry.second}")
     }

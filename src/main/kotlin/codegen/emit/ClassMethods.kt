@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.emit
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.inferBlockType
+import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.types.KtcType
 
 
@@ -144,7 +145,8 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 	val vParamDecl     = vParamStr.ifEmpty { "void" }
 	hdr.appendLine("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)($vParamDecl);")
 	impl.appendLine("$cName ${cName}_primaryConstructor($vParamDecl) {")
-	if (ci.bodyProps.isEmpty() && ci.ctorPlainParams.isEmpty() && ci.ctorProps.none { resolveTypeName(it.typeRef).isArrayLike || it.typeRef.nullable }) {
+	val vHasInitBlocks = ci.initBlocks.any { it.stmts.isNotEmpty() }
+	if (!vHasInitBlocks && ci.bodyProps.isEmpty() && ci.ctorPlainParams.isEmpty() && ci.ctorProps.none { resolveTypeName(it.typeRef).isArrayLike || it.typeRef.nullable }) {
 		impl.appendLine("    return ($cName){KTC_OBJ_BASE_INIT ${ci.ctorProps.joinToString(", ") { it.name }}};")
 		} else {
 		impl.appendLine("    $cName \$self = {0};")
@@ -185,6 +187,27 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 					impl.appendLine("    \$self.$vBodyFieldName = $vExpr;")
 					}
 				}
+			}
+		// init { } blocks run after all property initializers, with $self (a value) in scope.
+		if (vHasInitBlocks) {
+			val vPrevState = saveFunState()
+			currentClass  = ci.name
+			selfIsPointer = false
+			pushScope()
+			// Constructor params take priority over the matching $self fields.
+			for (vP in vAllCtorParams) {
+				defineVar(vP.name, LocalVar(ktc = resolveTypeName(vP.typeRef), mutable = true))
+				}
+			for ((vPropName, vPropType) in ci.props) {
+				if (scopes.last().containsKey(vPropName)) continue
+				val vKtc        = resolveTypeName(vPropType)
+				val vCFieldName = if (vPropName in ci.privateProps) "PRIV_$vPropName" else vPropName
+				val vIsOpt      = vPropType.nullable && !vPropType.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+				defineVar(vPropName, LocalVar(ktc = vKtc, mutable = !ci.isValProp(vPropName), optional = vIsOpt, cName = "\$self.$vCFieldName"))
+				}
+			for (vIb in ci.initBlocks) for (vS in vIb.stmts) emitStmt(vS, "    ", true)
+			popScope()
+			restoreFunState(vPrevState)
 			}
 		impl.appendLine("    return \$self;")
 		}

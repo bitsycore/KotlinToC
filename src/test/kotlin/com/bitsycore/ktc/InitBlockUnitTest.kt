@@ -5,14 +5,12 @@ import kotlin.test.Test
 /**
  * Tests for `init { }` blocks in class bodies.
  *
- * NOTE: Init blocks are PARSED and stored in ClassInfo.initBlocks
- * but NOT YET EMITTED for classes (only for objects).
- * All tests here are marked notYetImpl and will be skipped.
+ * Init blocks are emitted into the primary constructor, after all property
+ * initializers, with $self (a value) and constructor params in scope.
  */
 class InitBlockUnitTest : TranspilerTestBase() {
 
     @Test fun singleInitBlock() {
-        notYetImpl("init blocks in classes are parsed but not emitted in primary constructor")
         val r = transpileMain("val p = Player(\"Alice\")", decls = """
             class Player(val name: String) {
                 var health: Int = 0
@@ -23,7 +21,6 @@ class InitBlockUnitTest : TranspilerTestBase() {
     }
 
     @Test fun multipleInitBlocks() {
-        notYetImpl("init blocks in classes are parsed but not emitted in primary constructor")
         val r = transpileMain("val p = Player(0)", decls = """
             class Player(val start: Int) {
                 var x: Int = 0
@@ -33,11 +30,10 @@ class InitBlockUnitTest : TranspilerTestBase() {
             }
         """)
         r.sourceContains("\$self.x = start")
-        r.sourceContains("\$self.y = start + 1")
+        r.sourceContains("\$self.y = (start + 1)")
     }
 
     @Test fun initBlockWithExpression() {
-        notYetImpl("init blocks in classes are parsed but not emitted in primary constructor")
         val r = transpileMain("val p = Player(\"hello\")", decls = """
             class Player(val name: String) {
                 var len: Int = 0
@@ -48,7 +44,6 @@ class InitBlockUnitTest : TranspilerTestBase() {
     }
 
     @Test fun initBlockBeforeBodyPropsExecutesFirst() {
-        notYetImpl("init blocks in classes are parsed but not emitted in primary constructor")
         val r = transpileMain("val p = Player()", decls = """
             class Player {
                 var order: String = ""
