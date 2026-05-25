@@ -30,8 +30,22 @@ class Array<T>(val size: Int) {
 
 }
 
-fun <T> Array<T>.copyOf(inNewSize: Int): Array<T>
-fun <T> Array<T>.fill(inValue: T, inFromIndex: Int = 0, inToIndex: Int = size): Unit
+/** Returns a copy resized to [newSize]; grown slots are zero-filled, shrunk ones truncated. */
+fun <T> Array<T>.copyOf(newSize: Int): Array<T>
+
+/** Fills [fromIndex, toIndex) with [value] (whole array by default). memset when byte-sized / zero, else loop. */
+fun <T> Array<T>.fill(value: T, fromIndex: Int = 0, toIndex: Int = size): Unit
+
+/** Identity view of this array as `@Ptr Array<T>` — same VarArr, but safe to pass and return. */
+fun <T> Array<T>.ptr(): @Ptr Array<T>
+
+/** Heap-copies this array's data via [allocator], returning an owning `@Ptr Array<T>`. */
+fun <T> Array<T>.copyWith(allocator: Allocator): @Ptr Array<T>
+
+/** Reallocates this array to [newSize] elements via [allocator]; contents up to min(old, new) are preserved. */
+fun <T> Array<T>.resizeWith(allocator: Allocator, newSize: Int): @Ptr Array<T>
+
+/** Bare `@Ptr RawArray<T>` aliasing this array's data (no length); caller tracks the count. */
 fun <T> Array<T>.asRaw(): @Ptr RawArray<T>
 
 /**
@@ -93,7 +107,7 @@ val vRaw: @Ptr RawArray<Byte> = RawArray<Byte>.allocWith(Heap, n)
 
 Getting a raw pointer from a regular stack Array<T>:
 val vArr = ByteArray(n)
-val vRaw: @Ptr RawArray<Byte> = vArr.ptr()
+val vRaw: @Ptr RawArray<Byte> = vArr.asRaw()
  */
 class RawArray<T>
 
