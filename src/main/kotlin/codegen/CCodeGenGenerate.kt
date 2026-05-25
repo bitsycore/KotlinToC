@@ -399,5 +399,6 @@ internal fun CCodeGen.generate(): COutput {
 	replaceHdrPlaceholder("/* @VAR_ARR_PRIM_TYPES@ */", buildVarArrSection(varArrGuardedDecls), "typed VarArr types (primitives / external)")
 	replaceHdrPlaceholder("/* @VAR_ARR_TYPES@ */",      buildVarArrSection(varArrDecls),        "typed VarArr types (current-package user types)")
 
-	return COutput(hdr.toString(), vSources)
+	// Collapse 3+ consecutive newlines to 2 (= 1 blank line) so empty sections leave no extra whitespace.
+	return COutput(hdr.toString().replace(Regex("\n{3,}"), "\n\n"), vSources)
 	}
