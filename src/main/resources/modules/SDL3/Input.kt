@@ -19,7 +19,7 @@ inline fun pollEvents(block: (@Ptr c.SDL_Event) -> Unit) {
 /** True if the key with the given scancode is currently held down (polled, not event-based). */
 fun isKeyDown(scancode: Int): Boolean {
     var numKeys: Int = 0
-    val state: @Ptr Int = c.SDL_GetKeyboardState(c.addr(numKeys))
+    val state: @Ptr Byte = c.SDL_GetKeyboardState(c.addr(numKeys))
     if (scancode < 0 || scancode >= numKeys) return false
-    return state[scancode] != 0
+    return state[scancode] != 0.toByte()
 }
