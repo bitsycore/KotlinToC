@@ -172,17 +172,28 @@ Pre-compute concrete return types for generic functions whose declared return ty
 an interface but whose body returns a concrete class instance. Enables stack allocation.
 */
 internal fun CCodeGen.computeGenericFunConcreteReturns() {
-	for ((funName, instantiations) in genericFunInstantiations) {
-		val funDecl = genericFunDecls.find { it.name == funName } ?: continue
-		if (funDecl.returnType == null) continue
-		for (typeArgs in instantiations) {
-			val subst = funDecl.typeParams.zip(typeArgs).toMap()
-			val resolvedReturn = withTypeSubst(subst) { resolveTypeName(funDecl.returnType).toInternalStr }
-			if (interfaces.containsKey(resolvedReturn)) {
-				val concrete = inferConcreteReturnClass(funDecl.body, subst)
-				if (concrete != null) {
-					val mangledName = "${funName}_${typeArgs.joinToString("_")}"
-					genericFunConcreteReturn[mangledName] = concrete
+	var changed = true
+	while (changed) {
+		changed = false
+		val snapshot = genericFunInstantiations.entries.map { (k, v) -> k to v.toList() }
+		for ((funName, instantiations) in snapshot) {
+			val funDecl = genericFunDecls.find { it.name == funName } ?: continue
+			if (funDecl.returnType == null) continue
+			for (typeArgs in instantiations) {
+				val mangledName = "${funName}_${typeArgs.joinToString("_")}"
+				if (genericFunConcreteReturn.containsKey(mangledName)) continue
+				val subst = funDecl.typeParams.zip(typeArgs).toMap()
+				val resolvedReturn = withTypeSubst(subst) { resolveTypeName(funDecl.returnType).toInternalStr }
+				// Check both the monomorphized form (e.g. "List_Int" — set once List<Int> has
+				// been materialized) AND the base name from the unsubstituted declaration
+				// (always known once the interface is loaded).
+				val isIfaceReturn = interfaces.containsKey(resolvedReturn) || interfaces.containsKey(funDecl.returnType.name)
+				if (isIfaceReturn) {
+					val concrete = inferConcreteReturnClass(funDecl.body, subst)
+					if (concrete != null) {
+						genericFunConcreteReturn[mangledName] = concrete
+						changed = true
+						}
 					}
 				}
 			}
@@ -196,24 +207,78 @@ internal fun CCodeGen.inferConcreteReturnClass(body: Block?, subst: Map<String, 
 	for (s in body.stmts) {
 		if (s is VarDeclStmt) varInits[s.name] = s.init
 		}
-	for (s in body.stmts) {
-		if (s is ReturnStmt && s.value is NameExpr) {
-			val varName = s.value.name
-			val init = varInits[varName]
-			if (init is CallExpr) {
-				val calleeName = (init.callee as? NameExpr)?.name
-				if (calleeName != null && classes.containsKey(calleeName) && classes[calleeName]!!.isGeneric) {
-					val resolvedArgs = init.typeArgs.map { subst[it.name] ?: it.name }
-					val mangledName = mangledGenericName(calleeName, resolvedArgs)
-					if (classes.containsKey(mangledName)) return mangledName
-					}
-				if (calleeName != null && classes.containsKey(calleeName) && !classes[calleeName]!!.isGeneric) {
-					return calleeName
-					}
-				}
+	// Resolve a CallExpr to its concrete-return class name, if any.
+	fun resolveCall(call: CallExpr): String? {
+		val calleeName = (call.callee as? NameExpr)?.name ?: return null
+		// Direct concrete-class constructor: Foo(...) or Foo<T>(...).
+		if (classes.containsKey(calleeName) && classes[calleeName]!!.isGeneric) {
+			val resolvedArgs = call.typeArgs.map { subst[it.name] ?: it.name }
+			val mangledName = mangledGenericName(calleeName, resolvedArgs)
+			if (classes.containsKey(mangledName)) return mangledName
 			}
+		if (classes.containsKey(calleeName) && !classes[calleeName]!!.isGeneric) {
+			return calleeName
+			}
+		// Forwarded generic-function call: e.g. `return listOf(...)` where listOf
+		// itself has a known concrete return. Eagerly register the transitive
+		// instantiation so the fixed-point loop processes it on the next pass.
+		val forwardedDecl = genericFunDecls.find { it.name == calleeName } ?: return null
+		val forwardedSubst = inferForwardedSubst(forwardedDecl, call, subst) ?: return null
+		val forwardedTypeArgs = forwardedDecl.typeParams.map { forwardedSubst[it] ?: it }
+		val existing = genericFunInstantiations[calleeName]
+		if (existing == null || forwardedTypeArgs !in existing) {
+			genericFunInstantiations.getOrPut(calleeName) { mutableSetOf() }.add(forwardedTypeArgs)
+			}
+		val forwardedMangled = "${calleeName}_${forwardedTypeArgs.joinToString("_")}"
+		return genericFunConcreteReturn[forwardedMangled]
+		}
+	// Body forms we recognise:
+	//   1. val x = SomeClass(...) ; return x
+	//   2. return SomeClass(...) — single-expression body parses as a ReturnStmt
+	//   3. ExprStmt(SomeClass(...)) — single-expression body parses with implicit return
+	for (s in body.stmts) {
+		val expr: Expr? = when {
+			s is ReturnStmt && s.value is NameExpr   -> varInits[s.value.name]
+			s is ReturnStmt                            -> s.value
+			s is ExprStmt && body.stmts.size == 1     -> s.expr
+			else                                       -> null
+			}
+		if (expr is CallExpr) return resolveCall(expr) ?: continue
 		}
 	return null
+	}
+
+/* Infer the type-arg substitution map for a forwarded generic-function call.
+For `inner(arg1, arg2)` where inner has type params <U>, infer U from the argument types. */
+private fun CCodeGen.inferForwardedSubst(forwardedDecl: FunDecl, call: CallExpr, outerSubst: Map<String, String>): Map<String, String>? {
+	if (forwardedDecl.typeParams.isEmpty()) return emptyMap()
+	// Explicit type args at the call site take priority.
+	if (call.typeArgs.size == forwardedDecl.typeParams.size) {
+		return forwardedDecl.typeParams.zip(call.typeArgs.map { outerSubst[it.name] ?: it.name }).toMap()
+		}
+	// Otherwise, infer from positional args. Each param's type may reference a type param.
+	val result = mutableMapOf<String, String>()
+	val skipReceiver = if (forwardedDecl.receiver != null) 1 else 0
+	val params = forwardedDecl.params.filter { !it.isVararg }       // exact-position params only
+	val callArgs = call.args
+	for ((i, p) in params.withIndex()) {
+		val argIdx = i + skipReceiver
+		if (argIdx >= callArgs.size) continue
+		val paramTypeName = p.type.name
+		if (paramTypeName !in forwardedDecl.typeParams) continue
+		// The corresponding argument's type — look up via outerSubst if it's a type-param in the outer fn.
+		val argExpr = callArgs[argIdx].expr
+		val argTypeName = (argExpr as? NameExpr)?.let { outerSubst[it.name] } ?: continue
+		result[paramTypeName] = argTypeName
+		}
+	// For vararg type params: take the element type from outerSubst (T → outerSubst[T]).
+	for (vp in forwardedDecl.params.filter { it.isVararg }) {
+		if (vp.type.name in forwardedDecl.typeParams && vp.type.name !in result) {
+			result[vp.type.name] = outerSubst[vp.type.name] ?: continue
+			}
+		}
+	if (result.size != forwardedDecl.typeParams.size) return null
+	return result
 	}
 
 /*

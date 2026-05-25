@@ -88,13 +88,17 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun lambdaStandaloneErrors() {
-        notYetImpl("Standalone lambda expressions are not yet implemented")
+        // Standalone lambda expressions (`val f = { ... }`) are intentionally NOT supported:
+        // a lambda closure escaping its lexical scope would require heap-allocating an
+        // environment, which is exactly the kind of hidden allocation KTC avoids. Lambdas
+        // are only valid as arguments to inline functions.
+        // Parser rejects the typed-parameter standalone lambda syntax outright.
         transpileExpectError("""
             package test.Main
             fun main(args: Array<String>) {
                 val f = { x: Int -> x * 2 }
             }
-        """, "Lambda can only be passed")
+        """, "Expected expression")
     }
 
     @Test fun stdlibLetExpansion() {
@@ -117,7 +121,6 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun stdlibRunExpansion() {
-        notYetImpl("run function is not yet implemented")
         val r = transpileMainWithStdlib("""
             val r = run { 42 }
         """)
@@ -125,7 +128,6 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun stdlibWithExpansion() {
-        notYetImpl("run function is not yet implemented")
         val r = transpileMainWithStdlib("""
             val sb = StringBuilder()
             val len = with(sb) {

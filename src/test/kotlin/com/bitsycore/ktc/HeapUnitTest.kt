@@ -367,12 +367,17 @@ class HeapUnitTest : TranspilerTestBase() {
         notYetImpl("user-package class : Allocator triggers cross-package CLS_TYPES forward-decl bug")
     }
 
-    // Pair<T,T>.toList(allocator) / Triple<T,T,T>.toList(allocator) — defined in
-    // stdlib Tuples.kt but never tested. Codegen has multiple bugs: receiver fields
-    // aren't $self-qualified, the generic List<T> return type is placed in the
-    // calling package's namespace, and vararg packing through listOf is broken.
-    @Test fun pairToListWithAllocator_brokenCodegen() {
-        notYetImpl("Pair/Triple.toList(allocator) generic-extension codegen is broken")
+    // Pair<T,T>.toList(allocator) — generic extension on a stdlib generic class.
+    @Test fun pairToListWithAllocator() {
+        val r = transpileMainWithStdlib("""
+            val pair = 10 to 20
+            val list = pair.toList(Heap)
+        """)
+        // Receiver fields must be qualified with $self.
+        r.sourceContains("\$self.first")
+        r.sourceContains("\$self.second")
+        // Return type is the iface trampoline for List<Int>, NOT a user-package List type.
+        r.sourceNotContains("test_Main_List_")
     }
 
     // Multi-statement lambda body: a VarDeclStmt + tail expression. The emitArrayInitLambda

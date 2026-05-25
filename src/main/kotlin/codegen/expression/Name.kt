@@ -57,6 +57,16 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 				}
 			}
 		}
+	// Bare field access inside a class method or class-extension function body:
+	// resolve `field` to `$self.field` / `$self->field` based on selfIsPointer.
+	if (currentClass != null) {
+		val vCi = classes[currentClass]
+		if (vCi != null && vCi.props.any { it.first == e.name }) {
+			val vFieldName = if (e.name in vCi.privateProps) "PRIV_${e.name}" else e.name
+			val vOp = if (selfIsPointer) "->" else "."
+			return "\$self$vOp$vFieldName"
+			}
+		}
 	return e.name
 	}
 

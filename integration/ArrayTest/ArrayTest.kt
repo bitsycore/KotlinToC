@@ -281,10 +281,24 @@ fun testArrayCopyWith() {
     println("array copyWith ok")
 }
 
-// NOTE: Pair<T,T>.toList(allocator) / Triple<T,T,T>.toList(allocator) are defined
-// in stdlib Tuples.kt but their codegen has multiple bugs (receiver fields not
-// $self-qualified, wrong namespace for the generic List<T> return, broken vararg
-// packing through listOf). Filed as a known limitation — see Tuples.kt.
+fun testPairTripleToList() {
+    // Pair<T,T>.toList(allocator) — generic extension forwarding to listOf.
+    val pair  = 10 to 20
+    val list2 = pair.toList(Heap)
+    defer list2.dispose()
+    if (list2.size != 2)    error("pair toList size: ${list2.size}")
+    if (list2.get(0) != 10) error("pair toList[0]")
+    if (list2.get(1) != 20) error("pair toList[1]")
+
+    // Triple<T,T,T>.toList(allocator).
+    val triple = Triple(1, 2, 3)
+    val list3  = triple.toList(Heap)
+    defer list3.dispose()
+    if (list3.size != 3)    error("triple toList size: ${list3.size}")
+    if (list3.get(2) != 3)  error("triple toList[2]")
+
+    println("pair/triple toList ok")
+}
 
 fun main() {
     testArrayPtr()
@@ -294,6 +308,7 @@ fun main() {
     testHeapArrayInitLambda()
     testArrayResize()
     testArrayCopyWith()
+    testPairTripleToList()
 
 
 

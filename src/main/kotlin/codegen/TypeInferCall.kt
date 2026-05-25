@@ -286,10 +286,54 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     val extFun = extensionFuns[recvType]?.find { it.name == method }
     if (extFun != null) {
         if (extFun.typeParams.isNotEmpty() && extFun.returnType != null) {
-            val vArgTypes = args.map { inferExprType(it.expr) }
-            return withTypeSubst(inferInlineFunSubst(extFun, recvType, vArgTypes)) { resolveTypeName(extFun.returnType).toInternalStr }
+            // When the receiver is a generic type (e.g. Pair<T,T>, Triple<T,T,T>) matched
+            // against a monomorphized form (e.g. Triple_Int_Int_Int), inferInlineFunSubst
+            // can't deduce T (it only handles bare-type-param receivers like `T.foo()`).
+            // Use matchTypeParam, which walks typeArgs and consults genericTypeBindings.
+            val subst = mutableMapOf<String, String>()
+            val typeParamSet = extFun.typeParams.toSet()
+            extFun.receiver?.let { matchTypeParam(it, recvType.removeSuffix("?"), typeParamSet, subst) }
+            for ((i, p) in extFun.params.withIndex()) {
+                val argType = args.getOrNull(i)?.expr?.let { inferExprType(it) } ?: continue
+                matchTypeParam(p.type, argType, typeParamSet, subst)
+            }
+            // Prefer the concrete-return inference (e.g. ArrayList_Int) over the raw template return.
+            val typeArgNames = extFun.typeParams.map { subst[it] ?: it }
+            val mangledName  = "${extFun.name}_${typeArgNames.joinToString("_")}"
+            genericFunConcreteReturn[mangledName]?.let { return it }
+            return withTypeSubst(subst) { resolveTypeName(extFun.returnType).toInternalStr }
         }
         return if (extFun.returnType != null) resolveTypeName(extFun.returnType).toInternalStr else "Unit"
+    }
+    // Generic extension on a generic class — e.g. `fun <T> Pair<T,T>.toList(...)` applied to
+    // Pair_Int_Int. The flat receiver type (Pair_Int_Int) is in `classes` (monomorphized) but
+    // the extension lives in `genericFunDecls` keyed by the template name (Pair). Mirror the
+    // lookup done in CallMethod.kt's dispatch, and consult genericFunConcreteReturn so the
+    // caller infers the concrete return (e.g. ArrayList_Int) rather than the unsubstituted
+    // template return.
+    run {
+        val recvBase = recvType.removeSuffix("?")
+        val genericExt = genericFunDecls.find { gf ->
+            gf.name == method && gf.receiver != null && (
+                gf.receiver.name == recvBase ||
+                (genericClassDecls.containsKey(gf.receiver.name) && recvBase.startsWith("${gf.receiver.name}_"))
+            )
+        }
+        if (genericExt != null && genericExt.returnType != null) {
+            val subst = mutableMapOf<String, String>()
+            val typeParamSet = genericExt.typeParams.toSet()
+            matchTypeParam(genericExt.receiver!!, recvBase, typeParamSet, subst)
+            for ((i, p) in genericExt.params.withIndex()) {
+                val argType = args.getOrNull(i)?.expr?.let { inferExprType(it) } ?: continue
+                matchTypeParam(p.type, argType, typeParamSet, subst)
+            }
+            // If the function's concrete return is known (forwarded to a generic that returns a
+            // concrete class), use it. Otherwise resolve under the subst.
+            val typeArgNames = genericExt.typeParams.map { subst[it] ?: it }
+            val mangledName  = "${genericExt.name}_${typeArgNames.joinToString("_")}"
+            genericFunConcreteReturn[mangledName]?.let { return it }
+            return withTypeSubst(subst) { resolveTypeName(genericExt.returnType).toInternalStr }
+        }
     }
     if (recvType in enums) {
         when (method) {

@@ -12,11 +12,23 @@ internal fun CCodeGen.collectAndScan() {
 	scanForGenericInstantiations()
 	materializeGenericInstantiations()
 	scanForGenericFunCalls()
-	scanGenericFunBodiesForInstantiations()
-	materializeGenericInstantiations()
-	scanGenericClassMethodBodiesForInstantiations()
-	materializeGenericInstantiations()
-	computeGenericFunConcreteReturns()
+	runGenericScanFixedPoint()
+	}
+
+/* Run scan + materialize + concrete-return computation until no new instantiations
+appear. computeGenericFunConcreteReturns may discover transitive forwards (e.g.
+toList<Int>'s body calls listOf) and register new instantiations, which then need
+their own bodies scanned and materialized. */
+private fun CCodeGen.runGenericScanFixedPoint() {
+	var prevInst: Map<String, Set<List<String>>>
+	do {
+		prevInst = genericFunInstantiations.mapValues { it.value.toSet() }.toMap()
+		scanGenericFunBodiesForInstantiations()
+		materializeGenericInstantiations()
+		scanGenericClassMethodBodiesForInstantiations()
+		materializeGenericInstantiations()
+		computeGenericFunConcreteReturns()
+	} while (genericFunInstantiations.mapValues { it.value.toSet() } != prevInst)
 	}
 
 /* Translates the parsed KtFile AST into C11 output. Orchestrates all pipeline phases. */
@@ -65,11 +77,7 @@ internal fun CCodeGen.generate(): COutput {
 	scanForGenericInstantiations()
 	materializeGenericInstantiations()
 	scanForGenericFunCalls()
-	scanGenericFunBodiesForInstantiations()
-	materializeGenericInstantiations()
-	scanGenericClassMethodBodiesForInstantiations()
-	materializeGenericInstantiations()
-	computeGenericFunConcreteReturns()
+	runGenericScanFixedPoint()
 
 	// Forward-declare all concrete interface types and monomorphized generic class types.
 	data class FwdDecl(val vCName: String, val vSrc: String) // one forward declaration line

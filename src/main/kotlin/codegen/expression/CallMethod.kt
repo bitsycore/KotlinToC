@@ -250,7 +250,11 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				lambdaParamSubst["\$this"] = recv
 				}
 			val expandedArgs = withTypeSubst(genericTypeBindings[vClassInfo.name]) {
-				if (methodDecl != null) prepareArgs(args, methodDecl, vClassInfo.baseName) else argStr
+				when {
+					methodDecl != null  -> prepareArgs(args, methodDecl, vClassInfo.baseName)
+					effectiveDecl != null -> prepareArgs(args, effectiveDecl, vClassInfo.baseName)
+					else                  -> argStr
+					}
 				}
 			if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
 		val allArgs       = if (expandedArgs.isEmpty()) selfArg else "$selfArg, $expandedArgs"
