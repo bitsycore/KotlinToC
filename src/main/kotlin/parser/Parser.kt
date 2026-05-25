@@ -519,8 +519,19 @@ class Parser(private val tokens: List<Token>) {
         return stmt
     }
 
-    private fun parseVarDeclStmt(mutable: Boolean): VarDeclStmt {
+    private fun parseVarDeclStmt(mutable: Boolean): Stmt {
         advance()   // skip val/var
+        // Destructuring: `val (a, b, ...) = expr`
+        if (at(TokenType.LPAREN)) {
+            advance(); skipNL()
+            val names = mutableListOf<String>()
+            names += expectIdent()
+            while (at(TokenType.COMMA)) { advance(); skipNL(); names += expectIdent() }
+            skipNL(); expect(TokenType.RPAREN); skipNL()
+            expect(TokenType.EQ); skipNL()
+            val init = parseExpr()
+            return DestructuringDeclStmt(names, init, mutable)
+        }
         val name = expectIdent()
         val type = if (at(TokenType.COLON)) { advance(); skipNL(); parseTypeRef() } else null
         val init = if (at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null

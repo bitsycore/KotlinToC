@@ -25,6 +25,7 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
     currentInd = ind
     when (s) {
         is VarDeclStmt -> emitVarDecl(s, ind)
+        is DestructuringDeclStmt -> emitDestructuringDecl(s, ind)
         is AssignStmt -> emitAssign(s, ind, insideMethod)
         is ReturnStmt -> emitReturn(s, ind)
         is ExprStmt -> emitExprStmt(s, ind, insideMethod)

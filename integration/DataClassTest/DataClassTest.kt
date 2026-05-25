@@ -522,5 +522,21 @@ fun main() {
     val nestedInStr = "$r1"
     println("Nested interpolation: $nestedInStr")
 
+    // =================================
+    // 14. Destructuring declarations
+    // =================================
+    val (vx, vy) = Vec2(7.0f, 11.0f)
+    if (vx != 7.0f || vy != 11.0f) error("FAIL Vec2 destructuring: vx=$vx vy=$vy")
+    println("destructure Vec2: ok")
+
+    val (px, py) = MutablePoint(3, 4)
+    if (px != 3 || py != 4) error("FAIL MutablePoint destructuring")
+    println("destructure MutablePoint: ok")
+
+    // Discard slot
+    val (idOnly, _) = Mixed(99, 7)
+    if (idOnly != 99) error("FAIL discarded slot: idOnly=$idOnly")
+    println("destructure with discard: ok")
+
     println("ALL OK")
 }

@@ -115,6 +115,10 @@ internal fun dumpStmt(s: Stmt, depth: Int): String {
 			val vInit = if (s.init != null) " = ${dumpExpr(s.init)}" else ""
 			vSb.appendLine("${vId}$vMut ${s.name}$vTp$vInit")
 			}
+		is DestructuringDeclStmt -> {
+			val vMut = if (s.mutable) "var" else "val"
+			vSb.appendLine("${vId}$vMut (${s.names.joinToString(", ")}) = ${dumpExpr(s.init)}")
+			}
 		is AssignStmt  -> vSb.appendLine("${vId}${dumpExpr(s.target)} ${s.op} ${dumpExpr(s.value)}")
 		is ReturnStmt  -> vSb.appendLine("${vId}return${if (s.value != null) " ${dumpExpr(s.value)}" else ""}")
 		is ForStmt     -> {

@@ -9,6 +9,40 @@ import com.bitsycore.ktc.types.KtcType
 // ── var / val ─────────────────────────────────────────────────────
 // Core var declaration emitter. Array-init helpers live in VarHelpers.kt.
 
+/* `val (a, b, ...) = expr` desugaring: evaluate [expr] once into a tmp, then bind each
+   named slot to the corresponding positional ctor-param of the receiver class. */
+internal fun CCodeGen.emitDestructuringDecl(s: DestructuringDeclStmt, ind: String) {
+	val tmp  = "\$d${tmp().removePrefix("$")}"     // unique stable name (tmp() returns "$N")
+	val type = inferExprType(s.init)
+		?: codegenError("Cannot destructure: failed to infer type of init expression")
+	val core = type.removeSuffix("?")
+	// Resolve positional field names. Pair/Triple use first/second/third; user data classes
+	// use their ctor params in declaration order.
+	val fields: List<String> = when {
+		core == "Pair" || core.startsWith("Pair_") ->
+			listOf("first", "second").take(s.names.size)
+		core == "Triple" || core.startsWith("Triple_") ->
+			listOf("first", "second", "third").take(s.names.size)
+		else -> {
+			val ci = classes[core]
+				?: codegenError("Cannot destructure: '$core' is not a known data class")
+			val ctorProps = ci.ctorProps
+			if (s.names.size > ctorProps.size) {
+				codegenError("Destructuring '$core' requires at most ${ctorProps.size} names, got ${s.names.size}")
+				}
+			ctorProps.take(s.names.size).map { it.name }
+			}
+		}
+	// Emit the tmp binding, then one VarDeclStmt per named slot.
+	emitVarDecl(VarDeclStmt(tmp, null, s.init, mutable = false), ind)
+	for ((idx, n) in s.names.withIndex()) {
+		if (n == "_") continue          // skip discarded slots
+		val accessor = DotExpr(NameExpr(tmp), fields[idx])
+		emitVarDecl(VarDeclStmt(n, null, accessor, s.mutable), ind)
+		}
+	}
+
+
 /* Emit nullable VarArr deep-copy for a general expression:
 allocas a stack buffer, memcpys from the source temp, declares the var and its $has flag. */
 private fun CCodeGen.emitNullableArrayCopyWithTmp(

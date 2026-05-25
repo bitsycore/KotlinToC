@@ -140,6 +140,15 @@ data class VarDeclStmt(
     val mutable: Boolean
 ) : Stmt()
 
+/* Destructuring decl: `val (a, b, ...) = expr` / `var (...) = expr`.
+A name of "_" means the slot is discarded. Codegen evaluates [init] once into a
+local, then binds each name to the corresponding positional ctor-param field. */
+data class DestructuringDeclStmt(
+    val names:   List<String>,
+    val init:    Expr,
+    val mutable: Boolean
+) : Stmt()
+
 data class AssignStmt(
     val target: Expr,
     val op: String,        // = += -= *= /= %=

@@ -34,12 +34,43 @@ class DestructuringUnitTest : TranspilerTestBase() {
         r.sourceContains("p.first")
     }
 
-    @Test fun destructuringDeclarationNotYetImpl() {
-        notYetImpl("val (a, b) = pair destructuring syntax is not implemented")
+    @Test fun destructuringDeclPair() {
+        val r = transpileMainWithStdlib("val (a, b) = Pair(10, 20)")
+        r.sourceContains(".first")
+        r.sourceContains(".second")
     }
 
+    @Test fun destructuringDeclTriple() {
+        val r = transpileMainWithStdlib("val (a, b, c) = Triple(1, 2, 3)")
+        r.sourceContains(".first")
+        r.sourceContains(".second")
+        r.sourceContains(".third")
+    }
+
+    @Test fun destructuringDeclDataClass() {
+        val r = transpileMain(
+            "val (x, y) = Vec2(3.0f, 4.0f)",
+            decls = "data class Vec2(val x: Float, val y: Float)"
+        )
+        // For user data classes, destructured names bind via the ctor params in order.
+        r.sourceContains(".x")
+        r.sourceContains(".y")
+    }
+
+    @Test fun destructuringDeclDiscardSlot() {
+        val r = transpileMain(
+            "val (a, _) = Vec2(7.0f, 9.0f)",
+            decls = "data class Vec2(val x: Float, val y: Float)"
+        )
+        // The "_" slot must not emit a binding for it.
+        r.sourceContains("/*VAL*/ const ktc_Float a =")
+        r.sourceNotContains("ktc_Float _ =")
+    }
+
+    // Synthetic componentN() functions on data classes are not yet implemented —
+    // KTC destructures by direct ctor-param field access, not via component1()/component2().
     @Test fun componentFunctionOnDataClassNotYetImpl() {
-        notYetImpl("synthetic componentN() functions on data classes are not implemented")
+        notYetImpl("synthetic componentN() methods on data classes are not implemented; KTC uses positional field access for destructuring instead")
     }
 
     @Test fun tupleComponentAccess() {
