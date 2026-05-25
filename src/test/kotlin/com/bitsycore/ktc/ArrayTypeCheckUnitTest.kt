@@ -89,7 +89,7 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
     @Test fun functionReturningPtrArrayIntSucceeds2() {
         val r = transpile("""
             package test.Main
-            fun good(): @Ptr Array<Int> { return HeapAlloc<Array<Int>>(4)!! }
+            fun good(): @Ptr Array<Int> { val a = IntArray(4); return a.ptr() }
             fun main(args: Array<String>) {}
         """)
         r.sourceContains("test_Main_good(")
@@ -98,7 +98,7 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
     @Test fun functionReturningPtrArrayIntSucceeds() {
         val r = transpile("""
             package test.Main
-            fun good(): @Ptr Array<Int> { return HeapAlloc<Array<Int>>(4)!! }
+            fun good(): @Ptr Array<Int> { val a = IntArray(4); return a.ptr() }
             fun main(args: Array<String>) {}
         """)
         r.sourceContains("test_Main_good(")

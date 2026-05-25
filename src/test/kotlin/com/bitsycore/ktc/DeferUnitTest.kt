@@ -46,12 +46,12 @@ class DeferUnitTest : TranspilerTestBase() {
 
     @Test fun deferWithReturn() {
         val decls = "data class Vec2(var x: Float, var y: Float)"
-        val r = transpile("""
+        val r = transpileWithStdlib("""
             package test.Main
             $decls
             fun deferredReturn(): Int {
-                val p = HeapAlloc<Vec2>(1.0f, 2.0f)!!
-                defer HeapFree(p)
+                val p = Vec2.allocWith(Heap, 1.0f, 2.0f)!!
+                defer Heap.freeMem(p)
                 p.x = 42.0f
                 return p.x.toInt()
             }
@@ -61,7 +61,7 @@ class DeferUnitTest : TranspilerTestBase() {
         """)
         // Return value should be evaluated into a temp before defers run
         r.sourceMatches(Regex("ktc_Int \\$\\d+ = "))
-        r.sourceContains("free(p)")
+        r.sourceContains("freeMem")
     }
 
     // ── Multiple defers (LIFO) ───────────────────────────────────────

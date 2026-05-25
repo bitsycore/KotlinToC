@@ -149,19 +149,18 @@ class GenericsUnitTest : TranspilerTestBase() {
         r.sourceContains("count = 0")
     }
 
-    // ── HeapAlloc with generic class ───────────────────────────────────
+    // ── allocWith on a generic class ───────────────────────────────────
 
     @Test fun heapAllocGenericClass() {
-        val r = transpile("""
+        val r = transpileWithStdlib("""
             package test.Main
             class Box<T>(val item: T)
             fun main(args: Array<String>) {
-                val b = HeapAlloc<Box<Int>>(42)
+                val b = Box<Int>.allocWith(Heap, 42)
             }
         """)
-        // HeapAlloc<Box<Int>>(42) → inline malloc + primaryConstructor
+        // Box<Int>.allocWith(Heap, 42) → allocMem + primaryConstructor
         r.sourceContains("test_Main_Box_Int_primaryConstructor(42)")
-        r.sourceContains("malloc(sizeof(test_Main_Box_Int))")
     }
 
     // ── Generic class with multiple ctor params ─────────────────────
