@@ -30,11 +30,14 @@ fun main(args: Array<String>) {
 	val atlas = createAtlasTexture(renderer)
 	defer { atlas.destroy() }
 
-	val logBuf1 = ByteArray(2048)
-	val logBuf2 = ByteArray(2048)
+	val logBuf1 = Array<Byte>.allocWith(Heap, 2048)
+	defer { Heap.freeMem(logBuf1) }
+	val logBuf2 = Array<Byte>.allocWith(Heap, 2048)
+	defer { Heap.freeMem(logBuf2) }
 	var logArena1 = Arena(logBuf1.ptr(), logBuf1.size)
 	var logArena2 = Arena(logBuf2.ptr(), logBuf2.size)
-	val frameBuf = ByteArray(1024)
+	val frameBuf = Array<Byte>.allocWith(Heap, 1024)
+	defer { Heap.freeMem(frameBuf) }
 	var frameArena = Arena(frameBuf.ptr(), frameBuf.size)
 
 	val app = DemoApp(
