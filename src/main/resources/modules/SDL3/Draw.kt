@@ -122,14 +122,24 @@ inline fun SDL3.Renderer.fillTriangle(
 /**
  * Draw the outline of a rectangle with rounded corners.
  * Straight edges + all 4 corner arcs drawn in one midpoint-circle pass.
+ *
+ * Edges use SDL_RenderFillRect (1-pixel-thick rects) rather than SDL_RenderLine:
+ * SDL_RenderLine rasterizes a centered 1-pixel band that can land one row/column
+ * off from SDL_RenderPoint (used by the corner arcs), making the edges appear
+ * one pixel off from where the arcs end. FillRect's pixel coverage matches
+ * Point's for integer-aligned coords, so edges and arcs align cleanly.
  */
 inline fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val r = if (radius > rect.w / 2.0f) rect.w / 2.0f else if (radius > rect.h / 2.0f) rect.h / 2.0f else radius
-	// Straight edges
-	c.SDL_RenderLine(this.handle, rect.x + r,        rect.y,          rect.x + rect.w - r, rect.y)
-	c.SDL_RenderLine(this.handle, rect.x + r,        rect.y + rect.h, rect.x + rect.w - r, rect.y + rect.h)
-	c.SDL_RenderLine(this.handle, rect.x,            rect.y + r,      rect.x,              rect.y + rect.h - r)
-	c.SDL_RenderLine(this.handle, rect.x + rect.w,   rect.y + r,      rect.x + rect.w,     rect.y + rect.h - r)
+	// Straight edges as 1-pixel-thick filled rects
+	val topEdge    = SDL3.FRect(rect.x + r,          rect.y,              rect.w - r * 2.0f, 1.0f)
+	val bottomEdge = SDL3.FRect(rect.x + r,          rect.y + rect.h,     rect.w - r * 2.0f, 1.0f)
+	val leftEdge   = SDL3.FRect(rect.x,              rect.y + r,          1.0f, rect.h - r * 2.0f)
+	val rightEdge  = SDL3.FRect(rect.x + rect.w,     rect.y + r,          1.0f, rect.h - r * 2.0f)
+	c.SDL_RenderFillRect(this.handle, c.addr(topEdge.sdl))
+	c.SDL_RenderFillRect(this.handle, c.addr(bottomEdge.sdl))
+	c.SDL_RenderFillRect(this.handle, c.addr(leftEdge.sdl))
+	c.SDL_RenderFillRect(this.handle, c.addr(rightEdge.sdl))
 	// Corner arc centres
 	val tlx = rect.x + r;            val tly = rect.y + r
 	val trx = rect.x + rect.w - r;   val try_ = rect.y + r
