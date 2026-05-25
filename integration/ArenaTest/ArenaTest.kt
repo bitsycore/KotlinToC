@@ -42,13 +42,14 @@ fun testStackArena() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 2. Heap-backed arena
+ * 2. Heap-backed arena — caller owns the backing buffer
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun testHeapArena() {
     println("--- testHeapArena ---")
-    val vArena = Arena(256)
-    defer vArena.free()
+    val vBuf: @Ptr RawArray<Byte> = RawArray<Byte>(256).allocWith(Heap)!!
+    defer Heap.freeMem(vBuf)
+    val vArena = Arena(vBuf, 256)
 
     val pVec: @Ptr Vec2 = Vec2(7.0f, 8.0f).allocWith(vArena)
     assertEqF(pVec.x, 7.0f)
