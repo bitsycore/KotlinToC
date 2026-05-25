@@ -74,3 +74,26 @@ inline fun SDL3.Window.getSizeInPixels(): SDL3.FPoint {
     c.SDL_GetWindowSizeInPixels(this.handle, c.addr(w), c.addr(h))
     return SDL3.FPoint(w.toFloat(), h.toFloat())
 }
+
+/** Set window opacity (0.0 = transparent, 1.0 = opaque). */
+inline fun SDL3.Window.setOpacity(opacity: Float) {
+    c.SDL_SetWindowOpacity(this.handle, opacity)
+}
+
+/** Get current window opacity. */
+inline fun SDL3.Window.getOpacity(): Float = c.SDL_GetWindowOpacity(this.handle)
+
+/** Enable or disable relative mouse mode (hides cursor, reports relative motion). */
+inline fun SDL3.Window.setRelativeMouseMode(enabled: Boolean) {
+    c.SDL_SetWindowRelativeMouseMode(this.handle, enabled)
+}
+
+/** Warp the mouse pointer to a position within this window. */
+inline fun SDL3.Window.warpMouse(x: Float, y: Float) {
+    c.SDL_WarpMouseInWindow(this.handle, x, y)
+}
+
+/** Confine the mouse cursor to this window. */
+inline fun SDL3.Window.setMouseGrab(grabbed: Boolean) {
+    c.SDL_SetWindowMouseGrab(this.handle, grabbed)
+}

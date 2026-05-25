@@ -169,3 +169,120 @@ fun SDL3.Renderer.renderMinimap(
 
 	this.clearViewport()
 }
+
+// ══════════════════════════════════════════════════════════════
+// MARK: Help overlay
+// ══════════════════════════════════════════════════════════════
+
+fun SDL3.Renderer.renderHelpOverlay(ws: SDL3.FPoint) {
+	val panelW = 270.0f
+	val panelH = 207.0f
+	val px = (ws.x - panelW) / 2.0f
+	val py = (ws.y - panelH) / 2.0f
+
+	this.setBlendMode(SDL3.BlendMode.Blend)
+	this.setDrawColor(0, 0, 0, 200)
+	this.fillRoundedRect(SDL3.FRect(px, py, panelW, panelH), 8.0f)
+	this.setDrawColor(SDL3.Color(100, 140, 200, 255))
+	this.drawRoundedRect(SDL3.FRect(px, py, panelW, panelH), 8.0f)
+	this.setBlendMode(SDL3.BlendMode.None)
+
+	val charH = this.debugTextCharSize().toFloat()
+	val lx = px + 12.0f
+	var ly = py + 12.0f
+	val lineH = charH + 3.0f
+
+	this.setDrawColor(SDL3.Color(255, 220, 100, 255))
+	this.drawDebugText(lx, ly, "--- Controls ---")
+	ly += lineH + 4.0f
+
+	this.setDrawColor(SDL3.Color(220, 220, 220, 255))
+	this.drawDebugText(lx, ly, "WASD/Arrows  Move box")
+	ly += lineH
+	this.drawDebugText(lx, ly, "LClick       Drag box")
+	ly += lineH
+	this.drawDebugText(lx, ly, "RClick       Spawn pulse")
+	ly += lineH
+	this.drawDebugText(lx, ly, "Scroll       Resize box")
+	ly += lineH
+	this.drawDebugText(lx, ly, "Space        Fast spin")
+	ly += lineH
+	this.drawDebugText(lx, ly, "Z (hold)     2x zoom")
+	ly += lineH
+	this.drawDebugText(lx, ly, "F            Fullscreen")
+	ly += lineH
+	this.drawDebugText(lx, ly, "L            Letterbox mode")
+	ly += lineH
+	this.drawDebugText(lx, ly, "T            Toggle HUD")
+	ly += lineH
+	this.drawDebugText(lx, ly, "I            Toggle tooltips")
+	ly += lineH
+	this.drawDebugText(lx, ly, "Ctrl+C       Copy positions")
+	ly += lineH
+	this.drawDebugText(lx, ly, "H            This help")
+	ly += lineH
+
+	this.setDrawColor(SDL3.Color(140, 140, 160, 255))
+	this.drawDebugText(lx, ly + 4.0f, "Esc to quit")
+}
+
+// ══════════════════════════════════════════════════════════════
+// MARK: Clipboard toast
+// ══════════════════════════════════════════════════════════════
+
+fun SDL3.Renderer.renderClipboardToast(msg: String, ws: SDL3.FPoint) {
+	val charW = this.debugTextCharSize().toFloat()
+	val tw = msg.length.toFloat() * charW + 16.0f
+	val th = charW + 12.0f
+	val tx = (ws.x - tw) / 2.0f
+	val ty = ws.y - 40.0f
+
+	this.setBlendMode(SDL3.BlendMode.Blend)
+	this.setDrawColor(0, 80, 0, 200)
+	this.fillRoundedRect(SDL3.FRect(tx, ty, tw, th), 4.0f)
+	this.setBlendMode(SDL3.BlendMode.None)
+
+	this.setDrawColor(SDL3.Color(180, 255, 180, 255))
+	this.drawDebugText(tx + 8.0f, ty + 6.0f, msg)
+}
+
+// ══════════════════════════════════════════════════════════════
+// MARK: Tooltip
+// ══════════════════════════════════════════════════════════════
+
+fun SDL3.Renderer.renderTooltip(
+	mouseX: Float,
+	mouseY: Float,
+	line1: String,
+	line2: String,
+	ws: SDL3.FPoint
+) {
+	val charSz = this.debugTextCharSize().toFloat()
+	val padX = 8.0f
+	val padY = 5.0f
+	val maxLen = if (line1.length > line2.length) line1.length else line2.length
+	val tw = maxLen.toFloat() * charSz + padX * 2.0f
+	val hasLine2 = line2.length > 0
+	val th = if (hasLine2) charSz * 2.0f + padY * 2.0f + 2.0f else charSz + padY * 2.0f
+
+	// Position tooltip near cursor, clamped to screen
+	var tipX = mouseX + 16.0f
+	var tipY = mouseY - th - 4.0f
+	if (tipX + tw > ws.x) tipX = ws.x - tw - 4.0f
+	if (tipY < 0.0f) tipY = mouseY + 20.0f
+	if (tipX < 0.0f) tipX = 4.0f
+
+	this.setBlendMode(SDL3.BlendMode.Blend)
+	this.setDrawColor(0, 0, 0, 210)
+	this.fillRoundedRect(SDL3.FRect(tipX, tipY, tw, th), 4.0f)
+	this.setDrawColor(SDL3.Color(140, 160, 200, 255))
+	this.drawRoundedRect(SDL3.FRect(tipX, tipY, tw, th), 4.0f)
+	this.setBlendMode(SDL3.BlendMode.None)
+
+	this.setDrawColor(SDL3.Color(240, 240, 255, 255))
+	this.drawDebugText(tipX + padX, tipY + padY, line1)
+	if (hasLine2) {
+		this.setDrawColor(SDL3.Color(180, 190, 210, 255))
+		this.drawDebugText(tipX + padX, tipY + padY + charSz + 2.0f, line2)
+	}
+}

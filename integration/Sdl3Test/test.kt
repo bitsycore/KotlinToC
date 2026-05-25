@@ -72,13 +72,7 @@ fun main(args: Array<String>) {
 		trailAngle[trailHead] = app.spriteState.angle
 		trailHead = (trailHead + 1) % 24
 
-		val spinSpeed = if (isKeyDown(SDL3.Scancode.Space)) {
-            println("SPIN FAST")
-			270.0f
-        } else {
-			println("SPIN NORMAL")
-            90.0f
-        }
+		val spinSpeed = if (isKeyDown(SDL3.Scancode.Space)) 270.0f else 90.0f
 		app.spriteState.spin(dt, spinSpeed)
 
 		app.render(trailX, trailY, trailAngle, trailHead)

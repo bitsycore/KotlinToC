@@ -88,3 +88,15 @@ inline fun SDL3.Renderer.setLogicalSize(w: Int, h: Int) {
 inline fun SDL3.Renderer.clearLogicalSize() {
     c.SDL_SetRenderLogicalPresentation(this.handle, 0, 0, c.SDL_LOGICAL_PRESENTATION_DISABLED)
 }
+
+/** Enable or disable VSync (0 = off, 1 = on, -1 = adaptive). */
+inline fun SDL3.Renderer.setVSync(vsync: Int) {
+    c.SDL_SetRenderVSync(this.handle, vsync)
+}
+
+/** Query current VSync setting. */
+inline fun SDL3.Renderer.getVSync(): Int {
+    var vsync = 0
+    c.SDL_GetRenderVSync(this.handle, c.addr(vsync))
+    return vsync
+}

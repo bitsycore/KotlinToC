@@ -36,6 +36,15 @@ class DemoApp(
 	var titleTimer:    Float        = 0.0f,
 	var atlasTileTimer: Float       = 0.0f,
 	var atlasTileIdx:   Int         = 0,
+	var showHelp:      Boolean      = false,
+	var showHud:       Boolean      = true,
+	var showTooltips:  Boolean      = true,
+	var lastFps:       Int          = 0,
+	var clipboardMsg:  String       = "",
+	var clipboardTimer: Float       = 0.0f,
+	var tooltipLine1:  String       = "",
+	var tooltipLine2:  String       = "",
+	var tooltipActive: Boolean      = false,
 	var movState:      MovementState = MovementState(),
 	var pulse:         PulseState    = PulseState(),
 	var spriteState:   SpriteState   = SpriteState()
@@ -60,6 +69,17 @@ class DemoApp(
 			SDL3.Scancode.L -> {
 				logicalMode = !logicalMode
 				if (logicalMode) renderer.setLogicalSize(800, 600) else renderer.clearLogicalSize()
+			}
+			SDL3.Scancode.H -> showHelp = !showHelp
+			SDL3.Scancode.T -> showHud = !showHud
+			SDL3.Scancode.I -> showTooltips = !showTooltips
+			SDL3.Scancode.C -> {
+				if (isKeyDown(SDL3.Scancode.LCtrl) || isKeyDown(SDL3.Scancode.RCtrl)) {
+					val text = "sprite(${spriteState.posX.toInt()}, ${spriteState.posY.toInt()}) box(${box.x.toInt()}, ${box.y.toInt()})"
+					SDL3.setClipboardText(text)
+					clipboardMsg = "Copied: $text"
+					clipboardTimer = 2.0f
+				}
 			}
 		}
 	}
@@ -114,15 +134,17 @@ class DemoApp(
 		spriteState.update(dt, mouseX, mouseY)
 		updateHoverPulse(dt)
 		updateAtlasTile(dt)
+		updateTooltip()
+		if (clipboardTimer > 0.0f) clipboardTimer -= dt
 	}
 
 	private fun updateFpsTitle(dt: Float) {
 		frameCount++
 		titleTimer += dt
 		if (titleTimer >= 1.0f) {
-			val fps   = (frameCount.toFloat() / titleTimer).toInt()
+			lastFps = (frameCount.toFloat() / titleTimer).toInt()
 			val wsize = window.getSize()
-			window.setTitle("SDL3 Demo | FPS: $fps | ${wsize.x.toInt()}x${wsize.y.toInt()} | WASD RClick F=full L=lbox Z=zoom Spc=spin")
+			window.setTitle("SDL3 Demo | FPS: $lastFps | ${wsize.x.toInt()}x${wsize.y.toInt()} | H=help")
 			titleTimer = 0.0f
 			frameCount = 0
 		}
@@ -172,6 +194,56 @@ class DemoApp(
 		}
 	}
 
+	private fun updateTooltip() {
+		tooltipActive = false
+		if (!showTooltips || showHelp) return
+
+		val mp = SDL3.FPoint(mouseX, mouseY)
+
+		if (box.contains(mp)) {
+			tooltipLine1 = "Box ${box.w.toInt()}x${box.h.toInt()}"
+			tooltipLine2 = "LClick=drag  Scroll=resize"
+			tooltipActive = true
+			return
+		}
+
+		val spriteDst = SDL3.FRect(spriteState.posX - 32.0f, spriteState.posY - 32.0f, 64.0f, 64.0f)
+		if (spriteDst.contains(mp)) {
+			tooltipLine1 = "Sprite a=${spriteState.angle.toInt()}"
+			tooltipLine2 = "Space=fast spin"
+			tooltipActive = true
+			return
+		}
+
+		val ws = renderer.outputSize()
+		val atlasHud = SDL3.FRect(10.0f, ws.y - 58.0f, 48.0f, 48.0f)
+		if (atlasHud.contains(mp)) {
+			tooltipLine1 = "Atlas tile ${atlasTileIdx + 1}/4"
+			tooltipLine2 = "Animated at 0.5s/frame"
+			tooltipActive = true
+			return
+		}
+
+		val mmVpX = ws.x - 160.0f
+		val miniRect = SDL3.FRect(mmVpX, 10.0f, 150.0f, 100.0f)
+		if (miniRect.contains(mp)) {
+			tooltipLine1 = "Minimap"
+			tooltipLine2 = "Shows box, cursor, sprite"
+			tooltipActive = true
+			return
+		}
+
+		if (pulse.active) {
+			val pdist = SDL3.FPoint(mouseX - pulse.x, mouseY - pulse.y).length()
+			if (pdist < pulse.radius + 10.0f) {
+				tooltipLine1 = "Pulse r=${pulse.radius.toInt()}"
+				tooltipLine2 = "RClick to spawn"
+				tooltipActive = true
+				return
+			}
+		}
+	}
+
 	// ══════════════════════════════════════════════════════════
 	// MARK: Render
 	// ══════════════════════════════════════════════════════════
@@ -202,7 +274,38 @@ class DemoApp(
 		renderer.renderAtlasHud(atlas, atlasTileIdx, ws)
 		renderer.renderMinimap(ws, box, spriteState.posX, spriteState.posY, mouseX, mouseY, hovering, boxColor, hoverColor)
 
+		if (showHud) renderHud(ws)
+		if (tooltipActive) renderer.renderTooltip(mouseX, mouseY, tooltipLine1, tooltipLine2, ws)
+		if (showHelp) renderer.renderHelpOverlay(ws)
+		if (clipboardTimer > 0.0f) renderer.renderClipboardToast(clipboardMsg, ws)
+
 		renderer.present()
+	}
+
+	private fun renderHud(ws: SDL3.FPoint) {
+		renderer.setBlendMode(SDL3.BlendMode.Blend)
+		renderer.setDrawColor(0, 0, 0, 160)
+		renderer.fillRect(SDL3.FRect(4.0f, 4.0f, 220.0f, 68.0f))
+		renderer.setBlendMode(SDL3.BlendMode.None)
+
+		val charH = renderer.debugTextCharSize().toFloat()
+		var ly = 8.0f
+		renderer.setDrawColor(SDL3.Color(200, 220, 255, 255))
+		renderer.drawDebugText(8.0f, ly, "FPS: $lastFps")
+		ly += charH + 2.0f
+		renderer.setDrawColor(SDL3.Color(180, 200, 180, 255))
+		renderer.drawDebugText(8.0f, ly, "Mouse: ${mouseX.toInt()},${mouseY.toInt()}")
+		ly += charH + 2.0f
+		renderer.setDrawColor(SDL3.Color(180, 180, 200, 255))
+		renderer.drawDebugText(8.0f, ly, "Box: ${box.x.toInt()},${box.y.toInt()} ${box.w.toInt()}x${box.h.toInt()}")
+		ly += charH + 2.0f
+		renderer.setDrawColor(SDL3.Color(200, 180, 180, 255))
+		renderer.drawDebugText(8.0f, ly, "Sprite: ${spriteState.posX.toInt()},${spriteState.posY.toInt()} a=${spriteState.angle.toInt()}")
+
+		if (isKeyDown(SDL3.Scancode.Space)) {
+			renderer.setDrawColor(SDL3.Color(255, 200, 50, 255))
+			renderer.drawDebugText(8.0f, ly + charH + 6.0f, ">> FAST SPIN <<")
+		}
 	}
 
 	private fun renderTrail(trailX: FloatArray, trailY: FloatArray, trailAngle: FloatArray, trailHead: Int) {

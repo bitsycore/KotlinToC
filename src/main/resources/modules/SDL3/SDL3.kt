@@ -245,6 +245,17 @@ object SDL3 {
     /** Sleep for at least ms milliseconds. */
     fun delay(ms: Int) { c.SDL_Delay(ms) }
 
+    /** High-resolution counter value (use with performanceFrequency for timing). */
+    fun performanceCounter(): Long = c.SDL_GetPerformanceCounter()
+
+    /** Ticks per second of the high-resolution counter. */
+    fun performanceFrequency(): Long = c.SDL_GetPerformanceFrequency()
+
+    /** Show a simple modal message box. */
+    fun showMessageBox(flags: Int, title: String, message: String, window: Window) {
+        c.SDL_ShowSimpleMessageBox(flags, title.ptr, message.ptr, window.handle)
+    }
+
     @Namespace object Event
     @Namespace object Scancode
     @Namespace object BlendMode
@@ -255,4 +266,5 @@ object SDL3 {
     @Namespace object WindowFlags
     @Namespace object InitFlags
     @Namespace object SystemCursor
+    @Namespace object MessageBoxFlags
 }
