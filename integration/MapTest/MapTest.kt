@@ -1,10 +1,8 @@
 package MapTest
 
 fun main() {
-    println("Hello")
     // Setup
     val map = HashMap<Int, String>(16)
-    println("Hello")
 
     // Test put via operator set
     map[1] = "hello"

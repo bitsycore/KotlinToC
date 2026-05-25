@@ -112,4 +112,44 @@ class ArrayUnitTest : TranspilerTestBase() {
         r.sourceContainsXTime("ktc_core_alloca")
     }
 
+    // ── fill ─────────────────────────────────────────────────────────
+
+    // Byte-sized element → memset with the value byte.
+    @Test fun fillByteArrayUsesMemset() {
+        val r = transpileMain("""
+            val arr = ByteArray(8)
+            arr.fill(7)
+        """)
+        r.sourceContains("memset((arr).ptr, (int)(7), (size_t)((arr).len));")
+    }
+
+    // Zero literal on a non-byte element → memset 0 over the byte span.
+    @Test fun fillIntArrayZeroUsesMemset() {
+        val r = transpileMain("""
+            val arr = IntArray(4)
+            arr.fill(0)
+        """)
+        r.sourceContains("memset((arr).ptr, 0, sizeof(ktc_Int) * (size_t)((arr).len));")
+    }
+
+    // Non-zero, non-byte element → bounded element loop.
+    @Test fun fillIntArrayNonZeroUsesLoop() {
+        val r = transpileMain("""
+            val arr = IntArray(4)
+            arr.fill(9)
+        """)
+        r.sourceContains("(arr).ptr;")
+        r.sourceMatches(Regex("""for \(size_t \$\d+ = 0; \$\d+ < \$\d+; \$\d+\+\+\) \$\d+\[\$\d+\] = \$\d+;"""))
+    }
+
+    // RawArray has no length → count passed explicitly.
+    @Test fun fillRawArrayWithCount() {
+        val r = transpileMain("""
+            val src = ByteArray(8)
+            val raw: @Ptr RawArray<Byte> = src.ptr()
+            raw.fill(8, 0)
+        """)
+        r.sourceContains("memset(raw, 0, sizeof(ktc_Byte) * (size_t)(8));")
+    }
+
 }

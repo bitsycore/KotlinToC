@@ -24,6 +24,7 @@ Targets embedded/game/systems code.
   - `T.allocWith(Heap, ctorArgs...)` → `@Ptr T`
   - `Array<T>.allocWith(Heap, n)` / `RawArray<T>.allocWith(Heap, n)`
   - `arr.resizeWith(allocator, n)`, `arr.copyWith(allocator)`, `dataClass.copyWith(...)`
+  - `Array<T>.fill(value)` / `RawArray<T>.fill(count, value)` → memset when byte-sized or zero-literal, else loop
   - `allocator.freeMem(ptr)` (e.g. `Heap.freeMem(p)`); `Heap` is the default `object : Allocator`.
   - `Arena` is a bump allocator implementing `Allocator`.
 - The old `HeapAlloc`/`HeapArrayZero`/`HeapArrayResize`/`HeapFree` intrinsics were removed — use the allocator API.

@@ -146,6 +146,15 @@ Usage: val vFixed: @Size(5) IntArray = vDyn.copyOf(5)
 @DocumentationOnly
 fun <T> Array<T>.copyOf(inNewSize: Int): Array<T> = error("Transpiler intrinsic")
 
+/**
+Fills every element of this array with [inValue].
+Compiles to memset when the element is byte-sized or [inValue] is a zero literal,
+otherwise to a bounded element loop.
+Usage: vArr.fill(0)
+*/
+@DocumentationOnly
+fun <T> Array<T>.fill(inValue: T): Unit = error("Transpiler intrinsic")
+
 // ==================================================
 // MARK: RawArray
 // ==================================================
@@ -168,3 +177,13 @@ val vRaw: @Ptr RawArray<Byte> = vArr.ptr()
  */
 @DocumentationOnly
 class RawArray<T>
+
+/**
+Fills [inCount] elements of this raw array with [inValue].
+RawArray has no length, so the count must be supplied explicitly.
+Compiles to memset when the element is byte-sized or [inValue] is a zero literal,
+otherwise to a bounded element loop.
+Usage: vRaw.fill(n, 0)
+*/
+@DocumentationOnly
+fun <T> RawArray<T>.fill(inCount: Int, inValue: T): Unit = error("Transpiler intrinsic")

@@ -28,6 +28,28 @@ private fun CCodeGen.tmpStrToNumOptional(
 	return vT
 	}
 
+/* Emit an in-place fill of [inLen] elements at [inPtr] with [inValueExpr].
+Uses memset when [inValueExpr] is a zero literal (valid for any element) or the element
+is byte-sized (any value); otherwise emits a bounded element loop. */
+private fun CCodeGen.emitArrayFill(inPtr: String, inLen: String, inElemC: String, inValueExpr: String, inIsZeroLit: Boolean) {
+	val vByteSized = inElemC in setOf("ktc_Byte", "ktc_UByte", "ktc_Bool")
+	when {
+		inIsZeroLit -> preStmts += "memset($inPtr, 0, sizeof($inElemC) * (size_t)($inLen));"
+		vByteSized  -> preStmts += "memset($inPtr, (int)($inValueExpr), (size_t)($inLen));"
+		else -> {
+			val vP = tmp(); val vN = tmp(); val vV = tmp(); val vI = tmp()
+			preStmts += "$inElemC* $vP = $inPtr;"
+			preStmts += "const size_t $vN = (size_t)($inLen);"
+			preStmts += "const $inElemC $vV = $inValueExpr;"
+			preStmts += "for (size_t $vI = 0; $vI < $vN; $vI++) $vP[$vI] = $vV;"
+			}
+		}
+	}
+
+/* True when [inExpr] is an integer literal equal to zero (all-zero bytes → memset-safe). */
+private fun isZeroLit(inExpr: Expr): Boolean =
+	(inExpr is IntLit && inExpr.value == 0L) || (inExpr is LongLit && inExpr.value == 0L)
+
 /* Handles built-in String/primitive methods and array methods.
 Returns the expression string, or null if not a recognised built-in. */
 internal fun CCodeGen.genBuiltinMethodCallOrNull(
@@ -291,6 +313,34 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $vSrcPtr, (size_t)$vSrcLen * sizeof($vElemC));"
 		preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vSrcLen};"
 		return vResult
+		}
+	if (vMethod == "fill" && inRecvTypeKtc != null) {
+		val vCore = inRecvTypeKtc.stripNullable
+		// Array<T>.fill(value) — length is known from the VarArr / @Size(N) / trampoline.
+		if (vCore != null && vCore.isArrayLike && inArgs.size == 1) {
+			val vElemC   = arrayElementCTypeKtc(vCore)
+			val vObjName = (inDot.obj as? NameExpr)?.name
+			val vIsTramp = vObjName != null && vObjName in trampolinedParams
+			val vIsSized = vCore.asArr?.sized != null
+			val vPtr = when {
+				vIsTramp -> "local\$$vObjName"
+				vIsSized -> inRecv
+				else     -> "($inRecv).ptr"
+				}
+			val vLen = when {
+				vIsTramp -> arrayParamSizeExpr(vObjName!!)
+				vIsSized -> vCore.asArr!!.sized.toString()
+				else     -> "($inRecv).len"
+				}
+			emitArrayFill(vPtr, vLen, vElemC, genExpr(inArgs[0].expr), isZeroLit(inArgs[0].expr))
+			return ""
+			}
+		// RawArray<T>.fill(count, value) — no length, count supplied explicitly.
+		if (vCore is KtcType.Ptr && vCore.inner !is KtcType.Arr && inArgs.size == 2) {
+			val vElemC = vCore.inner.toCType()
+			emitArrayFill(inRecv, genExpr(inArgs[0].expr), vElemC, genExpr(inArgs[1].expr), isZeroLit(inArgs[1].expr))
+			return ""
+			}
 		}
 	if ((vMethod == "get" || vMethod == "set") && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		val vIdx        = inArgs.getOrNull(0)?.let { genExpr(it.expr) } ?: "0"

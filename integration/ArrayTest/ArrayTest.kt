@@ -126,8 +126,41 @@ fun testArrayInt(): @Ptr Array<Int> {
     return arr3
 }
 
+fun testFill() {
+    // Byte-sized element → memset with the value byte.
+    val barr = ByteArray(5)
+    barr.fill(7)
+    for (i in 0 until barr.size) {
+        if (barr[i] != 7.toByte()) error("byte fill failed at $i")
+    }
+
+    // Zero literal on non-byte element → memset 0.
+    val iarr = IntArray(6)
+    iarr.fill(0)
+    for (i in 0 until iarr.size) {
+        if (iarr[i] != 0) error("int zero fill failed at $i")
+    }
+
+    // Non-zero, non-byte element → element loop.
+    iarr.fill(42)
+    for (i in 0 until iarr.size) {
+        if (iarr[i] != 42) error("int loop fill failed at $i")
+    }
+
+    // RawArray needs an explicit count.
+    val raw: @Ptr RawArray<Int> = RawArray<Int>.allocWith(Heap, 4)!!
+    raw.fill(4, 9)
+    for (i in 0 until 4) {
+        if (raw[i] != 9) error("raw fill failed at $i")
+    }
+    Heap.freeMem(raw)
+
+    println("fill ok")
+}
+
 fun main() {
     testArrayPtr()
+    testFill()
 
 
 
