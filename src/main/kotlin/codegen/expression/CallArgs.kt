@@ -178,6 +178,11 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					val cIface      = typeFlatName(ifaceName)
 					val argKtc      = inferExprTypeKtc(arg.expr)
 					val argKtcCore  = argKtc.stripNullable
+					// Arg is already a trampoline (@Ptr Interface): forward directly, no re-wrap.
+					val argInner = (argKtcCore as? KtcType.Ptr)?.inner
+					if (argInner is KtcType.User && argInner.kind == KtcType.UserKind.Interface) {
+						parts += expr
+						} else {
 					val concreteName = when {
 						arg.expr is NameExpr && classes.containsKey(arg.expr.name)  -> arg.expr.name
 						arg.expr is NameExpr && objects.containsKey(arg.expr.name)  -> arg.expr.name
@@ -213,6 +218,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						parts += tIface
 						} else {
 						parts += expr
+						}
 						}
 					} else {
 					val vIsArrPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null

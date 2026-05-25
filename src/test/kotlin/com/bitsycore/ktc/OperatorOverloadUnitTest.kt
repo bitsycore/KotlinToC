@@ -116,7 +116,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
 
     @Test fun operatorIteratorWithStdlib() {
         val r = transpileMainWithStdlib("""
-            val list = mutableListOf(1, 2, 3)
+            val list = mutableListOf(Heap, 1, 2, 3)
             var sum = 0
             for (x in list) { sum += x }
         """)
@@ -125,7 +125,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
 
     @Test fun operatorContainsMap() {
         val r = transpileMainWithStdlib("""
-            val map = mutableMapOf("a" to 1, "b" to 2)
+            val map = mutableMapOf(Heap, "a" to 1, "b" to 2)
             val has = "a" in map
         """)
         r.sourceContains("containsKey")
@@ -133,7 +133,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
 
     @Test fun operatorGetMap() {
         val r = transpileMainWithStdlib("""
-            val map = mutableMapOf("a" to 1, "b" to 2)
+            val map = mutableMapOf(Heap, "a" to 1, "b" to 2)
             val v = map["a"]
         """)
         r.sourceContains("ktc_std_HashMap_String_Int_get")
@@ -141,7 +141,7 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
 
     @Test fun operatorSetMap() {
         val r = transpileMainWithStdlib("""
-            val map = mutableMapOf("a" to 1, "b" to 2)
+            val map = mutableMapOf(Heap, "a" to 1, "b" to 2)
             map["a"] = 99
         """)
         r.sourceContains("ktc_std_HashMap_String_Int_set")

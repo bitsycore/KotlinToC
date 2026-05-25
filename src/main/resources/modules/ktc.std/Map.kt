@@ -171,17 +171,17 @@ class HashMap<K, V>(private val allocator: @Ptr Allocator, private var capacity:
 
 }
 
-fun <K,V> mapOf(vararg pairs: Pair<K, V>): Map<K, V> {
-	val map = HashMap<K, V>(Heap, pairs.size)
+fun <K,V> mapOf(allocator: @Ptr Allocator, vararg pairs: Pair<K, V>): Map<K, V> {
+	val map = HashMap<K, V>(allocator, pairs.size)
 	for (p in pairs) {
 		map.put(p.first, p.second)
 	}
 	return map
 }
 
-fun <K,V> mutableMapOf(vararg pairs: Pair<K, V>): MutableMap<K, V> {
+fun <K,V> mutableMapOf(allocator: @Ptr Allocator, vararg pairs: Pair<K, V>): MutableMap<K, V> {
 	val notZero = if (pairs.size == 0) 8 else pairs.size * 2
-	val map = HashMap<K, V>(Heap, notZero)
+	val map = HashMap<K, V>(allocator, notZero)
 	for (p in pairs) {
 		map.put(p.first, p.second)
 	}

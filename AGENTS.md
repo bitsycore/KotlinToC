@@ -102,7 +102,7 @@ fun main() {
     println("value ok: $safe")
 
     // generic class + interface
-    val list: MutableList<String> = mutableListOf("a", "b", "c")
+    val list: MutableList<String> = mutableListOf(Heap, "a", "b", "c")
     defer list.dispose()
     if (list.size != 3) error("wrong size ${list.size}")
     println("list ok")

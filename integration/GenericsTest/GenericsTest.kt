@@ -13,7 +13,7 @@ class Wrapper<T>(private var value: T) {
 fun main() {
 
     // Generic function
-    val list = mutableListOf(10, 20, 30)
+    val list = mutableListOf(Heap, 10, 20, 30)
     defer list.dispose()
     println("firstOf = ${firstOf(list)}")
     if (firstOf(list) != 10) error("FAIL firstOf")

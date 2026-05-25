@@ -2,7 +2,7 @@ package IteratorTest
 
 fun main() {
     // Test ListIterator via mutableListOf
-    val list = mutableListOf(1, 2, 3, 4, 5)
+    val list = mutableListOf(Heap, 1, 2, 3, 4, 5)
     defer list.dispose()
 
     println("--- List iterator ---")
@@ -14,7 +14,7 @@ fun main() {
     if (listSum != 15) error("FAIL list sum=$listSum")  // 1+2+3+4+5
 
     // Test ListIterator via listOf
-    val fixedList = listOf(10, 20, 30)
+    val fixedList = listOf(Heap, 10, 20, 30)
     defer fixedList.dispose()
 
     println("--- Fixed list iterator ---")
@@ -41,7 +41,7 @@ fun main() {
     map.dispose()
 
     // Test MapIterator via mutableMapOf
-    val m2 = mutableMapOf(1 to "one", 2 to "two")
+    val m2 = mutableMapOf(Heap, 1 to "one", 2 to "two")
     defer m2.dispose()
 
     println("--- mutableMapOf iterator ---")
@@ -50,7 +50,7 @@ fun main() {
     }
 
     // Test MapIterator via mapOf (read-only)
-    val m3 = mapOf(100 to "hundred", 200 to "two hundred")
+    val m3 = mapOf(Heap, 100 to "hundred", 200 to "two hundred")
     defer m3.dispose()
 
     println("--- mapOf iterator ---")

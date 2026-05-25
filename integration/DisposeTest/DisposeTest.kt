@@ -45,7 +45,7 @@ fun main() {
     println("generic implicit dispose ok")
 
     // Test 6: mutableListOf has dispose (from Disposable interface)
-    val list = mutableListOf(1, 2, 3)
+    val list = mutableListOf(Heap, 1, 2, 3)
     defer list.dispose()
     println("list dispose ok")
 

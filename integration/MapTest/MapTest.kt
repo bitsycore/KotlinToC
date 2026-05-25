@@ -82,7 +82,7 @@ fun main() {
     iterMap.dispose()
 
     // Test mapOf
-    val m1 = mapOf("A" to "Alpha", "B" to "Bravo")
+    val m1 = mapOf(Heap, "A" to "Alpha", "B" to "Bravo")
     defer m1.dispose()
     println("mapOf keys:")
     for (entry in m1) {
@@ -90,7 +90,7 @@ fun main() {
     }
 
     // Test mutableMapOf
-    val m2 = mutableMapOf("X" to "Xray", "Y" to "Yankee")
+    val m2 = mutableMapOf(Heap, "X" to "Xray", "Y" to "Yankee")
     defer m2.dispose()
     m2["Z"] = "Zulu"
     println("mutableMapOf after add:")
