@@ -160,7 +160,7 @@ for keeping track of the element count. Use this only when interfacing with
 C APIs that expect a bare pointer or for optimizing class like HashMap implementation.
 
 Heap-allocating a RawArray:
-val vRaw: @Ptr RawArray<Byte> = HeapAlloc<RawArray<Byte>>(n)
+val vRaw: @Ptr RawArray<Byte> = RawArray<Byte>.allocWith(Heap, n)
 
 Getting a raw pointer from a regular stack Array<T>:
 val vArr = ByteArray(n)

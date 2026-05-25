@@ -17,7 +17,7 @@ import com.bitsycore.ktc.types.KtcType
  *   [genExpr]         — central expression dispatcher (see below for full list)
  *   [genName]         — resolve variable/field/this names with smart-cast unwrap
  *   [genBin]           — binary ops with special handling for String, Pair, null, in/!in
- *   [genCall]          — function/constructor call, built-ins (HeapAlloc, arrayOf...)
+ *   [genCall]          — function/constructor call, built-ins (allocWith, arrayOf...)
  *   [com.bitsycore.ktc.codegen.expression.genMethodCall]    — method dispatch: built-in, class method, interface vtable, extension
  *   [genDot]           — field access, enum values, object properties, pointer deref
  *   [genSafeDot]       — nullable-safe field access (?.)

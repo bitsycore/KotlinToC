@@ -5,43 +5,8 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
 // ── Built-in / intrinsic call dispatch ───────────────────────────
-// Handles println, print, HeapAlloc family, arrayOf family, Array, StringBuffer.
+// Handles println, print, arrayOf family, Array, StringBuffer.
 // Returns null when inName is not a recognised built-in (caller continues dispatch).
-
-/* Emit the final two preStmts that either build a VarArr or a raw pointer local,
-then return the tmp name. Shared by HeapAlloc, HeapArrayZero and HeapArrayResize. */
-private fun CCodeGen.finishHeapArrayVar(inT: String, inElemC: String, inSizeExpr: String, inIsArray: Boolean): String {
-	if (inIsArray) preStmts += "${varArrTypeName(inElemC)} $inT = {${inT}_ptr, $inSizeExpr};"
-	else           preStmts += "$inElemC* $inT = ${inT}_ptr;"
-	return inT
-	}
-
-/* Emit heap-allocation code for a single TypeRef (array or class or raw pointer).
-Shared by the explicit-type-arg branch and the target-type-inference branch of HeapAlloc. */
-private fun CCodeGen.genHeapAllocForTypeRef(inTa: TypeRef, inArgs: List<Arg>): String {
-	if ((inTa.name == "RawArray" || inTa.name == "Array") && inTa.typeArgs.isNotEmpty()) {
-		val vElemName = typeSubst[inTa.typeArgs[0].name] ?: inTa.typeArgs[0].name
-		val vElemC    = cTypeStr(vElemName)
-		val vSizeExpr = genExpr(inArgs[0].expr)
-		val vT        = tmp()
-		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-		return finishHeapArrayVar(vT, vElemC, vSizeExpr, inTa.name == "Array")
-		}
-	var vTypeName = typeSubst[inTa.name] ?: inTa.name
-	if (inTa.typeArgs.isNotEmpty() && classes.containsKey(vTypeName) && classes[vTypeName]!!.isGeneric)
-		vTypeName = mangledGenericName(vTypeName, inTa.typeArgs.map { it.name })
-	if (classes.containsKey(vTypeName)) {
-		val vCName  = typeFlatName(vTypeName)
-		val vArgStr = inArgs.joinToString(", ") { genExpr(it.expr) }
-		val vT      = tmp()
-		preStmts += "$vCName* $vT = ($vCName*)${tMalloc("sizeof($vCName)")};"
-		preStmts += "if ($vT) *$vT = ${vCName}_primaryConstructor($vArgStr);"
-		return vT
-		}
-	val vElemC = cTypeStr(vTypeName)
-	if (inArgs.isEmpty()) return "($vElemC*)${tMalloc("sizeof($vElemC)")}"
-	return "($vElemC*)${tMalloc("sizeof($vElemC) * (size_t)(${genExpr(inArgs[0].expr)})")}"
-	}
 
 /* Infer the capacity expression for the 2-arg StringBuffer constructor from the ptr argument. */
 private fun CCodeGen.strBufCapExpr(inPtrArg: Expr, inRawPtr: String): String =
@@ -66,55 +31,6 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 	when (inName) {
 		"println" -> return genPrintln(inArgs)
 		"print"   -> return genPrint(inArgs)
-
-		"HeapAlloc" -> {
-			if (inCall.typeArgs.isNotEmpty()) return genHeapAllocForTypeRef(inCall.typeArgs[0], inArgs)
-			if (heapAllocTargetType != null)  return genHeapAllocForTypeRef(heapAllocTargetType!!, inArgs)
-			return tMalloc("(size_t)(${genExpr(inArgs[0].expr)})")
-			}
-
-		"HeapArrayZero" -> {
-			fun genBranch(inTa: TypeRef): String {
-				val vIsArray    = inTa.name == "Array"    && inTa.typeArgs.isNotEmpty()
-				val vIsRawArray = inTa.name == "RawArray" && inTa.typeArgs.isNotEmpty()
-				val vElemName   = if (vIsArray || vIsRawArray) {
-					typeSubst[inTa.typeArgs[0].name] ?: inTa.typeArgs[0].name
-					} else typeSubst[inTa.name] ?: inTa.name
-				val vElemC    = cTypeStr(vElemName)
-				val vSizeExpr = genExpr(inArgs[0].expr)
-				val vT        = tmp()
-				preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tCalloc("(size_t)($vSizeExpr)", "sizeof($vElemC)")};"
-				return finishHeapArrayVar(vT, vElemC, vSizeExpr, vIsArray)
-				}
-			if (inCall.typeArgs.isNotEmpty()) return genBranch(inCall.typeArgs[0])
-			if (heapAllocTargetType != null)  return genBranch(heapAllocTargetType!!)
-			return tCalloc("(size_t)(${genExpr(inArgs[0].expr)})", "(size_t)(${genExpr(inArgs[1].expr)})")
-			}
-
-		"HeapArrayResize" -> {
-			fun genBranch(inTa: TypeRef): String {
-				val vIsArray  = inTa.name == "Array" && inTa.typeArgs.isNotEmpty()
-				val vElemName = if (vIsArray) typeSubst[inTa.typeArgs[0].name] ?: inTa.typeArgs[0].name
-					else typeSubst[inTa.name] ?: inTa.name
-				val vElemC    = cTypeStr(vElemName)
-				val vPtrExpr  = genExpr(inArgs[0].expr)
-				val vSizeExpr = genExpr(inArgs[1].expr)
-				val vT        = tmp()
-				val vRawPtrExpr = if (vIsArray) "($vPtrExpr).ptr" else vPtrExpr
-				preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)${tRealloc(vRawPtrExpr, "sizeof($vElemC) * (size_t)($vSizeExpr)")};"
-				return finishHeapArrayVar(vT, vElemC, vSizeExpr, vIsArray)
-				}
-			if (inCall.typeArgs.isNotEmpty()) return genBranch(inCall.typeArgs[0])
-			if (heapAllocTargetType != null)  return genBranch(heapAllocTargetType!!)
-			return tRealloc(genExpr(inArgs[0].expr), "(size_t)(${genExpr(inArgs[1].expr)})")
-			}
-
-		"HeapFree" -> {
-			val vFreeArgKtc  = inferExprTypeKtc(inArgs[0].expr)
-			val vFreeArgCore = vFreeArgKtc.stripNullable
-			val vFreeExpr    = genExpr(inArgs[0].expr)
-			return if (vFreeArgCore?.isArrayLike == true) tFree("($vFreeExpr).ptr") else tFree(vFreeExpr)
-			}
 
 		"byteArrayOf", "shortArrayOf", "intArrayOf", "longArrayOf",
 		"floatArrayOf", "doubleArrayOf", "booleanArrayOf", "charArrayOf",

@@ -86,8 +86,6 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val inferredNullable = s.type == null && vKtc is KtcType.Nullable
     // Strip ? suffix for nullable types; it gets added back at defineVar and optCTypeName
     val t = if (inferredNullable) tRaw.removeSuffix("?") else tRaw
-    // malloc/calloc/realloc return nullable pointers (may return NULL)
-    val isAlloc = s.type == null && isAllocCall(s.init)
 
     // Size compatibility check for @Size(N) array assignments.
     if (s.type != null && s.init != null && s.type.isSizedArray()) {
@@ -115,7 +113,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
 
     // Nullable pointer (@Ptr T?): can be NULL
     val isPtrNullable = isPointer &&
-            (s.type?.nullable == true || s.init is NullLit || inferredNullable || isAlloc)
+            (s.type?.nullable == true || s.init is NullLit || inferredNullable)
 
     // Value nullable (T? without pointer): uses Optional struct
     val isValueNullable = when {

@@ -191,60 +191,11 @@ internal fun CCodeGen.isArrayReturningCall(e: Expr?): Boolean {
 	return resolveTypeName(sig.returnType).isArrayLike
 	}
 
-/* Check if an expression is a malloc/calloc/realloc call (returns nullable pointer). */
-internal fun isAllocCall(e: Expr?): Boolean {
-	if (e !is CallExpr) return false
-	val name = (e.callee as? NameExpr)?.name ?: return false
-	return name in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize")
-	}
-
-/* Check if an expression is a malloc/calloc/realloc call with Array<T> type arg. */
-internal fun CCodeGen.isAllocArrayCall(e: Expr?): Boolean {
-	val inner = if (e is NotNullExpr) e.expr else e
-	if (inner !is CallExpr) return false
-	val name = (inner.callee as? NameExpr)?.name ?: return false
-	if (name !in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize")) return false
-	if (inner.typeArgs.isNotEmpty() && inner.typeArgs[0].name == "Array") return true
-	if (heapAllocTargetType != null && heapAllocTargetType!!.name == "Array" && heapAllocTargetType!!.typeArgs.isNotEmpty()) return true
-	return false
-	}
-
-/*
-Extract the allocation size argument from malloc<Array<T>>(size) or realloc<Array<T>>(ptr, size).
-Unwraps NotNullExpr (!!). Returns the size Expr or null.
-*/
-internal fun extractAllocSize(e: Expr?): Expr? {
-	val inner = if (e is NotNullExpr) e.expr else e
-	if (inner !is CallExpr) return null
-	if (inner.callee is DotExpr && inner.callee.name == "allocWith" && inner.args.size >= 2) {
-		return inner.args[1].expr
-		}
-	if (inner.callee is DotExpr && inner.callee.name == "resizeWith" && inner.args.size >= 2) {
-		return inner.args[1].expr
-		}
-	val name = (inner.callee as? NameExpr)?.name ?: return null
-	return when (name) {
-		"HeapAlloc"       -> inner.args.firstOrNull()?.expr
-		"HeapArrayZero"   -> inner.args.firstOrNull()?.expr
-		"HeapArrayResize" -> inner.args.getOrNull(1)?.expr
-		else              -> null
-		}
-	}
-
-/* Infer a TypeRef from an init expression, detecting @Ptr Array patterns from HeapAlloc. */
+/* Infer a TypeRef from an init expression, detecting @Ptr Array patterns from allocWith/arrayOf. */
 internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
 	val inner = if (init is NotNullExpr) init.expr else init
 	if (inner is CallExpr) {
 		val name = (inner.callee as? NameExpr)?.name
-		if (name in setOf("HeapAlloc", "HeapArrayZero", "HeapArrayResize") && inner.typeArgs.isNotEmpty()) {
-			val ta = inner.typeArgs[0]
-			if (ta.name == "Array" && ta.typeArgs.isNotEmpty()) {
-				return ta.copy(annotations = ta.annotations + Annotation("Ptr"))
-				}
-			if (ta.name == "RawArray" && ta.typeArgs.isNotEmpty()) {
-				return ta.typeArgs[0].copy(annotations = ta.typeArgs[0].annotations + Annotation("Ptr"))
-				}
-			}
 		if (name == "arrayOf" && inner.typeArgs.isNotEmpty()) {
 			val ta      = inner.typeArgs[0]
 			val size    = inner.args.size

@@ -445,7 +445,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val trampolinedParams: MutableSet<String>
         get() = fnCtx.trampolinedParams
     internal var currentExtRecvType: String? get() = fnCtx.extRecvType; set(v) { fnCtx.extRecvType = v }
-    // Target type for HeapAlloc/HeapArrayZero/HeapArrayResize inference (context from LHS)
+    // Target type for allocWith/resizeWith inference (context from LHS)
     internal var heapAllocTargetType: TypeRef? = null
 
     /* True if the variable was originally declared as Any trampoline (or Any?) and later smart-cast narrowed. */

@@ -32,7 +32,7 @@ class Arena(
     var fUsed: Int = 0
 
     /* Heap-backed: the arena allocates inCap bytes internally; call free() when done. */
-    constructor(inCap: Int) : this(HeapAlloc<RawArray<Byte>>(inCap), inCap, true)
+    constructor(inCap: Int) : this(RawArray<Byte>.allocWith(Heap, inCap), inCap, true)
 
     /*
     Bump-allocate inSize bytes, aligned to 8 bytes.

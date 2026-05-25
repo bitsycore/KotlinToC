@@ -48,9 +48,15 @@ class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
 	override var size: Int = 0
 		private set
 
-	private var keys: @Ptr RawArray<K> = HeapAlloc(capacity) ?: error("Could allocate keys")
-	private var vals: @Ptr RawArray<V> = HeapAlloc(capacity)  ?: error("Could allocate vals")
-	private var occ: @Ptr RawArray<Boolean> = HeapArrayZero(capacity)  ?: error("Could allocate occ")
+	private var keys: @Ptr RawArray<K> = RawArray<K>.allocWith(Heap, capacity) ?: error("Could allocate keys")
+	private var vals: @Ptr RawArray<V> = RawArray<V>.allocWith(Heap, capacity) ?: error("Could allocate vals")
+	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>.allocWith(Heap, capacity) ?: error("Could allocate occ")
+
+	init {
+		for (i in 0 until capacity) {
+			occ[i] = false
+		}
+	}
 
 	private fun findSlot(key: K): Int {
 		var idx = key.hashCode() % capacity
@@ -139,9 +145,12 @@ class HashMap<K, V>(private var capacity: Int) : MutableMap<K, V> {
 		val oldOcc = occ
 		val oldCap = capacity
 		val newCapacity = capacity * 2
-		keys = HeapAlloc<RawArray<K>>(newCapacity)!!
-		vals = HeapAlloc<RawArray<V>>(newCapacity)!!
-		occ = HeapArrayZero<RawArray<Boolean>>(newCapacity)!!
+		keys = RawArray<K>.allocWith(Heap, newCapacity)!!
+		vals = RawArray<V>.allocWith(Heap, newCapacity)!!
+		occ = RawArray<Boolean>.allocWith(Heap, newCapacity)!!
+		for (i in 0 until newCapacity) {
+			occ[i] = false
+		}
 		capacity = newCapacity
 		size = 0
 		for (i in 0 until oldCap) {

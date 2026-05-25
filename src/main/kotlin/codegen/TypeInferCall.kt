@@ -65,26 +65,6 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             return mangledGenericName(name, inferredArgs)
         }
         if (classes.containsKey(name)) return name
-        if (name == "HeapAlloc" || name == "HeapArrayZero" || name == "HeapArrayResize") {
-            val ta = e.typeArgs.getOrNull(0) ?: heapAllocTargetType ?: return "void*"
-            if (ta.name == "Array" && ta.typeArgs.isNotEmpty()) {
-                val elemName = typeSubst[ta.typeArgs[0].name] ?: ta.typeArgs[0].name
-                return "${elemName}Array"
-            }
-            if (ta.name == "RawArray" && ta.typeArgs.isNotEmpty()) {
-                val elemName = typeSubst[ta.typeArgs[0].name] ?: ta.typeArgs[0].name
-                return "${elemName}*"
-            }
-            if (ta.typeArgs.isNotEmpty() && classes.containsKey(ta.name) && classes[ta.name]!!.isGeneric) {
-                val resolvedArgs = ta.typeArgs.map { t ->
-                    val sub = substituteTypeParams(t)
-                    if (sub.nullable) "${resolveTypeNameStr(sub)}?" else resolveTypeNameStr(sub)
-                }
-                return "${mangledGenericName(ta.name, resolvedArgs)}*"
-            }
-            val resolvedName = typeSubst[ta.name] ?: ta.name
-            return "${resolvedName}*"
-        }
         if (name == "byteArrayOf" || name == "ByteArray") return "ByteArray"
         if (name == "shortArrayOf" || name == "ShortArray") return "ShortArray"
         if (name == "intArrayOf" || name == "IntArray") return "IntArray"

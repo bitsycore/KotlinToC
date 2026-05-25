@@ -4,7 +4,6 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceProperties
 import com.bitsycore.ktc.codegen.emit.registerClassFields
-import com.bitsycore.ktc.codegen.statement.isAllocCall
 import com.bitsycore.ktc.types.KtcType
 
 /* Returns the C field name for a dot access, prefixing private fields with PRIV_ when accessed via this. */
@@ -231,7 +230,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
 
     // Pointer-nullable: type ends with "*", "^", or "&"
     val baseType = innerType?.removeSuffix("?") ?: ""
-    val isPtr = innerKtcCore is KtcType.Ptr || isAllocCall(e.expr)
+    val isPtr = innerKtcCore is KtcType.Ptr
 
     if (isPtr) {
         // VarArr nullable (@Ptr Array<T>?): use .ptr field for null check
