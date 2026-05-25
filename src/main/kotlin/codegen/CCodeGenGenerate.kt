@@ -107,8 +107,10 @@ internal fun CCodeGen.generate(): COutput {
 	hdr.appendLine("/* @VAR_ARR_PRIM_TYPES@ */")
 	hdr.appendLine()
 	// Emit struct/enum/object declarations (non-generic).
+	// Topologically sort class declarations so value-embedded types are always defined before their users.
+	val sortedDecls = topoSortClassDecls(file.decls)
 	var firstClass = true
-	for (d in file.decls) when (d) {
+	for (d in sortedDecls) when (d) {
 		is ClassDecl -> if (d.typeParams.isEmpty() && !d.annotations.any { it.name == "DocumentationOnly" }) {
 			if (!firstClass) hdr.appendLine()
 			firstClass = false

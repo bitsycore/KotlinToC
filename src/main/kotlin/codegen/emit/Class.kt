@@ -1,14 +1,79 @@
 package com.bitsycore.ktc.codegen.emit
 
-import com.bitsycore.ktc.ast.ClassDecl
-import com.bitsycore.ktc.ast.FunDecl
-import com.bitsycore.ktc.ast.Param
-import com.bitsycore.ktc.ast.SecondaryCtor
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.statement.emitStmt
 
 // class / data class — primary class emit, secondary constructors
+
+/**
+ * Topologically sort concrete (non-generic) ClassDecls within a declaration list so that
+ * if class A has a value-embedded field of type B (both in the same package), B appears
+ * before A in the output.  Non-class declarations keep their relative positions.
+ *
+ * Uses Kahn's algorithm; any cycle (which KTC forbids in practice) falls back to the
+ * original declaration order for the affected nodes.
+ */
+internal fun topoSortClassDecls(decls: List<Decl>): List<Decl> {
+	// Collect the non-generic, non-doc-only classes we need to sort
+	val classDecls = decls.filterIsInstance<ClassDecl>()
+		.filter { it.typeParams.isEmpty() && it.annotations.none { a -> a.name == "DocumentationOnly" } }
+	if (classDecls.size <= 1) return decls
+
+	val classNames = classDecls.map { it.name }.toSet()
+
+	// deps[A] = same-package class names that must be defined before A (A has a value field of that type)
+	fun collectDeps(d: ClassDecl): Set<String> {
+		val result = mutableSetOf<String>()
+		for (p in d.ctorParams) {
+			val n = p.type.name
+			if (n in classNames && n != d.name) result += n
+			}
+		for (m in d.members) {
+			if (m is PropDecl && m.receiver == null && m.type != null) {
+				val n = m.type.name
+				if (n in classNames && n != d.name) result += n
+				}
+			}
+		return result
+		}
+
+	val deps = classDecls.associate { it.name to collectDeps(it) }
+
+	// Kahn's topological sort
+	val inDegree = classDecls.associate { it.name to deps[it.name]!!.size }.toMutableMap()
+	val reverseDeps = mutableMapOf<String, MutableList<String>>()
+	for ((name, depSet) in deps) {
+		for (dep in depSet) reverseDeps.getOrPut(dep) { mutableListOf() } += name
+		}
+
+	val queue: ArrayDeque<String> = ArrayDeque(classDecls.filter { inDegree[it.name] == 0 }.map { it.name })
+	val order = mutableListOf<String>()
+	while (queue.isNotEmpty()) {
+		val cur = queue.removeFirst()
+		order += cur
+		for (dependent in (reverseDeps[cur] ?: emptyList())) {
+			val newDeg = (inDegree[dependent] ?: 1) - 1
+			inDegree[dependent] = newDeg
+			if (newDeg == 0) queue += dependent
+			}
+		}
+
+	// Append any remaining classes (cyclic deps — preserve original order as fallback)
+	val emitted = order.toSet()
+	classDecls.filter { it.name !in emitted }.forEach { order += it.name }
+
+	// Rebuild the decls list: replace class-decl slots with the topo-sorted ones, others unchanged
+	val byName = classDecls.associateBy { it.name }
+	val sortedQueue = ArrayDeque(order.mapNotNull { byName[it] })
+	return decls.map { d ->
+		if (d is ClassDecl && d.typeParams.isEmpty() && d.annotations.none { a -> a.name == "DocumentationOnly" })
+			sortedQueue.removeFirst()
+		else
+			d
+		}
+	}
 
 internal fun CCodeGen.emitClass(d: ClassDecl) {
 	val ci = classes[d.name]!!

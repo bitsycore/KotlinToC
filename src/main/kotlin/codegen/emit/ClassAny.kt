@@ -28,12 +28,26 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
 				val vValueCmp = when {
 					vInnerName == "String" -> "ktc_core_string_eq(KTC_UNWRAP(a.$fieldName), KTC_UNWRAP(b.$fieldName))"
 					classes[vInnerName]?.isData == true -> "${typeFlatName(vInnerName)}_equals(KTC_UNWRAP(a.$fieldName), KTC_UNWRAP(b.$fieldName))"
+					classes[vInnerName] != null -> {
+						val vNullFieldCi = classes[vInnerName]!!
+						val hasCustomEq = vNullFieldCi.methods.any { it.name == "equals" && it.receiver == null }
+						if (hasCustomEq) "memcmp(&KTC_UNWRAP(a.$fieldName), &KTC_UNWRAP(b.$fieldName), sizeof(${typeFlatName(vInnerName)})) == 0"
+						else "${typeFlatName(vInnerName)}_equals(KTC_UNWRAP(a.$fieldName), KTC_UNWRAP(b.$fieldName))"
+						}
 					else -> "KTC_UNWRAP(a.$fieldName) == KTC_UNWRAP(b.$fieldName)"
 					}
 				"(KTC_IS_SOME(a.$fieldName) == KTC_IS_SOME(b.$fieldName) && (KTC_IS_NONE(a.$fieldName) || $vValueCmp))"
 				}
 			vTStr == "String" -> "ktc_core_string_eq(a.$fieldName, b.$fieldName)"
 			classes[vTStr]?.isData == true -> "${typeFlatName(vTStr)}_equals(a.$fieldName, b.$fieldName)"
+			classes[vTStr] != null -> {
+				val vFieldCi = classes[vTStr]!!
+				val hasCustomEq = vFieldCi.methods.any { it.name == "equals" && it.receiver == null }
+				if (hasCustomEq)
+					"memcmp(&a.$fieldName, &b.$fieldName, sizeof(${typeFlatName(vTStr)})) == 0"
+				else
+					"${typeFlatName(vTStr)}_equals(a.$fieldName, b.$fieldName)"
+				}
 			vKtcEq.isArrayLike && vKtcEq.asArr?.sized == null -> "a.$fieldName.ptr == b.$fieldName.ptr"
 			vKtcEq is KtcType.COpaque -> "memcmp(&a.$fieldName, &b.$fieldName, sizeof(${vKtcEq.toCType()})) == 0"
 			else -> "a.$fieldName == b.$fieldName"
