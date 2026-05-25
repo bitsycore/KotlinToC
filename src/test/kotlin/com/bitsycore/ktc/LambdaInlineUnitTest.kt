@@ -13,7 +13,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
             }
         """)
         r.sourceContains("/* inline twice(x = 5): Int */")
-        r.sourceContains("ktc_Int x = 5;")
+        r.sourceContains("_x = 5;")
         r.sourceContains("\$end_ir_")
         r.sourceNotContains("test_Main_twice")
     }
@@ -30,7 +30,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
             }
         """)
         r.sourceContains("/* inline greet(name = \"World\"): String */")
-        r.sourceContains("ktc_String name = ktc_core_str(\"World\");")
+        r.sourceContains("_name = ktc_core_str(\"World\");")
     }
 
     @Test fun inlineFunWithReturn() {
@@ -58,7 +58,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
             }
         """)
         r.sourceContains("/* inline foo(x = 5, block = Fun(Int)->Int): Int */")
-        r.sourceContains("ktc_Int x = 5;")
+        r.sourceContains("_x = 5;")
     }
 
     @Test fun lambdaWithExplicitParams() {
@@ -72,8 +72,8 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
             }
         """)
         r.sourceContains("/* inline combine(a = 3, b = 7, fn = Fun(Int,Int)->Int): Int */")
-        r.sourceContains("ktc_Int a = 3;")
-        r.sourceContains("ktc_Int b = 7;")
+        r.sourceContains("_a = 3;")
+        r.sourceContains("_b = 7;")
     }
 
     @Test fun inlineFunNotEmittedAsStandalone() {

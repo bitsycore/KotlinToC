@@ -79,10 +79,10 @@ internal fun CCodeGen.pushSmartCasts(casts: List<Pair<String, String>>, ind: Str
 	pushScope()
 		for ((name, type) in casts) {
 			val vKtc = parseResolvedTypeName(type)
+			val vExistingCName = lookupLocalVar(name)?.cName
 			// For pointer narrows (@Ptr Any → @Ptr Concrete), emit a C cast
-			val vCName = if (vKtc is KtcType.Ptr) "((${vKtc.toCType()})${name})" else null
-			if (vCName != null) defineVar(name, LocalVar(ktc = vKtc, mutable = false, cName = vCName))
-			else defineVar(name, type)
+			val vCName = if (vKtc is KtcType.Ptr) "((${vKtc.toCType()})${lookupCName(name)})" else vExistingCName
+			defineVar(name, LocalVar(ktc = vKtc, mutable = false, cName = vCName))
 			}
 	}
 

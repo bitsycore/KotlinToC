@@ -26,7 +26,8 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             inline fun twoArgInline(a: Int, b: Int): Int = a + b
         """)
         r.sourceContains("twoArgInline")
-        r.sourceContains("a + b")
+        r.sourceContains("_a + $")
+        r.sourceContains("_b)")
     }
 
     // ── Inline generic registration (with <T>) ──────────────────────
@@ -74,8 +75,9 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val x: Int? = 42
             val y: Int = checkNotNull(x)
         """)
-        r.sourceContains("ktc_Int\$Opt value = x")
-        r.sourceContains("KTC_UNWRAP(value)")
+        r.sourceContains("ktc_Int\$Opt \$il")
+        r.sourceContains("_value = x")
+        r.sourceContains("KTC_UNWRAP(\$il")
     }
 
     @Test fun checkNotNullSmartCastPropagation() {
@@ -93,8 +95,9 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
             val x: Float? = 3.14f
             val y: Float = requireNotNull(x)
         """)
-        r.sourceContains("ktc_Float\$Opt value = x")
-        r.sourceContains("KTC_UNWRAP(value)")
+        r.sourceContains("ktc_Float\$Opt \$il")
+        r.sourceContains("_value = x")
+        r.sourceContains("KTC_UNWRAP(\$il")
     }
 
     @Test fun requireNotNullSmartCastPropagation() {

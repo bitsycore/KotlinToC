@@ -369,6 +369,7 @@ static inline void*     ktc_ptr_at(void* inBase, ktc_Int inOff)      { return (k
 /* Advance a byte pointer by inOff bytes, returning ktc_Char* for StringBuffer use. */
 static inline ktc_Char* ktc_ptr_at_char(void* inBase, ktc_Int inOff) { return (ktc_Char*)((ktc_UByte*)inBase + inOff); }
 
+
 // ══════════════════════════════════════════════════════════════════
 // MARK: Conversion
 // ══════════════════════════════════════════════════════════════════

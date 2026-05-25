@@ -35,7 +35,8 @@ class InfixUnitTest : TranspilerTestBase() {
 		""")
 		// Result var declared, body assigns into it with substituted receiver
 		vR.sourceContains("ktc_Int \$ir")
-		vR.sourceContains("10 + other")
+		vR.sourceContains("10 + \$il")
+		vR.sourceContains("_other")
 	}
 
 	@Test fun infixFunReturnValueAssigned() {
@@ -47,7 +48,8 @@ class InfixUnitTest : TranspilerTestBase() {
 			}
 		""")
 		vR.sourceContains("ktc_Int r =")
-		vR.sourceContains("7 * factor")
+		vR.sourceContains("7 * \$il")
+		vR.sourceContains("_factor")
 	}
 
 	// ── Non-generic infix on String ──────────────────────────────────
@@ -138,6 +140,7 @@ class InfixUnitTest : TranspilerTestBase() {
 			}
 		""")
 		vR.sourceContains("ktc_Int \$ir")
-		vR.sourceContains("3 + n")
+		vR.sourceContains("3 + \$il")
+		vR.sourceContains("_n")
 	}
 }

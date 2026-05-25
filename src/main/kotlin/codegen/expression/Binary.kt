@@ -85,22 +85,23 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         }
         val varName = (nonNull as? NameExpr)?.name
         val varKtc = if (varName != null) lookupVarKtc(varName) else null
-        if (varKtc != null) {
+        if (varKtc != null && varName != null) {
+            val cName = lookupCName(varName)
             // @Ptr T? → compare pointer to NULL (exclude typed array pointers like IntArray)
             if (varKtc is KtcType.Nullable && varKtc.inner is KtcType.Ptr && varKtc.inner.inner !is KtcType.Arr) {
                 // @Ptr InterfaceType → check vt for null (ktc_IfacePtr is a struct)
                 if (varKtc.inner.inner is KtcType.User
                     && varKtc.inner.inner.kind == KtcType.UserKind.Interface)
-                    return if (e.op == "==") "!${varName}.vt" else "${varName}.vt"
-                return if (e.op == "==") "$varName == NULL" else "$varName != NULL"
+                    return if (e.op == "==") "!${cName}.vt" else "${cName}.vt"
+                return if (e.op == "==") "$cName == NULL" else "$cName != NULL"
             }
             // Any? nullable → compare data pointer to NULL
             if (varKtc is KtcType.Nullable && varKtc.inner is KtcType.Any) {
-                return if (e.op == "==") "$varName.data == NULL" else "$varName.data != NULL"
+                return if (e.op == "==") "$cName.data == NULL" else "$cName.data != NULL"
             }
             // Value nullable → use Optional tag
             if (isValueNullableKtc(varKtc)) {
-                return if (e.op == "==") "$varName.tag == ktc_NONE" else "$varName.tag == ktc_SOME"
+                return if (e.op == "==") "$cName.tag == ktc_NONE" else "$cName.tag == ktc_SOME"
             }
             // Trampolined array param: null is data == NULL — use local copy for consistency
             if (varName in trampolinedParams) {
@@ -108,11 +109,11 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             }
             // Nullable VarArr (@Ptr Array<T>?) → check .ptr for null
             if (varKtc is KtcType.Nullable && varKtc.inner.isArrayLike && varKtc.inner.asArr?.sized == null) {
-                return if (e.op == "==") "$varName.ptr == NULL" else "$varName.ptr != NULL"
+                return if (e.op == "==") "$cName.ptr == NULL" else "$cName.ptr != NULL"
             }
             // Fallback for other nullable
             if (varKtc is KtcType.Nullable) {
-                return if (e.op == "==") "$varName == NULL" else "$varName != NULL"
+                return if (e.op == "==") "$cName == NULL" else "$cName != NULL"
             }
         }
         // DotExpr on nullable field (e.g. np.x == null)
