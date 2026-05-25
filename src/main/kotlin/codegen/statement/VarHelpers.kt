@@ -219,8 +219,6 @@ internal fun CCodeGen.inferInitType(init: Expr?): TypeRef {
 				}
 			}
 		}
-	@Suppress("UNUSED_VARIABLE")
-	val initKtc = inferExprTypeKtc(init)
 	return TypeRef(inferExprType(init) ?: "Int")
 	}
 

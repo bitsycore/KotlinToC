@@ -185,7 +185,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
                 val pType       = p.type ?: inferInitType(p.init)
                 val vKtcObjInit = resolveTypeName(pType)
                 val sizeAnn     = pType.getSizeAnnotation()
-                val expr = genExprWithHeapTarget(p.init, pType)
+                val expr = genExprWithAllocTarget(p.init, pType)
                 flushPreStmts("    ")
                 if (vKtcObjInit.isArrayLike && sizeAnn != null) {
                     val vElemType = cTypeStr(vKtcObjInit.asArr!!.elem)

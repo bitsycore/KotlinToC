@@ -292,7 +292,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     impl.appendLine("$ind$mutComment$qual$vVarArrType ${s.name} = $expr;")
                     return
                 }
-                val expr = genExprWithHeapTarget(s.init, s.type)
+                val expr = genExprWithAllocTarget(s.init, s.type)
                 flushPreStmts(ind)
                 // Stack array: deep copy from source (value semantics); result is ktc_VarArr_T
                 if (vKtcCore is KtcType.Arr && s.init !is NullLit) {

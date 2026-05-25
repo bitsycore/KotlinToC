@@ -15,6 +15,34 @@ private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: S
 	preStmts += "ktc_IfacePtr $t = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$allocExpr};"
 	}
 
+/* Resolution of an allocator argument for class-construction allocWith.
+ifaceExpr is the ktc_IfacePtr expression to call through;
+ifaceCreated is true when ifaceExpr is a fresh local emitted via emitAllocatorIfacePtr;
+isTrampoline is true when the allocator arg is `@Ptr Allocator` (already a fat pointer). */
+private data class AllocResolution(val ifaceExpr: String, val ifaceCreated: Boolean, val isTrampoline: Boolean)
+
+/* Resolve the allocator argument of a Foo(...).allocWith(alloc) call.
+Emits the wrapping IfacePtr preStmt when needed and returns how the call site should
+invoke the allocator (direct, wrapped, or trampoline). */
+private fun CCodeGen.resolveAllocatorForClassAlloc(inCall: CallExpr, inAllocExpr: String, inAllocObjName: String?): AllocResolution {
+	val vAllocKtc       = inferExprTypeKtc(inCall.args[0].expr)
+	val vAllocCore      = vAllocKtc.stripNullable
+	val vAllocClassName = (vAllocCore as? KtcType.User)?.baseName
+	val vIsAllocObj     = inAllocObjName != null && objects.containsKey(inAllocObjName)
+		&& classInterfaces[inAllocObjName]?.contains("Allocator") == true
+	val vIsAllocClass   = vAllocClassName != null && classes.containsKey(vAllocClassName)
+		&& classInterfaces[vAllocClassName]?.contains("Allocator") == true
+	val vIsTrampoline   = run {
+		val vi = (vAllocCore as? KtcType.Ptr)?.inner
+		vi is KtcType.User && vi.kind == KtcType.UserKind.Interface
+		}
+	return when {
+		vIsAllocObj   -> { val vT = tmp(); emitAllocatorIfacePtr(inAllocObjName!!,   vT, inAllocExpr); AllocResolution(vT, true,  vIsTrampoline) }
+		vIsAllocClass -> { val vT = tmp(); emitAllocatorIfacePtr(vAllocClassName!!,  vT, inAllocExpr); AllocResolution(vT, true,  vIsTrampoline) }
+		else          -> AllocResolution(inAllocExpr, false, vIsTrampoline)
+		}
+	}
+
 /* Emit alloc+ctor preStmts for an allocator-based object construction and return the pointer expr. */
 private fun CCodeGen.emitAllocWithConstruct(cName: String, ifExpr: String, ifaceCreated: Boolean, isTrampoline: Boolean, ctorArgs: String): String {
 	val vTPtr = tmp()
@@ -61,8 +89,8 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val vElemName = when {
 			vTypeArgs.isNotEmpty() ->
 				typeSubst[vTypeArgs[0].name] ?: vTypeArgs[0].name
-			heapAllocTargetType != null && heapAllocTargetType!!.typeArgs.isNotEmpty() ->
-				typeSubst[heapAllocTargetType!!.typeArgs[0].name] ?: heapAllocTargetType!!.typeArgs[0].name
+			allocTargetType != null && allocTargetType!!.typeArgs.isNotEmpty() ->
+				typeSubst[allocTargetType!!.typeArgs[0].name] ?: allocTargetType!!.typeArgs[0].name
 			else -> "Int"
 			}
 		val vElemC    = cTypeStr(vElemName)
@@ -81,33 +109,15 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 
 	// Concrete class: Foo(ctorArgs...).allocWith(allocator)
 	if (classes.containsKey(vClassName) && !classes[vClassName]!!.isGeneric) {
-		val vCName    = typeFlatName(vClassName)
+		val vCName       = typeFlatName(vClassName)
 		val vCtorArgsStr = vCtorArgs.joinToString(", ") { genExpr(it.expr) }
-		val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
-		val vAllocCore = vAllocKtc.stripNullable
-		val vAllocClassName = (vAllocCore as? KtcType.User)?.baseName
-		val vIsAllocObj = vAllocObjName != null && objects.containsKey(vAllocObjName)
-			&& classInterfaces[vAllocObjName]?.contains("Allocator") == true
-		val vIsAllocClass = vAllocClassName != null && classes.containsKey(vAllocClassName)
-			&& classInterfaces[vAllocClassName]?.contains("Allocator") == true
-		val vIsTrampoline = run {
-			val vi = (vAllocCore as? KtcType.Ptr)?.inner
-			vi is KtcType.User && vi.kind == KtcType.UserKind.Interface
-			}
-		val vT          = tmp()
-		val vIfaceCreated: Boolean
-		val vIfExpr: String
-		when {
-			vIsAllocObj   -> { emitAllocatorIfacePtr(vAllocObjName, vT, vAllocExpr);   vIfaceCreated = true; vIfExpr = vT }
-			vIsAllocClass -> { emitAllocatorIfacePtr(vAllocClassName, vT, vAllocExpr); vIfaceCreated = true; vIfExpr = vT }
-			else          -> { vIfaceCreated = false; vIfExpr = vAllocExpr }
-			}
-		return emitAllocWithConstruct(vCName, vIfExpr, vIfaceCreated, vIsTrampoline, vCtorArgsStr)
+		val vAlloc       = resolveAllocatorForClassAlloc(inCall, vAllocExpr, vAllocObjName)
+		return emitAllocWithConstruct(vCName, vAlloc.ifaceExpr, vAlloc.ifaceCreated, vAlloc.isTrampoline, vCtorArgsStr)
 		}
 
 	// Generic class: Foo<T>(ctorArgs...).allocWith(allocator)
 	if (genericClassDecls.containsKey(vClassName)) {
-		val vEffectiveTypeArgs = vTypeArgs.ifEmpty { heapAllocTargetType?.typeArgs ?: emptyList() }
+		val vEffectiveTypeArgs = vTypeArgs.ifEmpty { allocTargetType?.typeArgs ?: emptyList() }
 		if (vEffectiveTypeArgs.isNotEmpty()) {
 			val vResolvedArgs = vEffectiveTypeArgs.map { vTa ->
 				val vSub = substituteTypeParams(vTa)
@@ -115,23 +125,11 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 				}
 			val vMangled = mangledGenericName(vClassName, vResolvedArgs)
 			if (classes.containsKey(vMangled)) {
-				val vCName    = typeFlatName(vMangled)
-				val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
-				val vAllocCore = vAllocKtc.stripNullable
-				val vAllocClassName2 = (vAllocCore as? KtcType.User)?.baseName
-				val vIsAllocObj2 = vAllocObjName != null && objects.containsKey(vAllocObjName)
-					&& classInterfaces[vAllocObjName]?.contains("Allocator") == true
-				val vIsAllocClass2 = vAllocClassName2 != null && classes.containsKey(vAllocClassName2)
-					&& classInterfaces[vAllocClassName2]?.contains("Allocator") == true
-				val vIsTrampoline2 = run {
-					val vi = (vAllocCore as? KtcType.Ptr)?.inner
-					vi is KtcType.User && vi.kind == KtcType.UserKind.Interface
-					}
-				val vT = tmp()
-				val vIfaceCreated2: Boolean
-				val vIfExpr2: String
-				val vCtorArgs2 = vCtorArgs.joinToString(", ") { vArg ->
-					val vArgExpr  = genExpr(vArg.expr)
+				val vCName = typeFlatName(vMangled)
+				// Generic-ctor args may themselves be Allocator-implementing objects (e.g. ArrayList<T>(Heap, n)
+				// where `Heap` is an object); wrap such object-args as IfacePtrs so they match the iface param type.
+				val vCtorArgsStr = vCtorArgs.joinToString(", ") { vArg ->
+					val vArgExpr    = genExpr(vArg.expr)
 					val vArgVarName = (vArg.expr as? NameExpr)?.name
 					if (vArgVarName != null && objects.containsKey(vArgVarName)) {
 						val vTCtor = tmp()
@@ -139,12 +137,8 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 						vTCtor
 						} else vArgExpr
 					}
-				when {
-					vIsAllocObj2   -> { emitAllocatorIfacePtr(vAllocObjName, vT, vAllocExpr);    vIfaceCreated2 = true; vIfExpr2 = vT }
-					vIsAllocClass2 -> { emitAllocatorIfacePtr(vAllocClassName2, vT, vAllocExpr); vIfaceCreated2 = true; vIfExpr2 = vT }
-					else           -> { vIfaceCreated2 = false; vIfExpr2 = vAllocExpr }
-					}
-				return emitAllocWithConstruct(vCName, vIfExpr2, vIfaceCreated2, vIsTrampoline2, vCtorArgs2)
+				val vAlloc = resolveAllocatorForClassAlloc(inCall, vAllocExpr, vAllocObjName)
+				return emitAllocWithConstruct(vCName, vAlloc.ifaceExpr, vAlloc.ifaceCreated, vAlloc.isTrampoline, vCtorArgsStr)
 				}
 			}
 		}
@@ -184,7 +178,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 				}
 		}
 
-	val vEffectiveTypeArgs = inCall.typeArgs.ifEmpty { heapAllocTargetType?.typeArgs ?: emptyList() }
+	val vEffectiveTypeArgs = inCall.typeArgs.ifEmpty { allocTargetType?.typeArgs ?: emptyList() }
 
 	// Generic class constructor: explicit type args or LHS inference
 	if (classes.containsKey(vResolvedName) && classes[vResolvedName]!!.isGeneric && vEffectiveTypeArgs.isNotEmpty()) {

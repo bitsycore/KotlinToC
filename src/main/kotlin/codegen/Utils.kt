@@ -56,11 +56,11 @@ internal fun CCodeGen.closeFunBody(inPrevState: CCodeGen.FunState) {
     impl.appendLine()
     }
 
-/* Evaluate an expression with a heapAllocTargetType hint set, then clear the hint. */
-internal fun CCodeGen.genExprWithHeapTarget(expr: Expr, targetType: TypeRef?): String {
-    heapAllocTargetType = targetType
+/* Evaluate an expression with an allocTargetType hint set, then clear the hint. */
+internal fun CCodeGen.genExprWithAllocTarget(expr: Expr, targetType: TypeRef?): String {
+    allocTargetType = targetType
     val result = genExpr(expr)
-    heapAllocTargetType = null
+    allocTargetType = null
     return result
     }
 

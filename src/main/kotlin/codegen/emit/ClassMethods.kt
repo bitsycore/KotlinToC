@@ -174,7 +174,7 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 					val vIsZeroInit = vBp.initExpr is CallExpr && (vBp.initExpr.callee as? NameExpr)?.name?.endsWith("Array") == true &&
 						vBp.initExpr.args.size == 1 && vBp.initExpr.args[0].expr !is LambdaExpr
 					if (!vIsZeroInit) {
-						val vExpr = genExprWithHeapTarget(vBp.initExpr, vBp.typeRef)
+						val vExpr = genExprWithAllocTarget(vBp.initExpr, vBp.typeRef)
 						flushPreStmts("    ")
 						val vElemType = cTypeStr(resolveTypeName(vBp.typeRef).asArr!!.elem)
 						val vSrcKtc  = inferExprTypeKtc(vBp.initExpr)
@@ -182,7 +182,7 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 						impl.appendLine("    memcpy(\$self.$vBodyFieldName, $vSrcExpr, $vSizeAnn * sizeof($vElemType));")
 						}
 					} else {
-					val vExpr = genExprWithHeapTarget(vBp.initExpr, vBp.typeRef)
+					val vExpr = genExprWithAllocTarget(vBp.initExpr, vBp.typeRef)
 					flushPreStmts("    ")
 					impl.appendLine("    \$self.$vBodyFieldName = $vExpr;")
 					}
