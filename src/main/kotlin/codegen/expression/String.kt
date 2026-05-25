@@ -170,7 +170,7 @@ internal fun CCodeGen.genStrTemplateToSb(e: StrTemplateExpr, sbExpr: String) {
 internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 	val buf = tmp()
 
-	data class PartData(val lit: String? = null, val sbAppend: String? = null)
+	data class PartData(val lit: String? = null, val sbAppend: String? = null, val sizeContrib: String? = null)
 
 	val parts = mutableListOf<PartData>()
 	for (part in e.parts) {
@@ -183,11 +183,30 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 			is ExprPart -> {
 				val isCPassthroughS = isCPassthroughCall(part.expr)
 				val tKtc = inferExprTypeKtc(part.expr) ?: if (isCPassthroughS) KtcType.Str else KtcType.Prim(KtcType.PrimKind.Int)
-				val expr = genExpr(part.expr)
+				var expr = genExpr(part.expr)
+
+				// Compute size contribution for computed-size single-pass optimization
+				var sizeContrib: String? = null
+				if (!(isCPassthroughS && inferExprTypeKtc(part.expr) == null) && tKtc !is KtcType.Nullable) {
+					val tCore = tKtc.stripNullable
+					if (tCore is KtcType.Str) {
+						if (!isSimpleCExpr(expr)) {
+							val v = tmp(); preStmts += "ktc_String $v = ($expr);"; expr = v
+						}
+						sizeContrib = "($expr).len"
+					} else {
+						val t = inferExprType(part.expr)
+						if (t != null) {
+							val ml = toStringMaxLen(t)
+							if (ml != null) sizeContrib = "$ml"
+						}
+					}
+				}
+
 				val append = if (isCPassthroughS && inferExprTypeKtc(part.expr) == null)
 					"ktc_core_sb_append_cstr(&${buf}_sb, $expr);"
 				else genSbAppendKtc("&${buf}_sb", expr, tKtc)
-				parts += PartData(sbAppend = append)
+				parts += PartData(sbAppend = append, sizeContrib = sizeContrib)
 				}
 			}
 		}
@@ -203,7 +222,39 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 			}
 		return "ktc_core_sb_to_string(&${buf}_sb)"
 		}
-	// First pass: count length with NULL buffer
+	// Computed-size single-pass: sum compile-time maxLen constants with runtime .len for Strings
+	val allComputable = parts.all { it.lit != null || it.sizeContrib != null }
+	if (allComputable) {
+		var constSize = 0
+		val dynamicSizes = mutableListOf<String>()
+		for (p in parts) {
+			if (p.lit != null) constSize += p.lit.length
+			else if (p.sizeContrib != null) {
+				val asInt = p.sizeContrib.toIntOrNull()
+				if (asInt != null) constSize += asInt
+				else dynamicSizes += p.sizeContrib
+			}
+		}
+		val sizeExpr = buildString {
+			if (constSize > 0 || dynamicSizes.isEmpty()) append(constSize)
+			for (d in dynamicSizes) {
+				if (isNotEmpty()) append(" + ")
+				append(d)
+			}
+		}
+		val sizeVar = tmp()
+		preStmts += "ktc_Int $sizeVar = $sizeExpr;"
+		preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca($sizeVar + 1);"
+		preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sizeVar};"
+		for (p in parts) {
+			when {
+				p.lit      != null -> preStmts += "ktc_core_sb_append_str(&${buf}_sb, ktc_core_str(\"${escapeStr(p.lit)}\"));"
+				p.sbAppend != null -> preStmts += p.sbAppend
+				}
+			}
+		return "ktc_core_sb_to_string(&${buf}_sb)"
+		}
+	// Two-pass fallback: count with NULL buffer, then alloca exact size
 	preStmts += "ktc_StrBuf ${buf}_sb = {NULL, 0, 0};"
 	for (p in parts) {
 		when {
@@ -213,7 +264,6 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 		}
 	preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(${buf}_sb.len + 1);"
 	preStmts += "${buf}_sb = (ktc_StrBuf){${buf}, 0, ${buf}_sb.len + 1};"
-	// Second pass: write to real buffer
 	for (p in parts) {
 		when {
 			p.lit      != null -> preStmts += "ktc_core_sb_append_str(&${buf}_sb, ktc_core_str(\"${escapeStr(p.lit)}\"));"
