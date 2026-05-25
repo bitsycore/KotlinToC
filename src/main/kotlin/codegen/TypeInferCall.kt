@@ -219,10 +219,11 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     if (method == "hashCode") return "Int"
     if (method == "inv") return recvType
     val recvKtc = parseResolvedTypeName(recvType)
-    // RawArray<T>.asArray(n) → @Ptr Array<T>
-    if (method == "asArray") {
+    // RawArray<T> (T*): asArray(n) → @Ptr Array<T>; resizeWith returns the bare pointer unchanged.
+    if (method == "asArray" || method == "resizeWith") {
         val core = recvKtc.stripNullable
-        if (core is KtcType.Ptr && core.inner !is KtcType.Arr) return "${core.inner.toInternalStr}Array"
+        if (core is KtcType.Ptr && core.inner !is KtcType.Arr)
+            return if (method == "asArray") "${core.inner.toInternalStr}Array" else recvType
     }
     val isArrayPtr = recvKtc.isArrayLike
     if (isArrayPtr) {
@@ -233,7 +234,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
                 if (base.endsWith("Array*")) base.removeSuffix("Array*") else base.removeSuffix("*")
             }
 
-            "ptr", "copyWith" -> recvType
+            "ptr", "copyWith", "resizeWith" -> recvType
             "asRaw" -> "${arrayElementKtTypeKtc(recvKtc)}*"
             "set" -> "Unit"
             else -> null

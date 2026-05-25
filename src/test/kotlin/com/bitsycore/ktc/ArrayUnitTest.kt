@@ -142,6 +142,34 @@ class ArrayUnitTest : TranspilerTestBase() {
         r.sourceMatches(Regex("""for \(size_t \$\d+ = 0; \$\d+ < \$\d+; \$\d+\+\+\) \$\d+\[\$\d+\] = \$\d+;"""))
     }
 
+    // fill(value, fromIndex, toIndex) → ranged memset over a byte-sized element.
+    @Test fun fillByteArrayRangeUsesMemset() {
+        val r = transpileMain("""
+            val arr = ByteArray(8)
+            arr.fill(7, 2, 5)
+        """)
+        r.sourceContains("memset(((arr).ptr) + (2), (int)(7), (size_t)((5) - (2)));")
+    }
+
+    // fill(value, fromIndex) → toIndex defaults to size.
+    @Test fun fillIntArrayFromIndexDefaultsToSize() {
+        val r = transpileMain("""
+            val arr = IntArray(6)
+            arr.fill(0, 3)
+        """)
+        r.sourceContains("memset(((arr).ptr) + (3), 0, sizeof(ktc_Int) * (size_t)(((arr).len) - (3)));")
+    }
+
+    // RawArray ranged fill: fill(size, value, fromIndex, toIndex).
+    @Test fun fillRawArrayRange() {
+        val r = transpileMain("""
+            val src = ByteArray(8)
+            val raw: @Ptr RawArray<Byte> = src.ptr()
+            raw.fill(8, 0, 1, 4)
+        """)
+        r.sourceContains("memset((raw) + (1), 0, sizeof(ktc_Byte) * (size_t)((4) - (1)));")
+    }
+
     // RawArray has no length → count passed explicitly.
     @Test fun fillRawArrayWithCount() {
         val r = transpileMain("""
@@ -172,6 +200,18 @@ class ArrayUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("(ktc_VarArr_ktc_Int){raw, 4}")
         r.sourceContains("view.len")
+    }
+
+    // resizeWith on a RawArray reallocs the bare pointer (no VarArr) with the right element size.
+    @Test fun resizeWithRawArrayReallocsBarePointer() {
+        val r = transpileMainWithStdlib("""
+            var raw: @Ptr RawArray<Int> = RawArray<Int>.allocWith(Heap, 4)!!
+            raw = raw.resizeWith(Heap, 8)
+        """)
+        r.sourceContains("reallocMem")
+        r.sourceContains("sizeof(ktc_Int) * (size_t)(8)")
+        // raw resize returns the bare pointer — no VarArr struct is built
+        r.sourceNotContains("ktc_VarArr_ktc_Int")
     }
 
 }

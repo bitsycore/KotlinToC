@@ -147,11 +147,26 @@ fun testFill() {
         if (iarr[i] != 42) error("int loop fill failed at $i")
     }
 
+    // Ranged fill: only [2, 5) changes.
+    val rarr = IntArray(8)
+    rarr.fill(1)
+    rarr.fill(9, 2, 5)
+    for (i in 0 until 8) {
+        val expected = if (i >= 2 && i < 5) 9 else 1
+        if (rarr[i] != expected) error("ranged fill failed at $i")
+    }
+
     // RawArray needs an explicit count.
     val raw: @Ptr RawArray<Int> = RawArray<Int>.allocWith(Heap, 4)!!
     raw.fill(4, 9)
     for (i in 0 until 4) {
         if (raw[i] != 9) error("raw fill failed at $i")
+    }
+    // RawArray ranged fill: only [1, 3) changes.
+    raw.fill(4, 0, 1, 3)
+    for (i in 0 until 4) {
+        val expected = if (i >= 1 && i < 3) 0 else 9
+        if (raw[i] != expected) error("raw ranged fill failed at $i")
     }
     Heap.freeMem(raw)
 

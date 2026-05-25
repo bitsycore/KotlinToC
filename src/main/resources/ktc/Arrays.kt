@@ -147,13 +147,13 @@ Usage: val vFixed: @Size(5) IntArray = vDyn.copyOf(5)
 fun <T> Array<T>.copyOf(inNewSize: Int): Array<T> = error("Transpiler intrinsic")
 
 /**
-Fills every element of this array with [inValue].
+Fills the elements in [inFromIndex, inToIndex) with [inValue] (defaults to the whole array).
 Compiles to memset when the element is byte-sized or [inValue] is a zero literal,
 otherwise to a bounded element loop.
-Usage: vArr.fill(0)
+Usage: vArr.fill(0)  /  vArr.fill(0, 2, 5)
 */
 @DocumentationOnly
-fun <T> Array<T>.fill(inValue: T): Unit = error("Transpiler intrinsic")
+fun <T> Array<T>.fill(inValue: T, inFromIndex: Int = 0, inToIndex: Int = size): Unit = error("Transpiler intrinsic")
 
 /**
 Returns a @Ptr RawArray<T> aliasing this array's data (no copy, no length).
@@ -187,14 +187,14 @@ val vRaw: @Ptr RawArray<Byte> = vArr.ptr()
 class RawArray<T>
 
 /**
-Fills [inCount] elements of this raw array with [inValue].
-RawArray has no length, so the count must be supplied explicitly.
+Fills the elements in [inFromIndex, inToIndex) with [inValue]. RawArray has no length, so
+[inSize] is the element count (and the default toIndex). Defaults fill the whole [0, inSize) range.
 Compiles to memset when the element is byte-sized or [inValue] is a zero literal,
 otherwise to a bounded element loop.
-Usage: vRaw.fill(n, 0)
+Usage: vRaw.fill(n, 0)  /  vRaw.fill(n, 0, 2, 5)
 */
 @DocumentationOnly
-fun <T> RawArray<T>.fill(inCount: Int, inValue: T): Unit = error("Transpiler intrinsic")
+fun <T> RawArray<T>.fill(inSize: Int, inValue: T, inFromIndex: Int = 0, inToIndex: Int = inSize): Unit = error("Transpiler intrinsic")
 
 /**
 Returns a @Ptr Array<T> (length-tracked) aliasing this raw array's data with length [inCount].
@@ -203,3 +203,12 @@ Usage: val vArr: @Ptr Array<Int> = vRaw.asArray(n)
 */
 @DocumentationOnly
 fun <T> RawArray<T>.asArray(inCount: Int): @Ptr Array<T> = error("Transpiler intrinsic")
+
+/**
+Reallocates this raw array to [inNewCount] elements via the allocator and returns the
+(possibly moved) new pointer. Existing contents up to min(old, new) are preserved.
+RawArray has no length, so the new count must be supplied explicitly.
+Usage: vRaw = vRaw.resizeWith(Heap, n)
+*/
+@DocumentationOnly
+fun <T> RawArray<T>.resizeWith(inAllocator: Allocator, inNewCount: Int): @Ptr RawArray<T> = error("Transpiler intrinsic")

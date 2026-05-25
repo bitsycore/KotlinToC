@@ -50,6 +50,14 @@ private fun CCodeGen.emitArrayFill(inPtr: String, inLen: String, inElemC: String
 private fun isZeroLit(inExpr: Expr): Boolean =
 	(inExpr is IntLit && inExpr.value == 0L) || (inExpr is LongLit && inExpr.value == 0L)
 
+/* Fill start pointer: [inBase] offset by [inFrom] elements (or [inBase] when fromIndex is omitted). */
+private fun fillStart(inBase: String, inFrom: String?): String =
+	if (inFrom == null) inBase else "($inBase) + ($inFrom)"
+
+/* Fill element count: toIndex - fromIndex (or just toIndex when fromIndex is omitted). */
+private fun fillCount(inFrom: String?, inTo: String): String =
+	if (inFrom == null) inTo else "($inTo) - ($inFrom)"
+
 /* Handles built-in String/primitive methods and array methods.
 Returns the expression string, or null if not a recognised built-in. */
 internal fun CCodeGen.genBuiltinMethodCallOrNull(
@@ -260,8 +268,11 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		preStmts += "$vVarArrType $vT = {$vData, $vNewSize};"
 		return vT
 		}
-	if (vMethod == "resizeWith" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size >= 2) {
-		val vElemC        = arrayElementCTypeKtc(inRecvTypeKtc)
+	if (vMethod == "resizeWith" && inRecvTypeKtc != null && inArgs.size >= 2
+		&& (inRecvTypeKtc.isArrayLike || inRecvTypeKtc.stripNullable.let { it is KtcType.Ptr && it.inner !is KtcType.Arr })) {
+		// RawArray<T> (Ptr(elem)) has no length: realloc the bare pointer and return it.
+		val vRawPtrType   = (inRecvTypeKtc.stripNullable as? KtcType.Ptr)?.takeIf { it.inner !is KtcType.Arr }
+		val vElemC        = vRawPtrType?.inner?.toCType() ?: arrayElementCTypeKtc(inRecvTypeKtc)
 		val vAllocExpr    = genExpr(inArgs[0].expr)
 		val vNewSizeExpr  = genExpr(inArgs[1].expr)
 		val vT            = tmp()
@@ -279,7 +290,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
-		val vIsRawArray = inRecvTypeKtc.asArr == null && inRecvTypeKtc is KtcType.Ptr
+		val vIsRawArray = vRawPtrType != null
 		val vSrcPtr     = if (vIsRawArray) inRecv else "$inRecv.ptr"
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->reallocMem($vIfExpr.obj, $vSrcPtr, sizeof($vElemC) * (size_t)($vNewSizeExpr), ${ktSrcStr()});"
 		if (!vIsRawArray) {
@@ -331,8 +342,8 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		}
 	if (vMethod == "fill" && inRecvTypeKtc != null) {
 		val vCore = inRecvTypeKtc.stripNullable
-		// Array<T>.fill(value) — length is known from the VarArr / @Size(N) / trampoline.
-		if (vCore != null && vCore.isArrayLike && inArgs.size == 1) {
+		// Array<T>.fill(element, fromIndex = 0, toIndex = size) — length known from VarArr / @Size / trampoline.
+		if (vCore != null && vCore.isArrayLike && inArgs.size in 1..3) {
 			val vElemC   = arrayElementCTypeKtc(vCore)
 			val vObjName = (inDot.obj as? NameExpr)?.name
 			val vIsTramp = vObjName != null && vObjName in trampolinedParams
@@ -347,13 +358,18 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 				vIsSized -> vCore.asArr!!.sized.toString()
 				else     -> "($inRecv).len"
 				}
-			emitArrayFill(vPtr, vLen, vElemC, genExpr(inArgs[0].expr), isZeroLit(inArgs[0].expr))
+			val vFrom = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else null
+			val vTo   = if (inArgs.size >= 3) genExpr(inArgs[2].expr) else vLen
+			emitArrayFill(fillStart(vPtr, vFrom), fillCount(vFrom, vTo), vElemC, genExpr(inArgs[0].expr), isZeroLit(inArgs[0].expr))
 			return ""
 			}
-		// RawArray<T>.fill(count, value) — no length, count supplied explicitly.
-		if (vCore is KtcType.Ptr && vCore.inner !is KtcType.Arr && inArgs.size == 2) {
+		// RawArray<T>.fill(size, element, fromIndex = 0, toIndex = size) — count supplied explicitly.
+		if (vCore is KtcType.Ptr && vCore.inner !is KtcType.Arr && inArgs.size in 2..4) {
 			val vElemC = vCore.inner.toCType()
-			emitArrayFill(inRecv, genExpr(inArgs[0].expr), vElemC, genExpr(inArgs[1].expr), isZeroLit(inArgs[1].expr))
+			val vSize  = genExpr(inArgs[0].expr)
+			val vFrom  = if (inArgs.size >= 3) genExpr(inArgs[2].expr) else null
+			val vTo    = if (inArgs.size >= 4) genExpr(inArgs[3].expr) else vSize
+			emitArrayFill(fillStart(inRecv, vFrom), fillCount(vFrom, vTo), vElemC, genExpr(inArgs[1].expr), isZeroLit(inArgs[1].expr))
 			return ""
 			}
 		}
