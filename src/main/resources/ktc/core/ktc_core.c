@@ -213,10 +213,14 @@ static ULONGLONG ktc_st_disk_image_base(const char* inExe)
     return (ULONGLONG)nt.OptionalHeader.ImageBase;
 }
 
-void ktc_core_stacktrace_print(const char* inMessage, int inMessageLen)
+void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line)
 {
-    fprintf(stderr, "Exception in thread \"main\" kotlin.Error: %.*s\n",
-        inMessageLen, inMessage);
+    fprintf(stderr,
+        "Exception in thread \"main\" kotlin.Error: %.*s\n"
+        "\tat %.*s:%d\n",
+        messageLen, message,
+        fileNameLen, fileName,
+        line);
 
     void* vFrames[KTC_ST_MAX_FRAMES];
     int   vFrameCount = (int)CaptureStackBackTrace(

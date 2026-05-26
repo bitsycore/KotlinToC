@@ -46,7 +46,7 @@ void ktc_core_mainInit(void);
 /** Print a Java-style stack trace to stderr, then return.
  * The caller (error()) exits afterwards.
  * Compile with -g (MinGW/GCC) for function names and file:line. */
-void ktc_core_stacktrace_print(const char* message, int message_len);
+void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line);
 
 // ══════════════════════════════════════════════════════════════════
 // MARK: Time

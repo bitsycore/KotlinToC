@@ -302,14 +302,31 @@ def run_streamed_capture(
 # MARK: Clean
 # ==================
 
+def _force_writable_and_retry(inFunc, inPath: str, _inExc) -> None:
+	# rmtree exception handler for Windows: cmake FetchContent dumps git pack
+	# files (*.idx, *.pack) into _cmake/_deps/ that are marked read-only, so
+	# os.unlink raises WinError 5 (Access denied). Strip the read-only bit and
+	# retry the operation. Compatible with both Python 3.12+ onexc signature
+	# and the older onerror signature (same arguments).
+	import stat
+	try:
+		os.chmod(inPath, stat.S_IWRITE)
+		inFunc(inPath)
+	except Exception:
+		# Best-effort: leave residual files but keep the overall clean going.
+		pass
+
 def cmd_clean() -> int:
 	# Removes the out/ directory inside every integration test directory.
 	pwrite(f"{kCyan}Cleaning per-test output directories...{kRst}")
 	vCleaned = 0
+	# Python 3.12 renamed the rmtree callback from `onerror` to `onexc`; pick
+	# whichever the current interpreter supports so the script works on both.
+	vKw = "onexc" if sys.version_info >= (3, 12) else "onerror"
 	for vT in find_test_dirs():
 		vOut = vT.fullPath / "out"
 		if vOut.is_dir():
-			shutil.rmtree(vOut)
+			shutil.rmtree(vOut, **{vKw: _force_writable_and_retry})
 			pwrite(f"{kGray}  removed {vOut}{kRst}")
 			vCleaned += 1
 	pwrite(f"{kGreen}Cleaned {vCleaned} test output directories.{kRst}")
