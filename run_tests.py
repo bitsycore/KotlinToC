@@ -589,49 +589,157 @@ def _tail(inText: str, inLines: int = 12) -> list[str]:
 	vAll = inText.splitlines()
 	return vAll[-inLines:] if len(vAll) > inLines else vAll
 
-@dataclass
-class ConciseRun:
-	# Outcome plus the line(s) the suite should print when it's this test's
-	# turn (we don't print from worker threads — the suite serializes prints
-	# so we get an ordered [N/total] counter prefix).
-	outcome: TestOutcome
-	lines:   list[str] = field(default_factory=list)
+# ==================
+# MARK: Live progress renderer
+# ==================
 
-def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> ConciseRun:
-	# Worker for the parallel suite. Captures the pipeline result and the lines
-	# to print; the suite caller decides when (and with what counter) to emit.
-	# On failure, the relevant tail of the captured output is included so the
-	# user sees why a test failed without re-running it in --run mode.
+import threading  # noqa: E402
+
+class LiveProgress:
+	# Thread-safe live multi-line renderer for the parallel suite.
+	#
+	# Maintains two areas on screen:
+	#  - History (scrollback): completed test lines with their [N/total]
+	#    counter. Printed once and never re-touched.
+	#  - Live area: currently-running tests, one row each, redrawn in place
+	#    as their phase timings come in (ktc, comp, run).
+	#
+	# Rendering uses ANSI cursor moves so it only works on a real tty;
+	# when stdout is piped/redirected the class still records state but
+	# only emits the final per-test line (no in-place updates).
+
+	def __init__(self, inTotal: int) -> None:
+		self.total       = inTotal
+		self.completed   = 0
+		self.active:     dict[str, str] = {}  # ordered name → current status text
+		self.lineCount   = 0                  # rows currently drawn in the live area
+		self.lock        = threading.Lock()
+		self.isLive      = sys.stdout.isatty()
+		self.width       = len(str(inTotal))
+
+	def _erase_active(self) -> None:
+		# Moves the cursor back to the start of the live area and clears
+		# everything from there to the end of the screen. Only meaningful
+		# when we've drawn rows since the last clear.
+		if self.lineCount > 0:
+			sys.stdout.write(f"\033[{self.lineCount}F\033[J")
+			sys.stdout.flush()
+			self.lineCount = 0
+
+	def _draw_active(self) -> None:
+		# Re-emits every active row. Called after _erase_active or after
+		# a completed line has been pushed into history. Active rows are
+		# capped to roughly half the terminal height so the live area
+		# can't overflow and break cursor positioning.
+		try:
+			vTermH = max(8, shutil.get_terminal_size((80, 24)).lines)
+		except Exception:
+			vTermH = 24
+		vCap = max(4, vTermH // 2)
+		vItems  = list(self.active.items())
+		vShown  = vItems[:vCap]
+		vHidden = len(vItems) - len(vShown)
+		for vName, vStatus in vShown:
+			sys.stdout.write(f"  {kGray}...{kRst} {vName}{vStatus}\n")
+		if vHidden > 0:
+			sys.stdout.write(f"  {kGray}... and {vHidden} more running{kRst}\n")
+		sys.stdout.flush()
+		self.lineCount = len(vShown) + (1 if vHidden > 0 else 0)
+
+	def start(self, inName: str) -> None:
+		# Called by a worker when it begins a test. Adds a "(starting)" row.
+		with self.lock:
+			self.active[inName] = f"  {kGray}(starting){kRst}"
+			if self.isLive:
+				self._erase_active()
+				self._draw_active()
+
+	def update(self, inName: str, inStatus: str) -> None:
+		# Called as each phase finishes. inStatus is the trailing portion
+		# of the row (e.g. "  ktc: 597ms  comp: 4.41s") — the name and
+		# RUN/PASS marker are added by the renderer.
+		with self.lock:
+			if inName not in self.active:
+				return
+			self.active[inName] = inStatus
+			if self.isLive:
+				self._erase_active()
+				self._draw_active()
+
+	def finish(self, inName: str, inLines: list[str]) -> None:
+		# Called when a test completes (pass/fail/skip). inLines is one or
+		# more lines (first is the result line, rest are warnings / tail).
+		# The first line gets the [N/total] counter prefix.
+		with self.lock:
+			self.active.pop(inName, None)
+			self.completed += 1
+			vCounter = f"{kGray}[{self.completed:>{self.width}}/{self.total}]{kRst}"
+			if self.isLive:
+				self._erase_active()
+			vFirst = True
+			for vLine in inLines:
+				if vFirst:
+					sys.stdout.write(f"{vCounter} {vLine.lstrip()}\n")
+					vFirst = False
+				else:
+					sys.stdout.write(f"{vLine}\n")
+			sys.stdout.flush()
+			if self.isLive:
+				self._draw_active()
+
+	def done(self) -> None:
+		# Final cleanup — clears any residual live area so the summary
+		# section starts on a clean line.
+		with self.lock:
+			if self.isLive:
+				self._erase_active()
+
+# ==================
+# MARK: Test worker (parallel)
+# ==================
+
+def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LiveProgress) -> TestOutcome:
+	# Worker for the parallel suite. Reports phase-by-phase progress to
+	# inProgress (so the live area updates as ktc/comp/run timings arrive),
+	# and posts the final result line through finish(). On failure the tail
+	# of the relevant tool output is included under the FAIL line.
 	vName  = inTest.relPath
 	vSrc   = inTest.fullPath
 	vOut   = vSrc / "out"
 	vCfg   = read_module_toml(vSrc / "module.ktc.toml")
 	vExe   = vCfg.executable or inTest.name
-	vLines: list[str] = []
 
-	def fail(inReason: str, inOut: str = "") -> ConciseRun:
-		# Build a FAIL line and append the tail of the captured tool output so
-		# the suite doesn't swallow the underlying compiler/runtime message.
-		vLines.append(f"  {kRed}FAIL{kRst} {vName} ({inReason})")
+	inProgress.start(vName)
+
+	def fail(inReason: str, inOut: str = "") -> TestOutcome:
+		# Emits the FAIL line plus a tail of the captured tool output for context.
+		vLines = [f"  {kRed}FAIL{kRst} {vName} ({inReason})"]
 		for vLine in _tail(inOut):
 			if vLine.strip():
 				vLines.append(f"       {kGray}{vLine}{kRst}")
-		return ConciseRun(outcome=TestOutcome(name=vName, status="fail"), lines=vLines)
+		inProgress.finish(vName, vLines)
+		return TestOutcome(name=vName, status="fail")
 
-	def skip(inReason: str) -> ConciseRun:
-		vLines.append(f"  {kDYellow}SKIP{kRst} {vName}  ({inReason})")
-		return ConciseRun(outcome=TestOutcome(name=vName, status="skip"), lines=vLines)
+	def skip(inReason: str) -> TestOutcome:
+		inProgress.finish(vName, [f"  {kDYellow}SKIP{kRst} {vName}  ({inReason})"])
+		return TestOutcome(name=vName, status="skip")
+
+	def status_line(inTimings: str, inRun: bool = True) -> str:
+		# Tail of an active row: name + accumulated timings so far.
+		vMarker = f"{kYellow}RUN{kRst} " if inRun else ""
+		return f"  {vMarker}{vName}  {kGray}{inTimings}{kRst}"
 
 	vKts = collect_kt_files(vSrc)
 	if not vKts:
 		return fail("no .kt files")
 	prepare_out_dir(vOut)
 
-	# Transpile
+	# ── Transpile ────────────────────────────────────────────────
 	vTr = run_capture(transpile_cmd(inOpts, vKts, vOut, vExe), inCwd=kRoot)
 	if vTr.exit != 0:
 		return fail("transpile failed", vTr.stdout)
 	vWarnings = [k for k in vTr.stdout.splitlines() if "warning:" in k]
+	inProgress.update(vName, status_line(f"ktc: {format_ms(vTr.ms)}"))
 
 	vSrcUserCmake = vSrc / "ktc_user.cmake"
 	if vSrcUserCmake.is_file():
@@ -645,6 +753,7 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> ConciseRun:
 	if vUseCmake and not inOpts.cmake:
 		return skip("ktc_user.cmake present but cmake not found")
 
+	# ── Compile ──────────────────────────────────────────────────
 	vExePath: Path
 	vCompMs  = 0
 	if vUseCmake:
@@ -683,22 +792,23 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> ConciseRun:
 		if vCo.exit != 0:
 			return fail("compile failed", vCo.stdout)
 		vCompMs = vCo.ms
+	inProgress.update(vName, status_line(f"ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}"))
 
-	# Run (always headless in parallel mode — GUI is single-test only)
+	# ── Run (always headless in suite mode) ──────────────────────
 	vRunArgs = ["--skip-interaction"] if vCfg.interactive else (vCfg.args.split() if vCfg.args else [])
 	vRunRes  = run_capture([str(vExePath), *vRunArgs])
 	if vRunRes.exit != 0:
 		return fail(f"runtime error, exit {vRunRes.exit}", vRunRes.stdout)
 
 	vTiming = f"{kGray}ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}  run: {format_ms(vRunRes.ms)}{kRst}"
-	vLeak = "leaked" in vRunRes.stdout
+	vLeak   = "leaked" in vRunRes.stdout
 	if vLeak:
-		vLines.append(f"  {kDYellow}PASS{kRst} {kDYellow}{vName}{kRst}  {kRed}LEAK{kRst}  {vTiming}")
+		vFinal = f"  {kDYellow}PASS{kRst} {kDYellow}{vName}{kRst}  {kRed}LEAK{kRst}  {vTiming}"
 	else:
-		vLines.append(f"  {kGreen}PASS{kRst} {kGreen}{vName}{kRst}  {vTiming}")
-	for vW in vWarnings:
-		vLines.append(f"       {kYellow}{vW}{kRst}")
-	return ConciseRun(outcome=TestOutcome(name=vName, status="pass", timing=vTiming), lines=vLines)
+		vFinal = f"  {kGreen}PASS{kRst} {kGreen}{vName}{kRst}  {vTiming}"
+	vLines = [vFinal] + [f"       {kYellow}{vW}{kRst}" for vW in vWarnings]
+	inProgress.finish(vName, vLines)
+	return TestOutcome(name=vName, status="pass", timing=vTiming)
 
 # ==================
 # MARK: Suite
@@ -725,9 +835,9 @@ def run_unit_tests() -> bool:
 
 def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> SuiteResult:
 	# Optionally runs unit tests then dispatches integration tests in parallel.
-	# Workers run concurrently but their result lines are emitted serially from
-	# the main thread as each future completes, with a [N/total] counter so the
-	# user can see real-time progress against the total work.
+	# Workers update a LiveProgress instance as their phases complete so the
+	# user sees per-test progress (RUN → ktc → comp → run → PASS) in real time
+	# below the scrollback of already-completed tests.
 	vRes = SuiteResult()
 	if not inSkipUnit:
 		if not run_unit_tests():
@@ -738,28 +848,16 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> S
 		pinfo("No tests to run.")
 		return vRes
 
-	vTotal   = len(inTests)
-	vWidth   = len(str(vTotal))
-	vWorkers = max(1, (os.cpu_count() or 4))
-	vDone    = 0
+	vProgress = LiveProgress(len(inTests))
+	vWorkers  = max(1, (os.cpu_count() or 4))
 	with ThreadPoolExecutor(max_workers=vWorkers) as vEx:
-		vFutures = {vEx.submit(invoke_test_concise, vT, inOpts): vT for vT in inTests}
+		vFutures = [vEx.submit(invoke_test_concise, vT, inOpts, vProgress) for vT in inTests]
 		for vF in as_completed(vFutures):
-			vDone += 1
-			vRun = vF.result()
-			vPrefix = f"{kGray}[{vDone:>{vWidth}}/{vTotal}]{kRst}"
-			# First line carries the counter; continuation lines indent under it.
-			vFirst = True
-			for vLine in vRun.lines:
-				if vFirst:
-					pwrite(f"{vPrefix} {vLine.lstrip()}")
-					vFirst = False
-				else:
-					pwrite(vLine)
-			vOut = vRun.outcome
+			vOut = vF.result()
 			if   vOut.status == "pass": vRes.passed += 1
 			elif vOut.status == "skip": vRes.skipped += 1; vRes.skippedNames.append(vOut.name)
 			else:                       vRes.failed  += 1; vRes.failedNames.append(vOut.name)
+	vProgress.done()
 	return vRes
 
 def show_summary(inRes: SuiteResult) -> int:
