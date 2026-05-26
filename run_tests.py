@@ -227,12 +227,13 @@ def run_streamed_split(
 	inCwd:    Path | None = None,
 	inIndent: str         = "  ",
 ) -> RunResult:
-	# Streams a command's stdout and stderr separately to the console — stdout
-	# in the default color, stderr tinted red — while accumulating each into a
-	# string for post-hoc inspection. Used by the verbose Run phase so error
-	# messages and stack traces are visibly distinct from normal output. Two
-	# reader threads drain the pipes concurrently to avoid the deadlock you
-	# get from sequential reads when one stream fills its OS buffer.
+	# Streams stdout live to the console (default color) while accumulating
+	# stderr silently. The caller decides when/how to surface the stderr block
+	# — typically AFTER stdout finishes, in red. This ordering avoids the
+	# "error message at the top of the dump" issue caused by stderr being
+	# unbuffered while stdout is block-buffered: live-printing both would let
+	# the error appear before the success markers that ran earlier in time.
+	# Two reader threads drain the pipes concurrently to avoid deadlocks.
 	import threading as _th
 	vStart = time.monotonic()
 	vP = subprocess.Popen(
@@ -247,16 +248,20 @@ def run_streamed_split(
 	vOutLines: list[str] = []
 	vErrLines: list[str] = []
 	vLock = _th.Lock()
-	def drain(inPipe, inSink: list[str], inColor: str) -> None:
+	def drain_live(inPipe, inSink: list[str]) -> None:
+		# Stdout: print as each line arrives (preserves interactivity).
 		for vRaw in inPipe:
 			vLine = vRaw.rstrip("\r\n")
 			inSink.append(vLine)
 			with vLock:
-				if inColor: pwrite(f"{inIndent}{inColor}{vLine}{kRst}")
-				else:        pwrite(f"{inIndent}{vLine}")
+				pwrite(f"{inIndent}{vLine}")
+	def drain_silent(inPipe, inSink: list[str]) -> None:
+		# Stderr: accumulate only; caller renders after stdout completes.
+		for vRaw in inPipe:
+			inSink.append(vRaw.rstrip("\r\n"))
 	assert vP.stdout is not None and vP.stderr is not None
-	vTOut = _th.Thread(target=drain, args=(vP.stdout, vOutLines, ""),    daemon=True)
-	vTErr = _th.Thread(target=drain, args=(vP.stderr, vErrLines, kRed),  daemon=True)
+	vTOut = _th.Thread(target=drain_live,   args=(vP.stdout, vOutLines), daemon=True)
+	vTErr = _th.Thread(target=drain_silent, args=(vP.stderr, vErrLines), daemon=True)
 	vTOut.start(); vTErr.start()
 	vP.wait()
 	vTOut.join(); vTErr.join()
@@ -655,13 +660,19 @@ def invoke_test_verbose(
 		vRMs = int((time.monotonic() - vStart) * 1000)
 		vCaptured = ""
 	else:
-		# Stream stdout (default color) and stderr (red) separately so error
-		# messages and stack traces stand out as they arrive. Concurrent reader
-		# threads keep both pipes drained to avoid OS-buffer deadlocks.
+		# Stream stdout live; buffer stderr and render it (red) AFTER stdout
+		# completes. stderr is unbuffered and stdout is block-buffered when
+		# piped, so live-printing both would surface the error message above
+		# the success markers that actually ran first — confusing on a fail.
 		vRunRes   = run_streamed_split([str(vExePath), *vRunArgs])
 		vRExit    = vRunRes.exit
 		vRMs      = vRunRes.ms
 		vCaptured = vRunRes.stdout + "\n" + vRunRes.stderr
+		# Stderr block: print after stdout, in red. Preserves the chronological
+		# order of execution (stdout first → stderr at exit).
+		for vELine in vRunRes.stderr.splitlines():
+			if vELine.strip():
+				pwrite(f"  {kRed}{vELine}{kRst}")
 		pwrite()
 
 	if vRExit != 0:
