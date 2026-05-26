@@ -216,11 +216,10 @@ static ULONGLONG ktc_st_disk_image_base(const char* inExe)
 void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line)
 {
     fprintf(stderr,
-        "Exception in thread \"main\" kotlin.Error: %.*s\n"
-        "\tat %.*s:%d\n",
-        messageLen, message,
-        fileNameLen, fileName,
-        line);
+        "Exception in %.*s:%d kotlin.Error: %.*s\n",
+        fileNameLen, fileName, line,
+        messageLen, message
+    );
 
     void* vFrames[KTC_ST_MAX_FRAMES];
     int   vFrameCount = (int)CaptureStackBackTrace(
@@ -296,10 +295,13 @@ typedef BOOL (WINAPI *PFN_SymFromAddr)(HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO);
 typedef BOOL (WINAPI *PFN_SymGetLineFromAddr64)(HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64);
 typedef BOOL (WINAPI *PFN_SymCleanup)(HANDLE);
 
-void ktc_core_stacktrace_print(const char* inMessage, int inMessageLen)
+void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line)
 {
-    fprintf(stderr, "Exception in thread \"main\" kotlin.Error: %.*s\n",
-        inMessageLen, inMessage);
+    fprintf(stderr,
+        "Exception in %.*s:%d kotlin.Error: %.*s\n",
+        fileNameLen, fileName, line,
+        messageLen, message
+    );
 
     void*  vFrames[KTC_ST_MAX_FRAMES];
     USHORT vFrameCount = CaptureStackBackTrace(
@@ -358,10 +360,13 @@ void ktc_core_stacktrace_print(const char* inMessage, int inMessageLen)
 #include <execinfo.h>
 #include <dlfcn.h>
 
-void ktc_core_stacktrace_print(const char* message, int message_len)
+void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line)
 {
-    fprintf(stderr, "Exception in thread \"main\" kotlin.Error: %.*s\n",
-        message_len, message);
+    fprintf(stderr,
+        "Exception in %.*s:%d kotlin.Error: %.*s\n",
+        fileNameLen, fileName, line,
+        messageLen, message
+    );
 
     void* frames[KTC_ST_MAX_FRAMES];
     int   frame_count = backtrace(frames, KTC_ST_MAX_FRAMES);
@@ -388,9 +393,13 @@ void ktc_core_stacktrace_print(const char* message, int message_len)
 #else
 
 /* Unsupported platform: print message only, no frames. */
-void ktc_core_stacktrace_print(const char* message, int message_len){
-    fprintf(stderr, "Exception in thread \"main\" kotlin.Error: %.*s\n", message_len, message);
-    fprintf(stderr, "\t(stack trace unavailable on this platform)\n");
+void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line) {
+    fprintf(stderr,
+        "Exception in %.*s:%d kotlin.Error: %.*s\n"
+        "\t(c stack trace unavailable on this platform)\n",
+        fileNameLen, fileName, line,
+        messageLen, message
+    );
 }
 
 #endif
