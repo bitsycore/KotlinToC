@@ -166,8 +166,9 @@ private fun resolveModules(seeds: List<String>, aClass: Class<*>): List<String> 
 
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println("Usage: ktc <file.kt...> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
+        System.err.println("Usage: ktc <file.kt...|module.ktc.toml|dir/> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
         System.err.println("  Transpiles Kotlin subset files to C11.")
+        System.err.println("  A module.ktc.toml or directory containing one can be given instead of .kt files.")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
         System.err.println("  --double-dispose=ASSERT|LOG|NO  Double-dispose: abort / log+continue / ignore (default: NO)")
@@ -232,15 +233,50 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
 
-    // Resolve input files
+    // Resolve input files — a module.ktc.toml (or directory containing one) expands to its .kt files
     val inputFiles = mutableListOf<File>()
     for (path in inputPaths) {
         val f = File(path)
-        if (f.exists()) {
-            inputFiles += f
-        } else {
+        if (!f.exists()) {
             System.err.println("Error: file not found: $path")
             exitProcess(1)
+        }
+        // If given a directory, look for module.ktc.toml inside it
+        val tomlFile = when {
+            f.isDirectory -> File(f, "module.ktc.toml").takeIf { it.exists() }
+            f.name == "module.ktc.toml" -> f
+            else -> null
+        }
+        if (tomlFile != null) {
+            val tomlDir = tomlFile.parentFile ?: File(".")
+            val content = tomlFile.readText()
+            // Read config fields from the toml if not already set via CLI
+            if (mainOverride == null) {
+                val tomlMain = parseMainEntry(content)
+                if (tomlMain != null) mainOverride = tomlMain
+                else if (parseAutoFindMain(content)) mainOverride = "__auto__"
+            }
+            if (nameOverride == null) {
+                val tomlExe = parseExecutable(content)
+                if (tomlExe != null) nameOverride = tomlExe
+            }
+            for (mod in parseDependencies(content)) {
+                if (isUrlModule(mod))
+                    moduleNames += resolveUrlModule(mod)
+                else if (mod.startsWith("./") || mod.startsWith("../"))
+                    moduleNames += File(tomlDir, mod).canonicalPath
+                else
+                    moduleNames += mod
+            }
+            // Discover .kt files in the same directory
+            val ktFiles = tomlDir.listFiles()?.filter { it.extension == "kt" }?.sorted() ?: emptyList()
+            if (ktFiles.isEmpty()) {
+                System.err.println("Error: no .kt files in module directory: ${tomlDir.path}")
+                exitProcess(1)
+            }
+            inputFiles += ktFiles
+        } else {
+            inputFiles += f
         }
     }
 

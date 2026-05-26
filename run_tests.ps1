@@ -586,9 +586,15 @@ function Run-Suite {
 		}
 
 		# interactive=true marks a test requiring user interaction; always headless in suite mode.
-		$vCfg2 = Read-ConfigToml "$($vDir.FullName)\module.ktc.toml"
-		$vRunArgs = $vCfg2.args
-		if ($vCfg2.interactive) { $vRunArgs = "--skip-interaction" }
+		$vRunArgs = ""; $vIsInteractive = $false
+		$vModToml = "$($vDir.FullName)\module.ktc.toml"
+		if (Test-Path $vModToml) {
+			foreach ($vL in (Get-Content $vModToml)) {
+				if     ($vL -match '^\s*interactive\s*=\s*true')       { $vIsInteractive = $true }
+				elseif ($vL -match '^\s*args\s*=\s*"([^"]*)"')        { $vRunArgs = $Matches[1] }
+			}
+		}
+		if ($vIsInteractive) { $vRunArgs = "--skip-interaction" }
 		$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
 		if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
 		$vPsi.RedirectStandardOutput = $true
