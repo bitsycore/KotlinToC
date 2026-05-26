@@ -191,30 +191,77 @@ def find_cmake() -> str | None:
 
 @dataclass
 class RunResult:
-	# Captured result of a child process invocation.
+	# Captured result of a child process invocation. stdout and stderr are kept
+	# separate so failure reporting can show normal output (e.g. test "ok"
+	# markers) distinctly from error messages and stack traces — the latter get
+	# colored red and printed after stdout in the suite output.
 	exit:   int
 	stdout: str
-	ms:     int
+	stderr: str = ""
+	ms:     int = 0
 
 def run_capture(inCmd: list[str], inCwd: Path | None = None) -> RunResult:
-	# Runs a command, captures combined stdout+stderr, returns exit and elapsed ms.
+	# Runs a command and captures stdout and stderr as separate strings. Python
+	# uses internal threads to drain both pipes concurrently so we don't
+	# deadlock on processes that write heavily to one stream.
 	vStart = time.monotonic()
 	vP = subprocess.run(
 		inCmd,
 		cwd=str(inCwd) if inCwd else None,
 		stdout=subprocess.PIPE,
-		stderr=subprocess.STDOUT,
+		stderr=subprocess.PIPE,
 		encoding="utf-8",
 		errors="replace",
 	)
 	vMs = int((time.monotonic() - vStart) * 1000)
-	return RunResult(exit=vP.returncode, stdout=vP.stdout or "", ms=vMs)
+	return RunResult(exit=vP.returncode, stdout=vP.stdout or "", stderr=vP.stderr or "", ms=vMs)
 
 def run_streamed(inCmd: list[str], inCwd: Path | None = None) -> int:
 	# Runs a command, streaming child stdout/stderr directly to ours. Used when
 	# we want the user to see live output (GUI mode for interactive tests).
 	vP = subprocess.run(inCmd, cwd=str(inCwd) if inCwd else None)
 	return vP.returncode
+
+def run_streamed_split(
+	inCmd:    list[str],
+	inCwd:    Path | None = None,
+	inIndent: str         = "  ",
+) -> RunResult:
+	# Streams a command's stdout and stderr separately to the console — stdout
+	# in the default color, stderr tinted red — while accumulating each into a
+	# string for post-hoc inspection. Used by the verbose Run phase so error
+	# messages and stack traces are visibly distinct from normal output. Two
+	# reader threads drain the pipes concurrently to avoid the deadlock you
+	# get from sequential reads when one stream fills its OS buffer.
+	import threading as _th
+	vStart = time.monotonic()
+	vP = subprocess.Popen(
+		inCmd,
+		cwd=str(inCwd) if inCwd else None,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.PIPE,
+		encoding="utf-8",
+		errors="replace",
+		bufsize=1,
+	)
+	vOutLines: list[str] = []
+	vErrLines: list[str] = []
+	vLock = _th.Lock()
+	def drain(inPipe, inSink: list[str], inColor: str) -> None:
+		for vRaw in inPipe:
+			vLine = vRaw.rstrip("\r\n")
+			inSink.append(vLine)
+			with vLock:
+				if inColor: pwrite(f"{inIndent}{inColor}{vLine}{kRst}")
+				else:        pwrite(f"{inIndent}{vLine}")
+	assert vP.stdout is not None and vP.stderr is not None
+	vTOut = _th.Thread(target=drain, args=(vP.stdout, vOutLines, ""),    daemon=True)
+	vTErr = _th.Thread(target=drain, args=(vP.stderr, vErrLines, kRed),  daemon=True)
+	vTOut.start(); vTErr.start()
+	vP.wait()
+	vTOut.join(); vTErr.join()
+	vMs = int((time.monotonic() - vStart) * 1000)
+	return RunResult(exit=vP.returncode, stdout="\n".join(vOutLines), stderr="\n".join(vErrLines), ms=vMs)
 
 def run_streamed_capture(
 	inCmd:        list[str],
@@ -473,8 +520,11 @@ def invoke_test_verbose(
 			pwrite()
 			for vLine in vConfig.stdout.splitlines():
 				pwrite(f"  {kGray}{vLine}{kRst}")
+			for vLine in vConfig.stderr.splitlines():
+				pwrite(f"  {kRed}{vLine}{kRst}")
 			pwrite()
-			if re.search(r"Could not find|not found|NOTFOUND", vConfig.stdout, re.IGNORECASE):
+			vCfgAll = vConfig.stdout + "\n" + vConfig.stderr
+			if re.search(r"Could not find|not found|NOTFOUND", vCfgAll, re.IGNORECASE):
 				pskip(f"{vName} — required library not found")
 				return TestOutcome(name=vName, status="skip")
 			pfail(f"CMake configure failed (exit {vConfig.exit})")
@@ -559,13 +609,13 @@ def invoke_test_verbose(
 		vRMs = int((time.monotonic() - vStart) * 1000)
 		vCaptured = ""
 	else:
-		# Stream output live as it arrives instead of dumping at exit — keeps
-		# long-running tests interactive on stdout and ensures crash output
-		# is visible before the failure message.
-		vRunRes   = run_streamed_capture([str(vExePath), *vRunArgs])
+		# Stream stdout (default color) and stderr (red) separately so error
+		# messages and stack traces stand out as they arrive. Concurrent reader
+		# threads keep both pipes drained to avoid OS-buffer deadlocks.
+		vRunRes   = run_streamed_split([str(vExePath), *vRunArgs])
 		vRExit    = vRunRes.exit
 		vRMs      = vRunRes.ms
-		vCaptured = vRunRes.stdout
+		vCaptured = vRunRes.stdout + "\n" + vRunRes.stderr
 		pwrite()
 
 	if vRExit != 0:
@@ -728,18 +778,20 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 
 	inProgress.start(vName)
 
-	def fail(inReason: str, inOut: str = "", inFullDump: bool = False) -> TestOutcome:
-		# Emits the FAIL line plus the captured tool output. Runtime errors get
-		# a full dump (inFullDump=True) because the actual error message and
-		# stacktrace can be anywhere in the stream — typically at the top when
-		# error()/abort() printed to stderr while stdout was block-buffered.
-		# Build/transpile failures fail-fast so the relevant context is in the
-		# tail; those use _tail() to avoid surfacing tool noise from before.
-		vLines    = [f"  {kRed}FAIL{kRst} {vName} ({inReason})"]
-		vBodyFn   = _full if inFullDump else _tail
+	def fail(inReason: str, inOut: str = "", inErr: str = "", inFullDump: bool = False) -> TestOutcome:
+		# Emits the FAIL line plus the captured tool output. stdout is rendered
+		# gray (normal output, "ok" markers, etc.) and stderr is rendered red
+		# below it (error messages, stack traces, compiler diagnostics). Runtime
+		# errors get a full dump because the actual error can be anywhere in the
+		# stream; build/transpile failures fail-fast so a tail is enough.
+		vLines  = [f"  {kRed}FAIL{kRst} {vName} ({inReason})"]
+		vBodyFn = _full if inFullDump else _tail
 		for vLine in vBodyFn(inOut):
 			if vLine.strip():
 				vLines.append(f"       {kGray}{vLine}{kRst}")
+		for vLine in vBodyFn(inErr):
+			if vLine.strip():
+				vLines.append(f"       {kRed}{vLine}{kRst}")
 		inProgress.finish(vName, vLines)
 		return TestOutcome(name=vName, status="fail")
 
@@ -760,8 +812,10 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 	# ── Transpile ────────────────────────────────────────────────
 	vTr = run_capture(transpile_cmd(inOpts, vKts, vOut, vExe), inCwd=kRoot)
 	if vTr.exit != 0:
-		return fail("transpile failed", vTr.stdout)
-	vWarnings = [k for k in vTr.stdout.splitlines() if "warning:" in k]
+		return fail("transpile failed", vTr.stdout, vTr.stderr)
+	# Transpiler warnings can land in either stream depending on how the JVM
+	# routes them — search both so they always surface under PASS.
+	vWarnings = [k for k in (vTr.stdout + "\n" + vTr.stderr).splitlines() if "warning:" in k]
 	inProgress.update(vName, status_line(f"ktc: {format_ms(vTr.ms)}"))
 
 	vSrcUserCmake = vSrc / "ktc_user.cmake"
@@ -790,13 +844,16 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 			vCfgArgs.extend(inOpts.cmakeArgs.split())
 		vConfig = run_capture([inOpts.cmake, "--log-level=WARNING", *vCfgArgs])
 		if vConfig.exit != 0:
-			if re.search(r"Could not find|not found|NOTFOUND", vConfig.stdout, re.IGNORECASE):
+			# Library-not-found indicators can land on either stream depending
+			# on the cmake version.
+			vCfgAll = vConfig.stdout + "\n" + vConfig.stderr
+			if re.search(r"Could not find|not found|NOTFOUND", vCfgAll, re.IGNORECASE):
 				return skip("required library not found")
-			return fail("cmake configure failed", vConfig.stdout)
+			return fail("cmake configure failed", vConfig.stdout, vConfig.stderr)
 		vJobs  = max(1, (os.cpu_count() or 4))
 		vBuild = run_capture([inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg, "--parallel", str(vJobs)])
 		if vBuild.exit != 0:
-			return fail("cmake build failed", vBuild.stdout)
+			return fail("cmake build failed", vBuild.stdout, vBuild.stderr)
 		vFound = find_built_exe(vOut, vExe)
 		if not vFound:
 			return fail("no executable after cmake build")
@@ -813,7 +870,7 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 		vCArgs.extend(str(c) for c in vCSrcs)
 		vCo = run_capture([inOpts.cc, *vCArgs])
 		if vCo.exit != 0:
-			return fail("compile failed", vCo.stdout)
+			return fail("compile failed", vCo.stdout, vCo.stderr)
 		vCompMs = vCo.ms
 	inProgress.update(vName, status_line(f"ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}"))
 
@@ -821,10 +878,11 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 	vRunArgs = ["--skip-interaction"] if vCfg.interactive else (vCfg.args.split() if vCfg.args else [])
 	vRunRes  = run_capture([str(vExePath), *vRunArgs])
 	if vRunRes.exit != 0:
-		return fail(f"runtime error, exit {vRunRes.exit}", vRunRes.stdout, inFullDump=True)
+		return fail(f"runtime error, exit {vRunRes.exit}", vRunRes.stdout, vRunRes.stderr, inFullDump=True)
 
 	vTiming = f"{kGray}ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}  run: {format_ms(vRunRes.ms)}{kRst}"
-	vLeak   = "leaked" in vRunRes.stdout
+	# Leak-tracker output can hit either stream; check both.
+	vLeak   = "leaked" in vRunRes.stdout or "leaked" in vRunRes.stderr
 	if vLeak:
 		vFinal = f"  {kDYellow}PASS{kRst} {kDYellow}{vName}{kRst}  {kRed}LEAK{kRst}  {vTiming}"
 	else:

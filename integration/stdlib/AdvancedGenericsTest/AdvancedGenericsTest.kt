@@ -494,8 +494,8 @@ fun arrayListDataClassAllocTest() {
     // MARK: NULLABLE
     // ===============================================
 
-    val heap1Null1: Ref<ArrayList<Vec3>>? = heap1
-    val heap1Null2: Ref<ArrayList<Vec3>>? = null
+    val heap1Null1: Ref<ArrayList<Vec3>?> = heap1
+    val heap1Null2: Ref<ArrayList<Vec3>?> = null
     val stack1Null1: ArrayList<Vec2>? = stack1
     val stack1Null2: ArrayList<Vec2>? = null
 
