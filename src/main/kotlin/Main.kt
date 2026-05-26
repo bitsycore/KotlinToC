@@ -475,6 +475,11 @@ fun main(args: Array<String>) {
     ktcDir.mkdirs()
     ktcCoreDir.mkdirs()
 
+    // Track every file we plan to write. Files that already exist with the
+    // same content are left untouched (so the C compiler's mtime cache stays
+    // warm); stale outputs from a previous run are deleted at the end.
+    val tracker = OutputTracker(outDir)
+
     val allAsts = parsedFiles.map { it.ast }.filter { !it.documentationOnly }
     val ktcOutputNames = mutableListOf<String>()  // paths relative to ktc/  (e.g. "std/Heap")
     val userOutputNames = mutableListOf<String>() // paths relative to outDir (e.g. "com/example/Point")
@@ -522,8 +527,7 @@ fun main(args: Array<String>) {
             else -> outDir
             }
         val headerFile  = File(pkgHdrDir, "_package_.h")
-        headerFile.writeText(output.header)
-        println("  wrote ${headerFile.path}")
+        if (tracker.write(headerFile, output.header)) println("  wrote ${headerFile.path}")
 
         // Write each .c file to the directory determined by its routingPkg
         for ((vFileName, vSourceFile) in output.sources) {
@@ -549,8 +553,7 @@ fun main(args: Array<String>) {
                 userOutputNames += vRelBase
                 }
             val vOutputFile = File(vFileSrcDir, vFileName)
-            vOutputFile.writeText(vSourceFile.content)
-            println("  wrote ${vOutputFile.path}")
+            if (tracker.write(vOutputFile, vSourceFile.content)) println("  wrote ${vOutputFile.path}")
             }
     }
 
@@ -679,8 +682,7 @@ fun main(args: Array<String>) {
             append("}")
         }
         val vMainCFile = File(outDir, "main.c")
-        vMainCFile.writeText(vMainC)
-        println("  wrote ${vMainCFile.path}")
+        if (tracker.write(vMainCFile, vMainC)) println("  wrote ${vMainCFile.path}")
         userOutputNames += "main"
         vGeneratedMainC = true
     }
@@ -690,7 +692,7 @@ fun main(args: Array<String>) {
         val vDst = File(ktcCoreDir, vName)
         val vSrc = aClass.getResourceAsStream("/ktc/core/$vName")
         if (vSrc != null) {
-            vDst.writeText(vSrc.bufferedReader().readText())
+            tracker.write(vDst, vSrc.bufferedReader().readText())
         } else {
             System.err.println("Warning: $vName not found in resources, copy it manually.")
         }
@@ -712,8 +714,16 @@ fun main(args: Array<String>) {
         ?: "output"
 
     // ── Generate CMakeLists.txt (+ ktc_modules.cmake if modules active) ─────────
-    writeCmakeFiles(outDir, mainBase, vCoreFullSrcs + vKtcFullSrcs, vUserFullSrcs, moduleCmakes)
-    println("  wrote ${File(outDir, "CMakeLists.txt").path}")
+    writeCmakeFiles(outDir, mainBase, vCoreFullSrcs + vKtcFullSrcs, vUserFullSrcs, moduleCmakes, tracker)
+
+    // ── Clean up stale transpiler outputs from previous runs ────────────────────
+    // Any .c/.h/CMakeLists.txt/ktc_modules.cmake in outDir that wasn't part of
+    // this emission set is deleted. Files the transpiler doesn't own (_cmake/,
+    // ktc_user.cmake, DLLs, the final executable) are left untouched. This is
+    // what lets the C compiler keep its incremental cache: unchanged files
+    // weren't rewritten, so their mtimes weren't bumped.
+    val vRemoved = tracker.cleanupStale()
+    for (vR in vRemoved) println("  removed (stale) $vR")
 
     println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")
     println("  or: cmake -B build . && cmake --build build")

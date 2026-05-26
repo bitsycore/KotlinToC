@@ -6,18 +6,27 @@ import java.io.File
 // MARK: CMake generation
 // ==================
 
-/* Generates CMakeLists.txt and (if modules are active) ktc_modules.cmake. */
+/* Generates CMakeLists.txt and (if modules are active) ktc_modules.cmake.
+Files go through inTracker so identical content is not re-written and stale
+files left over from a previous run will be cleaned up later. */
 internal fun writeCmakeFiles(
 	inOutDir:       File,
 	inExeName:      String,        // target executable name
 	inKtcSources:   List<String>,  // paths relative to inOutDir, e.g. "ktc/core/ktc_core.c"
 	inUserSources:  List<String>,  // paths relative to inOutDir, e.g. "com/example/Point.c"
-	inModuleCmakes: List<String> = emptyList(), // cmake snippets from active modules
+	inModuleCmakes: List<String>   = emptyList(), // cmake snippets from active modules
+	inTracker:      OutputTracker? = null,        // optional; falls back to direct write
 	) {
 	val vHasModules = inModuleCmakes.isNotEmpty()
-	File(inOutDir, "CMakeLists.txt").writeText(buildCmakeLists(inExeName, inKtcSources, inUserSources, vHasModules))
+	val vCMakeFile  = File(inOutDir, "CMakeLists.txt")
+	val vCMakeBody  = buildCmakeLists(inExeName, inKtcSources, inUserSources, vHasModules)
+	if (inTracker != null) inTracker.write(vCMakeFile, vCMakeBody)
+	else                   vCMakeFile.writeText(vCMakeBody)
 	if (vHasModules) {
-		File(inOutDir, "ktc_modules.cmake").writeText(inModuleCmakes.joinToString("\n\n"))
+		val vModFile = File(inOutDir, "ktc_modules.cmake")
+		val vModBody = inModuleCmakes.joinToString("\n\n")
+		if (inTracker != null) inTracker.write(vModFile, vModBody)
+		else                   vModFile.writeText(vModBody)
 		}
 	}
 

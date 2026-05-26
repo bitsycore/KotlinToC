@@ -298,29 +298,11 @@ def invoke_build(inBuildMode: str, inRebuild: bool) -> None:
 # MARK: File-system helpers for the run loop
 # ==================
 
-# Files/dirs preserved inside out/ when we re-prepare it for a transpile.
-# _cmake/ is the cmake build cache; ktc_user.cmake and *.dll are produced by
-# user setup steps and shouldn't be wiped by every transpile.
-kOutPreserveNames = {"_cmake", "ktc_user.cmake"}
-
 def prepare_out_dir(inOut: Path) -> None:
-	# Removes everything inside inOut except _cmake/, ktc_user.cmake, and any
-	# *.dll files (DLL preservation matters on Windows for runtime deps).
-	if inOut.is_dir():
-		for vEntry in inOut.iterdir():
-			if vEntry.name in kOutPreserveNames:
-				continue
-			if vEntry.is_file() and vEntry.suffix.lower() == ".dll":
-				continue
-			if vEntry.is_dir():
-				shutil.rmtree(vEntry, ignore_errors=True)
-			else:
-				try:
-					vEntry.unlink()
-				except OSError:
-					pass
-	else:
-		inOut.mkdir(parents=True, exist_ok=True)
+	# Ensures out/ exists. We no longer wipe it pre-transpile: the transpiler
+	# itself writes-only-on-change (preserving mtime for C compiler caching)
+	# and prunes its own stale outputs at the end of each run.
+	inOut.mkdir(parents=True, exist_ok=True)
 
 def collect_kt_files(inDir: Path) -> list[Path]:
 	# All .kt files under inDir, sorted for deterministic transpile order.
