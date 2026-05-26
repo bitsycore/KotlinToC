@@ -216,6 +216,41 @@ def run_streamed(inCmd: list[str], inCwd: Path | None = None) -> int:
 	vP = subprocess.run(inCmd, cwd=str(inCwd) if inCwd else None)
 	return vP.returncode
 
+def run_streamed_capture(
+	inCmd:        list[str],
+	inCwd:        Path | None = None,
+	inIndent:     str         = "  ",
+	inColorWarn:  bool        = False,
+	inDimAll:     bool        = False,
+) -> RunResult:
+	# Streams a command's combined stdout/stderr line-by-line to the console
+	# while also accumulating it for post-hoc inspection. Used by the verbose
+	# (--run) path so interactive tests show output as it happens instead of
+	# only at exit, and so crashes leave the partial output on screen.
+	#  inColorWarn: tint lines containing "warning:" yellow.
+	#  inDimAll:    print every line in gray (used for tool output like cmake).
+	vStart = time.monotonic()
+	vP = subprocess.Popen(
+		inCmd,
+		cwd=str(inCwd) if inCwd else None,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.STDOUT,
+		encoding="utf-8",
+		errors="replace",
+		bufsize=1,  # line-buffered
+	)
+	vLines: list[str] = []
+	assert vP.stdout is not None
+	for vRawLine in vP.stdout:
+		vLine = vRawLine.rstrip("\r\n")
+		if   inColorWarn and "warning:" in vLine: pwrite(f"{inIndent}{kYellow}{vLine}{kRst}")
+		elif inDimAll:                            pwrite(f"{inIndent}{kGray}{vLine}{kRst}")
+		else:                                      pwrite(f"{inIndent}{vLine}")
+		vLines.append(vLine)
+	vP.wait()
+	vMs = int((time.monotonic() - vStart) * 1000)
+	return RunResult(exit=vP.returncode, stdout="\n".join(vLines), ms=vMs)
+
 # ==================
 # MARK: Clean
 # ==================
@@ -411,12 +446,7 @@ def invoke_test_verbose(
 	else:
 		pcmd(f"java -jar {vJarLbl} {' '.join(k.name for k in vKts)} -o {vOut} --name {vExe}{vSuf}")
 	pwrite()
-	vTr = run_capture(vCmd, inCwd=kRoot)
-	for vLine in vTr.stdout.splitlines():
-		if "warning:" in vLine:
-			pwrite(f"  {kYellow}{vLine}{kRst}")
-		else:
-			pwrite(f"  {vLine}")
+	vTr = run_streamed_capture(vCmd, inCwd=kRoot, inColorWarn=True)
 	pwrite()
 	if vTr.exit != 0:
 		pfail(f"Transpilation failed (exit {vTr.exit})")
@@ -451,14 +481,17 @@ def invoke_test_verbose(
 			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
 		if inOpts.cmakeArgs:
 			vCfgArgs.extend(inOpts.cmakeArgs.split())
+		# CMake Configure: capture silently — the "-- Configuring done" boilerplate
+		# is noise on success. Dump it only when configure fails so the user can
+		# diagnose missing-library / wrong-flag errors.
 		psection("CMake Configure")
 		pcmd(f"cmake {' '.join(vCfgArgs)}")
-		pwrite()
-		vConfig = run_capture([inOpts.cmake, *vCfgArgs])
-		for vLine in vConfig.stdout.splitlines():
-			pwrite(f"  {kGray}{vLine}{kRst}")
-		pwrite()
+		vConfig = run_capture([inOpts.cmake, "--log-level=WARNING", *vCfgArgs])
 		if vConfig.exit != 0:
+			pwrite()
+			for vLine in vConfig.stdout.splitlines():
+				pwrite(f"  {kGray}{vLine}{kRst}")
+			pwrite()
 			if re.search(r"Could not find|not found|NOTFOUND", vConfig.stdout, re.IGNORECASE):
 				pskip(f"{vName} — required library not found")
 				return TestOutcome(name=vName, status="skip")
@@ -466,15 +499,17 @@ def invoke_test_verbose(
 			return TestOutcome(name=vName, status="fail")
 		pwrite(f"  {kGreen}PASS{kRst} CMake configure OK  {kGray}(cfg: {format_ms(vConfig.ms)}){kRst}")
 
+		# CMake Build: stream so the user sees per-file progress on long builds
+		# (Sdl3Test in particular). `--parallel` activates ninja/make's parallel
+		# build; cmake's own progress prefix ("[ 12/47] Building C object …")
+		# gives a clear visual of how much is left.
 		psection("CMake Build")
-		vBuildCmd = [inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg]
-		pcmd(f"cmake --build {vBld.name} --config {inOpts.cfg}")
+		vJobs = max(1, (os.cpu_count() or 4))
+		vBuildCmd = [inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg, "--parallel", str(vJobs)]
+		pcmd(f"cmake --build {vBld.name} --config {inOpts.cfg} --parallel {vJobs}")
 		pwrite()
-		vBuild = run_capture(vBuildCmd)
-		if vBuild.stdout:
-			for vLine in vBuild.stdout.splitlines():
-				pwrite(f"  {kGray}{vLine}{kRst}")
-			pwrite()
+		vBuild = run_streamed_capture(vBuildCmd, inDimAll=True)
+		pwrite()
 		if vBuild.exit != 0:
 			pfail(f"CMake build failed (exit {vBuild.exit})")
 			return TestOutcome(name=vName, status="fail")
@@ -500,11 +535,8 @@ def invoke_test_verbose(
 		vCArgs.extend(str(c) for c in vCSrcs)
 		pcmd(f"{inOpts.cc} -std=c11{(' ' + inOpts.ccArgs) if inOpts.ccArgs else ''} -o {vExePath} {' '.join(c.name for c in vCSrcs)}")
 		pwrite()
-		vCo = run_capture([inOpts.cc, *vCArgs])
-		if vCo.stdout:
-			for vLine in vCo.stdout.splitlines():
-				pwrite(f"  {kGray}{vLine}{kRst}")
-			pwrite()
+		vCo = run_streamed_capture([inOpts.cc, *vCArgs], inDimAll=True)
+		pwrite()
 		if vCo.exit != 0:
 			pfail(f"Compilation failed (exit {vCo.exit})")
 			return TestOutcome(name=vName, status="fail")
@@ -534,17 +566,19 @@ def invoke_test_verbose(
 		pinfo(f"Test args: {' '.join(vRunArgs)}")
 
 	if inOpts.gui and vCfg.interactive:
+		# Full passthrough: child owns the terminal. Used for interactive windows.
 		vStart = time.monotonic()
 		vRExit = run_streamed([str(vExePath), *vRunArgs])
 		vRMs = int((time.monotonic() - vStart) * 1000)
 		vCaptured = ""
 	else:
-		vRunRes = run_capture([str(vExePath), *vRunArgs])
-		vRExit  = vRunRes.exit
-		vRMs    = vRunRes.ms
+		# Stream output live as it arrives instead of dumping at exit — keeps
+		# long-running tests interactive on stdout and ensures crash output
+		# is visible before the failure message.
+		vRunRes   = run_streamed_capture([str(vExePath), *vRunArgs])
+		vRExit    = vRunRes.exit
+		vRMs      = vRunRes.ms
 		vCaptured = vRunRes.stdout
-		for vLine in vCaptured.splitlines():
-			pwrite(f"  {vLine}")
 		pwrite()
 
 	if vRExit != 0:
@@ -562,28 +596,54 @@ def invoke_test_verbose(
 # MARK: Single test (concise, used by parallel suite)
 # ==================
 
-def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> TestOutcome:
-	# Worker for the parallel suite — same pipeline but accumulates all output
-	# into a single one-line report per test.
-	vName = inTest.relPath
-	vSrc  = inTest.fullPath
-	vOut  = vSrc / "out"
-	vCfg  = read_module_toml(vSrc / "module.ktc.toml")
-	vExe  = vCfg.executable or inTest.name
+# Last N lines of a captured output, used to surface the relevant context of
+# a failure without flooding the suite output with successful tool noise.
+def _tail(inText: str, inLines: int = 12) -> list[str]:
+	vAll = inText.splitlines()
+	return vAll[-inLines:] if len(vAll) > inLines else vAll
+
+@dataclass
+class ConciseRun:
+	# Outcome plus the line(s) the suite should print when it's this test's
+	# turn (we don't print from worker threads — the suite serializes prints
+	# so we get an ordered [N/total] counter prefix).
+	outcome: TestOutcome
+	lines:   list[str] = field(default_factory=list)
+
+def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> ConciseRun:
+	# Worker for the parallel suite. Captures the pipeline result and the lines
+	# to print; the suite caller decides when (and with what counter) to emit.
+	# On failure, the relevant tail of the captured output is included so the
+	# user sees why a test failed without re-running it in --run mode.
+	vName  = inTest.relPath
+	vSrc   = inTest.fullPath
+	vOut   = vSrc / "out"
+	vCfg   = read_module_toml(vSrc / "module.ktc.toml")
+	vExe   = vCfg.executable or inTest.name
+	vLines: list[str] = []
+
+	def fail(inReason: str, inOut: str = "") -> ConciseRun:
+		# Build a FAIL line and append the tail of the captured tool output so
+		# the suite doesn't swallow the underlying compiler/runtime message.
+		vLines.append(f"  {kRed}FAIL{kRst} {vName} ({inReason})")
+		for vLine in _tail(inOut):
+			if vLine.strip():
+				vLines.append(f"       {kGray}{vLine}{kRst}")
+		return ConciseRun(outcome=TestOutcome(name=vName, status="fail"), lines=vLines)
+
+	def skip(inReason: str) -> ConciseRun:
+		vLines.append(f"  {kDYellow}SKIP{kRst} {vName}  ({inReason})")
+		return ConciseRun(outcome=TestOutcome(name=vName, status="skip"), lines=vLines)
 
 	vKts = collect_kt_files(vSrc)
 	if not vKts:
-		return TestOutcome(name=vName, status="fail")
+		return fail("no .kt files")
 	prepare_out_dir(vOut)
 
 	# Transpile
 	vTr = run_capture(transpile_cmd(inOpts, vKts, vOut, vExe), inCwd=kRoot)
 	if vTr.exit != 0:
-		pwrite(f"  {kRed}FAIL{kRst} {vName} (transpile failed)")
-		# Surface the first warning/error line so the failure isn't fully opaque.
-		for vLine in vTr.stdout.splitlines()[:6]:
-			pwrite(f"       {kGray}{vLine}{kRst}")
-		return TestOutcome(name=vName, status="fail")
+		return fail("transpile failed", vTr.stdout)
 	vWarnings = [k for k in vTr.stdout.splitlines() if "warning:" in k]
 
 	vSrcUserCmake = vSrc / "ktc_user.cmake"
@@ -592,13 +652,11 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> TestOutcome:
 
 	vCSrcs = collect_c_sources(vOut)
 	if not vCSrcs and not has_user_cmake(vOut):
-		pwrite(f"  {kRed}FAIL{kRst} {vName} (no .c files generated)")
-		return TestOutcome(name=vName, status="fail")
+		return fail("no .c files generated")
 
 	vUseCmake = has_user_cmake(vOut)
 	if vUseCmake and not inOpts.cmake:
-		pwrite(f"  {kDYellow}SKIP{kRst} {vName}  (ktc_user.cmake present but cmake not found)")
-		return TestOutcome(name=vName, status="skip")
+		return skip("ktc_user.cmake present but cmake not found")
 
 	vExePath: Path
 	vCompMs  = 0
@@ -611,21 +669,18 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> TestOutcome:
 			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
 		if inOpts.cmakeArgs:
 			vCfgArgs.extend(inOpts.cmakeArgs.split())
-		vConfig = run_capture([inOpts.cmake, *vCfgArgs])
+		vConfig = run_capture([inOpts.cmake, "--log-level=WARNING", *vCfgArgs])
 		if vConfig.exit != 0:
 			if re.search(r"Could not find|not found|NOTFOUND", vConfig.stdout, re.IGNORECASE):
-				pwrite(f"  {kDYellow}SKIP{kRst} {vName}  (required library not found)")
-				return TestOutcome(name=vName, status="skip")
-			pwrite(f"  {kRed}FAIL{kRst} {vName} (cmake configure failed)")
-			return TestOutcome(name=vName, status="fail")
-		vBuild = run_capture([inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg])
+				return skip("required library not found")
+			return fail("cmake configure failed", vConfig.stdout)
+		vJobs  = max(1, (os.cpu_count() or 4))
+		vBuild = run_capture([inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg, "--parallel", str(vJobs)])
 		if vBuild.exit != 0:
-			pwrite(f"  {kRed}FAIL{kRst} {vName} (cmake build failed)")
-			return TestOutcome(name=vName, status="fail")
+			return fail("cmake build failed", vBuild.stdout)
 		vFound = find_built_exe(vOut, vExe)
 		if not vFound:
-			pwrite(f"  {kRed}FAIL{kRst} {vName} (no executable after cmake build)")
-			return TestOutcome(name=vName, status="fail")
+			return fail("no executable after cmake build")
 		vExePath = vFound
 		vCompMs = vConfig.ms + vBuild.ms
 	else:
@@ -639,28 +694,24 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> TestOutcome:
 		vCArgs.extend(str(c) for c in vCSrcs)
 		vCo = run_capture([inOpts.cc, *vCArgs])
 		if vCo.exit != 0:
-			pwrite(f"  {kRed}FAIL{kRst} {vName} (compile failed)")
-			for vLine in vCo.stdout.splitlines()[:6]:
-				pwrite(f"       {kGray}{vLine}{kRst}")
-			return TestOutcome(name=vName, status="fail")
+			return fail("compile failed", vCo.stdout)
 		vCompMs = vCo.ms
 
 	# Run (always headless in parallel mode — GUI is single-test only)
 	vRunArgs = ["--skip-interaction"] if vCfg.interactive else (vCfg.args.split() if vCfg.args else [])
 	vRunRes  = run_capture([str(vExePath), *vRunArgs])
 	if vRunRes.exit != 0:
-		pwrite(f"  {kRed}FAIL{kRst} {vName} (runtime error, exit {vRunRes.exit})")
-		return TestOutcome(name=vName, status="fail")
+		return fail(f"runtime error, exit {vRunRes.exit}", vRunRes.stdout)
 
 	vTiming = f"{kGray}ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}  run: {format_ms(vRunRes.ms)}{kRst}"
 	vLeak = "leaked" in vRunRes.stdout
 	if vLeak:
-		pwrite(f"  {kDYellow}PASS{kRst} {kDYellow}{vName}{kRst}  {kRed}LEAK{kRst}  {vTiming}")
+		vLines.append(f"  {kDYellow}PASS{kRst} {kDYellow}{vName}{kRst}  {kRed}LEAK{kRst}  {vTiming}")
 	else:
-		pwrite(f"  {kGreen}PASS{kRst} {kGreen}{vName}{kRst}  {vTiming}")
+		vLines.append(f"  {kGreen}PASS{kRst} {kGreen}{vName}{kRst}  {vTiming}")
 	for vW in vWarnings:
-		pwrite(f"       {kYellow}{vW}{kRst}")
-	return TestOutcome(name=vName, status="pass", timing=vTiming)
+		vLines.append(f"       {kYellow}{vW}{kRst}")
+	return ConciseRun(outcome=TestOutcome(name=vName, status="pass", timing=vTiming), lines=vLines)
 
 # ==================
 # MARK: Suite
@@ -687,8 +738,9 @@ def run_unit_tests() -> bool:
 
 def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> SuiteResult:
 	# Optionally runs unit tests then dispatches integration tests in parallel.
-	# Order of completion is non-deterministic; the result struct is what callers
-	# should rely on for the summary.
+	# Workers run concurrently but their result lines are emitted serially from
+	# the main thread as each future completes, with a [N/total] counter so the
+	# user can see real-time progress against the total work.
 	vRes = SuiteResult()
 	if not inSkipUnit:
 		if not run_unit_tests():
@@ -699,14 +751,28 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> S
 		pinfo("No tests to run.")
 		return vRes
 
+	vTotal   = len(inTests)
+	vWidth   = len(str(vTotal))
 	vWorkers = max(1, (os.cpu_count() or 4))
+	vDone    = 0
 	with ThreadPoolExecutor(max_workers=vWorkers) as vEx:
 		vFutures = {vEx.submit(invoke_test_concise, vT, inOpts): vT for vT in inTests}
 		for vF in as_completed(vFutures):
-			vOutcome = vF.result()
-			if   vOutcome.status == "pass": vRes.passed += 1
-			elif vOutcome.status == "skip": vRes.skipped += 1; vRes.skippedNames.append(vOutcome.name)
-			else:                            vRes.failed  += 1; vRes.failedNames.append(vOutcome.name)
+			vDone += 1
+			vRun = vF.result()
+			vPrefix = f"{kGray}[{vDone:>{vWidth}}/{vTotal}]{kRst}"
+			# First line carries the counter; continuation lines indent under it.
+			vFirst = True
+			for vLine in vRun.lines:
+				if vFirst:
+					pwrite(f"{vPrefix} {vLine.lstrip()}")
+					vFirst = False
+				else:
+					pwrite(vLine)
+			vOut = vRun.outcome
+			if   vOut.status == "pass": vRes.passed += 1
+			elif vOut.status == "skip": vRes.skipped += 1; vRes.skippedNames.append(vOut.name)
+			else:                       vRes.failed  += 1; vRes.failedNames.append(vOut.name)
 	return vRes
 
 def show_summary(inRes: SuiteResult) -> int:
