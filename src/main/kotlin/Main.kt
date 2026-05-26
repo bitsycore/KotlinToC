@@ -666,8 +666,9 @@ fun main(args: Array<String>) {
     val vCoreFullSrcs = listOf("ktc/core/ktc_core.c", "ktc/core/ktc_thread.c")
     val vKtcFullSrcs  = ktcOutputNames.sorted().map { "ktc/$it.c" }
     val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
-    val ktcSources    = (vCoreFullSrcs + vKtcFullSrcs).joinToString(" ")
-    val userSources   = vUserFullSrcs.joinToString(" ")
+    fun shellQuote(path: String) = if ('$' in path || ' ' in path) "'" + path + "'" else path
+    val ktcSources    = (vCoreFullSrcs + vKtcFullSrcs).joinToString(" ") { shellQuote(it) }
+    val userSources   = vUserFullSrcs.joinToString(" ") { shellQuote(it) }
     // Derive binary name: --name override, else heuristic from first user output
     val mainBase = nameOverride
         ?: userOutputNames.firstOrNull()
