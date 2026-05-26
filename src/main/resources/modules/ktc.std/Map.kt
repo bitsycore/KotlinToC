@@ -1,9 +1,9 @@
 package ktc.std
 
 class MapIterator<K, V>(
-	private val keys: @Ptr RawArray<K>,
-	private val vals: @Ptr RawArray<V>,
-	private val occ: @Ptr RawArray<Boolean>,
+	private val keys: RawArray<K>,
+	private val vals: RawArray<V>,
+	private val occ: RawArray<Boolean>,
 	private val cap: Int
 ) : Iterator<Pair<K, V>> {
 
@@ -43,14 +43,14 @@ interface MutableMap<K, V> : Map<K, V> {
 	fun clear()
 }
 
-class HashMap<K, V>(private val allocator: @Ptr Allocator, private var capacity: Int) : MutableMap<K, V> {
+class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity: Int) : MutableMap<K, V> {
 
 	override var size: Int = 0
 		private set
 
-	private var keys: @Ptr RawArray<K> = RawArray<K>(capacity).allocWith(allocator) ?: error("Could allocate keys")
-	private var vals: @Ptr RawArray<V> = RawArray<V>(capacity).allocWith(allocator) ?: error("Could allocate vals")
-	private var occ: @Ptr RawArray<Boolean> = RawArray<Boolean>(capacity).allocWith(allocator) ?: error("Could allocate occ")
+	private var keys: RawArray<K> = RawArray<K>(capacity).allocWith(allocator) ?: error("Could allocate keys")
+	private var vals: RawArray<V> = RawArray<V>(capacity).allocWith(allocator) ?: error("Could allocate vals")
+	private var occ: RawArray<Boolean> = RawArray<Boolean>(capacity).allocWith(allocator) ?: error("Could allocate occ")
 
 	init {
 		occ.fill(capacity, false)
@@ -171,7 +171,7 @@ class HashMap<K, V>(private val allocator: @Ptr Allocator, private var capacity:
 
 }
 
-fun <K,V> mapOf(allocator: @Ptr Allocator, vararg pairs: Pair<K, V>): Map<K, V> {
+fun <K,V> mapOf(allocator: Ref<Allocator>, vararg pairs: Pair<K, V>): Map<K, V> {
 	val map = HashMap<K, V>(allocator, pairs.size)
 	for (p in pairs) {
 		map.put(p.first, p.second)
@@ -179,7 +179,7 @@ fun <K,V> mapOf(allocator: @Ptr Allocator, vararg pairs: Pair<K, V>): Map<K, V> 
 	return map
 }
 
-fun <K,V> mutableMapOf(allocator: @Ptr Allocator, vararg pairs: Pair<K, V>): MutableMap<K, V> {
+fun <K,V> mutableMapOf(allocator: Ref<Allocator>, vararg pairs: Pair<K, V>): MutableMap<K, V> {
 	val notZero = if (pairs.size == 0) 8 else pairs.size * 2
 	val map = HashMap<K, V>(allocator, notZero)
 	for (p in pairs) {

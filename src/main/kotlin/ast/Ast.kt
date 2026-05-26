@@ -242,3 +242,18 @@ fun TypeRef.getSizeAnnotation(): Int? {
 
 /* True when this TypeRef is a @Size(N)-annotated String — a fixed-capacity string buffer. */
 fun TypeRef.isSizedString(): Boolean = hasSizeAnnotation() && name == "String"
+
+/* True when this TypeRef is a reference/pointer type — either Ref<T> syntax or internal @Ptr annotation. */
+fun TypeRef.isRefType(): Boolean = name == "Ref" || annotations.any { it.name == "Ptr" }
+
+/* Nullable accounting for Ref<T?> where nullability sits on the inner type arg, not the outer TypeRef. */
+fun TypeRef.isEffectivelyNullable(): Boolean = nullable || (name == "Ref" && typeArgs.firstOrNull()?.nullable == true)
+
+/* Normalize Ref<T> → @Ptr T so downstream code only sees the @Ptr form. */
+fun TypeRef.normalizeRef(): TypeRef {
+	if (name != "Ref" || typeArgs.isEmpty()) return this
+	val inner = typeArgs[0]
+	return TypeRef(inner.name, inner.nullable || nullable, inner.typeArgs,
+		inner.funcParams, inner.funcReturn, inner.funcReceiver,
+		inner.annotations + Annotation("Ptr"))
+}

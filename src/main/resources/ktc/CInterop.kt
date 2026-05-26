@@ -32,12 +32,12 @@ Kotlin primitive types map directly to C types:
 Pointers
 ==========
 
-`@Ptr T` maps to `T*` in C.  Use on parameter types, return types, and val/var types.
-Nullable `@Ptr T?` maps to `T*` and compares against NULL instead of using Optional.
+`Ref<T>` maps to `T*` in C.  Use on parameter types, return types, and val/var types.
+Nullable `Ref<T?>` maps to `T*` and compares against NULL instead of using Optional.
 
-    fun read(buf: @Ptr ByteArray, len: Int): Int     →  int32_t read(int8_t* buf, int32_t len)
-    fun next(): @Ptr Node?                           →  sdl3_Node* next(void)
-    val fData: @Ptr Array<Float>                     →  float* fData;
+    fun read(buf: Ref<ByteArray>, len: Int): Int     →  int32_t read(int8_t* buf, int32_t len)
+    fun next(): Ref<Node?>                           →  sdl3_Node* next(void)
+    val fData: Ref<Array<Float>>                     →  float* fData;
 
 `c.addr(x)` produces `&x` (address-of).
 `c.NULL` is the null pointer constant.
@@ -49,7 +49,7 @@ C calls
 Call any C function via `c.functionName(args)`:
 
     c.SDL_Init(c.SDL_INIT_VIDEO)
-    val vHandle: @Ptr c.SDL_Window = c.SDL_CreateWindow(title.ptr, w, h, flags)
+    val vHandle: Ref<c.SDL_Window> = c.SDL_CreateWindow(title.ptr, w, h, flags)
 
 Struct types are accessed as `c.SDL_FRect`, `c.SDL_Color`, etc.
 Struct instances: `c.SDL_FRect(x, y, w, h)` — a compound literal.
@@ -103,4 +103,4 @@ object c
 
 inline fun <T> c.zeroed(vararg params: Any): T
 inline fun <T> c.init(vararg params: Any): T
-inline fun <T> c.addr(value: T): @Ptr T
+inline fun <T> c.addr(value: T): Ref<T>

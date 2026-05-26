@@ -87,16 +87,16 @@ inline fun SDL3.Renderer.clearTarget() {
 
 /** Create a blank texture. */
 fun SDL3.Renderer.createTexture(width: Int, height: Int, format: Int, access: Int): SDL3.Texture {
-    val vHandle: @Ptr c.SDL_Texture = c.SDL_CreateTexture(this.handle, format, access, width, height)
+    val vHandle: Ref<c.SDL_Texture> = c.SDL_CreateTexture(this.handle, format, access, width, height)
     if (!vHandle) error("SDL_CreateTexture failed: ${c.SDL_GetError()}")
     return SDL3.Texture(vHandle)
 }
 
 /** Load a BMP file and upload it as a static texture. */
 fun SDL3.Renderer.loadTextureBmp(path: String): SDL3.Texture {
-    val vSurface: @Ptr c.SDL_Surface = c.SDL_LoadBMP(path.ptr)
+    val vSurface: Ref<c.SDL_Surface> = c.SDL_LoadBMP(path.ptr)
     if (!vSurface) error("SDL_LoadBMP failed: ${c.SDL_GetError()}")
-    val vHandle: @Ptr c.SDL_Texture = c.SDL_CreateTextureFromSurface(this.handle, vSurface)
+    val vHandle: Ref<c.SDL_Texture> = c.SDL_CreateTextureFromSurface(this.handle, vSurface)
     c.SDL_DestroySurface(vSurface)
     if (!vHandle) error("SDL_CreateTextureFromSurface failed: ${c.SDL_GetError()}")
     return SDL3.Texture(vHandle)

@@ -47,7 +47,7 @@ fun testMultipleInits() {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 class FilledBuf(val capacity: Int) {
-    var buf: @Ptr RawArray<Int> = RawArray<Int>(capacity).allocWith(Heap)!!
+    var buf: Ref<RawArray<Int>> = RawArray<Int>(capacity).allocWith(Heap)!!
     init {
         buf.fill(capacity, 42)
     }

@@ -1,6 +1,6 @@
 package ktc.std
 
-class ListIterator<T>(val buf: @Ptr Array<T>, val size: Int) : Iterator<T> {
+class ListIterator<T>(val buf: Ref<Array<T>>, val size: Int) : Iterator<T> {
 
 	var idx: Int = 0
 
@@ -30,9 +30,9 @@ interface MutableList<T> : List<T> {
 	fun clear()
 }
 
-class ArrayList<T>(private val allocator: @Ptr Allocator, capacity: Int) : MutableList<T> {
+class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : MutableList<T> {
 
-	private var buf: @Ptr Array<T> = Array<T>(if (capacity > 0) capacity else 4).allocWith(allocator)!!
+	private var buf: Ref<Array<T>> = Array<T>(if (capacity > 0) capacity else 4).allocWith(allocator)!!
 
 	override var size: Int = 0
 		private set
@@ -89,7 +89,7 @@ class ArrayList<T>(private val allocator: @Ptr Allocator, capacity: Int) : Mutab
 
 }
 
-fun <T> mutableListOf(allocator: @Ptr Allocator, vararg items: T): MutableList<T> {
+fun <T> mutableListOf(allocator: Ref<Allocator>, vararg items: T): MutableList<T> {
     val list = ArrayList<T>(allocator, items.size)
     for (item in items) {
         list.add(item)
@@ -97,7 +97,7 @@ fun <T> mutableListOf(allocator: @Ptr Allocator, vararg items: T): MutableList<T
     return list
 }
 
-fun <T> listOf(allocator: @Ptr Allocator, vararg items: T): List<T> {
+fun <T> listOf(allocator: Ref<Allocator>, vararg items: T): List<T> {
     val list = ArrayList<T>(allocator, items.size)
     for (item in items) {
         list.add(item)

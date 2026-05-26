@@ -31,7 +31,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 return mangledGenericName(flatCallee, resolvedArgs)
             }
         }
-        // Class(args).allocWith(allocator) → @Ptr ClassType (type/args come from the receiver ctor call)
+        // Class(args).allocWith(allocator) → Ref<ClassType> (type/args come from the receiver ctor call)
         if (e.callee.name == "allocWith" && e.callee.obj is CallExpr) {
             val objName = (e.callee.obj.callee as? NameExpr)?.name
             if (objName != null) {
@@ -220,7 +220,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     if (method == "hashCode") return "Int"
     if (method == "inv") return recvType
     val recvKtc = parseResolvedTypeName(recvType)
-    // RawArray<T> (T*): asArray(n) → @Ptr Array<T>; resizeWith returns the bare pointer unchanged.
+    // RawArray<T> (T*): asArray(n) → Ref<Array<T>>; resizeWith returns the bare pointer unchanged.
     if (method == "asArray" || method == "resizeWith") {
         val core = recvKtc.stripNullable
         if (core is KtcType.Ptr && core.inner !is KtcType.Arr)
@@ -235,7 +235,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
                 if (base.endsWith("Array*")) base.removeSuffix("Array*") else base.removeSuffix("*")
             }
 
-            "ptr", "copyWith", "resizeWith" -> recvType
+            "asRef", "copyWith", "resizeWith" -> recvType
             "asRaw" -> "${arrayElementKtTypeKtc(recvKtc)}*"
             "set" -> "Unit"
             else -> null
@@ -256,17 +256,17 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
         val extFun = extensionFuns[pointerBase]?.find { it.name == method }
         if (extFun != null) return if (extFun.returnType != null) resolveTypeName(extFun.returnType).toInternalStr else "Unit"
         return when (method) {
-            "value" -> pointerBase
+            "refValue" -> pointerBase
             "set" -> "Unit"
             "copy" -> pointerBase
-            "ptr" -> "${pointerBase}*"
+            "asRef" -> "${pointerBase}*"
             else -> null
         }
     }
     val baseClass = recvType.removeSuffix("?")
     if (classes.containsKey(baseClass)) {
         if (method == "copy") return baseClass
-        if (method == "ptr") return "${baseClass}*"
+        if (method == "asRef") return "${baseClass}*"
     }
     val iface = interfaces[recvType]
     if (iface != null) {

@@ -11,7 +11,7 @@ object Random {
 	All methods share this thread-local PRNG state.te.
 	*/
 	init {
-		c.ktc_core_srand(state.ptr(), inc.ptr(), c.time(c.NULL))
+		c.ktc_core_srand(state.asRef(), inc.asRef(), c.time(c.NULL))
 	}
 
 	/**
@@ -20,8 +20,8 @@ object Random {
 	Matches Kotlin's Random.nextInt() and Random.nextInt(until: Int).
 	*/
 	fun nextInt(until: Int = 0): Int {
-		if (until <= 0) return c.ktc_core_rand(state.ptr(), inc.ptr())
-		return c.ktc_core_rand(state.ptr(), inc.ptr()) % until
+		if (until <= 0) return c.ktc_core_rand(state.asRef(), inc.asRef())
+		return c.ktc_core_rand(state.asRef(), inc.asRef()) % until
 	}
 
 	/**
@@ -29,7 +29,7 @@ object Random {
 	Matches Kotlin's Random.nextInt(from: Int, until: Int).
 	*/
 	fun nextInt(from: Int, until: Int): Int {
-		return from + c.ktc_core_rand(state.ptr(), inc.ptr()) % (until - from)
+		return from + c.ktc_core_rand(state.asRef(), inc.asRef()) % (until - from)
 	}
 
 	/**
@@ -40,8 +40,8 @@ object Random {
 	Matches Kotlin's Random.nextLong() and Random.nextLong(until: Long).
 	*/
 	fun nextLong(until: Long = 0L): Long {
-		val vA: Long = c.ktc_core_rand(state.ptr(), inc.ptr()).toLong()
-		val vB: Long = c.ktc_core_rand(state.ptr(), inc.ptr()).toLong()
+		val vA: Long = c.ktc_core_rand(state.asRef(), inc.asRef()).toLong()
+		val vB: Long = c.ktc_core_rand(state.asRef(), inc.asRef()).toLong()
 		val vRaw: Long = vA * (c.KTC_RAND_MAX.toLong() + 1L) + vB
 		if (until <= 0L) return vRaw
 		return vRaw % until
@@ -52,8 +52,8 @@ object Random {
 	Matches Kotlin's Random.nextLong(from: Long, until: Long).
 	*/
 	fun nextLong(from: Long, until: Long): Long {
-		val vA: Long = c.ktc_core_rand(state.ptr(), inc.ptr()).toLong()
-		val vB: Long = c.ktc_core_rand(state.ptr(), inc.ptr()).toLong()
+		val vA: Long = c.ktc_core_rand(state.asRef(), inc.asRef()).toLong()
+		val vB: Long = c.ktc_core_rand(state.asRef(), inc.asRef()).toLong()
 		val vRaw: Long = vA * (c.KTC_RAND_MAX.toLong() + 1L) + vB
 		return from + vRaw % (until - from)
 	}
@@ -63,7 +63,7 @@ object Random {
 	Matches Kotlin's Random.nextFloat().
 	*/
 	fun nextFloat(): Float {
-		return c.ktc_core_rand(state.ptr(), inc.ptr()).toFloat() / (c.KTC_RAND_MAX.toFloat() + 1.0f)
+		return c.ktc_core_rand(state.asRef(), inc.asRef()).toFloat() / (c.KTC_RAND_MAX.toFloat() + 1.0f)
 	}
 
 	/**
@@ -71,7 +71,7 @@ object Random {
 	Matches Kotlin's Random.nextDouble().
 	*/
 	fun nextDouble(): Double {
-		return c.ktc_core_rand(state.ptr(), inc.ptr()).toDouble() / (c.KTC_RAND_MAX.toDouble() + 1.0)
+		return c.ktc_core_rand(state.asRef(), inc.asRef()).toDouble() / (c.KTC_RAND_MAX.toDouble() + 1.0)
 	}
 
 	/**
@@ -79,7 +79,7 @@ object Random {
 	Matches Kotlin's Random.nextDouble(from: Double, until: Double).
 	*/
 	fun nextDouble(from: Double, until: Double): Double {
-		val vRaw: Double = c.ktc_core_rand(state.ptr(), inc.ptr()).toDouble() / (c.KTC_RAND_MAX.toDouble() + 1.0)
+		val vRaw: Double = c.ktc_core_rand(state.asRef(), inc.asRef()).toDouble() / (c.KTC_RAND_MAX.toDouble() + 1.0)
 		return from + vRaw * (until - from)
 	}
 
@@ -88,6 +88,6 @@ object Random {
 	Matches Kotlin's Random.nextBoolean().
 	*/
 	fun nextBoolean(): Boolean {
-		return c.ktc_core_rand(state.ptr(), inc.ptr()) % 2 != 0
+		return c.ktc_core_rand(state.asRef(), inc.asRef()) % 2 != 0
 	}
 }

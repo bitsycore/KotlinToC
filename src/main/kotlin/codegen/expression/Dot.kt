@@ -108,6 +108,14 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Enum .name → lookup in names array
     if (e.name == "name" && vOrdinalEnumInfo != null) return "${vOrdinalEnumInfo.flatName}_names[($recv)]"
 
+    // p.refValue → dereference pointer (*p)
+    if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) {
+        val inner = (recvTypeCoreKtc as KtcType.Ptr).inner
+        if (inner is KtcType.User && objects.containsKey(inner.baseName))
+            codegenError("Cannot access .refValue on object '${inner.baseName}' — objects are always Ref")
+        return "(*$recv)"
+    }
+
     // p->field (auto-deref through pointer)
     if (recvTypeCoreKtc is KtcType.Ptr) {
         return "$recv->${thisFieldName(e.name, e.obj)}"
@@ -191,6 +199,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
 
     // Determine field access expression (same logic as genDot but without nullable check)
     val fieldAccess = when {
+        e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr -> "(*$recvVal)"
         recvTypeCoreKtc is KtcType.Ptr -> "$recvVal->${e.name}"
         e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.len"
         e.name == "ptr" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.ptr"
@@ -233,7 +242,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
     val isPtr = innerKtcCore is KtcType.Ptr
 
     if (isPtr) {
-        // VarArr nullable (@Ptr Array<T>?): use .ptr field for null check
+        // VarArr nullable (Ref<Array<T>?>): use .ptr field for null check
         val isVarArr = innerKtcCore is KtcType.Ptr && innerKtcCore.inner.let {
             it is KtcType.Arr && it.sized == null
             }

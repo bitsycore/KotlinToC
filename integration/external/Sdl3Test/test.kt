@@ -34,11 +34,11 @@ fun main(args: Array<String>) {
 	defer { Heap.freeMem(logBuf1) }
 	val logBuf2 = Array<Byte>(2048).allocWith(Heap)
 	defer { Heap.freeMem(logBuf2) }
-	var logArena1 = Arena(logBuf1.ptr(), logBuf1.size)
-	var logArena2 = Arena(logBuf2.ptr(), logBuf2.size)
+	var logArena1 = Arena(logBuf1.asRef(), logBuf1.size)
+	var logArena2 = Arena(logBuf2.asRef(), logBuf2.size)
 	val frameBuf = Array<Byte>(1024).allocWith(Heap)
 	defer { Heap.freeMem(frameBuf) }
-	var frameArena = Arena(frameBuf.ptr(), frameBuf.size)
+	var frameArena = Arena(frameBuf.asRef(), frameBuf.size)
 
 	val app = DemoApp(
 		window        = window,
@@ -54,9 +54,9 @@ fun main(args: Array<String>) {
 		crosshairCol  = SDL3.Color(180, 180, 180, 200),
 		leashColor    = SDL3.Color(100, 100, 220, 120),
 		box           = SDL3.FRect(300.0f, 225.0f, 200.0f, 150.0f),
-		logArena1     = logArena1.ptr(),
-		logArena2     = logArena2.ptr(),
-		frameArena    = frameArena.ptr()
+		logArena1     = logArena1.asRef(),
+		logArena2     = logArena2.asRef(),
+		frameArena    = frameArena.asRef()
 	)
 
 	val trailPoints = Array<SDL3.FPoint>(24)
@@ -85,7 +85,7 @@ fun main(args: Array<String>) {
 		val spinSpeed = if (isKeyDown(SDL3.Scancode.Space)) 270.0f else 90.0f
 		app.spriteState.spin(dt, spinSpeed)
 
-		app.render(trailPoints.ptr(), trailAngle.ptr(), trailHead)
+		app.render(trailPoints.asRef(), trailAngle.asRef(), trailHead)
 		!app.quit && !testMode
 	}
 }

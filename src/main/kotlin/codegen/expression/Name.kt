@@ -30,7 +30,7 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 					val vMemOp = if (vOuterKtc is KtcType.Ptr) "->" else "."
 				return "(*(($vCt*)(${e.name}${vMemOp}data)))"
 				}
-			// @Ptr Any narrowed to @Ptr Concrete: cast the pointer
+			// Ref<Any> narrowed to Ref<Concrete>: cast the pointer
 			if (vCurKtc is KtcType.Ptr && isAnySmartCastVar(e.name)) {
 				val vCt = vCurKtc.toCType()
 				return "(($vCt)${e.name})"
@@ -92,7 +92,7 @@ internal fun CCodeGen.genLValue(e: Expr): String {
 		is IndexExpr -> {
 			val vObjKtc        = inferExprTypeKtc(e.obj)
 			val vObjKtcCore    = vObjKtc.stripNullable
-			val vIsRawPtr      = vObjKtcCore is KtcType.Ptr && vObjKtcCore.inner !is KtcType.Arr // raw pointer (not @Ptr Array)
+			val vIsRawPtr      = vObjKtcCore is KtcType.Ptr && vObjKtcCore.inner !is KtcType.Arr // raw pointer (not Ref<Array<T>>)
 			val vIsSizedArr    = vObjKtcCore?.asArr?.sized != null                             // fixed-size C array
 			val vIsTrampolined = e.obj is NameExpr && e.obj.name in trampolinedParams                             // @Size trampolined param
 			if (vIsRawPtr || vIsSizedArr || vIsTrampolined) "${genExpr(e.obj)}[${genExpr(e.index)}]"

@@ -11,13 +11,13 @@ data class Offset(val x: Int? = null, val y: Int = 0)
 // MARK: Array Ptr
 // =================================
 
-fun passArrayPtr(inarr: @Ptr Array<Int>) {
+fun passArrayPtr(inarr: Ref<Array<Int>>) {
     for(i in 0..<inarr.size) {
         println("inarr[$i] = ${inarr[i]}")
     }
 }
 
-fun passArrayNullablePtr(inarr: @Ptr Array<Int>? = null) {
+fun passArrayNullablePtr(inarr: Ref<Array<Int>?> = null) {
     if (inarr == null) {
         println("inarr is null")
         return
@@ -51,11 +51,11 @@ fun passArrayValueNullable(inarr: Array<Int?>? = null) {
 // MARK: Vec Ptr
 // =================================
 
-fun passVecPtr(inVec: @Ptr Vec2) {
+fun passVecPtr(inVec: Ref<Vec2>) {
     println(inVec)
 }
 
-fun passVecNullablePtr(inVec: @Ptr Vec2? = null) {
+fun passVecNullablePtr(inVec: Ref<Vec2?> = null) {
     if (inVec == null) {
         println("inVec is null")
         return
@@ -106,10 +106,10 @@ fun main() {
 
     // ARRAY PTR
 
-    passArrayPtr(array.ptr())
+    passArrayPtr(array.asRef())
 
-    passArrayNullablePtr(array.ptr())
-    passArrayNullablePtr(arrayNullable?.ptr())
+    passArrayNullablePtr(array.asRef())
+    passArrayNullablePtr(arrayNullable?.asRef())
     passArrayNullablePtr(null)
     passArrayNullablePtr()
 
@@ -129,10 +129,10 @@ fun main() {
 
     // VEC PTR
 
-    passVecPtr(vec.ptr())
+    passVecPtr(vec.asRef())
 
-    passVecNullablePtr(vec.ptr())
-    passVecNullablePtr(vecNullable?.ptr())
+    passVecNullablePtr(vec.asRef())
+    passVecNullablePtr(vecNullable?.asRef())
     passVecNullablePtr()
     passVecNullablePtr(null)
 

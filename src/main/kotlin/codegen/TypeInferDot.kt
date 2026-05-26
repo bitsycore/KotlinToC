@@ -51,6 +51,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 		if (recvTypeCoreKtc is KtcType.Ptr && recvTypeCoreKtc.inner is KtcType.Arr) return parseResolvedTypeName(recvType)
 		return if (recvTypeCoreKtc is KtcType.Ptr) parseResolvedTypeName(recvType) else parseResolvedTypeName("${recvType}*")
 		}
+	if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) return recvTypeCoreKtc.inner
 	if (e.name == "ptr"    && recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
 	if (e.name == "length" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
 	if (e.name == "runeLen" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)

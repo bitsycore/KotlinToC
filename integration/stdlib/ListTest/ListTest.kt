@@ -6,7 +6,7 @@ data class Vec2(val x: Int, val y: Int)
 
 // ── main ─────────────────────────────────────────────────────────────
 
-fun <T> newArray(size: Int = 100) : @Ptr Array<T> {
+fun <T> newArray(size: Int = 100) : Ref<Array<T>> {
 	return Array<T>(size).allocWith(Heap)!!
 }
 

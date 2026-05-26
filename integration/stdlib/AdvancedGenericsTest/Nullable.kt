@@ -6,7 +6,7 @@ package advanced.generics
 
 var testPtrNullableCounter = 0
 
-fun <T> testPtrNullable(list: @Ptr ArrayList<T>?) {
+fun <T> testPtrNullable(list: Ref<ArrayList<T>?>) {
     println()
     println("[$testPtrNullableCounter] testPtrNullable(ArrayList)")
     testPtrNullableCounter++
@@ -40,7 +40,7 @@ fun <T> testValueNullable(list: ArrayList<T>?) {
 
 var testPtrExtNullableCounter = 0
 
-fun <T> @Ptr ArrayList<T>?.testPtrExtNullable() {
+fun <T> Ref<ArrayList<T>?>.testPtrExtNullable() {
     println()
     println("[$testPtrExtNullableCounter] ArrayList.testPtrExtNullable()")
     testPtrExtNullableCounter++
@@ -78,7 +78,7 @@ fun <T> ArrayList<T>?.testValueExtNullable() {
 
 var testListPtrNullableCounter = 0
 
-fun <T> testListPtrNullable(list: @Ptr List<T>?) {
+fun <T> testListPtrNullable(list: Ref<List<T>?>) {
     println()
     println("[$testListPtrNullableCounter] testListPtrNullable(List)")
     testListPtrNullableCounter++
@@ -112,7 +112,7 @@ fun <T> testListValueNullable(list: List<T>?) {
 
 var testListPtrExtNullableCounter = 0
 
-fun <T> @Ptr List<T>?.testListPtrExtNullable() {
+fun <T> Ref<List<T>?>.testListPtrExtNullable() {
     println()
     println("[$testListPtrExtNullableCounter] List.testListPtrExtNullable()")
     testListPtrExtNullableCounter++

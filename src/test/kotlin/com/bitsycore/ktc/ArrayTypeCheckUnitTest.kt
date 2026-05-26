@@ -84,12 +84,12 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
         """, "cannot have raw array type")
     }
 
-    // ── Allowed: @Ptr Array<T> ────────────────────
+    // ── Allowed: Ref<Array<T>> ────────────────────
 
     @Test fun functionReturningPtrArrayIntSucceeds2() {
         val r = transpile("""
             package test.Main
-            fun good(): @Ptr Array<Int> { val a = IntArray(4); return a.ptr() }
+            fun good(): Ref<Array<Int>> { val a = IntArray(4); return a.asRef() }
             fun main(args: Array<String>) {}
         """)
         r.sourceContains("test_Main_good(")
@@ -98,7 +98,7 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
     @Test fun functionReturningPtrArrayIntSucceeds() {
         val r = transpile("""
             package test.Main
-            fun good(): @Ptr Array<Int> { val a = IntArray(4); return a.ptr() }
+            fun good(): Ref<Array<Int>> { val a = IntArray(4); return a.asRef() }
             fun main(args: Array<String>) {}
         """)
         r.sourceContains("test_Main_good(")
@@ -107,7 +107,7 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
     @Test fun classPropertyWithHeapArrayIntSucceeds() {
         val r = transpile("""
             package test.Main
-            class Foo(var arr: @Ptr Array<Int>)
+            class Foo(var arr: Ref<Array<Int>>)
             fun main(args: Array<String>) {}
         """)
         r.headerContains("ktc_VarArr_ktc_Int arr;")
@@ -116,7 +116,7 @@ class ArrayTypeCheckUnitTest : TranspilerTestBase() {
     @Test fun classPropertyWithPtrArrayIntSucceeds() {
         val r = transpile("""
             package test.Main
-            class Foo(var arr: @Ptr Array<Int>)
+            class Foo(var arr: Ref<Array<Int>>)
             fun main(args: Array<String>) {}
         """)
         r.headerContains("ktc_VarArr_ktc_Int arr;")

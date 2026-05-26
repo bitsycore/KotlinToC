@@ -23,10 +23,10 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         val isValueNullRecv = recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
         val guard = if (recvTypeKtc != null) nullGuardExpr(recvTypeKtc, recv, recvName, isThis) else "${recv}\$has"
         val recvVal = if (isValueNullRecv) "KTC_UNWRAP($recv)" else recv
-        // p?.value = x on @Ptr T? → if (p) *p = x;
-        if (s.target.name == "value" && s.op == "=" && recvTypeCoreKtc is KtcType.Ptr) {
+        // p?.refValue = x on Ref<T?> → if (p) *p = x;
+        if (s.target.name == "refValue" && s.op == "=" && recvTypeCoreKtc is KtcType.Ptr) {
             val baseClass = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
-            if (baseClass != null && classes[baseClass]?.properties?.any { it.name == "value" } != true) {
+            if (baseClass != null && classes[baseClass]?.properties?.any { it.name == "refValue" } != true) {
                 val value = genExpr(s.value)
                 flushPreStmts(ind)
                 impl.appendLine("${ind}if ($guard) { *$recvVal = $value; }")
@@ -85,14 +85,14 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         }
     }
 
-    // p.value = x on @Ptr T → *p = x;  (only when the pointee class has no own
-    // 'value' property — user classes always win over the synthetic pointer access).
-    if (s.target is DotExpr && s.target.name == "value" && s.op == "=") {
+    // p.refValue = x on Ref<T> → *p = x;  (only when the pointee class has no own
+    // 'refValue' property — user classes always win over the synthetic ref access).
+    if (s.target is DotExpr && s.target.name == "refValue" && s.op == "=") {
         val recvTypeKtc = inferExprTypeKtc(s.target.obj)
         val recvTypeCoreKtc = recvTypeKtc.stripNullable
         val baseClass = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
         if (baseClass != null
-            && classes[baseClass]?.properties?.any { it.name == "value" } != true
+            && classes[baseClass]?.properties?.any { it.name == "refValue" } != true
             && objects.containsKey(baseClass).not()
         ) {
             val recv  = genExpr(s.target.obj)

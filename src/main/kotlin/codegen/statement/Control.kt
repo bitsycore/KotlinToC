@@ -31,7 +31,7 @@ internal fun CCodeGen.extractSmartCasts(cond: Expr, forElse: Boolean = false): L
 	fun tryCastTo(name: String, target: String) {
 		if (isMutable(name)) return
 		val ktc = lookupVarKtc(name)
-		// Allow narrowing for trampoline Any, and for @Ptr Any → @Ptr Concrete
+		// Allow narrowing for trampoline Any, and for Ref<Any> → Ref<Concrete>
 			if (ktc != null && ktc.toInternalStr != target) {
 				val vNarrowed: String? = when {
 					// Ptr(Any) → value type (goes through .data deref in genName)
@@ -80,7 +80,7 @@ internal fun CCodeGen.pushSmartCasts(casts: List<Pair<String, String>>, ind: Str
 		for ((name, type) in casts) {
 			val vKtc = parseResolvedTypeName(type)
 			val vExistingCName = lookupLocalVar(name)?.cName
-			// For pointer narrows (@Ptr Any → @Ptr Concrete), emit a C cast
+			// For pointer narrows (Ref<Any> → Ref<Concrete>), emit a C cast
 			val vCName = if (vKtc is KtcType.Ptr) "((${vKtc.toCType()})${lookupCName(name)})" else vExistingCName
 			defineVar(name, LocalVar(ktc = vKtc, mutable = false, cName = vCName))
 			}

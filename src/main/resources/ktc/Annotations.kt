@@ -2,16 +2,20 @@
 package ktc
 
 /**
-Mark a type parameter, type property, or return type as a raw C pointer.
-A @Ptr T is emitted as `T*` (pointer to single value).
-Nullable @Ptr T? is emitted as `T*` and compares to NULL instead of wrapping in an Optional.
+Reference type. Ref<T> maps to T* in C (pointer to single value).
+Nullable Ref<T?> maps to T* that can be NULL.
+
+Ref<T> always points to valid memory. Ref<T?> can point to null memory.
+Access the referenced value with .refValue; take a reference with .asRef().
 
 Usage:
-    fun read(inBuf: @Ptr ByteArray, inLen: Int): Int
-    val fData: @Ptr Array<Float>
-    fun next(): @Ptr Node?
+    fun read(inBuf: Ref<ByteArray>, inLen: Int): Int
+    val fData: Ref<Array<Float>>
+    fun next(): Ref<Node?>
 */
-annotation class Ptr
+class Ref<T> {
+	var refValue: T
+}
 
 /**
 Mark a fixed-size stack array.

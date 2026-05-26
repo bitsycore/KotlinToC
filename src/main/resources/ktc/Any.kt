@@ -21,9 +21,9 @@ open class Any {
 }
 
 /**
-Heap-allocates the constructed receiver via [allocator] and returns an owning `@Ptr` to it.
+Heap-allocates the constructed receiver via [allocator] and returns an owning `Ref<T>` to it.
 The construction is fused with the allocation — the object is built directly in the allocated
 storage (no stack temporary).
 Usage: val p = Vec2(1.0f, 2.0f).allocWith(Heap)   /   val a = Array<Int>(n).allocWith(Heap)
 */
-fun <T> T.allocWith(allocator: Allocator): @Ptr T = error("Transpiler intrinsic")
+fun <T> T.allocWith(allocator: Allocator): Ref<T> = error("Transpiler intrinsic")

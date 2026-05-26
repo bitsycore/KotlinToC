@@ -72,18 +72,18 @@ fun shapeReturnerById4Infer(id: Int) = when {
     else -> Square(4.0f)
 }
 
-// ═══════════════════════ @Ptr Interface helpers ══════════════════
+// ═══════════════════════ Ref<Interface> helpers ══════════════════
 
-fun testAtPtrAlloc(alloc: @Ptr Allocator) {
-    val p: @Ptr Byte = alloc.allocMem(32)
-    println("@Ptr allocMem(32): ok")
+fun testRefAlloc(alloc: Ref<Allocator>) {
+    val p: Ref<Byte> = alloc.allocMem(32)
+    println("Ref allocMem(32): ok")
     alloc.freeMem(p)
-    println("@Ptr freeMem: ok")
+    println("Ref freeMem: ok")
 }
 
-class AllocHolder(private val alloc: @Ptr Allocator) {
+class AllocHolder(private val alloc: Ref<Allocator>) {
     fun test() {
-        val p: @Ptr RawArray<Byte> = alloc.allocMem(64)
+        val p: Ref<RawArray<Byte>> = alloc.allocMem(64)
         println("Holder allocMem(64): ok")
         alloc.freeMem(p)
         println("Holder freeMem: ok")
@@ -174,10 +174,10 @@ fun main() {
     println("dispose on Circle (should be no-op):")
     c.dispose()
 
-    // ═══════════════════════ @Ptr Interface dispatch ══════════════
+    // ═══════════════════════ Ref<Interface> dispatch ══════════════
     println()
-    println("=== @Ptr Interface ===")
-    testAtPtrAlloc(Heap)
+    println("=== Ref<Interface> ===")
+    testRefAlloc(Heap)
 
     val holder = AllocHolder(Heap)
     holder.test()

@@ -1,10 +1,10 @@
 package ArrayTest
 
-fun arrayPtr(arr: @Ptr Array<Int>) {
+fun arrayPtr(arr: Ref<Array<Int>>) {
     if (arr.size < 0) error("negative size")
 }
 
-fun arrayPtrWithDispose(arr: @Ptr Array<Int>) {
+fun arrayPtrWithDispose(arr: Ref<Array<Int>>) {
     if (arr.size < 0) error("negative size")
     Heap.freeMem(arr)
 }
@@ -13,16 +13,16 @@ fun testArrayPtr() {
     // STACK ARRAY TO PTR
 
     val arr = Array<Int>(10)
-    arrayPtr(arr.ptr())
+    arrayPtr(arr.asRef())
 
-    arrayPtr(Array<Int>(10).ptr())
+    arrayPtr(Array<Int>(10).asRef())
 
     val arrOther = Array<Int>(10)
-    arrayPtr(arrOther.ptr())
+    arrayPtr(arrOther.asRef())
 
-    arrayPtr(Array<Int>(10).ptr())
+    arrayPtr(Array<Int>(10).asRef())
 
-    arrayPtr(arrayOf(1,2,3,4,5).ptr())
+    arrayPtr(arrayOf(1,2,3,4,5).asRef())
 
     // HEAP ARRAY TO PTR
 
@@ -34,9 +34,9 @@ fun testArrayPtr() {
 
     // ARRAY COPY PTR
 
-    val arr2 = arrayOf(1,2,3,4,5).ptr()
+    val arr2 = arrayOf(1,2,3,4,5).asRef()
     val arr3 = arr2
-    val arr4: @Ptr Array<Int> = arr3
+    val arr4: Ref<Array<Int>> = arr3
     arrayPtr(arr2)
     arrayPtr(arr3)
     arrayPtr(arr4)
@@ -46,13 +46,13 @@ fun testArrayPtr() {
     val arr5 = arrayOf(1,2,3,4,5).copyWith(Heap)
     defer Heap.freeMem(arr5)
     val arr6 = arr5
-    val arr7: @Ptr Array<Int> = arr6
+    val arr7: Ref<Array<Int>> = arr6
     arrayPtr(arr5)
     arrayPtr(arr6)
     arrayPtr(arr7)
 }
 
-fun testArrayInt(): @Ptr Array<Int> {
+fun testArrayInt(): Ref<Array<Int>> {
 
     // arr
 
@@ -98,7 +98,7 @@ fun testArrayInt(): @Ptr Array<Int> {
 
     // arr3
 
-    val arr3: @Ptr Array<Int>? = arrayOf(5, 10, 15, 20).copyWith(Heap)
+    val arr3: Ref<Array<Int>>? = arrayOf(5, 10, 15, 20).copyWith(Heap)
     arr3?.let { it ->
         if (it.size != 4) error("size should be 4")
         println("size = ${it.size}")
@@ -157,7 +157,7 @@ fun testFill() {
     }
 
     // RawArray needs an explicit count.
-    val raw: @Ptr RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
+    val raw: Ref<RawArray<Int>> = RawArray<Int>(4).allocWith(Heap)!!
     raw.fill(4, 9)
     for (i in 0 until 4) {
         if (raw[i] != 9) error("raw fill failed at $i")
@@ -178,12 +178,12 @@ fun testAliasing() {
     arr.fill(3)
 
     // asRaw() aliases the same data (no copy).
-    val raw: @Ptr RawArray<Int> = arr.asRaw()
+    val raw: Ref<RawArray<Int>> = arr.asRaw()
     raw[0] = 100
     if (arr[0] != 100) error("asRaw should alias the array data")
 
     // asArray(n) re-views the raw pointer with a length, sharing the same memory.
-    val view: @Ptr Array<Int> = raw.asArray(4)
+    val view: Ref<Array<Int>> = raw.asArray(4)
     if (view.size != 4) error("asArray size should be 4")
     view[1] = 200
     if (arr[1] != 200) error("asArray should alias the same memory")
@@ -193,7 +193,7 @@ fun testAliasing() {
 
 fun testRawResize() {
     // Grow: first N elements must survive the realloc.
-    var raw: @Ptr RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
+    var raw: Ref<RawArray<Int>> = RawArray<Int>(4).allocWith(Heap)!!
     for (i in 0 until 4) {
         raw[i] = (i + 1) * 10           // 10, 20, 30, 40
     }
@@ -219,14 +219,14 @@ fun testRawResize() {
 
 fun testHeapArrayInitLambda() {
     // Array<T>(n) { init }.allocWith(allocator) — lambda must run over the freshly allocated slots.
-    val squares: @Ptr Array<Int> = Array<Int>(8) { it -> it * it }.allocWith(Heap)
+    val squares: Ref<Array<Int>> = Array<Int>(8) { it -> it * it }.allocWith(Heap)
     defer Heap.freeMem(squares)
     for (i in 0 until 8) {
         if (squares[i] != i * i) error("heap init lambda failed at $i: expected ${i * i}, got ${squares[i]}")
     }
 
     // Zero-init form (no lambda) — slots are uninitialized memory, but the size is correct.
-    val raw: @Ptr Array<Int> = Array<Int>(4).allocWith(Heap)
+    val raw: Ref<Array<Int>> = Array<Int>(4).allocWith(Heap)
     defer Heap.freeMem(raw)
     if (raw.size != 4) error("alloc size wrong: ${raw.size}")
     // Write something to prove the buffer is addressable.
@@ -238,7 +238,7 @@ fun testHeapArrayInitLambda() {
 
 fun testArrayResize() {
     // Array<T> grown via resizeWith preserves the original contents.
-    var arr: @Ptr Array<Int> = Array<Int>(4) { it -> it + 1 }.allocWith(Heap)
+    var arr: Ref<Array<Int>> = Array<Int>(4) { it -> it + 1 }.allocWith(Heap)
     if (arr.size != 4) error("array size wrong: ${arr.size}")
 
     arr = arr.resizeWith(Heap, 8)
@@ -265,9 +265,9 @@ fun testArrayResize() {
 
 fun testArrayCopyWith() {
     // copyWith allocates a new buffer with the same data — modifying the copy must not touch the original.
-    val src: @Ptr Array<Int> = Array<Int>(4) { it -> it * 10 }.allocWith(Heap)
+    val src: Ref<Array<Int>> = Array<Int>(4) { it -> it * 10 }.allocWith(Heap)
     defer Heap.freeMem(src)
-    val dst: @Ptr Array<Int> = src.copyWith(Heap)
+    val dst: Ref<Array<Int>> = src.copyWith(Heap)
     defer Heap.freeMem(dst)
 
     if (dst.size != src.size) error("copy size mismatch")

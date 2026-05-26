@@ -8,13 +8,13 @@ import com.bitsycore.ktc.codegen.expression.inferInlineFunSubst
 import com.bitsycore.ktc.types.KtcType
 import kotlin.math.abs
 
-/* Crosses the @Ptr T ↔ T boundary check. Rejects an init/value whose KtcType
-disagrees with the declared/target type on whether it's a pointer. The user
-must use .ptr() or .value() explicitly. Skips array-element pointers (those
+/* Crosses the Ref<T> ↔ T boundary check. Rejects an init/value whose KtcType
+disagrees with the declared/target type on whether it's a reference. The user
+must use .asRef() or .refValue explicitly. Skips array-element pointers (those
 are unavoidable because Array<T> internally carries a T*), null literals
 (NULL is a valid pointer value), interface receivers (their ktc_IfacePtr
 wrap/unwrap is already explicit elsewhere), and initializers that are
-themselves .ptr()/.value() calls (already explicit at the syntax level). */
+themselves .asRef()/.refValue calls (already explicit at the syntax level). */
 internal fun CCodeGen.checkPtrValueBoundary(
 	inDeclTypeRef: TypeRef,
 	inDeclKtc: KtcType,
@@ -24,26 +24,28 @@ internal fun CCodeGen.checkPtrValueBoundary(
 ) {
 	if (inExprKtc == null) return
 	if (inExpr is NullLit) return
-	// Already-explicit conversion: .ptr() or .value() at the tail of the init expr.
+	// Already-explicit conversion: .asRef() or .refValue at the tail of the init expr.
 	if (inExpr is CallExpr && inExpr.callee is DotExpr) {
 		val vName = inExpr.callee.name
-		if (vName == "ptr" || vName == "value") return
+		if (vName == "asRef" || vName == "refValue") return
 	}
+	// Property-style .refValue access (not a call, just a DotExpr in expression position)
+	if (inExpr is DotExpr && inExpr.name == "refValue") return
 	val vDeclCore = inDeclKtc.stripNullable
 	val vExprCore = inExprKtc.stripNullable
 	val vDeclIsPtr = vDeclCore is KtcType.Ptr && vDeclCore.inner !is KtcType.Arr
 	val vExprIsPtr = vExprCore is KtcType.Ptr && vExprCore.inner !is KtcType.Arr
 	if (vDeclIsPtr == vExprIsPtr) return
 	// Interface values (ktc_IfacePtr) carry a pointer internally but type as User —
-	// allow them through the boundary without forcing .ptr()/.value() at the syntax
+	// allow them through the boundary without forcing .asRef()/.refValue at the syntax
 	// level (the wrapping/unwrapping is already explicit in call/dispatch sites).
 	if (vDeclCore is KtcType.User && interfaces.containsKey(vDeclCore.baseName)) return
 	if (vExprCore is KtcType.User && interfaces.containsKey(vExprCore.baseName)) return
 	val vDeclName = inDeclKtc.toInternalStr
 	val vExprName = inExprKtc.toInternalStr
-	val vFix = if (vDeclIsPtr) ".ptr()" else ".value()"
+	val vFix = if (vDeclIsPtr) ".asRef()" else ".refValue"
 	codegenError(
-		"Pointer↔value boundary for $inWhere: declared '$vDeclName' but initializer is '$vExprName'. " +
+		"Ref↔value boundary for $inWhere: declared '$vDeclName' but initializer is '$vExprName'. " +
 		"Use '$vFix' to make the conversion explicit."
 	)
 	}
@@ -222,8 +224,7 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
             emitPrintStmt(e.args, ind); return
         }
     }
-    // Note: pointer assignment goes through `p.value = x` (handled in emitAssign);
-    // legacy `p.set(x)` is rejected in genCallMethod with a clear error.
+    // Note: ref assignment goes through `p.refValue = x` (handled in emitAssign).
     // Safe method call as statement: a?.method() → if (guard) { method(a); }
     if (e is CallExpr && e.callee is SafeDotExpr) {
         val safe = e.callee

@@ -11,10 +11,10 @@ passed by value. Stack-allocated by default (the factory functions below); heap-
 `Array<T>(n).allocWith(allocator)`.
 
 A bare `Array<T>` field cannot be stored in a class/object — use `@Size(N) Array<T>` (fixed,
-becomes `T[N]`) or `@Ptr Array<T>` (the same VarArr, but safe to pass and return).
+becomes `T[N]`) or `Ref<Array<T>>` (the same VarArr, but safe to pass and return).
 
 Element access uses `arr[i]`; `size` returns the element count. Related views:
-`asRaw()` → `@Ptr RawArray<T>` (bare data pointer), and `RawArray<T>.asArray(n)` back to a VarArr.
+`asRaw()` → `RawArray<T>` (bare data pointer), and `RawArray<T>.asArray(n)` back to a VarArr.
  */
 class Array<T>(val size: Int) {
 
@@ -36,17 +36,17 @@ fun <T> Array<T>.copyOf(newSize: Int): Array<T>
 /** Fills [fromIndex, toIndex) with [value] (whole array by default). memset when byte-sized / zero, else loop. */
 fun <T> Array<T>.fill(value: T, fromIndex: Int = 0, toIndex: Int = size): Unit
 
-/** Identity view of this array as `@Ptr Array<T>` — same VarArr, but safe to pass and return. */
-fun <T> Array<T>.ptr(): @Ptr Array<T>
+/** Identity view of this array as `Ref<Array<T>>` — same VarArr, but safe to pass and return. */
+fun <T> Array<T>.asRef(): Ref<Array<T>>
 
-/** Heap-copies this array's data via [allocator], returning an owning `@Ptr Array<T>`. */
-fun <T> Array<T>.copyWith(allocator: Allocator): @Ptr Array<T>
+/** Heap-copies this array's data via [allocator], returning an owning `Ref<Array<T>>`. */
+fun <T> Array<T>.copyWith(allocator: Allocator): Ref<Array<T>>
 
 /** Reallocates this array to [newSize] elements via [allocator]; contents up to min(old, new) are preserved. */
-fun <T> Array<T>.resizeWith(allocator: Allocator, newSize: Int): @Ptr Array<T>
+fun <T> Array<T>.resizeWith(allocator: Allocator, newSize: Int): Ref<Array<T>>
 
-/** Bare `@Ptr RawArray<T>` aliasing this array's data (no length); caller tracks the count. */
-fun <T> Array<T>.asRaw(): @Ptr RawArray<T>
+/** Bare `RawArray<T>` aliasing this array's data (no length); caller tracks the count. */
+fun <T> Array<T>.asRaw(): RawArray<T>
 
 /**
 Construct a stack array from a fixed list of values.
@@ -95,22 +95,21 @@ fun booleanArrayOf(vararg inElements: Boolean): Array<Boolean>
 
 /**
 A raw C pointer to an array of T elements with no companion $len field.
-RawArray<T> is always used together with @Ptr:
-@Ptr RawArray<T>  →  T*
+RawArray<T> is inherently a reference type (T* in C).
 
 Unlike Array<T>, RawArray has no length tracking. The caller is responsible
 for keeping track of the element count. Use this only when interfacing with
 C APIs that expect a bare pointer or for optimizing class like HashMap implementation.
 
 Heap-allocating a RawArray:
-val vRaw: @Ptr RawArray<Byte> = RawArray<Byte>(n).allocWith(Heap)
+val vRaw: RawArray<Byte> = RawArray<Byte>(n).allocWith(Heap)
 
 Getting a raw pointer from a regular stack Array<T>:
 val vArr = ByteArray(n)
-val vRaw: @Ptr RawArray<Byte> = vArr.asRaw()
+val vRaw: RawArray<Byte> = vArr.asRaw()
  */
 class RawArray<T>
 
 fun <T> RawArray<T>.fill(size: Int, value: T, fromIndex: Int = 0, toIndex: Int = size): Unit
-fun <T> RawArray<T>.asArray(count: Int): @Ptr Array<T>
-fun <T> RawArray<T>.resizeWith(allocator: Allocator, newCount: Int): @Ptr RawArray<T>
+fun <T> RawArray<T>.asArray(count: Int): Ref<Array<T>>
+fun <T> RawArray<T>.resizeWith(allocator: Allocator, newCount: Int): RawArray<T>

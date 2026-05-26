@@ -16,7 +16,7 @@ fun arrayListAllocTest() {
         Heap.freeMem(heap1)
     }
     // alloc ArrayList on heap, left infered
-    val heap2: @Ptr ArrayList<Float> = ArrayList(Heap, 1).allocWith(Heap)
+    val heap2: Ref<ArrayList<Float>> = ArrayList(Heap, 1).allocWith(Heap)
     defer {
         heap2.dispose()
         Heap.freeMem(heap2)
@@ -105,11 +105,11 @@ fun arrayListAllocTest() {
 
     testValue(stack1)
     testValue(stack2)
-    testValue(heap1.value())
-    testValue(heap2.value())
+    testValue(heap1.refValue)
+    testValue(heap2.refValue)
 
-    testPtr(stack1.ptr())
-    testPtr(stack2.ptr())
+    testPtr(stack1.asRef())
+    testPtr(stack2.asRef())
     testPtr(heap1)
     testPtr(heap2)
 
@@ -117,11 +117,11 @@ fun arrayListAllocTest() {
 
     stack1.testValueExt()
     stack2.testValueExt()
-    heap1.value().testValueExt()
-    heap2.value().testValueExt()
+    heap1.refValue.testValueExt()
+    heap2.refValue.testValueExt()
 
-    stack1.ptr().testPtrExt()
-    stack2.ptr().testPtrExt()
+    stack1.asRef().testPtrExt()
+    stack2.asRef().testPtrExt()
     heap1.testPtrExt()
     heap2.testPtrExt()
 
@@ -129,11 +129,11 @@ fun arrayListAllocTest() {
 
     testListValue(stack1)
     testListValue(stack2)
-    testListValue(heap1.value())
-    testListValue(heap2.value())
+    testListValue(heap1.refValue)
+    testListValue(heap2.refValue)
 
-    testListPtr(stack1.ptr())
-    testListPtr(stack2.ptr())
+    testListPtr(stack1.asRef())
+    testListPtr(stack2.asRef())
     testListPtr(heap1)
     testListPtr(heap2)
 
@@ -141,11 +141,11 @@ fun arrayListAllocTest() {
 
     stack1.testListValueExt()
     stack2.testListValueExt()
-    heap1.value().testListValueExt()
-    heap2.value().testListValueExt()
+    heap1.refValue.testListValueExt()
+    heap2.refValue.testListValueExt()
 
-    stack1.ptr().testListPtrExt()
-    stack2.ptr().testListPtrExt()
+    stack1.asRef().testListPtrExt()
+    stack2.asRef().testListPtrExt()
     heap1.testListPtrExt()
     heap2.testListPtrExt()
 
@@ -153,8 +153,8 @@ fun arrayListAllocTest() {
     // MARK: NULLABLE
     // ===============================================
 
-    val heap1Null1: @Ptr ArrayList<Int>? = heap1
-    val heap1Null2: @Ptr ArrayList<Int>? = null
+    val heap1Null1: Ref<ArrayList<Int>?> = heap1
+    val heap1Null2: Ref<ArrayList<Int>?> = null
     val stack1Null1: ArrayList<Int>? = stack1
     val stack1Null2: ArrayList<Int>? = null
 
@@ -162,59 +162,59 @@ fun arrayListAllocTest() {
 
     testValueNullable(stack1)
     testValueNullable(stack2)
-    testValueNullable(heap1.value())
-    testValueNullable(heap2.value())
+    testValueNullable(heap1.refValue)
+    testValueNullable(heap2.refValue)
 
     testValueNullable(null)
-    heap1Null1?.let { a -> testValueNullable(a.value()) }
-    heap1Null2?.let { a -> testValueNullable(a.value()) }
+    heap1Null1?.let { a -> testValueNullable(a.refValue) }
+    heap1Null2?.let { a -> testValueNullable(a.refValue) }
     testValueNullable(stack1Null1)
     testValueNullable(stack1Null2)
 
-    testPtrNullable(stack1.ptr())
-    testPtrNullable(stack2.ptr())
+    testPtrNullable(stack1.asRef())
+    testPtrNullable(stack2.asRef())
     testPtrNullable(heap1)
     testPtrNullable(heap2)
 
     testPtrNullable(null)
-    testPtrNullable(stack1Null1.ptr())
-    testPtrNullable(stack1Null2.ptr())
+    testPtrNullable(stack1Null1.asRef())
+    testPtrNullable(stack1Null2.asRef())
     testPtrNullable(heap1Null1)
     testPtrNullable(heap1Null2)
 
     // CONCRETE EXTENSION NULLABLE
     stack1.testValueExtNullable()
     stack2.testValueExtNullable()
-    heap1.value().testValueExtNullable()
-    heap2.value().testValueExtNullable()
+    heap1.refValue.testValueExtNullable()
+    heap2.refValue.testValueExtNullable()
 
-    heap1Null1?.value()?.testValueExtNullable()
-    heap1Null2?.value()?.testValueExtNullable()
+    heap1Null1?.refValue?.testValueExtNullable()
+    heap1Null2?.refValue?.testValueExtNullable()
     stack1Null1.testValueExtNullable()
     stack1Null2.testValueExtNullable()
 
-    stack1.ptr().testPtrExtNullable()
-    stack2.ptr().testPtrExtNullable()
+    stack1.asRef().testPtrExtNullable()
+    stack2.asRef().testPtrExtNullable()
     heap1.testPtrExtNullable()
     heap2.testPtrExtNullable()
 
     heap1Null1.testPtrExtNullable()
     heap1Null2.testPtrExtNullable()
-    stack1Null1.ptr().testPtrExtNullable()
-    stack1Null2.ptr().testPtrExtNullable()
+    stack1Null1.asRef().testPtrExtNullable()
+    stack1Null2.asRef().testPtrExtNullable()
 
     // INTERFACE NULLABLE — interface unions need Optional + for-loop support
     testListValueNullable(stack1)
     testListValueNullable(stack2)
-    testListValueNullable(heap1.value())
-    testListValueNullable(heap2.value())
+    testListValueNullable(heap1.refValue)
+    testListValueNullable(heap2.refValue)
 
     testListValueNullable(null)
     testListValueNullable(stack1Null1)
     testListValueNullable(stack1Null2)
 
-    testListPtrNullable(stack1.ptr())
-    testListPtrNullable(stack2.ptr())
+    testListPtrNullable(stack1.asRef())
+    testListPtrNullable(stack2.asRef())
     testListPtrNullable(heap1)
     testListPtrNullable(heap2)
 
@@ -225,14 +225,14 @@ fun arrayListAllocTest() {
     // INTERFACE EXTENSION NULLABLE — need interface ext fun nullable support
     stack1.testListValueExtNullable()
     stack2.testListValueExtNullable()
-    heap1.value().testListValueExtNullable()
-    heap2.value().testListValueExtNullable()
+    heap1.refValue.testListValueExtNullable()
+    heap2.refValue.testListValueExtNullable()
 
     stack1Null1.testListValueExtNullable()
     stack1Null2.testListValueExtNullable()
 
-    stack1.ptr().testListPtrExtNullable()
-    stack2.ptr().testListPtrExtNullable()
+    stack1.asRef().testListPtrExtNullable()
+    stack2.asRef().testListPtrExtNullable()
     heap1.testListPtrExtNullable()
     heap2.testListPtrExtNullable()
 
@@ -256,7 +256,7 @@ fun arrayListWithNullableAllocTest() {
         Heap.freeMem(heap1)
     }
     // alloc ArrayList on heap, left infered
-    val heap2: @Ptr ArrayList<Float?> = ArrayList(Heap, 4).allocWith(Heap)
+    val heap2: Ref<ArrayList<Float?>> = ArrayList(Heap, 4).allocWith(Heap)
     defer {
         heap2.dispose()
         Heap.freeMem(heap2)
@@ -357,7 +357,7 @@ fun arrayListDataClassAllocTest() {
         Heap.freeMem(heap1)
     }
     // alloc ArrayList on heap, left infered
-    val heap2: @Ptr ArrayList<Vec3> = ArrayList(Heap, 1).allocWith(Heap)
+    val heap2: Ref<ArrayList<Vec3>> = ArrayList(Heap, 1).allocWith(Heap)
     defer {
         heap2.dispose()
         Heap.freeMem(heap2)
@@ -446,11 +446,11 @@ fun arrayListDataClassAllocTest() {
 
     testValue(stack1)
     testValue(stack2)
-    testValue(heap1.value())
-    testValue(heap2.value())
+    testValue(heap1.refValue)
+    testValue(heap2.refValue)
 
-    testPtr(stack1.ptr())
-    testPtr(stack2.ptr())
+    testPtr(stack1.asRef())
+    testPtr(stack2.asRef())
     testPtr(heap1)
     testPtr(heap2)
 
@@ -458,11 +458,11 @@ fun arrayListDataClassAllocTest() {
 
     stack1.testValueExt()
     stack2.testValueExt()
-    heap1.value().testValueExt()
-    heap2.value().testValueExt()
+    heap1.refValue.testValueExt()
+    heap2.refValue.testValueExt()
 
-    stack1.ptr().testPtrExt()
-    stack2.ptr().testPtrExt()
+    stack1.asRef().testPtrExt()
+    stack2.asRef().testPtrExt()
     heap1.testPtrExt()
     heap2.testPtrExt()
 
@@ -470,11 +470,11 @@ fun arrayListDataClassAllocTest() {
 
     testListValue(stack1)
     testListValue(stack2)
-    testListValue(heap1.value())
-    testListValue(heap2.value())
+    testListValue(heap1.refValue)
+    testListValue(heap2.refValue)
 
-    testListPtr(stack1.ptr())
-    testListPtr(stack2.ptr())
+    testListPtr(stack1.asRef())
+    testListPtr(stack2.asRef())
     testListPtr(heap1)
     testListPtr(heap2)
 
@@ -482,11 +482,11 @@ fun arrayListDataClassAllocTest() {
 
     stack1.testListValueExt()
     stack2.testListValueExt()
-    heap1.value().testListValueExt()
-    heap2.value().testListValueExt()
+    heap1.refValue.testListValueExt()
+    heap2.refValue.testListValueExt()
 
-    stack1.ptr().testListPtrExt()
-    stack2.ptr().testListPtrExt()
+    stack1.asRef().testListPtrExt()
+    stack2.asRef().testListPtrExt()
     heap1.testListPtrExt()
     heap2.testListPtrExt()
 
@@ -494,8 +494,8 @@ fun arrayListDataClassAllocTest() {
     // MARK: NULLABLE
     // ===============================================
 
-    val heap1Null1: @Ptr ArrayList<Vec3>? = heap1
-    val heap1Null2: @Ptr ArrayList<Vec3>? = null
+    val heap1Null1: Ref<ArrayList<Vec3>>? = heap1
+    val heap1Null2: Ref<ArrayList<Vec3>>? = null
     val stack1Null1: ArrayList<Vec2>? = stack1
     val stack1Null2: ArrayList<Vec2>? = null
 
@@ -503,59 +503,59 @@ fun arrayListDataClassAllocTest() {
 
     testValueNullable(stack1)
     testValueNullable(stack2)
-    testValueNullable(heap1.value())
-    testValueNullable(heap2.value())
+    testValueNullable(heap1.refValue)
+    testValueNullable(heap2.refValue)
 
     testValueNullable(null)
-    heap1Null1?.let { a -> testValueNullable(a.value()) }
-    heap1Null2?.let { a -> testValueNullable(a.value()) }
+    heap1Null1?.let { a -> testValueNullable(a.refValue) }
+    heap1Null2?.let { a -> testValueNullable(a.refValue) }
     testValueNullable(stack1Null1)
     testValueNullable(stack1Null2)
 
-    testPtrNullable(stack1.ptr())
-    testPtrNullable(stack2.ptr())
+    testPtrNullable(stack1.asRef())
+    testPtrNullable(stack2.asRef())
     testPtrNullable(heap1)
     testPtrNullable(heap2)
 
     testPtrNullable(null)
-    testPtrNullable(stack1Null1.ptr())
-    testPtrNullable(stack1Null2.ptr())
+    testPtrNullable(stack1Null1.asRef())
+    testPtrNullable(stack1Null2.asRef())
     testPtrNullable(heap1Null1)
     testPtrNullable(heap1Null2)
 
     // CONCRETE EXTENSION NULLABLE
     stack1.testValueExtNullable()
     stack2.testValueExtNullable()
-    heap1.value().testValueExtNullable()
-    heap2.value().testValueExtNullable()
+    heap1.refValue.testValueExtNullable()
+    heap2.refValue.testValueExtNullable()
 
-    heap1Null1?.value()?.testValueExtNullable()
-    heap1Null2?.value()?.testValueExtNullable()
+    heap1Null1?.refValue?.testValueExtNullable()
+    heap1Null2?.refValue?.testValueExtNullable()
     stack1Null1.testValueExtNullable()
     stack1Null2.testValueExtNullable()
 
-    stack1.ptr().testPtrExtNullable()
-    stack2.ptr().testPtrExtNullable()
+    stack1.asRef().testPtrExtNullable()
+    stack2.asRef().testPtrExtNullable()
     heap1.testPtrExtNullable()
     heap2.testPtrExtNullable()
 
     heap1Null1.testPtrExtNullable()
     heap1Null2.testPtrExtNullable()
-    stack1Null1.ptr().testPtrExtNullable()
-    stack1Null2.ptr().testPtrExtNullable()
+    stack1Null1.asRef().testPtrExtNullable()
+    stack1Null2.asRef().testPtrExtNullable()
 
     // INTERFACE NULLABLE — interface unions need Optional + for-loop support
     testListValueNullable(stack1)
     testListValueNullable(stack2)
-    testListValueNullable(heap1.value())
-    testListValueNullable(heap2.value())
+    testListValueNullable(heap1.refValue)
+    testListValueNullable(heap2.refValue)
 
     testListValueNullable(null)
     testListValueNullable(stack1Null1)
     testListValueNullable(stack1Null2)
 
-    testListPtrNullable(stack1.ptr())
-    testListPtrNullable(stack2.ptr())
+    testListPtrNullable(stack1.asRef())
+    testListPtrNullable(stack2.asRef())
     testListPtrNullable(heap1)
     testListPtrNullable(heap2)
 
@@ -566,14 +566,14 @@ fun arrayListDataClassAllocTest() {
     // INTERFACE EXTENSION NULLABLE — need interface ext fun nullable support
     stack1.testListValueExtNullable()
     stack2.testListValueExtNullable()
-    heap1.value().testListValueExtNullable()
-    heap2.value().testListValueExtNullable()
+    heap1.refValue.testListValueExtNullable()
+    heap2.refValue.testListValueExtNullable()
 
     stack1Null1.testListValueExtNullable()
     stack1Null2.testListValueExtNullable()
 
-    stack1.ptr().testListPtrExtNullable()
-    stack2.ptr().testListPtrExtNullable()
+    stack1.asRef().testListPtrExtNullable()
+    stack2.asRef().testListPtrExtNullable()
     heap1.testListPtrExtNullable()
     heap2.testListPtrExtNullable()
 

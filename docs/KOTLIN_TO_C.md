@@ -35,7 +35,7 @@ All primitives have `ktc_T$Optional` and `ktc_hash_*` support.
 | Kotlin            | C                                                      |
 |-------------------|--------------------------------------------------------|
 | `T?` (value type) | `ktc_T$Optional` = `{ ktc$OptionalTag tag; T value; }` |
-| `@Ptr T?`         | `T*` (NULL = null)                                     |
+| `Ref<T?>`         | `T*` (NULL = null)                                     |
 | `Array<T>?`       | `ktc_VarArr_T` with `ptr == NULL`                       |
 
 ### Arrays
@@ -45,8 +45,8 @@ All primitives have `ktc_T$Optional` and `ktc_hash_*` support.
 | `IntArray`, `ByteArray`, ... | `ktc_VarArr_ktc_Int`               | Struct `{ ptr, len }`, stack or heap     |
 | `Array<T>`                   | `ktc_VarArr_T`                     | Struct `{ T*, len }`, **cannot be returned** |
 | `@Size(N) Array<T>`          | `T[N]` (out-pointer for return)    | Fixed-size, **can be returned** via out-ptr |
-| `@Ptr Array<T>`              | `ktc_VarArr_T`                     | Same VarArr struct, passed by value      |
-| `RawArray<T>` + `@Ptr`       | `T*`                               | Raw pointer, no length tracking          |
+| `Ref<Array<T>>`              | `ktc_VarArr_T`                     | Same VarArr struct, passed by value      |
+| `RawArray<T>`                | `T*`                               | Raw pointer, no length tracking          |
 | `Array<T>(n).allocWith(Heap)` | Heap-allocated `ktc_VarArr_T`      | Safe to return from functions            |
 
 **Array factories:**
@@ -61,18 +61,25 @@ Array<T>(n).allocWith(Heap)  // allocator-backed heap array, safe to return
 
 **All type aliases exist for every built-in type:** `ByteArray`, `ShortArray`, `IntArray`, `LongArray`, `FloatArray`, `DoubleArray`, `BooleanArray`, `CharArray`, `UByteArray`, `UShortArray`, `UIntArray`, `ULongArray`, `StringArray` and corresponding `xxxArrayOf`.
 
-**Array field limitation:** Class/object fields cannot hold raw `Array<T>`. Use `@Size(N) Array<T>` or `@Ptr Array<T>`.
+**Array field limitation:** Class/object fields cannot hold raw `Array<T>`. Use `@Size(N) Array<T>` or `Ref<Array<T>>`.
 
 ---
 
 ## Annotations
 
-### `@Ptr`
-Pointer semantics. `@Ptr T` becomes `T*` in C.
+### `Ref<T>` (Reference type)
+Reference/pointer semantics. `Ref<T>` becomes `T*` in C. `Ref<T?>` is a nullable reference (NULL).
 ```kotlin
-fun update(buf: @Ptr ByteArray) { ... }   // → ktc_VarArr_ktc_Byte buf
-fun passVec(v: @Ptr Vec2) { ... }         // → Vec2* v
+fun update(buf: Ref<ByteArray>) { ... }   // → ktc_VarArr_ktc_Byte buf
+fun passVec(v: Ref<Vec2>) { ... }         // → Vec2* v
 ```
+
+**Reference access:**
+| Kotlin | C | Description |
+|---|---|---|
+| `p.refValue` | `(*p)` | Read through reference (dereference) |
+| `p.refValue = x` | `*p = x` | Write through reference |
+| `val.asRef()` | `&val` | Take a reference to a value |
 
 ### `@Size(N)`
 Fixed-size array. Can be returned from functions (out-parameter ABI).
@@ -126,11 +133,14 @@ class Vec2(val x: Float, val y: Float) {
 ```
 
 ### Value semantics
-All types are **by value** by default. Assignment copies the struct. `@Ptr T` introduces pointer semantics.
+All types are **by value** by default. Assignment copies the struct. `Ref<T>` introduces reference/pointer semantics.
 
-### `@Ptr` class pointer methods
-| `.value()` | `(*ptr)` | Dereference to stack copy |
-| `.ptr()` | `&value` | Take address → `T*` |
+### Reference methods
+| Kotlin | C | Description |
+|---|---|---|
+| `p.refValue` | `(*p)` | Dereference to stack copy |
+| `p.refValue = x` | `*p = x` | Write through reference |
+| `val.asRef()` | `&val` | Take address → `T*` |
 | `.copy()` | data class copy | Struct copy for data classes |
 | `.copyTo(allocator)` | Allocation to selected allocator like "Heap" |
 
@@ -183,8 +193,8 @@ object Sha256 {
 
 ### Overloading (methods only)
 ```kotlin
-fun digest(buff: @Ptr ByteArray) → digest
-fun digest(buff: @Ptr ByteArray, offset: Int, length: Int) → digestWithByteArray_Int_Int
+fun digest(buff: Ref<ByteArray>) → digest
+fun digest(buff: Ref<ByteArray>, offset: Int, length: Int) → digestWithByteArray_Int_Int
 fun greet() → greetNoArg
 fun greet(name: String) → greetWithString
 ```
@@ -319,8 +329,8 @@ These Kotlin features are **not supported** and have no planned equivalent:
 | `sealed class`                                   | Not supported — use `when` + interfaces                    |
 | String `split`, `replace`, complex operations    | Limited — use C interop for complex string work            |
 | Checked arithmetic, overflow detection           | No — wraps like C                                          |
-| Dynamic dispatch on value types                  | Not supported — use `@Ptr` for polymorphism                |
-| `Array<T>` as a class field                      | Not supported — use `@Size(N) Array<T>` or `@Ptr Array<T>` |
+| Dynamic dispatch on value types                  | Not supported — use `Ref<T>` for polymorphism              |
+| `Array<T>` as a class field                      | Not supported — use `@Size(N) Array<T>` or `Ref<Array<T>>` |
 | Raw `Array<T>` returned from functions           | Not supported — use `@Size(N)` or heap arrays              |
 
 ---

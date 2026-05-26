@@ -115,7 +115,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         // the explicit `this.` chain so the inline expansion can compile end-to-end.
         val r = transpileMainWithStdlib("""
             val buf = CharArray(64)
-            val sb = StringBuffer(buf.ptr(), 0).apply {
+            val sb = StringBuffer(buf.asRef(), 0).apply {
                 this.append("a")
             }
         """)

@@ -7,13 +7,13 @@ object SDL3 {
     // ==================
     // Window
 
-    class Window(val handle: @Ptr c.SDL_Window) {
+    class Window(val handle: Ref<c.SDL_Window>) {
         constructor(title: String, width: Int, height: Int, flags: Int = 0)
                 : this(createWindow(title, width, height, flags))
     }
 
-    private inline fun createWindow(title: String, width: Int, height: Int, flags: Int = 0): @Ptr c.SDL_Window {
-        val vHandle: @Ptr c.SDL_Window = c.SDL_CreateWindow(title.ptr, width, height, flags)
+    private inline fun createWindow(title: String, width: Int, height: Int, flags: Int = 0): Ref<c.SDL_Window> {
+        val vHandle: Ref<c.SDL_Window> = c.SDL_CreateWindow(title.ptr, width, height, flags)
         if (!vHandle) error("SDL_CreateWindow failed: ${c.SDL_GetError()}")
         return vHandle
     }
@@ -21,12 +21,12 @@ object SDL3 {
     // ==================
     // Renderer
 
-    data class Renderer(val handle: @Ptr c.SDL_Renderer) {
+    data class Renderer(val handle: Ref<c.SDL_Renderer>) {
         constructor(window: Window) : this(window.createRenderer())
     }
 
-    private inline fun Window.createRenderer(): @Ptr c.SDL_Renderer {
-        val vHandle: @Ptr c.SDL_Renderer = c.SDL_CreateRenderer(this.handle, c.NULL)
+    private inline fun Window.createRenderer(): Ref<c.SDL_Renderer> {
+        val vHandle: Ref<c.SDL_Renderer> = c.SDL_CreateRenderer(this.handle, c.NULL)
         if (!vHandle) error("SDL_CreateRenderer failed: ${c.SDL_GetError()}")
         return vHandle
     }
@@ -47,7 +47,7 @@ object SDL3 {
             return "FRect(x=${sdl.x}, y=${sdl.y}, w=${sdl.w}, h=${sdl.h})"
         }
 
-        override fun equals(other: @Ptr Any?): Boolean {
+        override fun equals(other: Ref<Any?>): Boolean {
             if (this === other) return true
             if (other !is FRect) return false
             return sdl.x == other.sdl.x
@@ -84,7 +84,7 @@ object SDL3 {
 
         fun toFRect(): FRect = FRect(sdl.x.toFloat(), sdl.y.toFloat(), sdl.w.toFloat(), sdl.h.toFloat())
 
-        override fun equals(other: @Ptr Any?): Boolean {
+        override fun equals(other: Ref<Any?>): Boolean {
             if (this === other) return true
             if (other !is Rect) return false
             return sdl.x == other.sdl.x
@@ -114,7 +114,7 @@ object SDL3 {
 
         override fun toString(): String = "FPoint(x=${sdl.x}, y=${sdl.y})"
 
-        override fun equals(other: @Ptr Any?): Boolean {
+        override fun equals(other: Ref<Any?>): Boolean {
             if (this === other) return true
             if (other !is FPoint) return false
             return sdl.x == other.sdl.x && sdl.y == other.sdl.y
@@ -152,7 +152,7 @@ object SDL3 {
             return "Color(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
         }
 
-        override fun equals(other: @Ptr Any?): Boolean {
+        override fun equals(other: Ref<Any?>): Boolean {
             if (this === other) return true
             if (other !is Color) return false
             return sdl.r == other.sdl.r
@@ -195,7 +195,7 @@ object SDL3 {
             return "FColor(r=${sdl.r}, g=${sdl.g}, b=${sdl.b}, a=${sdl.a})"
         }
 
-        override fun equals(other: @Ptr Any?): Boolean {
+        override fun equals(other: Ref<Any?>): Boolean {
             if (this === other) return true
             if (other !is FColor) return false
             return sdl.r == other.sdl.r
@@ -216,7 +216,7 @@ object SDL3 {
     // ===================
     // Texture
 
-    class Texture(val handle: @Ptr c.SDL_Texture) {
+    class Texture(val handle: Ref<c.SDL_Texture>) {
         fun size(): FPoint {
             var w = 0.0f
             var h = 0.0f
@@ -228,7 +228,7 @@ object SDL3 {
     // ==================
     // Cursor
 
-    class Cursor(val handle: @Ptr c.SDL_Cursor)
+    class Cursor(val handle: Ref<c.SDL_Cursor>)
 
     // ==================
     // Lib init

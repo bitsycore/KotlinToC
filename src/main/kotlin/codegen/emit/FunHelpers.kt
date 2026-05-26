@@ -63,12 +63,13 @@ internal fun CCodeGen.registerParams(params: List<Param>) {
 	for (p in params) {
 		val ktc = resolveTypeName(p.type)
 		val str = ktc.toInternalStr
+		val isNullable = p.type.isEffectivelyNullable()
 		defineVar(p.name, when {
-			p.isVararg      -> "${str}Array"
-			p.type.nullable -> "${str}?"
-			else            -> str
+			p.isVararg   -> "${str}Array"
+			isNullable   -> "${str}?"
+			else         -> str
 			})
-		if (p.type.nullable && isValueNullableKtc(KtcType.Nullable(ktc))) markOptional(p.name)
+		if (isNullable && isValueNullableKtc(KtcType.Nullable(ktc))) markOptional(p.name)
 		}
 	}
 
@@ -81,7 +82,7 @@ internal fun CCodeGen.registerClassFields(ci: ClassInfo, selfPrefix: String) {
 		val ktc        = resolveTypeName(type)
 		if (scopes.last().containsKey(name)) continue  // don't shadow params
 		val cFieldName = if (name in ci.privateProps) "PRIV_$name" else name
-		val isOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !ktc.isArrayLike
+		val isOpt      = type.nullable && !type.isRefType() && !ktc.isArrayLike
 		defineVar(name, LocalVar(ktc = ktc, mutable = !ci.isValProp(name), optional = isOpt, cName = "$selfPrefix$cFieldName"))
 		}
 	}

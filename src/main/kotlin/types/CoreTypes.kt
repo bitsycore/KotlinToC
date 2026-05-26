@@ -115,10 +115,10 @@ internal sealed class KtcType {
 
     // ── Raw pointer ──────────────────────────────────────────────────
 
-    /** A pointer type. When [inner] is [Arr], this represents a **typed array**
-     * (e.g. `IntArray`, `ByteArray`) — the trampoline is a pointer to the array data.
-     * When [inner] is [User], this is a `@Ptr`-annotated class pointer (e.g. `Vec2*`).
-     * Use `isArrayLike` to cover both [Arr] and `Ptr(Arr)`. */
+    /* A pointer/reference type. When [inner] is [Arr], this represents a typed array
+    (e.g. IntArray, ByteArray) — the trampoline is a pointer to the array data.
+    When [inner] is [User], this is a Ref<T> class reference (e.g. Vec2*).
+    Use isArrayLike to cover both Arr and Ptr(Arr). */
     data class Ptr(val inner: KtcType) : KtcType() {
         override fun toCType() = "${inner.toCType()}*"
     }
@@ -145,7 +145,7 @@ internal sealed class KtcType {
     // ── C interop external type ───────────────────────────────────────
     /* Opaque external C type referenced via 'c.TypeName' syntax.
     The cName is emitted verbatim as the C type (e.g. "SDL_Window", "SDL_FRect").
-    Use @Ptr c.TypeName to get a pointer: SDL_Window*. */
+    Use Ref<c.TypeName> to get a pointer: SDL_Window*. */
     data class COpaque(val cName: String) : KtcType() {
         override fun toCType() = cName
     }
@@ -156,7 +156,7 @@ internal sealed class KtcType {
 
     // ── Queries (replace string checks) ──────────────────────────────
 
-    /* True for both Arr and Ptr(Arr): covers typed arrays (IntArray) and @Ptr Array<T>.
+    /* True for both Arr and Ptr(Arr): covers typed arrays (IntArray) and Ref<Array<T>>.
     This replaces the string-based `isArrayType()` check. */
     val isArrayLike: Boolean get() = this is Arr || (this is Ptr && inner is Arr)
 
@@ -212,6 +212,15 @@ internal sealed class KtcType {
          * resolveName: (String, List<String>) → String (calls resolveTypeName under the hood)
          */
         fun from(typeRef: TypeRef, resolveName: (String) -> String): KtcType {
+            // Ref<T> / Ref<T?> → Ptr(inner), with nullable on the outer wrapper
+            if (typeRef.name == "Ref" && typeRef.typeArgs.isNotEmpty()) {
+                val innerRef = typeRef.typeArgs[0]
+                val innerNoNull = TypeRef(innerRef.name, false, innerRef.typeArgs,
+                    innerRef.funcParams, innerRef.funcReturn, innerRef.funcReceiver, innerRef.annotations)
+                val inner = from(innerNoNull, resolveName)
+                val ptr = Ptr(inner)
+                return if (innerRef.nullable || typeRef.nullable) Nullable(ptr) else ptr
+            }
             val resolved = resolveName(typeRef.name)
             val base = if (typeRef.typeArgs.isNotEmpty()) resolved else typeRef.name
             val isPtr = typeRef.annotations.any { it.name == "Ptr" }

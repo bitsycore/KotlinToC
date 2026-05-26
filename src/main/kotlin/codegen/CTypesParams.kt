@@ -33,7 +33,7 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
                     }
 
                     vKtc is KtcType.Ptr -> {
-                        // @Ptr Array<T>: treat same as regular Array<T> — ktc_VarArr_T
+                        // Ref<Array<T>>: treat same as regular Array<T> — ktc_VarArr_T
                         val vInnerArr = vKtc.inner.asArr!!
                         val vElemCType =
                             if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr)
@@ -51,7 +51,7 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
                 }
             }
 
-            vType.nullable -> vParts += "${optCTypeName(vKtc.toInternalStr)} $vName"
+            vType.isEffectivelyNullable() -> vParts += "${optCTypeName(vKtc.toInternalStr)} $vName"
             else -> vParts += "${cTypeStr(vKtc)} $vName"
         }
     }
@@ -75,18 +75,19 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
                 vParts += "${sizedStringCTypeName(vSize)} ${vP.name}"
             }
 
-            vKtc is KtcType.Ptr && vP.type.annotations.any { it.name == "Ptr" } -> {
+            vKtc is KtcType.Ptr && vP.type.isRefType() -> {
+                val vIsNullable = vP.type.isEffectivelyNullable()
                 val vInnerArr = vKtc.inner.asArr
                 if (vInnerArr != null && vInnerArr.sized == null) {
-                    // @Ptr Array<T>: treat same as regular ktc_VarArr_T (no raw pointer ABI)
-                    val vNullComment = if (vP.type.nullable) " /** nullable */" else ""
+                    // Ref<Array<T>>: treat same as regular ktc_VarArr_T (no raw pointer ABI)
+                    val vNullComment = if (vIsNullable) " /** nullable */" else ""
                     val vElemCType =
                         if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr)
                         else cTypeStr(vInnerArr.elem)
                     vParts += "${varArrTypeName(vElemCType)} ${vP.name}$vNullComment"
                 } else {
-                    // @Ptr non-array or @Ptr @Size array: keep as raw pointer
-                    val vNullComment = if (vP.type.nullable) " /** nullable */" else " /** notnull */"
+                    // Ref<non-array> or Ref<@Size array>: keep as raw pointer
+                    val vNullComment = if (vIsNullable) " /** nullable */" else " /** notnull */"
                     vParts += "${cTypeStr(vKtc)} ${vP.name}$vNullComment"
                 }
             }
@@ -97,7 +98,7 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
                     val vSize = vP.type.getSizeAnnotation()!!
                     vParts += "${sizedArrayCTypeName(vElemCType, vSize)} ${vP.name}"
                 } else {
-                    val vNullComment = if (vP.type.nullable) " /** nullable */" else ""
+                    val vNullComment = if (vP.type.isEffectivelyNullable()) " /** nullable */" else ""
                     val vArrElem = vKtc.asArr!!.elem
                     val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr)
                     else cTypeStr(vArrElem)
@@ -105,7 +106,7 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
                 }
             }
 
-            vP.type.nullable -> {
+            vP.type.isEffectivelyNullable() -> {
                 val vNullComment = if (vKtc is KtcType.Any) " /** nullable */" else ""
                 vParts += "${optCTypeName(vKtc.toInternalStr)} ${vP.name}$vNullComment"
             }

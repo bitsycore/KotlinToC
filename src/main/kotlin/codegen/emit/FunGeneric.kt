@@ -1,8 +1,6 @@
 package com.bitsycore.ktc.codegen.emit
 
-import com.bitsycore.ktc.ast.FunDecl
-import com.bitsycore.ktc.ast.Param
-import com.bitsycore.ktc.ast.TypeRef
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.types.KtcType
 
@@ -30,7 +28,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 				val recvKtc  = resolveTypeName(f.receiver!!)
 				val recvName = (recvKtc as? KtcType.Ptr)?.inner?.let { (it as? KtcType.User)?.baseName }
 					?: recvKtc.toInternalStr.removeSuffix("*").removeSuffix("?")
-				if (f.receiver.annotations.any { it.name == "Ptr" }) {
+				if (f.receiver.isRefType()) {
 					val baseFlat = typeFlatName(recvName)
 					"${baseFlat.removeSuffix("_$recvName")}_Ptr$${recvName}_${f.name}"
 					} else "${typeFlatName(recvName)}_${f.name}"
@@ -64,7 +62,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 				currentExtRecvType = if (f.receiver.nullable) "${recvName}?" else recvName
 				defineVar("\$self", if (f.receiver.nullable) "${recvName}?" else recvName)
 				if (f.receiver.nullable && isValueNullableKtc(recvResolved as? KtcType.Nullable ?: KtcType.Nullable(recvResolved))) markOptional("\$self")
-				if (isClassType) { currentClass = recvName; selfIsPointer = f.receiver.annotations.any { it.name == "Ptr" } }
+				if (isClassType) { currentClass = recvName; selfIsPointer = f.receiver.isRefType() }
 				else             { currentClass = null;     selfIsPointer = false }
 				}
 			registerParams(f.params)
@@ -82,9 +80,9 @@ private fun CCodeGen.registerStarExtParams(params: List<Param>) {
 		val ktc = resolveTypeName(p.type)
 		val str = ktc.toInternalStr
 		defineVar(p.name, when {
-			p.type.nullable          -> "${str}?"
-			classes.containsKey(str) -> "${str}*"
-			else                     -> str
+			p.type.isEffectivelyNullable() -> "${str}?"
+			classes.containsKey(str)       -> "${str}*"
+			else                           -> str
 			})
 		}
 	}

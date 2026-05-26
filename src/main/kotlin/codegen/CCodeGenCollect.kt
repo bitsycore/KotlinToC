@@ -161,14 +161,14 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
 			for (p in d.ctorParams) {
 				if ((p.isVal || p.isVar) && p.type.isRawArray()) {
-					codegenError("Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
+					codegenError("Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}
 			for (p in d.members.filterIsInstance<PropDecl>()) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {
 					currentStmtLine = p.line
-					codegenError("Class property '${p.name}' cannot have raw array type '${propType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
+					codegenError("Class property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}
 			val vCtorProps = d.ctorParams.filter { it.isVal || it.isVar }.map { vP ->  // ctor val/var props
@@ -207,7 +207,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
 				if (m.returnType != null && m.returnType.isRawArray()) {
-					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
+					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				ci.methods += m
 				}
@@ -280,7 +280,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {
 					currentStmtLine = p.line
-					codegenError("Object property '${p.name}' cannot have raw array type '${propType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
+					codegenError("Object property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}
 			val vObjProps = d.members.filterIsInstance<PropDecl>().map { vP ->  // object properties
@@ -300,7 +300,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			val oi = ObjInfo(d.name, vObjProps)
 			for (m in d.members) if (m is FunDecl) {
 				if (m.returnType != null && m.returnType.isRawArray()) {
-					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
+					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				oi.methods += m
 				if (funSigs[m.name] == null) funSigs[m.name] = FunSig(m.params, m.returnType)
@@ -344,48 +344,55 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 
 		is FunDecl -> {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
+			// Normalize Ref<T> in receiver and params to @Ptr T so all downstream code uses the uniform form
+			val needsRecvNorm = d.receiver != null && d.receiver.name == "Ref" && d.receiver.typeArgs.isNotEmpty()
+			val needsParamNorm = d.params.any { it.type.name == "Ref" && it.type.typeArgs.isNotEmpty() }
+			if (needsRecvNorm || needsParamNorm) {
+				val normRecv = if (needsRecvNorm) d.receiver!!.normalizeRef() else d.receiver
+				val normParams = if (needsParamNorm) d.params.map {
+					if (it.type.name == "Ref" && it.type.typeArgs.isNotEmpty()) it.copy(type = it.type.normalizeRef())
+					else it
+				} else d.params
+				collectDecl(d.copy(receiver = normRecv, params = normParams))
+				return
+			}
 			if (d.returnType != null && d.returnType.isRawArray()) {
-				codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use @Ptr Array<T> or @Size(N) Array<T> instead")
+				codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 				}
-			if (d.returnType != null && d.returnType.name == "Any" && d.returnType.annotations.none { it.name == "Ptr" }) {
-				codegenError("Function '${d.name}' cannot return value-type 'Any'. Use @Ptr Any instead")
+			if (d.returnType != null && d.returnType.name == "Any" && !d.returnType.isRefType()) {
+				codegenError("Function '${d.name}' cannot return value-type 'Any'. Use Ref<Any> instead")
 				}
 			// Bare String returns are unsafe outside inline functions and toString overrides:
 			// the String's internal buffer would live in the callee's frame and become a
-			// dangling reference after return. Require @Ptr String or @Size(N) String, OR
+			// dangling reference after return. Require Ref<String> or @Size(N) String, OR
 			// mark the function inline (the buffer lives in the caller's frame via alloca).
-			// String? is allowed — it's an Optional wrapping a possibly-null String value.
-			// Bodyless declarations (interface methods, expect/external) also allowed —
-			// no body means no buffer to dangle here.
-			// Literal-only bodies (every return is a string literal) are safe — the literal
-			// points to .rodata, not a stack buffer.
 			if (d.returnType != null && d.returnType.name == "String"
 				&& !d.returnType.nullable
 				&& d.body != null
-				&& d.returnType.annotations.none { it.name == "Ptr" || it.name == "Size" }
+				&& !d.returnType.isRefType() && !d.returnType.hasSizeAnnotation()
 				&& !d.isInline && d.name != "toString"
 				&& !returnsOnlyStringLiterals(d.body)
 			) {
 				codegenError("Function '${d.name}' cannot return value-type 'String' " +
 					"(its internal buffer would die at function exit). " +
-					"Use one of: @Ptr String, @Size(N) String, or mark the function `inline`.")
+					"Use one of: Ref<String>, @Size(N) String, or mark the function `inline`.")
 				}
 			val effectiveReturnType = d.returnType ?: d.body?.let { inferredTypeRef(inferBlockType(it)) }
 			when {
 				d.typeParams.isNotEmpty() -> {
 					// Generic function template — store for monomorphization
-					if (genericFunDecls.none { it === d }) genericFunDecls += d
+					if (genericFunDecls.none { it == d }) genericFunDecls += d
 					funSigs[d.name] = FunSig(d.params, effectiveReturnType)
 					allGenericTypeParamNames += d.typeParams
 					if (d.isInline && d.receiver != null) inlineExtFunDecls.getOrPut(d.name) { mutableListOf() }.add(d)
 					if (d.isInline) inlineFunDecls.getOrPut(d.name) { mutableListOf() }.add(d)
 					}
 				d.receiver != null && d.receiver.typeArgs.any { it.name == "*" } -> {
-					if (starExtFunDecls.none { it === d }) starExtFunDecls += d
+					if (starExtFunDecls.none { it == d }) starExtFunDecls += d
 					}
 				d.receiver != null && d.receiver.typeArgs.isNotEmpty()
 						&& (genericIfaceDecls.containsKey(d.receiver.name) || genericClassDecls.containsKey(d.receiver.name)) -> {
-					if (starExtFunDecls.none { it === d }) starExtFunDecls += d
+					if (starExtFunDecls.none { it == d }) starExtFunDecls += d
 					}
 				d.receiver != null -> {
 					// Resolve dotted receiver (e.g. "SDL3.Window" → "SDL3$Window", also for nested objects)

@@ -75,7 +75,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 	if (retType == null || retType == "Unit") {
 		return "($guard ? ($call, 0) : 0)"
 		}
-	// Pointer return (@Ptr): use NULL for null; value return: wrap in Optional
+	// Pointer return (Ref<T>): use NULL for null; value return: wrap in Optional
 	return wrapSafeCallResult(retType, guard, call)
 	}
 

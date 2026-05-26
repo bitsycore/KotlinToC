@@ -99,7 +99,7 @@ internal fun CCodeGen.emitMethod(
 			if (scopes.last().containsKey(name)) continue // class field or param takes priority
 			val vKtc   = resolveTypeName(type)
 			val vFn    = if (name in vParentOi.privateProps) "PRIV_$name" else name
-			val vIsOpt = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			val vIsOpt = type.nullable && !type.isRefType() && !vKtc.isArrayLike
 			defineVar(name, LocalVar(ktc = vKtc, mutable = true, optional = vIsOpt, cName = "$vParentCName.$vFn"))
 			}
 		}
@@ -202,7 +202,7 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 				if (scopes.last().containsKey(vPropName)) continue
 				val vKtc        = resolveTypeName(vPropType)
 				val vCFieldName = if (vPropName in ci.privateProps) "PRIV_$vPropName" else vPropName
-				val vIsOpt      = vPropType.nullable && !vPropType.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+				val vIsOpt      = vPropType.nullable && !vPropType.isRefType() && !vKtc.isArrayLike
 				defineVar(vPropName, LocalVar(ktc = vKtc, mutable = !ci.isValProp(vPropName), optional = vIsOpt, cName = "\$self.$vCFieldName"))
 				}
 			for (vIb in ci.initBlocks) for (vS in vIb.stmts) emitStmt(vS, "    ", true)

@@ -75,7 +75,7 @@ class ToStringUnitTest : TranspilerTestBase() {
     @Test fun `StringBuffer constructor with array pointer derives capacity`() {
         val r = transpileMain("""
             val chars = CharArray(256)
-            val sb = StringBuffer(chars.ptr(), 0)
+            val sb = StringBuffer(chars.asRef(), 0)
         """.trimIndent())
         r.sourceContains("(ktc_StrBuf){")
         r.sourceContains(".len")
@@ -155,7 +155,7 @@ class ToStringUnitTest : TranspilerTestBase() {
                 val sb = StringBuffer(null, 0)
                 p.toString(sb)
                 val buf = CharArray(sb.len + 1)
-                val sb2 = StringBuffer(buf.ptr(), 0)
+                val sb2 = StringBuffer(buf.asRef(), 0)
                 p.toString(sb2)
             """.trimIndent()
         )

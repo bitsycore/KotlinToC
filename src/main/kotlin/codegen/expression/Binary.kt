@@ -67,11 +67,11 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         if (nonNull is ThisExpr) {
             val thisKtc = inferExprTypeKtc(nonNull)
             if (thisKtc is KtcType.Nullable) {
-                // Nullable VarArr (@Ptr Array<T>?) → check .ptr for null
+                // Nullable VarArr (Ref<Array<T>?>) → check .ptr for null
                 if (thisKtc.inner.isArrayLike && thisKtc.inner.asArr?.sized == null) {
                     return if (e.op == "==") "\$self.ptr == NULL" else "\$self.ptr != NULL"
                 }
-                // @Ptr T? → compare pointer to NULL
+                // Ref<T?> → compare pointer to NULL
                 if (thisKtc.inner is KtcType.Ptr && thisKtc.inner.inner !is KtcType.Arr) {
                     if (thisKtc.inner.inner is KtcType.User && thisKtc.inner.inner.kind == KtcType.UserKind.Interface)
                         return if (e.op == "==") "!\$self.vt" else "\$self.vt"
@@ -87,9 +87,9 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         val varKtc = if (varName != null) lookupVarKtc(varName) else null
         if (varKtc != null && varName != null) {
             val cName = lookupCName(varName)
-            // @Ptr T? → compare pointer to NULL (exclude typed array pointers like IntArray)
+            // Ref<T?> → compare pointer to NULL (exclude typed array pointers like IntArray)
             if (varKtc is KtcType.Nullable && varKtc.inner is KtcType.Ptr && varKtc.inner.inner !is KtcType.Arr) {
-                // @Ptr InterfaceType → check vt for null (ktc_IfacePtr is a struct)
+                // Ref<InterfaceType> → check vt for null (ktc_IfacePtr is a struct)
                 if (varKtc.inner.inner is KtcType.User
                     && varKtc.inner.inner.kind == KtcType.UserKind.Interface)
                     return if (e.op == "==") "!${cName}.vt" else "${cName}.vt"
@@ -107,7 +107,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             if (varName in trampolinedParams) {
                 return if (e.op == "==") "local$$varName == NULL" else "local$$varName != NULL"
             }
-            // Nullable VarArr (@Ptr Array<T>?) → check .ptr for null
+            // Nullable VarArr (Ref<Array<T>?>) → check .ptr for null
             if (varKtc is KtcType.Nullable && varKtc.inner.isArrayLike && varKtc.inner.asArr?.sized == null) {
                 return if (e.op == "==") "$cName.ptr == NULL" else "$cName.ptr != NULL"
             }
@@ -183,7 +183,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         }
     }
     // Class == / != → ClassName_equals (all classes, not just data)
-    // Also handles @Ptr types by resolving to base class and dereferencing
+    // Also handles Ref<T> types by resolving to base class and dereferencing
     val ltKtc2 = inferExprTypeKtc(e.left)
     var isPtr = false
     val classKeyFromKtc: String? = when (ltKtc2) {
@@ -199,7 +199,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     if ((e.op == "==" || e.op == "!=") && classKey != null) {
         val leftExpr = genExpr(e.left)
         val rightExpr = genExpr(e.right)
-        // Dereference if the operands are pointers (e.g. @Ptr Vec2)
+        // Dereference if the operands are pointers (e.g. Ref<Vec2>)
         val l = if (isPtr) "(*$leftExpr)" else leftExpr
         val r = if (isPtr) "(*$rightExpr)" else rightExpr
         val eq = "${typeFlatName(classKey)}_equals($l, $r)"

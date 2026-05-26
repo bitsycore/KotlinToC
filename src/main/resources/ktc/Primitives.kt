@@ -624,7 +624,7 @@ class String {
     val length: Int get() = error("Transpiler intrinsic")
 
     /** Raw `const char*` pointer to the underlying null-terminated UTF-8 data. */
-    val ptr: @Ptr Char get() = error("Transpiler intrinsic")
+    val ptr: Ref<Char> get() = error("Transpiler intrinsic")
 
     /** Concatenates this string with [other]. */
     operator fun plus(other: String): String = error("Transpiler intrinsic")

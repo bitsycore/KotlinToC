@@ -25,7 +25,7 @@ Usage with Arena (persistent strings that outlive the current scope):
 
 Usage with stack buffer (temporary strings):
     val buf = ByteArray(128)
-    val sb = StringBuffer(buf.ptr(), 0, buf.size)
+    val sb = StringBuffer(buf.asRef(), 0, buf.size)
     sb.append("hello ")
     sb.appendInt(42)
     println(sb.toString())
@@ -41,7 +41,7 @@ Append methods:
     fun toString(): String
 */
 class StringBuffer(
-	val ptr: @Ptr RawArray<Char>,
+	val ptr: RawArray<Char>,
 	var len: Int,
 	val cap: Int
 ) {
@@ -52,6 +52,6 @@ class StringBuffer(
 	fun appendDouble(inV: Double) = error("Transpiler intrinsic")
 	fun appendBool(inV: Boolean) = error("Transpiler intrinsic")
 	fun appendChar(inV: Char) = error("Transpiler intrinsic")
-	fun appendChar(inV: @Ptr c.char) = error("Transpiler intrinsic")
+	fun appendChar(inV: Ref<c.char>) = error("Transpiler intrinsic")
 	override fun toString(): String = error("Transpiler intrinsic")
 }

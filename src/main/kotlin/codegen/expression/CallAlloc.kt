@@ -48,7 +48,7 @@ private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: S
 /* Resolution of an allocator argument for class-construction allocWith.
 ifaceExpr is the ktc_IfacePtr expression to call through;
 ifaceCreated is true when ifaceExpr is a fresh local emitted via emitAllocatorIfacePtr;
-isTrampoline is true when the allocator arg is `@Ptr Allocator` (already a fat pointer). */
+isTrampoline is true when the allocator arg is `Ref<Allocator>` (already a fat pointer). */
 private data class AllocResolution(val ifaceExpr: String, val ifaceCreated: Boolean, val isTrampoline: Boolean)
 
 /* Resolve the allocator argument of a Foo(...).allocWith(alloc) call.

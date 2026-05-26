@@ -5,10 +5,10 @@ data class Vec2(val x: Float, val y: Float)
 data class Person(val name: String, val age: Int)
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: @Ptr Any — pointer receiver, all primitive + class types
+// MARK: Ref<Any> — pointer receiver, all primitive + class types
 // ══════════════════════════════════════════════════════════════════
 
-fun checkAnyPtr(item: @Ptr Any) {
+fun checkAnyPtr(item: Ref<Any>) {
     if (item is Int) {
         val v = item as Int
         println("ptr-int: $v")
@@ -42,15 +42,15 @@ fun checkAnyPtr(item: @Ptr Any) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: @Ptr Any? — nullable pointer to Any
+// MARK: Ref<Any>? — nullable pointer to Any
 // ══════════════════════════════════════════════════════════════════
 
-fun checkAnyPtrNull(item: @Ptr Any?) {
+fun checkAnyPtrNull(item: Ref<Any>?) {
     if (item == null) {
         println("ptr-null: null")
         return
     }
-    // TODO: @Ptr Any? → @Ptr Any pass-through loses typeId
+    // TODO: Ref<Any>? → Ref<Any> pass-through loses typeId
     // Workaround: is-check directly on nullable pointer
     if (item is Int) {
         val v = item as Int
@@ -156,12 +156,12 @@ fun passAndCheckString(item: Any) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: return @Ptr Any
-// TODO: Cannot return @Ptr Any from local value (address of local)
+// MARK: return Ref<Any>
+// TODO: Cannot return Ref<Any> from local value (address of local)
 // ══════════════════════════════════════════════════════════════════
 
 /*
-fun wrapInt(value: Int): @Ptr Any {
+fun wrapInt(value: Int): Ref<Any> {
     val a: Any = value
     println("wrapInt: $value → Any")
     return a
@@ -173,8 +173,8 @@ fun wrapInt(value: Int): @Ptr Any {
 // ══════════════════════════════════════════════════════════════════
 
 fun main() {
-    // ── @Ptr Any ──────────────────────────────────────────────────
-    println("=== @Ptr Any ===")
+    // ── Ref<Any> ──────────────────────────────────────────────────
+    println("=== Ref<Any> ===")
     checkAnyPtr(42)
     checkAnyPtr(3.14f)
     checkAnyPtr(2.718281828)
@@ -185,9 +185,9 @@ fun main() {
     checkAnyPtr(Vec2(1.0f, 2.0f))
     checkAnyPtr(Person("Alice", 30))
 
-    // ── @Ptr Any? ─────────────────────────────────────────────────
+    // ── Ref<Any>? ─────────────────────────────────────────────────
     println()
-    println("=== @Ptr Any? ===")
+    println("=== Ref<Any>? ===")
     checkAnyPtrNull(42)
     checkAnyPtrNull(2.5f)
     checkAnyPtrNull("nullable-ptr")

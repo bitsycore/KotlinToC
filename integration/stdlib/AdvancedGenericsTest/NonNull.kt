@@ -6,7 +6,7 @@ package advanced.generics
 
 var testPtrCounter = 0
 
-fun <T> testPtr(list: @Ptr ArrayList<T>) {
+fun <T> testPtr(list: Ref<ArrayList<T>>) {
     println()
     println("[$testPtrCounter] testPtr(ArrayList)")
     testPtrCounter++
@@ -32,7 +32,7 @@ fun <T> testValue(list: ArrayList<T>) {
 
 var testPtrExtCounter = 0
 
-fun <T> @Ptr ArrayList<T>.testPtrExt() {
+fun <T> Ref<ArrayList<T>>.testPtrExt() {
     println()
     println("[$testPtrExtCounter] ArrayList.testPtrExt()")
     testPtrExtCounter++
@@ -62,7 +62,7 @@ fun <T> ArrayList<T>.testValueExt() {
 
 var testListPtrCounter = 0
 
-fun <T> testListPtr(list: @Ptr List<T>) {
+fun <T> testListPtr(list: Ref<List<T>>) {
     println()
     println("[$testListPtrCounter] testListPtr(List)")
     testListPtrCounter++
@@ -88,7 +88,7 @@ fun <T> testListValue(list: List<T>) {
 
 var testListPtrExtCounter = 0
 
-fun <T> @Ptr List<T>.testListPtrExt() {
+fun <T> Ref<List<T>>.testListPtrExt() {
     println()
     println("[$testListPtrExtCounter] List.testListPtrExt()")
     testListPtrExtCounter++

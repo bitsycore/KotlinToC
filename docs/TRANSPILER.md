@@ -168,7 +168,7 @@ KtcType
 ├── Void                         — Unit / void
 ├── User(decl: TypeDef, typeArgs) — any class, object, enum, interface
 ├── Arr(elem, sized?)            — Array<T>, IntArray, @Size(N) T[]
-├── Ptr(inner)                   — @Ptr T (raw C pointer, no $len)
+├── Ptr(inner)                   — Ref<T> (raw C pointer, no $len)
 ├── Nullable(inner)              — T? (Optional struct or NULL)
 └── Func(params, ret, receiver?) — function / lambda type
 ```
@@ -439,7 +439,7 @@ Three representations depending on the type:
 | Kotlin type               | C representation                        | Null sentinel  |
 |---------------------------|-----------------------------------------|----------------|
 | `T?` (primitive / struct) | `ktc_T$Optional { has, value }`         | `has == 0`     |
-| `@Ptr T?`                 | `T*`                                    | `NULL`         |
+| `Ref<T?>`                 | `T*`                                    | `NULL`         |
 | `Array<T>?`               | `ktc_VarArr_T` with `.ptr == NULL`      | `ptr == NULL`  |
 | `Any?`                    | `ktc_Any` trampoline                    | `data == NULL` |
 
@@ -454,11 +454,11 @@ Emit helpers: `optCTypeName(base)`, `optNone(cType)`, `optSome(cType, expr)`.
 |---------------------------|---------------------------------------------------|
 | `IntArray` / `Array<Int>` | `ktc_VarArr_ktc_Int` struct `{ ptr, len }`        |
 | `@Size(N) IntArray`       | `ktc_Int[N]` on the stack, no `.len`              |
-| `@Ptr IntArray`           | `ktc_VarArr_ktc_Int` (same struct, value-copy)    |
+| `Ref<IntArray>`           | `ktc_VarArr_ktc_Int` (same struct, value-copy)    |
 | `Array<Vec2>`             | `ktc_VarArr_game_Vec2` struct `{ Vec2*, len }`    |
 | `RawArray<T>`             | `T*` (no length tracking at all)                  |
 
-Typed arrays (`IntArray`, `Array<T>`, `@Ptr Array<T>`) all use `ktc_VarArr_T`
+Typed arrays (`IntArray`, `Array<T>`, `Ref<Array<T>>`) all use `ktc_VarArr_T`
 structs with `.ptr` and `.len` fields. Array return values use the VarArr struct
 directly — no out-parameter needed.
 

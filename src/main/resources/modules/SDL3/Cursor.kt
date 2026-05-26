@@ -25,7 +25,7 @@ inline val SDL3.SystemCursor.Pointer    get() = c.SDL_SYSTEM_CURSOR_POINTER
 
 /** Create a system cursor from a SDL_SystemCursor id. Destroy with destroy() when done. */
 inline fun SDL3.createSystemCursor(id: Int): SDL3.Cursor {
-    val vHandle: @Ptr c.SDL_Cursor = c.SDL_CreateSystemCursor(id)
+    val vHandle: Ref<c.SDL_Cursor> = c.SDL_CreateSystemCursor(id)
     if (!vHandle) error("SDL_CreateSystemCursor failed: ${c.SDL_GetError()}")
     return SDL3.Cursor(vHandle)
 }

@@ -144,13 +144,15 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         }
     }
 
-    // Is this a pointer type? (@Ptr annotation adds * suffix)
+    // Is this a pointer type? (Ref<T> adds * suffix)
     // Only user-class pointers (Vec2*), not typed-array pointers (IntArray which is Ptr<Arr<Int>>)
     val isPointer = vKtcCore is KtcType.Ptr && vKtcCore.inner !is KtcType.Arr
 
-    // Nullable pointer (@Ptr T?): can be NULL
+    val typeIsNullable = s.type?.isEffectivelyNullable() == true
+
+    // Nullable pointer (Ref<T?>): can be NULL
     val isPtrNullable = isPointer &&
-            (s.type?.nullable == true || s.init is NullLit || inferredNullable)
+            (typeIsNullable || s.init is NullLit || inferredNullable)
 
     // Value nullable (T? without pointer): uses Optional struct
     val isValueNullable = when {
@@ -158,16 +160,16 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         vKtcCore is KtcType.Func -> false
         vKtcCore.isArrayLike -> false
         vKtcCore is KtcType.Any -> false
-        else -> s.type?.nullable == true || s.init is NullLit || isNullableReturningCall(s.init) || inferredNullable
+        else -> typeIsNullable || s.init is NullLit || isNullableReturningCall(s.init) || inferredNullable
     }
 
     // Nullable array (Array<T>?): uses VarArr struct, null = .ptr == NULL
     val isNullableArray = isArrayType(t) && !isPointer &&
-            (s.type?.nullable == true || s.init is NullLit || inferredNullable)
+            (typeIsNullable || s.init is NullLit || inferredNullable)
 
     // Nullable Any: trampoline, null = data == NULL
     val isAnyNullable = vKtcCore is KtcType.Any &&
-            (s.type?.nullable == true || s.init is NullLit || inferredNullable)
+            (typeIsNullable || s.init is NullLit || inferredNullable)
 
     // Register type in scope
     defineVar(
@@ -211,7 +213,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         if (arrayInit != null) {
             impl.appendLine(arrayInit)
             // Emit $has for nullable array variables so safe-calls work
-            val isNullableArray = (s.type?.nullable == true || inferredNullable) && vKtcCore.isArrayLike && !isPtrNullable
+            val isNullableArray = (s.type?.isEffectivelyNullable() == true || inferredNullable) && vKtcCore.isArrayLike && !isPtrNullable
             if (isNullableArray) {
                 impl.appendLine("${ind}bool ${s.name}\$has = true;")
             }
@@ -219,7 +221,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         }
 
         when {
-            // ── Nullable pointer (@Ptr T?): can be NULL ──
+            // ── Nullable pointer (Ref<T?>): can be NULL ──
             isPtrNullable -> {
                 if (s.init is NullLit) {
                     impl.appendLine("$ind$mutComment$ct ${s.name} /* nullable */ = NULL;")
@@ -304,9 +306,9 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     val initType = inferExprType(s.init)
                     if (initType != null && (classes.containsKey(initType) || objects.containsKey(initType)) && classInterfaces[initType]?.contains(t) == true) {
                         val isObj = objects.containsKey(initType)
-                        if (isObj && (s.type == null || s.type.annotations.none { it.name == "Ptr" })) {
+                        if (isObj && (s.type == null || !s.type.isRefType())) {
                             currentStmtLine = s.line
-                            codegenError("Object '${initType}' must be stored as @Ptr. Use: val ${s.name}: @Ptr $t = ${initType}")
+                            codegenError("Object '${initType}' must be stored as Ref. Use: val ${s.name}: Ref<$t> = ${initType}")
                         }
                         val expr = genExpr(s.init)
                         flushPreStmts(ind)

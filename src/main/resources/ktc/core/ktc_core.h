@@ -139,9 +139,9 @@ typedef struct { ktc_UInt flags; } ktc_core_ObjFlags;
 #define KTC_EMPTY_OBJ_INIT
 #endif
 
-/** @Ptr interface trampoline — fat pointer for interface references.
+/** Ref<Interface> trampoline — fat pointer for interface references.
  *  typeId holds the concrete type ID for is-checks; vt for dispatch; obj for data.
- *  One unified struct for all @Ptr InterfaceType regardless of which interface. */
+ *  One unified struct for all Ref<InterfaceType> regardless of which interface. */
 typedef struct { ktc_UInt typeId; const void* vt; void* obj; } ktc_IfacePtr;
 
 /** Vtable for Any methods — one static instance per class.

@@ -33,16 +33,16 @@ data class Vec3(val x: Float, val y: Float, val z: Float) {
 // 9. Data class with default parameter values
 data class WithDefaults(val x: Int = 10, var y: String = "hello")
 
-fun passVecPtr(inVec: @Ptr Vec2) {
+fun passVecPtr(inVec: Ref<Vec2>) {
     println("passVecPtr: $inVec")
 }
 
-fun passNullableVecPtr(inVec: @Ptr Vec2? = null) {
+fun passNullableVecPtr(inVec: Ref<Vec2?> = null) {
     if (inVec == null) {
         println("passNullableVecPtr: inVec is null")
         return
     }
-    println("passNullableVecPtr: ${inVec.value()}")
+    println("passNullableVecPtr: ${inVec.refValue}")
 }
 
 fun passVecValue(inVec: Vec2) {
@@ -57,15 +57,15 @@ fun passNullableVecValue(inVec: Vec2? = null) {
     println("passNullableVecValue: $inVec")
 }
 
-fun passMutablePointPtr(p: @Ptr MutablePoint) {
+fun passMutablePointPtr(p: Ref<MutablePoint>) {
     println("passMutablePointPtr before set: $p")
-    p.value = MutablePoint(99, 100)
+    p.refValue = MutablePoint(99, 100)
     println("passMutablePointPtr after set: $p")
 }
 
-fun passMutablePointPtrNullable(p: @Ptr MutablePoint?) {
+fun passMutablePointPtrNullable(p: Ref<MutablePoint?>) {
     println("passMutablePointPtrNullable before set: $p")
-    if (p != null) p.value = MutablePoint(99, 100)
+    if (p != null) p.refValue = MutablePoint(99, 100)
     println("passMutablePointPtrNullable after set: $p")
 }
 
@@ -387,90 +387,90 @@ fun main() {
     println("WithDefaults copy: ok")
 
     // =================================
-    // 10. @Ptr data class tests
+    // 10. Ref data class tests
     val vec = Vec2(100.0f, 200.0f)
 
-    // ptr() -> pointer
-    passVecPtr(vec.ptr())
+    // asRef() -> pointer
+    passVecPtr(vec.asRef())
 
-    // @Ptr nullable
-    passNullableVecPtr(vec.ptr())
+    // Ref nullable
+    passNullableVecPtr(vec.asRef())
     passNullableVecPtr()
     passNullableVecPtr(null)
 
-    // @Ptr value type pass
+    // Ref value type pass
     passVecValue(vec)
     passNullableVecValue(vec)
     passNullableVecValue()
     passNullableVecValue(null)
 
-    // @Ptr with var data class
+    // Ref with var data class
     val mpForPtr = MutablePoint(50, 60)
-    val mpPtr = mpForPtr.ptr()
+    val mpPtr = mpForPtr.asRef()
     passMutablePointPtr(mpPtr)
-    // verify mutation through set()
-    val mutatedMp = mpPtr.value()
-    if (mutatedMp.x != 99 || mutatedMp.y != 100) error("FAIL @Ptr set() mutation")
-    println("@Ptr set() mutation verified: ok")
+    // verify mutation through refValue
+    val mutatedMp = mpPtr.refValue
+    if (mutatedMp.x != 99 || mutatedMp.y != 100) error("FAIL Ref refValue mutation")
+    println("Ref refValue mutation verified: ok")
 
-    // @Ptr Nullable with var data class
+    // Ref Nullable with var data class
     val mpForPtrNullable = MutablePoint(50, 60)
-    val mpPtrNullable = mpForPtrNullable.ptr()
+    val mpPtrNullable = mpForPtrNullable.asRef()
     passMutablePointPtrNullable(mpPtrNullable)
     passMutablePointPtrNullable(null)
-    // verify mutation through set()
-    val mutatedMpNullable = mpPtrNullable.value()
-    if (mutatedMpNullable.x != 99 || mutatedMpNullable.y != 100) error("FAIL @Ptr Nullable set() mutation")
-    println("@Ptr Nullable set() mutation verified: ok")
+    // verify mutation through refValue
+    val mutatedMpNullable = mpPtrNullable.refValue
+    if (mutatedMpNullable.x != 99 || mutatedMpNullable.y != 100) error("FAIL Ref Nullable refValue mutation")
+    println("Ref Nullable refValue mutation verified: ok")
 
-    // @Ptr .value() dereference
+    // Ref .refValue dereference
     val directVec = Vec2(300.0f, 400.0f)
-    val directPtr = directVec.ptr()
-    val derefd = directPtr.value()
-    if (derefd.x != 300.0f || derefd.y != 400.0f) error("FAIL @Ptr value()")
-    println("@Ptr value(): ok")
+    val directPtr = directVec.asRef()
+    val derefd = directPtr.refValue
+    if (derefd.x != 300.0f || derefd.y != 400.0f) error("FAIL Ref refValue")
+    println("Ref refValue: ok")
 
-    // @Ptr .value = x
+    // Ref .refValue = x
     val setVec = Vec2(0.0f, 0.0f)
-    val setPtr = setVec.ptr()
-    setPtr.value = Vec2(50.0f, 60.0f)
-    val setVal = setPtr.value()
-    if (setVal.x != 50.0f || setVal.y != 60.0f) error("FAIL @Ptr .value =")
-    println("@Ptr .value =: ok")
+    val setPtr = setVec.asRef()
+    setPtr.refValue = Vec2(50.0f, 60.0f)
+    val setVal = setPtr.refValue
+    if (setVal.x != 50.0f || setVal.y != 60.0f) error("FAIL Ref .refValue =")
+    println("Ref .refValue =: ok")
 
-    // @Ptr .copy()
+    // Ref .copy()
     val copyFrom = Vec2(1.0f, 2.0f)
-    val copyFromPtr = copyFrom.ptr()
+    val copyFromPtr = copyFrom.asRef()
     val copied = copyFromPtr.copy(x = 10.0f)
-    if (copied.x != 10.0f || copied.y != 2.0f) error("FAIL @Ptr copy()")
-    println("@Ptr copy(): ok")
+    if (copied.x != 10.0f || copied.y != 2.0f) error("FAIL Ref copy()")
+    println("Ref copy(): ok")
 
-    // @Ptr equals (structural via ClassName_equals)
+    // Ref equals (structural via ClassName_equals)
     val eqA = Vec2(10.0f, 20.0f)
     val eqB = Vec2(10.0f, 20.0f)
-    val eqPtrA = eqA.ptr()
-    val eqPtrB = eqB.ptr()
-    if (eqPtrA != eqPtrB) error("FAIL @Ptr equals (same struct)")
+    val eqPtrA = eqA.asRef()
+    val eqPtrB = eqB.asRef()
+    if (eqPtrA != eqPtrB) error("FAIL Ref equals (same struct)")
     // verify different values are not equal
     val eqC = Vec2(30.0f, 40.0f)
-    val eqPtrC = eqC.ptr()
-    if (eqPtrA == eqPtrC) error("FAIL @Ptr equals (different struct)")
-    println("@Ptr equals: ok")
+    val eqPtrC = eqC.asRef()
+    if (eqPtrA == eqPtrC) error("FAIL Ref equals (different struct)")
+    println("Ref equals: ok")
 
-    // @Ptr hashCode
+    // Ref hashCode
     val hashSrc = Vec2(7.0f, 8.0f)
-    val hashPtr = hashSrc.ptr()
-    println("@Ptr hashCode: ${hashPtr.hashCode()}")
+    val hashPtr = hashSrc.asRef()
+    println("Ref hashCode: ${hashPtr.hashCode()}")
 
-    // @Ptr toString
+    // Ref toString
     val displayVec = Vec2(10.0f, 20.0f)
-    val displayVecPtr = displayVec.ptr()
-    println("@Ptr toString: $displayVecPtr")
+    val displayVecPtr = displayVec.asRef()
+    println("Ref toString: $displayVecPtr")
 
-    // @Ptr with nested data class
+    // Ref with nested data class
     val rect = Rect(Vec2(1.0f, 1.0f), Vec2(2.0f, 2.0f))
-    val rectPtr = rect.ptr()
-    println("@Ptr nested toString: $rectPtr")
+    val rectPtr = rect.asRef()
+    println("Ref nested toString: $rectPtr")
 
     // =================================
     // 11. Generic copy scenarios

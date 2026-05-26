@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.Decl
 import com.bitsycore.ktc.ast.FunDecl
+import com.bitsycore.ktc.ast.isRefType
 import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.codegen.ClassInfo
 import com.bitsycore.ktc.codegen.boxSection
@@ -17,7 +18,8 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
 	impl.appendLine("// ══ fun equals ══")
 	impl.appendLine("ktc_Bool ${cName}_equals($cName a, $cName b) {")
 	val eqs = ci.props.filter { (_, type) ->
-		!(type.annotations.any { it.name == "Ptr" } && interfaces.containsKey(type.name))
+		val innerName = if (type.name == "Ref" && type.typeArgs.isNotEmpty()) type.typeArgs[0].name else type.name
+		!(type.isRefType() && interfaces.containsKey(innerName))
 		}.joinToString(" && ") { (name, type) ->
 		val fieldName = if (name in ci.privateProps) "PRIV_$name" else name
 		val vKtcEq    = resolveTypeName(type)
@@ -168,7 +170,7 @@ internal fun CCodeGen.emitAnyVtable(
 	impl.appendLine()
 		val vHasEqualsOverride = members.any { it is FunDecl && it.name == "equals" }
 		if (vHasEqualsOverride) {
-			val vIsPtr = members.any { it is FunDecl && it.name == "equals" && it.params.isNotEmpty() && it.params[0].type.annotations.any { a -> a.name == "Ptr" } }
+			val vIsPtr = members.any { it is FunDecl && it.name == "equals" && it.params.isNotEmpty() && it.params[0].type.isRefType() }
 			if (vIsPtr) {
 				impl.appendLine("static ktc_Bool ${cName}_equals_any(void* \$self, void* other) {")
 				impl.appendLine("    return ${cName}_equals(($cName*)\$self, (ktc_Any*)other);")

@@ -96,7 +96,7 @@ internal fun CCodeGen.emitInlineCall(
 			vNewLambdas[vParam.name] = ActiveLambda(vExpr, vParamTypes, vRetType)
 			} else {
 			val vResolvedKtc    = resolveTypeName(vParam.type)
-			val vIsValueNullable = vParam.type.nullable && !vParam.type.annotations.any { it.name == "Ptr" }
+			val vIsValueNullable = vParam.type.nullable && !vParam.type.isRefType()
 			val (vCTypeName, vScopeKtc) = if (vIsValueNullable) {
 				val vInnerKtc = resolveTypeName(vParam.type.copy(nullable = false))
 				optCTypeName(vInnerKtc.toInternalStr) to KtcType.Nullable(vInnerKtc)
@@ -163,7 +163,7 @@ internal fun CCodeGen.emitLambdaCall(active: ActiveLambda, callArgs: List<Arg>, 
 			if (vArg != null) {
 				var vSubst = genExpr(vArg.expr)
 				val vParamKtc = active.paramTypes.getOrNull(i)
-				// Unwrap c.addr(x) → &x when param is @Ptr: use x directly
+				// Unwrap c.addr(x) → &x when param is Ref<T>: use x directly
 				if (vParamKtc is KtcType.Ptr && vSubst.startsWith("&")) {
 					vSubst = vSubst.removePrefix("&")
 					}

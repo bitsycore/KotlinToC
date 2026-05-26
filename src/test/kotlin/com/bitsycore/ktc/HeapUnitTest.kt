@@ -4,7 +4,7 @@ import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 
 /**
- * Tests for heap allocation via allocWith(Heap, ...), Ptr<T>, and Value<T>.
+ * Tests for heap allocation via allocWith(Heap, ...), Ref<T>, and Value<T>.
  */
 class HeapUnitTest : TranspilerTestBase() {
 
@@ -49,11 +49,11 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("= p;") // v = p (same pointer)
     }
 
-    // ── p.value = x → update ─────────────────────────────────────────
+    // ── p.refValue = x → update ─────────────────────────────────────────
 
     @Test fun heapSet() {
         val r = transpileMainWithStdlib(
-            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\np.value = Vec2(1.0f, 2.0f)",
+            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\np.refValue = Vec2(1.0f, 2.0f)",
             decls = vec2Decl
         )
         r.sourceContains("*p =")
@@ -69,12 +69,12 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("freeMem")
     }
 
-    // ── @Ptr T? — pointer nullable ──────────────────────────────────
+    // ── Ref<T?> — pointer nullable ──────────────────────────────────
 
     @Test fun heapAllocNullCheckSmartCast() {
         // After null check, smart cast should allow access
         val r = transpileMainWithStdlib("""
-            val p: @Ptr Vec2? = Vec2(10.0f, 20.0f).allocWith(Heap)
+            val p: Ref<Vec2?> = Vec2(10.0f, 20.0f).allocWith(Heap)
             if (p == null) return
             println(p.x)
         """, decls = vec2Decl)
@@ -83,9 +83,9 @@ class HeapUnitTest : TranspilerTestBase() {
     }
 
     @Test fun notNullAssertionEmitsCrash() {
-        // !! on a nullable @Ptr should emit a NullPointerException check
+        // !! on a nullable Ref should emit a NullPointerException check
         val r = transpileMainWithStdlib(
-            "val p: @Ptr Vec2? = Vec2(10.0f, 20.0f).allocWith(Heap)\nval q = p!!",
+            "val p: Ref<Vec2?> = Vec2(10.0f, 20.0f).allocWith(Heap)\nval q = p!!",
             decls = vec2Decl
         )
         r.sourceContains("NullPointerException")
@@ -95,7 +95,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun notNullAssertionOnVariable() {
         // !! on nullable variable should emit check
         val r = transpileMainWithStdlib("""
-            var p: @Ptr Vec2? = Vec2(1.0f, 2.0f).allocWith(Heap)
+            var p: Ref<Vec2?> = Vec2(1.0f, 2.0f).allocWith(Heap)
             val q = p!!
         """, decls = vec2Decl)
         r.sourceContains("NullPointerException")
@@ -104,19 +104,19 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun heapPtrNullable() {
         val r = transpileMainWithStdlib(
             """
-                var q: @Ptr Vec2? = Vec2(3.0f, 4.0f).allocWith(Heap)
+                var q: Ref<Vec2?> = Vec2(3.0f, 4.0f).allocWith(Heap)
                 q = null
             """.trimIndent(),
             decls = vec2Decl
         )
-        // @Ptr T? uses NULL for null
+        // Ref<T?> uses NULL for null
         r.sourceContains("NULL")
     }
 
     @Test fun heapPtrNullCheck() {
         val r = transpileMainWithStdlib(
             """
-            var q: @Ptr Vec2? = Vec2(3.0f, 4.0f).allocWith(Heap)
+            var q: Ref<Vec2?> = Vec2(3.0f, 4.0f).allocWith(Heap)
             if (q != null) {
                 println(q?.x)
             }
@@ -126,70 +126,70 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("q != NULL")
     }
 
-    // ── Heap .ptr() ────────────────────────────────────────────────
+    // ── Heap .asRef() ────────────────────────────────────────────────
 
     @Test fun heapptr() {
         val r = transpileMainWithStdlib(
-            "val h = Vec2(1.0f, 2.0f).allocWith(Heap)!!\nval p = h.ptr()",
+            "val h = Vec2(1.0f, 2.0f).allocWith(Heap)!!\nval p = h.asRef()",
             decls = vec2Decl
         )
-        // ptr() is identity — same pointer, just changes type
+        // asRef() is identity — same pointer, just changes type
         r.sourceContains("= h;")
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // Ptr<T> tests
+    // Ref<T> tests
     // ══════════════════════════════════════════════════════════════════
 
-    // ── Ptr from stack (.ptr()) ────────────────────────────────────
+    // ── Ref from stack (.asRef()) ────────────────────────────────────
 
     @Test fun stackptr() {
         val r = transpileMain(
-            "val v = Vec2(1.0f, 2.0f)\nval p = v.ptr()",
+            "val v = Vec2(1.0f, 2.0f)\nval p = v.asRef()",
             decls = vec2Decl
         )
         r.sourceContains("&v")
     }
 
-    // ── Ptr field access (auto-deref) ──────────────────────────────
+    // ── Ref field access (auto-deref) ──────────────────────────────
 
     @Test fun ptrFieldAccess() {
         val r = transpileMain(
-            "val v = Vec2(5.0f, 6.0f)\nval p = v.ptr()\nprintln(p.x)",
+            "val v = Vec2(5.0f, 6.0f)\nval p = v.asRef()\nprintln(p.x)",
             decls = vec2Decl
         )
         r.sourceContains("p->x")
     }
 
-    // ── Ptr.value() → Value<T> ───────────────────────────────────────
+    // ── .refValue → Value<T> ───────────────────────────────────────
 
     @Test fun ptrValue() {
         val r = transpileMain(
             """
                 val v = Vec2(1.0f, 2.0f)
-                val p = v.ptr()
-                val vr = p.value()
+                val p = v.asRef()
+                val vr = p.refValue
             """,
             decls = vec2Decl
         )
         r.sourceContains("(*p)")
     }
 
-    // ── Ptr write via .value = x ─────────────────────────────────────
+    // ── Ref write via .refValue = x ─────────────────────────────────────
 
     @Test fun ptrSet() {
         val r = transpileMain(
-            "val v = Vec2(1.0f, 2.0f)\nval p = v.ptr()\np.value = Vec2(3.0f, 4.0f)",
+            "val v = Vec2(1.0f, 2.0f)\nval p = v.asRef()\np.refValue = Vec2(3.0f, 4.0f)",
             decls = vec2Decl
         )
         r.sourceContains("*p =")
     }
 
-    // ── Ptr field access through .value() ────────────────────────────
+    // ── Ref field access through .refValue ────────────────────────────
 
     @Test fun ptrValueFieldAccess() {
         val r = transpileMain(
-            "val v = Vec2(5.0f, 6.0f)\nval p = v.ptr()\nprintln(p.value().x)",
+            "val v = Vec2(5.0f, 6.0f)\nval p = v.asRef()\nprintln(p.refValue.x)",
             decls = vec2Decl
         )
         r.sourceContains("->x")
@@ -199,13 +199,13 @@ class HeapUnitTest : TranspilerTestBase() {
     // Value<T> tests
     // ══════════════════════════════════════════════════════════════════
 
-    // ── Value<T> from .value() — transparent field access ────────────
+    // ── Value<T> from .refValue — transparent field access ────────────
 
     @Test fun valueFieldAccess() {
         val r = transpileMainWithStdlib(
             """
             val h = Vec2(10.0f, 20.0f).allocWith(Heap)!!
-            val v = h.value()
+            val v = h.refValue
             Heap.freeMem(h)
             println(v.x)
             """.trimIndent(),
@@ -220,7 +220,7 @@ class HeapUnitTest : TranspilerTestBase() {
         val r = transpileMainWithStdlib(
             """
             val h = Vec2(10.0f, 20.0f).allocWith(Heap)!!
-            val v = h.value()
+            val v = h.refValue
             v.x = 99.0f
             """.trimIndent(),
             decls = vec2Decl
@@ -228,13 +228,13 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("v.x = 99.0f;")
     }
 
-    // ── Value<T>.value() → stack copy ────────────────────────────────
+    // ── Value<T>.refValue → stack copy ────────────────────────────────
 
     @Test fun valueDeref() {
         val r = transpileMainWithStdlib(
             """
             val h = Vec2(10.0f, 20.0f).allocWith(Heap)!!
-            val v = h.value()
+            val v = h.refValue
             """,
             decls = vec2Decl
         )
@@ -246,7 +246,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun valueMethodCall() {
         val r = transpileMainWithStdlib("""
             val h = Counter(0).allocWith(Heap)!!
-            val v = h.value()
+            val v = h.refValue
             v.inc()
         """, decls = "class Counter(var count: Int) {\n    fun inc() { count = count + 1 }\n}")
         r.sourceContains("test_Main_Counter_inc(&v)")
@@ -258,7 +258,7 @@ class HeapUnitTest : TranspilerTestBase() {
         val r = transpileMainWithStdlib(
             """
             val h = Vec2(1.0f, 2.0f).allocWith(Heap)!!
-            val v: Vec2 = h.value()
+            val v: Vec2 = h.refValue
             println(v.x)
             """.trimIndent(),
             decls = vec2Decl
@@ -278,7 +278,7 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun bodyPropInitFromCtorParam() {
         val decl = """
             class Buf(var capacity: Int) {
-                var buf: @Ptr Array<Int> = Array<Int>(capacity).allocWith(Heap)
+                var buf: Ref<Array<Int>> = Array<Int>(capacity).allocWith(Heap)
             }
         """
         val r = transpileMainWithStdlib("val b = Buf(16)", decls = decl)
@@ -298,15 +298,15 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("\$self.count = 0;")
     }
 
-    // ── @Ptr Allocator forwarding (regression for CallArgs trampoline-rewrap bug) ────
+    // ── Ref<Allocator> forwarding (regression for CallArgs trampoline-rewrap bug) ────
 
-    // When a function takes @Ptr Allocator and forwards it to another @Ptr-Allocator
+    // When a function takes Ref<Allocator> and forwards it to another Ref<Allocator>
     // call site (here: allocWith), the codegen must forward the existing IfacePtr
     // directly — NOT wrap it again with a bogus ktc_Allocator_Allocator_vt.
     @Test fun ptrAllocatorForwardedToAllocWith() {
         val r = transpileMainWithStdlib(
             body  = "val p = mk(Heap)!!",
-            decls = "$vec2Decl\nfun mk(a: @Ptr Allocator): @Ptr Vec2 = Vec2(1.0f, 2.0f).allocWith(a)"
+            decls = "$vec2Decl\nfun mk(a: Ref<Allocator>): Ref<Vec2> = Vec2(1.0f, 2.0f).allocWith(a)"
         )
         // The bug emitted a reference to a non-existent vtable; ensure it's gone.
         r.sourceNotContains("ktc_Allocator_Allocator_vt")
@@ -319,20 +319,20 @@ class HeapUnitTest : TranspilerTestBase() {
     @Test fun ptrAllocatorForwardedToGenericCtor() {
         val r = transpileMainWithStdlib(
             body  = "val list = mk(Heap)",
-            decls = "fun mk(a: @Ptr Allocator): ArrayList<Int> = ArrayList<Int>(a, 4)"
+            decls = "fun mk(a: Ref<Allocator>): ArrayList<Int> = ArrayList<Int>(a, 4)"
         )
         r.sourceNotContains("ktc_Allocator_Allocator_vt")
     }
 
-    // Two-level forwarding: the inner function takes @Ptr Allocator from the outer,
+    // Two-level forwarding: the inner function takes Ref<Allocator> from the outer,
     // which itself got it from the call site. Trampoline must survive both hops.
     @Test fun ptrAllocatorForwardedTwoLevels() {
         val r = transpileMainWithStdlib(
             body  = "val p = outer(Heap)!!",
             decls = """
                 $vec2Decl
-                fun inner(a: @Ptr Allocator): @Ptr Vec2 = Vec2(1.0f, 2.0f).allocWith(a)
-                fun outer(a: @Ptr Allocator): @Ptr Vec2 = inner(a)
+                fun inner(a: Ref<Allocator>): Ref<Vec2> = Vec2(1.0f, 2.0f).allocWith(a)
+                fun outer(a: Ref<Allocator>): Ref<Vec2> = inner(a)
             """.trimIndent()
         )
         r.sourceNotContains("ktc_Allocator_Allocator_vt")
@@ -397,38 +397,38 @@ class HeapUnitTest : TranspilerTestBase() {
 
     // ── Pointer↔value boundary check (Task 18) ──────────────────────
 
-    // Declaring a @Ptr T variable with a value-typed initializer is rejected:
-    // the user must write .ptr() explicitly.
+    // Declaring a Ref<T> variable with a value-typed initializer is rejected:
+    // the user must write .asRef() explicitly.
     @Test fun ptrDeclFromValueIsRejected() {
         val ex = assertThrows<IllegalStateException> {
             transpileMain("""
                 val v = Vec2(1.0f, 2.0f)
-                val p: @Ptr Vec2 = v
+                val p: Ref<Vec2> = v
             """, decls = vec2Decl)
         }
         assert(ex.message!!.contains("boundary")) { "expected boundary error, got: ${ex.message}" }
-        assert(ex.message!!.contains(".ptr()")) { "expected .ptr() fix-it, got: ${ex.message}" }
+        assert(ex.message!!.contains(".asRef()")) { "expected .asRef() fix-it, got: ${ex.message}" }
     }
 
     // Declaring a value T variable with a pointer-typed initializer is rejected:
-    // the user must write .value() explicitly.
+    // the user must write .refValue explicitly.
     @Test fun valueDeclFromPtrIsRejected() {
         val ex = assertThrows<IllegalStateException> {
             transpileMain("""
                 val v = Vec2(1.0f, 2.0f)
-                val p = v.ptr()
+                val p = v.asRef()
                 val w: Vec2 = p
             """, decls = vec2Decl)
         }
         assert(ex.message!!.contains("boundary")) { "expected boundary error, got: ${ex.message}" }
-        assert(ex.message!!.contains(".value()")) { "expected .value() fix-it, got: ${ex.message}" }
+        assert(ex.message!!.contains(".refValue")) { "expected .refValue fix-it, got: ${ex.message}" }
     }
 
-    // Explicit .ptr() at the boundary is accepted with no error.
+    // Explicit .asRef() at the boundary is accepted with no error.
     @Test fun ptrDeclWithExplicitPtrIsOk() {
         val r = transpileMain("""
             val v = Vec2(1.0f, 2.0f)
-            val p: @Ptr Vec2 = v.ptr()
+            val p: Ref<Vec2> = v.asRef()
         """, decls = vec2Decl)
         r.sourceContains("Vec2* p =")
     }

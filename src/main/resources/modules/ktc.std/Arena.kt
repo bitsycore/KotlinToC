@@ -20,7 +20,7 @@ val vArena = Arena(vBuf.asRaw(), vBuf.size)
 defer vArena.reset()
 
 Heap-backed (caller owns and frees the buffer):
-val vBuf: @Ptr RawArray<Byte> = RawArray<Byte>(4096).allocWith(Heap)!!
+val vBuf: RawArray<Byte> = RawArray<Byte>(4096).allocWith(Heap)!!
 defer Heap.freeMem(vBuf)
 val vArena = Arena(vBuf, 4096)
 
@@ -29,7 +29,7 @@ val vSb = vArena.stringBuffer(256)
 // use vSb with println, toString, etc.
  */
 class Arena(
-    val buf: @Ptr RawArray<Byte>,
+    val buf: RawArray<Byte>,
     val cap: Int
 ) : Allocator {
 
@@ -73,7 +73,7 @@ class Arena(
     fun stringBuffer(capacity: Int): StringBuffer {
         val aligned = (capacity + 7) / 8 * 8   // round up to 8-byte alignment
         if (bytesUsed + aligned > cap) error("Arena overflow for StringBuffer: requested $capacity bytes but only ${cap - bytesUsed} remaining")
-        val ptr: @Ptr Char? = c.ktc_ptr_at_char(buf, bytesUsed)
+        val ptr: Ref<Char?> = c.ktc_ptr_at_char(buf, bytesUsed)
         bytesUsed += aligned
         return StringBuffer(ptr, 0, capacity)
     }

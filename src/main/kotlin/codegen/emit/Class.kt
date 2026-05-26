@@ -166,7 +166,7 @@ internal fun CCodeGen.emitSecondaryCtor(className: String, cClass: String, sctor
 			if (scopes.last().containsKey(name)) continue // param takes priority
 			val vKtc        = resolveTypeName(type)
 			val vCFieldName = if (name in ci.privateProps) "PRIV_$name" else name
-			val vIsOpt      = type.nullable && !type.annotations.any { it.name == "Ptr" } && !vKtc.isArrayLike
+			val vIsOpt      = type.nullable && !type.isRefType() && !vKtc.isArrayLike
 			defineVar(name, LocalVar(ktc = vKtc, mutable = !ci.isValProp(name), optional = vIsOpt, cName = "\$self.$vCFieldName"))
 			}
 		}

@@ -178,16 +178,17 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun hasNullableReceiverExt(baseType: String, method: String): Boolean {
         val bareType = baseType.removeSuffix("*")
         // Check non-generic extension functions
-        if (extensionFuns[bareType]?.any { it.name == method && it.receiver?.nullable == true } == true) return true
+        if (extensionFuns[bareType]?.any { it.name == method && it.receiver?.isEffectivelyNullable() == true } == true) return true
         // Check generic extension functions matching the base type or its interfaces
         val genericMatch = genericFunDecls.any {
-            it.name == method && it.receiver?.nullable == true && (
-                it.receiver.name == bareType ||
-                (genericClassDecls.containsKey(it.receiver.name) && bareType.startsWith("${it.receiver.name}_")) ||
-                (genericIfaceDecls.containsKey(it.receiver.name) && (
-                    bareType == it.receiver.name ||
-                    classInterfaces[bareType]?.contains(it.receiver.name) == true ||
-                    bareType.startsWith("${it.receiver.name}_")
+            val recvName = if (it.receiver?.name == "Ref" && it.receiver.typeArgs.isNotEmpty()) it.receiver.typeArgs[0].name else it.receiver?.name
+            it.name == method && it.receiver?.isEffectivelyNullable() == true && (
+                recvName == bareType ||
+                (genericClassDecls.containsKey(recvName) && bareType.startsWith("${recvName}_")) ||
+                (genericIfaceDecls.containsKey(recvName) && (
+                    bareType == recvName ||
+                    classInterfaces[bareType]?.contains(recvName) == true ||
+                    bareType.startsWith("${recvName}_")
                 ))
             )
         }
@@ -196,9 +197,10 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         val ifaces = classInterfaces[bareType] ?: emptyList()
         return ifaces.any { iface ->
             genericFunDecls.any { gf ->
-                gf.name == method && gf.receiver?.nullable == true && (
-                    gf.receiver.name == iface ||
-                    (genericIfaceDecls.containsKey(gf.receiver.name) && iface.startsWith("${gf.receiver.name}_"))
+                val recvName = if (gf.receiver?.name == "Ref" && gf.receiver.typeArgs.isNotEmpty()) gf.receiver.typeArgs[0].name else gf.receiver?.name
+                gf.name == method && gf.receiver?.isEffectivelyNullable() == true && (
+                    recvName == iface ||
+                    (genericIfaceDecls.containsKey(recvName) && iface.startsWith("${recvName}_"))
                 )
             }
         }
@@ -292,7 +294,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Narrow a variable's KtcType for a guard smart-cast, preserving mutable/optional/arraySize. */
     internal fun narrowVarType(inName: String, inType: String) {
         val vNewKtc = parseResolvedTypeName(inType)
-        // Emit a C cast only for guard-pattern narrows on @Ptr Any? (equals case).
+        // Emit a C cast only for guard-pattern narrows on Ref<Any?> (equals case).
         // The old type is Nullable(Ptr(Any)) → points to the actual object, safe to cast.
         // Skip for plain Ptr(Any) → points to a ktc_Any trampoline, must use .data.
         var vCName: String? = null
@@ -360,7 +362,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun ifaceInfoFor(inType: KtcType?): IfaceInfo? =    // IfaceInfo if type is a user-defined interface
         when (inType) {
             is KtcType.User -> inType.decl as? IfaceInfo ?: interfaces[inType.baseName]
-            is KtcType.Ptr -> ifaceInfoFor(inType.inner)  // unwrap @Ptr
+            is KtcType.Ptr -> ifaceInfoFor(inType.inner)  // unwrap Ref<T>
             else -> null
         }
     internal fun enumInfoFor(inType: KtcType?): EnumInfo? =      // EnumInfo if type is an enum class

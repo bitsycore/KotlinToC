@@ -164,7 +164,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
             }
         }
     }
-    // Ptr to interface (e.g. @Ptr List<T> → List_Int*)
+    // Ptr to interface (e.g. Ref<List<T>> → List_Int*)
     val isMonoIface = indirectBase != null && genericIfaceDecls.keys.any { indirectBase.startsWith(it + "_") }
     if ((indirectBase != null && interfaces.containsKey(indirectBase)) || isMonoIface) {
         val ifaceName = if (isMonoIface) indirectBase else indirectBase

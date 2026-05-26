@@ -69,7 +69,7 @@ int main(void) {
 
 **Types and memory**
 - All types are **by value** on the stack by default — no hidden allocations
-- `@Ptr T` for pointer semantics; `@Ptr T?` for nullable pointers (NULL)
+- `Ref<T>` for reference/pointer semantics; `Ref<T?>` for nullable references (NULL)
 - `T?` value-nullable via `ktc_T$Optional { tag, value }` struct
 - Heap allocation via `T(args).allocWith(Heap)` (explicit, allocator-based, no GC)
 
@@ -91,7 +91,7 @@ int main(void) {
 - Smart casts on `val` after null check or `is` check
 
 **Arrays**
-- `IntArray`, `Array<T>`, `@Size(N) Array<T>`, `@Ptr Array<T>` — see [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md)
+- `IntArray`, `Array<T>`, `@Size(N) Array<T>`, `Ref<Array<T>>` — see [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md)
 - `Pair<A,B>`, `Triple<A,B,C>` as intrinsic stack structs
 
 **Stdlib** (`package ktc.std`)

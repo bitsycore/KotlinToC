@@ -173,7 +173,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         val vPType = p.type ?: inferInitType(p.init)
         val vKtcP  = resolveTypeName(vPType)
         val vFn    = if (p.isPrivate) "PRIV_${p.name}" else p.name
-        val vIsOpt = vPType.nullable && !vPType.annotations.any { it.name == "Ptr" } && !vKtcP.isArrayLike
+        val vIsOpt = vPType.nullable && !vPType.isRefType() && !vKtcP.isArrayLike
         defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
     }
 
@@ -263,7 +263,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             val vPType = p.type ?: inferInitType(p.init)
             val vKtcP  = resolveTypeName(vPType)
             val vFn    = if (p.isPrivate) "PRIV_${p.name}" else p.name
-            val vIsOpt = vPType.nullable && !vPType.annotations.any { it.name == "Ptr" } && !vKtcP.isArrayLike
+            val vIsOpt = vPType.nullable && !vPType.isRefType() && !vKtcP.isArrayLike
             defineVar(p.name, LocalVar(ktc = vKtcP, mutable = p.mutable, optional = vIsOpt, cName = "$cName.$vFn"))
         }
         registerParams(m.params)

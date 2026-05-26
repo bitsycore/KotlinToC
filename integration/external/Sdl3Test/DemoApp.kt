@@ -24,9 +24,9 @@ class DemoApp(
 	val crosshairCol:  SDL3.Color,
 	val leashColor:    SDL3.Color,
 	var box:           SDL3.FRect,
-	val logArena1:     @Ptr Arena,
-	val logArena2:     @Ptr Arena,
-	val frameArena:    @Ptr Arena,
+	val logArena1:     Ref<Arena>,
+	val logArena2:     Ref<Arena>,
+	val frameArena:    Ref<Arena>,
 	var mouseX:        Float        = 0.0f,
 	var mouseY:        Float        = 0.0f,
 	var hoverPulse:    Float        = 0.0f,
@@ -298,7 +298,7 @@ class DemoApp(
 	// MARK: Render
 	// ══════════════════════════════════════════════════════════
 
-	fun render(trailPoints: @Ptr Array<SDL3.FPoint>, trailAngle: @Ptr FloatArray, trailHead: Int) {
+	fun render(trailPoints: Ref<Array<SDL3.FPoint>>, trailAngle: Ref<FloatArray>, trailHead: Int) {
 		val ws          = renderer.outputSize()
 		val renderScale = if (isKeyDown(SDL3.Scancode.Z)) 2.0f else 1.0f
 
@@ -414,7 +414,7 @@ class DemoApp(
 		}
 	}
 
-	private fun renderTrail(trailPoints: @Ptr Array<SDL3.FPoint>, trailAngle: @Ptr FloatArray, trailHead: Int) {
+	private fun renderTrail(trailPoints: Ref<Array<SDL3.FPoint>>, trailAngle: Ref<FloatArray>, trailHead: Int) {
 		sprite.setColorMod(255, 255, 255)
 		for (i in 0 until trailPoints.size) {
 			val tidx   = (trailHead + i) % trailPoints.size

@@ -99,7 +99,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 
 	genBuiltinMethodCallOrNull(dot, args, recv, recvType, recvTypeKtc)?.let { return it }
 
-	// ── @Ptr / @Heap / @Value class pointer methods ───────────────────
+	// ── Ref<T> class reference methods ───────────────────────────────
 
 	val pointerBase = (recvTypeKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
 	val isIface     = pointerBase != null && interfaces.containsKey(pointerBase)
@@ -119,15 +119,17 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			return "${typeFlatName(pointerBase)}_$method($allArgs)"
 			}
 		when (method) {
-			"value" -> {
-				if (objects.containsKey(pointerBase)) codegenError("Cannot call .value() on object '${pointerBase}' — objects are always @Ptr")
+			"refValue" -> {
+				if (objects.containsKey(pointerBase)) codegenError("Cannot call .refValue on object '${pointerBase}' — objects are always Ref")
 				return "(*$recv)"
 				}
-			"set"  -> codegenError("Use 'p.value = x' to assign through a @Ptr (instead of p.set(x))")
+			"value" -> codegenError("Use '.refValue' instead of '.value()' to dereference a Ref<T>")
+			"set"  -> codegenError("Use 'p.refValue = x' to assign through a Ref (instead of p.set(x))")
 			"copy" -> if (classes[pointerBase]?.isData == true) return genDataClassCopy(recv, pointerBase, args, heap = true)
-			"ptr" -> return recv
+			"asRef" -> return recv
+			"ptr" -> codegenError("Use '.asRef()' instead of '.ptr()' to take a reference")
 			}
-		// Check generic extension functions and interfaces for @Ptr receiver
+		// Check generic extension functions and interfaces for Ref receiver
 		val genExt = genericFunDecls.find {
 			it.name == method && it.receiver != null && (
 				it.receiver.name == pointerBase ||
@@ -136,7 +138,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			}
 		val (ifaceExt, ifaceExtConcrete) = resolveIfaceExt(pointerBase, method, genExt)
 		val effectiveGenExt = genExt ?: ifaceExt
-		val isPtrExt      = effectiveGenExt?.receiver?.annotations?.any { it.name == "Ptr" } == true
+		val isPtrExt      = effectiveGenExt?.receiver?.isRefType() == true
 		val flatPtrBase   = resolveExtFlatBase(pointerBase, typeFlatName(pointerBase), isPtrExt, ifaceExtConcrete)
 		val wrappedRecv = if (ifaceExtConcrete != null && isPtrExt) {
 			val cConcrete  = typeFlatName(pointerBase)
@@ -179,8 +181,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		return "$vtAccess->$method($allArgs)"
 		}
 
-	// .ptr() on nullable value type → produce @Ptr T? (nullable pointer)
-	if (method == "ptr" && rawRecvTypeKtc is KtcType.Nullable && isValueNullableKtc(rawRecvTypeKtc)) {
+	// .asRef() on nullable value type → produce Ref<T?> (nullable reference)
+	if (method == "asRef" && rawRecvTypeKtc is KtcType.Nullable && isValueNullableKtc(rawRecvTypeKtc)) {
 		val innerKtc = rawRecvTypeKtc.inner
 		val ct       = cTypeStr(innerKtc.toInternalStr)
 		val t        = tmp()
@@ -193,7 +195,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	val vClassInfo = classInfoFor(recvTypeKtc)
 	if (vClassInfo != null) {
 		if (method == "copy" && vClassInfo.isData) return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
-		if (method == "ptr") {
+		if (method == "asRef") {
 			val t = tmp()
 			preStmts += "${vClassInfo.flatName}* $t = &$recv;"
 			return t
@@ -222,7 +224,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			codegenError("Unknown method '$method' on receiver of type '${vClassInfo.baseName}' — no matching method, extension function, or operator.")
 		}
 		val isExtFun       = effectiveDecl?.receiver != null
-		val isPtrRecv      = effectiveDecl?.receiver?.annotations?.any { it.name == "Ptr" } == true
+		val isPtrRecv      = effectiveDecl?.receiver?.isRefType() == true
 		val isNullableRecv = effectiveDecl?.receiver?.nullable == true
 		val flatBase       = resolveExtFlatBase(vClassInfo.baseName, vClassInfo.flatName, isPtrRecv, ifaceConcrete)
 		val nullableRecv = hasNullableReceiverExt(recvType ?: "", method)
@@ -368,8 +370,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			}
 		}
 
-	// .ptr() for value types (primitives, enums, etc.) — take address
-	if (method == "ptr" && recvType != null) {
+	// .asRef() for value types (primitives, enums, etc.) — take address
+	if (method == "asRef" && recvType != null) {
 		val cType = cTypeStr(recvType)
 		val t     = tmp()
 		preStmts += "$cType* $t = &$recv;"

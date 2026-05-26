@@ -1,7 +1,7 @@
 package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.TypeRef
-import com.bitsycore.ktc.ast.getSizeAnnotation
+import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.types.BuiltinTypeDef
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.types.TypeDef
@@ -42,10 +42,11 @@ internal fun SymbolReader.substituteTypeParams(t: TypeRef): TypeRef {
 /* Human-readable TypeRef string (debug / error messages). */
 internal fun SymbolReader.typeRefToStr(t: TypeRef?): String {
 	if (t == null) return "Unit"
-	val ann      = if (t.annotations.any { it.name == "Ptr" }) "@Ptr " else ""
+	val isRef    = t.isRefType() && t.name != "Ref"
 	val args     = if (t.typeArgs.isNotEmpty()) "<${t.typeArgs.joinToString(", ") { typeRefToStr(it) }}>" else ""
 	val nullable = if (t.nullable) "?" else ""
-	return "$ann${t.name}$args$nullable"
+	if (isRef) return "Ref<${t.name}$args$nullable>"
+	return "${t.name}$args$nullable"
 	}
 
 // ═══════════════════════════ resolveTypeName ══════════════════════
@@ -65,7 +66,14 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 		return KtcType.Func(vParams, vRet, receiver = vReceiver)
 		}
 	val vResolved = resolveTypeNameStr(inT)                      // string-based resolution (legacy bridge)
-	val base      = parseResolvedTypeName(vResolved, inT)
+	// For Ref<T>, pass the rewritten inner TypeRef so parseResolvedTypeName sees the real type name
+	val vTypeRefForParsing = if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.isNotEmpty()) {
+		val vInner = vSubstituted.typeArgs[0]
+		TypeRef(vInner.name, vInner.nullable || vSubstituted.nullable, vInner.typeArgs,
+			vInner.funcParams, vInner.funcReturn, vInner.funcReceiver,
+			vInner.annotations + Annotation("Ptr"))
+		} else inT
+	val base      = parseResolvedTypeName(vResolved, vTypeRefForParsing)
 	// Preserve nullability from type substitution (e.g. T→Int? produces nullable=true on vSubstituted)
 	val isSubstNullable = vSubstituted.nullable && !inT.nullable
 	return if (isSubstNullable && base !is KtcType.Ptr && base !is KtcType.Nullable) KtcType.Nullable(base) else base
@@ -74,20 +82,31 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 /* Resolve a TypeRef to an internal string, wrapping in nullable notation when typeRef.nullable is true. */
 internal fun CCodeGen.resolveTypeRefStr(typeRef: TypeRef): String {
 	val base = resolveTypeName(typeRef)
-	return if (typeRef.nullable) KtcType.Nullable(base).toInternalStr else base.toInternalStr
+	return if (typeRef.isEffectivelyNullable()) KtcType.Nullable(base).toInternalStr else base.toInternalStr
 	}
 
 /* Resolve a TypeRef to its internal string type name (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 	if (t == null) return "Int"
 	val vSubstituted = substituteTypeParams(t)                   // type-param-substituted copy
+	// Ref<T> → rewrite to inner type with @Ptr annotation and re-resolve
+	if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.isNotEmpty()) {
+		val vInner = vSubstituted.typeArgs[0]
+		val vIsRefNullable = vInner.nullable || vSubstituted.nullable
+		if (vSubstituted.nullable && !vInner.nullable)
+			codegenWarning("Prefer Ref<${typeRefToStr(vInner)}?> over Ref<${typeRefToStr(vInner)}>? — nullability belongs on the inner type")
+		val vRewritten = TypeRef(vInner.name, vIsRefNullable, vInner.typeArgs,
+			vInner.funcParams, vInner.funcReturn, vInner.funcReceiver,
+			vInner.annotations + Annotation("Ptr"))
+		return resolveTypeNameStr(vRewritten)
+		}
 	// RawArray<T> → T* (raw pointer, no $len companion)
 	if (vSubstituted.name == "RawArray" && vSubstituted.typeArgs.isNotEmpty())
 		return resolveTypeNameStr(vSubstituted.typeArgs[0]) + "*"
 	val vBase = resolveTypeNameInnerStr(vSubstituted)            // raw resolved name
-	val vIsPtr = vSubstituted.annotations.any { it.name == "Ptr" }
+	val vIsPtr = vSubstituted.isRefType()
 	if (vIsPtr) {
-		// @Ptr InterfaceType → ktc_IfacePtr (trampoline value, carries vt+obj)
+		// Ref<InterfaceType> → ktc_IfacePtr (trampoline value, carries vt+obj)
 		if (interfaces.containsKey(vSubstituted.name)) {
 			if (vSubstituted.typeArgs.isNotEmpty()) return "ktc_IfacePtr:${vBase}"
 			return "ktc_IfacePtr"
@@ -97,7 +116,7 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 	return vBase
 	}
 
-/* Internal string-based type resolution after @Ptr stripping (legacy bridge). */
+/* Internal string-based type resolution after Ref / @Ptr stripping (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	// c.SDL_Window → "c:SDL_Window" (C interop external type passthrough)
 	if (t.name.startsWith("c.")) return "c:${t.name.removePrefix("c.")}"
@@ -145,8 +164,8 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	if (t.typeArgs.isNotEmpty()
 		&& !classes.containsKey(t.name) && !interfaces.containsKey(t.name)
 		&& !genericClassDecls.containsKey(t.name) && !genericIfaceDecls.containsKey(t.name)
-		&& t.name !in setOf("Array", "RawArray", "AnyPtr"))
-		codegenError("Unknown type '${t.name}<...>'. Use @Ptr for pointer types.")
+		&& t.name !in setOf("Array", "RawArray", "AnyPtr", "Ref"))
+		codegenError("Unknown type '${t.name}<...>'. Use Ref<T> for pointer types.")
 	// Resolve nested class within current object/class scope (e.g. Context → Sha256$Context)
 	if (!classes.containsKey(t.name) && !enums.containsKey(t.name)
 		&& !interfaces.containsKey(t.name) && !genericClassDecls.containsKey(t.name)) {
@@ -202,7 +221,7 @@ private val kBuiltinTypeNames = setOf(
 	"Byte", "Short", "Int", "Long", "UByte", "UShort", "UInt", "ULong",
 	"Float", "Double", "Boolean", "Char", "Rune",
 	"String", "StringBuffer", "Any", "Unit", "Nothing", "void",
-	"Array", "RawArray", "AnyPtr",
+	"Array", "RawArray", "AnyPtr", "Ref",
 	"IntArray", "LongArray", "FloatArray", "DoubleArray",
 	"BooleanArray", "CharArray", "ByteArray", "ShortArray",
 	"UIntArray", "ULongArray", "UByteArray", "UShortArray",

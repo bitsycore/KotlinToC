@@ -126,7 +126,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.GT); nesting--
             params
         } else emptyList()
-        // Parse annotations before identifier (@Ptr, @Size(N), etc.)
+        // Parse annotations (@Size(N), etc.)
         val firstAnnotations = parseAnnotations()
         val firstName = expectIdent()
         // Parse optional type args on receiver: fun Foo<Int>.bar() or fun Foo<*>.bar()

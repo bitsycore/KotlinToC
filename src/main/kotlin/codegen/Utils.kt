@@ -56,9 +56,11 @@ internal fun CCodeGen.closeFunBody(inPrevState: CCodeGen.FunState) {
     impl.appendLine()
     }
 
-/* Evaluate an expression with an allocTargetType hint set, then clear the hint. */
+/* Evaluate an expression with an allocTargetType hint set, then clear the hint.
+Unwraps Ref<T> so downstream alloc code sees the inner type directly. */
 internal fun CCodeGen.genExprWithAllocTarget(expr: Expr, targetType: TypeRef?): String {
-    allocTargetType = targetType
+    allocTargetType = if (targetType != null && targetType.name == "Ref" && targetType.typeArgs.isNotEmpty())
+        targetType.typeArgs[0] else targetType
     val result = genExpr(expr)
     allocTargetType = null
     return result

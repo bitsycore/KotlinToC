@@ -29,7 +29,7 @@ infix fun <A, B> A.toStd(that: B): Pair<A, B> = Pair(this, that)
 /**
  * Converts this pair into a list, backed by [allocator].
  */
-fun <T> Pair<T, T>.toList(allocator: @Ptr Allocator): List<T> = listOf(allocator, first, second)
+fun <T> Pair<T, T>.toList(allocator: Ref<Allocator>): List<T> = listOf(allocator, first, second)
 
 /**
  * Represents a triad of values
@@ -54,4 +54,4 @@ data class Triple<A, B, C>(
 /**
  * Converts this triple into a list, backed by [allocator].
  */
-fun <T> Triple<T, T, T>.toList(allocator: @Ptr Allocator): List<T> = listOf(allocator, first, second, third)
+fun <T> Triple<T, T, T>.toList(allocator: Ref<Allocator>): List<T> = listOf(allocator, first, second, third)

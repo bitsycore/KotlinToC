@@ -164,7 +164,7 @@ class ArrayUnitTest : TranspilerTestBase() {
     @Test fun fillRawArrayRange() {
         val r = transpileMain("""
             val src = ByteArray(8)
-            val raw: @Ptr RawArray<Byte> = src.ptr()
+            val raw: RawArray<Byte> = src.asRef()
             raw.fill(8, 0, 1, 4)
         """)
         r.sourceContains("memset((raw) + (1), 0, sizeof(ktc_Byte) * (size_t)((4) - (1)));")
@@ -174,7 +174,7 @@ class ArrayUnitTest : TranspilerTestBase() {
     @Test fun fillRawArrayWithCount() {
         val r = transpileMain("""
             val src = ByteArray(8)
-            val raw: @Ptr RawArray<Byte> = src.ptr()
+            val raw: RawArray<Byte> = src.asRef()
             raw.fill(8, 0)
         """)
         r.sourceContains("memset(raw, 0, sizeof(ktc_Byte) * (size_t)(8));")
@@ -185,7 +185,7 @@ class ArrayUnitTest : TranspilerTestBase() {
     @Test fun asRawExtractsBarePointer() {
         val r = transpileMain("""
             val arr = IntArray(4)
-            val raw: @Ptr RawArray<Int> = arr.asRaw()
+            val raw: RawArray<Int> = arr.asRaw()
         """)
         r.sourceContains("ktc_Int* raw")
         r.sourceContains("(arr).ptr;")
@@ -194,8 +194,8 @@ class ArrayUnitTest : TranspilerTestBase() {
     @Test fun asArrayBuildsVarArrOverSameData() {
         val r = transpileMain("""
             val src = IntArray(4)
-            val raw: @Ptr RawArray<Int> = src.asRaw()
-            val view: @Ptr Array<Int> = raw.asArray(4)
+            val raw: RawArray<Int> = src.asRaw()
+            val view: Ref<Array<Int>> = raw.asArray(4)
             println(view.size)
         """)
         r.sourceContains("(ktc_VarArr_ktc_Int){raw, 4}")
@@ -205,7 +205,7 @@ class ArrayUnitTest : TranspilerTestBase() {
     // resizeWith on a RawArray reallocs the bare pointer (no VarArr) with the right element size.
     @Test fun resizeWithRawArrayReallocsBarePointer() {
         val r = transpileMainWithStdlib("""
-            var raw: @Ptr RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
+            var raw: RawArray<Int> = RawArray<Int>(4).allocWith(Heap)!!
             raw = raw.resizeWith(Heap, 8)
         """)
         r.sourceContains("reallocMem")

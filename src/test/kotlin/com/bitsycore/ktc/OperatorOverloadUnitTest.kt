@@ -7,12 +7,12 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
     @Test fun operatorGetIndex() {
         val r = transpile("""
             package test.Main
-            class IntMap(val arr: @Ptr IntArray) {
+            class IntMap(val arr: Ref<IntArray>) {
                 operator fun get(index: Int): Int = arr[index]
             }
             fun main(args: Array<String>) {
                 val arr = intArrayOf(10, 20, 30)
-                val m = IntMap(arr.ptr())
+                val m = IntMap(arr.asRef())
                 val v = m[1]
             }
         """)
@@ -22,14 +22,14 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
     @Test fun operatorSetIndex() {
         val r = transpile("""
             package test.Main
-            class IntMap(var arr: @Ptr IntArray) {
+            class IntMap(var arr: Ref<IntArray>) {
                 operator fun set(index: Int, value: Int) {
                     arr[index] = value
                 }
             }
             fun main(args: Array<String>) {
                 val arr = intArrayOf(10, 20, 30)
-                val m = IntMap(arr.ptr())
+                val m = IntMap(arr.asRef())
                 m[1] = 99
             }
         """)
@@ -70,11 +70,11 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
             interface Indexed {
                 operator fun get(index: Int): Int
             }
-            class IntList(val arr: @Ptr IntArray) : Indexed {
+            class IntList(val arr: Ref<IntArray>) : Indexed {
                 override fun get(index: Int): Int = arr[index]
             }
             fun main(args: Array<String>) {
-                val arr = intArrayOf(1, 2, 3).ptr()
+                val arr = intArrayOf(1, 2, 3).asRef()
                 val lst: Indexed = IntList(arr)
                 val v = lst[0]
             }
@@ -88,12 +88,12 @@ class OperatorOverloadUnitTest : TranspilerTestBase() {
             interface MutableIndexed {
                 operator fun set(index: Int, value: Int)
             }
-            class IntList(var arr: @Ptr IntArray) : MutableIndexed {
+            class IntList(var arr: Ref<IntArray>) : MutableIndexed {
                 override fun set(index: Int, value: Int) { arr[index] = value }
             }
             fun main(args: Array<String>) {
                 val arr = intArrayOf(1, 2, 3)
-                val lst: MutableIndexed = IntList(arr.ptr())
+                val lst: MutableIndexed = IntList(arr.asRef())
                 lst[0] = 99
             }
         """)

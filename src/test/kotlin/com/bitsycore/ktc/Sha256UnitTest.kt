@@ -14,7 +14,7 @@ class Sha256UnitTest : TranspilerTestBase() {
                 fun new(): Context = Context()
                 class Context() {
                     private val state: @Size(8) UIntArray = uintArrayOf(0x6a09e667U)
-                    fun update(buff: @Ptr ByteArray, offset: Int = 0, length: Int = buff.size) {}
+                    fun update(buff: Ref<ByteArray>, offset: Int = 0, length: Int = buff.size) {}
                     fun finalizeHash(): @Size(32) ByteArray { return ByteArray(32) }
                 }
                 private fun rotr(x: Int, n: Int): Int = (x ushr n) or (x shl (32 - n))
@@ -96,7 +96,7 @@ class Sha256UnitTest : TranspilerTestBase() {
         val v = transpileMain("", """
             object Obj {
                 class Inner() {
-                    fun update(buff: @Ptr ByteArray, offset: Int = 0, length: Int = buff.size) {}
+                    fun update(buff: Ref<ByteArray>, offset: Int = 0, length: Int = buff.size) {}
                 }
             }
         """)

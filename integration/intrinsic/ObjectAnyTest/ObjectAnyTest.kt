@@ -80,7 +80,7 @@ fun main() {
     // - hashCode() direct call passes &obj as extra arg (expression codegen
     //   resolves object methods through class path for Any methods).
     //   Workaround: use toString() which goes through genToString built-in.
-    // - is/as on objects via @Ptr Any has type-name _t suffix issues in
+    // - is/as on objects via Ref<Any> has type-name _t suffix issues in
     //   expression codegen (Object vs Object_t mismatch).
     // - alloca-based string return in object methods may produce dangling
     //   pointers on platforms where alloca is frame-local (non-GCC).

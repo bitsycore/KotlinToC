@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.TypeRef
 import com.bitsycore.ktc.ast.hasSizeAnnotation
+import com.bitsycore.ktc.ast.isRefType
 
 // Sized-array/string type registration and predicates.
 // Printf helpers (printfFmt / printfArg) live in CTypes.kt alongside other KtcType→C mappers.
@@ -12,10 +13,10 @@ import com.bitsycore.ktc.ast.hasSizeAnnotation
 internal fun isArrayType(inTypeName: String): Boolean =
 	inTypeName.removeSuffix("?").removeSuffix("*").endsWith("Array")
 
-/* True if this TypeRef is a raw Array<T> or primitive array — not @Ptr, not @Size. */
+/* True if this TypeRef is a raw Array<T> or primitive array — not Ref<>, not @Size. */
 internal fun TypeRef.isRawArray(): Boolean {
 	if (hasSizeAnnotation()) return false
-	if (annotations.any { it.name == "Ptr" }) return false
+	if (isRefType()) return false
 	return name == "Array" || name in primitiveArraySet
 	}
 

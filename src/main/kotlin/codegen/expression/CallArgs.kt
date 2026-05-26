@@ -132,15 +132,15 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 			} else if (argIdx < args.size) {
 			val arg    = args[argIdx]
 			val expr   = genExpr(arg.expr)
-			val hasAtPtr        = param.type.annotations.any { it.name == "Ptr" }
-			// User-class pointer (e.g. @Ptr Vec2 → Vec2*), NOT a typed array pointer (IntArray → Ptr<Arr<Int>>)
+			val hasAtPtr        = param.type.isRefType()
+			// User-class pointer (e.g. Ref<Vec2> → Vec2*), NOT a typed array pointer (IntArray → Ptr<Arr<Int>>)
 			val isPtrOrArrayPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner !is KtcType.Arr
 			if (hasAtPtr || isPtrOrArrayPtr) {
-				// @Ptr-annotated type — pass raw pointer (NULL for null)
+				// Ref<T> type — pass raw pointer (NULL for null)
 				if (arg.expr is NullLit) {
 					val vNullIsVarArr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null
 					if (vNullIsVarArr) {
-						// @Ptr Array<T> null: emit {NULL, 0} struct (same as regular nullable array)
+						// Ref<Array<T>> null: emit {NULL, 0} struct (same as regular nullable array)
 						val vInner   = paramTypeKtc.inner
 						val vElemC   = elemCTypeStr(vInner.elem)
 						parts += "(${varArrTypeName(vElemC)}){NULL, 0}"
@@ -149,11 +149,11 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						parts += "(ktc_IfacePtr){0}"   // zero-init for iface trampoline
 					else parts += "NULL"
 					} else if ((paramTypeKtc as? KtcType.Ptr)?.inner?.let { it is KtcType.Any || (it is KtcType.User && it.baseName == "Any") } == true) {
-					// @Ptr Any → check if arg is VarArr first (extract .ptr for void* cast)
+					// Ref<Any> → check if arg is VarArr first (extract .ptr for void* cast)
 					val vAnyArgKtc  = inferExprTypeKtc(arg.expr)
 					val vAnyArgCore = vAnyArgKtc.stripNullable
 					if (vAnyArgCore?.isArrayLike == true && vAnyArgCore.asArr?.sized == null) {
-						// VarArr passed to @Ptr Any: extract raw .ptr
+						// VarArr passed to Ref<Any>: extract raw .ptr
 						parts += "(void*)($expr).ptr"
 						} else {
 					// Wrap as ktc_Any fat pointer, pass pointer to it.
@@ -173,12 +173,12 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					parts += "&$tAny"
 					}
 					} else if ((paramTypeKtc as? KtcType.Ptr)?.inner is KtcType.User && interfaces.containsKey((paramTypeKtc.inner as KtcType.User).baseName)) {
-					// @Ptr InterfaceType → wrap into ktc_IfacePtr trampoline
+					// Ref<InterfaceType> → wrap into ktc_IfacePtr trampoline
 					val ifaceName   = paramTypeKtc.inner.baseName
 					val cIface      = typeFlatName(ifaceName)
 					val argKtc      = inferExprTypeKtc(arg.expr)
 					val argKtcCore  = argKtc.stripNullable
-					// Arg is already a trampoline (@Ptr Interface): forward directly, no re-wrap.
+					// Arg is already a trampoline (Ref<Interface>): forward directly, no re-wrap.
 					val argInner = (argKtcCore as? KtcType.Ptr)?.inner
 					if (argInner is KtcType.User && argInner.kind == KtcType.UserKind.Interface) {
 						parts += expr
@@ -193,7 +193,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					if (concreteName != null) {
 						val cConcrete      = typeFlatName(concreteName)
 						val typeId         = getTypeId(concreteName)
-						// Objects are always @Ptr (genName returns &objName), so just cast
+						// Objects are always Ref (genName returns &objName), so just cast
 						val objPtr: String = if (arg.expr is NameExpr && objects.containsKey(arg.expr.name)) {
 							"(void*)&$expr"
 							} else if (arg.expr is NameExpr && argKtcCore is KtcType.Ptr) {
@@ -223,13 +223,13 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					} else {
 					val vIsArrPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null
 					if (vIsArrPtr) {
-						// @Ptr Array<T>: now ktc_VarArr_T — pass struct with .ptr cast if needed
+						// Ref<Array<T>>: now ktc_VarArr_T — pass struct with .ptr cast if needed
 						val vInnerArr  = paramTypeKtc.inner
 						val vElemCType = elemCTypeStr(vInnerArr.elem)
 						val vVarArrTp  = varArrTypeName(vElemCType)
 						parts += buildVarArrArg(expr, arg.expr, vVarArrTp, vElemCType)
 						} else if (paramTypeKtc is KtcType.Ptr && (paramTypeKtc.inner is KtcType.Void || paramTypeKtc.inner is KtcType.Any)) {
-						// AnyPtr / @Ptr Any (void*): extract .ptr when arg is a VarArr
+						// AnyPtr / Ref<Any> (void*): extract .ptr when arg is a VarArr
 						val vVoidArgKtc  = inferExprTypeKtc(arg.expr)
 						val vVoidArgCore = vVoidArgKtc.stripNullable
 						if (vVoidArgCore?.isArrayLike == true && vVoidArgCore.asArr?.sized == null) {

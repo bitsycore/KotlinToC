@@ -228,10 +228,10 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vDotName = (inDot.obj as? NameExpr)?.name
 		return if (vDotName != null && vDotName in trampolinedParams) arrayParamSizeExpr(vDotName) else "${inRecv}.len"
 		}
-	if (vMethod == "ptr" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
+	if (vMethod == "asRef" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		return inRecv
 		}
-	// Array<T>.asRaw() → bare @Ptr RawArray<T> pointing at the array data (no length).
+	// Array<T>.asRaw() → bare RawArray<T> pointing at the array data (no length).
 	if (vMethod == "asRaw" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {
 		val vObjName = (inDot.obj as? NameExpr)?.name
 		return when {
@@ -240,7 +240,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			else                                              -> "($inRecv).ptr"
 			}
 		}
-	// RawArray<T>.asArray(n) → @Ptr Array<T> (VarArr) over the same data with length n.
+	// RawArray<T>.asArray(n) → Ref<Array<T>> (VarArr) over the same data with length n.
 	if (vMethod == "asArray" && inRecvTypeKtc is KtcType.Ptr && inRecvTypeKtc.inner !is KtcType.Arr && inArgs.size == 1) {
 		val vElemC      = inRecvTypeKtc.inner.toCType()
 		val vVarArrType = varArrTypeName(vElemC)

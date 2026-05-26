@@ -2,21 +2,21 @@ package AllocatorTest
 
 data class Vec2(val x: Float, val y: Float)
 
-fun testAlloc(alloc: Allocator, size: Int): @Ptr Byte {
+fun testAlloc(alloc: Allocator, size: Int): Ref<Byte> {
     return alloc.allocMem(size)
 }
 
 fun main() {
     println("=== alloc / free === ${Macro.FILE}")
-    val p1: @Ptr Byte = Heap.allocMem(64)
+    val p1: Ref<Byte> = Heap.allocMem(64)
     println("Heap.allocMem(64): ok")
     Heap.freeMem(p1)
     println("Heap.freeMem: ok")
 
     println()
     println("=== realloc ===")
-    val p2: @Ptr Byte = Heap.allocMem(16)
-    val p3: @Ptr Byte = Heap.reallocMem(p2, 32)
+    val p2: Ref<Byte> = Heap.allocMem(16)
+    val p3: Ref<Byte> = Heap.reallocMem(p2, 32)
     println("realloc 16->32: ok")
     Heap.freeMem(p3)
 
@@ -32,13 +32,13 @@ fun main() {
 
     println()
     println("=== interface dispatch ===")
-    val p4: @Ptr Byte = testAlloc(Heap, 256)
+    val p4: Ref<Byte> = testAlloc(Heap, 256)
     println("interface alloc(256): ok")
     Heap.freeMem(p4)
 
     println()
     println("=== allocWith constructor ===")
-    val pv: @Ptr Vec2 = Vec2(10.0f, 20.0f).allocWith(Heap)
+    val pv: Ref<Vec2> = Vec2(10.0f, 20.0f).allocWith(Heap)
     defer Heap.freeMem(pv)
     println("allocWith Vec2 x=" + pv.x.toString() + " y=" + pv.y.toString())
     if (pv.x != 10.0f || pv.y != 20.0f) error("FAIL allocWith values")
@@ -46,7 +46,7 @@ fun main() {
 
     println()
     println("=== defer ===")
-    val p5: @Ptr Byte = Heap.allocMem(32)
+    val p5: Ref<Byte> = Heap.allocMem(32)
     defer Heap.freeMem(p5)
     println("defer alloc+free: ok")
 
