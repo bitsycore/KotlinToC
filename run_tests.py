@@ -971,8 +971,32 @@ def build_extra_args(inNs: argparse.Namespace) -> list[str]:
 		vExtras.extend(inNs.transpiler_args.split())
 	return vExtras
 
+# Options whose value is a free-form string of compiler/tool flags. argparse
+# refuses to consume a dash-prefixed token as the value of these, so users have
+# to write `--cc-args=-g` instead of the more natural `--cc-args "-g"`. The
+# preprocessor below normalizes the latter into the former before argparse
+# sees the argv.
+kStringValueOpts = {"--cc-args", "--cmake-args", "--transpiler-args", "--run", "--compiler", "--cfg", "--skip"}
+
+def normalize_argv(inArgv: list[str]) -> list[str]:
+	# Walks the argv and folds `--cc-args VALUE` into `--cc-args=VALUE` when
+	# VALUE starts with '-'. argparse only stumbles when the value starts with
+	# a dash and would otherwise be mistaken for another option — equals-form
+	# is unambiguous.
+	vOut: list[str] = []
+	vI = 0
+	while vI < len(inArgv):
+		vTok = inArgv[vI]
+		if vTok in kStringValueOpts and vI + 1 < len(inArgv) and inArgv[vI + 1].startswith("-"):
+			vOut.append(f"{vTok}={inArgv[vI + 1]}")
+			vI += 2
+			continue
+		vOut.append(vTok)
+		vI += 1
+	return vOut
+
 def main(inArgv: list[str]) -> int:
-	vNs = build_arg_parser().parse_args(inArgv)
+	vNs = build_arg_parser().parse_args(normalize_argv(inArgv))
 
 	if vNs.clean:
 		return cmd_clean()
