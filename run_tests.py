@@ -583,11 +583,28 @@ def invoke_test_verbose(
 # MARK: Single test (concise, used by parallel suite)
 # ==================
 
-# Last N lines of a captured output, used to surface the relevant context of
-# a failure without flooding the suite output with successful tool noise.
-def _tail(inText: str, inLines: int = 12) -> list[str]:
+# Number of lines kept from the tail of a captured output stream when surfacing
+# a build/transpile failure. Generous enough that an error and a short stack
+# trace both fit, even when the tool printed routine status lines afterwards.
+kFailTailLines = 30
+
+# Cap for full-output dumps (runtime errors). Sanity bound so a runaway test
+# that printed thousands of lines doesn't flood the suite output.
+kFailFullCap   = 250
+
+def _tail(inText: str, inLines: int = kFailTailLines) -> list[str]:
 	vAll = inText.splitlines()
 	return vAll[-inLines:] if len(vAll) > inLines else vAll
+
+def _full(inText: str, inCap: int = kFailFullCap) -> list[str]:
+	# Returns all captured lines up to inCap, with a marker noting any elision.
+	# Used for runtime-error reporting where the actual error message can appear
+	# ANYWHERE in the stream — typically near the top when error() printed to
+	# stderr but stdout was block-buffered and flushed at exit.
+	vAll = inText.splitlines()
+	if len(vAll) <= inCap:
+		return vAll
+	return [f"[+{len(vAll) - inCap} earlier line(s) elided]"] + vAll[-inCap:]
 
 # ==================
 # MARK: Live progress renderer
@@ -711,10 +728,16 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 
 	inProgress.start(vName)
 
-	def fail(inReason: str, inOut: str = "") -> TestOutcome:
-		# Emits the FAIL line plus a tail of the captured tool output for context.
-		vLines = [f"  {kRed}FAIL{kRst} {vName} ({inReason})"]
-		for vLine in _tail(inOut):
+	def fail(inReason: str, inOut: str = "", inFullDump: bool = False) -> TestOutcome:
+		# Emits the FAIL line plus the captured tool output. Runtime errors get
+		# a full dump (inFullDump=True) because the actual error message and
+		# stacktrace can be anywhere in the stream — typically at the top when
+		# error()/abort() printed to stderr while stdout was block-buffered.
+		# Build/transpile failures fail-fast so the relevant context is in the
+		# tail; those use _tail() to avoid surfacing tool noise from before.
+		vLines    = [f"  {kRed}FAIL{kRst} {vName} ({inReason})"]
+		vBodyFn   = _full if inFullDump else _tail
+		for vLine in vBodyFn(inOut):
 			if vLine.strip():
 				vLines.append(f"       {kGray}{vLine}{kRst}")
 		inProgress.finish(vName, vLines)
@@ -798,7 +821,7 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 	vRunArgs = ["--skip-interaction"] if vCfg.interactive else (vCfg.args.split() if vCfg.args else [])
 	vRunRes  = run_capture([str(vExePath), *vRunArgs])
 	if vRunRes.exit != 0:
-		return fail(f"runtime error, exit {vRunRes.exit}", vRunRes.stdout)
+		return fail(f"runtime error, exit {vRunRes.exit}", vRunRes.stdout, inFullDump=True)
 
 	vTiming = f"{kGray}ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}  run: {format_ms(vRunRes.ms)}{kRst}"
 	vLeak   = "leaked" in vRunRes.stdout
