@@ -55,6 +55,11 @@ internal fun CCodeGen.emitInlineCall(
 		decl.returnType?.let { append(": ${resolveTypeName(it).toInternalStr}") }
 		}
 	typeSubst = vSavedSubstForComment
+	// Flush any preStmts accumulated from the caller's earlier arg evaluation
+	// (e.g. iface trampoline temps from a previous sibling argument). They
+	// belong in the enclosing scope; leaving them would land them inside this
+	// inline body's `{ }` and put them out of scope for the outer call.
+	flushPreStmts(ind)
 	impl.appendLine("$ind/* inline $vSig */")
 	impl.appendLine("$ind{")
 	pushScope()

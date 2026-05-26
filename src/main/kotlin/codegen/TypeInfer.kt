@@ -47,16 +47,11 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	is BinExpr -> {
 		if (e.op in setOf("==", "!=", "<", ">", "<=", ">=", "&&", "||", "in", "!in")) "Boolean"
 		else if (e.op == "..") "IntRange"
-		else if (e.op == "to") {
-			val a = inferExprType(e.left) ?: "Int"
-			val b = inferExprType(e.right) ?: "Int"
-			if (genericClassDecls.containsKey("Pair")) {
-				val vMangled = recordGenericInstantiation("Pair", listOf(a, b))
-				materializeGenericInstantiations()
-				vMangled
-				} else "Pair_${a}_${b}"
-			}
 		else {
+			// All infix functions (including `to` → Pair from stdlib) resolve
+			// through inline-extension lookup. Return type comes from the
+			// declared return TypeRef, with generic type-parameter substitution
+			// applied based on the receiver and argument types.
 			val vInfixDecl = inlineExtFunDecls[e.op]?.firstOrNull()
 			if (vInfixDecl != null && vInfixDecl.returnType != null) {
 				val vRecvType   = inferExprType(e.left)

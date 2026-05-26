@@ -161,7 +161,7 @@ open class TranspilerTestBase {
     so stdlib types (Random, ArrayList, etc.) are visible to the codegen.
     The generated output is for the primary file only.
     Stdlib is loaded (and prescanned for infix names) BEFORE parsing the user source
-    so stdlib infix operators like toStd are recognized during parsing.
+    so stdlib infix operators like `to` are recognized during parsing.
     */
     protected fun transpileWithStdlib(@Language("kotlin") src: String): TranspileResult {
         val vSource = src.trimIndent()

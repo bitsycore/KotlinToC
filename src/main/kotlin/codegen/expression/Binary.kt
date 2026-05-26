@@ -8,25 +8,8 @@ import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.genBin(e: BinExpr): String {
     val lt = inferExprType(e.left)
-    /* `to` infix → Pair; use stdlib path when stdlib Pair class is loaded, else intrinsic */
-    if (e.op == "to") {
-                val aType = inferExprType(e.left) ?: "Int" // left operand type
-        val bType = inferExprType(e.right) ?: "Int" // right operand type
-        if (genericClassDecls.containsKey("Pair")) {
-            // stdlib Pair<A,B> is active — emit primaryConstructor call
-            val vMangledName = recordGenericInstantiation("Pair", listOf(aType, bType)) // e.g. "Pair$2_Int_String"
-            materializeGenericInstantiations() // ensure ClassInfo entry exists
-            val vCi = classes[vMangledName] // concrete class info with correct pkg
-            if (vCi != null) {
-                val vLExpr = genExpr(e.left) // C expression for first
-                val vRExpr = genExpr(e.right) // C expression for second
-                return "${vCi.flatName}_primaryConstructor($vLExpr, $vRExpr)"
-            }
-        } else {
-            error("AAAA")
-        }
-    }
-    // User-defined infix inline extension function dispatch
+    // User-defined infix inline extension function dispatch (covers `to`,
+    // `toStd`-style functions, and any user-declared infix extension).
     val vInfixDecl = inlineExtFunDecls[e.op]?.firstOrNull()
     if (vInfixDecl != null) {
         val vRecvType = inferExprType(e.left) // receiver type string

@@ -18,13 +18,10 @@ data class Pair<A, B>(
     val second: B
 )
 
-/**
- * Creates a Pair from this and [that] using the infix toStd operator.
- * The `to` BinExpr operator is handled directly by the code generator (Phase 4).
- * A `to` extension function is intentionally left out; the BinExpr handler calls
- * Pair_primaryConstructor directly when the stdlib Pair class is active.
- */
-infix fun <A, B> A.toStd(that: B): Pair<A, B> = Pair(this, that)
+/* Creates a Pair from this and [that] using the infix `to` operator.
+Resolves through the normal inline-extension dispatch path — there's
+no special-cased BinExpr handler. */
+infix fun <A, B> A.to(that: B): Pair<A, B> = Pair(this, that)
 
 /**
  * Converts this pair into a list, backed by [allocator].

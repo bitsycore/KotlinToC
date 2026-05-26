@@ -114,12 +114,14 @@ class InfixUnitTest : TranspilerTestBase() {
 		vR.sourceNotContains("test_Main_duoWith") // no regular function emitted
 	}
 
-	// ── stdlib toStd infix via transpileWithStdlib ───────────────────
+	// ── stdlib `to` infix via transpileWithStdlib ────────────────────
+	// `to` is a normal infix extension function in Tuples.kt now — no
+	// special-cased BinExpr handler. These tests guard the dispatch path.
 
-	@Test fun stdlibToStdInfixProducesStdPairType() {
+	@Test fun stdlibToInfixProducesStdPairType() {
 		val vR = transpileMainWithStdlib(
 			body = """
-				val p = 1 toStd "hello"
+				val p = 1 to "hello"
 				println(p.first)
 				println(p.second)
 			""")
@@ -129,10 +131,10 @@ class InfixUnitTest : TranspilerTestBase() {
 		vR.sourceContains("ktc_std_Pair_Int_String \$ir")
 	}
 
-	@Test fun stdlibToStdFirstAndSecondAccess() {
+	@Test fun stdlibToFirstAndSecondAccess() {
 		val vR = transpileMainWithStdlib(
 			body = """
-				val p = 42 toStd "world"
+				val p = 42 to "world"
 			""")
 		vR.headerContains("ktc_std_Pair_Int_String")
 	}
