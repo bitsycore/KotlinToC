@@ -27,7 +27,6 @@ data class Vec3(val x: Float, val y: Float, val z: Float) {
     constructor(x: Int, y: Int, z: Int) : this(x.toFloat(), y.toFloat(), z.toFloat())
     constructor() : this(0.0f, 0.0f, 0.0f) {
         println("Vec3 empty ctor body executed")
-        error("ERROR ahaha")
     }
 }
 
