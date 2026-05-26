@@ -243,8 +243,10 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams)
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
-				if (m.returnType != null && m.returnType.isRawArray()) {
-					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
+				// Mirror the function-level rule: inline methods may return bare
+				// Array<T> since the body's stack array lands in the caller's frame.
+				if (m.returnType != null && m.returnType.isRawArray() && !m.isInline) {
+					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>>, @Size(N) Array<T>, or mark the method `inline`.")
 					}
 				if (m.isOperator) {
 					val vExpected = kOperatorArity[m.name]
@@ -343,8 +345,10 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				}
 			val oi = ObjInfo(d.name, vObjProps)
 			for (m in d.members) if (m is FunDecl) {
-				if (m.returnType != null && m.returnType.isRawArray()) {
-					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
+				// Mirror the function-level rule: inline methods may return bare
+				// Array<T> since the body's stack array lands in the caller's frame.
+				if (m.returnType != null && m.returnType.isRawArray() && !m.isInline) {
+					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>>, @Size(N) Array<T>, or mark the method `inline`.")
 					}
 				oi.methods += m
 				if (funSigs[m.name] == null) funSigs[m.name] = FunSig(m.params, m.returnType)
@@ -400,8 +404,13 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				collectDecl(d.copy(receiver = normRecv, params = normParams))
 				return
 			}
-			if (d.returnType != null && d.returnType.isRawArray()) {
-				codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
+			// Bare Array<T> returns dangle the same way bare String returns do —
+			// the underlying buffer lives in the callee's frame and dies at exit.
+			// Inline functions are exempt (body is expanded into the caller's
+			// frame, so the array storage lives in scope long enough for the
+			// caller to consume it). Mirrors the String return rule.
+			if (d.returnType != null && d.returnType.isRawArray() && !d.isInline) {
+				codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use Ref<Array<T>>, @Size(N) Array<T>, or mark the function `inline`.")
 				}
 			if (d.returnType != null && d.returnType.name == "Any" && !d.returnType.isRefType()) {
 				codegenError("Function '${d.name}' cannot return value-type 'Any'. Use Ref<Any> instead")
@@ -428,6 +437,13 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			if (d.returnType != null && d.returnType.funcParams != null && !d.isInline) {
 				codegenError("Function '${d.name}' returns a function type (lambda) — not supported outside inline functions. " +
 					"Mark '${d.name}' as `inline` so its body is expanded at the call site (KTC has no closure heap allocation).")
+			}
+			// inline + vararg: inline expansion doesn't reify the vararg array on
+			// a frame the body can scan over — KTC's vararg lowering needs a real
+			// stack-allocated slot per arg group. The combination silently
+			// produces incorrect C.
+			if (d.isInline && d.params.any { it.isVararg }) {
+				codegenError("Function '${d.name}' cannot be both 'inline' and have a vararg parameter — KTC's inline expansion has no stack frame to reify the vararg array.")
 			}
 			// Operator function arity: Kotlin pins operator-name arities, and a
 			// mismatched signature would produce a method that's never callable

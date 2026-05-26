@@ -59,6 +59,12 @@ void ktc_core_stacktrace_print(const char* message, int messageLen, const char* 
  * lvalue/rvalue without sequence-point gymnastics. */
 ktc_Int ktc_core_bounds_check(const char* fileName, int fileNameLen, int line, ktc_Int idx, ktc_Int len);
 
+/** When --check-null is enabled (default ON), every `p.refValue` /
+ * `p.refValue = x` access routes through this helper before the
+ * dereference. Null pointers print a Kotlin-style stack trace and exit.
+ * Returns void so it can be used as the LHS of a comma operator. */
+void ktc_core_null_check(const void* p, const char* fileName, int fileNameLen, int line);
+
 // ══════════════════════════════════════════════════════════════════
 // MARK: Time
 // ══════════════════════════════════════════════════════════════════

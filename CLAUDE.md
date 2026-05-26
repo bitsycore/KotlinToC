@@ -40,8 +40,14 @@ Targets embedded/game/systems code.
 - Take a reference: `val.asRef()` → `&val` (returns `Ref<T>`).
 - Crossing the `Ref<T>` ↔ `T` boundary at var-decl/assignment requires explicit `.asRef()` or `.refValue`. Implicit conversions are rejected with a fix-it pointing at the right form. Null literals, interface receivers (already wrapped in `ktc_IfacePtr`), and array-element pointers are exempt.
 
-## String return safety
-- Non-inline functions returning bare `String` are refused when the body builds the result at runtime (concat, template). The buffer would die at function exit; require `Ref<String>`, `@Size(N) String`, or mark the function `inline`. Literal-only bodies (every yield is a `StrLit`) and `String?` returns are allowed.
+## String and Array return safety
+`String` is `{ const ktc_Char* ptr; ktc_Int len; }`; `Array<T>` is `{ T* ptr; ktc_Int len; }`. **Both are passed by value as a struct copy — the struct (ptr+len) is duplicated, the underlying bytes are shared**. Behaves like C++'s `string_view` / Rust's `&str`: ~16-byte copy, no allocation, callee sees the same backing buffer.
+
+Because the backing buffer is shared, **returning a freshly-built one from a non-inline function would dangle**. Same rule for both:
+- **`String`**: bare returns are refused unless the function is `inline`, named `toString`, or its body returns only `StrLit`s (those point at `.rodata`). Otherwise use `Ref<String>` or `@Size(N) String`. `String?` returns are allowed.
+- **`Array<T>` / `IntArray` / etc.**: bare returns are refused unless the function is `inline` (the inline body's stack array lands in the caller's frame, same logic as inline String concat). Otherwise use `Ref<Array<T>>` or `@Size(N) Array<T>`.
+
+Conceptually: both types are slice-views. Passing them is cheap, but the callee never owns the data.
 
 ## Strings
 - `String` is a value struct `{ const ktc_Char* ptr; ktc_Int len; }` — immutable view, no NUL-termination assumed. Literals point at `.rodata`.
@@ -57,11 +63,14 @@ Targets embedded/game/systems code.
 - `Array<T>.asRaw()` → `RawArray<T>` (alias, no copy); `RawArray<T>.asArray(n)` → `Ref<Array<T>>` (alias plus length tag).
 - Functions can return `@Size(N) T` arrays by value (struct return), but cannot return bare `Array<T>` or `RawArray<T>` — the underlying buffer would dangle. Use `Ref<Array<T>>` (heap-backed) or `@Size(N)` (stack struct).
 
-## Bounds checking
-- **Default ON.** Every `arr[i]` / `s[i]` for an `Array<T>`, `String`, or `@Size(N)` array routes through `ktc_core_bounds_check(file, line, idx, len)`. Out-of-range access prints a Kotlin-style `ArrayIndexOutOfBoundsException` with a stack trace and exits.
-- **Static check** also fires when the index is a literal AND the length is statically known (`@Size(N)` types, string literals). Emits a `WARNING [file:line]: array index N is out of bounds for length M` at transpile time.
-- **Opt out with `--no-check-bounds`** — strips the runtime wrap for hot loops where you've already verified ranges. Out-of-range is UB (raw C pointer arithmetic).
-- `RawArray<T>` (bare `T*`) carries no length and is never bounds-checked, regardless of the flag.
+## Runtime safety checks
+Two safety nets default-ON, each with an opt-out flag. They emit calls to `ktc_core_*_check` helpers that print a Kotlin-style stack trace and exit on violation.
+
+**Bounds check** — every `arr[i]` / `s[i]` for `Array<T>`, `String`, or `@Size(N)` routes through `ktc_core_bounds_check(file, line, idx, len)`. Static-warning sibling fires at transpile time when the index is a literal AND length is statically known (`@Size(N)`, string literals). Opt out with `--no-check-bounds`. `RawArray<T>` (bare `T*`) carries no length and is never bounds-checked.
+
+**Null-deref check** — every `p.refValue` / `p.refValue = x` is preceded by `ktc_core_null_check(p, file, line)` which exits with `NullPointerException` if `p` is NULL. The static analysis already refuses bare `.refValue` on a statically-nullable `Ref<T?>` (forces `?.refValue`), so this catches the harder cases — allocator failure returning NULL, dangling pointer becomes NULL, etc. Opt out with `--no-check-null`.
+
+Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since default is already ON) for explicit-intent clarity.
 
 ## Operator overloading
 - `operator fun` arities are enforced at transpile time: `plus`/`minus`/`times`/`div`/`rem` take 1 arg, unaries (`unaryPlus`/`unaryMinus`/`not`/`inc`/`dec`) take 0, `compareTo`/`contains`/`rangeTo` take 1, iterator protocol (`iterator`/`hasNext`/`next`) takes 0, `equals` takes 1.

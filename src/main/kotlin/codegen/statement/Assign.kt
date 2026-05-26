@@ -7,6 +7,7 @@ import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.codegen.emit.registerClassFields
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.genLValue
+import com.bitsycore.ktc.codegen.expression.nullCheckStmt
 import com.bitsycore.ktc.types.KtcType
 
 // ── assignment ───────────────────────────────────────────────────
@@ -98,6 +99,8 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
             val recv  = genExpr(s.target.obj)
             val value = genExpr(s.value)
             flushPreStmts(ind)
+            // Null-check the pointer (when --check-null on) before writing through it.
+            if (checkNull) impl.appendLine("$ind${nullCheckStmt(recv)}")
             impl.appendLine("$ind*$recv = $value;")
             return
         }

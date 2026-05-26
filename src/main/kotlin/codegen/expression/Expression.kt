@@ -377,6 +377,31 @@ internal fun CCodeGen.wrapBoundsIdx(inIdxExpr: String, inLen: String): String {
 	return "ktc_core_bounds_check($vFileC, $vFileLen, $currentStmtLine, ($inIdxExpr), ($inLen))"
 }
 
+// ══════════════════════════════════════════════════════════════════
+// MARK: Null-deref check (--check-null opt-in)
+// ══════════════════════════════════════════════════════════════════
+
+/* Read-side wrapper: emits the null check as a preStmt so the returned
+expression stays a plain lvalue (`*p`) — important when the caller writes
+patterns like `&p.refValue` which need an lvalue operand. Returns the raw
+deref expression unchanged on --no-check-null. */
+internal fun CCodeGen.wrapNullCheck(inPtrExpr: String, inDerefExpr: String): String {
+	if (!checkNull) return inDerefExpr
+	preStmts += nullCheckStmt(inPtrExpr)
+	return inDerefExpr
+}
+
+/* Statement-form null check, used before `*p = x` assignment lowering or
+as a preStmt before a read-side deref. Returns a single C statement
+(terminated with `;`). No-op string when --check-null is off. */
+internal fun CCodeGen.nullCheckStmt(inPtrExpr: String): String {
+	if (!checkNull) return ""
+	val vFile = currentSourceFile
+	val vFileC = "\"${vFile.replace("\\", "\\\\")}\""
+	val vFileLen = vFile.length
+	return "ktc_core_null_check((const void*)($inPtrExpr), $vFileC, $vFileLen, $currentStmtLine);"
+}
+
 /* Compile-time bounds check: if inIdx is a literal IntLit AND the array's
 length is statically known (sized arrays, string literals), validates the
 range and emits a warning (negative or >= length). Stays silent otherwise.

@@ -108,12 +108,12 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Enum .name → lookup in names array
     if (e.name == "name" && vOrdinalEnumInfo != null) return "${vOrdinalEnumInfo.flatName}_names[($recv)]"
 
-    // p.refValue → dereference pointer (*p)
+    // p.refValue → dereference pointer (*p), optionally guarded by --check-null
     if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) {
         val inner = (recvTypeCoreKtc as KtcType.Ptr).inner
         if (inner is KtcType.User && objects.containsKey(inner.baseName))
             codegenError("Cannot access .refValue on object '${inner.baseName}' — objects are always Ref")
-        return "(*$recv)"
+        return wrapNullCheck(recv, "(*$recv)")
     }
 
     // p->field (auto-deref through pointer)

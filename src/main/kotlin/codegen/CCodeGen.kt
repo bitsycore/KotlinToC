@@ -19,7 +19,7 @@ internal fun relIncludePath(inFromDir: String, inToPath: String): String {
 	return if (vUps == 0) vDown else "../".repeat(vUps) + vDown
 }
 
-internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val checkBounds: Boolean = true, val sourceFileName: String = "") : SymbolReader {
+internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val checkBounds: Boolean = true, val checkNull: Boolean = true, val sourceFileName: String = "") : SymbolReader {
 
     // ── Package prefix ───────────────────────────────────────────────
     override val prefix: String = file.pkg?.replace('.', '_')?.plus("_") ?: ""

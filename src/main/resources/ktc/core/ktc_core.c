@@ -911,6 +911,17 @@ ktc_Int ktc_core_bounds_check(const char* fileName, int fileNameLen, int line, k
     exit(1);
 }
 
+/* Null-pointer guard called before every `p.refValue` / `p.refValue = x`
+ * lowering when --check-null is on. Returns silently on a valid pointer,
+ * prints a stack trace and exits on NULL. */
+void ktc_core_null_check(const void* p, const char* fileName, int fileNameLen, int line)
+{
+    if (p) return;
+    const char* vMsg = "NullPointerException: cannot dereference a null Ref<T?>";
+    ktc_core_stacktrace_print(vMsg, (int)strlen(vMsg), fileName, fileNameLen, line);
+    exit(1);
+}
+
 // ══════════════════════════════════════════════════════════════════
 // MARK: Initialization
 // ══════════════════════════════════════════════════════════════════
