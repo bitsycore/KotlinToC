@@ -77,10 +77,10 @@ private fun CCodeGen.resolveAllocatorForClassAlloc(inCall: CallExpr, inAllocExpr
 private fun CCodeGen.emitAllocWithConstruct(cName: String, ifExpr: String, ifaceCreated: Boolean, isTrampoline: Boolean, ctorArgs: String): String {
 	val vTPtr = tmp()
 	if (ifaceCreated || isTrampoline) {
+		// ktc_IfacePtr trampoline: self pointer is .obj (direct concrete object pointer)
 		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)((ktc_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
-		} else if (ifaceUsesPointerLayout("Allocator")) {
-		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)$ifExpr.vt->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
 		} else {
+		// Union-layout interface: self pointer is &.data (start of union = concrete object)
 		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)$ifExpr.vt->allocMem((void*)&$ifExpr.data, sizeof($cName), ${ktSrcStr()});"
 		}
 	preStmts += "if (${vTPtr}_ptr) *${vTPtr}_ptr = ${cName}_primaryConstructor($ctorArgs);"

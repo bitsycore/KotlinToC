@@ -33,12 +33,16 @@ private fun CCodeGen.emitBlockIntoTempBase(b: Block, indent: String, assignLast:
 /** Emit block statements into preStmts, wrapping the last expression into an interface struct. */
 internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concreteType: String, ifaceName: String, indent: String) {
     val cConcrete = typeFlatName(concreteType)
-    val impls     = interfaceImplementors[ifaceName] ?: emptyList()
-    val dataName  = ifaceDataName(concreteType)
-    val fieldPath = if (ifaceUsesPointerLayout(ifaceName)) ".$dataName" else ".data.$dataName"
+    val crossPkg = isImplCrossPkg(ifaceName, concreteType)
     emitBlockIntoTempBase(b, indent) { expr ->
         val valExpr = genExpr(expr)
-        preStmts += "$indent$tempVar$fieldPath = $valExpr;"
+        if (crossPkg) {
+            val cType = if (objects.containsKey(concreteType)) "${cConcrete}_t" else cConcrete
+            preStmts += "${indent}*($cType*)&$tempVar.data = $valExpr;"
+        } else {
+            val dataName = ifaceDataName(concreteType)
+            preStmts += "$indent$tempVar.data.$dataName = $valExpr;"
+        }
         preStmts += "$indent$tempVar.vt = &${cConcrete}_${ifaceName}_vt;"
         }
     }

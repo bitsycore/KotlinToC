@@ -53,21 +53,34 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     hdr.appendLine("#define KTC_OPT_TYPE_NAME $vOptName")
     hdr.appendLine("KTC_TYPE_ID(${typeIds[info.name]!!})")
 
-    // Check if all implementors are in the same package (safe for by-value union embedding).
-    // Cross-package implementors can't be in the union (their struct isn't defined yet).
-    val hasCrossPkgImpls = impls.any {
+    // Same-package implementors go in the union by name.
+    // Cross-package implementors are covered by a char __buf[] sized to fit them.
+    val samePkgImpls = impls.filter {
+        val vImplPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
+        vImplPkg == prefix || vImplPkg == info.pkg
+    }
+    val crossPkgImpls = impls.filter {
         val vImplPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
         vImplPkg != prefix && vImplPkg != info.pkg
     }
-    val useUnion = impls.isNotEmpty() && !hasCrossPkgImpls
-    if (useUnion) {
+
+    if (samePkgImpls.isNotEmpty() || crossPkgImpls.isNotEmpty()) {
         hdr.appendLine()
         hdr.appendLine("#define CLS_TYPES(X) \\")
-        for ((i, impl) in impls.withIndex()) {
+        for ((i, impl) in samePkgImpls.withIndex()) {
             val vType = implCType(impl)
             val vName = typeFlatName(impl)
-            if (i < impls.size - 1) hdr.appendLine("    X($vType, $vName) \\")
-            else hdr.appendLine("    X($vType, $vName)")
+            val trail = if (i < samePkgImpls.size - 1 || crossPkgImpls.isNotEmpty()) " \\" else ""
+            hdr.appendLine("    X($vType, $vName)$trail")
+        }
+        if (crossPkgImpls.isNotEmpty()) {
+            val maxCrossPkgSize = crossPkgImpls.maxOf { estimateCStructSize(it) }
+            val bufSize = maxOf(maxCrossPkgSize, 8)
+            // Ensure buffer alignment via a void* member alongside the char buf
+            if (samePkgImpls.isEmpty())
+                hdr.appendLine("    X(struct { void* __align; char __buf[${bufSize}]; }, __cross_pkg)")
+            else
+                hdr.appendLine("    X(struct { void* __align; char __buf[${bufSize}]; }, __cross_pkg)")
         }
     }
 
@@ -77,18 +90,19 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     val allProps = collectAllIfaceProperties(info)
     val vtableHasDispose = allMethods.any { it.name == "dispose" }
 
-    if (useUnion) {
+    if (samePkgImpls.isNotEmpty() || crossPkgImpls.isNotEmpty()) {
         hdr.appendLine("KTC_INTERFACE({")
         emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
         hdr.appendLine("}, CLS_TYPES);")
     } else {
-        // Pointer-based layout: used when there are cross-package implementors or none at all
+        // No implementors at all — emit minimal struct with just vtable pointer
         hdr.appendLine("typedef struct ${cName}_vt {")
         emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
         hdr.appendLine("} ${cName}_vt;")
         hdr.appendLine()
         hdr.appendLine("typedef struct $cName {")
-        hdr.appendLine("    void* obj;")
+        hdr.appendLine("    int __typeId;")
+        hdr.appendLine("    union { void* __ptr; } data;")
         hdr.appendLine("    const ${cName}_vt* vt;")
         hdr.appendLine("} $cName;")
         hdr.appendLine("typedef struct { ktc_OptionalTag tag; $cName value; } $vOptName;")
@@ -97,7 +111,7 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     hdr.appendLine()
     hdr.appendLine("#undef KTC_TYPE_NAME")
     hdr.appendLine("#undef KTC_OPT_TYPE_NAME")
-    if (useUnion) hdr.appendLine("#undef CLS_TYPES")
+    if (samePkgImpls.isNotEmpty() || crossPkgImpls.isNotEmpty()) hdr.appendLine("#undef CLS_TYPES")
 
     hdr.appendLine(classBlockFooter("interface", vBaseName, vDisplayArgs))
 }

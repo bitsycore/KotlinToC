@@ -105,19 +105,12 @@ internal fun CCodeGen.ifaceAsInit(
 	className: String,
 	ifaceName: String
 	): String {
-	val vImpls    = interfaceImplementors[ifaceName]
 	val vDataName = ifaceDataName(className)
 	val vTypeIdField = ".__typeId = ${cClass}_TYPE_ID"
-	val vHasCrossPkgImpls = vImpls?.any {
-		val vImplPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
-		val vIfacePkg = interfaces[ifaceName]?.pkg ?: ""
-		vImplPkg != vIfacePkg
-	} ?: false
-	val vUsePointer = vImpls.isNullOrEmpty() || vHasCrossPkgImpls
-	return when {
-		vUsePointer -> "($cIface){(void*)\$self, &${cClass}_${ifaceName}_vt}"
-		else -> "($cIface){$vTypeIdField, .data.$vDataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
-		}
+	return if (isImplCrossPkg(ifaceName, className))
+		"($cIface){$vTypeIdField, .vt = &${cClass}_${ifaceName}_vt}"
+	else
+		"($cIface){$vTypeIdField, .data.$vDataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
 	}
 
 /* Emit vtables for a concrete class implementing the given super interfaces.
@@ -185,9 +178,18 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(
 				}
 			}
 		if (!declsOnly) {
+			if (isImplCrossPkg(vIfaceName, className)) {
+				impl.appendLine("_Static_assert(sizeof($vCSelfType) <= sizeof((($vCIface*)0)->data), \"$vCSelfType too large for $vCIface union\");")
+			}
 			impl.appendLine("$vCIface ${vCClass}_as_${vIfaceName}($vCSelfPtr \$self) {")
 			if (vIsObject) impl.appendLine("    (void)\$self;")
-			impl.appendLine("    return ${ifaceAsInit(vCIface, vCClass, className, vIfaceName)};")
+			if (isImplCrossPkg(vIfaceName, className)) {
+				impl.appendLine("    $vCIface __r = ${ifaceAsInit(vCIface, vCClass, className, vIfaceName)};")
+				impl.appendLine("    memcpy(&__r.data, \$self, sizeof($vCSelfType));")
+				impl.appendLine("    return __r;")
+			} else {
+				impl.appendLine("    return ${ifaceAsInit(vCIface, vCClass, className, vIfaceName)};")
+			}
 			impl.appendLine("}")
 			impl.appendLine()
 			}
@@ -227,7 +229,13 @@ internal fun CCodeGen.emitTransitiveInterfaceVtables(
 		// Emit vtable and as_SuperName cast
 		emitVtable(cClass, vCSuper, vSuperName, className, vSuperProps, vSuperMethods)
 		impl.appendLine("$vCSuper ${cClass}_as_${vSuperName}($cClass* \$self) {")
-		impl.appendLine("    return ${ifaceAsInit(vCSuper, cClass, className, vSuperName)};")
+		if (isImplCrossPkg(vSuperName, className)) {
+			impl.appendLine("    $vCSuper __r = ${ifaceAsInit(vCSuper, cClass, className, vSuperName)};")
+			impl.appendLine("    memcpy(&__r.data, \$self, sizeof($cClass));")
+			impl.appendLine("    return __r;")
+		} else {
+			impl.appendLine("    return ${ifaceAsInit(vCSuper, cClass, className, vSuperName)};")
+		}
 		impl.appendLine("}")
 		impl.appendLine()
 

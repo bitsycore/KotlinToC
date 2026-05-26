@@ -381,12 +381,16 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 ) {
                     val cExprType = typeFlatName(exprType)
                     val cIface = typeFlatName(retIface)
-                    val impls = interfaceImplementors[retIface] ?: emptyList()
-                    val dataName = ifaceDataName(exprType)
-                    val fieldPath = if (ifaceUsesPointerLayout(retIface)) ".$dataName" else ".data.$dataName"
+                    val crossPkg = isImplCrossPkg(retIface, exprType)
                     val t = tmp()
                     impl.appendLine("$ind${cIface} $t;")
-                    impl.appendLine("$ind$t$fieldPath = $expr;")
+                    if (crossPkg) {
+                        val cType = if (objects.containsKey(exprType)) "${cExprType}_t" else cExprType
+                        impl.appendLine("$ind*($cType*)&$t.data = $expr;")
+                    } else {
+                        val dataName = ifaceDataName(exprType)
+                        impl.appendLine("$ind$t.data.$dataName = $expr;")
+                    }
                     impl.appendLine("$ind$t.vt = &${cExprType}_${retIface}_vt;")
                     impl.appendLine("${ind}return $t;")
                 } else {

@@ -366,14 +366,56 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun enumInfoFor(inType: KtcType?): EnumInfo? =      // EnumInfo if type is an enum class
         (inType as? KtcType.User)?.decl as? EnumInfo
 
-    // True when an interface uses pointer-based layout (cross-package implementors exist)
-    internal fun ifaceUsesPointerLayout(ifaceName: String): Boolean {
-        val impls = interfaceImplementors[ifaceName] ?: return true
-        if (impls.isEmpty()) return true
-        val ifacePkg = interfaces[ifaceName]?.pkg ?: return true
+    // True when an interface has implementors from a different package than the interface itself
+    internal fun ifaceHasCrossPkgImpls(ifaceName: String): Boolean {
+        val impls = interfaceImplementors[ifaceName] ?: return false
+        if (impls.isEmpty()) return false
+        val ifacePkg = interfaces[ifaceName]?.pkg ?: return false
         return impls.any {
             val implPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
             implPkg != ifacePkg
+        }
+    }
+
+    // True when a specific implementor is in a different package than its interface
+    internal fun isImplCrossPkg(ifaceName: String, implName: String): Boolean {
+        val ifacePkg = interfaces[ifaceName]?.pkg ?: return false
+        val implPkg = classes[implName]?.pkg ?: objects[implName]?.pkg ?: ""
+        return implPkg != ifacePkg
+    }
+
+    // Upper-bound estimate of the C struct size for a class/object.
+    // Each field is rounded up to its alignment, and the total is rounded
+    // up to pointer alignment (8). Always >= the real sizeof.
+    internal fun estimateCStructSize(className: String): Int {
+        val props = classes[className]?.properties ?: objects[className]?.properties ?: return 8
+        var size = 0
+        for (p in props) {
+            val tName = resolveTypeName(p.typeRef).toInternalStr
+            val (fieldSize, fieldAlign) = estimateTypeSizeAlign(tName)
+            size = (size + fieldAlign - 1) / fieldAlign * fieldAlign + fieldSize
+        }
+        return (size + 7) / 8 * 8   // round up to 8-byte (pointer) alignment
+    }
+
+    // Returns (size, alignment) for a C type
+    private fun estimateTypeSizeAlign(typeName: String): Pair<Int, Int> {
+        if (typeName.startsWith("@Ptr ") || typeName.endsWith("?")) return Pair(8, 8)
+        return when (typeName) {
+            "Byte", "UByte"                           -> Pair(1, 1)
+            "Short", "UShort"                         -> Pair(2, 2)
+            "Int", "UInt", "Float", "Bool", "Char"   -> Pair(4, 4)
+            "Long", "ULong", "Double"                 -> Pair(8, 8)
+            "String"                                  -> Pair(16, 8)
+            "AnyPtr"                                  -> Pair(8, 8)
+            else -> {
+                if (enums.containsKey(typeName)) Pair(4, 4)
+                else if (interfaces.containsKey(typeName)) Pair(32, 8)
+                else {
+                    val s = estimateCStructSize(typeName)
+                    Pair(s, 8)
+                }
+            }
         }
     }
 
@@ -498,8 +540,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Generates the C expression to access the union data field for a narrowed interface variable. */
     internal fun ifaceUnionAccess(inIfaceName: String, inNarrowedClass: String, inRecv: String): String
         {
-        val vDataName = "${typeFlatName(inNarrowedClass)}_data"     // e.g. "IsAsTest_Circle_data"
-        return if (ifaceUsesPointerLayout(inIfaceName)) "$inRecv.$vDataName" else "$inRecv.data.$vDataName"
+        return if (isImplCrossPkg(inIfaceName, inNarrowedClass))
+            "(*(${typeFlatName(inNarrowedClass)}*)&$inRecv.data)"
+        else {
+            val vDataName = "${typeFlatName(inNarrowedClass)}_data"
+            "$inRecv.data.$vDataName"
+            }
         }
 
     /*
@@ -512,10 +558,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun ifaceVtableSelf(inIfaceName: String, inRecv: String, isPtr: Boolean = false): String
         {
         val deref = if (isPtr) "->" else "."
-        return if (ifaceUsesPointerLayout(inIfaceName))
-            "$inRecv${deref}obj"
-        else
-            "(void*)&$inRecv${deref}data"
+        return "(void*)&$inRecv${deref}data"
         }
 
     /* True if type is a function pointer type: "Fun(P1,P2)->R" */
