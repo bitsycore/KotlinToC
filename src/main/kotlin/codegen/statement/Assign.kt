@@ -117,6 +117,14 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     val varKtc = if (varType != null) parseResolvedTypeName(varType) else null
     val isAnyPtrNullVar = varKtc is KtcType.Nullable && varKtc.inner is KtcType.Ptr
 
+    // Pointer↔value boundary: reassignment of a known-typed local must not silently
+    // cross between Ptr<T> and T. Class-field DotExpr targets and IndexExpr targets
+    // are handled by other branches above, so this only covers NameExpr targets.
+    if (s.target is NameExpr && varKtc != null && s.op == "=") {
+        val vValKtc = inferExprTypeKtc(s.value)
+        checkPtrValueBoundary(TypeRef(varType!!), varKtc, vValKtc, s.value, "assignment to '$varName'")
+    }
+
     // Val reassignment check
     if (varName != null) {
         // Local variable

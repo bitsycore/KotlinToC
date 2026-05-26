@@ -121,6 +121,9 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     // Strip ? suffix for nullable types; it gets added back at defineVar and optCTypeName
     val t = if (inferredNullable) tRaw.removeSuffix("?") else tRaw
 
+    // Pointer↔value boundary: require explicit .ptr()/.value() when crossing.
+    if (s.type != null && s.init != null) checkPtrValueBoundary(s.type, vKtc, vKtcKtc, s.init, "variable '${s.name}'")
+
     // Size compatibility check for @Size(N) array assignments.
     if (s.type != null && s.init != null && s.type.isSizedArray()) {
         val vTargetSize = s.type.getSizeAnnotation()

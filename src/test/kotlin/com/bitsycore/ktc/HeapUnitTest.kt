@@ -394,4 +394,42 @@ class HeapUnitTest : TranspilerTestBase() {
         // The final expression is what writes the slot.
         r.sourceMatches(Regex("""_ptr\[i\] = \(doubled \+ 1\);"""))
     }
+
+    // ── Pointer↔value boundary check (Task 18) ──────────────────────
+
+    // Declaring a @Ptr T variable with a value-typed initializer is rejected:
+    // the user must write .ptr() explicitly.
+    @Test fun ptrDeclFromValueIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain("""
+                val v = Vec2(1.0f, 2.0f)
+                val p: @Ptr Vec2 = v
+            """, decls = vec2Decl)
+        }
+        assert(ex.message!!.contains("boundary")) { "expected boundary error, got: ${ex.message}" }
+        assert(ex.message!!.contains(".ptr()")) { "expected .ptr() fix-it, got: ${ex.message}" }
+    }
+
+    // Declaring a value T variable with a pointer-typed initializer is rejected:
+    // the user must write .value() explicitly.
+    @Test fun valueDeclFromPtrIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain("""
+                val v = Vec2(1.0f, 2.0f)
+                val p = v.ptr()
+                val w: Vec2 = p
+            """, decls = vec2Decl)
+        }
+        assert(ex.message!!.contains("boundary")) { "expected boundary error, got: ${ex.message}" }
+        assert(ex.message!!.contains(".value()")) { "expected .value() fix-it, got: ${ex.message}" }
+    }
+
+    // Explicit .ptr() at the boundary is accepted with no error.
+    @Test fun ptrDeclWithExplicitPtrIsOk() {
+        val r = transpileMain("""
+            val v = Vec2(1.0f, 2.0f)
+            val p: @Ptr Vec2 = v.ptr()
+        """, decls = vec2Decl)
+        r.sourceContains("Vec2* p =")
+    }
 }

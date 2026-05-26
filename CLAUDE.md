@@ -35,6 +35,7 @@ Targets embedded/game/systems code.
 - Read through a `@Ptr T`: `p.value()` → `*p` (no parens variant `p.value` reserved for assignment LHS).
 - Write through a `@Ptr T`: `p.value = x` → `*p = x;` (the old `p.set(x)` form is rejected — name was confusing).
 - `p?.value = x` is supported and expands to `if (p) *p = x;`.
+- Crossing the `@Ptr T` ↔ `T` boundary at var-decl/assignment requires explicit `.ptr()` or `.value()`. Implicit conversions are rejected with a fix-it pointing at the right form. Null literals, interface receivers (already wrapped in `ktc_IfacePtr`), and array-element pointers are exempt.
 
 ## String return safety
 - Non-inline functions returning bare `String` are refused when the body builds the result at runtime (concat, template). The buffer would die at function exit; require `@Ptr String`, `@Size(N) String`, or mark the function `inline`. Literal-only bodies (every yield is a `StrLit`) and `String?` returns are allowed.

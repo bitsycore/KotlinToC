@@ -8,6 +8,46 @@ import com.bitsycore.ktc.codegen.expression.inferInlineFunSubst
 import com.bitsycore.ktc.types.KtcType
 import kotlin.math.abs
 
+/* Crosses the @Ptr T ↔ T boundary check. Rejects an init/value whose KtcType
+disagrees with the declared/target type on whether it's a pointer. The user
+must use .ptr() or .value() explicitly. Skips array-element pointers (those
+are unavoidable because Array<T> internally carries a T*), null literals
+(NULL is a valid pointer value), interface receivers (their ktc_IfacePtr
+wrap/unwrap is already explicit elsewhere), and initializers that are
+themselves .ptr()/.value() calls (already explicit at the syntax level). */
+internal fun CCodeGen.checkPtrValueBoundary(
+	inDeclTypeRef: TypeRef,
+	inDeclKtc: KtcType,
+	inExprKtc: KtcType?,
+	inExpr: Expr,
+	inWhere: String,
+) {
+	if (inExprKtc == null) return
+	if (inExpr is NullLit) return
+	// Already-explicit conversion: .ptr() or .value() at the tail of the init expr.
+	if (inExpr is CallExpr && inExpr.callee is DotExpr) {
+		val vName = inExpr.callee.name
+		if (vName == "ptr" || vName == "value") return
+	}
+	val vDeclCore = inDeclKtc.stripNullable
+	val vExprCore = inExprKtc.stripNullable
+	val vDeclIsPtr = vDeclCore is KtcType.Ptr && vDeclCore.inner !is KtcType.Arr
+	val vExprIsPtr = vExprCore is KtcType.Ptr && vExprCore.inner !is KtcType.Arr
+	if (vDeclIsPtr == vExprIsPtr) return
+	// Interface values (ktc_IfacePtr) carry a pointer internally but type as User —
+	// allow them through the boundary without forcing .ptr()/.value() at the syntax
+	// level (the wrapping/unwrapping is already explicit in call/dispatch sites).
+	if (vDeclCore is KtcType.User && interfaces.containsKey(vDeclCore.baseName)) return
+	if (vExprCore is KtcType.User && interfaces.containsKey(vExprCore.baseName)) return
+	val vDeclName = inDeclKtc.toInternalStr
+	val vExprName = inExprKtc.toInternalStr
+	val vFix = if (vDeclIsPtr) ".ptr()" else ".value()"
+	codegenError(
+		"Pointer↔value boundary for $inWhere: declared '$vDeclName' but initializer is '$vExprName'. " +
+		"Use '$vFix' to make the conversion explicit."
+	)
+	}
+
 /* Statement dispatcher, block emitter and expression-statement emitter.
 Inline/lambda expansion lives in Inline.kt.
 Specialized handlers in other files:
