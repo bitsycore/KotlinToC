@@ -302,19 +302,27 @@ def run_streamed_capture(
 # MARK: Clean
 # ==================
 
-def _force_writable_and_retry(inFunc, inPath: str, _inExc) -> None:
+# Per-clean failure list. Populated by the rmtree exception handler with
+# (path, reason) tuples for each file/dir that couldn't be removed even after
+# the read-only retry. cmd_clean() reports the contents at the end of its run.
+_gCleanFailures: list[tuple[str, str]] = []
+
+def _force_writable_and_retry(inFunc, inPath: str, inExc) -> None:
 	# rmtree exception handler for Windows: cmake FetchContent dumps git pack
 	# files (*.idx, *.pack) into _cmake/_deps/ that are marked read-only, so
 	# os.unlink raises WinError 5 (Access denied). Strip the read-only bit and
-	# retry the operation. Compatible with both Python 3.12+ onexc signature
-	# and the older onerror signature (same arguments).
+	# retry the failing operation. Anything still failing after the retry is
+	# recorded so cmd_clean can surface it instead of silently leaving residue.
 	import stat
 	try:
 		os.chmod(inPath, stat.S_IWRITE)
 		inFunc(inPath)
-	except Exception:
-		# Best-effort: leave residual files but keep the overall clean going.
-		pass
+		return
+	except Exception as vE:
+		# inExc on Python 3.12+ is the exception object; on older versions it
+		# was the (exc_type, exc_value, tb) triple. Render whichever cleanly.
+		vOrig = inExc[1] if isinstance(inExc, tuple) and len(inExc) >= 2 else inExc
+		_gCleanFailures.append((inPath, f"{type(vOrig).__name__}: {vOrig}  (retry: {vE})"))
 
 def cmd_clean() -> int:
 	# Removes the out/ directory inside every integration test directory.
@@ -323,13 +331,34 @@ def cmd_clean() -> int:
 	# Python 3.12 renamed the rmtree callback from `onerror` to `onexc`; pick
 	# whichever the current interpreter supports so the script works on both.
 	vKw = "onexc" if sys.version_info >= (3, 12) else "onerror"
+	_gCleanFailures.clear()
 	for vT in find_test_dirs():
 		vOut = vT.fullPath / "out"
-		if vOut.is_dir():
-			shutil.rmtree(vOut, **{vKw: _force_writable_and_retry})
+		if not vOut.is_dir():
+			continue
+		vBefore = len(_gCleanFailures)
+		shutil.rmtree(vOut, **{vKw: _force_writable_and_retry})
+		if len(_gCleanFailures) == vBefore and not vOut.exists():
 			pwrite(f"{kGray}  removed {vOut}{kRst}")
 			vCleaned += 1
+		else:
+			# Something inside vOut couldn't be removed. Report it explicitly so
+			# the user knows the test wasn't fully cleaned.
+			pwrite(f"{kYellow}  partial  {vOut}{kRst}  {kGray}(see errors below){kRst}")
 	pwrite(f"{kGreen}Cleaned {vCleaned} test output directories.{kRst}")
+	if _gCleanFailures:
+		pwrite("")
+		pwrite(f"{kRed}{len(_gCleanFailures)} path(s) could not be removed:{kRst}")
+		# Cap at 20 to keep the report bounded for catastrophic cases.
+		for vPath, vReason in _gCleanFailures[:20]:
+			pwrite(f"{kRed}  - {vPath}{kRst}")
+			pwrite(f"{kGray}      {vReason}{kRst}")
+		if len(_gCleanFailures) > 20:
+			pwrite(f"{kGray}    ... and {len(_gCleanFailures) - 20} more{kRst}")
+		pwrite("")
+		pwrite(f"{kYellow}Hint:{kRst} a process may be holding the file open (running .exe,"
+		       f" antivirus, indexer). Close it and retry, or delete the directory by hand.")
+		return 1
 	return 0
 
 # ==================
