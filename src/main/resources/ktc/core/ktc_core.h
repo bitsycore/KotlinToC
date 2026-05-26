@@ -49,6 +49,17 @@ void ktc_core_mainInit(void);
 void ktc_core_stacktrace_print(const char* message, int messageLen, const char* fileName, int fileNameLen, int line);
 
 // ══════════════════════════════════════════════════════════════════
+// MARK: Bounds check (--check-bounds opt-in)
+// ══════════════════════════════════════════════════════════════════
+
+/** When --check-bounds is enabled, generated array accesses route through
+ * KTC_BOUNDS(arr, i, line) → this helper. Out-of-range indices print a
+ * stack trace and abort. Returns the index unchanged on success so the
+ * surrounding `(arr).ptr[KTC_BOUNDS_IDX(...)]` C expression stays a single
+ * lvalue/rvalue without sequence-point gymnastics. */
+ktc_Int ktc_core_bounds_check(const char* fileName, int fileNameLen, int line, ktc_Int idx, ktc_Int len);
+
+// ══════════════════════════════════════════════════════════════════
 // MARK: Time
 // ══════════════════════════════════════════════════════════════════
 

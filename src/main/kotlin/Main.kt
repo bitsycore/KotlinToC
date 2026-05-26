@@ -170,6 +170,8 @@ fun main(args: Array<String>) {
         System.err.println("  Transpiles Kotlin subset files to C11.")
         System.err.println("  A module.ktc.toml or directory containing one can be given instead of .kt files.")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
+        System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
+        System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
         System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
         System.err.println("  --double-dispose=ASSERT|LOG|NO  Double-dispose: abort / log+continue / ignore (default: NO)")
         System.err.println("  --main <qualified.name>      Select the entry point by qualified name (e.g. com.example.Main.run)")
@@ -189,6 +191,7 @@ fun main(args: Array<String>) {
     var memTrack = false
     var disposedMode = "NO"        // ASSERT | LOG | NO
     var doubleDisposeMode = "NO"   // ASSERT | LOG | NO
+    var checkBounds = true         // runtime bounds check on every array[] access (default ON; --no-check-bounds disables)
     var mainOverride: String? = null  // --main qualified.name
     var nameOverride: String? = null  // --name exe-name
     var dumpAst = false
@@ -203,6 +206,12 @@ fun main(args: Array<String>) {
             i += 2
         } else if (args[i] == "--mem-track") {
             memTrack = true
+            i++
+        } else if (args[i] == "--check-bounds") {
+            checkBounds = true   // no-op when default is ON, kept for backwards compat / explicit intent
+            i++
+        } else if (args[i] == "--no-check-bounds") {
+            checkBounds = false
             i++
         } else if (args[i].startsWith("--disposed=")) {
             disposedMode = args[i].removePrefix("--disposed=").uppercase()
@@ -505,6 +514,7 @@ fun main(args: Array<String>) {
                 memTrack = memTrack,
                 disposedMode = disposedMode,
                 doubleDisposeMode = doubleDisposeMode,
+                checkBounds = checkBounds,
                 sourceFileName = srcName
             ).generate()
         } catch (e: Exception) {

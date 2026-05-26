@@ -51,11 +51,17 @@ Targets embedded/game/systems code.
 - `StringBuffer` (mutable: `{ ktc_Char* ptr; ktc_Int len; ktc_Int cap; }`) requires a caller-provided backing buffer: `StringBuffer(charArray.ptr(), 0)`. With `ptr=NULL` it runs in counting-only mode (no writes, just `len` accumulates) so you can size a real buffer in a second pass.
 
 ## Arrays
-- `Array<T>` is a `VarArr` struct `{ T* ptr; ktc_Int len; }` — variable-length, header carries the count. `arr.size` reads `.len`, `arr[i]` reads `.ptr[i]`. **No runtime bounds check** in release mode; out-of-range index is UB.
-- `RawArray<T>` is bare `T*` — a reference type with no length, no `.size`. Use when you already track the length elsewhere (FFI, fixed-size protocols).
+- `Array<T>` is a `VarArr` struct `{ T* ptr; ktc_Int len; }` — variable-length, header carries the count. `arr.size` reads `.len`, `arr[i]` reads `.ptr[i]`.
+- `RawArray<T>` is bare `T*` — a reference type with no length, no `.size`. Use when you already track the length elsewhere (FFI, fixed-size protocols). **Not bounds-checked** — there's no length to check against.
 - `@Size(N) Array<T>` / `@Size(N) IntArray` is a fixed-size struct `{ T arr[N]; }` — lives entirely on the caller's stack, no heap. Pass by value. Assigning a larger source warns and inserts an implicit `.copyOf(N)` truncation (data loss).
 - `Array<T>.asRaw()` → `RawArray<T>` (alias, no copy); `RawArray<T>.asArray(n)` → `Ref<Array<T>>` (alias plus length tag).
 - Functions can return `@Size(N) T` arrays by value (struct return), but cannot return bare `Array<T>` or `RawArray<T>` — the underlying buffer would dangle. Use `Ref<Array<T>>` (heap-backed) or `@Size(N)` (stack struct).
+
+## Bounds checking
+- **Default ON.** Every `arr[i]` / `s[i]` for an `Array<T>`, `String`, or `@Size(N)` array routes through `ktc_core_bounds_check(file, line, idx, len)`. Out-of-range access prints a Kotlin-style `ArrayIndexOutOfBoundsException` with a stack trace and exits.
+- **Static check** also fires when the index is a literal AND the length is statically known (`@Size(N)` types, string literals). Emits a `WARNING [file:line]: array index N is out of bounds for length M` at transpile time.
+- **Opt out with `--no-check-bounds`** — strips the runtime wrap for hot loops where you've already verified ranges. Out-of-range is UB (raw C pointer arithmetic).
+- `RawArray<T>` (bare `T*`) carries no length and is never bounds-checked, regardless of the flag.
 
 ## Operator overloading
 - `operator fun` arities are enforced at transpile time: `plus`/`minus`/`times`/`div`/`rem` take 1 arg, unaries (`unaryPlus`/`unaryMinus`/`not`/`inc`/`dec`) take 0, `compareTo`/`contains`/`rangeTo` take 1, iterator protocol (`iterator`/`hasNext`/`next`) takes 0, `equals` takes 1.
@@ -73,7 +79,7 @@ Targets embedded/game/systems code.
 - No `inline value class` / `@JvmInline`.
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
 - No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.
-- No bounds check on `Array`/`RawArray` indexing.
+- `RawArray<T>` is never bounds-checked (no length carried). `Array<T>` / `String` / `@Size(N)` indexing IS checked by default — see "Bounds checking" above.
 - No visibility enforcement for `private`/`internal` across class boundaries (declared but not policed by codegen).
 - Parameters are not enforced read-only — `fun foo(x: Int) { x = 5 }` compiles even though Kotlin makes params `val`.
 - Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.

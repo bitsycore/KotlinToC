@@ -200,12 +200,16 @@ class StringUnitTest : TranspilerTestBase() {
 
     // ── String character indexing ───────────────────────────────────
 
+    // String indexing uses `s.ptr[…]`; with --check-bounds on (the default),
+    // the literal index is wrapped in ktc_core_bounds_check(...). Match the
+    // .ptr[ prefix so the test is independent of bounds-check rendering.
     @Test fun stringCharIndex() {
         val r = transpileMain("""
             val s = "hello"
             val ch: Char = s[0]
         """)
-        r.sourceContains("s.ptr[0]")
+        r.sourceContains("s.ptr[")
+        r.sourceContains("(0)")
     }
 
     @Test fun stringCharIndexVariable() {
@@ -214,7 +218,8 @@ class StringUnitTest : TranspilerTestBase() {
             val i = 2
             val ch = s[i]
         """)
-        r.sourceContains("s.ptr[i]")
+        r.sourceContains("s.ptr[")
+        r.sourceContains("(i)")
     }
 
     @Test fun stringCharIndexInExpression() {
@@ -222,7 +227,7 @@ class StringUnitTest : TranspilerTestBase() {
             val s = "abc"
             val isA = s[0] == 'a'
         """)
-        r.sourceContains("s.ptr[0]")
+        r.sourceContains("s.ptr[")
     }
 
     // ── String.substring ─────────────────────────────────────────────

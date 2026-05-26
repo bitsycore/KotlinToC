@@ -891,6 +891,26 @@ void ktc_core_mem_report(void) {}
 
 #endif /* KTC_MEM_TRACK */
 
+/* ════════════════════════════════════════════════════════════════════
+ * MARK: Bounds check (--check-bounds runtime helper)
+ * ════════════════════════════════════════════════════════════════════
+ * Inserted around each array/string subscript when --check-bounds is on.
+ * On out-of-range access, prints a Kotlin-style stack trace then exits.
+ * Returns the index unchanged on success so the surrounding C expression
+ * `(arr).ptr[ktc_core_bounds_check(...)]` stays a clean rvalue. */
+ktc_Int ktc_core_bounds_check(const char* fileName, int fileNameLen, int line, ktc_Int idx, ktc_Int len)
+{
+    if (idx >= 0 && idx < len) return idx;
+    char vMsg[128];
+    int  vMsgLen = snprintf(vMsg, sizeof vMsg,
+        "ArrayIndexOutOfBoundsException: index %lld out of bounds for length %lld",
+        (long long)idx, (long long)len);
+    if (vMsgLen < 0) vMsgLen = 0;
+    if (vMsgLen > (int)sizeof vMsg - 1) vMsgLen = (int)sizeof vMsg - 1;
+    ktc_core_stacktrace_print(vMsg, vMsgLen, fileName, fileNameLen, line);
+    exit(1);
+}
+
 // ══════════════════════════════════════════════════════════════════
 // MARK: Initialization
 // ══════════════════════════════════════════════════════════════════

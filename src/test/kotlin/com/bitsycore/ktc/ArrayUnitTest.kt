@@ -15,7 +15,10 @@ class ArrayUnitTest : TranspilerTestBase() {
             println(arr[0])
         """)
         r.sourceContains("ktc_Int arr_data[] = {10, 20, 30};")
-        r.sourceContains("arr.ptr[0]")
+        // Default-on --check-bounds wraps the index in ktc_core_bounds_check(...);
+        // match the prefix so the test isn't tied to the exact bounds-check form.
+        r.sourceContains("arr.ptr[")
+        r.sourceContains("(0)")
     }
 
     @Test fun intArraySize() {

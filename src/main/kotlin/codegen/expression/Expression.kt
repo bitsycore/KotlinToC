@@ -92,9 +92,14 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val objTypeCoreKtc = objTypeKtc.stripNullable  // KtcType? stripped Nullable
         val vIdxClassInfo = classInfoFor(objTypeCoreKtc)                              // non-null if object is a class
         val vIdxIfaceInfo = ifaceInfoFor(objTypeCoreKtc)                              // non-null if object is an interface
+        // Static bounds check: if index is a literal AND the array has a
+        // statically known size, validate at transpile time. Triggers for
+        // @Size(N) arrays and string literals where len is known.
+        staticBoundsCheck(e.obj, e.index, objTypeCoreKtc)
         if (objType == "String") {
             // String indexing: str[i] → str.ptr[i] (returns char)
-            "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
+            val vS = genExpr(e.obj)
+            "$vS.ptr[${wrapBoundsIdx(genExpr(e.index), "$vS.len")}]"
         } else if (vIdxClassInfo != null) {
             // Class with operator get() method → operator[] dispatch
             val methodDecl = vIdxClassInfo.methods.find { it.name == "get" && it.isOperator }
@@ -107,7 +112,8 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                     "${vIdxClassInfo.flatName}_get(&$recv, $idx)"
                 }
             } else {
-                "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
+                val vR = genExpr(e.obj)
+                "$vR.ptr[${wrapBoundsIdx(genExpr(e.index), "$vR.len")}]"
             }
         } else if (objTypeCoreKtc is KtcType.Ptr && objTypeCoreKtc.inner !is KtcType.Arr) {
             // Ptr<T>/Value<T> with operator get() → pointer-based dispatch
@@ -123,6 +129,8 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                     "${typeFlatName(baseName)}_get($recv, $idx)"
                 }
             } else {
+                // Bare T* pointer indexing — no .len carried; bounds-check is impossible.
+                // User opted into raw pointer arithmetic; warn statically only.
                 "${genExpr(e.obj)}[${genExpr(e.index)}]"
             }
         } else if (vIdxIfaceInfo != null) {
@@ -140,16 +148,32 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                     "$recv.vt->get($vIdxSelfArg, $idx)"
                 }
             } else {
-                "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
+                val vR = genExpr(e.obj)
+                "$vR.ptr[${wrapBoundsIdx(genExpr(e.index), "$vR.len")}]"
             }
         } else if (objTypeCoreKtc != null && objTypeCoreKtc.isArrayLike) {
             val vObjName       = (e.obj as? NameExpr)?.name                             // name of array expr (if any)
             val vIsTrampolined = vObjName != null && vObjName in trampolinedParams      // @Size trampolined param
-            val vIsSizedArr    = objTypeCoreKtc.asArr?.sized != null              // fixed-size C array
-            if (vIsTrampolined || vIsSizedArr) "${genExpr(e.obj)}[${genExpr(e.index)}]"
-            else "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
+            val vSizedN        = objTypeCoreKtc.asArr?.sized                            // fixed-size N (or null)
+            if (vIsTrampolined || vSizedN != null) {
+                val vA = genExpr(e.obj)
+                // Length resolution priority:
+                //   1. Trampolined sized param → local$name$len constant (the unpacked size).
+                //   2. Type carries @Size(N) → use the literal N.
+                //   3. Fallback to sizeof — only safe for true stack arrays (not pointers).
+                val vLen = when {
+                    vIsTrampolined && vObjName != null -> arrayParamSizeExpr(vObjName)
+                    vSizedN != null                    -> vSizedN.toString()
+                    else                                -> "(sizeof($vA)/sizeof(($vA)[0]))"
+                }
+                "$vA[${wrapBoundsIdx(genExpr(e.index), vLen)}]"
+            } else {
+                val vA = genExpr(e.obj)
+                "$vA.ptr[${wrapBoundsIdx(genExpr(e.index), "$vA.len")}]"
+            }
         } else {
-            "${genExpr(e.obj)}.ptr[${genExpr(e.index)}]"
+            val vR = genExpr(e.obj)
+            "$vR.ptr[${wrapBoundsIdx(genExpr(e.index), "$vR.len")}]"
         }
     }
 
@@ -333,4 +357,51 @@ private fun String.indentCount(): Int {
         if (c == ' ') count++ else if (c == '\t') count++ else break
     }
     return count
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MARK: Array bounds checking (static warnings + runtime check)
+// ══════════════════════════════════════════════════════════════════
+
+/* Wraps a runtime index expression with ktc_core_bounds_check when the
+checkBounds flag is on, returning a C expression that panics-then-exits on
+out-of-range access and returns the index unchanged otherwise. inLen is a C
+expression yielding the array's length (e.g. "arr.len" or a literal "8").
+When the flag is off, returns the raw index unchanged for a zero-cost
+release build. */
+internal fun CCodeGen.wrapBoundsIdx(inIdxExpr: String, inLen: String): String {
+	if (!checkBounds) return inIdxExpr
+	val vFile = currentSourceFile
+	val vFileC = "\"${vFile.replace("\\", "\\\\")}\""
+	val vFileLen = vFile.length
+	return "ktc_core_bounds_check($vFileC, $vFileLen, $currentStmtLine, ($inIdxExpr), ($inLen))"
+}
+
+/* Compile-time bounds check: if inIdx is a literal IntLit AND the array's
+length is statically known (sized arrays, string literals), validates the
+range and emits a warning (negative or >= length). Stays silent otherwise.
+Doesn't block compilation — runtime check will fire for the same access
+when checkBounds is on. */
+internal fun CCodeGen.staticBoundsCheck(inObj: Expr, inIdx: Expr, inObjTypeCore: KtcType?) {
+	val vIdxVal = when (inIdx) {
+		is IntLit -> inIdx.value
+		else -> return
+	}
+	// Determine statically-known length.
+	val vKnownLen: Long? = when {
+		inObjTypeCore is KtcType.Arr && inObjTypeCore.sized != null -> inObjTypeCore.sized!!.toLong()
+		inObj is StrLit -> inObj.value.length.toLong()
+		// Note: inferring length from a NameExpr would need flow analysis
+		// against the declared `IntArray(N)` initializer — left for the
+		// runtime check to catch on default-on bounds checking.
+		else -> null
+	}
+	if (vKnownLen == null) return
+	if (vIdxVal < 0) {
+		System.err.println("WARNING [$currentSourceFile:$currentStmtLine]: " +
+			"array index $vIdxVal is negative — always out of bounds.")
+	} else if (vIdxVal >= vKnownLen) {
+		System.err.println("WARNING [$currentSourceFile:$currentStmtLine]: " +
+			"array index $vIdxVal is out of bounds for length $vKnownLen.")
+	}
 }
