@@ -30,7 +30,6 @@ Targets embedded/game/systems code.
   - `Array<T>.asRaw()` → `RawArray<T>` (bare data ptr); `RawArray<T>.asArray(n)` → `Ref<Array<T>>` (VarArr) — both alias, no copy
   - `allocator.freeMem(ref)` (e.g. `Heap.freeMem(p)`); `Heap` is the default `object : Allocator`.
   - `Arena` is a bump allocator implementing `Allocator`.
-- The old `HeapAlloc`/`HeapArrayZero`/`HeapArrayResize`/`HeapFree` intrinsics were removed — use the allocator API.
 - Note: `allocWith` returns a non-null `Ref<T>`. To null-check, declare the var `Ref<T?>` explicitly.
 - `RawArray<T>` is inherently a reference type (always `T*` in C) — no `Ref<>` wrapper needed.
 
