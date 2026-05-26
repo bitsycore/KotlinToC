@@ -10,6 +10,7 @@ Targets embedded/game/systems code.
 - Full suite (builds JAR + transpile/compile/run integration tests, parallel):
   `./run_tests.ps1`  | single: `./run_tests.ps1 -Run TestName`  | skip unit: `-Skip unit`
 - Integration tests live in `integration/<Name>/*.kt` (each compiled with gcc/cmake and executed).
+- Each test has a `module.ktc.toml` for config (dependencies, executable name, main entry, etc.).
 
 ## Architecture
 - Pipeline: `Lexer` → `Parser` → `CCodeGen.generate()` (`src/main/kotlin`).
@@ -39,6 +40,25 @@ Targets embedded/game/systems code.
 
 ## String return safety
 - Non-inline functions returning bare `String` are refused when the body builds the result at runtime (concat, template). The buffer would die at function exit; require `@Ptr String`, `@Size(N) String`, or mark the function `inline`. Literal-only bodies (every yield is a `StrLit`) and `String?` returns are allowed.
+
+## Module system
+- Project config is `module.ktc.toml` (replaces the old `deps.ktc.toml` + `config.ktc.toml`):
+  ```toml
+  name         = "My App"
+  version      = "1.0"
+  description  = "What this module does"
+  authors      = ["name"]
+  license      = "MIT"
+  url          = "https://project-home"
+  repository   = "https://github.com/user/repo.git#path/to/module"
+  executable   = "myapp"          # output binary name
+  main         = "pkg.funcName"   # explicit entry point (like --main)
+  autoFindMain = true             # auto-detect single main function
+  gui          = true             # windowed app (test runner flag)
+  dependencies = ["ktc.std", "./../LocalMod", "https://github.com/user/repo.git#module"]
+  ```
+- Dependency sources: named (bundled JAR), relative (`./`), or URL (git clone to `~/.ktc/cache/`).
+- Bundled modules: `src/main/resources/modules/<name>/` with `module.ktc.toml` + `.kt` files + optional `module.cmake`.
 
 ## Conventions
 - Generated C: K&R style. Doc comments `/** */`.

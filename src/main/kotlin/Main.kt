@@ -40,12 +40,25 @@ private fun parseTomlStringArray(arrayContent: String): List<String> =
         .map { it.trim().removeSurrounding("\"").removeSurrounding("'") }
         .filter { it.isNotEmpty() }
 
-/** Parse `modules = ["A", "B"]` from a deps.ktc.toml string. */
-private fun parseDepsToml(content: String): List<String> {
-    val match = Regex("""^\s*modules\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
+// Parse dependencies from a module.ktc.toml string.
+// Accepts both "dependencies = [...]" and "modules = [...]" (legacy deps.ktc.toml compat).
+private fun parseDependencies(content: String): List<String> {
+    val match = Regex("""^\s*(?:dependencies|modules)\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
         ?: return emptyList()
     return parseTomlStringArray(match.groupValues[1])
 }
+
+// Parse the "main" field from module.ktc.toml (e.g. main = "com.example.run").
+private fun parseMainEntry(content: String): String? =
+    Regex("""^\s*main\s*=\s*"([^"]+)"""", RegexOption.MULTILINE).find(content)?.groupValues?.get(1)
+
+// Parse the "autoFindMain" field from module.ktc.toml.
+private fun parseAutoFindMain(content: String): Boolean =
+    Regex("""^\s*autoFindMain\s*=\s*true""", RegexOption.MULTILINE).find(content) != null
+
+// Parse the "executable" field from module.ktc.toml (e.g. executable = "myapp").
+private fun parseExecutable(content: String): String? =
+    Regex("""^\s*executable\s*=\s*"([^"]+)"""", RegexOption.MULTILINE).find(content)?.groupValues?.get(1)
 
 // A module name that is an absolute path refers to a filesystem directory, not a bundled JAR resource.
 private fun isFileSystemModule(name: String): Boolean = File(name).isAbsolute
@@ -112,12 +125,10 @@ private fun readModuleToml(moduleName: String, aClass: Class<*>): String? {
     return aClass.getResourceAsStream("/modules/$moduleName/module.ktc.toml")?.bufferedReader()?.readText()
 }
 
-/** Parse `dependencies = ["A", "B"]` from a module's module.ktc.toml. Returns empty list if absent. */
+/** Parse dependencies from a module's module.ktc.toml. Returns empty list if absent. */
 private fun parseModuleDeps(moduleName: String, aClass: Class<*>): List<String> {
     val content = readModuleToml(moduleName, aClass) ?: return emptyList()
-    val match = Regex("""^\s*dependencies\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
-        ?: return emptyList()
-    val deps = parseTomlStringArray(match.groupValues[1])
+    val deps = parseDependencies(content)
     // Resolve relative and URL dependency paths
     val moduleDir = if (isFileSystemModule(moduleName)) File(moduleName) else null
     return deps.map { dep ->
@@ -248,21 +259,32 @@ fun main(args: Array<String>) {
 
     val vRawSources = mutableListOf<RawSource>() // all sources before parsing
 
-    // Discover deps.ktc.toml in the source directories and merge with --module args
+    // Discover module.ktc.toml (or legacy deps.ktc.toml) in source directories
     val seenDirs = mutableSetOf<File>()
     for (f in inputFiles) {
         val dir = f.parentFile ?: continue
         if (!seenDirs.add(dir)) continue
-        val depsFile = File(dir, "deps.ktc.toml")
-        if (depsFile.exists()) {
-            for (mod in parseDepsToml(depsFile.readText())) {
-                if (isUrlModule(mod))
-                    moduleNames += resolveUrlModule(mod)
-                else if (mod.startsWith("./") || mod.startsWith("../"))
-                    moduleNames += File(dir, mod).canonicalPath
-                else
-                    moduleNames += mod
-            }
+        val moduleToml = File(dir, "module.ktc.toml")
+        val depsToml = File(dir, "deps.ktc.toml")
+        val tomlFile = if (moduleToml.exists()) moduleToml else if (depsToml.exists()) depsToml else continue
+        val content = tomlFile.readText()
+        for (mod in parseDependencies(content)) {
+            if (isUrlModule(mod))
+                moduleNames += resolveUrlModule(mod)
+            else if (mod.startsWith("./") || mod.startsWith("../"))
+                moduleNames += File(dir, mod).canonicalPath
+            else
+                moduleNames += mod
+        }
+        // Pick up main/autoFindMain/executable from module.ktc.toml if not set via CLI
+        if (mainOverride == null) {
+            val tomlMain = parseMainEntry(content)
+            if (tomlMain != null) mainOverride = tomlMain
+            else if (parseAutoFindMain(content)) mainOverride = "__auto__"
+        }
+        if (nameOverride == null) {
+            val tomlExe = parseExecutable(content)
+            if (tomlExe != null) nameOverride = tomlExe
         }
     }
     // Resolve URL modules passed via --module args
@@ -536,11 +558,11 @@ fun main(args: Array<String>) {
 
     val vMainCandidate: MainCandidate?
 
-    if (mainOverride != null) {
-        // --main "a.b.c.funName": split at the last dot to separate package from function name
-        val vDotIdx  = mainOverride.lastIndexOf('.')                        // split point
-        val vOvrPkg  = if (vDotIdx > 0) mainOverride.substring(0, vDotIdx) else ""  // package part
-        val vOvrName = mainOverride.substring(vDotIdx + 1)                  // function name part
+    if (mainOverride != null && mainOverride != "__auto__") {
+        // --main "a.b.c.funName" or main = "a.b.c.funName" in module.ktc.toml
+        val vDotIdx  = mainOverride!!.lastIndexOf('.')                      // split point
+        val vOvrPkg  = if (vDotIdx > 0) mainOverride!!.substring(0, vDotIdx) else ""  // package part
+        val vOvrName = mainOverride!!.substring(vDotIdx + 1)                // function name part
         val vFound   = vNonDocFiles
             .filter { it.ast.pkg == vOvrPkg.ifEmpty { null } || (vOvrPkg.isEmpty() && it.ast.pkg == null) }
             .flatMap { ps -> ps.ast.decls.filterIsInstance<FunDecl>()

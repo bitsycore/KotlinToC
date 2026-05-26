@@ -108,21 +108,26 @@ function Format-Ms {
 }
 
 <#
-Parses a config.ktc.toml file and returns a hashtable with fields:
+Parses a module.ktc.toml file and returns a hashtable with fields:
   name, author, version, info, executable, gui (bool), args, timeout (int seconds).
+Falls back to config.ktc.toml if module.ktc.toml is not found (legacy compat).
 Returns defaults for any missing field.
 #>
 function Read-ConfigToml {
 	param([string]$inPath)
 	$vCfg = @{ name = ""; author = ""; version = ""; info = ""; executable = ""; gui = $false; args = ""; timeout = 0 }
-	if (-not (Test-Path $inPath)) { return $vCfg }
-	foreach ($vLine in (Get-Content $inPath)) {
+	# Try module.ktc.toml first, fall back to config.ktc.toml
+	$vDir = Split-Path $inPath -Parent
+	$vModuleToml = Join-Path $vDir "module.ktc.toml"
+	$vActualPath = if (Test-Path $vModuleToml) { $vModuleToml } else { $inPath }
+	if (-not (Test-Path $vActualPath)) { return $vCfg }
+	foreach ($vLine in (Get-Content $vActualPath)) {
 		$vLine = $vLine.Trim()
 		if     ($vLine -match '^\s*gui\s*=\s*true')              { $vCfg.gui        = $true }
 		elseif ($vLine -match '^\s*name\s*=\s*"([^"]*)"')        { $vCfg.name       = $Matches[1] }
-		elseif ($vLine -match '^\s*author\s*=\s*"([^"]*)"')      { $vCfg.author     = $Matches[1] }
+		elseif ($vLine -match '^\s*authors?\s*=\s*"([^"]*)"')    { $vCfg.author     = $Matches[1] }
 		elseif ($vLine -match '^\s*version\s*=\s*"([^"]*)"')     { $vCfg.version    = $Matches[1] }
-		elseif ($vLine -match '^\s*info\s*=\s*"([^"]*)"')        { $vCfg.info       = $Matches[1] }
+		elseif ($vLine -match '^\s*(?:info|description)\s*=\s*"([^"]*)"') { $vCfg.info = $Matches[1] }
 		elseif ($vLine -match '^\s*executable\s*=\s*"([^"]*)"')  { $vCfg.executable = $Matches[1] }
 		elseif ($vLine -match '^\s*args\s*=\s*"([^"]*)"')        { $vCfg.args       = $Matches[1] }
 		elseif ($vLine -match '^\s*timeout\s*=\s*(\d+)')         { $vCfg.timeout    = [int]$Matches[1] }

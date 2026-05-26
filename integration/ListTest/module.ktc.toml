@@ -1,0 +1,3 @@
+autoFindMain = true
+dependencies = ["ktc.std"]
+
