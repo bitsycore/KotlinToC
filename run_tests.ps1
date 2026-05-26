@@ -84,6 +84,17 @@ $vRoot       = $PSScriptRoot                                             # proje
 $vJar        = "$vRoot\build\libs\KotlinToC-1.0-SNAPSHOT.jar"          # standard fat JAR
 $vReleaseJar = "$vRoot\build\libs\KotlinToC-1.0-SNAPSHOT-release.jar"  # ProGuard JAR
 $vTestsDir   = "$vRoot\integration"                                            # integration tests root
+
+# Discover all test directories: any folder under integration/ containing a module.ktc.toml.
+# Returns objects with Name (leaf), RelPath (relative to integration/), FullPath.
+function Find-TestDirs {
+	Get-ChildItem $vTestsDir -Recurse -Filter "module.ktc.toml" -ErrorAction SilentlyContinue |
+		ForEach-Object {
+			$vDir     = $_.Directory
+			$vRelPath = $vDir.FullName.Substring($vTestsDir.Length + 1).Replace('\', '/')
+			[PSCustomObject]@{ Name = $vDir.Name; RelPath = $vRelPath; FullPath = $vDir.FullName }
+		} | Sort-Object RelPath
+}
 $vBuildMode  = $Build.ToLowerInvariant()                                # normalized build mode string
 $vGradleJar  = if ($Rebuild) { "clean jar" } else { "jar" }            # gradle JAR task
 $vGradlePro  = if ($Rebuild) { "clean proguard" } else { "proguard" }  # gradle ProGuard task
@@ -142,8 +153,8 @@ function Read-ConfigToml {
 if ($Clean) {
 	Write-Host "Cleaning per-test output directories..." -ForegroundColor Cyan
 	$vCleaned = 0
-	Get-ChildItem $vTestsDir -Directory | ForEach-Object {
-		$vOut = Join-Path $_.FullName "out"
+	Find-TestDirs | ForEach-Object {
+		$vOut = Join-Path $_.FullPath "out"
 		if (Test-Path $vOut) {
 			Remove-Item $vOut -Recurse -Force
 			Write-Host "  removed $vOut" -ForegroundColor DarkGray
@@ -447,7 +458,7 @@ function Run-Suite {
 	Write-Sec "Integration Tests"
 	if ($inTestNames.Count -eq 0) { Write-Info "No tests to run."; return }
 
-	$vDirs     = @($inTestNames | ForEach-Object { Get-Item "$vTestsDir\$_" })
+	$vDirs     = @($inTestNames | ForEach-Object { Get-Item "$vTestsDir\$($_ -replace '/', '\')" })
 	$vThrottle = [Math]::Max(1, [Environment]::ProcessorCount)
 
 	$vResults = $vDirs | ForEach-Object -Parallel {
@@ -1067,7 +1078,7 @@ if (-not $vCC) {
 
 # ── Interactive mode ─────────────────────────────────────────────
 if ($Interactive) {
-	$vNames = @(Get-ChildItem $vTestsDir -Directory | Sort-Object Name | ForEach-Object Name)
+	$vNames = @(Find-TestDirs | ForEach-Object { $_.RelPath })
 	$vTui   = [TuiRunner]::new($vNames, $vCC)
 	$vSel   = $vTui.Loop()
 	Write-Host ""
@@ -1119,17 +1130,21 @@ if ($Run -ne "") {
 	) -join " ")
 
 	$vRunNames  = $Run -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+	$vAllTests  = @(Find-TestDirs)
 	$vAnyFailed = $false
-	foreach ($vName in $vRunNames) {
-		$vSrc = "$vTestsDir\$vName"
-		if (-not (Test-Path $vSrc -PathType Container)) {
-			Write-Host "ERROR: test directory not found: $vSrc" -ForegroundColor Red
+	foreach ($vQuery in $vRunNames) {
+		# Match by leaf name or relative path (e.g. "PointerTest" or "intrinsic/PointerTest")
+		$vMatch = $vAllTests | Where-Object { $_.Name -eq $vQuery -or $_.RelPath -eq $vQuery }
+		if (-not $vMatch) {
+			Write-Host "ERROR: test not found: $vQuery" -ForegroundColor Red
 			Write-Host "Available tests:" -ForegroundColor Yellow
-			Get-ChildItem $vTestsDir -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
+			$vAllTests | ForEach-Object { Write-Host "  - $($_.RelPath)" }
 			$vAnyFailed = $true; continue
 		}
-		if ((Invoke-Test -inName $vName -inSrcDir $vSrc -inOutDir "$vSrc\out" -inExtraArgs $vArgsStr -inGuiMode $Gui) -eq "fail") {
-			$vAnyFailed = $true
+		foreach ($vT in $vMatch) {
+			if ((Invoke-Test -inName $vT.Name -inSrcDir $vT.FullPath -inOutDir "$($vT.FullPath)\out" -inExtraArgs $vArgsStr -inGuiMode $Gui) -eq "fail") {
+				$vAnyFailed = $true
+			}
 		}
 	}
 	exit ([int]$vAnyFailed)
@@ -1146,7 +1161,8 @@ $vArgsStr  = (@(
 	if ($DoubleDispose -ne "NO") { "--double-dispose=$($DoubleDispose.ToUpper())" }
 	if ($TranspilerArgs -ne "")       { $TranspilerArgs }
 ) -join " ")
-$vAllNames = @(Get-ChildItem $vTestsDir -Directory | Sort-Object Name | ForEach-Object Name)
+$vAllTests = @(Find-TestDirs)
+$vAllNames = @($vAllTests | ForEach-Object { $_.RelPath })
 
 Invoke-Build
 $vResult = Run-Suite -inTestNames $vAllNames -inExtraArgs $vArgsStr -inSkipUnit ($Skip -eq "unit")

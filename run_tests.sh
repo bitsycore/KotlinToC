@@ -38,6 +38,15 @@ JAR="$ROOT/build/libs/KotlinToC-1.0-SNAPSHOT.jar"
 RELEASE_JAR="$ROOT/build/libs/KotlinToC-1.0-SNAPSHOT-release.jar"
 TESTS_DIR="$ROOT/integration"
 
+# Discover all test directories: any folder under integration/ containing a module.ktc.toml.
+# Populates an array of relative paths (e.g. "intrinsic/PointerTest").
+find_test_dirs() {
+	find "$TESTS_DIR" -name "module.ktc.toml" -type f | while read -r f; do
+		local dir; dir="$(dirname "$f")"
+		echo "${dir#$TESTS_DIR/}"
+	done | sort
+}
+
 SKIP_UNIT=false
 RUN_TEST=""
 EXTRA_ARGS=""
@@ -88,14 +97,14 @@ GRADLE_PRO="$([ "$REBUILD" = true ] && echo "clean proguard" || echo "proguard")
 if [[ "$CLEAN" == true ]]; then
 	echo "Cleaning per-test output directories..."
 	vCleaned=0
-	for d in "$TESTS_DIR"/*/; do
-		[[ -d "$d" ]] || continue
+	while IFS= read -r rel; do
+		local d="$TESTS_DIR/$rel"
 		if [[ -d "$d/out" ]]; then
 			rm -rf "$d/out"
 			echo "  removed $d/out"
 			((vCleaned++)) || true
 		fi
-	done
+	done < <(find_test_dirs)
 	echo "Cleaned $vCleaned test output directories."
 	exit 0
 fi
@@ -504,6 +513,7 @@ run_suite() {
 	local vPids=()
 	for vDirName in "${inTestNames[@]}"; do
 		local vDir="$TESTS_DIR/$vDirName"
+		local vTmpName="${vDirName//\//_}"
 		(
 			# Collect .kt files recursively
 			local vKtFiles=()
@@ -512,7 +522,7 @@ run_suite() {
 			done < <(find "$vDir" -name "*.kt" -print0 2>/dev/null)
 			if [[ ${#vKtFiles[@]} -eq 0 ]]; then
 				printf "  ${RED}FAIL${NC} %s (no .kt files)\n" "$vDirName"
-				echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+				echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 			fi
 			local vOut="$vDir/out"
 
@@ -546,7 +556,7 @@ run_suite() {
 			local vWarnings; vWarnings=$(echo "$vTOut" | grep 'warning:' || true)
 			if [[ $vTExit -ne 0 ]]; then
 				printf "  ${RED}FAIL${NC} %s (transpile failed)\n" "$vDirName"
-				echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+				echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 			fi
 
 			# Copy ktc_user.cmake from source dir if present
@@ -569,7 +579,7 @@ run_suite() {
 			done < <(find "$vOut" -name "*.c" -print0 2>/dev/null | sort -z)
 			if [[ ${#vCSrcs[@]} -eq 0 ]]; then
 				printf "  ${RED}FAIL${NC} %s (no .c files generated)\n" "$vDirName"
-				echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+				echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 			fi
 
 			# Compile — cmake if ktc_user.cmake/ktc_modules.cmake present, direct otherwise
@@ -579,7 +589,7 @@ run_suite() {
 
 			if [[ "$vHasUCmake" == true && -z "$CMAKE_BIN" ]]; then
 				printf "  ${DYELLOW}SKIP${NC} %s  (ktc_user.cmake present but cmake not found)\n" "$vDirName"
-				echo 2 > "$vTmpDir/$vDirName.code"; exit 0
+				echo 2 > "$vTmpDir/$vTmpName.code"; exit 0
 			fi
 
 			if [[ "$vHasUCmake" == true ]]; then
@@ -594,17 +604,17 @@ run_suite() {
 				if [[ $vCfgEx -ne 0 ]]; then
 					if echo "$vCfgOut" | grep -qiE 'Could not find|not found|NOTFOUND'; then
 						printf "  ${DYELLOW}SKIP${NC} %s  (required library not found)\n" "$vDirName"
-						echo 2 > "$vTmpDir/$vDirName.code"; exit 0
+						echo 2 > "$vTmpDir/$vTmpName.code"; exit 0
 					fi
 					printf "  ${RED}FAIL${NC} %s (cmake configure failed)\n" "$vDirName"
-					echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+					echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 				fi
 				"$CMAKE_BIN" --build "$vCmkBld" --config "$CFG" 2>/dev/null
 				local vBldEx=$?
 				vTe=$(now_ms); vCMs=$(( vTe - vTs ))
 				if [[ $vBldEx -ne 0 ]]; then
 					printf "  ${RED}FAIL${NC} %s (cmake build failed)\n" "$vDirName"
-					echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+					echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 				fi
 				local vExpected="$vOut/$vExeName"
 				if [[ -f "$vExpected" && -x "$vExpected" ]]; then vExe="$vExpected"
@@ -613,7 +623,7 @@ run_suite() {
 					vFoundExe=$(find "$vOut" -maxdepth 1 -type f -perm +111 ! -path "*/_cmake/*" ! -name "_ktcrun*" ! -name "*.dll" ! -name "*.dylib" 2>/dev/null | head -1)
 					if [[ -z "$vFoundExe" ]]; then
 						printf "  ${RED}FAIL${NC} %s (no executable after cmake build)\n" "$vDirName"
-						echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+						echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 					fi
 					vExe="$vFoundExe"
 				fi
@@ -629,7 +639,7 @@ run_suite() {
 				set -e
 				if [[ $vCExit -ne 0 ]]; then
 					printf "  ${RED}FAIL${NC} %s (compile failed)\n" "$vDirName"
-					echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+					echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 				fi
 			fi
 
@@ -653,7 +663,7 @@ run_suite() {
 			set -e
 			if [[ $vRExit -ne 0 ]]; then
 				printf "  ${RED}FAIL${NC} %s (runtime error, exit %d)\n" "$vDirName" "$vRExit"
-				echo 1 > "$vTmpDir/$vDirName.code"; exit 0
+				echo 1 > "$vTmpDir/$vTmpName.code"; exit 0
 			fi
 
 			local vLeak=false
@@ -668,7 +678,7 @@ run_suite() {
 			[[ -n "$vWarnings" ]] && while IFS= read -r w; do
 				[[ -n "$w" ]] && printf "       ${YELLOW}%s${NC}\n" "$w"
 			done <<< "$vWarnings"
-			echo 0 > "$vTmpDir/$vDirName.code"
+			echo 0 > "$vTmpDir/$vTmpName.code"
 		) &
 		vPids+=($!)
 	done
@@ -676,7 +686,8 @@ run_suite() {
 
 	SUITE_SKIPPED_COUNT=0; SUITE_SKIPPED_NAMES_ARR=()
 	for vDirName in "${inTestNames[@]}"; do
-		local vCode; vCode=$(cat "$vTmpDir/$vDirName.code" 2>/dev/null || echo 1)
+		local vTmpName="${vDirName//\//_}"
+		local vCode; vCode=$(cat "$vTmpDir/$vTmpName.code" 2>/dev/null || echo 1)
 		if [[ "$vCode" == "0" ]]; then
 			((SUITE_PASSED++)) || true
 		elif [[ "$vCode" == "2" ]]; then
@@ -747,8 +758,7 @@ tui_read_key() {
 # Returns 0 if user confirmed, 1 if cancelled.
 run_interactive() {
 	local vTestNames=()
-	for d in "$TESTS_DIR"/*/; do [[ -d "$d" ]] && vTestNames+=("$(basename "$d")"); done
-	IFS=$'\n' vTestNames=($(sort <<< "${vTestNames[*]}")); unset IFS
+	mapfile -t vTestNames < <(find_test_dirs)
 
 	local vCount=${#vTestNames[@]}
 
@@ -1141,18 +1151,27 @@ if [[ -n "$RUN_TEST" ]]; then
 	invoke_build
 
 	IFS=',' read -ra vRunNames <<< "$RUN_TEST"
+	mapfile -t vAllTests < <(find_test_dirs)
 	vAnyFailed=false
-	for vName in "${vRunNames[@]}"; do
-		vName="${vName// /}"
-		[[ -z "$vName" ]] && continue
-		vSrc="$TESTS_DIR/$vName"
-		if [[ ! -d "$vSrc" ]]; then
-			echo "ERROR: test directory not found: $vSrc"
+	for vQuery in "${vRunNames[@]}"; do
+		vQuery="${vQuery// /}"
+		[[ -z "$vQuery" ]] && continue
+		# Match by leaf name or relative path
+		vMatched=false
+		for vRel in "${vAllTests[@]}"; do
+			vLeaf="$(basename "$vRel")"
+			if [[ "$vLeaf" == "$vQuery" || "$vRel" == "$vQuery" ]]; then
+				vSrc="$TESTS_DIR/$vRel"
+				invoke_test "$vLeaf" "$vSrc" "$vSrc/out" "$EXTRA_ARGS" "$GUI_MODE" || vAnyFailed=true
+				vMatched=true
+			fi
+		done
+		if [[ "$vMatched" == false ]]; then
+			echo "ERROR: test not found: $vQuery"
 			echo "Available tests:"
-			for d in "$TESTS_DIR"/*/; do [[ -d "$d" ]] && echo "  - $(basename "$d")"; done
-			vAnyFailed=true; continue
+			for vRel in "${vAllTests[@]}"; do echo "  - $vRel"; done
+			vAnyFailed=true
 		fi
-		invoke_test "$vName" "$vSrc" "$vSrc/out" "$EXTRA_ARGS" "$GUI_MODE" || vAnyFailed=true
 	done
 	[[ "$vAnyFailed" == true ]] && exit 1 || exit 0
 fi
@@ -1160,9 +1179,7 @@ fi
 # ── Full suite mode ───────────────────────────────────────────────
 invoke_build
 
-vAllNames=()
-for d in "$TESTS_DIR"/*/; do [[ -d "$d" ]] && vAllNames+=("$(basename "$d")"); done
-IFS=$'\n' vAllNames=($(sort <<< "${vAllNames[*]}")); unset IFS
+mapfile -t vAllNames < <(find_test_dirs)
 
 SUITE_PASSED=0; SUITE_FAILED=0; SUITE_FAILED_NAMES=(); SUITE_SKIPPED_COUNT=0; SUITE_SKIPPED_NAMES_ARR=()
 run_suite "$SKIP_UNIT" "${vAllNames[@]}"
