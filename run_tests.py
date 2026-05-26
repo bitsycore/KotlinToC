@@ -544,11 +544,16 @@ def invoke_test_verbose(
 		pwrite(f"  {kGreen}PASS{kRst} Compilation succeeded -> {vExePath}  {kGray}(comp: {format_ms(vCo.ms)}){kRst}")
 
 	# ── Generated files listing ──────────────────────────────────
+	# Lists transpiler output and the final executable — skips the _cmake/
+	# build cache (FetchContent deps like SDL3 dump thousands of files there
+	# that aren't useful to surface in test output).
 	psection("Generated Files")
 	for vFile in sorted(vOut.rglob("*")):
 		if not vFile.is_file():
 			continue
 		vRel = vFile.relative_to(vOut)
+		if vRel.parts and vRel.parts[0] == "_cmake":
+			continue
 		vSz = vFile.stat().st_size
 		vSize = f"{vSz / 1024:.1f} KB" if vSz >= 1024 else f"{vSz} B"
 		pinfo(f"{str(vRel):<30} {vSize:>10}")
