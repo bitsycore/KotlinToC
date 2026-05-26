@@ -423,6 +423,148 @@ ktc_String ktc_core_string_cat(
     return (ktc_String){buf, vALen + vBLen};
 }
 
+/* ──────────── Find / locate ──────────── */
+
+ktc_Int ktc_core_string_indexOf_char(ktc_String s, ktc_Char ch) {
+    for (ktc_Int i = 0; i < s.len; i++) if (s.ptr[i] == ch) return i;
+    return -1;
+}
+
+ktc_Int ktc_core_string_lastIndexOf_char(ktc_String s, ktc_Char ch) {
+    for (ktc_Int i = s.len - 1; i >= 0; i--) if (s.ptr[i] == ch) return i;
+    return -1;
+}
+
+ktc_Int ktc_core_string_lastIndexOf_str(ktc_String s, ktc_String sub) {
+    if (sub.len == 0) return s.len;
+    if (sub.len > s.len) return -1;
+    for (ktc_Int i = s.len - sub.len; i >= 0; i--)
+        if (memcmp(s.ptr + i, sub.ptr, (size_t)sub.len) == 0) return i;
+    return -1;
+}
+
+ktc_Bool ktc_core_string_contains_char(ktc_String s, ktc_Char ch) {
+    return ktc_core_string_indexOf_char(s, ch) >= 0;
+}
+
+/* ──────────── Trim (view-only, no copy) ──────────── */
+
+/* Kotlin's Char.isWhitespace covers more than ASCII space, but for KTC's
+ * byte-oriented String we treat the canonical ASCII whitespace set. */
+static int ktc_core_is_ascii_ws(ktc_Char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f';
+}
+
+ktc_String ktc_core_string_trimStart(ktc_String s) {
+    ktc_Int i = 0;
+    while (i < s.len && ktc_core_is_ascii_ws(s.ptr[i])) i++;
+    return (ktc_String){s.ptr + i, s.len - i};
+}
+
+ktc_String ktc_core_string_trimEnd(ktc_String s) {
+    ktc_Int j = s.len;
+    while (j > 0 && ktc_core_is_ascii_ws(s.ptr[j - 1])) j--;
+    return (ktc_String){s.ptr, j};
+}
+
+ktc_String ktc_core_string_trim(ktc_String s) {
+    return ktc_core_string_trimEnd(ktc_core_string_trimStart(s));
+}
+
+/* ──────────── Buffer-producing ops ──────────── */
+
+ktc_String ktc_core_string_reversed(ktc_Char* buf, ktc_Int bufsz, ktc_String s) {
+    ktc_Int n = s.len < bufsz - 1 ? s.len : bufsz - 1;
+    for (ktc_Int i = 0; i < n; i++) buf[i] = s.ptr[n - 1 - i];
+    buf[n] = '\0';
+    return (ktc_String){buf, n};
+}
+
+ktc_String ktc_core_string_lowercase_ascii(ktc_Char* buf, ktc_Int bufsz, ktc_String s) {
+    ktc_Int n = s.len < bufsz - 1 ? s.len : bufsz - 1;
+    for (ktc_Int i = 0; i < n; i++) {
+        ktc_Char c = s.ptr[i];
+        buf[i] = (c >= 'A' && c <= 'Z') ? (ktc_Char)(c + 32) : c;
+    }
+    buf[n] = '\0';
+    return (ktc_String){buf, n};
+}
+
+ktc_String ktc_core_string_uppercase_ascii(ktc_Char* buf, ktc_Int bufsz, ktc_String s) {
+    ktc_Int n = s.len < bufsz - 1 ? s.len : bufsz - 1;
+    for (ktc_Int i = 0; i < n; i++) {
+        ktc_Char c = s.ptr[i];
+        buf[i] = (c >= 'a' && c <= 'z') ? (ktc_Char)(c - 32) : c;
+    }
+    buf[n] = '\0';
+    return (ktc_String){buf, n};
+}
+
+ktc_String ktc_core_string_replace_char(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Char old, ktc_Char new_) {
+    ktc_Int n = s.len < bufsz - 1 ? s.len : bufsz - 1;
+    for (ktc_Int i = 0; i < n; i++) {
+        ktc_Char c = s.ptr[i];
+        buf[i] = (c == old) ? new_ : c;
+    }
+    buf[n] = '\0';
+    return (ktc_String){buf, n};
+}
+
+ktc_String ktc_core_string_repeat(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Int n) {
+    if (n <= 0 || s.len == 0) { if (bufsz > 0) buf[0] = '\0'; return (ktc_String){buf, 0}; }
+    ktc_Int vTotal = s.len * n;
+    if (vTotal >= bufsz) vTotal = bufsz - 1;
+    ktc_Int vWritten = 0;
+    while (vWritten + s.len <= vTotal) {
+        memcpy(buf + vWritten, s.ptr, (size_t)s.len);
+        vWritten += s.len;
+    }
+    if (vWritten < vTotal) {
+        memcpy(buf + vWritten, s.ptr, (size_t)(vTotal - vWritten));
+        vWritten = vTotal;
+    }
+    buf[vWritten] = '\0';
+    return (ktc_String){buf, vWritten};
+}
+
+ktc_String ktc_core_string_padStart(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Int targetLen, ktc_Char padChar) {
+    if (s.len >= targetLen) {
+        ktc_Int n = s.len < bufsz - 1 ? s.len : bufsz - 1;
+        memcpy(buf, s.ptr, (size_t)n); buf[n] = '\0';
+        return (ktc_String){buf, n};
+    }
+    ktc_Int vCap = bufsz - 1;
+    ktc_Int vN   = targetLen < vCap ? targetLen : vCap;
+    ktc_Int vPad = vN - s.len; if (vPad < 0) vPad = 0;
+    for (ktc_Int i = 0; i < vPad; i++) buf[i] = padChar;
+    memcpy(buf + vPad, s.ptr, (size_t)(vN - vPad));
+    buf[vN] = '\0';
+    return (ktc_String){buf, vN};
+}
+
+ktc_String ktc_core_string_padEnd(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Int targetLen, ktc_Char padChar) {
+    if (s.len >= targetLen) {
+        ktc_Int n = s.len < bufsz - 1 ? s.len : bufsz - 1;
+        memcpy(buf, s.ptr, (size_t)n); buf[n] = '\0';
+        return (ktc_String){buf, n};
+    }
+    ktc_Int vCap = bufsz - 1;
+    ktc_Int vN   = targetLen < vCap ? targetLen : vCap;
+    ktc_Int vCopy = s.len < vN ? s.len : vN;
+    memcpy(buf, s.ptr, (size_t)vCopy);
+    for (ktc_Int i = vCopy; i < vN; i++) buf[i] = padChar;
+    buf[vN] = '\0';
+    return (ktc_String){buf, vN};
+}
+
+/* ──────────── Boolean parse ──────────── */
+
+ktc_Bool ktc_core_str_toBooleanStrictOrNull(ktc_String s, ktc_Bool* out) {
+    if (s.len == 4 && memcmp(s.ptr, "true",  4) == 0) { *out = true;  return true;  }
+    if (s.len == 5 && memcmp(s.ptr, "false", 5) == 0) { *out = false; return true;  }
+    return false;
+}
+
 static ktc_Int ktc_core_f2s(ktc_Float  v, ktc_Char* buf, ktc_Int bufsz); // defined in Conversion
 static ktc_Int ktc_core_d2s(ktc_Double v, ktc_Char* buf, ktc_Int bufsz); // defined in Conversion
 

@@ -171,18 +171,109 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			}
 
 		"contains" -> if (inRecvTypeKtc is KtcType.Str) {
-			val vSub = genExpr(inArgs[0].expr)
-			val vT   = tmp()
-			preStmts += "ktc_Bool $vT = false;"
-			preStmts += "for (ktc_Int ${vT}_i = 0; ${vT}_i <= $inRecv.len - $vSub.len; ${vT}_i++) { if (memcmp($inRecv.ptr + ${vT}_i, $vSub.ptr, (size_t)$vSub.len) == 0) { $vT = true; break; } }"
-			return vT
+			val vArgKtc = inferExprTypeKtc(inArgs[0].expr).stripNullable
+			val vArg = genExpr(inArgs[0].expr)
+			return if (vArgKtc is KtcType.Prim && vArgKtc.kind == KtcType.PrimKind.Char) {
+				"ktc_core_string_contains_char($inRecv, $vArg)"
+			} else {
+				val vT = tmp()
+				preStmts += "ktc_Bool $vT = false;"
+				preStmts += "for (ktc_Int ${vT}_i = 0; ${vT}_i <= $inRecv.len - $vArg.len; ${vT}_i++) { if (memcmp($inRecv.ptr + ${vT}_i, $vArg.ptr, (size_t)$vArg.len) == 0) { $vT = true; break; } }"
+				vT
+			}
 			}
 
 		"indexOf" -> if (inRecvTypeKtc is KtcType.Str) {
-			val vSub = genExpr(inArgs[0].expr)
-			val vT   = tmp()
-			preStmts += "ktc_Int $vT = -1;"
-			preStmts += "for (ktc_Int ${vT}_i = 0; ${vT}_i <= $inRecv.len - $vSub.len; ${vT}_i++) { if (memcmp($inRecv.ptr + ${vT}_i, $vSub.ptr, (size_t)$vSub.len) == 0) { $vT = ${vT}_i; break; } }"
+			val vArgKtc = inferExprTypeKtc(inArgs[0].expr).stripNullable
+			val vArg = genExpr(inArgs[0].expr)
+			return if (vArgKtc is KtcType.Prim && vArgKtc.kind == KtcType.PrimKind.Char) {
+				"ktc_core_string_indexOf_char($inRecv, $vArg)"
+			} else {
+				val vT = tmp()
+				preStmts += "ktc_Int $vT = -1;"
+				preStmts += "for (ktc_Int ${vT}_i = 0; ${vT}_i <= $inRecv.len - $vArg.len; ${vT}_i++) { if (memcmp($inRecv.ptr + ${vT}_i, $vArg.ptr, (size_t)$vArg.len) == 0) { $vT = ${vT}_i; break; } }"
+				vT
+			}
+			}
+
+		"lastIndexOf" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vArgKtc = inferExprTypeKtc(inArgs[0].expr).stripNullable
+			val vArg = genExpr(inArgs[0].expr)
+			return if (vArgKtc is KtcType.Prim && vArgKtc.kind == KtcType.PrimKind.Char)
+				"ktc_core_string_lastIndexOf_char($inRecv, $vArg)"
+			else
+				"ktc_core_string_lastIndexOf_str($inRecv, $vArg)"
+			}
+
+		// Buffer-producing String intrinsics. Each allocates a stack buffer via
+		// alloca sized to (input.len + slack) for the worst case, then the core
+		// helper writes into it. Output is a ktc_String view of that buffer —
+		// safe within the surrounding function frame (same lifetime model as
+		// the `+` concat helper).
+		"reversed" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vBuf = tmp()
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca($inRecv.len + 1);"
+			return "ktc_core_string_reversed($vBuf, $inRecv.len + 1, $inRecv)"
+			}
+
+		"lowercase" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vBuf = tmp()
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca($inRecv.len + 1);"
+			return "ktc_core_string_lowercase_ascii($vBuf, $inRecv.len + 1, $inRecv)"
+			}
+
+		"uppercase" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vBuf = tmp()
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca($inRecv.len + 1);"
+			return "ktc_core_string_uppercase_ascii($vBuf, $inRecv.len + 1, $inRecv)"
+			}
+
+		"repeat" -> if (inRecvTypeKtc is KtcType.Str && inArgs.isNotEmpty()) {
+			val vN = genExpr(inArgs[0].expr)
+			val vBuf = tmp()
+			// Cap the alloca request to keep `n * len` from blowing the stack —
+			// 64KB ceiling is a sane default for repeat-on-stack patterns.
+			preStmts += "ktc_Int ${vBuf}_sz = ($inRecv.len * ($vN)) + 1; if (${vBuf}_sz > 65536) ${vBuf}_sz = 65536;"
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca(${vBuf}_sz);"
+			return "ktc_core_string_repeat($vBuf, ${vBuf}_sz, $inRecv, $vN)"
+			}
+
+		"replace" -> if (inRecvTypeKtc is KtcType.Str && inArgs.size == 2) {
+			val vOldKtc = inferExprTypeKtc(inArgs[0].expr).stripNullable
+			if (vOldKtc is KtcType.Prim && vOldKtc.kind == KtcType.PrimKind.Char) {
+				val vOld = genExpr(inArgs[0].expr)
+				val vNew = genExpr(inArgs[1].expr)
+				val vBuf = tmp()
+				preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca($inRecv.len + 1);"
+				return "ktc_core_string_replace_char($vBuf, $inRecv.len + 1, $inRecv, $vOld, $vNew)"
+			}
+			}
+
+		"padStart" -> if (inRecvTypeKtc is KtcType.Str && inArgs.isNotEmpty()) {
+			val vTarget = genExpr(inArgs[0].expr)
+			val vPadCh  = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else "' '"
+			val vBuf = tmp()
+			preStmts += "ktc_Int ${vBuf}_sz = (($vTarget) > $inRecv.len ? ($vTarget) : $inRecv.len) + 1;"
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca(${vBuf}_sz);"
+			return "ktc_core_string_padStart($vBuf, ${vBuf}_sz, $inRecv, $vTarget, $vPadCh)"
+			}
+
+		"padEnd" -> if (inRecvTypeKtc is KtcType.Str && inArgs.isNotEmpty()) {
+			val vTarget = genExpr(inArgs[0].expr)
+			val vPadCh  = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else "' '"
+			val vBuf = tmp()
+			preStmts += "ktc_Int ${vBuf}_sz = (($vTarget) > $inRecv.len ? ($vTarget) : $inRecv.len) + 1;"
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca(${vBuf}_sz);"
+			return "ktc_core_string_padEnd($vBuf, ${vBuf}_sz, $inRecv, $vTarget, $vPadCh)"
+			}
+
+		"toBooleanStrictOrNull" -> if (inRecvTypeKtc is KtcType.Str)
+			return tmpStrToNumOptional(inRecv, "ktc_Bool", "toBooleanStrictOrNull")
+
+		"toBooleanStrict" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vT = tmp()
+			preStmts += "ktc_Bool $vT = false;"
+			preStmts += "if (!ktc_core_str_toBooleanStrictOrNull($inRecv, &$vT)) { ktc_core_stacktrace_print(\"IllegalArgumentException: not a valid Boolean\", 41, \"$currentSourceFile\", ${currentSourceFile.length}, $currentStmtLine); exit(1); }"
 			return vT
 			}
 

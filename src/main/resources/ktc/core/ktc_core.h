@@ -285,6 +285,38 @@ static inline ktc_String ktc_core_string_substring(ktc_String s, ktc_Int from, k
 /** Concatenate into caller-provided buffer. Clamps each half independently. */
 ktc_String ktc_core_string_cat(ktc_Char* buf, ktc_Int bufsz, ktc_String a, ktc_String b);
 
+/* ─────────── Find/locate ─────────── */
+ktc_Int  ktc_core_string_indexOf_char(ktc_String s, ktc_Char ch);
+ktc_Int  ktc_core_string_lastIndexOf_char(ktc_String s, ktc_Char ch);
+ktc_Int  ktc_core_string_lastIndexOf_str(ktc_String s, ktc_String sub);
+ktc_Bool ktc_core_string_contains_char(ktc_String s, ktc_Char ch);
+
+/* ─────────── Trim ─────────── */
+/* Returns a view of s with leading/trailing ASCII whitespace removed. No copy. */
+ktc_String ktc_core_string_trim(ktc_String s);
+ktc_String ktc_core_string_trimStart(ktc_String s);
+ktc_String ktc_core_string_trimEnd(ktc_String s);
+
+/* ─────────── Buffer-producing ops ─────────── */
+/* All take a caller-provided buffer (typically via alloca) and write the
+result into it. Return a ktc_String view of the written prefix. The
+required buffer size is documented per op; the helper truncates rather
+than overflowing if bufsz is too small. */
+
+ktc_String ktc_core_string_reversed(ktc_Char* buf, ktc_Int bufsz, ktc_String s);
+/* ASCII-only case conversion (Unicode case-folding requires tables; outside scope). */
+ktc_String ktc_core_string_lowercase_ascii(ktc_Char* buf, ktc_Int bufsz, ktc_String s);
+ktc_String ktc_core_string_uppercase_ascii(ktc_Char* buf, ktc_Int bufsz, ktc_String s);
+ktc_String ktc_core_string_replace_char(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Char old, ktc_Char new_);
+ktc_String ktc_core_string_repeat(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Int n);
+ktc_String ktc_core_string_padStart(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Int targetLen, ktc_Char padChar);
+ktc_String ktc_core_string_padEnd(ktc_Char* buf, ktc_Int bufsz, ktc_String s, ktc_Int targetLen, ktc_Char padChar);
+
+/* ─────────── Parse ─────────── */
+/* Parses "true" or "false" (Kotlin's Boolean.toString output). Returns
+KTC_TRUE on success and writes the parsed value through *out. */
+ktc_Bool ktc_core_str_toBooleanStrictOrNull(ktc_String s, ktc_Bool* out);
+
 // ══════════════════════════════════════════════════════════════════
 // MARK: StrBuf
 // ══════════════════════════════════════════════════════════════════

@@ -301,4 +301,131 @@ class StringUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("(s.len > 0)")
     }
+
+    // ── New String intrinsics (codegen) ──────────────────────────────
+
+    @Test fun stringIndexOfChar() {
+        val r = transpileMain("""
+            val s = "hello"
+            val i = s.indexOf('l')
+        """)
+        r.sourceContains("ktc_core_string_indexOf_char(s, ")
+    }
+
+    @Test fun stringLastIndexOfChar() {
+        val r = transpileMain("""
+            val s = "hello"
+            val i = s.lastIndexOf('l')
+        """)
+        r.sourceContains("ktc_core_string_lastIndexOf_char(s, ")
+    }
+
+    @Test fun stringLastIndexOfString() {
+        val r = transpileMain("""
+            val s = "hello world hello"
+            val i = s.lastIndexOf("hello")
+        """)
+        r.sourceContains("ktc_core_string_lastIndexOf_str(s, ")
+    }
+
+    @Test fun stringContainsChar() {
+        val r = transpileMain("""
+            val s = "hello"
+            val ok = s.contains('l')
+        """)
+        r.sourceContains("ktc_core_string_contains_char(s, ")
+    }
+
+    @Test fun stringReversed() {
+        val r = transpileMain("""
+            val s = "abc"
+            val r = s.reversed()
+        """)
+        r.sourceContains("ktc_core_string_reversed(")
+        r.sourceContains("ktc_core_alloca")
+    }
+
+    @Test fun stringLowercase() {
+        val r = transpileMain("""
+            val s = "ABC"
+            val r = s.lowercase()
+        """)
+        r.sourceContains("ktc_core_string_lowercase_ascii(")
+    }
+
+    @Test fun stringUppercase() {
+        val r = transpileMain("""
+            val s = "abc"
+            val r = s.uppercase()
+        """)
+        r.sourceContains("ktc_core_string_uppercase_ascii(")
+    }
+
+    @Test fun stringRepeat() {
+        val r = transpileMain("""
+            val s = "ab"
+            val r = s.repeat(3)
+        """)
+        r.sourceContains("ktc_core_string_repeat(")
+    }
+
+    @Test fun stringReplaceCharChar() {
+        val r = transpileMain("""
+            val s = "hello"
+            val r = s.replace('l', 'L')
+        """)
+        r.sourceContains("ktc_core_string_replace_char(")
+    }
+
+    @Test fun stringPadStart() {
+        val r = transpileMain("""
+            val s = "42"
+            val r = s.padStart(5, '0')
+        """)
+        r.sourceContains("ktc_core_string_padStart(")
+    }
+
+    @Test fun stringPadEnd() {
+        val r = transpileMain("""
+            val s = "42"
+            val r = s.padEnd(5, ' ')
+        """)
+        r.sourceContains("ktc_core_string_padEnd(")
+    }
+
+    // ── New String stdlib extensions (pure Kotlin) ───────────────────
+
+    @Test fun stringLastIndex() {
+        val r = transpileMainWithStdlib("""
+            val s = "hello"
+            val li = s.lastIndex
+        """)
+        // inline val expands to (s.len - 1) at the use site.
+        r.sourceMatches(Regex("""s\.len\s*-\s*1"""))
+    }
+
+    @Test fun stringTake() {
+        val r = transpileMainWithStdlib("""
+            val s = "hello"
+            val t = s.take(3)
+        """)
+        r.sourceContains("ktc_core_string_substring(")
+    }
+
+    @Test fun stringTrim() {
+        val r = transpileMainWithStdlib("""
+            val s = "  hello  "
+            val t = s.trim()
+        """)
+        r.sourceContains("ktc_core_string_substring(")
+    }
+
+    @Test fun stringIsBlank() {
+        val r = transpileMainWithStdlib("""
+            val s = "   "
+            val b = s.isBlank()
+        """)
+        // isBlank is inlined as a char-scan loop
+        r.sourceContains("/* inline ")
+    }
 }

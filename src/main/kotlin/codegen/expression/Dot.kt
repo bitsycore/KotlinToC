@@ -108,6 +108,9 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Enum .name → lookup in names array
     if (e.name == "name" && vOrdinalEnumInfo != null) return "${vOrdinalEnumInfo.flatName}_names[($recv)]"
 
+    // String.lastIndex → s.len - 1 (Kotlin stdlib extension property).
+    if (e.name == "lastIndex" && recvTypeKtc is KtcType.Str) return "($recv.len - 1)"
+
     // p.refValue → dereference pointer (*p), optionally guarded by --check-null
     if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) {
         val inner = (recvTypeCoreKtc as KtcType.Ptr).inner
