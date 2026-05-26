@@ -47,19 +47,92 @@ private fun parseDepsToml(content: String): List<String> {
     return parseTomlStringArray(match.groupValues[1])
 }
 
-/** Parse `dependencies = ["A", "B"]` from a module.ktc.toml resource. Returns empty list if absent. */
-private fun parseModuleDeps(moduleName: String, aClass: Class<*>): List<String> {
-    val res = aClass.getResourceAsStream("/modules/$moduleName/module.ktc.toml") ?: return emptyList()
-    val content = res.bufferedReader().readText()
-    val match = Regex("""^\s*dependencies\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
-        ?: return emptyList()
-    return parseTomlStringArray(match.groupValues[1])
+// A module name that is an absolute path refers to a filesystem directory, not a bundled JAR resource.
+private fun isFileSystemModule(name: String): Boolean = File(name).isAbsolute
+
+// Detect a URL module (https://, http://, or file:// prefix).
+private fun isUrlModule(name: String): Boolean =
+    name.startsWith("https://") || name.startsWith("http://") || name.startsWith("file://")
+
+// Resolve a URL module to a local filesystem path by cloning the repo into a cache directory.
+// URL format: "https://...repo.git#subpath/to/module" — splits on last '#'.
+// Without '#', the repo root is the module directory.
+private fun resolveUrlModule(url: String): String {
+    val hashIdx = url.lastIndexOf('#')
+    val repoUrl: String
+    val subPath: String
+    if (hashIdx > 0 && hashIdx < url.length - 1) {
+        repoUrl = url.substring(0, hashIdx)
+        subPath = url.substring(hashIdx + 1)
+    } else {
+        repoUrl = if (hashIdx == url.length - 1) url.substring(0, hashIdx) else url
+        subPath = ""
+    }
+
+    val cacheDir = File(System.getProperty("user.home"), ".ktc/cache")
+    cacheDir.mkdirs()
+
+    // Use a hash of the repo URL as the cache folder name
+    val repoHash = repoUrl.hashCode().toUInt().toString(16)
+    val repoName = repoUrl.substringAfterLast('/').removeSuffix(".git").ifEmpty { "repo" }
+    val cloneDir = File(cacheDir, "${repoName}_$repoHash")
+
+    if (cloneDir.exists()) {
+        // Pull latest changes
+        val pullResult = ProcessBuilder("git", "-C", cloneDir.absolutePath, "pull", "--ff-only", "-q")
+            .redirectErrorStream(true).start()
+        pullResult.waitFor()
+    } else {
+        // Clone
+        System.err.println("  Fetching module: $repoUrl")
+        val cloneResult = ProcessBuilder("git", "clone", "--depth", "1", "-q", repoUrl, cloneDir.absolutePath)
+            .redirectErrorStream(true).start()
+        val output = cloneResult.inputStream.bufferedReader().readText()
+        val exitCode = cloneResult.waitFor()
+        if (exitCode != 0) {
+            System.err.println("Error: failed to clone module '$repoUrl':\n$output")
+            exitProcess(1)
+        }
+    }
+
+    val moduleDir = if (subPath.isNotEmpty()) File(cloneDir, subPath) else cloneDir
+    if (!moduleDir.isDirectory) {
+        System.err.println("Error: subpath '$subPath' not found in cloned repo '$repoUrl'")
+        exitProcess(1)
+    }
+    return moduleDir.canonicalPath
 }
 
-/** Parse `autoImport = "ktc.std.*"` from a module.ktc.toml resource. Returns null if absent. */
+// Read module.ktc.toml content for a module (bundled or filesystem). Returns null if absent.
+private fun readModuleToml(moduleName: String, aClass: Class<*>): String? {
+    if (isFileSystemModule(moduleName)) {
+        val f = File(moduleName, "module.ktc.toml")
+        return if (f.exists()) f.readText() else null
+    }
+    return aClass.getResourceAsStream("/modules/$moduleName/module.ktc.toml")?.bufferedReader()?.readText()
+}
+
+/** Parse `dependencies = ["A", "B"]` from a module's module.ktc.toml. Returns empty list if absent. */
+private fun parseModuleDeps(moduleName: String, aClass: Class<*>): List<String> {
+    val content = readModuleToml(moduleName, aClass) ?: return emptyList()
+    val match = Regex("""^\s*dependencies\s*=\s*\[([^\]]*)]""", RegexOption.MULTILINE).find(content)
+        ?: return emptyList()
+    val deps = parseTomlStringArray(match.groupValues[1])
+    // Resolve relative and URL dependency paths
+    val moduleDir = if (isFileSystemModule(moduleName)) File(moduleName) else null
+    return deps.map { dep ->
+        when {
+            isUrlModule(dep) -> resolveUrlModule(dep)
+            (dep.startsWith("./") || dep.startsWith("../")) && moduleDir != null ->
+                File(moduleDir, dep).canonicalPath
+            else -> dep
+        }
+    }
+}
+
+/** Parse `autoImport = "ktc.std.*"` from a module's module.ktc.toml. Returns null if absent. */
 private fun parseModuleAutoImport(moduleName: String, aClass: Class<*>): String? {
-    val res = aClass.getResourceAsStream("/modules/$moduleName/module.ktc.toml") ?: return null
-    val content = res.bufferedReader().readText()
+    val content = readModuleToml(moduleName, aClass) ?: return null
     return Regex("""^\s*autoImport\s*=\s*"([^"]+)"""", RegexOption.MULTILINE)
         .find(content)?.groupValues?.get(1)
 }
@@ -181,7 +254,21 @@ fun main(args: Array<String>) {
         val dir = f.parentFile ?: continue
         if (!seenDirs.add(dir)) continue
         val depsFile = File(dir, "deps.ktc.toml")
-        if (depsFile.exists()) moduleNames += parseDepsToml(depsFile.readText())
+        if (depsFile.exists()) {
+            for (mod in parseDepsToml(depsFile.readText())) {
+                if (isUrlModule(mod))
+                    moduleNames += resolveUrlModule(mod)
+                else if (mod.startsWith("./") || mod.startsWith("../"))
+                    moduleNames += File(dir, mod).canonicalPath
+                else
+                    moduleNames += mod
+            }
+        }
+    }
+    // Resolve URL modules passed via --module args
+    for (i in moduleNames.indices) {
+        if (isUrlModule(moduleNames[i]))
+            moduleNames[i] = resolveUrlModule(moduleNames[i])
     }
     val resolvedModules = resolveModules(moduleNames.distinct(), aClass)
     val moduleAutoImports = resolvedModules.mapNotNull { parseModuleAutoImport(it, aClass) }.distinct()
@@ -214,21 +301,39 @@ fun main(args: Array<String>) {
         }
     }
 
-    // Load module .kt files from embedded resources (modules/ in JAR)
+    // Load module .kt files from embedded resources (modules/ in JAR) or filesystem
     val moduleCmakes = mutableListOf<String>()
     for (moduleName in resolvedModules) {
-        val modulePath = "/modules/$moduleName"
-        val moduleKtFiles = discoverResourceFiles(modulePath, ".kt")
-        if (moduleKtFiles.isEmpty()) {
-            System.err.println("Warning: module '$moduleName' not found in bundled modules.")
-            continue
+        if (isFileSystemModule(moduleName)) {
+            val moduleDir = File(moduleName)
+            if (!moduleDir.isDirectory) {
+                System.err.println("Warning: filesystem module '$moduleName' is not a directory.")
+                continue
+            }
+            val ktFiles = moduleDir.listFiles()?.filter { it.extension == "kt" }?.sortedBy { it.name }
+            if (ktFiles.isNullOrEmpty()) {
+                System.err.println("Warning: no .kt files in filesystem module '$moduleName'.")
+                continue
+            }
+            for (f in ktFiles) {
+                vRawSources += RawSource(f, f.name, f.readText(), false)
+            }
+            val cmakeFile = File(moduleDir, "module.cmake")
+            if (cmakeFile.exists()) moduleCmakes += cmakeFile.readText()
+        } else {
+            val modulePath = "/modules/$moduleName"
+            val moduleKtFiles = discoverResourceFiles(modulePath, ".kt")
+            if (moduleKtFiles.isEmpty()) {
+                System.err.println("Warning: module '$moduleName' not found in bundled modules.")
+                continue
+            }
+            for (name in moduleKtFiles.sorted()) {
+                val res = aClass.getResourceAsStream("$modulePath/$name") ?: continue
+                vRawSources += RawSource(File("modules/$moduleName/$name"), name, res.bufferedReader().readText(), false)
+            }
+            val cmakeRes = aClass.getResourceAsStream("$modulePath/module.cmake")
+            if (cmakeRes != null) moduleCmakes += cmakeRes.bufferedReader().readText()
         }
-        for (name in moduleKtFiles.sorted()) {
-            val res = aClass.getResourceAsStream("$modulePath/$name") ?: continue
-            vRawSources += RawSource(File("modules/$moduleName/$name"), name, res.bufferedReader().readText(), false)
-        }
-        val cmakeRes = aClass.getResourceAsStream("$modulePath/module.cmake")
-        if (cmakeRes != null) moduleCmakes += cmakeRes.bufferedReader().readText()
     }
 
     // Collect user sources
