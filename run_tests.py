@@ -1,0 +1,854 @@
+#!/usr/bin/env python3
+"""
+run_tests.py — Build the transpiler, then run unit + integration tests.
+
+Single cross-platform replacement for run_tests.ps1 / run_tests.sh.
+
+Usage:
+    python3 run_tests.py                            # Full suite (build + unit + integration)
+    python3 run_tests.py --run HashMapTest          # Single test, verbose
+    python3 run_tests.py --run Test1,Test2          # Multiple tests, verbose
+    python3 run_tests.py --skip unit                # Skip unit tests
+    python3 run_tests.py --run game --gui           # Open window for interactive test
+    python3 run_tests.py --run game --mem-track     # Pass --mem-track to transpiler
+    python3 run_tests.py --run game --ast
+    python3 run_tests.py --run game --dump-semantics
+    python3 run_tests.py --run game --disposed ASSERT|LOG|NO
+    python3 run_tests.py --run game --double-dispose ASSERT|LOG|NO
+    python3 run_tests.py --clean                    # Remove all integration/*/out/ directories
+    python3 run_tests.py --rebuild                  # Force clean rebuild of the JAR
+    python3 run_tests.py --compiler clang           # Override C compiler (gcc/clang/cl/cc)
+    python3 run_tests.py --cc-args "-O2 -g"
+    python3 run_tests.py --cmake-args "-DFOO=BAR"
+    python3 run_tests.py --cfg Debug                # CMake build type
+    python3 run_tests.py --static-libc              # -DKTC_STATIC_LIBC=ON
+    python3 run_tests.py --build jar|gradle|proguard
+"""
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# ==================
+# MARK: Constants
+# ==================
+
+kRoot       = Path(__file__).resolve().parent
+kJar        = kRoot / "build" / "libs" / "KotlinToC-1.0-SNAPSHOT.jar"
+kReleaseJar = kRoot / "build" / "libs" / "KotlinToC-1.0-SNAPSHOT-release.jar"
+kTestsDir   = kRoot / "integration"
+kIsWindows  = os.name == "nt"
+kGradlew    = kRoot / ("gradlew.bat" if kIsWindows else "gradlew")
+kExeSuffix  = ".exe" if kIsWindows else ""
+
+# Enable ANSI on Windows 10+ terminals (Windows Terminal handles it automatically;
+# legacy conhost needs the VT processing flag — harmless when already set).
+if kIsWindows:
+	try:
+		import ctypes
+		vKernel = ctypes.windll.kernel32
+		vKernel.SetConsoleMode(vKernel.GetStdHandle(-11), 7)
+	except Exception:
+		pass
+
+# Force UTF-8 on stdout/stderr — Windows defaults to cp1252 which can't encode
+# many characters the transpiler emits (Unicode arrows, replacement chars, etc).
+for vStream in (sys.stdout, sys.stderr):
+	try:
+		vStream.reconfigure(encoding="utf-8", errors="replace")
+	except (AttributeError, ValueError):
+		pass
+
+# ANSI colors. The plain `kRst` resets everything; the rest are foreground codes.
+kRed     = "\033[31m"
+kGreen   = "\033[32m"
+kYellow  = "\033[33m"
+kDYellow = "\033[33m"
+kCyan    = "\033[36m"
+kGray    = "\033[90m"
+kWhite   = "\033[97m"
+kRst     = "\033[0m"
+
+# ==================
+# MARK: Print helpers
+# ==================
+
+def pwrite(inMsg: str = "") -> None:
+	# Plain stdout writer with a trailing newline. Keeps output consistent
+	# whether or not the caller already includes ANSI escapes.
+	print(inMsg, flush=True)
+
+def ppass(inMsg: str) -> None:
+	pwrite(f"  {kGreen}PASS{kRst} {inMsg}")
+
+def pfail(inMsg: str) -> None:
+	pwrite(f"  {kRed}FAIL{kRst} {inMsg}")
+
+def pskip(inMsg: str) -> None:
+	pwrite(f"  {kYellow}SKIP{kRst} {inMsg}")
+
+def pinfo(inMsg: str) -> None:
+	pwrite(f"  {kCyan}----{kRst} {inMsg}")
+
+def psection(inMsg: str) -> None:
+	pwrite(f"\n{kYellow}=== {inMsg} ==={kRst}")
+
+def pcmd(inMsg: str) -> None:
+	pwrite(f"  {kDYellow}${kRst} {kWhite}{inMsg}{kRst}")
+
+def format_ms(inMs: int) -> str:
+	# "123ms" under a second, "1.23s" otherwise.
+	if inMs < 1000:
+		return f"{inMs}ms"
+	return f"{inMs / 1000.0:.2f}s"
+
+# ==================
+# MARK: Test discovery
+# ==================
+
+@dataclass
+class TestDir:
+	# Discovered integration test directory.
+	name:    str   # leaf directory name
+	relPath: str   # path relative to integration/, slash-normalized
+	fullPath: Path # absolute filesystem path
+
+def find_test_dirs() -> list[TestDir]:
+	# Walks integration/ and returns one entry per directory that contains a
+	# module.ktc.toml. The results are sorted by relPath for stable order.
+	vResults: list[TestDir] = []
+	if not kTestsDir.is_dir():
+		return vResults
+	for vToml in kTestsDir.rglob("module.ktc.toml"):
+		vDir = vToml.parent
+		vRel = vDir.relative_to(kTestsDir).as_posix()
+		vResults.append(TestDir(name=vDir.name, relPath=vRel, fullPath=vDir))
+	vResults.sort(key=lambda inT: inT.relPath)
+	return vResults
+
+# ==================
+# MARK: module.ktc.toml mini-parser
+# ==================
+
+@dataclass
+class ModuleConfig:
+	# Subset of module.ktc.toml that the runner cares about. Anything else
+	# is ignored — full TOML parsing isn't needed for execution.
+	executable:  str  = ""
+	interactive: bool = False
+	args:        str  = ""
+
+# Regex for `key = "value"` and `key = true|false|N`. Lenient on whitespace.
+kReStr  = re.compile(r'^\s*(?P<k>\w+)\s*=\s*"(?P<v>[^"]*)"')
+kReBool = re.compile(r'^\s*(?P<k>\w+)\s*=\s*(?P<v>true|false)\b')
+
+def read_module_toml(inPath: Path) -> ModuleConfig:
+	# Parses the subset of module.ktc.toml fields used at runtime. Missing
+	# file → default config. Quotes are required for string values.
+	vCfg = ModuleConfig()
+	if not inPath.is_file():
+		return vCfg
+	for vLine in inPath.read_text(encoding="utf-8", errors="replace").splitlines():
+		vM = kReStr.match(vLine)
+		if vM:
+			vK, vV = vM.group("k"), vM.group("v")
+			if   vK == "executable": vCfg.executable = vV
+			elif vK == "args":       vCfg.args       = vV
+			continue
+		vM = kReBool.match(vLine)
+		if vM and vM.group("k") == "interactive":
+			vCfg.interactive = (vM.group("v") == "true")
+	return vCfg
+
+# ==================
+# MARK: Compiler / cmake detection
+# ==================
+
+def find_c_compiler(inPreferred: str | None) -> str | None:
+	# Returns inPreferred if it's on PATH, otherwise the first of the platform's
+	# usual suspects. None if nothing is found.
+	if inPreferred:
+		return inPreferred if shutil.which(inPreferred) else None
+	vCandidates = ["gcc", "clang", "cl"] if kIsWindows else ["gcc", "clang", "cc"]
+	for vC in vCandidates:
+		if shutil.which(vC):
+			return vC
+	return None
+
+def find_cmake() -> str | None:
+	return "cmake" if shutil.which("cmake") else None
+
+# ==================
+# MARK: Subprocess helpers
+# ==================
+
+@dataclass
+class RunResult:
+	# Captured result of a child process invocation.
+	exit:   int
+	stdout: str
+	ms:     int
+
+def run_capture(inCmd: list[str], inCwd: Path | None = None) -> RunResult:
+	# Runs a command, captures combined stdout+stderr, returns exit and elapsed ms.
+	vStart = time.monotonic()
+	vP = subprocess.run(
+		inCmd,
+		cwd=str(inCwd) if inCwd else None,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.STDOUT,
+		encoding="utf-8",
+		errors="replace",
+	)
+	vMs = int((time.monotonic() - vStart) * 1000)
+	return RunResult(exit=vP.returncode, stdout=vP.stdout or "", ms=vMs)
+
+def run_streamed(inCmd: list[str], inCwd: Path | None = None) -> int:
+	# Runs a command, streaming child stdout/stderr directly to ours. Used when
+	# we want the user to see live output (GUI mode for interactive tests).
+	vP = subprocess.run(inCmd, cwd=str(inCwd) if inCwd else None)
+	return vP.returncode
+
+# ==================
+# MARK: Clean
+# ==================
+
+def cmd_clean() -> int:
+	# Removes the out/ directory inside every integration test directory.
+	pwrite(f"{kCyan}Cleaning per-test output directories...{kRst}")
+	vCleaned = 0
+	for vT in find_test_dirs():
+		vOut = vT.fullPath / "out"
+		if vOut.is_dir():
+			shutil.rmtree(vOut)
+			pwrite(f"{kGray}  removed {vOut}{kRst}")
+			vCleaned += 1
+	pwrite(f"{kGreen}Cleaned {vCleaned} test output directories.{kRst}")
+	return 0
+
+# ==================
+# MARK: Build (Gradle / ProGuard)
+# ==================
+
+def invoke_build(inBuildMode: str, inRebuild: bool) -> None:
+	# Runs the Gradle wrapper to produce the JAR (or ProGuard release JAR).
+	# The "gradle" mode skips the JAR build entirely — `gradle run` will be
+	# used at transpile time instead.
+	if inBuildMode == "gradle":
+		return
+	if inBuildMode == "proguard":
+		vTask = ["clean", "proguard"] if inRebuild else ["proguard"]
+		vLabel = "ProGuard release JAR"
+		vExpected = kReleaseJar
+	else:
+		vTask = ["clean", "jar"] if inRebuild else ["jar"]
+		vLabel = "transpiler JAR"
+		vExpected = kJar
+	psection(f"Building {vLabel}")
+	pcmd(f"{kGradlew.name} {' '.join(vTask)}")
+	vRes = run_streamed([str(kGradlew), *vTask], inCwd=kRoot)
+	if vRes != 0 or not vExpected.is_file():
+		pwrite(f"{kRed}ERROR: build failed{kRst}")
+		sys.exit(1)
+	ppass(f"Built {vExpected}")
+
+# ==================
+# MARK: File-system helpers for the run loop
+# ==================
+
+# Files/dirs preserved inside out/ when we re-prepare it for a transpile.
+# _cmake/ is the cmake build cache; ktc_user.cmake and *.dll are produced by
+# user setup steps and shouldn't be wiped by every transpile.
+kOutPreserveNames = {"_cmake", "ktc_user.cmake"}
+
+def prepare_out_dir(inOut: Path) -> None:
+	# Removes everything inside inOut except _cmake/, ktc_user.cmake, and any
+	# *.dll files (DLL preservation matters on Windows for runtime deps).
+	if inOut.is_dir():
+		for vEntry in inOut.iterdir():
+			if vEntry.name in kOutPreserveNames:
+				continue
+			if vEntry.is_file() and vEntry.suffix.lower() == ".dll":
+				continue
+			if vEntry.is_dir():
+				shutil.rmtree(vEntry, ignore_errors=True)
+			else:
+				try:
+					vEntry.unlink()
+				except OSError:
+					pass
+	else:
+		inOut.mkdir(parents=True, exist_ok=True)
+
+def collect_kt_files(inDir: Path) -> list[Path]:
+	# All .kt files under inDir, sorted for deterministic transpile order.
+	return sorted(inDir.rglob("*.kt"))
+
+def collect_c_sources(inOut: Path) -> list[Path]:
+	# Discovers .c files in the transpile output. ktc.core/ktc_core.c goes first
+	# (the runtime), then ktc/** sorted, then everything else (user package code)
+	# sorted. Matches the ordering the PowerShell/bash versions used so direct
+	# gcc invocations stay reproducible.
+	vSources: list[Path] = []
+	vKtcDir = inOut / "ktc"
+	vCoreDir = inOut / "ktc.core"
+	vCore = vCoreDir / "ktc_core.c"
+	if vCore.is_file():
+		vSources.append(vCore)
+	if vKtcDir.is_dir():
+		vSources.extend(sorted(vKtcDir.rglob("*.c")))
+	for vC in sorted(inOut.rglob("*.c")):
+		if vKtcDir in vC.parents or vCoreDir in vC.parents:
+			continue
+		vSources.append(vC)
+	return vSources
+
+def has_user_cmake(inOut: Path) -> bool:
+	# True when this test needs cmake rather than direct gcc (presence of either
+	# ktc_user.cmake or ktc_modules.cmake from the transpiler).
+	return (inOut / "ktc_user.cmake").is_file() or (inOut / "ktc_modules.cmake").is_file()
+
+def find_built_exe(inOut: Path, inExeName: str) -> Path | None:
+	# After a CMake build, prefer <exeName>(.exe), then fall back to any
+	# executable file directly under inOut that isn't a known artifact.
+	vExpected = inOut / f"{inExeName}{kExeSuffix}"
+	if vExpected.is_file():
+		return vExpected
+	for vCand in inOut.iterdir():
+		if not vCand.is_file():
+			continue
+		vN = vCand.name
+		if vN.startswith("_ktcrun") or vN in {"ktc_user.cmake", "ktc_modules.cmake"}:
+			continue
+		if vN.endswith((".dll", ".so", ".dylib", ".c", ".h", ".obj", ".o")):
+			continue
+		if kIsWindows:
+			if vN.endswith(".exe"):
+				return vCand
+		else:
+			if os.access(vCand, os.X_OK):
+				return vCand
+	return None
+
+# ==================
+# MARK: Runner options
+# ==================
+
+@dataclass
+class RunOptions:
+	# Aggregated CLI options that flow through the build/run pipeline.
+	buildMode:   str        = "jar"         # jar | gradle | proguard
+	compiler:    str        = ""
+	ccArgs:      str        = ""
+	cmakeArgs:   str        = ""
+	cfg:         str        = "Release"
+	staticLibc:  bool       = False
+	gui:         bool       = False
+	extraArgs:   list[str]  = field(default_factory=list)  # transpiler flags
+	cc:          str        = ""                            # resolved compiler binary
+	cmake:       str | None = None                          # resolved cmake binary or None
+
+def transpile_cmd(inOpts: RunOptions, inKts: list[Path], inOut: Path, inExeName: str) -> list[str]:
+	# Builds the argv for the transpile step. Two backends: the fat JAR
+	# (default and proguard) or `gradle run --args=...` for in-place dev.
+	if inOpts.buildMode == "gradle":
+		vArgs = " ".join([*(str(k) for k in inKts), "-o", str(inOut), "--name", inExeName, *inOpts.extraArgs])
+		return [str(kGradlew), "run", "--quiet", f"--args={vArgs}"]
+	vJar = kReleaseJar if inOpts.buildMode == "proguard" else kJar
+	return ["java", "-jar", str(vJar), *(str(k) for k in inKts), "-o", str(inOut), "--name", inExeName, *inOpts.extraArgs]
+
+# ==================
+# MARK: Single test (verbose, used by --run)
+# ==================
+
+@dataclass
+class TestOutcome:
+	# Outcome of one test in the suite.
+	#  pass     — transpile + compile + run all succeeded.
+	#  skip     — required toolchain/library missing (e.g. cmake or a system lib).
+	#  fail     — any step failed.
+	name:    str
+	status:  str
+	timing:  str        = ""
+	warning: str        = ""
+
+def invoke_test_verbose(
+	inTest:   TestDir,
+	inOpts:   RunOptions,
+) -> TestOutcome:
+	# Runs one test with full per-step output. Used by --run mode. Returns the
+	# outcome so the caller can compute the right exit code.
+	vName = inTest.relPath
+	vSrc  = inTest.fullPath
+	vOut  = vSrc / "out"
+	vCfg  = read_module_toml(vSrc / "module.ktc.toml")
+	vExe  = vCfg.executable or inTest.name
+
+	vKts = collect_kt_files(vSrc)
+	if not vKts:
+		pfail(f"{vName} — no .kt files in {vSrc}")
+		return TestOutcome(name=vName, status="fail")
+	prepare_out_dir(vOut)
+
+	pinfo(f"Input:      {' '.join(k.name for k in vKts)}")
+	pinfo(f"Output dir: {vOut}")
+
+	# ── Transpile ─────────────────────────────────────────────────
+	psection("Transpile")
+	vCmd = transpile_cmd(inOpts, vKts, vOut, vExe)
+	# Friendly cmd line: shortened JAR name and just .kt leaf names.
+	vJarLbl = "KotlinToC-release.jar" if inOpts.buildMode == "proguard" else "KotlinToC.jar"
+	vSuf = (" " + " ".join(inOpts.extraArgs)) if inOpts.extraArgs else ""
+	if inOpts.buildMode == "gradle":
+		pcmd(f"gradlew run --args=\"{' '.join(k.name for k in vKts)} -o {vOut} --name {vExe}{vSuf}\"")
+	else:
+		pcmd(f"java -jar {vJarLbl} {' '.join(k.name for k in vKts)} -o {vOut} --name {vExe}{vSuf}")
+	pwrite()
+	vTr = run_capture(vCmd, inCwd=kRoot)
+	for vLine in vTr.stdout.splitlines():
+		if "warning:" in vLine:
+			pwrite(f"  {kYellow}{vLine}{kRst}")
+		else:
+			pwrite(f"  {vLine}")
+	pwrite()
+	if vTr.exit != 0:
+		pfail(f"Transpilation failed (exit {vTr.exit})")
+		return TestOutcome(name=vName, status="fail")
+	pwrite(f"  {kGreen}PASS{kRst} Transpilation succeeded  {kGray}(ktc: {format_ms(vTr.ms)}){kRst}")
+
+	# Carry ktc_user.cmake from src to out (preserved across rebuilds).
+	vSrcUserCmake = vSrc / "ktc_user.cmake"
+	if vSrcUserCmake.is_file():
+		shutil.copy2(vSrcUserCmake, vOut / "ktc_user.cmake")
+
+	vCSrcs = collect_c_sources(vOut)
+	if not vCSrcs and not has_user_cmake(vOut):
+		pfail("No .c files generated")
+		return TestOutcome(name=vName, status="fail")
+
+	# ── Compile ───────────────────────────────────────────────────
+	vUseCmake = has_user_cmake(vOut)
+	if vUseCmake and not inOpts.cmake:
+		pskip(f"{vName} — ktc_user.cmake/ktc_modules.cmake requires cmake (not on PATH)")
+		return TestOutcome(name=vName, status="skip")
+
+	vExePath: Path
+	vCompMs = 0
+	if vUseCmake:
+		# Two-step CMake: configure (-B _cmake) then build (--build _cmake).
+		vBld = vOut / "_cmake"
+		vCfgArgs = ["-B", str(vBld), "-S", str(vOut), f"-DCMAKE_BUILD_TYPE={inOpts.cfg}"]
+		if inOpts.compiler:
+			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.compiler}")
+		if inOpts.staticLibc:
+			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
+		if inOpts.cmakeArgs:
+			vCfgArgs.extend(inOpts.cmakeArgs.split())
+		psection("CMake Configure")
+		pcmd(f"cmake {' '.join(vCfgArgs)}")
+		pwrite()
+		vConfig = run_capture([inOpts.cmake, *vCfgArgs])
+		for vLine in vConfig.stdout.splitlines():
+			pwrite(f"  {kGray}{vLine}{kRst}")
+		pwrite()
+		if vConfig.exit != 0:
+			if re.search(r"Could not find|not found|NOTFOUND", vConfig.stdout, re.IGNORECASE):
+				pskip(f"{vName} — required library not found")
+				return TestOutcome(name=vName, status="skip")
+			pfail(f"CMake configure failed (exit {vConfig.exit})")
+			return TestOutcome(name=vName, status="fail")
+		pwrite(f"  {kGreen}PASS{kRst} CMake configure OK  {kGray}(cfg: {format_ms(vConfig.ms)}){kRst}")
+
+		psection("CMake Build")
+		vBuildCmd = [inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg]
+		pcmd(f"cmake --build {vBld.name} --config {inOpts.cfg}")
+		pwrite()
+		vBuild = run_capture(vBuildCmd)
+		if vBuild.stdout:
+			for vLine in vBuild.stdout.splitlines():
+				pwrite(f"  {kGray}{vLine}{kRst}")
+			pwrite()
+		if vBuild.exit != 0:
+			pfail(f"CMake build failed (exit {vBuild.exit})")
+			return TestOutcome(name=vName, status="fail")
+		vFound = find_built_exe(vOut, vExe)
+		if not vFound:
+			pfail("No executable found after cmake build")
+			return TestOutcome(name=vName, status="fail")
+		vExePath = vFound
+		vCompMs = vConfig.ms + vBuild.ms
+		pwrite(f"  {kGreen}PASS{kRst} CMake build OK -> {vExePath}  {kGray}(build: {format_ms(vBuild.ms)}){kRst}")
+	else:
+		# Direct compile with collected .c sources.
+		vExeName = f"{vExe}{kExeSuffix}"
+		vExePath = vOut / vExeName
+		# On Unix the binary name may collide with a same-named package dir;
+		# CMake-less builds emit straight into the dir, so add .out as fallback.
+		if not kIsWindows and (vOut / vExe).is_dir():
+			vExePath = vOut / f"{vExe}.out"
+		psection("Compile")
+		vCArgs = ["-std=c11", "-iquote", str(vOut), "-o", str(vExePath)]
+		if inOpts.ccArgs:
+			vCArgs.extend(inOpts.ccArgs.split())
+		vCArgs.extend(str(c) for c in vCSrcs)
+		pcmd(f"{inOpts.cc} -std=c11{(' ' + inOpts.ccArgs) if inOpts.ccArgs else ''} -o {vExePath} {' '.join(c.name for c in vCSrcs)}")
+		pwrite()
+		vCo = run_capture([inOpts.cc, *vCArgs])
+		if vCo.stdout:
+			for vLine in vCo.stdout.splitlines():
+				pwrite(f"  {kGray}{vLine}{kRst}")
+			pwrite()
+		if vCo.exit != 0:
+			pfail(f"Compilation failed (exit {vCo.exit})")
+			return TestOutcome(name=vName, status="fail")
+		vCompMs = vCo.ms
+		pwrite(f"  {kGreen}PASS{kRst} Compilation succeeded -> {vExePath}  {kGray}(comp: {format_ms(vCo.ms)}){kRst}")
+
+	# ── Generated files listing ──────────────────────────────────
+	psection("Generated Files")
+	for vFile in sorted(vOut.rglob("*")):
+		if not vFile.is_file():
+			continue
+		vRel = vFile.relative_to(vOut)
+		vSz = vFile.stat().st_size
+		vSize = f"{vSz / 1024:.1f} KB" if vSz >= 1024 else f"{vSz} B"
+		pinfo(f"{str(vRel):<30} {vSize:>10}")
+
+	# ── Run ──────────────────────────────────────────────────────
+	psection("Run")
+	pcmd(str(vExePath))
+	pwrite()
+	vRunArgs: list[str] = []
+	if vCfg.interactive and not inOpts.gui:
+		vRunArgs = ["--skip-interaction"]
+	elif vCfg.args:
+		vRunArgs = vCfg.args.split()
+	if vRunArgs:
+		pinfo(f"Test args: {' '.join(vRunArgs)}")
+
+	if inOpts.gui and vCfg.interactive:
+		vStart = time.monotonic()
+		vRExit = run_streamed([str(vExePath), *vRunArgs])
+		vRMs = int((time.monotonic() - vStart) * 1000)
+		vCaptured = ""
+	else:
+		vRunRes = run_capture([str(vExePath), *vRunArgs])
+		vRExit  = vRunRes.exit
+		vRMs    = vRunRes.ms
+		vCaptured = vRunRes.stdout
+		for vLine in vCaptured.splitlines():
+			pwrite(f"  {vLine}")
+		pwrite()
+
+	if vRExit != 0:
+		pfail(f"Runtime error (exit {vRExit})")
+		return TestOutcome(name=vName, status="fail")
+
+	vLeak = "leaked" in vCaptured
+	if vLeak:
+		pwrite(f"  {kDYellow}PASS{kRst} Program exited - memory leaks detected  {kRed}LEAK{kRst}  {kGray}(run: {format_ms(vRMs)}){kRst}")
+	else:
+		pwrite(f"  {kGreen}PASS{kRst} Program exited successfully (code 0)  {kGray}(run: {format_ms(vRMs)}){kRst}")
+	return TestOutcome(name=vName, status="pass")
+
+# ==================
+# MARK: Single test (concise, used by parallel suite)
+# ==================
+
+def invoke_test_concise(inTest: TestDir, inOpts: RunOptions) -> TestOutcome:
+	# Worker for the parallel suite — same pipeline but accumulates all output
+	# into a single one-line report per test.
+	vName = inTest.relPath
+	vSrc  = inTest.fullPath
+	vOut  = vSrc / "out"
+	vCfg  = read_module_toml(vSrc / "module.ktc.toml")
+	vExe  = vCfg.executable or inTest.name
+
+	vKts = collect_kt_files(vSrc)
+	if not vKts:
+		return TestOutcome(name=vName, status="fail")
+	prepare_out_dir(vOut)
+
+	# Transpile
+	vTr = run_capture(transpile_cmd(inOpts, vKts, vOut, vExe), inCwd=kRoot)
+	if vTr.exit != 0:
+		pwrite(f"  {kRed}FAIL{kRst} {vName} (transpile failed)")
+		# Surface the first warning/error line so the failure isn't fully opaque.
+		for vLine in vTr.stdout.splitlines()[:6]:
+			pwrite(f"       {kGray}{vLine}{kRst}")
+		return TestOutcome(name=vName, status="fail")
+	vWarnings = [k for k in vTr.stdout.splitlines() if "warning:" in k]
+
+	vSrcUserCmake = vSrc / "ktc_user.cmake"
+	if vSrcUserCmake.is_file():
+		shutil.copy2(vSrcUserCmake, vOut / "ktc_user.cmake")
+
+	vCSrcs = collect_c_sources(vOut)
+	if not vCSrcs and not has_user_cmake(vOut):
+		pwrite(f"  {kRed}FAIL{kRst} {vName} (no .c files generated)")
+		return TestOutcome(name=vName, status="fail")
+
+	vUseCmake = has_user_cmake(vOut)
+	if vUseCmake and not inOpts.cmake:
+		pwrite(f"  {kDYellow}SKIP{kRst} {vName}  (ktc_user.cmake present but cmake not found)")
+		return TestOutcome(name=vName, status="skip")
+
+	vExePath: Path
+	vCompMs  = 0
+	if vUseCmake:
+		vBld = vOut / "_cmake"
+		vCfgArgs = ["-B", str(vBld), "-S", str(vOut), f"-DCMAKE_BUILD_TYPE={inOpts.cfg}"]
+		if inOpts.compiler:
+			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.compiler}")
+		if inOpts.staticLibc:
+			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
+		if inOpts.cmakeArgs:
+			vCfgArgs.extend(inOpts.cmakeArgs.split())
+		vConfig = run_capture([inOpts.cmake, *vCfgArgs])
+		if vConfig.exit != 0:
+			if re.search(r"Could not find|not found|NOTFOUND", vConfig.stdout, re.IGNORECASE):
+				pwrite(f"  {kDYellow}SKIP{kRst} {vName}  (required library not found)")
+				return TestOutcome(name=vName, status="skip")
+			pwrite(f"  {kRed}FAIL{kRst} {vName} (cmake configure failed)")
+			return TestOutcome(name=vName, status="fail")
+		vBuild = run_capture([inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg])
+		if vBuild.exit != 0:
+			pwrite(f"  {kRed}FAIL{kRst} {vName} (cmake build failed)")
+			return TestOutcome(name=vName, status="fail")
+		vFound = find_built_exe(vOut, vExe)
+		if not vFound:
+			pwrite(f"  {kRed}FAIL{kRst} {vName} (no executable after cmake build)")
+			return TestOutcome(name=vName, status="fail")
+		vExePath = vFound
+		vCompMs = vConfig.ms + vBuild.ms
+	else:
+		vExeName = f"{vExe}{kExeSuffix}"
+		vExePath = vOut / vExeName
+		if not kIsWindows and (vOut / vExe).is_dir():
+			vExePath = vOut / f"{vExe}.out"
+		vCArgs = ["-std=c11", "-iquote", str(vOut), "-o", str(vExePath)]
+		if inOpts.ccArgs:
+			vCArgs.extend(inOpts.ccArgs.split())
+		vCArgs.extend(str(c) for c in vCSrcs)
+		vCo = run_capture([inOpts.cc, *vCArgs])
+		if vCo.exit != 0:
+			pwrite(f"  {kRed}FAIL{kRst} {vName} (compile failed)")
+			for vLine in vCo.stdout.splitlines()[:6]:
+				pwrite(f"       {kGray}{vLine}{kRst}")
+			return TestOutcome(name=vName, status="fail")
+		vCompMs = vCo.ms
+
+	# Run (always headless in parallel mode — GUI is single-test only)
+	vRunArgs = ["--skip-interaction"] if vCfg.interactive else (vCfg.args.split() if vCfg.args else [])
+	vRunRes  = run_capture([str(vExePath), *vRunArgs])
+	if vRunRes.exit != 0:
+		pwrite(f"  {kRed}FAIL{kRst} {vName} (runtime error, exit {vRunRes.exit})")
+		return TestOutcome(name=vName, status="fail")
+
+	vTiming = f"{kGray}ktc: {format_ms(vTr.ms)}  comp: {format_ms(vCompMs)}  run: {format_ms(vRunRes.ms)}{kRst}"
+	vLeak = "leaked" in vRunRes.stdout
+	if vLeak:
+		pwrite(f"  {kDYellow}PASS{kRst} {kDYellow}{vName}{kRst}  {kRed}LEAK{kRst}  {vTiming}")
+	else:
+		pwrite(f"  {kGreen}PASS{kRst} {kGreen}{vName}{kRst}  {vTiming}")
+	for vW in vWarnings:
+		pwrite(f"       {kYellow}{vW}{kRst}")
+	return TestOutcome(name=vName, status="pass", timing=vTiming)
+
+# ==================
+# MARK: Suite
+# ==================
+
+@dataclass
+class SuiteResult:
+	# Aggregated counts and lists from a suite run.
+	passed:       int       = 0
+	failed:       int       = 0
+	skipped:      int       = 0
+	failedNames:  list[str] = field(default_factory=list)
+	skippedNames: list[str] = field(default_factory=list)
+
+def run_unit_tests() -> bool:
+	# Returns True on success. Streams gradle output directly.
+	psection("Unit Tests (gradlew test)")
+	vRes = run_streamed([str(kGradlew), "test", "--quiet"], inCwd=kRoot)
+	if vRes == 0:
+		ppass("All unit tests passed")
+		return True
+	pfail("Unit tests had failures")
+	return False
+
+def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> SuiteResult:
+	# Optionally runs unit tests then dispatches integration tests in parallel.
+	# Order of completion is non-deterministic; the result struct is what callers
+	# should rely on for the summary.
+	vRes = SuiteResult()
+	if not inSkipUnit:
+		if not run_unit_tests():
+			vRes.failed += 1
+			vRes.failedNames.append("unit-tests")
+	psection("Integration Tests")
+	if not inTests:
+		pinfo("No tests to run.")
+		return vRes
+
+	vWorkers = max(1, (os.cpu_count() or 4))
+	with ThreadPoolExecutor(max_workers=vWorkers) as vEx:
+		vFutures = {vEx.submit(invoke_test_concise, vT, inOpts): vT for vT in inTests}
+		for vF in as_completed(vFutures):
+			vOutcome = vF.result()
+			if   vOutcome.status == "pass": vRes.passed += 1
+			elif vOutcome.status == "skip": vRes.skipped += 1; vRes.skippedNames.append(vOutcome.name)
+			else:                            vRes.failed  += 1; vRes.failedNames.append(vOutcome.name)
+	return vRes
+
+def show_summary(inRes: SuiteResult) -> int:
+	# Prints a final tally and returns the appropriate exit code (0 = all pass).
+	psection("Summary")
+	vTotal = inRes.passed + inRes.failed + inRes.skipped
+	vParts = [f"Total: {vTotal}", f"{kGreen}Passed: {inRes.passed}{kRst}"]
+	if inRes.skipped:
+		vParts.append(f"{kYellow}Skipped: {inRes.skipped}{kRst}")
+	if inRes.failed:
+		vParts.append(f"{kRed}Failed: {inRes.failed}{kRst}")
+	else:
+		vParts.append(f"{kGreen}Failed: 0{kRst}")
+	pwrite("  " + "  |  ".join(vParts))
+	if inRes.failedNames:
+		pwrite("")
+		pwrite(f"  {kRed}Failed tests:{kRst}")
+		for vN in inRes.failedNames:
+			pwrite(f"    {kRed}- {vN}{kRst}")
+	if inRes.skippedNames:
+		pwrite("")
+		pwrite(f"  {kYellow}Skipped tests (missing library):{kRst}")
+		for vN in inRes.skippedNames:
+			pwrite(f"    {kYellow}- {vN}{kRst}")
+	return 1 if inRes.failed else 0
+
+# ==================
+# MARK: Test matching
+# ==================
+
+def resolve_test_query(inQuery: str, inAll: list[TestDir]) -> list[TestDir]:
+	# Matches a CLI test query against the discovered tests. Accepts either the
+	# leaf name (`PointerTest`) or the slash-normalized relative path
+	# (`intrinsic/PointerTest`). Returns all matches.
+	vQ = inQuery.strip()
+	if not vQ:
+		return []
+	return [t for t in inAll if t.name == vQ or t.relPath == vQ]
+
+# ==================
+# MARK: CLI
+# ==================
+
+def build_arg_parser() -> argparse.ArgumentParser:
+	# Mirrors the flags from run_tests.ps1 / run_tests.sh. Short aliases match
+	# the bash flavor for muscle-memory carryover (--skip-unit / --run / ...).
+	vP = argparse.ArgumentParser(
+		prog="run_tests.py",
+		description="Build the KotlinToC transpiler and run unit + integration tests.",
+		formatter_class=argparse.RawDescriptionHelpFormatter,
+		epilog=__doc__,
+	)
+	# Selection
+	vP.add_argument("--run",  default="", help="Run named test(s) (comma-separated)")
+	vP.add_argument("--skip", default="", choices=["", "unit"], help="Skip a phase ('unit' to skip unit tests)")
+	vP.add_argument("--skip-unit", action="store_true", help="Alias for --skip unit")
+	# Build
+	vP.add_argument("--build", default="jar", choices=["jar", "gradle", "proguard"], help="Build mode")
+	vP.add_argument("--rebuild", action="store_true", help="Force clean rebuild of the JAR")
+	vP.add_argument("--clean",   action="store_true", help="Remove all integration/*/out/ directories")
+	# Compile
+	vP.add_argument("--compiler",   default="", help="C compiler (gcc/clang/cl/cc) — auto-detected if omitted")
+	vP.add_argument("--cc-args",    default="", help="Extra C compiler flags (single quoted string)")
+	vP.add_argument("--cmake-args", default="", help="Extra cmake -D flags")
+	vP.add_argument("--cfg",        default="Release", help="CMake build type")
+	vP.add_argument("--static-libc", action="store_true", help="Pass -DKTC_STATIC_LIBC=ON to cmake")
+	# Run
+	vP.add_argument("--gui", action="store_true", help="Open window for interactive tests (no --skip-interaction)")
+	# Transpiler-flag toggles
+	vP.add_argument("--mem-track",       action="store_true", help="Pass --mem-track to the transpiler")
+	vP.add_argument("--ast",             action="store_true", help="Pass --ast to the transpiler")
+	vP.add_argument("--dump-semantics",  action="store_true", help="Pass --dump-semantics to the transpiler")
+	vP.add_argument("--disposed",         default="NO", choices=["NO", "ASSERT", "LOG"], help="Use-after-dispose behavior")
+	vP.add_argument("--double-dispose",   default="NO", choices=["NO", "ASSERT", "LOG"], help="Double-dispose behavior")
+	vP.add_argument("--transpiler-args",  default="", help="Extra raw transpiler args appended at the end")
+	return vP
+
+def build_extra_args(inNs: argparse.Namespace) -> list[str]:
+	# Translates the transpiler-flag namespace into a flat argv list. Empty
+	# strings are dropped so the final argv has no stray "" tokens.
+	vExtras: list[str] = []
+	if inNs.mem_track:      vExtras.append("--mem-track")
+	if inNs.ast:            vExtras.append("--ast")
+	if inNs.dump_semantics: vExtras.append("--dump-semantics")
+	if inNs.disposed       != "NO": vExtras.append(f"--disposed={inNs.disposed}")
+	if inNs.double_dispose != "NO": vExtras.append(f"--double-dispose={inNs.double_dispose}")
+	if inNs.transpiler_args:
+		vExtras.extend(inNs.transpiler_args.split())
+	return vExtras
+
+def main(inArgv: list[str]) -> int:
+	vNs = build_arg_parser().parse_args(inArgv)
+
+	if vNs.clean:
+		return cmd_clean()
+
+	vCC = find_c_compiler(vNs.compiler or None)
+	if not vCC:
+		pwrite(f"{kRed}ERROR: No C compiler found (tried gcc, clang, {'cl' if kIsWindows else 'cc'}). Install one and add it to PATH.{kRst}")
+		return 1
+	vCmake = find_cmake()
+
+	vOpts = RunOptions(
+		buildMode  = vNs.build,
+		compiler   = vNs.compiler,
+		ccArgs     = vNs.cc_args,
+		cmakeArgs  = vNs.cmake_args,
+		cfg        = vNs.cfg,
+		staticLibc = vNs.static_libc,
+		gui        = vNs.gui,
+		extraArgs  = build_extra_args(vNs),
+		cc         = vCC,
+		cmake      = vCmake,
+	)
+
+	vAllTests = find_test_dirs()
+	pinfo(f"Using C compiler: {vCC}")
+
+	# ── --run: explicit selection (verbose) ───────────────────────
+	if vNs.run:
+		invoke_build(vOpts.buildMode, vNs.rebuild)
+		vQueries = [k.strip() for k in vNs.run.split(",") if k.strip()]
+		vAnyFail = False
+		for vQ in vQueries:
+			vMatches = resolve_test_query(vQ, vAllTests)
+			if not vMatches:
+				pwrite(f"{kRed}ERROR: test not found: {vQ}{kRst}")
+				pwrite(f"{kYellow}Available tests:{kRst}")
+				for vT in vAllTests:
+					pwrite(f"  - {vT.relPath}")
+				vAnyFail = True
+				continue
+			for vT in vMatches:
+				if invoke_test_verbose(vT, vOpts).status == "fail":
+					vAnyFail = True
+		return 1 if vAnyFail else 0
+
+	# ── Default: full suite ───────────────────────────────────────
+	invoke_build(vOpts.buildMode, vNs.rebuild)
+	vSkipUnit = vNs.skip_unit or vNs.skip == "unit"
+	vRes      = run_suite(vAllTests, vOpts, vSkipUnit)
+	return show_summary(vRes)
+
+if __name__ == "__main__":
+	sys.exit(main(sys.argv[1:]))

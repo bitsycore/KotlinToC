@@ -59,3 +59,7 @@ ktc_std.h
 /test_out/
 /gradle/gradle-daemon-jvm.properties
 /local.properties
+
+### Python ###
+__pycache__/
+*.pyc

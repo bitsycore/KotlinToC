@@ -8,7 +8,7 @@ Targets embedded/game/systems code.
 - Transpile: `java -jar <jar> file.kt -o out/ --name app`
 - Unit tests: `./gradlew test` (fast; `TranspilerTestBase` transpiles snippets and asserts on emitted C)
 - Full suite (builds JAR + transpile/compile/run integration tests, parallel):
-  `./run_tests.ps1`  | single: `./run_tests.ps1 -Run TestName`  | skip unit: `-Skip unit`
+  `python3 run_tests.py`  | single: `python3 run_tests.py --run TestName`  | skip unit: `--skip unit`
 - Integration tests live in `integration/<Category>/<Name>/*.kt` (each compiled with gcc/cmake and executed).
 - Each test has a `module.ktc.toml` for config (dependencies, executable name, main entry, etc.).
 
@@ -63,6 +63,7 @@ Targets embedded/game/systems code.
 - Bundled modules: `src/main/resources/modules/<name>/` with `module.ktc.toml` + `.kt` files + optional `module.cmake`.
 
 ## Conventions
-- Generated C: K&R style. Doc comments `/** */`.
+- For Kotlin and KTC use standard kotlin conventions.
+- Generated C: K&R style. Doc comments with `/** */`.
 - Kotlin codegen source: section markers `// ====` + `// MARK: Name` between major groups; concise comments only when non-obvious.
 - Commits: no Co-Authored-By / AI attribution.
