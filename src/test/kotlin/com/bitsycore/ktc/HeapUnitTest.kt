@@ -432,4 +432,33 @@ class HeapUnitTest : TranspilerTestBase() {
         """, decls = vec2Decl)
         r.sourceContains("Vec2* p =")
     }
+
+    // ── Name-resolution refusals ────────────────────────────────────
+
+    // Reference to a class/type that hasn't been declared is refused at transpile.
+    @Test fun unknownTypeIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain("val x: NotARealType = 0")
+        }
+        assert(ex.message!!.contains("Unknown type")) { "got: ${ex.message}" }
+    }
+
+    // Call to an undeclared free function is refused at transpile.
+    @Test fun unknownFunctionCallIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain("val x = someFunctionThatDoesNotExist(1, 2)")
+        }
+        assert(ex.message!!.contains("Unresolved function call")) { "got: ${ex.message}" }
+    }
+
+    // Method call on a known class type with no matching method is refused.
+    @Test fun unknownMethodOnKnownClassIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain(
+                "val v = Vec2(1.0f, 2.0f)\nv.fooBarBaz()",
+                decls = vec2Decl
+            )
+        }
+        assert(ex.message!!.contains("Unknown method")) { "got: ${ex.message}" }
+    }
 }

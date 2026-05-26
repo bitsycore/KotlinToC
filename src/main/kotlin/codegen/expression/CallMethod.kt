@@ -213,6 +213,14 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				?: extensionFuns[vClassInfo.flatName]?.find { it.name == method }
 			else null
 		val effectiveDecl  = methodDecl ?: genericExtDecl ?: regularExtDecl
+		// No matching declaration anywhere — refuse before emitting a call to a C
+		// symbol that won't exist. Star-extension methods (resolved later via the
+		// `starExtFunDecls` fallback) and built-in `copy`/`ptr` are handled above.
+		if (effectiveDecl == null && !starExtFunDecls.any { it.name == method }
+			&& method !in kClassReceiverIntrinsics
+		) {
+			codegenError("Unknown method '$method' on receiver of type '${vClassInfo.baseName}' — no matching method, extension function, or operator.")
+		}
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.annotations?.any { it.name == "Ptr" } == true
 		val isNullableRecv = effectiveDecl?.receiver?.nullable == true
@@ -368,6 +376,22 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		return t
 		}
 
+	// Fallback: refuse method calls on receivers whose type is a known declared
+	// type (class/interface/enum/object) but which lack any matching method,
+	// extension function, or operator. C-interop receivers and unknown/typeless
+	// receivers fall through unchanged — there are too many implicit-conversion
+	// and intrinsic cases to validate them precisely here.
+	val vRecvCore = recvTypeKtc?.stripNullable
+	val vRecvName = when (vRecvCore) {
+		is KtcType.User -> vRecvCore.baseName
+		is KtcType.Ptr -> (vRecvCore.inner as? KtcType.User)?.baseName
+		else -> null
+		}
+	if (vRecvName != null && (classes.containsKey(vRecvName) || interfaces.containsKey(vRecvName)
+			|| objects.containsKey(vRecvName) || enums.containsKey(vRecvName))
+	) {
+		codegenError("Unknown method '$method' on receiver of type '${recvType ?: vRecvName}' — no matching method, extension function, operator, or intrinsic.")
+	}
 	return "$recv.$method($argStr)"   // fallback
 	}
 
@@ -413,3 +437,15 @@ internal fun CCodeGen.genDataClassCopy(
 		}
 	return t
 	}
+
+/* Method names that look like user-defined methods but are recognized by other
+codegen branches (operator overloading, iterator protocol, hash/equality
+intrinsics). Excluding them from the "unknown method" refusal lets those
+codegen paths still produce a result when the user-class chain ends. */
+private val kClassReceiverIntrinsics = setOf(
+	"toString", "hashCode", "equals", "dispose",
+	"get", "set", "contains", "iterator",
+	"compareTo", "plus", "minus", "times", "div", "rem",
+	"inc", "dec", "unaryMinus", "unaryPlus", "not",
+	"rangeTo", "invoke",
+)
