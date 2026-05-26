@@ -8,7 +8,7 @@
 #   .\run_tests.ps1 -Run HashMapTest           # Run a single test (verbose)
 #   .\run_tests.ps1 -Run "Test1,Test2"         # Run multiple tests
 #   .\run_tests.ps1 -Skip unit                 # Skip unit tests
-#   .\run_tests.ps1 -Run game -Gui                # Run with GUI window open (config.ktc.toml: gui=true)
+#   .\run_tests.ps1 -Run game -Gui                # Run interactive test with window open (interactive=true)
 #   .\run_tests.ps1 -Run game -MemTrack           # With --mem-track
 #   .\run_tests.ps1 -Run game -Ast                # With --ast
 #   .\run_tests.ps1 -Run game -DumpSemantics      # With --dump-semantics
@@ -109,13 +109,13 @@ function Format-Ms {
 
 <#
 Parses a module.ktc.toml file and returns a hashtable with fields:
-  name, author, version, info, executable, gui (bool), args, timeout (int seconds).
+  name, author, version, info, executable, interactive (bool), args, timeout (int seconds).
 Falls back to config.ktc.toml if module.ktc.toml is not found (legacy compat).
 Returns defaults for any missing field.
 #>
 function Read-ConfigToml {
 	param([string]$inPath)
-	$vCfg = @{ name = ""; author = ""; version = ""; info = ""; executable = ""; gui = $false; args = ""; timeout = 0 }
+	$vCfg = @{ name = ""; author = ""; version = ""; info = ""; executable = ""; interactive = $false; args = ""; timeout = 0 }
 	# Try module.ktc.toml first, fall back to config.ktc.toml
 	$vDir = Split-Path $inPath -Parent
 	$vModuleToml = Join-Path $vDir "module.ktc.toml"
@@ -123,7 +123,7 @@ function Read-ConfigToml {
 	if (-not (Test-Path $vActualPath)) { return $vCfg }
 	foreach ($vLine in (Get-Content $vActualPath)) {
 		$vLine = $vLine.Trim()
-		if     ($vLine -match '^\s*gui\s*=\s*true')              { $vCfg.gui        = $true }
+		if     ($vLine -match '^\s*interactive\s*=\s*true')       { $vCfg.interactive = $true }
 		elseif ($vLine -match '^\s*name\s*=\s*"([^"]*)"')        { $vCfg.name       = $Matches[1] }
 		elseif ($vLine -match '^\s*authors?\s*=\s*"([^"]*)"')    { $vCfg.author     = $Matches[1] }
 		elseif ($vLine -match '^\s*version\s*=\s*"([^"]*)"')     { $vCfg.version    = $Matches[1] }
@@ -234,7 +234,7 @@ function Invoke-Test {
 		Get-ChildItem $inOutDir -File -Exclude "ktc_user.cmake", "*.dll" -ErrorAction SilentlyContinue | Remove-Item -Force
 	}
 	New-Item $inOutDir -ItemType Directory -Force | Out-Null
-	$vCfgEarly = Read-ConfigToml "$inSrcDir\config.ktc.toml"
+	$vCfgEarly = Read-ConfigToml "$inSrcDir\module.ktc.toml"
 	$vExeName  = if ($vCfgEarly.executable) { $vCfgEarly.executable } else { $inName }
 	Write-Info "Input:      $(($vKtFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' ')"
 	Write-Info "Output dir: $inOutDir"
@@ -368,10 +368,10 @@ function Invoke-Test {
 	# ── Run ──────────────────────────────────────────────────────
 	Write-Sec "Run"
 	Write-Cmd $vExe; Write-Host ""
-	# config.ktc.toml: gui=true marks a windowed test.
-	# In automated mode the script injects --skip-gui; with -Gui the window opens for real.
-	$vIsGuiTest = $vCfgEarly.gui
-	$vRunArgs   = if ($vIsGuiTest -and -not $inGuiMode) { "--skip-gui" } else { $vCfgEarly.args }
+	# interactive=true marks a test that requires user interaction (e.g. windowed app).
+	# In automated mode the script injects --skip-interaction; with -Gui the window opens for real.
+	$vIsInteractive = $vCfgEarly.interactive
+	$vRunArgs       = if ($vIsInteractive -and -not $inGuiMode) { "--skip-interaction" } else { $vCfgEarly.args }
 	if ($vRunArgs) { Write-Info "Test args: $vRunArgs" }
 
 	# UseShellExecute=false uses CreateProcess — no Windows auto-elevation.
@@ -380,7 +380,7 @@ function Invoke-Test {
 	$vPsi.UseShellExecute = $false
 
 	$vCaptured = @()
-	if ($inGuiMode -and $vIsGuiTest) {
+	if ($inGuiMode -and $vIsInteractive) {
 		# GUI mode: stdout flows directly to the console in real time — no redirect.
 		$vP = [System.Diagnostics.Process]::Start($vPsi)
 		$vP.WaitForExit()
@@ -483,8 +483,8 @@ function Run-Suite {
 		}
 		New-Item $vOut -ItemType Directory -Force | Out-Null
 
-		# Read config.ktc.toml for exe name
-		$vCfgP0 = "$($vDir.FullName)\config.ktc.toml"
+		# Read module.ktc.toml for exe name
+		$vCfgP0 = "$($vDir.FullName)\module.ktc.toml"
 		$vExeN  = $vName
 		if (Test-Path $vCfgP0) {
 			foreach ($vL in (Get-Content $vCfgP0)) {
@@ -585,16 +585,10 @@ function Run-Suite {
 			}
 		}
 
-		# Run — config.ktc.toml: gui=true marks a windowed test; always headless in suite mode.
-		$vCfgPath = "$($vDir.FullName)\config.ktc.toml"
-		$vRunArgs = ""; $vIsGui = $false
-		if (Test-Path $vCfgPath) {
-			foreach ($vL in (Get-Content $vCfgPath)) {
-				if     ($vL -match '^\s*gui\s*=\s*true')             { $vIsGui = $true }
-				elseif ($vL -match '^\s*args\s*=\s*"([^"]*)"')       { $vRunArgs = $Matches[1] }
-			}
-		}
-		if ($vIsGui) { $vRunArgs = "--skip-gui" }
+		# interactive=true marks a test requiring user interaction; always headless in suite mode.
+		$vCfg2 = Read-ConfigToml "$($vDir.FullName)\module.ktc.toml"
+		$vRunArgs = $vCfg2.args
+		if ($vCfg2.interactive) { $vRunArgs = "--skip-interaction" }
 		$vPsi = [System.Diagnostics.ProcessStartInfo]::new($vExe)
 		if ($vRunArgs) { $vPsi.Arguments = $vRunArgs }
 		$vPsi.RedirectStandardOutput = $true

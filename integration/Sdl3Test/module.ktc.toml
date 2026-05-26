@@ -1,7 +1,7 @@
-name         = "SDL3 Sprite Demo"
+name = "SDL3 Sprite Demo"
 autoFindMain = true
-description  = "Bouncing sprite with keyboard movement, rendered with SDL3"
-executable   = "sdl3demo"
-gui          = true
+description = "Bouncing sprite with keyboard movement, rendered with SDL3"
+executable = "sdl3demo"
+interactive = true
 dependencies = ["SDL3"]
 

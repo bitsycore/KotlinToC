@@ -15,7 +15,7 @@
 #   ./run_tests.sh --run game --disposed=log             # Use-after-dispose: log and continue
 #   ./run_tests.sh --run game --double-dispose=assert    # Double-dispose: abort
 #   ./run_tests.sh --run game --double-dispose=log       # Double-dispose: log and continue
-#   ./run_tests.sh --run game --gui                       # With GUI window open
+#   ./run_tests.sh --run game --gui                       # Run interactive test with window open
 #   ./run_tests.sh --run game --static-libc               # Link C runtime statically
 #   ./run_tests.sh --clean                    # Remove all test out/ directories
 #   ./run_tests.sh --rebuild                  # Force clean rebuild of JAR
@@ -145,18 +145,24 @@ format_ms() {
 	else awk "BEGIN { printf \"%.2fs\", $ms / 1000 }"; fi
 }
 
-# Parses a config.ktc.toml file and prints the value for the given key.
+# Parses a module.ktc.toml file and prints the value for the given key.
+# Falls back to config.ktc.toml if module.ktc.toml is not found (legacy compat).
 # Returns empty string if not found.
 read_config_toml() {
 	local inPath="$1"
 	local inKey="$2"
-	[[ -f "$inPath" ]] || { echo ""; return; }
+	# Try module.ktc.toml first, fall back to the given path
+	local vDir; vDir="$(dirname "$inPath")"
+	local vModuleToml="$vDir/module.ktc.toml"
+	local vActualPath="$inPath"
+	[[ -f "$vModuleToml" ]] && vActualPath="$vModuleToml"
+	[[ -f "$vActualPath" ]] || { echo ""; return; }
 	case "$inKey" in
-		gui)   grep -qE '^[[:space:]]*gui[[:space:]]*=[[:space:]]*true' "$inPath" 2>/dev/null && echo "true" || echo "false" ;;
-		executable|name|author|version|info|args)
-			sed -nE 's/^[[:space:]]*'"$inKey"'[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/p' "$inPath" 2>/dev/null | head -1 || echo "" ;;
+		interactive) grep -qE '^[[:space:]]*interactive[[:space:]]*=[[:space:]]*true' "$vActualPath" 2>/dev/null && echo "true" || echo "false" ;;
+		executable|name|author|version|info|args|description)
+			sed -nE 's/^[[:space:]]*'"$inKey"'[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/p' "$vActualPath" 2>/dev/null | head -1 || echo "" ;;
 		timeout)
-			sed -nE 's/^[[:space:]]*timeout[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' "$inPath" 2>/dev/null | head -1 || echo "" ;;
+			sed -nE 's/^[[:space:]]*timeout[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' "$vActualPath" 2>/dev/null | head -1 || echo "" ;;
 		*) echo "" ;;
 	esac
 }
@@ -236,8 +242,8 @@ invoke_test() {
 	done < <(find "$inSrcDir" -name "*.kt" -print0 2>/dev/null | sort -z)
 	if [[ ${#vKtFiles[@]} -eq 0 ]]; then fail "$inName — no .kt files in $inSrcDir"; return 1; fi
 
-	# Read config.ktc.toml for executable name
-	local vCfgPath="$inSrcDir/config.ktc.toml"
+	# Read module.ktc.toml for executable name
+	local vCfgPath="$inSrcDir/module.ktc.toml"
 	local vExeName; vExeName="$(read_config_toml "$vCfgPath" executable)"
 	[[ -z "$vExeName" ]] && vExeName="$inName"
 
@@ -428,11 +434,11 @@ invoke_test() {
 	showcmd "$vExe"
 	echo ""
 
-	local vIsGui; vIsGui="$(read_config_toml "$vCfgPath" gui)"
+	local vIsInteractive; vIsInteractive="$(read_config_toml "$vCfgPath" interactive)"
 	local vCfgArgs; vCfgArgs="$(read_config_toml "$vCfgPath" args)"
 	local vRunArgs=""
-	if [[ "$vIsGui" == true && "$inGuiMode" != true ]]; then
-		vRunArgs="--skip-gui"
+	if [[ "$vIsInteractive" == true && "$inGuiMode" != true ]]; then
+		vRunArgs="--skip-interaction"
 	else
 		vRunArgs="$vCfgArgs"
 	fi
@@ -510,8 +516,8 @@ run_suite() {
 			fi
 			local vOut="$vDir/out"
 
-			# Read config.ktc.toml for executable name
-			local vCfgPath="$vDir/config.ktc.toml"
+			# Read module.ktc.toml for executable name
+			local vCfgPath="$vDir/module.ktc.toml"
 			local vExeName; vExeName="$(read_config_toml "$vCfgPath" executable)"
 			[[ -z "$vExeName" ]] && vExeName="$vDirName"
 
@@ -628,11 +634,11 @@ run_suite() {
 			fi
 
 			# Run
-			local vCfgArgsRun=""; local vIsGui=""
+			local vCfgArgsRun=""; local vIsInteractive=""
 			vCfgArgsRun="$(read_config_toml "$vCfgPath" args)"
-			vIsGui="$(read_config_toml "$vCfgPath" gui)"
+			vIsInteractive="$(read_config_toml "$vCfgPath" interactive)"
 			local vRunArgs=""
-			[[ "$vIsGui" == true ]] && vRunArgs="--skip-gui" || vRunArgs="$vCfgArgsRun"
+			[[ "$vIsInteractive" == true ]] && vRunArgs="--skip-interaction" || vRunArgs="$vCfgArgsRun"
 
 			set +e
 			local vROut

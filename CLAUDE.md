@@ -54,7 +54,7 @@ Targets embedded/game/systems code.
   executable   = "myapp"          # output binary name
   main         = "pkg.funcName"   # explicit entry point (like --main)
   autoFindMain = true             # auto-detect single main function
-  gui          = true             # windowed app (test runner flag)
+  interactive  = true             # requires user interaction; --skip-interaction passed in test mode
   dependencies = ["ktc.std", "./../LocalMod", "https://github.com/user/repo.git#module"]
   ```
 - Dependency sources: named (bundled JAR), relative (`./`), or URL (git clone to `~/.ktc/cache/`).
