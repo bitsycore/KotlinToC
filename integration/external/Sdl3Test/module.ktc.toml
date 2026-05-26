@@ -3,5 +3,5 @@ autoFindMain = true
 description = "Bouncing sprite with keyboard movement, rendered with SDL3"
 executable = "sdl3demo"
 interactive = true
-dependencies = ["SDL3"]
+dependencies = ["ktc.sdl3"]
 

@@ -1,6 +1,6 @@
 @file:cInclude("SDL3/SDL.h")
 
-package sdl3
+package ktc.sdl3
 
 inline fun SDL3.Window.destroy() { c.SDL_DestroyWindow(this.handle) }
 

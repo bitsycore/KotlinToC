@@ -1,6 +1,6 @@
 package test
 
-import sdl3.*
+import ktc.sdl3.*
 
 fun main(args: Array<String>) {
 	var testMode = false

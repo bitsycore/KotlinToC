@@ -1,6 +1,6 @@
 @file:cInclude("SDL3/SDL.h")
 
-package sdl3
+package ktc.sdl3
 
 // Mouse button index constants
 inline val SDL3.Mouse.Left   get() = c.SDL_BUTTON_LEFT

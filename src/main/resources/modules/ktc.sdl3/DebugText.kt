@@ -1,6 +1,6 @@
 @file:cInclude("SDL3/SDL.h")
 
-package sdl3
+package ktc.sdl3
 
 /** Draw a debug text string at (x, y) using the current draw color. 8x8 monospace font. */
 inline fun SDL3.Renderer.drawDebugText(x: Float, y: Float, text: String) {

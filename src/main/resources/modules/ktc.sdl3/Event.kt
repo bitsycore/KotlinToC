@@ -1,6 +1,6 @@
 @file:cInclude("SDL3/SDL.h")
 
-package sdl3
+package ktc.sdl3
 
 // Application events
 inline val SDL3.Event.Quit                     get() = c.SDL_EVENT_QUIT

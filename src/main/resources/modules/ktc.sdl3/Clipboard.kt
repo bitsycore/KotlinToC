@@ -1,6 +1,6 @@
 @file:cInclude("SDL3/SDL.h")
 
-package sdl3
+package ktc.sdl3
 
 /** Copy text to the system clipboard. */
 inline fun SDL3.setClipboardText(text: String) {

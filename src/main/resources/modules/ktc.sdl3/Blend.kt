@@ -1,6 +1,6 @@
 @file:cInclude("SDL3/SDL.h")
 
-package sdl3
+package ktc.sdl3
 
 inline val SDL3.BlendMode.None  get() = c.SDL_BLENDMODE_NONE
 inline val SDL3.BlendMode.Blend get() = c.SDL_BLENDMODE_BLEND

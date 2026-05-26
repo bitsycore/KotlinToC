@@ -1,8 +1,0 @@
-name         = "SDL3"
-version      = "3.x"
-description  = "SDL3 (Simple DirectMedia Layer 3) Kotlin bindings for KotlinToC"
-authors      = ["bitsycore"]
-license      = "MIT"
-url          = "https://github.com/bitsycore/KotlinToC"
-repository   = "https://github.com/bitsycore/KotlinToC.git#src/main/resources/modules/SDL3"
-dependencies = ["ktc.std"]

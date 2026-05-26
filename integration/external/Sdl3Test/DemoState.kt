@@ -1,6 +1,6 @@
 package test
 
-import sdl3.*
+import ktc.sdl3.*
 
 data class MovementState(
 	var left:  Boolean = false,
