@@ -6,6 +6,33 @@ import com.bitsycore.ktc.codegen.expression.inferBlockType
 import com.bitsycore.ktc.codegen.statement.inferInitType
 import com.bitsycore.ktc.types.KtcType
 
+/* Kotlin operator-function arity table. Maps the operator method name to the
+set of valid parameter counts (the receiver is implicit, so a binary infix
+operator like `plus` takes ONE explicit parameter). Operators not listed
+either have variable arity (get/set/invoke) or are accepted as-is. */
+private val kOperatorArity: Map<String, Set<Int>> = mapOf(
+	// Binary arithmetic — exactly one operand
+	"plus" to setOf(1), "minus" to setOf(1), "times" to setOf(1),
+	"div"  to setOf(1), "rem"   to setOf(1), "mod"   to setOf(1),
+	// Unary — no operand
+	"unaryPlus" to setOf(0), "unaryMinus" to setOf(0), "not" to setOf(0),
+	"inc"       to setOf(0), "dec"        to setOf(0),
+	// Range operators take exactly one operand
+	"rangeTo" to setOf(1), "rangeUntil" to setOf(1),
+	// `a in b` → b.contains(a); always one explicit param
+	"contains" to setOf(1),
+	// Comparison: a.compareTo(b)
+	"compareTo" to setOf(1),
+	// Iterator protocol: no args
+	"iterator" to setOf(0), "hasNext" to setOf(0), "next" to setOf(0),
+	// Compound-assignment helpers take one operand
+	"plusAssign" to setOf(1), "minusAssign" to setOf(1),
+	"timesAssign" to setOf(1), "divAssign" to setOf(1), "remAssign" to setOf(1),
+	// `==` lowers to equals(other: Any?). One operand.
+	"equals" to setOf(1),
+	// `get`, `set`, and `invoke` accept multiple — checked elsewhere if at all.
+)
+
 /* Returns true if every yielded String value in the body is a bare string
 literal. Such a function is safe to return value-type String — the literal's
 bytes live in .rodata, not in the callee's frame. */
@@ -203,12 +230,29 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					)
 				}
 			val vAllProps = vCtorProps + vBodyProps  // combined property list
+			// Direct recursive self-reference without Ref/array indirection produces
+			// an infinite-size struct in C. The user must indirect through Ref<T>,
+			// Array<T> (VarArr), or RawArray<T> to break the size cycle.
+			for (vProp in vAllProps) {
+				val vT = vProp.typeRef ?: continue
+				if (vT.name == d.name && !vT.isRefType() && vT.name != "Array" && vT.name != "RawArray") {
+					codegenError("Class '${d.name}' has property '${vProp.name}' of its own type — infinite struct size. " +
+						"Use Ref<${d.name}> (pointer), Array<${d.name}>, or RawArray<${d.name}> to indirect.")
+				}
+			}
 			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams)
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
 				if (m.returnType != null && m.returnType.isRawArray()) {
 					codegenError("Method '${m.name}' cannot return raw array type '${m.returnType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
+				if (m.isOperator) {
+					val vExpected = kOperatorArity[m.name]
+					if (vExpected != null && m.params.size !in vExpected) {
+						codegenError("Operator function '${m.name}' has wrong arity (${m.params.size}); " +
+							"valid arity for '${m.name}' is ${vExpected.joinToString(" or ")}.")
+					}
+				}
 				ci.methods += m
 				}
 			classes[d.name] = ci
@@ -377,6 +421,25 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					"(its internal buffer would die at function exit). " +
 					"Use one of: Ref<String>, @Size(N) String, or mark the function `inline`.")
 				}
+			// Lambda escape: non-inline functions can't return function types.
+			// KTC has no closure/heap-capture machinery, so the lambda would
+			// only see captured locals on the dead caller frame. Require
+			// inline so the function body is expanded into the caller.
+			if (d.returnType != null && d.returnType.funcParams != null && !d.isInline) {
+				codegenError("Function '${d.name}' returns a function type (lambda) — not supported outside inline functions. " +
+					"Mark '${d.name}' as `inline` so its body is expanded at the call site (KTC has no closure heap allocation).")
+			}
+			// Operator function arity: Kotlin pins operator-name arities, and a
+			// mismatched signature would produce a method that's never callable
+			// via the operator syntax (and confuses overload resolution).
+			if (d.isOperator) {
+				val vArity = d.params.size
+				val vExpected = kOperatorArity[d.name]
+				if (vExpected != null && vArity !in vExpected) {
+					codegenError("Operator function '${d.name}' has wrong arity ($vArity); " +
+						"valid arity for '${d.name}' is ${vExpected.joinToString(" or ")}.")
+				}
+			}
 			val effectiveReturnType = d.returnType ?: d.body?.let { inferredTypeRef(inferBlockType(it)) }
 			when {
 				d.typeParams.isNotEmpty() -> {

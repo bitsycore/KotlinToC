@@ -43,6 +43,41 @@ Targets embedded/game/systems code.
 ## String return safety
 - Non-inline functions returning bare `String` are refused when the body builds the result at runtime (concat, template). The buffer would die at function exit; require `Ref<String>`, `@Size(N) String`, or mark the function `inline`. Literal-only bodies (every yield is a `StrLit`) and `String?` returns are allowed.
 
+## Strings
+- `String` is a value struct `{ const ktc_Char* ptr; ktc_Int len; }` — immutable view, no NUL-termination assumed. Literals point at `.rodata`.
+- `s.length`, `s[i]`, `s.substring(a, b)`, `s.startsWith(...)`, `s.contains(...)`, `s == t` are supported and lower to `memcmp` / `ktc_core_string_*`. `==` uses `ktc_core_string_eq`, not byte-equality of the struct.
+- `s + t` concatenation allocates a buffer via `alloca` (function-scoped) — safe for inline functions and immediate use, dangerous to return. See "String return safety" above.
+- `s.toInt()` / `toLong()` / `toFloat()` / `toDouble()` parse on demand; `*OrNull()` variants return `Int?` etc.
+- `StringBuffer` (mutable: `{ ktc_Char* ptr; ktc_Int len; ktc_Int cap; }`) requires a caller-provided backing buffer: `StringBuffer(charArray.ptr(), 0)`. With `ptr=NULL` it runs in counting-only mode (no writes, just `len` accumulates) so you can size a real buffer in a second pass.
+
+## Arrays
+- `Array<T>` is a `VarArr` struct `{ T* ptr; ktc_Int len; }` — variable-length, header carries the count. `arr.size` reads `.len`, `arr[i]` reads `.ptr[i]`. **No runtime bounds check** in release mode; out-of-range index is UB.
+- `RawArray<T>` is bare `T*` — a reference type with no length, no `.size`. Use when you already track the length elsewhere (FFI, fixed-size protocols).
+- `@Size(N) Array<T>` / `@Size(N) IntArray` is a fixed-size struct `{ T arr[N]; }` — lives entirely on the caller's stack, no heap. Pass by value. Assigning a larger source warns and inserts an implicit `.copyOf(N)` truncation (data loss).
+- `Array<T>.asRaw()` → `RawArray<T>` (alias, no copy); `RawArray<T>.asArray(n)` → `Ref<Array<T>>` (alias plus length tag).
+- Functions can return `@Size(N) T` arrays by value (struct return), but cannot return bare `Array<T>` or `RawArray<T>` — the underlying buffer would dangle. Use `Ref<Array<T>>` (heap-backed) or `@Size(N)` (stack struct).
+
+## Operator overloading
+- `operator fun` arities are enforced at transpile time: `plus`/`minus`/`times`/`div`/`rem` take 1 arg, unaries (`unaryPlus`/`unaryMinus`/`not`/`inc`/`dec`) take 0, `compareTo`/`contains`/`rangeTo` take 1, iterator protocol (`iterator`/`hasNext`/`next`) takes 0, `equals` takes 1.
+- `get`/`set`/`invoke` have free arity (Kotlin allows multi-index access like `m[i, j]`).
+
+## Lambdas and functional types
+- Lambdas are **inline-only**: there is no closure heap allocation, no escaping function-pointer-with-captures. A function returning a function type (`(Int) -> Int`) must be marked `inline` so the body is expanded at the call site; non-inline lambda returns are rejected at transpile.
+- Lambda parameters of inline functions are expanded in place — `let`, `apply`, `with`, `run`, `also`, `takeIf`, `repeat` all work through this mechanism.
+- Standalone lambda expressions outside of inline-function argument position are not supported.
+
+## Limitations vs Kotlin (intentional)
+- No coroutines (`suspend`, `async`), no reflection (no `KClass`, `::class`), no `java.lang.*`.
+- No `inner class` with implicit outer-instance capture. Nested classes are fine; they're emitted as `Outer$Inner`.
+- No `by lazy` / property delegation, no `typealias`.
+- No `inline value class` / `@JvmInline`.
+- No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
+- No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.
+- No bounds check on `Array`/`RawArray` indexing.
+- No visibility enforcement for `private`/`internal` across class boundaries (declared but not policed by codegen).
+- Parameters are not enforced read-only — `fun foo(x: Int) { x = 5 }` compiles even though Kotlin makes params `val`.
+- Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.
+
 ## Module system
 - Project config is `module.ktc.toml` (replaces the old `deps.ktc.toml` + `config.ktc.toml`):
   ```toml

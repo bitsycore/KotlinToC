@@ -461,4 +461,53 @@ class HeapUnitTest : TranspilerTestBase() {
         }
         assert(ex.message!!.contains("Unknown method")) { "got: ${ex.message}" }
     }
+
+    // Returning a function type (lambda) from a non-inline function would
+    // dangle captures on the dead caller frame — must be inline.
+    @Test fun lambdaEscapeIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain(
+                "val f = makeAdder(5)",
+                decls = "fun makeAdder(n: Int): (Int) -> Int = { it + n }"
+            )
+        }
+        assert(ex.message!!.contains("lambda") || ex.message!!.contains("function type")) {
+            "got: ${ex.message}"
+        }
+    }
+
+    // operator fun plus must take exactly one operand.
+    @Test fun operatorPlusWrongArityIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain(
+                "val v = V(1)",
+                decls = """
+                    class V(val n: Int) {
+                        operator fun plus(a: Int, b: Int): V = V(n + a + b)
+                    }
+                """.trimIndent()
+            )
+        }
+        assert(ex.message!!.contains("Operator function 'plus'")) { "got: ${ex.message}" }
+    }
+
+    // Direct self-reference without Ref/Array indirection — infinite struct size.
+    @Test fun recursiveClassWithoutRefIsRejected() {
+        val ex = assertThrows<IllegalStateException> {
+            transpileMain(
+                "",
+                decls = "class Node(val value: Int, val next: Node)"
+            )
+        }
+        assert(ex.message!!.contains("infinite struct size")) { "got: ${ex.message}" }
+    }
+
+    // Same shape but indirected through Ref — accepted.
+    @Test fun recursiveClassAllowedWithRef() {
+        val r = transpileMain(
+            "",
+            decls = "class Node(val value: Int, val next: Ref<Node?>)"
+        )
+        r.headerContains("test_Main_Node")
+    }
 }
