@@ -161,8 +161,51 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 				return vNestedName
 			}
 		}
+	// Unknown type: at this point everything resolvable has been handled (primitives,
+	// String/Char/Any/Unit/Nothing/Bool/Float/Double, Array/RawArray/AnyPtr/StringBuffer,
+	// classes/enums/interfaces/objects, generic params, nested classes). Anything else
+	// is a typo or a missing declaration — refuse rather than pass it through to C.
+	if (!isKnownTypeName(t.name))
+		codegenError("Unknown type '${t.name}'. Not a class, interface, enum, object, primitive, or generic type parameter — did you forget to import it or mistype the name?")
 	return t.name
 	}
+
+/* Returns true when inName is a recognized type identifier — primitive, built-in
+alias, declared class/interface/enum/object, generic type parameter, or
+C-interop passthrough. Used to gate the "unknown type" refusal. */
+private fun CCodeGen.isKnownTypeName(inName: String): Boolean {
+	if (inName.startsWith("c.") || inName.startsWith("c:")) return true
+	if (inName.startsWith("ktc_")) return true
+	// Already-resolved C forms: pointers (`Foo*`), nullables (`Foo?`), iface trampolines (`ktc_IfacePtr:T`)
+	if (inName.contains('*') || inName.contains('?') || inName.contains(':')) return true
+	if (inName in kBuiltinTypeNames) return true
+	if (classes.containsKey(inName)) return true
+	if (objects.containsKey(inName)) return true
+	if (interfaces.containsKey(inName)) return true
+	if (enums.containsKey(inName)) return true
+	if (genericClassDecls.containsKey(inName)) return true
+	if (genericIfaceDecls.containsKey(inName)) return true
+	if (inName in allGenericTypeParamNames) return true
+	// Mangled generic instantiation (Foo_Bar_Baz): accept when the leading segment
+	// is a known generic-class/iface name. This catches re-entries where the type
+	// has already been mangled before resolution.
+	val vUnderscoreIdx = inName.indexOf('_')
+	if (vUnderscoreIdx > 0) {
+		val vHead = inName.substring(0, vUnderscoreIdx)
+		if (genericClassDecls.containsKey(vHead) || genericIfaceDecls.containsKey(vHead)) return true
+	}
+	return false
+	}
+
+private val kBuiltinTypeNames = setOf(
+	"Byte", "Short", "Int", "Long", "UByte", "UShort", "UInt", "ULong",
+	"Float", "Double", "Boolean", "Char", "Rune",
+	"String", "StringBuffer", "Any", "Unit", "Nothing", "void",
+	"Array", "RawArray", "AnyPtr",
+	"IntArray", "LongArray", "FloatArray", "DoubleArray",
+	"BooleanArray", "CharArray", "ByteArray", "ShortArray",
+	"UIntArray", "ULongArray", "UByteArray", "UShortArray",
+	)
 
 // ═══════════════════════════ KtcType constructors ══════════════════
 

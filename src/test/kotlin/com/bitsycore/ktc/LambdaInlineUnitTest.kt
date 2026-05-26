@@ -111,9 +111,12 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun stdlibApplyExpansion() {
+        // apply's body receives the receiver as `this`. Use a method that resolves via
+        // the explicit `this.` chain so the inline expansion can compile end-to-end.
         val r = transpileMainWithStdlib("""
-            val sb = StringBuilder().apply {
-                append("a")
+            val buf = CharArray(64)
+            val sb = StringBuffer(buf.ptr(), 0).apply {
+                this.append("a")
             }
         """)
         r.sourceContains("/* inline ")

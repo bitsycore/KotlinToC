@@ -312,5 +312,56 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         return callOrSized("${funCName(vFnName)}($vExpanded2)", vTopOvr.returnType)
     }
 
+    // No resolution path produced a result: the name doesn't match a known function,
+    // method, constructor, lambda param, generic instantiation, or C interop. Refuse
+    // before emitting a call that would only fail at the C compiler with a confusing
+    // "implicit declaration" error.
+    if (!isKnownCallName(vName)) {
+        codegenError("Unresolved function call '$vName(...)' — no top-level function, method, extension, constructor, generic, or imported symbol with that name.")
+    }
+
     return "${funCName(vName)}($vExpandedArgs)"
 }
+
+/* Returns true when vName might legitimately resolve to a callable: a top-level
+function, an inline function, a generic function, an extension function, a
+constructor, a known class/object/enum (for ctor-style calls), a lambda param
+in scope, or a C-interop name. The check is conservative — false negatives
+(unknown names) are fine because the codegenError above is the safety net. */
+internal fun CCodeGen.isKnownCallName(vName: String): Boolean {
+    if (vName in funSigs) return true
+    if (inlineFunDecls.containsKey(vName)) return true
+    if (inlineExtFunDecls.containsKey(vName)) return true
+    if (genericFunDecls.any { it.name == vName }) return true
+    if (extensionFuns.values.any { it.any { d -> d.name == vName } }) return true
+    if (classes.containsKey(vName)) return true     // constructor call
+    if (objects.containsKey(vName)) return true     // companion / object invoke
+    if (enums.containsKey(vName)) return true       // enum entry lookup
+    if (genericClassDecls.containsKey(vName)) return true
+    if (genericIfaceDecls.containsKey(vName)) return true
+    if (interfaces.containsKey(vName)) return true
+    if (lookupVar(vName) != null) return true       // local function variable
+    if (vName in lambdaParamSubst.keys) return true // active lambda parameter
+    if (vName in activeLambdas.keys) return true    // inline-bound lambda
+    // Built-ins handled by genBuiltinCallOrNull — listed here so the late guard
+    // doesn't fire when they reach this branch via overload-resolution paths.
+    if (vName in kBuiltinCallNames) return true
+    // Allow names with a package prefix (foo.bar.baz) — they're resolved by
+    // findCrossPackageFun or by emitter-side passthrough.
+    if ('.' in vName || '_' in vName) return true
+    return false
+}
+
+private val kBuiltinCallNames = setOf(
+    "println", "print", "error", "TODO",
+    "arrayOf", "arrayOfNulls",
+    "intArrayOf", "longArrayOf", "floatArrayOf", "doubleArrayOf",
+    "booleanArrayOf", "charArrayOf", "byteArrayOf", "shortArrayOf",
+    "uintArrayOf", "ulongArrayOf", "ubyteArrayOf", "ushortArrayOf",
+    "IntArray", "LongArray", "FloatArray", "DoubleArray",
+    "BooleanArray", "CharArray", "ByteArray", "ShortArray",
+    "UIntArray", "ULongArray", "UByteArray", "UShortArray",
+    "Array", "RawArray",
+    "listOf", "mapOf", "setOf", "enumValues", "enumValueOf",
+    "StringBuffer", "StringBuilder", "Macro",
+)

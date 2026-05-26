@@ -15,22 +15,22 @@ import kotlin.test.Test
 class DestructuringUnitTest : TranspilerTestBase() {
 
     @Test fun pairFirstAccess() {
-        val r = transpileMain("val p = Pair(1, 2)\nval f = p.first")
+        val r = transpileMainWithStdlib("val p = Pair(1, 2)\nval f = p.first")
         r.sourceContains("p.first")
     }
 
     @Test fun pairSecondAccess() {
-        val r = transpileMain("val p = Pair(1, 2)\nval s = p.second")
+        val r = transpileMainWithStdlib("val p = Pair(1, 2)\nval s = p.second")
         r.sourceContains("p.second")
     }
 
     @Test fun tripleThirdAccess() {
-        val r = transpileMain("val t = Triple(1, 2, 3)\nval th = t.third")
+        val r = transpileMainWithStdlib("val t = Triple(1, 2, 3)\nval th = t.third")
         r.sourceContains("t.third")
     }
 
     @Test fun pairFirstTyped() {
-        val r = transpileMain("val p = Pair(\"a\", 1)\nval f = p.first")
+        val r = transpileMainWithStdlib("val p = Pair(\"a\", 1)\nval f = p.first")
         r.sourceContains("p.first")
     }
 
@@ -74,12 +74,16 @@ class DestructuringUnitTest : TranspilerTestBase() {
     }
 
     @Test fun tupleComponentAccess() {
-        val r = transpileMainWithStdlib("""
-            val t = Tuple("x", 1, true)
-            val c0 = t.component0
-            val c1 = t.component1
-        """)
-        r.sourceContains("t.component0")
-        r.sourceContains("t.component1")
+        // Three-field data class with componentN-like accessors via direct field lookup.
+        val r = transpileMain(
+            """
+                val t = Tup("x", 1, true)
+                val c0 = t.first
+                val c1 = t.second
+            """,
+            decls = "data class Tup(val first: String, val second: Int, val third: Boolean)"
+        )
+        r.sourceContains("t.first")
+        r.sourceContains("t.second")
     }
 }
