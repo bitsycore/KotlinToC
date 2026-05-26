@@ -298,7 +298,7 @@ class DemoApp(
 	// MARK: Render
 	// ══════════════════════════════════════════════════════════
 
-	fun render(trailX: FloatArray, trailY: FloatArray, trailAngle: FloatArray, trailHead: Int) {
+	fun render(trailPoints: @Ptr Array<SDL3.FPoint>, trailAngle: @Ptr FloatArray, trailHead: Int) {
 		val ws          = renderer.outputSize()
 		val renderScale = if (isKeyDown(SDL3.Scancode.Z)) 2.0f else 1.0f
 
@@ -315,7 +315,7 @@ class DemoApp(
 		renderer.setDrawColor(SDL3.Color(255, 255, 255, 60))
 		renderer.drawLine(spriteState.posX, spriteState.posY, mouseX, mouseY)
 
-		renderTrail(trailX, trailY, trailAngle, trailHead)
+		renderTrail(trailPoints, trailAngle, trailHead)
 		spriteState.applyMods(sprite)
 		spriteState.render(renderer, sprite)
 
@@ -414,12 +414,12 @@ class DemoApp(
 		}
 	}
 
-	private fun renderTrail(trailX: FloatArray, trailY: FloatArray, trailAngle: FloatArray, trailHead: Int) {
+	private fun renderTrail(trailPoints: @Ptr Array<SDL3.FPoint>, trailAngle: @Ptr FloatArray, trailHead: Int) {
 		sprite.setColorMod(255, 255, 255)
-		for (i in 0 until 24) {
-			val tidx   = (trailHead + i) % 24
+		for (i in 0 until trailPoints.size) {
+			val tidx   = (trailHead + i) % trailPoints.size
 			sprite.setAlphaMod((i + 1) * 10)
-			val ghostDst = SDL3.FRect(trailX[tidx] - 16.0f, trailY[tidx] - 16.0f, 32.0f, 32.0f)
+			val ghostDst = SDL3.FRect(trailPoints[tidx].x - 16.0f, trailPoints[tidx].y - 16.0f, 32.0f, 32.0f)
 			renderer.renderTextureRotated(sprite, ghostDst, trailAngle[tidx], SDL3.Flip.None)
 		}
 	}

@@ -948,6 +948,10 @@ class Parser(private val tokens: List<Token>) {
             val name = tokens[pos].value
             if (name.isEmpty() || name[0].isLowerCase()) return false  // types start uppercase
             advance(); skipNL()
+            // Skip dotted names: SDL3.FPoint, Outer.Inner.Nested
+            while (at(TokenType.DOT) && pos + 1 < tokens.size && tokens[pos + 1].type == TokenType.IDENT) {
+                advance(); advance(); skipNL()
+            }
             // Skip nullable marker for type args like <Int?>
             if (at(TokenType.QUESTION)) { advance(); skipNL() }
             return at(TokenType.GT) || at(TokenType.COMMA) || at(TokenType.LT)

@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen
 
-import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.ast.TypeRef
+import com.bitsycore.ktc.ast.hasSizeAnnotation
 
 // Sized-array/string type registration and predicates.
 // Printf helpers (printfFmt / printfArg) live in CTypes.kt alongside other KtcType→C mappers.
@@ -33,10 +34,10 @@ private val kPrimitiveCTypes = setOf(
 
 /* True when inCTypeName is a user type defined in the package currently being compiled. */
 internal fun SymbolReader.isCurrentPkgUserType(inCTypeName: String): Boolean =
-	classes.values.any    { it.flatName == inCTypeName }
-	|| objects.values.any    { it.flatName == inCTypeName }
-	|| enums.values.any      { it.flatName == inCTypeName }
-	|| interfaces.values.any { it.flatName == inCTypeName }
+	classes.values.any    { it.flatName == inCTypeName && it.pkg == prefix }
+	|| objects.values.any    { it.flatName == inCTypeName && it.pkg == prefix }
+	|| enums.values.any      { it.flatName == inCTypeName && it.pkg == prefix }
+	|| interfaces.values.any { it.flatName == inCTypeName && it.pkg == prefix }
 
 // ═══════════════════════════ sized-array registration ════════════
 
@@ -68,7 +69,7 @@ internal fun sizedStringCTypeRef(inSize: Int): String =
 
 /* Sanitize a C type string into a valid C identifier suffix (replaces $, *, space). */
 internal fun sanitizeForVarArrName(inCType: String): String =
-	inCType.replace('$', '_').replace('*', 'p').replace(' ', '_')
+	inCType.replace('$', '_').replace('.', '_').replace('*', 'p').replace(' ', '_')
 
 /* Registers KTC_DECL_VAR_ARR and returns the typedef name for a typed array with element type inElemCType. */
 internal fun CCodeGen.varArrTypeName(inElemCType: String): String {

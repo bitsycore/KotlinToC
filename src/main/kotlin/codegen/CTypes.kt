@@ -137,7 +137,8 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	if (t.name == "Array" && t.typeArgs.isNotEmpty()) {
 		val vElemRef      = t.typeArgs[0]
 		val vNullableElem = vElemRef.nullable
-		return if (vNullableElem) primitiveToArrayOptionalType(vElemRef.name) else primitiveToArrayType(vElemRef.name)
+		val vElemName     = resolveTypeNameInnerStr(vElemRef)
+		return if (vNullableElem) primitiveToArrayOptionalType(vElemName) else primitiveToArrayType(vElemName)
 		}
 	if (t.name == "RawArray" && t.typeArgs.isNotEmpty())
 		return resolveTypeNameStr(t.typeArgs[0]) + "*"

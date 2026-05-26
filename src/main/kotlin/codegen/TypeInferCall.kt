@@ -3,7 +3,6 @@ package com.bitsycore.ktc.codegen
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
-import com.bitsycore.ktc.codegen.expression.inferInlineFunSubst
 import com.bitsycore.ktc.types.KtcType
 
 // Return-type inference for function calls and method calls.
@@ -82,7 +81,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
         if (name == "arrayOf") {
             if (e.typeArgs.isNotEmpty()) {
                 val vTypeArg = e.typeArgs[0]
-                val vElemName = typeSubst[vTypeArg.name] ?: vTypeArg.name
+                val vElemName = resolveTypeNameInnerStr(vTypeArg)
                 if (vTypeArg.nullable) return primitiveToArrayOptionalType(vElemName)
                 return primitiveToArrayType(vElemName)
             }
@@ -92,7 +91,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
         if (name == "arrayOfNulls") {
             if (e.typeArgs.isNotEmpty()) {
                 val vTypeArg = e.typeArgs[0]
-                val vElemName = typeSubst[vTypeArg.name] ?: vTypeArg.name
+                val vElemName = resolveTypeNameInnerStr(vTypeArg)
                 return primitiveToArrayOptionalType(vElemName)
             }
             return "IntOptArray"

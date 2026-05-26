@@ -59,11 +59,9 @@ fun main(args: Array<String>) {
 		frameArena    = frameArena.ptr()
 	)
 
-	// Sprite angle trail — kept local to avoid FloatArray-in-struct issues
-	val trailX     = FloatArray(24)
-	val trailY     = FloatArray(24)
-	val trailAngle = FloatArray(24)
-	var trailHead  = 0
+	val trailPoints = Array<SDL3.FPoint>(24)
+	val trailAngle  = FloatArray(24)
+	var trailHead   = 0
 
 	gameLoop(60) { dt ->
 		pollEvents { event ->
@@ -80,15 +78,14 @@ fun main(args: Array<String>) {
 		app.update(dt)
 
 		// Record trail before spinning so ghosts show the pre-spin pose
-		trailX[trailHead]     = app.spriteState.posX
-		trailY[trailHead]     = app.spriteState.posY
-		trailAngle[trailHead] = app.spriteState.angle
+		trailPoints[trailHead] = SDL3.FPoint(app.spriteState.posX, app.spriteState.posY)
+		trailAngle[trailHead]  = app.spriteState.angle
 		trailHead = (trailHead + 1) % 24
 
 		val spinSpeed = if (isKeyDown(SDL3.Scancode.Space)) 270.0f else 90.0f
 		app.spriteState.spin(dt, spinSpeed)
 
-		app.render(trailX, trailY, trailAngle, trailHead)
+		app.render(trailPoints.ptr(), trailAngle.ptr(), trailHead)
 		!app.quit && !testMode
 	}
 }

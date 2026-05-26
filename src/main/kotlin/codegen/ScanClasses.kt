@@ -13,7 +13,7 @@ internal fun CCodeGen.scanForClassArrayTypes() {
 	fun checkType(t: TypeRef?) {
 		if (t == null) return
 		if (t.name == "Array" && t.typeArgs.isNotEmpty()) {
-			val elem = t.typeArgs[0].name
+			val elem = t.typeArgs[0].name.replace('.', '$')
 			if (elem !in primitives) classArrayTypes.add(elem)
 			}
 		}
@@ -29,7 +29,7 @@ internal fun CCodeGen.scanForClassArrayTypes() {
 					}
 				}
 			if (name == "arrayOfNulls" && e.typeArgs.isNotEmpty()) {
-				val elem = e.typeArgs[0].name
+				val elem = e.typeArgs[0].name.replace('.', '$')
 				if (elem !in primitives) classArrayTypes.add(elem)
 				}
 			for (arg in e.args) scanExpr(arg.expr)
