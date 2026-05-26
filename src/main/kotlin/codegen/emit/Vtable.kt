@@ -108,8 +108,14 @@ internal fun CCodeGen.ifaceAsInit(
 	val vImpls    = interfaceImplementors[ifaceName]
 	val vDataName = ifaceDataName(className)
 	val vTypeIdField = ".__typeId = ${cClass}_TYPE_ID"
+	val vHasCrossPkgImpls = vImpls?.any {
+		val vImplPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
+		val vIfacePkg = interfaces[ifaceName]?.pkg ?: ""
+		vImplPkg != vIfacePkg
+	} ?: false
+	val vUsePointer = vImpls.isNullOrEmpty() || vHasCrossPkgImpls
 	return when {
-		vImpls.isNullOrEmpty() -> "($cIface){(void*)\$self, &${cClass}_${ifaceName}_vt}"
+		vUsePointer -> "($cIface){(void*)\$self, &${cClass}_${ifaceName}_vt}"
 		else -> "($cIface){$vTypeIdField, .data.$vDataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
 		}
 	}

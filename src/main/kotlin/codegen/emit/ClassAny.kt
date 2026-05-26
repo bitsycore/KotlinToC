@@ -198,8 +198,12 @@ internal fun CCodeGen.emitAnyVtable(
 		}
 	impl.appendLine()
 	impl.appendLine("static void* ${cName}_copyWith_any(void* \$self, void* alloc) {")
-	impl.appendLine("    ktc_std_Allocator* a = (ktc_std_Allocator*)alloc;")
-	impl.appendLine("    $cName* dst = ($cName*)a->vt->allocMem(a, sizeof($cName), ${ktSrcStr()});")
+	impl.appendLine("    ktc_Allocator* a = (ktc_Allocator*)alloc;")
+	if (ifaceUsesPointerLayout("Allocator")) {
+		impl.appendLine("    $cName* dst = ($cName*)a->vt->allocMem(a->obj, sizeof($cName), ${ktSrcStr()});")
+	} else {
+		impl.appendLine("    $cName* dst = ($cName*)a->vt->allocMem((void*)&a->data, sizeof($cName), ${ktSrcStr()});")
+	}
 	impl.appendLine("    if (dst) *dst = *($cName*)\$self;")
 	impl.appendLine("    return dst;")
 	impl.appendLine("}")

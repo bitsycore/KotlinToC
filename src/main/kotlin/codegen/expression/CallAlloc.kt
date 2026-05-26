@@ -42,7 +42,7 @@ private fun CCodeGen.emitArrayInitLambda(dataPtr: String, sizeExpr: String, lamb
 private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: String) {
 	val vConcrete = typeFlatName(name)
 	val vTypeId   = getTypeId(name)
-	preStmts += "ktc_IfacePtr $t = {{$vTypeId}, (const void*)&${vConcrete}_Allocator_vt, (void*)&$allocExpr};"
+	preStmts += "ktc_IfacePtr $t = {$vTypeId, (const void*)&${vConcrete}_Allocator_vt, (void*)&$allocExpr};"
 	}
 
 /* Resolution of an allocator argument for class-construction allocWith.
@@ -77,7 +77,9 @@ private fun CCodeGen.resolveAllocatorForClassAlloc(inCall: CallExpr, inAllocExpr
 private fun CCodeGen.emitAllocWithConstruct(cName: String, ifExpr: String, ifaceCreated: Boolean, isTrampoline: Boolean, ctorArgs: String): String {
 	val vTPtr = tmp()
 	if (ifaceCreated || isTrampoline) {
-		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)((ktc_std_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
+		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)((ktc_Allocator_vt*)$ifExpr.vt)->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
+		} else if (ifaceUsesPointerLayout("Allocator")) {
+		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)$ifExpr.vt->allocMem($ifExpr.obj, sizeof($cName), ${ktSrcStr()});"
 		} else {
 		preStmts += "$cName* ${vTPtr}_ptr = ($cName*)$ifExpr.vt->allocMem((void*)&$ifExpr.data, sizeof($cName), ${ktSrcStr()});"
 		}
@@ -129,7 +131,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
 		val (vIfExpr, _) = resolveAllocIface(vAllocKtc)
 		val vT = tmp()
-		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSizeExpr), ${ktSrcStr()});"
+		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSizeExpr), ${ktSrcStr()});"
 		// Array<T>(size) { init } — run the init lambda over the freshly allocated slots.
 		// (RawArray has no lambda-init form.)
 		if (vClassName == "Array" && vCtorArgs.size >= 2 && vCtorArgs[1].expr is LambdaExpr) {

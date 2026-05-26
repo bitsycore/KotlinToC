@@ -35,7 +35,7 @@ internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concrete
     val cConcrete = typeFlatName(concreteType)
     val impls     = interfaceImplementors[ifaceName] ?: emptyList()
     val dataName  = ifaceDataName(concreteType)
-    val fieldPath = if (impls.isEmpty()) ".$dataName" else ".data.$dataName"
+    val fieldPath = if (ifaceUsesPointerLayout(ifaceName)) ".$dataName" else ".data.$dataName"
     emitBlockIntoTempBase(b, indent) { expr ->
         val valExpr = genExpr(expr)
         preStmts += "$indent$tempVar$fieldPath = $valExpr;"

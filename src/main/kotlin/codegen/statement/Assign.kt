@@ -383,7 +383,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     val cIface = typeFlatName(retIface)
                     val impls = interfaceImplementors[retIface] ?: emptyList()
                     val dataName = ifaceDataName(exprType)
-                    val fieldPath = if (impls.isEmpty()) ".$dataName" else ".data.$dataName"
+                    val fieldPath = if (ifaceUsesPointerLayout(retIface)) ".$dataName" else ".data.$dataName"
                     val t = tmp()
                     impl.appendLine("$ind${cIface} $t;")
                     impl.appendLine("$ind$t$fieldPath = $expr;")

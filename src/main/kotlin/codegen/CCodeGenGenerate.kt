@@ -79,6 +79,11 @@ internal fun CCodeGen.generate(): COutput {
 	scanForGenericFunCalls()
 	runGenericScanFixedPoint()
 
+	// Build interfaceImplementors early so emitClass/emitObject can query it (e.g. copyWith_any).
+	for ((className, ifaces) in classInterfaces) {
+		for (iface in ifaces) interfaceImplementors.getOrPut(iface) { mutableListOf() }.add(className)
+		}
+
 	// Forward-declare all concrete interface types and monomorphized generic class types.
 	data class FwdDecl(val vCName: String, val vSrc: String) // one forward declaration line
 	val vFwdDecls = mutableListOf<FwdDecl>()
@@ -184,6 +189,8 @@ internal fun CCodeGen.generate(): COutput {
 			typeSubst = emptyMap()
 			}
 		}
+	// Rebuild interfaceImplementors with generic classes included.
+	interfaceImplementors.clear()
 	for ((className, ifaces) in classInterfaces) {
 		for (iface in ifaces) interfaceImplementors.getOrPut(iface) { mutableListOf() }.add(className)
 		}

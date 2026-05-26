@@ -366,6 +366,17 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun enumInfoFor(inType: KtcType?): EnumInfo? =      // EnumInfo if type is an enum class
         (inType as? KtcType.User)?.decl as? EnumInfo
 
+    // True when an interface uses pointer-based layout (cross-package implementors exist)
+    internal fun ifaceUsesPointerLayout(ifaceName: String): Boolean {
+        val impls = interfaceImplementors[ifaceName] ?: return true
+        if (impls.isEmpty()) return true
+        val ifacePkg = interfaces[ifaceName]?.pkg ?: return true
+        return impls.any {
+            val implPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
+            implPkg != ifacePkg
+        }
+    }
+
     /** Returns the ObjInfo for a DotExpr, resolving through companion objects if needed. */
     internal fun resolveDotObjInfo(dot: DotExpr): ObjInfo? {
         val name = (dot.obj as? NameExpr)?.name ?: return null
@@ -387,7 +398,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
             }
         // Recurse into chained dots: only for nested objects (A.B where B is an object)
         if (dot.obj is DotExpr) {
-            val vParent = resolveDotObjCName(dot.obj as DotExpr) ?: return null
+            val vParent = resolveDotObjCName(dot.obj) ?: return null
             val vNestedName = "${vParent.replace('.', '$')}\$${dot.name}"
             if (objects.containsKey(vNestedName)) return objects[vNestedName]!!.flatName
             // Not a nested object — let genDot handle it as a regular property access
@@ -487,9 +498,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Generates the C expression to access the union data field for a narrowed interface variable. */
     internal fun ifaceUnionAccess(inIfaceName: String, inNarrowedClass: String, inRecv: String): String
         {
-        val vImpls = interfaceImplementors[inIfaceName]             // list of implementors for this interface
         val vDataName = "${typeFlatName(inNarrowedClass)}_data"     // e.g. "IsAsTest_Circle_data"
-        return if (vImpls.isNullOrEmpty()) "$inRecv.$vDataName" else "$inRecv.data.$vDataName"
+        return if (ifaceUsesPointerLayout(inIfaceName)) "$inRecv.$vDataName" else "$inRecv.data.$vDataName"
         }
 
     /*
@@ -501,13 +511,11 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     */
     internal fun ifaceVtableSelf(inIfaceName: String, inRecv: String, isPtr: Boolean = false): String
         {
-        val vImpls = interfaceImplementors[inIfaceName]
         val deref = if (isPtr) "->" else "."
-        return when
-            {
-            vImpls.isNullOrEmpty() -> if (isPtr) "$inRecv->obj" else "$inRecv.obj"
-            else -> "(void*)&$inRecv${deref}data"
-            }
+        return if (ifaceUsesPointerLayout(inIfaceName))
+            "$inRecv${deref}obj"
+        else
+            "(void*)&$inRecv${deref}data"
         }
 
     /* True if type is a function pointer type: "Fun(P1,P2)->R" */

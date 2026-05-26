@@ -1,4 +1,4 @@
-package ktc.std
+package ktc
 
 interface Allocator {
     fun allocMem(size: Int, file: String = Macro.FILE, line: Int = Macro.LINE): AnyPtr

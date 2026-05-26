@@ -53,15 +53,19 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     hdr.appendLine("#define KTC_OPT_TYPE_NAME $vOptName")
     hdr.appendLine("KTC_TYPE_ID(${typeIds[info.name]!!})")
 
-    // CLS_TYPES X-macro listing every concrete implementor (used by KTC_INTERFACE union).
-    // Each entry is X(TYPE, NAME) where TYPE is the C struct type and NAME is the field base
-    // (these differ for object singletons: TYPE = Foo_t, NAME = Foo).
-    if (impls.isNotEmpty()) {
+    // Check if all implementors are in the same package (safe for by-value union embedding).
+    // Cross-package implementors can't be in the union (their struct isn't defined yet).
+    val hasCrossPkgImpls = impls.any {
+        val vImplPkg = classes[it]?.pkg ?: objects[it]?.pkg ?: ""
+        vImplPkg != prefix && vImplPkg != info.pkg
+    }
+    val useUnion = impls.isNotEmpty() && !hasCrossPkgImpls
+    if (useUnion) {
         hdr.appendLine()
         hdr.appendLine("#define CLS_TYPES(X) \\")
         for ((i, impl) in impls.withIndex()) {
-            val vType = implCType(impl)           // e.g. ktc_std_Heap_t or ktc_std_Circle
-            val vName = typeFlatName(impl)        // always without _t, used for field name
+            val vType = implCType(impl)
+            val vName = typeFlatName(impl)
             if (i < impls.size - 1) hdr.appendLine("    X($vType, $vName) \\")
             else hdr.appendLine("    X($vType, $vName)")
         }
@@ -73,8 +77,12 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     val allProps = collectAllIfaceProperties(info)
     val vtableHasDispose = allMethods.any { it.name == "dispose" }
 
-    if (impls.isEmpty()) {
-        // No-implementor fallback: raw structs (KTC_INTERFACE requires at least one union member)
+    if (useUnion) {
+        hdr.appendLine("KTC_INTERFACE({")
+        emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
+        hdr.appendLine("}, CLS_TYPES);")
+    } else {
+        // Pointer-based layout: used when there are cross-package implementors or none at all
         hdr.appendLine("typedef struct ${cName}_vt {")
         emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
         hdr.appendLine("} ${cName}_vt;")
@@ -84,17 +92,12 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
         hdr.appendLine("    const ${cName}_vt* vt;")
         hdr.appendLine("} $cName;")
         hdr.appendLine("typedef struct { ktc_OptionalTag tag; $cName value; } $vOptName;")
-    } else {
-        // Use KTC_INTERFACE macro — always emits a union (works for 1 or more implementors)
-        hdr.appendLine("KTC_INTERFACE({")
-        emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
-        hdr.appendLine("}, CLS_TYPES);")
     }
 
     hdr.appendLine()
     hdr.appendLine("#undef KTC_TYPE_NAME")
     hdr.appendLine("#undef KTC_OPT_TYPE_NAME")
-    if (impls.isNotEmpty()) hdr.appendLine("#undef CLS_TYPES")
+    if (useUnion) hdr.appendLine("#undef CLS_TYPES")
 
     hdr.appendLine(classBlockFooter("interface", vBaseName, vDisplayArgs))
 }

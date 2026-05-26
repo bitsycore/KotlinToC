@@ -286,13 +286,13 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
 			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
 				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
+				preStmts += "ktc_IfacePtr $vT = {$vTypeId, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
 		val vIsRawArray = vRawPtrType != null
 		val vSrcPtr     = if (vIsRawArray) inRecv else "$inRecv.ptr"
-		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->reallocMem($vIfExpr.obj, $vSrcPtr, sizeof($vElemC) * (size_t)($vNewSizeExpr), ${ktSrcStr()});"
+		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->reallocMem($vIfExpr.obj, $vSrcPtr, sizeof($vElemC) * (size_t)($vNewSizeExpr), ${ktSrcStr()});"
 		if (!vIsRawArray) {
 			val vVarArrType = varArrTypeName(vElemC)
 			val vResult     = tmp()
@@ -331,11 +331,11 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			} else {
 			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
 				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = {{$vTypeId}, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
+				preStmts += "ktc_IfacePtr $vT = {$vTypeId, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
-		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_std_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSrcLen), ${ktSrcStr()});"
+		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSrcLen), ${ktSrcStr()});"
 		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $vSrcPtr, (size_t)$vSrcLen * sizeof($vElemC));"
 		preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vSrcLen};"
 		return vResult

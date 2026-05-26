@@ -302,16 +302,16 @@ class HeapUnitTest : TranspilerTestBase() {
 
     // When a function takes @Ptr Allocator and forwards it to another @Ptr-Allocator
     // call site (here: allocWith), the codegen must forward the existing IfacePtr
-    // directly — NOT wrap it again with a bogus ktc_std_Allocator_Allocator_vt.
+    // directly — NOT wrap it again with a bogus ktc_Allocator_Allocator_vt.
     @Test fun ptrAllocatorForwardedToAllocWith() {
         val r = transpileMainWithStdlib(
             body  = "val p = mk(Heap)!!",
             decls = "$vec2Decl\nfun mk(a: @Ptr Allocator): @Ptr Vec2 = Vec2(1.0f, 2.0f).allocWith(a)"
         )
         // The bug emitted a reference to a non-existent vtable; ensure it's gone.
-        r.sourceNotContains("ktc_std_Allocator_Allocator_vt")
+        r.sourceNotContains("ktc_Allocator_Allocator_vt")
         // And the trampoline path through the allocator's vtable is emitted.
-        r.sourceContains("(ktc_std_Allocator_vt*)")
+        r.sourceContains("(ktc_Allocator_vt*)")
     }
 
     // Same forwarding pattern through ArrayList<T>(allocator, n) — exercises the
@@ -321,7 +321,7 @@ class HeapUnitTest : TranspilerTestBase() {
             body  = "val list = mk(Heap)",
             decls = "fun mk(a: @Ptr Allocator): ArrayList<Int> = ArrayList<Int>(a, 4)"
         )
-        r.sourceNotContains("ktc_std_Allocator_Allocator_vt")
+        r.sourceNotContains("ktc_Allocator_Allocator_vt")
     }
 
     // Two-level forwarding: the inner function takes @Ptr Allocator from the outer,
@@ -335,7 +335,7 @@ class HeapUnitTest : TranspilerTestBase() {
                 fun outer(a: @Ptr Allocator): @Ptr Vec2 = inner(a)
             """.trimIndent()
         )
-        r.sourceNotContains("ktc_std_Allocator_Allocator_vt")
+        r.sourceNotContains("ktc_Allocator_Allocator_vt")
     }
 
     // Heap-allocated Array<T>(size) { init } via allocWith — the lambda init must

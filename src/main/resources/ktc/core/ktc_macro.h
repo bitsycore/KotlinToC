@@ -111,7 +111,7 @@
 	typedef struct __KTC_IFACE_VT(CLS_) VTABLE_BODY __KTC_IFACE_VT(CLS_); \
 	typedef struct CLS_ { \
 		ktc_UInt __typeId; \
-		union { CONCRETE_TYPES(KTC_UNION_MEMBER) } data; \
+		union { void* __ptr; CONCRETE_TYPES(KTC_UNION_MEMBER) } data; \
 		const __KTC_IFACE_VT(CLS_)* vt; \
 	} CLS_; \
 	KTC_DEFINE_OPT_NAMED(CLS_, CLS_OPT_)
