@@ -49,11 +49,11 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("= p;") // v = p (same pointer)
     }
 
-    // ── .set() → update ──────────────────────────────────────────────
+    // ── p.value = x → update ─────────────────────────────────────────
 
     @Test fun heapSet() {
         val r = transpileMainWithStdlib(
-            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\np.set(Vec2(1.0f, 2.0f))",
+            "val p = Vec2(10.0f, 20.0f).allocWith(Heap)!!\np.value = Vec2(1.0f, 2.0f)",
             decls = vec2Decl
         )
         r.sourceContains("*p =")
@@ -175,14 +175,14 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("(*p)")
     }
 
-    // ── Ptr.set() ────────────────────────────────────────────────────
+    // ── Ptr write via .value = x ─────────────────────────────────────
 
     @Test fun ptrSet() {
         val r = transpileMain(
-            "val v = Vec2(1.0f, 2.0f)\nval p = v.ptr()\np.set(Vec2(3.0f, 4.0f))",
+            "val v = Vec2(1.0f, 2.0f)\nval p = v.ptr()\np.value = Vec2(3.0f, 4.0f)",
             decls = vec2Decl
         )
-        r.sourceContains("*")
+        r.sourceContains("*p =")
     }
 
     // ── Ptr field access through .value() ────────────────────────────

@@ -182,19 +182,8 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
             emitPrintStmt(e.args, ind); return
         }
     }
-    // Heap/Ptr/Value .set(val) as statement — only when class has no own set() method
-    if (e is CallExpr && e.callee is DotExpr && e.callee.name == "set") {
-        val recvTypeKtc = inferExprTypeKtc(e.callee.obj)
-        val recvTypeCoreKtc = recvTypeKtc.stripNullable
-        val baseClass = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
-        if (baseClass != null && classes[baseClass]?.methods?.any { it.name == "set" } != true) {
-            val recv = genExpr(e.callee.obj)
-            val argStr = e.args.joinToString(", ") { genExpr(it.expr) }
-            flushPreStmts(ind)
-            impl.appendLine("$ind*$recv = $argStr;")
-            return
-        }
-    }
+    // Note: pointer assignment goes through `p.value = x` (handled in emitAssign);
+    // legacy `p.set(x)` is rejected in genCallMethod with a clear error.
     // Safe method call as statement: a?.method() → if (guard) { method(a); }
     if (e is CallExpr && e.callee is SafeDotExpr) {
         val safe = e.callee

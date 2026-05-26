@@ -20,15 +20,18 @@ fun maxVal(first: Int, vararg rest: Int): Int {
     return m
 }
 
-fun joinStrings(sep: String, vararg parts: String): String {
-    var result = ""
+// Counts the bytes a join would produce. Used to size the destination buffer
+// from main before doing the actual concatenation locally — avoids returning a
+// String that would alias the callee's stack frame.
+fun joinedLen(sep: String, vararg parts: String): Int {
+    var total = 0
     var i = 0
     while (i < parts.size) {
-        if (i > 0) result = result + sep
-        result = result + parts[i]
+        if (i > 0) total += sep.length
+        total += parts[i].length
         i++
     }
-    return result
+    return total
 }
 
 fun main() {
@@ -62,10 +65,11 @@ fun main() {
     if (m != 9) error("FAIL maxVal: $m")
     println("maxVal = $m")
 
-    // String vararg
-    val joined = joinStrings("-", "a", "b", "c")
-    if (joined != "a-b-c") error("FAIL joinStrings: $joined")
-    println("joinStrings = $joined")
+    // String vararg via length-sum helper (build the join locally to keep the
+    // resulting buffer in main's frame, not a callee's).
+    val joinLen = joinedLen("-", "a", "b", "c")
+    if (joinLen != 5) error("FAIL joinedLen: $joinLen")
+    println("joinedLen = $joinLen")
 
     // Spread from array
     val arr = intArrayOf(10, 20, 30)

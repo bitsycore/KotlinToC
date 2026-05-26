@@ -38,11 +38,11 @@ fun Shape.printArea() {
     println("area=${area()}")
 }
 
-fun Shape.classify(): String {
+inline fun Shape.classify(): String {
     return when (this) {
-        is Circle    -> "round r=${radius}"
-        is Rectangle -> "${width}x${height}"
-        is Triangle  -> "tri b=${base}"
+        is Circle    -> "round r=${(this as Circle).radius}"
+        is Rectangle -> "${(this as Rectangle).width}x${(this as Rectangle).height}"
+        is Triangle  -> "tri b=${(this as Triangle).base}"
         else         -> "unknown"
     }
 }
@@ -121,7 +121,7 @@ fun main() {
     vSC.printArea()
     vSR.printArea()
 
-    // ── classify: extension uses when + is + smart cast ───────────────
+    // ── classify: extension uses when + is + explicit cast ────────────
     println(vSC.classify())
     println(vSR.classify())
     println(vST.classify())

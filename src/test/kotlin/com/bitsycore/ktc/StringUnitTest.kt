@@ -121,9 +121,10 @@ class StringUnitTest : TranspilerTestBase() {
             val c = a + b
         """)
         r.sourceContains("ktc_core_string_cat")
-        // Verify buffer declaration and 4-arg call: (buf, sizeof(buf), a, b)
-        r.sourceMatches(Regex("""ktc_Char \$\w+\[512\];"""))
-        r.sourceMatches(Regex("""ktc_core_string_cat\(\$\w+, sizeof\(\$\w+\), a, b\)"""))
+        // Buffer is alloca'd so it survives any enclosing inline `{ }` block — see
+        // genStringConcat for why a stack array won't do.
+        r.sourceMatches(Regex("""ktc_Char\* \$\w+ = \(ktc_Char\*\)ktc_core_alloca\(512\);"""))
+        r.sourceMatches(Regex("""ktc_core_string_cat\(\$\w+, 512, a, b\)"""))
     }
 
     // ── toIntOrNull ──────────────────────────────────────────────────

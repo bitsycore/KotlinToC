@@ -320,6 +320,9 @@ internal fun inferInlineFunSubst(
 
 internal fun CCodeGen.genStringConcat(e: BinExpr): String {
     val buf = tmp()
-    preStmts += "ktc_Char ${buf}[512];"
-    return "ktc_core_string_cat($buf, sizeof($buf), ${genExpr(e.left)}, ${genExpr(e.right)})"
+    // alloca, not a stack array: the buffer must live in the enclosing function's
+    // frame so a String built here survives any surrounding inline `{ }` block and
+    // can be safely returned from inline functions back to the caller.
+    preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(512);"
+    return "ktc_core_string_cat($buf, 512, ${genExpr(e.left)}, ${genExpr(e.right)})"
 }

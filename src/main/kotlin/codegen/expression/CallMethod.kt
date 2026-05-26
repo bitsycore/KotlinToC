@@ -123,7 +123,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				if (objects.containsKey(pointerBase)) codegenError("Cannot call .value() on object '${pointerBase}' — objects are always @Ptr")
 				return "(*$recv)"
 				}
-			"set"  -> return "(*$recv = $argStr)"
+			"set"  -> codegenError("Use 'p.value = x' to assign through a @Ptr (instead of p.set(x))")
 			"copy" -> if (classes[pointerBase]?.isData == true) return genDataClassCopy(recv, pointerBase, args, heap = true)
 			"ptr" -> return recv
 			}

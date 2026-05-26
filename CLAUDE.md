@@ -31,6 +31,14 @@ Targets embedded/game/systems code.
 - The old `HeapAlloc`/`HeapArrayZero`/`HeapArrayResize`/`HeapFree` intrinsics were removed — use the allocator API.
 - Note: `allocWith` returns a non-null `@Ptr`. To null-check, declare the var `@Ptr T?` explicitly.
 
+## Pointer access
+- Read through a `@Ptr T`: `p.value()` → `*p` (no parens variant `p.value` reserved for assignment LHS).
+- Write through a `@Ptr T`: `p.value = x` → `*p = x;` (the old `p.set(x)` form is rejected — name was confusing).
+- `p?.value = x` is supported and expands to `if (p) *p = x;`.
+
+## String return safety
+- Non-inline functions returning bare `String` are refused when the body builds the result at runtime (concat, template). The buffer would die at function exit; require `@Ptr String`, `@Size(N) String`, or mark the function `inline`. Literal-only bodies (every yield is a `StrLit`) and `String?` returns are allowed.
+
 ## Conventions
 - Generated C: K&R style. Doc comments `/** */`.
 - Kotlin codegen source: section markers `// ====` + `// MARK: Name` between major groups; concise comments only when non-obvious.

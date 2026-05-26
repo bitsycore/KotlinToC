@@ -6,6 +6,47 @@ import com.bitsycore.ktc.codegen.expression.inferBlockType
 import com.bitsycore.ktc.codegen.statement.inferInitType
 import com.bitsycore.ktc.types.KtcType
 
+/* Returns true if every yielded String value in the body is a bare string
+literal. Such a function is safe to return value-type String — the literal's
+bytes live in .rodata, not in the callee's frame. */
+private fun returnsOnlyStringLiterals(inBody: Block): Boolean {
+	// A "yield" is either a ReturnStmt value or the tail expression of an
+	// expression-body function (parser emits it as ExprStmt at the tail).
+	fun isLiteralYield(e: Expr): Boolean {
+		// Use a small worklist to avoid mutual recursion (Kotlin forbids forward refs).
+		val vStack = ArrayDeque<Expr>()
+		vStack.addLast(e)
+		while (vStack.isNotEmpty()) {
+			when (val vCur = vStack.removeLast()) {
+				is StrLit -> {}
+				is IfExpr -> {
+					val vLastThen = vCur.then.stmts.lastOrNull()
+					if (vLastThen is ReturnStmt && vLastThen.value != null) vStack.addLast(vLastThen.value)
+					else if (vLastThen is ExprStmt) vStack.addLast(vLastThen.expr)
+					if (vCur.els != null) {
+						val vLastEls = vCur.els.stmts.lastOrNull()
+						if (vLastEls is ReturnStmt && vLastEls.value != null) vStack.addLast(vLastEls.value)
+						else if (vLastEls is ExprStmt) vStack.addLast(vLastEls.expr)
+						}
+					}
+				is WhenExpr -> for (b in vCur.branches) {
+					val vLastB = b.body.stmts.lastOrNull()
+					if (vLastB is ReturnStmt && vLastB.value != null) vStack.addLast(vLastB.value)
+					else if (vLastB is ExprStmt) vStack.addLast(vLastB.expr)
+					}
+				else -> return false
+				}
+			}
+		return true
+		}
+	for (s in inBody.stmts) {
+		if (s is ReturnStmt && s.value != null && !isLiteralYield(s.value)) return false
+		}
+	val vLast = inBody.stmts.lastOrNull()
+	if (vLast is ExprStmt && !isLiteralYield(vLast.expr)) return false
+	return true
+	}
+
 /* Populate all symbol tables from allFiles (cross-reference pass) then from
 the current file (authoritative pass). Must be called before any emission. */
 internal fun CCodeGen.collectDecls() {
@@ -308,6 +349,26 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				}
 			if (d.returnType != null && d.returnType.name == "Any" && d.returnType.annotations.none { it.name == "Ptr" }) {
 				codegenError("Function '${d.name}' cannot return value-type 'Any'. Use @Ptr Any instead")
+				}
+			// Bare String returns are unsafe outside inline functions and toString overrides:
+			// the String's internal buffer would live in the callee's frame and become a
+			// dangling reference after return. Require @Ptr String or @Size(N) String, OR
+			// mark the function inline (the buffer lives in the caller's frame via alloca).
+			// String? is allowed — it's an Optional wrapping a possibly-null String value.
+			// Bodyless declarations (interface methods, expect/external) also allowed —
+			// no body means no buffer to dangle here.
+			// Literal-only bodies (every return is a string literal) are safe — the literal
+			// points to .rodata, not a stack buffer.
+			if (d.returnType != null && d.returnType.name == "String"
+				&& !d.returnType.nullable
+				&& d.body != null
+				&& d.returnType.annotations.none { it.name == "Ptr" || it.name == "Size" }
+				&& !d.isInline && d.name != "toString"
+				&& !returnsOnlyStringLiterals(d.body)
+			) {
+				codegenError("Function '${d.name}' cannot return value-type 'String' " +
+					"(its internal buffer would die at function exit). " +
+					"Use one of: @Ptr String, @Size(N) String, or mark the function `inline`.")
 				}
 			val effectiveReturnType = d.returnType ?: d.body?.let { inferredTypeRef(inferBlockType(it)) }
 			when {

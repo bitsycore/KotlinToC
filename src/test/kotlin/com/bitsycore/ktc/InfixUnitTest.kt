@@ -55,9 +55,17 @@ class InfixUnitTest : TranspilerTestBase() {
 	// ── Non-generic infix on String ──────────────────────────────────
 
 	@Test fun infixOnString() {
-		/* String-returning inline functions have a known stack-lifetime issue: the
-		internal buffer used by ktc_core_string_cat is local to the inline block. */
-		notYetImpl("String-returning infix inline: stack buffer lifetime issue")
+		// String-returning inline functions are now safe: the concat buffer is alloca'd
+		// so it lives in the enclosing function's frame and survives the inline `{ }` block.
+		val vR = transpile("""
+			package test.Main
+			infix fun String.cat(other: String): String = this + other
+			fun main(args: Array<String>) {
+				val r = "a" cat "b"
+			}
+		""")
+		vR.sourceContains("ktc_core_alloca(512)")
+		vR.sourceContains("ktc_core_string_cat")
 	}
 
 	// ── Generic infix with type substitution ─────────────────────────

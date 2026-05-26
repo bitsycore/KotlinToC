@@ -59,13 +59,13 @@ fun passNullableVecValue(inVec: Vec2? = null) {
 
 fun passMutablePointPtr(p: @Ptr MutablePoint) {
     println("passMutablePointPtr before set: $p")
-    p.set(MutablePoint(99, 100))
+    p.value = MutablePoint(99, 100)
     println("passMutablePointPtr after set: $p")
 }
 
 fun passMutablePointPtrNullable(p: @Ptr MutablePoint?) {
     println("passMutablePointPtrNullable before set: $p")
-    p?.set(MutablePoint(99, 100))
+    if (p != null) p.value = MutablePoint(99, 100)
     println("passMutablePointPtrNullable after set: $p")
 }
 
@@ -430,13 +430,13 @@ fun main() {
     if (derefd.x != 300.0f || derefd.y != 400.0f) error("FAIL @Ptr value()")
     println("@Ptr value(): ok")
 
-    // @Ptr .set()
+    // @Ptr .value = x
     val setVec = Vec2(0.0f, 0.0f)
     val setPtr = setVec.ptr()
-    setPtr.set(Vec2(50.0f, 60.0f))
+    setPtr.value = Vec2(50.0f, 60.0f)
     val setVal = setPtr.value()
-    if (setVal.x != 50.0f || setVal.y != 60.0f) error("FAIL @Ptr .set()")
-    println("@Ptr .set(): ok")
+    if (setVal.x != 50.0f || setVal.y != 60.0f) error("FAIL @Ptr .value =")
+    println("@Ptr .value =: ok")
 
     // @Ptr .copy()
     val copyFrom = Vec2(1.0f, 2.0f)
