@@ -194,6 +194,10 @@ fun main(args: Array<String>) {
         System.err.println("  --check                      Validate source (lex + parse + collect), skip C emission")
         System.err.println("  --strict                     Promote all warnings to errors")
         System.err.println("  --diagnostics=json           Output errors/warnings as JSON (for editor/LSP integration)")
+        System.err.println("  -W<name>                     Enable warning <name> (e.g. -Wshadow)")
+        System.err.println("  -Wno-<name>                  Disable warning <name> (e.g. -Wno-safe-call)")
+        System.err.println("                               Names: shadow, nullable-ref, tailrec-inline, tailrec-suggestion,")
+        System.err.println("                                      const-condition, exhaustive-when, null-check, safe-call")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
         System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
@@ -234,6 +238,7 @@ fun main(args: Array<String>) {
     var checkOnly = false
     var strict = false
     var diagnosticsJson = false
+    val warnFlags = mutableMapOf<String, Boolean>()
     var i = 0
     while (i < args.size) {
         if (args[i] == "-o" && i + 1 < args.size) {
@@ -283,6 +288,12 @@ fun main(args: Array<String>) {
             i++
         } else if (args[i] == "--diagnostics=json") {
             diagnosticsJson = true
+            i++
+        } else if (args[i].startsWith("-Wno-")) {
+            warnFlags[args[i].removePrefix("-Wno-")] = false
+            i++
+        } else if (args[i].startsWith("-W") && args[i].length > 2) {
+            warnFlags[args[i].removePrefix("-W")] = true
             i++
         } else if (args[i] == "--version") {
             i++
@@ -550,7 +561,8 @@ fun main(args: Array<String>) {
                     checkBounds = checkBounds, checkNull = checkNull,
                     strict = strict,
                     sourceFileName = srcName,
-                    diagnosticsJson = diagnosticsJson)
+                    diagnosticsJson = diagnosticsJson,
+                    warnFlags = warnFlags)
                 gen.collectAndScan()
                 allDiagnostics += gen.diagnostics
             } catch (e: Exception) {
@@ -615,7 +627,8 @@ fun main(args: Array<String>) {
                 checkNull = checkNull,
                 strict = strict,
                 sourceFileName = srcName,
-                diagnosticsJson = diagnosticsJson
+                diagnosticsJson = diagnosticsJson,
+                warnFlags = warnFlags
             )
             output = gen.generate()
             allDiagnostics += gen.diagnostics

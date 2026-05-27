@@ -102,7 +102,7 @@ internal fun analyzeTailrec(body: Block, fnName: String, params: List<Param> = e
 internal fun CCodeGen.validateTailrec(f: FunDecl) {
 	if (!f.isTailrec || f.body == null) return
 	if (f.isInline) {
-		codegenWarning("'tailrec' is ignored on 'inline' function '${f.name}'")
+		codegenWarning("tailrec-inline", "'tailrec' is ignored on 'inline' function '${f.name}'")
 		return
 	}
 	val a = analyzeTailrec(f.body, f.name, f.params)
@@ -116,7 +116,7 @@ internal fun CCodeGen.suggestTailrec(f: FunDecl) {
 	if (f.isTailrec || f.isInline || f.body == null) return
 	val a = analyzeTailrec(f.body, f.name, f.params)
 	if (a.allCalls > 0 && a.nonTailCalls == 0)
-		codegenWarning("'${f.name}' has recursive tail calls - consider adding 'tailrec' modifier")
+		codegenWarning("tailrec-suggestion", "'${f.name}' has recursive tail calls - consider adding 'tailrec' modifier")
 }
 
 // ════════════════════════════ Tailrec setup for emit ═══════════════════════════

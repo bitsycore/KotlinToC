@@ -50,7 +50,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         val nonNullKtc = inferExprTypeKtc(nonNull)
         if (nonNullKtc != null && nonNullKtc !is KtcType.Nullable) {
             val always = if (e.op == "==") "false" else "true"
-            codegenWarning("Null check on non-nullable '$nonNullType' is always $always")
+            codegenWarning("null-check", "Null check on non-nullable '$nonNullType' is always $always")
         }
         // this == null / this != null inside nullable-receiver extension
         if (nonNull is ThisExpr) {

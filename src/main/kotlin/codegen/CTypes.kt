@@ -131,7 +131,7 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 		val vInner = vSubstituted.typeArgs[0]
 		val vIsRefNullable = vInner.nullable || vSubstituted.nullable
 		if (vSubstituted.nullable && !vInner.nullable)
-			codegenWarning("Prefer Ref<${typeRefToStr(vInner)}?> over Ref<${typeRefToStr(vInner)}>? - nullability belongs on the inner type")
+			codegenWarning("nullable-ref", "Prefer Ref<${typeRefToStr(vInner)}?> over Ref<${typeRefToStr(vInner)}>? - nullability belongs on the inner type")
 		val vRewritten = TypeRef(vInner.name, vIsRefNullable, vInner.typeArgs,
 			vInner.funcParams, vInner.funcReturn, vInner.funcReceiver,
 			vInner.annotations + Annotation("Ptr"))

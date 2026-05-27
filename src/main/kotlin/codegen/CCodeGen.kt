@@ -22,7 +22,7 @@ internal fun relIncludePath(inFromDir: String, inToPath: String): String {
 	return if (vUps == 0) vDown else "../".repeat(vUps) + vDown
 }
 
-internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val checkBounds: Boolean = true, val checkNull: Boolean = true, val strict: Boolean = false, val sourceFileName: String = "", val diagnosticsJson: Boolean = false) : SymbolReader {
+internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val checkBounds: Boolean = true, val checkNull: Boolean = true, val strict: Boolean = false, val sourceFileName: String = "", val diagnosticsJson: Boolean = false, val warnFlags: Map<String, Boolean> = emptyMap()) : SymbolReader {
 
     // ── Package prefix ───────────────────────────────────────────────
     override val prefix: String = file.pkg?.replace('.', '_')?.plus("_") ?: ""
@@ -289,7 +289,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
             for (i in 0 until scopes.size - 1) {
                 val vShadowed = scopes[i][inName]
                 if (vShadowed?.cName != null) {
-                    codegenWarning("local '$inName' shadows field '${vShadowed.cName}'")
+                    codegenWarning("shadow", "local '$inName' shadows field '${vShadowed.cName}'")
                     break
                     }
                 }
@@ -835,6 +835,11 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         val loc = locationPrefix(line, col)
         val snippet = sourceSnippet(line, col)
         System.err.print("${loc}${"warning".wrapYellow()}: $inMsg$snippet\n")
+    }
+
+    override fun codegenWarning(inName: String, inMsg: String) {
+        if (warnFlags[inName] == false) return
+        codegenWarning(inMsg)
     }
 
     internal var diagnosticWarningCount: Int = 0  // total warnings emitted this file

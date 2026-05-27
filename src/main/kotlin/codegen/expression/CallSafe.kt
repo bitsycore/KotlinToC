@@ -27,7 +27,7 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 	// Warn: ?. method call on a non-nullable receiver (and not a pointer)
 	if (recvTypeKtc != null && recvTypeKtc !is KtcType.Nullable && recvTypeCoreKtc !is KtcType.Ptr) {
 		val vSrc = recvName ?: "expression"
-		codegenWarning("Safe call '?.' on non-nullable '$recvType' ($vSrc.${dot.name}) is redundant; use '.' instead")
+		codegenWarning("safe-call", "Safe call '?.' on non-nullable '$recvType' ($vSrc.${dot.name}) is redundant; use '.' instead")
 		}
 	val isValueNullRecv = recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
 

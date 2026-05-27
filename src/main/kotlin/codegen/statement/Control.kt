@@ -94,7 +94,7 @@ internal fun CCodeGen.popSmartCasts(casts: List<Pair<String, String>>) {
 internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 	if (e.cond is BoolLit) {
 		val v = e.cond.value
-		codegenWarning("Condition is always ${if (v) "true" else "false"}")
+		codegenWarning("const-condition", "Condition is always ${if (v) "true" else "false"}")
 		}
 	impl.appendLine("${ind}if (${genExprFlushed(e.cond, ind)}) {")
 	val thenCasts = extractSmartCasts(e.cond)
@@ -169,7 +169,7 @@ internal fun CCodeGen.checkWhenExhaustiveness(e: WhenExpr) {
 	val missing = enumInfo.entries.filter { it !in covered }
 	if (missing.isNotEmpty()) {
 		val names = missing.joinToString(", ")
-		codegenWarning("'when' on enum ${enumInfo.name} is not exhaustive; missing: $names — add an 'else' branch or handle all entries")
+		codegenWarning("exhaustive-when", "'when' on enum ${enumInfo.name} is not exhaustive; missing: $names — add an 'else' branch or handle all entries")
 	}
 }
 

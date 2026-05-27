@@ -208,7 +208,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
     // Warn: ?. on a receiver that is already non-nullable (and not a pointer)
     if (recvTypeKtc != null && recvTypeKtc !is KtcType.Nullable && recvTypeCoreKtc !is KtcType.Ptr) {
         val vSrc = (e.obj as? NameExpr)?.name ?: "expression"
-        codegenWarning("Safe call '?.' on non-nullable '$recvType' ($vSrc) is redundant; use '.' instead")
+        codegenWarning("safe-call", "Safe call '?.' on non-nullable '$recvType' ($vSrc) is redundant; use '.' instead")
     }
     val recv = genExpr(e.obj)
     val recvName = (e.obj as? NameExpr)?.name
