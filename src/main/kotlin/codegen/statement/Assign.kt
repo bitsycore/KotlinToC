@@ -271,6 +271,14 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         inlineLabelUsed = true
         return
     }
+    // Tailrec trampoline: return selfCall(args) → reassign params + goto
+    if (tailrecFnName != null && s.value != null) {
+        val selfCall = asTailrecSelfCall(s.value)
+        if (selfCall != null) {
+            emitTailrecTrampoline(selfCall, ind)
+            return
+        }
+    }
     if (currentFnReturnsNullable) {
         // Any? nullable return: uses ktc_Any with data==NULL for null (not Optional)
         if ((currentFnReturnKtcType as? KtcType.Nullable)?.inner is KtcType.Any || currentFnReturnKtcType is KtcType.Any) {

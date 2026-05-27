@@ -55,6 +55,8 @@ internal fun CCodeGen.emitMethod(
 	suppressHdr: Boolean = false,
 	ifaceName:   String  = ""
 	) {
+	validateTailrec(f)
+	suggestTailrec(f)
 	val cClass         = typeFlatName(className)
 	val siblings       = classes[className]?.methods ?: emptyList()
 	val methodName     = resolvedFnName(f, siblings)
@@ -104,6 +106,7 @@ internal fun CCodeGen.emitMethod(
 			}
 		}
 	emitArrayParamCopies(f.params, "    ")
+	setupTailrec(f, hasReceiver = true, selfCType = "$cClass*")
 	emitFunBodyAndClose(f, prevState, insideMethod = true)
 	}
 

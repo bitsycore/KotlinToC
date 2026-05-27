@@ -352,7 +352,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 					else -> optSome(optSelfType, recv)
 					}
 				} else recv
-			val allArgs = if (argStr.isEmpty()) recvArg else "$recvArg, $argStr"
+			val expandedArgs = prepareArgs(args, extFun, extFunOwner)
+			val allArgs = if (expandedArgs.isEmpty()) recvArg else "$recvArg, $expandedArgs"
 			val vExtSiblings = extensionFuns[extFunOwner]?.filter { it.name == extFun.name }?.distinctBy { it.params.map { p -> resolveTypeName(p.type).toInternalStr } } ?: listOf(extFun)
 			val vExtFnName = resolvedFnName(extFun, vExtSiblings)
 			return "${typeFlatName(extFunOwner)}_$vExtFnName($allArgs)"

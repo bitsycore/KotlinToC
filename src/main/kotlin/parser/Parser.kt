@@ -68,11 +68,13 @@ class Parser(private val tokens: List<Token>) {
         if (isInfix) advance()
         val isPrivate = at(TokenType.PRIVATE)
         if (isPrivate) advance()
+        val isTailrec = at(TokenType.TAILREC)
+        if (isTailrec) advance()
         val isInlineExplicit = at(TokenType.IDENT) && cur().value == "inline" && peek().type in setOf(TokenType.FUN, TokenType.VAL, TokenType.VAR)
         if (isInlineExplicit) advance()
         val isInline = isInlineExplicit || isInfix
         return when {
-            at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInline = isInline, isOverride = isOverride, isInfix = isInfix)
+            at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec)
             at(TokenType.DATA)   -> { if (isPrivate) error("private with data not supported"); advance(); expect(TokenType.CLASS); parseClassDecl(isData = true) }
             at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false) }
             at(TokenType.IDENT) && cur().value == "annotation" && peek().type == TokenType.CLASS -> {
@@ -100,7 +102,7 @@ class Parser(private val tokens: List<Token>) {
                     }
                     at(TokenType.FUN) -> parseFunDecl(
                         isOperator = isOperator, isPrivate = isPrivate, isInline = isInline,
-                        isOverride = isOverride, isInfix = isInfix, annotations = anns
+                        isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec, annotations = anns
                     )
                     at(TokenType.DATA) -> {
                         advance(); expect(TokenType.CLASS)
@@ -117,7 +119,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── fun ──────────────────────────────────────────────────────────
 
-    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
+    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
         expect(TokenType.FUN)
         // Parse optional type parameters: fun <T, U> name(...)
         val typeParams = if (at(TokenType.LT)) {
@@ -169,7 +171,7 @@ class Parser(private val tokens: List<Token>) {
             else -> null
         }
         skipTerminator()
-        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInline, isOverride, isInfix, annotations)
+        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInline, isOverride, isInfix, isTailrec, annotations)
     }
 
     private fun parseParamList(): List<Param> {

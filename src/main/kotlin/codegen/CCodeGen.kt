@@ -752,6 +752,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
 
     internal var loopDepth: Int get() = fnCtx.loopDepth; set(v) { fnCtx.loopDepth = v }
 
+    // ── Tailrec state ──────────────────────────────────────────────────
+    internal var tailrecFnName: String?      get() = fnCtx.tailrecFnName;    set(v) { fnCtx.tailrecFnName = v }
+    internal var tailrecParams: List<Param>  get() = fnCtx.tailrecParams;    set(v) { fnCtx.tailrecParams = v }
+    internal var tailrecHasReceiver: Boolean get() = fnCtx.tailrecHasReceiver; set(v) { fnCtx.tailrecHasReceiver = v }
+    internal var tailrecSelfCType: String?  get() = fnCtx.tailrecSelfCType; set(v) { fnCtx.tailrecSelfCType = v }
+
     // ── Source location tracking for error messages ──────────────────
     internal var currentStmtLine: Int = 0
     /** Mutable source file name for mem-track attribution.

@@ -12,6 +12,8 @@ import com.bitsycore.ktc.codegen.statement.emitStmt
 // Enum emit lives in Enum.kt.
 
 internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
+	validateTailrec(f)
+	suggestTailrec(f)
 	val vRawRecvName        = f.receiver!!.name
 		// Resolve dotted receiver (e.g. "SDL3.Window" → "SDL3$Window", also nested objects)
 		val recvTypeName        = vRawRecvName.replace('.', '$').let { if (classes.containsKey(it) || objects.containsKey(it)) it else vRawRecvName }
@@ -55,11 +57,15 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	registerParams(f.params)
 	if (isClassType) registerClassFields(classes[recvTypeName]!!, "\$self.")
 	emitArrayParamCopies(f.params, "    ")
+	val selfCType = if (recvIsNullable) optCTypeName(recvTypeName) else cSelfType
+	setupTailrec(f, hasReceiver = !isNamespaceObj, selfCType = selfCType)
 	emitFunBodyAndClose(f, prevState, insideMethod = isClassType)
 	}
 
 internal fun CCodeGen.emitFun(f: FunDecl) {
 	if (f.isInline) return  // inline funs are expanded at call sites only
+	validateTailrec(f)
+	suggestTailrec(f)
 
 	maybeEmitFunBanner(f.name)
 
@@ -95,6 +101,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		emitArrayParamCopies(f.params, "    ")
 		}
 
+	setupTailrec(f)
 	if (f.body != null) for (s in f.body.stmts) emitStmt(s, "    ")
 	val lastStmt = f.body?.stmts?.lastOrNull()
 	if (lastStmt !is ReturnStmt) emitDeferredBlocks("    ")

@@ -46,6 +46,7 @@ data class FunDecl(
     val isInline: Boolean = false,
     val isOverride: Boolean = false,
     val isInfix: Boolean = false,
+    val isTailrec: Boolean = false,
     val annotations: List<Annotation> = emptyList()  // declaration-level annotations (e.g. @DocumentationOnly)
 ) : Decl()
 

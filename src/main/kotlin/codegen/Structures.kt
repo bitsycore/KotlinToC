@@ -235,6 +235,10 @@ internal data class FunctionContext(
 	var deferStack: MutableList<Block>               = mutableListOf(),  // LIFO stack of deferred blocks
 	var currentObject: String?                        = null,            // current object singleton context
 	var loopDepth: Int                                = 0,               // active for/while/do-while nesting depth
+	var tailrecFnName: String?                        = null,            // non-null inside a tailrec function body
+	var tailrecParams: List<Param>                    = emptyList(),     // params to reassign on tail call
+	var tailrecHasReceiver: Boolean                   = false,           // true when function has a $self to reassign
+	var tailrecSelfCType: String?                     = null,            // C type of $self for temp declarations
 	) {
 	    /** Deep-copies mutable collections so save/restore is isolated. */
 	    fun deepCopy(): FunctionContext = copy(
