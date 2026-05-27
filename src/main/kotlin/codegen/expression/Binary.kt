@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.codegen.statement.emitInlineCall
+import com.bitsycore.ktc.codegen.statement.tryGenInlineExpr
 import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.genBin(e: BinExpr): String {
@@ -18,14 +19,19 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         val vRetType = vInfixDecl.returnType // declared return TypeRef
         return withTypeSubst(vSubst) {
             if (vRetType != null) {
-                val vResultName = "\$ir${inlineCounter++}" // temp var for inline result
-                impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-                val vRecvExpr = genExpr(e.left) // C expression for receiver
-                emitInlineCall(
-                    vInfixDecl, listOf(Arg(expr = e.right)), currentInd, false,
-                    receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?"), resultVar = vResultName
-                )
-                vResultName
+                val vRecvExpr = genExpr(e.left)
+                tryGenInlineExpr(
+                    vInfixDecl, listOf(Arg(expr = e.right)),
+                    receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?")
+                ) ?: run {
+                    val vResultName = "\$ir${inlineCounter++}"
+                    impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
+                    emitInlineCall(
+                        vInfixDecl, listOf(Arg(expr = e.right)), currentInd, false,
+                        receiverExpr = vRecvExpr, receiverType = vRecvType?.removeSuffix("?"), resultVar = vResultName
+                    )
+                    vResultName
+                }
             } else {
                 val vRecvExpr = genExpr(e.left)
                 emitInlineCall(

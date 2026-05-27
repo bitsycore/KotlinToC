@@ -14,7 +14,9 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("/* inline twice(x = 5): Int */")
         r.sourceContains("_x = 5;")
-        r.sourceContains("\$end_ir_")
+        // Collapsed: no goto label, no $ir temp
+        r.sourceNotContains("\$end_ir_")
+        r.sourceNotContains("\$ir")
         r.sourceNotContains("test_Main_twice")
     }
 

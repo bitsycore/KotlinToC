@@ -33,8 +33,8 @@ class InfixUnitTest : TranspilerTestBase() {
 				val r = 10 addWith 5
 			}
 		""")
-		// Result var declared, body assigns into it with substituted receiver
-		vR.sourceContains("ktc_Int \$ir")
+		// Trivial single-expression body collapsed — no $ir temp, expression inlined directly
+		vR.sourceNotContains("ktc_Int \$ir")
 		vR.sourceContains("10 + \$il")
 		vR.sourceContains("_other")
 	}
@@ -71,7 +71,7 @@ class InfixUnitTest : TranspilerTestBase() {
 	// ── Generic infix with type substitution ─────────────────────────
 
 	@Test fun genericInfixTypeSubstInResultVar() {
-		// Verify that the result variable declaration uses the concrete type (not the template param)
+		// Verify that the concrete type is materialized (not the template param)
 		val vR = transpile("""
 			package test.Main
 			data class Duo<A, B>(val first: A, val second: B)
@@ -82,8 +82,8 @@ class InfixUnitTest : TranspilerTestBase() {
 		""")
 		// Struct must be materialized
 		vR.headerContains("test_Main_Duo_Int_String")
-		// Result var must use the concrete mangled type
-		vR.sourceContains("test_Main_Duo_Int_String \$ir")
+		// Collapsed: ctor call assigned directly, no $ir temp
+		vR.sourceContains("test_Main_Duo_Int_String p =")
 	}
 
 	@Test fun genericInfixReceiverAndArgBound() {
@@ -127,8 +127,8 @@ class InfixUnitTest : TranspilerTestBase() {
 			""")
 		// Pair_Int_String struct must exist in the header
 		vR.headerContains("ktc_std_Pair_Int_String")
-		// Result variable uses that type
-		vR.sourceContains("ktc_std_Pair_Int_String \$ir")
+		// Collapsed: ctor assigned directly, no $ir temp
+		vR.sourceContains("ktc_std_Pair_Int_String p =")
 	}
 
 	@Test fun stdlibToFirstAndSecondAccess() {
@@ -149,7 +149,8 @@ class InfixUnitTest : TranspilerTestBase() {
 				println(3 plus1 4)
 			}
 		""")
-		vR.sourceContains("ktc_Int \$ir")
+		// Collapsed: no $ir temp, expression used directly
+		vR.sourceNotContains("ktc_Int \$ir")
 		vR.sourceContains("3 + \$il")
 		vR.sourceContains("_n")
 	}

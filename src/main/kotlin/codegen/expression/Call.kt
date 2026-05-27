@@ -5,6 +5,7 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
 import com.bitsycore.ktc.codegen.statement.emitInlineCall
 import com.bitsycore.ktc.codegen.statement.emitStmt
+import com.bitsycore.ktc.codegen.statement.tryGenInlineExpr
 import com.bitsycore.ktc.types.KtcType
 
 // ── Call expression codegen ───────────────────────────────────────
@@ -27,10 +28,13 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType)
                     ""
                 } else {
-                    val vResultName = "\$ir${inlineCounter++}"
-                    impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-                    emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType, resultVar = vResultName)
-                    vResultName
+                    tryGenInlineExpr(vInlineExt, e.args, receiverExpr = vRecvExpr, receiverType = vRecvKtType)
+                        ?: run {
+                            val vResultName = "\$ir${inlineCounter++}"
+                            impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
+                            emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType, resultVar = vResultName)
+                            vResultName
+                        }
                 }
             }
         }
@@ -148,10 +152,13 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 emitInlineCall(vInlineDecl, e.args, currentInd, false)
                 ""
             } else {
-                val vResultName = "\$ir${inlineCounter++}"
-                impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-                emitInlineCall(vInlineDecl, e.args, currentInd, false, resultVar = vResultName)
-                vResultName
+                tryGenInlineExpr(vInlineDecl, e.args)
+                    ?: run {
+                        val vResultName = "\$ir${inlineCounter++}"
+                        impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
+                        emitInlineCall(vInlineDecl, e.args, currentInd, false, resultVar = vResultName)
+                        vResultName
+                    }
             }
         }
     }

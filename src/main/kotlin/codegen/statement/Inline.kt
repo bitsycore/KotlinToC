@@ -13,20 +13,12 @@ resultVar: when non-null, `return` inside the body assigns here (value position)
            when null, the body is expanded for side effects (statement position).
 A unique goto label is emitted after the block so that `return` inside the body
 jumps to the end without exiting the enclosing C function. */
-internal fun CCodeGen.emitInlineCall(
+private fun CCodeGen.buildInlineComment(
 	decl: FunDecl,
 	callArgs: List<Arg>,
-	ind: String,
-	method: Boolean,
-	receiverExpr: String? = null,
-	receiverType: String? = null,
-	resultVar: String? = null
-	) {
-	val body = decl.body ?: return
-	val vInlineId  = inlineCounter++
-	val vLabelName = "\$end_ir_$vInlineId"
-	// Build comment with template types (clear typeSubst so type params appear unsubstituted)
-	val vSavedSubstForComment = typeSubst
+	receiverExpr: String? = null
+): String {
+	val vSavedSubst = typeSubst
 	typeSubst = emptyMap()
 	val vSig = buildString {
 		if (receiverExpr != null) append("$receiverExpr.")
@@ -39,7 +31,7 @@ internal fun CCodeGen.emitInlineCall(
 			if (a.expr is LambdaExpr) {
 				val vPType = vP?.type?.let { resolveTypeName(it).toInternalStr } ?: "?"
 				append("$vPName = $vPType")
-				} else {
+			} else {
 				val vExprStr = when (a.expr) {
 					is NameExpr -> a.expr.name
 					is ThisExpr -> "this"
@@ -47,14 +39,30 @@ internal fun CCodeGen.emitInlineCall(
 					is StrLit   -> "\"${a.expr.value}\""
 					is BoolLit  -> a.expr.value.toString()
 					else        -> "..."
-					}
-				append("$vPName = $vExprStr")
 				}
+				append("$vPName = $vExprStr")
 			}
+		}
 		append(")")
 		decl.returnType?.let { append(": ${resolveTypeName(it).toInternalStr}") }
-		}
-	typeSubst = vSavedSubstForComment
+	}
+	typeSubst = vSavedSubst
+	return vSig
+}
+
+internal fun CCodeGen.emitInlineCall(
+	decl: FunDecl,
+	callArgs: List<Arg>,
+	ind: String,
+	method: Boolean,
+	receiverExpr: String? = null,
+	receiverType: String? = null,
+	resultVar: String? = null
+	) {
+	val body = decl.body ?: return
+	val vInlineId  = inlineCounter++
+	val vLabelName = "\$end_ir_$vInlineId"
+	val vSig = buildInlineComment(decl, callArgs, receiverExpr)
 	// Flush any preStmts accumulated from the caller's earlier arg evaluation
 	// (e.g. iface trampoline temps from a previous sibling argument). They
 	// belong in the enclosing scope; leaving them would land them inside this
@@ -156,6 +164,70 @@ internal fun CCodeGen.emitInlineCall(
 		impl.appendLine("$ind// smart-cast: '$vName' narrowed to '$vNarrowedType'")
 		}
 	}
+
+/* Try to collapse a trivial inline function (single return expression, no lambda
+args) into a direct expression evaluation — avoids the $ir temp var, { } block,
+and goto label, producing cleaner emitted C. Returns the C expression string, or
+null if the body isn't trivially collapsible. */
+internal fun CCodeGen.tryGenInlineExpr(
+	decl: FunDecl,
+	callArgs: List<Arg>,
+	receiverExpr: String? = null,
+	receiverType: String? = null
+): String? {
+	val body = decl.body ?: return null
+	if (body.stmts.size != 1) return null
+	val retStmt = body.stmts[0] as? ReturnStmt ?: return null
+	val retExpr = retStmt.value ?: return null
+	if (callArgs.any { it.expr is LambdaExpr }) return null
+
+	val vInlineId = inlineCounter++
+	val ind = currentInd
+	flushPreStmts(ind)
+	val vSig = buildInlineComment(decl, callArgs, receiverExpr)
+	impl.appendLine("$ind/* inline $vSig */")
+
+	val vSavedThis     = lambdaParamSubst["\$this"]
+	val vSavedThisType = lambdaParamTypes["\$this"]
+	if (receiverExpr != null) lambdaParamSubst["\$this"] = receiverExpr
+	if (receiverType != null) lambdaParamTypes["\$this"] = receiverType
+
+	pushScope()
+
+	callArgs.forEachIndexed { i, arg ->
+		val param = decl.params.getOrNull(i) ?: return@forEachIndexed
+		val resolvedKtc    = resolveTypeName(param.type)
+		val isValueNullable = param.type.nullable && !param.type.isRefType()
+		val (cTypeName, scopeKtc) = if (isValueNullable) {
+			val innerKtc = resolveTypeName(param.type.copy(nullable = false))
+			optCTypeName(innerKtc.toInternalStr) to KtcType.Nullable(innerKtc)
+		} else {
+			cTypeStr(resolvedKtc) to resolvedKtc
+		}
+		val cVal  = genExpr(arg.expr)
+		flushPreStmts(ind)
+		val cName = "\$il${vInlineId}_${param.name}"
+		impl.appendLine("$ind$cTypeName $cName = $cVal;")
+		defineVar(param.name, LocalVar(scopeKtc, cName = cName))
+		if (isValueNullable) markOptional(param.name)
+	}
+
+	val result = genExpr(retExpr)
+	flushPreStmts(ind)
+
+	popScope()
+
+	if (receiverExpr != null) {
+		if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis
+		else lambdaParamSubst.remove("\$this")
+	}
+	if (receiverType != null) {
+		if (vSavedThisType != null) lambdaParamTypes["\$this"] = vSavedThisType
+		else lambdaParamTypes.remove("\$this")
+	}
+
+	return result
+}
 
 /* Expand a lambda call inside an inline body (statement position).
 Lambda params are substituted via lambdaParamSubst rather than declared as C variables,

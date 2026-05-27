@@ -23,4 +23,48 @@ class ElisionUnitTest : TranspilerTestBase() {
 		""")
 		r.sourceNotContains("null_check")
 	}
+
+	// ── Trivial inline body collapse ─────────────────────────────────
+
+	@Test fun singleExprInlineNoIrVar() {
+		val r = transpile("""
+			package test.Main
+			inline fun square(x: Int): Int = x * x
+			fun main(args: Array<String>) {
+				val r = square(7)
+			}
+		""")
+		r.sourceContains("/* inline square(x = 7): Int */")
+		r.sourceNotContains("\$ir")
+		r.sourceNotContains("\$end_ir")
+		r.sourceContains("_x = 7;")
+	}
+
+	@Test fun multiStmtInlineKeepsIrVar() {
+		val r = transpile("""
+			package test.Main
+			inline fun compute(x: Int): Int {
+				val y = x + 1
+				return y * 2
+			}
+			fun main(args: Array<String>) {
+				val r = compute(5)
+			}
+		""")
+		// Multi-statement body: full expansion with $ir and block
+		r.sourceContains("\$ir")
+		r.sourceContains("{")
+	}
+
+	@Test fun singleExprExtensionInlineCollapsed() {
+		val r = transpile("""
+			package test.Main
+			inline fun Int.doubled(): Int = this * 2
+			fun main(args: Array<String>) {
+				val r = 5.doubled()
+			}
+		""")
+		r.sourceContains("/* inline 5.doubled(): Int */")
+		r.sourceNotContains("\$ir")
+	}
 }
