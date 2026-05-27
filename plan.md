@@ -41,7 +41,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 ### Build & toolchain
 
-- [ ] **`-j N` in direct-gcc path** (S) — Compile .c files in parallel when there are many; cmake path already does.
+- [x] **`-j N` in direct-gcc path** (S) — `compile_direct_gcc()` compiles each `.c` → `.o` in parallel with a thread pool, then links. Defaults to CPU count. Both verbose and suite paths use it.
 - [x] **ccache integration in `run_tests.py`** (S) — Auto-detects `ccache` on PATH; prefixes the C compiler in direct-gcc mode, passes `CMAKE_C_COMPILER_LAUNCHER` for cmake.
 - [ ] **`-G Ninja` for the user-cmake path** (M) — Faster than make on multi-file projects; also emit a standalone `build.ninja` for the no-cmake path.
 

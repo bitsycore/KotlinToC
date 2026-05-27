@@ -21,6 +21,7 @@ Usage:
     python3 run_tests.py --run game --double-dispose ASSERT|LOG|NO
     python3 run_tests.py --clean                    # Remove all integration/*/out/ directories
     python3 run_tests.py --rebuild                  # Force clean rebuild of the JAR
+    python3 run_tests.py -j 8                        # Parallel .c compilation (direct-gcc path)
     python3 run_tests.py --compiler clang           # Override C compiler (gcc/clang/cl/cc)
     python3 run_tests.py --cc-args "-O2 -g"
     python3 run_tests.py --cmake-args "-DFOO=BAR"
@@ -417,7 +418,7 @@ _run_tests_completions() {{
     local cur opts tests
     COMPREPLY=()
     cur="${{COMP_WORDS[COMP_CWORD]}}"
-    opts="--run --skip --list --filter --exclude --fail-fast --build --rebuild --clean --compiler --cc-args --cmake-args --cfg --static-libc --gui --mem-track --ast --dump-semantics --strict --disposed --double-dispose --transpiler-args --bench -n --completions init"
+    opts="--run --skip --list --filter --exclude --fail-fast --build --rebuild --clean --compiler --cc-args --cmake-args --cfg -j --jobs --static-libc --gui --mem-track --ast --dump-semantics --strict --disposed --double-dispose --transpiler-args --bench -n --completions init"
     tests="{vNames}"
     case "${{COMP_WORDS[COMP_CWORD-1]}}" in
         --run|--bench|--filter|--exclude)
@@ -444,7 +445,7 @@ complete -F _run_tests_completions python3 run_tests.py""")
 _run_tests() {{
     local -a tests opts
     tests=({vTestList})
-    opts=(--run --skip --list --filter --exclude --fail-fast --build --rebuild --clean --compiler --cc-args --cmake-args --cfg --static-libc --gui --mem-track --ast --dump-semantics --strict --disposed --double-dispose --transpiler-args --bench -n --completions init)
+    opts=(--run --skip --list --filter --exclude --fail-fast --build --rebuild --clean --compiler --cc-args --cmake-args --cfg -j --jobs --static-libc --gui --mem-track --ast --dump-semantics --strict --disposed --double-dispose --transpiler-args --bench -n --completions init)
     case "$words[CURRENT-1]" in
         --run|--bench|--filter|--exclude) _describe 'test' tests ;;
         --skip) compadd unit ;;
@@ -612,6 +613,44 @@ def has_user_cmake(inOut: Path) -> bool:
 	# ktc_user.cmake or ktc_modules.cmake from the transpiler).
 	return (inOut / "ktc_user.cmake").is_file() or (inOut / "ktc_modules.cmake").is_file()
 
+def compile_direct_gcc(
+	inOpts:    RunOptions,
+	inCSrcs:   list[Path],
+	inOut:     Path,
+	inExePath: Path,
+) -> RunResult:
+	# Compiles .c sources via direct gcc/clang invocation. When jobs > 1 and
+	# there are multiple sources, compiles each .c → .o in parallel then links.
+	vCcCmd  = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
+	vJobs   = inOpts.jobs or max(1, os.cpu_count() or 4)
+	vCommon = ["-std=c11", "-iquote", str(inOut)]
+	if inOpts.ccArgs:
+		vCommon.extend(inOpts.ccArgs.split())
+
+	if vJobs <= 1 or len(inCSrcs) <= 1:
+		vArgs = [*vCommon, "-o", str(inExePath), *(str(c) for c in inCSrcs)]
+		return run_capture([*vCcCmd, *vArgs])
+
+	vStart  = time.monotonic()
+	vObjs:   list[Path] = []
+	vFailed: RunResult | None = None
+	with ThreadPoolExecutor(max_workers=vJobs) as vPool:
+		vFuts = {}
+		for vSrc in inCSrcs:
+			vObj = vSrc.with_suffix(".o")
+			vObjs.append(vObj)
+			vFuts[vPool.submit(run_capture, [*vCcCmd, *vCommon, "-c", str(vSrc), "-o", str(vObj)])] = vSrc
+		for vFut in as_completed(vFuts):
+			vRes = vFut.result()
+			if vRes.exit != 0 and vFailed is None:
+				vFailed = vRes
+	if vFailed is not None:
+		vFailed.ms = int((time.monotonic() - vStart) * 1000)
+		return vFailed
+	vLink = run_capture([*vCcCmd, "-o", str(inExePath), *(str(o) for o in vObjs)])
+	vLink.ms = int((time.monotonic() - vStart) * 1000)
+	return vLink
+
 def find_built_exe(inOut: Path, inExeName: str) -> Path | None:
 	# After a CMake build, prefer <exeName>(.exe), then fall back to any
 	# executable file directly under inOut that isn't a known artifact.
@@ -648,6 +687,7 @@ class RunOptions:
 	cfg:         str        = "Release"
 	staticLibc:  bool       = False
 	gui:         bool       = False
+	jobs:        int        = 0                             # -j N for direct-gcc parallel compile (0 = auto)
 	extraArgs:   list[str]  = field(default_factory=list)  # transpiler flags
 	cc:          str        = ""                            # resolved compiler binary
 	cmake:       str | None = None                          # resolved cmake binary or None
@@ -807,16 +847,17 @@ def invoke_test_verbose(
 		if not kIsWindows and (vOut / vExe).is_dir():
 			vExePath = vOut / f"{vExe}.out"
 		psection("Compile")
-		vCArgs = ["-std=c11", "-iquote", str(vOut), "-o", str(vExePath)]
-		if inOpts.ccArgs:
-			vCArgs.extend(inOpts.ccArgs.split())
-		vCArgs.extend(str(c) for c in vCSrcs)
-		vCcCmd = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
-		pcmd(f"{' '.join(vCcCmd)} -std=c11{(' ' + inOpts.ccArgs) if inOpts.ccArgs else ''} -o {vExePath} {' '.join(c.name for c in vCSrcs)}")
+		vCcLbl = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
+		vJobs  = inOpts.jobs or max(1, os.cpu_count() or 4)
+		vJLbl  = f" -j {vJobs}" if vJobs > 1 and len(vCSrcs) > 1 else ""
+		pcmd(f"{' '.join(vCcLbl)}{vJLbl} -std=c11{(' ' + inOpts.ccArgs) if inOpts.ccArgs else ''} -o {vExePath} {' '.join(c.name for c in vCSrcs)}")
 		pwrite()
-		vCo = run_streamed_capture([*vCcCmd, *vCArgs], inDimAll=True)
-		pwrite()
+		vCo = compile_direct_gcc(inOpts, vCSrcs, vOut, vExePath)
 		if vCo.exit != 0:
+			for vLine in (vCo.stdout + "\n" + vCo.stderr).splitlines():
+				if vLine.strip():
+					pwrite(f"  {kRed}{vLine}{kRst}")
+			pwrite()
 			pfail(f"Compilation failed (exit {vCo.exit})")
 			return TestOutcome(name=vName, status="fail")
 		vCompMs = vCo.ms
@@ -1125,12 +1166,7 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 		vExePath = vOut / vExeName
 		if not kIsWindows and (vOut / vExe).is_dir():
 			vExePath = vOut / f"{vExe}.out"
-		vCcCmd = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
-		vCArgs = ["-std=c11", "-iquote", str(vOut), "-o", str(vExePath)]
-		if inOpts.ccArgs:
-			vCArgs.extend(inOpts.ccArgs.split())
-		vCArgs.extend(str(c) for c in vCSrcs)
-		vCo = run_capture([*vCcCmd, *vCArgs])
+		vCo = compile_direct_gcc(inOpts, vCSrcs, vOut, vExePath)
 		if vCo.exit != 0:
 			return fail("compile failed", vCo.stdout, vCo.stderr)
 		vCompMs = vCo.ms
@@ -1286,6 +1322,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("--cc-args",    default="", help="Extra C compiler flags (single quoted string)")
 	vP.add_argument("--cmake-args", default="", help="Extra cmake -D flags")
 	vP.add_argument("--cfg",        default="Release", help="CMake build type")
+	vP.add_argument("-j", "--jobs", type=int, default=0, help="Parallel .c compilation jobs for direct-gcc (0 = auto-detect CPU count)")
 	vP.add_argument("--static-libc", action="store_true", help="Pass -DKTC_STATIC_LIBC=ON to cmake")
 	# Run
 	vP.add_argument("--gui", action="store_true", help="Open window for interactive tests (no --skip-interaction)")
@@ -1387,6 +1424,7 @@ def main(inArgv: list[str]) -> int:
 		cfg        = vNs.cfg,
 		staticLibc = vNs.static_libc,
 		gui        = vNs.gui,
+		jobs       = vNs.jobs,
 		extraArgs  = build_extra_args(vNs),
 		cc         = vCC,
 		cmake      = vCmake,
