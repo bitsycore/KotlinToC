@@ -319,7 +319,8 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     val initType = inferExprType(s.init)
                     if (initType != null && (classes.containsKey(initType) || objects.containsKey(initType)) && classInterfaces[initType]?.contains(t) == true) {
                         val isObj = objects.containsKey(initType)
-                        if (isObj && (s.type == null || !s.type.isRefType())) {
+                        val isAnonObj = isObj && initType.startsWith("\$anon_")
+                        if (isObj && !isAnonObj && (s.type == null || !s.type.isRefType())) {
                             currentStmtLine = s.line; currentStmtCol = s.col
                             codegenError("Object '${initType}' must be stored as Ref. Use: val ${s.name}: Ref<$t> = ${initType}")
                         }

@@ -28,7 +28,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 ### Larger
 
 - [ ] **Sealed-subclass exhaustiveness in type inference** (M) — Once `when` exhaustiveness is in, `when` expression types can be inferred without an `else` branch.
-- [ ] **`object : Interface` (anonymous object expressions)** (M) — Synthetic class with vtable at the call site.
+- [x] **`object : Interface` (anonymous object expressions)** (M) — Parser generates synthetic `$anon_N` ObjectDecl hoisted to file decls, codegen reuses existing object+vtable infrastructure. Tests in `AnonObjectUnitTest` and `AnonObjectTest`.
 - [ ] **`Result<T>` stdlib type** (M) — `Result<Vec2>` for fallible operations. Needs a convention for `runCatching`.
 - [x] **Cross-class private visibility enforcement** (M) — `currentClass` tracked at codegen; private fields, methods, and `private set` are rejected at access sites. Unit tests in `PrivateUnitTest`.
 

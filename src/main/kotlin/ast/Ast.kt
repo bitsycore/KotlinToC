@@ -219,6 +219,7 @@ data class CastExpr(val expr: Expr, val type: TypeRef, val safe: Boolean = false
 data class FunRefExpr(val name: String) : Expr()   // ::functionName
 data class ClassRefExpr(val typeName: String) : Expr()   // Type::class
 data class LambdaExpr(val params: List<String>, val body: List<Stmt>) : Expr()
+data class ObjectExpr(val syntheticName: String) : Expr()  // object : Interface { ... }
 
 // ═══════════════════════════ Helpers ═══════════════════════════
 

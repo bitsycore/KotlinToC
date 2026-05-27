@@ -7,6 +7,8 @@ class Parser(private val tokens: List<Token>) {
     private var pos = 0
     private var nesting = 0          // depth inside () [] {}
     private var noNewlineExpr = false // when true, parseExpr stops at newlines
+    private var anonObjectCounter = 0
+    private val syntheticDecls = mutableListOf<Decl>()
 
     // ═══════════════════════════ Public entry ═════════════════════════
 
@@ -48,7 +50,7 @@ class Parser(private val tokens: List<Token>) {
             if (at(TokenType.COMMENT)) { advance(); skipTerminator(); continue }
             decls += parseDecl()
         }
-        return KtFile(pkg, imports, decls, cIncludes = vCIncludes)
+        return KtFile(pkg, imports, decls + syntheticDecls, cIncludes = vCIncludes)
     }
 
     // ═══════════════════════════ Declarations ═════════════════════════
@@ -411,6 +413,32 @@ class Parser(private val tokens: List<Token>) {
         }
         skipTerminator()
         return ObjectDecl(name, members, anns, superInterfaces)
+    }
+
+    private fun parseAnonObjectExpr(): ObjectExpr {
+        expect(TokenType.OBJECT)
+        skipNL()
+        if (!at(TokenType.COLON)) error("Anonymous object requires ': Interface' after 'object'")
+        advance(); skipNL()
+        val superInterfaces = mutableListOf<TypeRef>()
+        while (true) {
+            superInterfaces += parseTypeRef()
+            if (at(TokenType.COMMA)) { advance(); skipNL() }
+            else break
+        }
+        skipNL()
+        val members = mutableListOf<Decl>()
+        if (at(TokenType.LBRACE)) {
+            advance(); nesting++; skipNL()
+            while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
+                skipNL(); if (at(TokenType.RBRACE)) break
+                members += parseDecl(); skipNL()
+            }
+            expect(TokenType.RBRACE); nesting--
+        }
+        val name = "\$anon_${anonObjectCounter++}"
+        syntheticDecls += ObjectDecl(name, members, superInterfaces = superInterfaces)
+        return ObjectExpr(name)
     }
 
     // ── companion object ─────────────────────────────────────────────
@@ -888,6 +916,7 @@ class Parser(private val tokens: List<Token>) {
             at(TokenType.WHEN)       -> parseWhenExpr()
             at(TokenType.LBRACE)     -> parseLambdaExpr()
             at(TokenType.LPAREN)     -> { advance(); nesting++; skipNL(); val e = parseExpr(); skipNL(); expect(TokenType.RPAREN); nesting--; e }
+            at(TokenType.OBJECT)     -> parseAnonObjectExpr()
             else -> error("Expected expression, got ${cur()}")
         }
     }

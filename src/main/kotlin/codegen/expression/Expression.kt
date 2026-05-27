@@ -80,6 +80,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
     }
 
     is NameExpr -> genName(e)
+    is ObjectExpr -> typeFlatName(e.syntheticName)
     is BinExpr -> genBin(e)
     is PrefixExpr -> "(${e.op}${genExpr(e.expr)})"
     is PostfixExpr -> "(${genExpr(e.expr)}${e.op})"

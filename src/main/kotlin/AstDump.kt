@@ -210,6 +210,7 @@ internal fun dumpExpr(e: Expr): String = when (e) {
 		val vBody   = e.body.joinToString("; ") { dumpStmt(it, 0).trim() }
 		"{ $vParams$vBody }"
 		}
+	is ObjectExpr    -> "object<${e.syntheticName}>"
 	}
 
 internal fun dumpWhenCond(c: WhenCond): String = when (c) {

@@ -97,6 +97,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 		}
 	is ClassRefExpr -> "KClass"
 	is LambdaExpr -> null
+	is ObjectExpr -> e.syntheticName
 	}
 
 /*
