@@ -139,6 +139,7 @@ data class Block(val stmts: List<Stmt>)
 
 sealed class Stmt {
     var line: Int = 0
+    var col: Int = 0
 }
 
 data class ExprStmt(val expr: Expr) : Stmt()

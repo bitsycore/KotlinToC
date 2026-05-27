@@ -194,7 +194,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			for (p in d.members.filterIsInstance<PropDecl>()) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {
-					currentStmtLine = p.line
+					currentStmtLine = p.line; currentStmtCol = 0
 					codegenError("Class property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}
@@ -332,7 +332,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			for (p in d.members.filterIsInstance<PropDecl>()) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {
-					currentStmtLine = p.line
+					currentStmtLine = p.line; currentStmtCol = 0
 					codegenError("Object property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}

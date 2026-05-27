@@ -170,7 +170,7 @@ internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
 			}
 		for (vBp in ci.bodyProps) {
 			if (vBp.initExpr != null) {
-				if (vBp.line > 0) currentStmtLine = vBp.line
+				if (vBp.line > 0) { currentStmtLine = vBp.line; currentStmtCol = 0 }
 				val vBodyFieldName = if (vBp.isPrivate) "PRIV_${vBp.name}" else vBp.name
 				val vSizeAnn = vBp.typeRef.getSizeAnnotation()
 				if (vSizeAnn != null && vBp.typeRef.isSizedArray()) {

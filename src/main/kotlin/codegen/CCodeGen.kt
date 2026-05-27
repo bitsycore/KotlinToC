@@ -766,6 +766,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
 
     // ── Source location tracking for error messages ──────────────────
     internal var currentStmtLine: Int = 0
+    internal var currentStmtCol: Int = 0
     /** Mutable source file name for mem-track attribution.
      *  Overridden when emitting generic instantiations from other packages (e.g. stdlib). */
     internal var currentSourceFile: String = sourceFileName
@@ -773,26 +774,34 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /** Last source file for which a functions banner was emitted; null = none yet. */
     internal var lastEmittedFunFile: String? = null
 
-    private fun locationPrefix(line: Int): String {
+    private fun locationPrefix(line: Int, col: Int = 0): String {
         val file = currentSourceFile
-        return if (file.isNotEmpty() && line > 0) "$file:$line: "
+        return if (file.isNotEmpty() && line > 0 && col > 0) "$file:$line:$col: "
+        else if (file.isNotEmpty() && line > 0) "$file:$line: "
         else if (file.isNotEmpty()) "$file: "
         else ""
     }
 
-    private fun sourceSnippet(line: Int, errorMarker: Boolean = false): String {
+    private fun sourceSnippet(line: Int, col: Int = 0, errorMarker: Boolean = false): String {
         if (line <= 0 || sourceLines.isEmpty()) return ""
         val sb = StringBuilder()
         sb.appendLine()
         val from = maxOf(0, line - 2)
         val to = minOf(sourceLines.size, line + 1)
+        val gutter = "    "
         for (i in from until to) {
             val lineNum = i + 1
             if (lineNum == line) {
                 val marker = if (errorMarker) ">>>".wrapRed() else ">>>".wrapYellow()
                 sb.appendLine("$marker %4d | %s".format(lineNum, sourceLines[i].wrapBold()))
+                if (col > 0) {
+                    val srcLine = sourceLines[i]
+                    val leadPad = srcLine.take(col - 1).map { if (it == '\t') '\t' else ' ' }.joinToString("")
+                    val caret = if (errorMarker) "^".wrapRed() else "^".wrapYellow()
+                    sb.appendLine("$gutter     | $leadPad$caret")
+                }
             } else {
-                sb.appendLine("    %4d | %s".format(lineNum, sourceLines[i].wrapGray()))
+                sb.appendLine("$gutter %4d | %s".format(lineNum, sourceLines[i].wrapGray()))
             }
         }
         return sb.toString().trimEnd()
@@ -801,8 +810,9 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Throw an error with source context around the given line. */
     override fun codegenError(inMsg: String): Nothing {
         val line = currentStmtLine
-        val loc = locationPrefix(line)
-        val snippet = sourceSnippet(line, errorMarker = true)
+        val col = currentStmtCol
+        val loc = locationPrefix(line, col)
+        val snippet = sourceSnippet(line, col, errorMarker = true)
         error("${loc}${"error".wrapRed()}: $inMsg$snippet")
     }
 
@@ -813,8 +823,9 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
             return
         }
         val line = currentStmtLine
-        val loc = locationPrefix(line)
-        val snippet = sourceSnippet(line)
+        val col = currentStmtCol
+        val loc = locationPrefix(line, col)
+        val snippet = sourceSnippet(line, col)
 
         System.err.print("${loc}${"warning".wrapYellow()}: $inMsg$snippet\n")
         diagnosticWarningCount++

@@ -63,7 +63,7 @@ Specialized handlers in other files:
 // ═══════════════════════════ Statements ═══════════════════════════
 
 internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = false) {
-    if (s.line > 0) currentStmtLine = s.line
+    if (s.line > 0) { currentStmtLine = s.line; currentStmtCol = s.col }
     currentInd = ind
     when (s) {
         is VarDeclStmt -> emitVarDecl(s, ind)
@@ -128,7 +128,7 @@ internal fun CCodeGen.emitBlock(b: Block, ind: String, insideMethod: Boolean = f
         if (s is ReturnStmt || s is BreakStmt || s is ContinueStmt) {
             val vRemaining = b.stmts.drop(idx + 1).filter { it !is CommentStmt }
             if (vRemaining.isNotEmpty()) {
-                if (s.line > 0) currentStmtLine = s.line
+                if (s.line > 0) { currentStmtLine = s.line; currentStmtCol = s.col }
                 codegenError("Unreachable code after '${if (s is ReturnStmt) "return" else if (s is BreakStmt) "break" else "continue"}'")
             }
         }

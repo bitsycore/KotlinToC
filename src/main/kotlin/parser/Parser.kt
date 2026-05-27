@@ -544,6 +544,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parseStmt(): Stmt {
         skipNL()
         val stmtLine = cur().line
+        val stmtCol = cur().col
         val stmt = when {
             at(TokenType.COMMENT) -> { val text = advance().value; CommentStmt(text) }
             at(TokenType.VAL) -> parseVarDeclStmt(mutable = false)
@@ -558,6 +559,7 @@ class Parser(private val tokens: List<Token>) {
             else -> parseExprOrAssignStmt()
         }
         stmt.line = stmtLine
+        stmt.col = stmtCol
         return stmt
     }
 
@@ -932,6 +934,7 @@ class Parser(private val tokens: List<Token>) {
     /** Parse a single statement when braces are omitted (e.g. `if (c) return x`). */
     private fun parseSingleStmtOrExpr(): Stmt {
         val stmtLine = cur().line
+        val stmtCol = cur().col
         val stmt = when {
             at(TokenType.RETURN)   -> { advance(); val v = if (atExprStart()) parseExpr() else null; ReturnStmt(v) }
             at(TokenType.BREAK)    -> { advance(); BreakStmt() }
@@ -949,6 +952,7 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         stmt.line = stmtLine
+        stmt.col = stmtCol
         return stmt
     }
 
