@@ -194,6 +194,15 @@ def find_cmake() -> str | None:
 def find_ccache() -> str | None:
 	return "ccache" if shutil.which("ccache") else None
 
+def find_ninja() -> str | None:
+	# On Windows the Visual Studio generator is the default and handles the
+	# Windows SDK automatically; Ninja would bypass that and pick gcc/clang
+	# which can break complex projects (SDL3 etc.). Only auto-enable Ninja
+	# on POSIX where it replaces the slower Makefile generator.
+	if kIsWindows:
+		return None
+	return "ninja" if shutil.which("ninja") else None
+
 # ==================
 # MARK: Subprocess helpers
 # ==================
@@ -434,6 +443,22 @@ def collect_c_sources(inOut: Path) -> list[Path]:
 		vSources.append(vC)
 	return vSources
 
+def cmake_generator_matches(inBld: Path, inNinja: str | None) -> bool:
+	# Check if the cached cmake generator matches the requested one.
+	vCache = inBld / "CMakeCache.txt"
+	if not vCache.is_file():
+		return True
+	vWant = "Ninja" if inNinja else None
+	for vLine in vCache.read_text(errors="replace").splitlines():
+		if vLine.startswith("CMAKE_GENERATOR:"):
+			vCached = vLine.split("=", 1)[1].strip()
+			if vWant and vWant not in vCached:
+				return False
+			if not vWant and "Ninja" in vCached:
+				return False
+			return True
+	return True
+
 def has_user_cmake(inOut: Path) -> bool:
 	# True when this test needs cmake rather than direct gcc (presence of either
 	# ktc_user.cmake or ktc_modules.cmake from the transpiler).
@@ -479,6 +504,7 @@ class RunOptions:
 	cc:          str        = ""                            # resolved compiler binary
 	cmake:       str | None = None                          # resolved cmake binary or None
 	ccache:      str | None = None                          # resolved ccache binary or None
+	ninja:       str | None = None                          # resolved ninja binary or None
 
 def transpile_cmd(inOpts: RunOptions, inKts: list[Path], inOut: Path, inExeName: str) -> list[str]:
 	# Builds the argv for the transpile step. Two backends: the fat JAR
@@ -564,9 +590,15 @@ def invoke_test_verbose(
 	if vUseCmake:
 		# Two-step CMake: configure (-B _cmake) then build (--build _cmake).
 		vBld = vOut / "_cmake"
+		if not cmake_generator_matches(vBld, inOpts.ninja):
+			shutil.rmtree(vBld, onerror=_force_writable_and_retry)
 		vCfgArgs = ["-B", str(vBld), "-S", str(vOut), f"-DCMAKE_BUILD_TYPE={inOpts.cfg}"]
+		if inOpts.ninja:
+			vCfgArgs.extend(["-G", "Ninja"])
 		if inOpts.compiler:
 			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.compiler}")
+		elif inOpts.ninja and inOpts.cc:
+			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.cc}")
 		if inOpts.ccache:
 			vCfgArgs.append(f"-DCMAKE_C_COMPILER_LAUNCHER={inOpts.ccache}")
 		if inOpts.staticLibc:
@@ -905,9 +937,15 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 	vCompMs  = 0
 	if vUseCmake:
 		vBld = vOut / "_cmake"
+		if not cmake_generator_matches(vBld, inOpts.ninja):
+			shutil.rmtree(vBld, onerror=_force_writable_and_retry)
 		vCfgArgs = ["-B", str(vBld), "-S", str(vOut), f"-DCMAKE_BUILD_TYPE={inOpts.cfg}"]
+		if inOpts.ninja:
+			vCfgArgs.extend(["-G", "Ninja"])
 		if inOpts.compiler:
 			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.compiler}")
+		elif inOpts.ninja and inOpts.cc:
+			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.cc}")
 		if inOpts.ccache:
 			vCfgArgs.append(f"-DCMAKE_C_COMPILER_LAUNCHER={inOpts.ccache}")
 		if inOpts.staticLibc:
@@ -1168,6 +1206,7 @@ def main(inArgv: list[str]) -> int:
 		return 1
 	vCmake  = find_cmake()
 	vCcache = find_ccache()
+	vNinja  = find_ninja()
 
 	vOpts = RunOptions(
 		buildMode  = vNs.build,
@@ -1181,10 +1220,14 @@ def main(inArgv: list[str]) -> int:
 		cc         = vCC,
 		cmake      = vCmake,
 		ccache     = vCcache,
+		ninja      = vNinja,
 	)
 
 	vAllTests = filter_tests(vAllTests, vNs.filter, vNs.exclude)
-	pinfo(f"Using C compiler: {vCC}" + (f" (via {vCcache})" if vCcache else ""))
+	vCompInfo = f"Using C compiler: {vCC}"
+	if vCcache: vCompInfo += f" (via {vCcache})"
+	if vNinja:  vCompInfo += f" [ninja]"
+	pinfo(vCompInfo)
 
 	# ── --run: explicit selection (verbose) ───────────────────────
 	if vNs.run:
