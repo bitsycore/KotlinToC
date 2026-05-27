@@ -767,52 +767,44 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /** Last source file for which a functions banner was emitted; null = none yet. */
     internal var lastEmittedFunFile: String? = null
 
+    private fun locationPrefix(line: Int): String {
+        val file = currentSourceFile
+        return if (file.isNotEmpty() && line > 0) "$file:$line: "
+        else if (file.isNotEmpty()) "$file: "
+        else ""
+    }
+
+    private fun sourceSnippet(line: Int, errorMarker: Boolean = false): String {
+        if (line <= 0 || sourceLines.isEmpty()) return ""
+        val sb = StringBuilder()
+        sb.appendLine()
+        val from = maxOf(0, line - 3)
+        val to = minOf(sourceLines.size, line + 2)
+        for (i in from until to) {
+            val lineNum = i + 1
+            val marker = if (lineNum == line) {
+                if (errorMarker) ">>>" else ">>>".wrapYellow()
+            } else "   "
+            sb.appendLine("$marker %4d | %s".format(lineNum, sourceLines[i]))
+        }
+        return sb.toString().trimEnd()
+    }
+
     /* Throw an error with source context around the given line. */
     override fun codegenError(inMsg: String): Nothing {
-        val msg = inMsg  // local alias so body can use `msg` unchanged
         val line = currentStmtLine
-        if (line > 0 && sourceLines.isNotEmpty()) {
-            val sb = StringBuilder()
-            sb.appendLine(msg)
-            val from = maxOf(0, line - 3)
-            val to = minOf(sourceLines.size, line + 2)
-            for (i in from until to) {
-                val lineNum = i + 1   // 1-indexed
-                val marker = if (lineNum == line) ">>>" else "   "
-                sb.appendLine("$marker %4d | %s".format(lineNum, sourceLines[i]))
-            }
-            error(sb.toString().trimEnd())
-        } else {
-            error(msg)
-        }
+        val loc = locationPrefix(line)
+        val snippet = sourceSnippet(line, errorMarker = true)
+        error("${loc}$inMsg$snippet")
     }
 
     /* Print a non-fatal warning with the same source-context display as codegenError. */
     override fun codegenWarning(inMsg: String) {
-        val msg = inMsg  // local alias so body can use `msg` unchanged
         val line = currentStmtLine
-        val sb = StringBuilder()
+        val loc = locationPrefix(line)
+        val snippet = sourceSnippet(line)
 
-        sb.append("warning".wrapYellow())
-        sb.append(": $msg")
-
-        if (line > 0 && sourceLines.isNotEmpty()) {
-            sb.appendLine()
-
-            val from = maxOf(0, line - 3)
-            val to = minOf(sourceLines.size, line + 2)
-
-            for (i in from until to) {
-                val lineNum = i + 1
-                val marker = if (lineNum == line) ">>>".wrapYellow() else "   "
-
-                sb.appendLine(
-                    "$marker %4d | %s".format(lineNum, sourceLines[i])
-                )
-            }
-        }
-
-        System.err.print(sb.toString().trimEnd() + "\n")
+        System.err.print("${loc}${"warning".wrapYellow()}: $inMsg$snippet\n")
         diagnosticWarningCount++
     }
 
