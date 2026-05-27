@@ -168,4 +168,83 @@ class PrivateUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("PRIV_secret")
     }
+
+    // ── Cross-class private field enforcement ────────────────────
+
+    @Test fun privateClassFieldAccessedFromOutsideError() {
+        transpileExpectError("""
+            package test.Main
+            class Wallet {
+                private var balance: Int = 100
+                fun getBalance(): Int = balance
+            }
+            fun main(args: Array<String>) {
+                val w = Wallet()
+                println(w.balance)
+            }
+        """.trimIndent(), "Cannot access 'balance': it is private in 'Wallet'")
+    }
+
+    @Test fun privateClassMethodAccessedFromOutsideError() {
+        transpileExpectError("""
+            package test.Main
+            class Engine {
+                private fun ignite(): Int = 42
+                fun start(): Int = ignite()
+            }
+            fun main(args: Array<String>) {
+                val e = Engine()
+                println(e.ignite())
+            }
+        """.trimIndent(), "Cannot access 'ignite': it is private in 'Engine'")
+    }
+
+    @Test fun privateClassFieldAccessInsideIsOk() {
+        val r = transpile("""
+            package test.Main
+            class Wallet {
+                private var balance: Int = 100
+                fun spend(amount: Int) { balance = balance - amount }
+                fun getBalance(): Int = balance
+            }
+            fun main(args: Array<String>) {
+                val w = Wallet()
+                w.spend(30)
+                println(w.getBalance())
+            }
+        """)
+        r.sourceContains("PRIV_balance")
+    }
+
+    @Test fun privateSetFromOutsideError() {
+        transpileExpectError("""
+            package test.Main
+            class Counter {
+                var count: Int = 0
+                    private set
+                fun increment() { count = count + 1 }
+            }
+            fun main(args: Array<String>) {
+                val c = Counter()
+                c.count = 99
+            }
+        """.trimIndent(), "Cannot set 'count': setter is private in 'Counter'")
+    }
+
+    @Test fun privateSetInsideIsOk() {
+        val r = transpile("""
+            package test.Main
+            class Counter {
+                var count: Int = 0
+                    private set
+                fun increment() { count = count + 1 }
+            }
+            fun main(args: Array<String>) {
+                val c = Counter()
+                c.increment()
+                println(c.count)
+            }
+        """)
+        r.sourceContains("count")
+    }
 }

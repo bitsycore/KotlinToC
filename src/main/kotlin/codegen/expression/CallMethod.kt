@@ -107,6 +107,8 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val classHasMethod = classes[pointerBase]?.methods?.any { it.name == method } == true
 		if (classHasMethod) {
 			val methodDecl     = classes[pointerBase]?.let { findOverload(method, args, it.methods) }
+			if (methodDecl != null && methodDecl.isPrivate && currentClass != pointerBase)
+				codegenError("Cannot access '$method': it is private in '$pointerBase'")
 			val isExt         = methodDecl?.receiver != null
 			val recvArg       = if (isExt) "(*$recv)" else recv
 			val expandedArgs2 = withTypeSubst(genericTypeBindings[pointerBase]) {
@@ -202,6 +204,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			}
 
 		val methodDecl = findOverload(method, args, vClassInfo.methods)
+		// Private method visibility enforcement
+		if (methodDecl != null && methodDecl.isPrivate && currentClass != vClassInfo.name)
+			codegenError("Cannot access '$method': it is private in '${vClassInfo.name}'")
 		var genericExtDecl: FunDecl? = if (methodDecl == null) genericFunDecls.find {
 			it.name == method && it.receiver != null && (
 				it.receiver.name == vClassInfo.baseName ||

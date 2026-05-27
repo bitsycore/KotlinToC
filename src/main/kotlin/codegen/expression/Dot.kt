@@ -160,6 +160,10 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Computed property with custom getter: inline the getter expression
     val vDotClassInfo = classInfoFor(recvTypeCoreKtc)
     if (vDotClassInfo != null) {
+        // Private visibility enforcement: reject access from outside the owning class
+        if (e.name in vDotClassInfo.privateProps && currentClass != vDotClassInfo.name) {
+            codegenError("Cannot access '${e.name}': it is private in '${vDotClassInfo.name}'")
+        }
         val vGetterProp = vDotClassInfo.properties.find { it.name == e.name && it.getter != null }
         if (vGetterProp != null) {
             // Emit getter in class context with $self bound to receiver

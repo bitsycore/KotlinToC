@@ -173,8 +173,11 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
                     currentClass = vPrevClass; selfIsPointer = vPrevSelfPtr
                     return
                     }
-                if (propName in ci.privateSetProps) {
-                    codegenError("Var with private set cannot be reassigned outside its class: '$propName'")
+                if (propName in ci.privateSetProps && currentClass != className) {
+                    codegenError("Cannot set '$propName': setter is private in '${className}'")
+                }
+                if (propName in ci.privateProps && currentClass != className) {
+                    codegenError("Cannot access '$propName': it is private in '${className}'")
                 }
                 if (ci.isValProp(propName)) {
                     codegenError("Val cannot be reassigned: '$propName'")
