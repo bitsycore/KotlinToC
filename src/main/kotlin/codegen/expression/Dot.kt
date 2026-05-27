@@ -116,7 +116,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         val inner = (recvTypeCoreKtc as KtcType.Ptr).inner
         if (inner is KtcType.User && objects.containsKey(inner.baseName))
             codegenError("Cannot access .refValue on object '${inner.baseName}' — objects are always Ref")
-        return wrapNullCheck(recv, "(*$recv)")
+        return wrapNullCheck(recv, "(*$recv)", e.obj)
     }
 
     // p->field (auto-deref through pointer)

@@ -99,7 +99,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         if (objType == "String") {
             // String indexing: str[i] → str.ptr[i] (returns char)
             val vS = genExpr(e.obj)
-            "$vS.ptr[${wrapBoundsIdx(genExpr(e.index), "$vS.len")}]"
+            "$vS.ptr[${wrapBoundsIdx(genExpr(e.index), "$vS.len", e.index, e.obj)}]"
         } else if (vIdxClassInfo != null) {
             // Class with operator get() method → operator[] dispatch
             val methodDecl = vIdxClassInfo.methods.find { it.name == "get" && it.isOperator }
@@ -166,10 +166,10 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                     vSizedN != null                    -> vSizedN.toString()
                     else                                -> "(sizeof($vA)/sizeof(($vA)[0]))"
                 }
-                "$vA[${wrapBoundsIdx(genExpr(e.index), vLen)}]"
+                "$vA[${wrapBoundsIdx(genExpr(e.index), vLen, e.index, e.obj)}]"
             } else {
                 val vA = genExpr(e.obj)
-                "$vA.ptr[${wrapBoundsIdx(genExpr(e.index), "$vA.len")}]"
+                "$vA.ptr[${wrapBoundsIdx(genExpr(e.index), "$vA.len", e.index, e.obj)}]"
             }
         } else {
             val vR = genExpr(e.obj)
@@ -368,13 +368,30 @@ checkBounds flag is on, returning a C expression that panics-then-exits on
 out-of-range access and returns the index unchanged otherwise. inLen is a C
 expression yielding the array's length (e.g. "arr.len" or a literal "8").
 When the flag is off, returns the raw index unchanged for a zero-cost
-release build. */
-internal fun CCodeGen.wrapBoundsIdx(inIdxExpr: String, inLen: String): String {
+release build.
+inIdxAst/inObjAst: optional AST nodes — when both are present and the index
+is a non-negative literal within the statically known array size, the
+runtime check is elided (the access is provably safe). */
+internal fun CCodeGen.wrapBoundsIdx(inIdxExpr: String, inLen: String, inIdxAst: Expr? = null, inObjAst: Expr? = null): String {
 	if (!checkBounds) return inIdxExpr
+	if (inIdxAst != null && inObjAst != null && isStaticallySafe(inIdxAst, inObjAst)) return inIdxExpr
 	val vFile = currentSourceFile
 	val vFileC = "\"${vFile.replace("\\", "\\\\")}\""
 	val vFileLen = vFile.length
 	return "ktc_core_bounds_check($vFileC, $vFileLen, $currentStmtLine, ($inIdxExpr), ($inLen))"
+}
+
+// Returns true when a literal index is provably within bounds of a statically-sized container.
+private fun CCodeGen.isStaticallySafe(inIdxAst: Expr, inObjAst: Expr): Boolean {
+	val vIdx = (inIdxAst as? IntLit)?.value ?: return false
+	if (vIdx < 0) return false
+	val vObjKtc = inferExprTypeKtc(inObjAst)?.stripNullable
+	val vLen: Long = when {
+		vObjKtc is KtcType.Arr && vObjKtc.sized != null -> vObjKtc.sized!!.toLong()
+		inObjAst is StrLit -> inObjAst.value.length.toLong()
+		else -> return false
+	}
+	return vIdx < vLen
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -384,11 +401,22 @@ internal fun CCodeGen.wrapBoundsIdx(inIdxExpr: String, inLen: String): String {
 /* Read-side wrapper: emits the null check as a preStmt so the returned
 expression stays a plain lvalue (`*p`) — important when the caller writes
 patterns like `&p.refValue` which need an lvalue operand. Returns the raw
-deref expression unchanged on --no-check-null. */
-internal fun CCodeGen.wrapNullCheck(inPtrExpr: String, inDerefExpr: String): String {
+deref expression unchanged on --no-check-null.
+inRecvAst: optional AST node for the pointer expression — when present,
+the check is elided for provably non-null origins (e.g. .asRef() of a local). */
+internal fun CCodeGen.wrapNullCheck(inPtrExpr: String, inDerefExpr: String, inRecvAst: Expr? = null): String {
 	if (!checkNull) return inDerefExpr
+	if (inRecvAst != null && isProvablyNonNull(inRecvAst)) return inDerefExpr
 	preStmts += nullCheckStmt(inPtrExpr)
 	return inDerefExpr
+}
+
+// .asRef() of any expression produces &x, which is never NULL.
+// allocWith() of known non-null allocators could be added later.
+internal fun CCodeGen.isProvablyNonNull(inExpr: Expr): Boolean {
+	if (inExpr is CallExpr && inExpr.callee is DotExpr && (inExpr.callee as DotExpr).name == "asRef")
+		return true
+	return false
 }
 
 /* Statement-form null check, used before `*p = x` assignment lowering or
