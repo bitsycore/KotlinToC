@@ -30,7 +30,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [ ] **Sealed-subclass exhaustiveness in type inference** (M) — Once `when` exhaustiveness is in, `when` expression types can be inferred without an `else` branch.
 - [ ] **`object : Interface` (anonymous object expressions)** (M) — Synthetic class with vtable at the call site.
 - [ ] **`Result<T>` stdlib type** (M) — `Result<Vec2>` for fallible operations. Needs a convention for `runCatching`.
-- [ ] **Cross-class private visibility enforcement** (M) — Currently declared but not policed. Track `currentClass` and check at field/method access sites.
+- [x] **Cross-class private visibility enforcement** (M) — `currentClass` tracked at codegen; private fields, methods, and `private set` are rejected at access sites. Unit tests in `PrivateUnitTest`.
 
 ### Out of scope
 
@@ -42,14 +42,14 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 ### Build & toolchain
 
 - [ ] **`-j N` in direct-gcc path** (S) — Compile .c files in parallel when there are many; cmake path already does.
-- [ ] **ccache integration in `run_tests.py`** (S) — Detect `ccache` on PATH and prefix the C compiler. Combined with the write-if-changed transpiler, makes warm-cache rebuilds essentially instant.
+- [x] **ccache integration in `run_tests.py`** (S) — Auto-detects `ccache` on PATH; prefixes the C compiler in direct-gcc mode, passes `CMAKE_C_COMPILER_LAUNCHER` for cmake.
 - [ ] **`-G Ninja` for the user-cmake path** (M) — Faster than make on multi-file projects; also emit a standalone `build.ninja` for the no-cmake path.
 
 ### Emitted C quality
 
-- [ ] **Static-bounds elision for proven-safe literal indices** (S) — `arr[0]` on a known-size array of ≥1 elements already passes the static check; also skip the runtime wrap to drop the helper call.
+- [x] **Static-bounds elision for proven-safe literal indices** (S) — When index is a non-negative literal within a statically-known array size, the runtime `bounds_check` call is elided.
 - [ ] **Static-null elision after `?.let { ... }` / `if (p != null) { ... }`** (S–M) — Inside the smart-cast block the pointer is non-null; skip the runtime null check.
-- [ ] **Skip null-check when source is `.asRef()` of a local** (S) — Address-of a stack variable is never NULL; mark such expressions "non-null origin" through the codegen.
+- [x] **Skip null-check when source is `.asRef()` of a local** (S) — `isProvablyNonNull()` detects `.asRef()` origins and skips the runtime null check. Unit tests in `ElisionUnitTest`.
 - [ ] **String literal deduplication** (M) — Every `ktc_core_str("foo")` builds a fresh `{ptr, len}`. Promote to `static const ktc_String` at file scope and reuse. Smaller code, better cache locality.
 - [ ] **Collapse trivial `$ir` for single-expression inline bodies** (M) — Splice the body directly instead of declaring a result var.
 - [ ] **Constant-fold trivial integer arithmetic at transpile** (S) — Not a perf win (C compiler does it) but the emitted C is more readable.
@@ -63,37 +63,37 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 ### Transpiler flags
 
-- [ ] **`--version`** (S) — Print transpiler version + commit SHA in `--help` header. Currently no way to identify which build is running.
-- [ ] **`--check`** (S) — Lex + parse + type-infer + collect, skip code emission. Fast feedback for "is my code valid".
+- [x] **`--version`** (S) — Prints `ktc <version>` from JAR manifest.
+- [x] **`--check`** (S) — Lex + parse + collect for each package, skip code emission. Prints `OK` or error.
 - [ ] **Colored error messages with source caret** (M) — Upgrade `file:line` + 3-line snippet to clang/rustc style with column underline.
 - [ ] **`--diagnostics=json`** (M) — Machine-readable error output for editor / LSP integration.
 - [ ] **`--explain <error-code>`** (M) — Stable error codes (e.g., `E0042`: "Cannot return value-type String") with a longer explanation. Discoverability.
 - [ ] **`-W<name>` / `-Wno-<name>`** (M) — Per-warning controls so the user can opt out of specific warnings without going binary on `--no-check-bounds`.
-- [ ] **`--strict`** (S) — Promote all warnings to errors. Useful for CI.
+- [x] **`--strict`** (S) — `codegenWarning()` promotes to `codegenError()` when `--strict` is on. Passed through `run_tests.py --strict`.
 
 ### `run_tests.py`
 
-- [ ] **`--list`** (S) — Print all discovered tests without running. Helpful for shell completion and discovery.
-- [ ] **`--filter <glob>`** / **`--exclude <glob>`** (S) — `--filter "stdlib/*"` to run only stdlib tests. More flexible than the comma list.
-- [ ] **`--fail-fast`** (S) — Stop after the first failure. Speeds up CI bisects.
+- [x] **`--list`** (S) — Prints all discovered tests (respects `--filter`/`--exclude`).
+- [x] **`--filter <glob>`** / **`--exclude <glob>`** (S) — Glob matching against test relPath or name. Works with `--list` and full runs.
+- [x] **`--fail-fast`** (S) — Stops after first failure; cancels pending futures in parallel mode.
 - [ ] **`--bench <test> [-n N]`** (M) — Run a test N times, report min/median/p95 of ktc/comp/run timings. Catches codegen perf regressions.
 - [ ] **`--watch`** (M) — Re-run tests when a `.kt` file changes. Drives a fast inner-loop dev workflow.
 - [ ] **Shell completion script** (S) — Generate bash/zsh completion for `--run <test-name>` from the discovered test list.
-- [ ] **`NO_COLOR` env var support** (S) — Already partially handled via tty detection; respect the standard env var too for CI logs.
+- [x] **`NO_COLOR` env var support** (S) — `_gNoColor` flag disables all ANSI escapes and live progress when `NO_COLOR` is set or stdout is not a tty.
 - [ ] **HTML test report** (M) — `--report html` writes a summary in `build/test-report.html` with timings, errors, and captured stdout/stderr.
 - [ ] **`init <name>` subcommand** (M) — `python run_tests.py init MyApp` scaffolds a new test directory with `module.ktc.toml` and a starter `.kt`.
 
 ## Recommended order
 
-The next 8 items, picked for value/effort ratio:
+The next items, picked for value/effort ratio:
 
-1. **`tailrec`** (S) — missing Kotlin idiom, trivial codegen.
+1. ~~**`tailrec`**~~ — done.
 2. **`inline value class`** (M) — big type-safety win, KTC's by-value semantics make it nearly free.
-3. **Static null/bounds elision for proven-safe cases** (S–M) — measurable perf, builds on the recent runtime-check infrastructure.
+3. ~~**Static null/bounds elision**~~ — done.
 4. **Colored error messages with caret** (M) — DX win, every subsequent task benefits.
-5. **`--check` flag** (S) — fast feedback for editing loops.
-6. **ccache integration in `run_tests.py`** (S) — dev iteration speed, free with the recent write-if-changed change.
+5. ~~**`--check` flag**~~ — done.
+6. ~~**ccache integration**~~ — done.
 7. **`when` exhaustiveness** (S–M) — type-safety, unblocks several follow-ups.
-8. **`--filter` + `--list` for `run_tests.py`** (S) — ergonomics.
+8. ~~**`--filter` + `--list`**~~ — done.
 
 Defer the rest until usage patterns make them worth it.

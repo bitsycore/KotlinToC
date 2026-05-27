@@ -89,7 +89,7 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
 - No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.
 - `RawArray<T>` is never bounds-checked (no length carried). `Array<T>` / `String` / `@Size(N)` indexing IS checked by default — see "Bounds checking" above.
-- No visibility enforcement for `private`/`internal` across class boundaries (declared but not policed by codegen).
+- `private` fields and methods are enforced across class boundaries (codegen error on access from outside). `internal` is not enforced.
 - Parameters are not enforced read-only — `fun foo(x: Int) { x = 5 }` compiles even though Kotlin makes params `val`.
 - Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.
 
