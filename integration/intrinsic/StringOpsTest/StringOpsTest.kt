@@ -397,6 +397,41 @@ fun testToBoolean() {
 // MARK: Entry
 // ════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════
+// MARK: Raw triple-quoted strings
+// ════════════════════════════════════════════════════════════════════
+
+fun testRawStringNoEscape() {
+    // Backslashes inside """...""" are literal, not escape introducers.
+    val s = """a\nb"""
+    if (s.length != 4) error("FAIL raw length")
+    if (s[0] != 'a')   error("FAIL raw [0]")
+    if (s[1] != '\\')  error("FAIL raw [1] not backslash")
+    if (s[2] != 'n')   error("FAIL raw [2]")
+    if (s[3] != 'b')   error("FAIL raw [3]")
+    println("raw no-escape ok")
+}
+
+fun testRawStringMultiline() {
+    // A literal newline between the two lines is preserved verbatim.
+    val s = """line1
+line2"""
+    if (s.length != 11)   error("FAIL multiline length")
+    if (s[5]   != '\n')   error("FAIL multiline newline at idx 5")
+    if (!s.startsWith("line1")) error("FAIL multiline starts")
+    if (!s.endsWith("line2"))   error("FAIL multiline ends")
+    println("raw multiline ok")
+}
+
+fun testRawStringEmbeddedQuote() {
+    // A single embedded `"` inside the raw block is fine; only `"""` closes.
+    val s = """a "b" c"""
+    if (s.length != 7) error("FAIL embedded quote length")
+    if (s[2] != '"')   error("FAIL embedded quote at idx 2")
+    if (s[4] != '"')   error("FAIL embedded quote at idx 4")
+    println("raw embedded quote ok")
+}
+
 fun main() {
     testLength()
     testLastIndex()
@@ -438,5 +473,8 @@ fun main() {
     testToIntOrNull()
     testToLong()
     testToBoolean()
+    testRawStringNoEscape()
+    testRawStringMultiline()
+    testRawStringEmbeddedQuote()
     println("done")
 }

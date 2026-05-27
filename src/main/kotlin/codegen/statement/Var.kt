@@ -152,7 +152,11 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     // Only user-class pointers (Vec2*), not typed-array pointers (IntArray which is Ptr<Arr<Int>>)
     val isPointer = vKtcCore is KtcType.Ptr && vKtcCore.inner !is KtcType.Arr
 
-    val typeIsNullable = s.type?.isEffectivelyNullable() == true
+    // Type is nullable if the source TypeRef carries `?` directly OR if alias
+    // expansion produced a nullable result (e.g. `typealias MaybeInt = Int?`,
+    // `val x: MaybeInt = 42` — the alias name itself isn't marked nullable but
+    // vKtc came out as Nullable<Int>).
+    val typeIsNullable = s.type?.isEffectivelyNullable() == true || (s.type != null && vKtc is KtcType.Nullable)
 
     // Nullable pointer (Ref<T?>): can be NULL
     val isPtrNullable = isPointer &&
