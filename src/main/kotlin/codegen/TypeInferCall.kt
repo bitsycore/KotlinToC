@@ -115,6 +115,12 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             val elemName = resolveTypeName(e.typeArgs[0]).toInternalStr
             return "${elemName}Array"
         }
+        // Union1<A,B>(value), Union2<A,B>(value), … → Union<A,B>
+        val vUnionCtorMatch = Regex("^Union(\\d+)$").matchEntire(name)
+        if (vUnionCtorMatch != null && e.typeArgs.size >= 2) {
+            val vMembers = e.typeArgs.map { resolveTypeName(it) }
+            return KtcType.Union(vMembers).toInternalStr
+        }
         // Generic function call: resolve return type with type substitution
         val genFun = genericFunDecls.find { it.name == name }
         if (genFun != null && genFun.returnType != null) {
@@ -220,6 +226,17 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     if (method == "hashCode") return "Int"
     if (method == "inv") return recvType
     val recvKtc = parseResolvedTypeName(recvType)
+    // Union methods: get1..N → member type, is1..N → Boolean
+    val vUnionKtc = recvKtc.stripNullable as? KtcType.Union
+    if (vUnionKtc != null) {
+        val vGetMatch = Regex("^get(\\d+)$").matchEntire(method)
+        if (vGetMatch != null) {
+            val vIdx = vGetMatch.groupValues[1].toInt() - 1
+            if (vIdx in vUnionKtc.members.indices) return vUnionKtc.members[vIdx].toInternalStr
+        }
+        val vIsMatch = Regex("^is(\\d+)$").matchEntire(method)
+        if (vIsMatch != null) return "Boolean"
+    }
     // RawArray<T> (T*): asArray(n) → Ref<Array<T>>; resizeWith returns the bare pointer unchanged.
     if (method == "asArray" || method == "resizeWith") {
         val core = recvKtc.stripNullable

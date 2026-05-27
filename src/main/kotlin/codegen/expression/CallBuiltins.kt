@@ -91,6 +91,20 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 			}
 		}
 
+	// Union1<A,B>(value), Union2<A,B>(value), …
+	val vUnionMatch = Regex("^Union(\\d+)$").matchEntire(inName)
+	if (vUnionMatch != null && inCall.typeArgs.size >= 2 && inArgs.size == 1) {
+		val vIdx = vUnionMatch.groupValues[1].toInt() - 1
+		if (vIdx < 0 || vIdx >= inCall.typeArgs.size)
+			codegenError("Union${vIdx + 1} index out of range for Union with ${inCall.typeArgs.size} type args")
+		val vMembers     = inCall.typeArgs.map { resolveTypeName(it) }
+		val vMemberCTypes = vMembers.map { cTypeStr(it) }
+		unionTypeName(vMemberCTypes)
+		val vUnionCType = unionTypeRef(vMemberCTypes)
+		val vValueExpr  = genExpr(inArgs[0].expr)
+		return "($vUnionCType){$vIdx, {._$vIdx = $vValueExpr}}"
+		}
+
 	// StringBuffer(ptr, len[, cap])
 	if (inName == "StringBuffer" && inArgs.size in 2..3
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")

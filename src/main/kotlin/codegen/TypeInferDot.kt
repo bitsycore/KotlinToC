@@ -58,6 +58,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	if (e.name == "runeLen" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
 	if (e.name == "name"    && recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) return KtcType.Str
 	if (e.name == "ordinal" && recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) return KtcType.Prim(KtcType.PrimKind.Int)
+	if (e.name == "id" && recvTypeCoreKtc is KtcType.Union) return KtcType.Prim(KtcType.PrimKind.Int)
 	val indirectBase = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
 	if (indirectBase != null) {
 		val ci = classes[indirectBase] ?: return null

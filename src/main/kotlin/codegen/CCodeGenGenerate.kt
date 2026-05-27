@@ -171,6 +171,9 @@ internal fun CCodeGen.generate(): COutput {
 	// User-package VarArr types — after non-generic type defs, before monomorphized generics.
 	hdr.appendLine()
 	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
+	// Union types — after VarArr so all member types are visible.
+	hdr.appendLine()
+	hdr.appendLine("/* @UNION_TYPES@ */")
 
 	// Pre-pass: register classInterfaces for objects and all monomorphized generic classes.
 	for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty())
@@ -415,6 +418,28 @@ internal fun CCodeGen.generate(): COutput {
 		}
 	replaceHdrPlaceholder("/* @VAR_ARR_PRIM_TYPES@ */", buildVarArrSection(varArrGuardedDecls), "typed VarArr types (primitives / external)")
 	replaceHdrPlaceholder("/* @VAR_ARR_TYPES@ */",      buildVarArrSection(varArrDecls),        "typed VarArr types (current-package user types)")
+
+	// Union typedefs
+	fun buildUnionSection(inTypes: Set<List<String>>): StringBuilder {
+		val vSb = StringBuilder()
+		for (vMembers in inTypes.sortedBy { it.joinToString("_") }) {
+			val vName = unionTypeRef(vMembers)
+			val vGuard = "KTC_UNION_DEF_$vName"
+			vSb.appendLine("#ifndef $vGuard")
+			vSb.appendLine("#define $vGuard")
+			vSb.appendLine("typedef struct $vName {")
+			vSb.appendLine("    ktc_Int id;")
+			vSb.appendLine("    union {")
+			for ((i, vMemberC) in vMembers.withIndex())
+				vSb.appendLine("        $vMemberC _$i;")
+			vSb.appendLine("    } data;")
+			vSb.appendLine("} $vName;")
+			vSb.appendLine("#endif")
+			}
+		return vSb
+		}
+	val vAllUnions = (unionGuardedDecls + unionDecls).toSet()
+	replaceHdrPlaceholder("/* @UNION_TYPES@ */", buildUnionSection(vAllUnions), "Union types")
 
 	// Deduplicate string literals used 2+ times within the same .c file.
 	val vStrPattern = Regex("""ktc_core_str\("([^"]*)"\)""")

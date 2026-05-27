@@ -740,6 +740,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     /* Same but emitted WITH #ifndef guard for primitives and external types. */
     internal val varArrGuardedDecls = mutableSetOf<String>()                 // guarded: primitives / external types
 
+    // ── Union (tagged union) type registry ───────────────────────────
+    /* Lists of member C type strings for each Union<A,B,...> instantiation.
+    Split into guarded (primitive members only) and unguarded (user-type members). */
+    internal val unionDecls = mutableSetOf<List<String>>()
+    internal val unionGuardedDecls = mutableSetOf<List<String>>()
+
     // ── Sized array param tracking ────────────────────────────────────
     /* Names of @Size(N) array params that arrived as ktc_Array_T_N structs and were
     unpacked to local$name pointers. Subset of trampolinedParams; checked when
