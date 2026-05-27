@@ -86,4 +86,62 @@ class DestructuringUnitTest : TranspilerTestBase() {
         r.sourceContains("t.first")
         r.sourceContains("t.second")
     }
+
+    // ── for ((a, b) in pairs) ────────────────────────────────────────
+
+    @Test fun forDestructuringPairList() {
+        val r = transpileMainWithStdlib("""
+            val list = listOf(Heap, 1 to "a", 2 to "b")
+            for ((k, v) in list) { println(v) }
+        """)
+        // Synthetic temp $ditem_k_v binds the element; user-visible k, v
+        // are extracted from it via .first / .second.
+        r.sourceContains("\$ditem_k_v")
+        r.sourceContains(".first")
+        r.sourceContains(".second")
+    }
+
+    @Test fun forDestructuringDataClass() {
+        val r = transpileMain(
+            """
+                val v1 = Vec2(1.0f, 2.0f)
+                val arr = arrayOf<Vec2>(v1)
+                for ((x, y) in arr) { println(x) }
+            """,
+            decls = "data class Vec2(val x: Float, val y: Float)"
+        )
+        r.sourceContains("\$ditem_x_y")
+        // x and y are extracted from the per-iteration element. The
+        // destructuring goes through a temporary tmp, so the chain is
+        //   $ditem_x_y → $dN = $ditem_x_y → x = $dN.x
+        // — match the field-access tail rather than the full chain.
+        r.sourceMatches(Regex("const ktc_Float x = \\\$\\w+\\.x"))
+        r.sourceMatches(Regex("const ktc_Float y = \\\$\\w+\\.y"))
+    }
+
+    @Test fun forDestructuringTriple() {
+        val r = transpileMainWithStdlib("""
+            val list = listOf(Heap, Triple(1, "a", true))
+            for ((a, b, c) in list) { println(b) }
+        """)
+        r.sourceContains("\$ditem_a_b_c")
+        r.sourceContains(".first")
+        r.sourceContains(".second")
+        r.sourceContains(".third")
+    }
+
+    @Test fun forDestructuringWithDiscard() {
+        val r = transpileMain(
+            """
+                val v1 = Vec2(1.0f, 2.0f)
+                val arr = arrayOf<Vec2>(v1)
+                for ((x, _) in arr) { println(x) }
+            """,
+            decls = "data class Vec2(val x: Float, val y: Float)"
+        )
+        // The "_" slot does not bind a local.
+        r.sourceContains("\$ditem_x__")
+        r.sourceContains("const ktc_Float x =")
+        r.sourceNotContains("ktc_Float _ =")
+    }
 }

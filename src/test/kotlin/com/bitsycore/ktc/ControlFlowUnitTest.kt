@@ -128,6 +128,44 @@ class ControlFlowUnitTest : TranspilerTestBase() {
         r.sourceContains("i -= 2")
     }
 
+    // ── Ranges over Char and Long ────────────────────────────────────
+
+    @Test fun forRangeChar() {
+        val r = transpileMain("for (c in 'a'..'z') { println(c) }")
+        r.sourceContains("for (ktc_Char c = 'a'; c <= 'z'; c++)")
+    }
+
+    @Test fun forUntilChar() {
+        val r = transpileMain("for (c in 'a' until 'd') { println(c) }")
+        r.sourceContains("for (ktc_Char c = 'a'; c < 'd'; c++)")
+    }
+
+    @Test fun forDownToChar() {
+        val r = transpileMain("for (c in 'z' downTo 'a') { println(c) }")
+        r.sourceContains("for (ktc_Char c = 'z'; c >= 'a'; c--)")
+    }
+
+    @Test fun forRangeLong() {
+        val r = transpileMain("for (i in 0L..10L) { println(i) }")
+        r.sourceContains("for (ktc_Long i = 0LL; i <= 10LL; i++)")
+    }
+
+    @Test fun forUntilLong() {
+        val r = transpileMain("for (i in 0L until 5L) { println(i) }")
+        r.sourceContains("for (ktc_Long i = 0LL; i < 5LL; i++)")
+    }
+
+    @Test fun forDownToLong() {
+        val r = transpileMain("for (i in 10L downTo 0L) { println(i) }")
+        r.sourceContains("for (ktc_Long i = 10LL; i >= 0LL; i--)")
+    }
+
+    // Mixed: when either side is Long, loop variable must widen to Long.
+    @Test fun forRangeMixedIntLong() {
+        val r = transpileMain("val n = 10L\nfor (i in 0..n) { println(i) }")
+        r.sourceContains("for (ktc_Long i = 0;")
+    }
+
     // ── For over array ───────────────────────────────────────────────
 
     @Test fun forOverArray() {

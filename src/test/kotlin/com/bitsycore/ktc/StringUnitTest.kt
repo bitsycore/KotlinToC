@@ -7,6 +7,27 @@ import kotlin.test.Test
  */
 class StringUnitTest : TranspilerTestBase() {
 
+    // ── Raw triple-quoted string ─────────────────────────────────────
+
+    // Raw strings preserve newlines literally and don't process escape
+    // sequences. Lexer.lexRawStringContent accumulates verbatim until the
+    // closing triple quote.
+    @Test fun rawStringMultiline() {
+        // KTC source: `val s = """line1<NL>line2"""` (literal newline between).
+        // The raw newline survives into the emitted C as a \n escape.
+        val r = transpileMain("val s = \"\"\"line1\nline2\"\"\"\nprintln(s)")
+        r.sourceContains("line1\\n")
+        r.sourceContains("line2")
+    }
+
+    @Test fun rawStringNoEscapeProcessing() {
+        // Backslashes inside a raw string are literal — no `\n` interpretation.
+        // KTC source: `val s = """a\nb"""` — the \n is two characters here.
+        val r = transpileMain("val s = \"\"\"a\\nb\"\"\"")
+        // In the emitted C the backslash itself is escaped as \\ for the C literal.
+        r.sourceContains("a\\\\nb")
+    }
+
     // ── Simple string template ───────────────────────────────────────
 
     @Test fun simpleTemplate() {

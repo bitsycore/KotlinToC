@@ -156,7 +156,13 @@ data class AssignStmt(
 ) : Stmt()
 
 data class ReturnStmt(val value: Expr?) : Stmt()
-data class ForStmt(val varName: String, val iter: Expr, val body: Block) : Stmt()
+/* For-loop with optional destructuring of each element. When destructureNames
+is empty, varName binds the element directly (idiomatic for-each).
+When destructureNames is non-empty, the iterator element is decomposed into
+those names via componentN() / ctor-param field access — varName is then
+the implementation-detail temp holding the element. Both forms can carry
+the same body. */
+data class ForStmt(val varName: String, val iter: Expr, val body: Block, val destructureNames: List<String> = emptyList()) : Stmt()
 data class WhileStmt(val cond: Expr, val body: Block) : Stmt()
 data class DoWhileStmt(val body: Block, val cond: Expr) : Stmt()
 class BreakStmt : Stmt()

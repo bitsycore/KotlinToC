@@ -57,11 +57,74 @@ fun testForInArray() {
     if (sum != 600) error("FAIL array sum=$sum")
 }
 
+// ── Char and Long ranges ─────────────────────────────────────────
+
+fun testRangeChar() {
+    println("--- 'a'..'c' ---")
+    var n = 0
+    for (c in 'a'..'c') {
+        println(c)
+        n++
+    }
+    if (n != 3) error("FAIL char range count=$n")
+}
+
+fun testRangeLong() {
+    println("--- 0L..2L ---")
+    var sum = 0L
+    for (i in 0L..2L) {
+        sum += i
+    }
+    if (sum != 3L) error("FAIL long range sum=$sum")
+}
+
+fun testRangeCharDownTo() {
+    println("--- 'c' downTo 'a' ---")
+    var n = 0
+    for (c in 'c' downTo 'a') {
+        println(c)
+        n++
+    }
+    if (n != 3) error("FAIL char downTo count=$n")
+}
+
+// ── For-loop destructuring ───────────────────────────────────────
+
+data class IntPair(val first: Int, val second: Int)
+
+fun testForDestructuringDataClass() {
+    println("--- destructuring data class ---")
+    val arr = arrayOf<IntPair>(IntPair(1, 2), IntPair(3, 4), IntPair(5, 6))
+    var fSum = 0
+    var sSum = 0
+    for ((a, b) in arr) {
+        fSum += a
+        sSum += b
+    }
+    if (fSum != 9)  error("FAIL destructuring first sum=$fSum")
+    if (sSum != 12) error("FAIL destructuring second sum=$sSum")
+}
+
+fun testForDestructuringWithDiscard() {
+    println("--- destructuring with _ ---")
+    val arr = arrayOf<IntPair>(IntPair(10, 20), IntPair(30, 40))
+    var sum = 0
+    for ((a, _) in arr) {
+        sum += a
+    }
+    if (sum != 40) error("FAIL destructuring discard sum=$sum")
+}
+
 fun main() {
     testRangeInclusive()
     testRangeUntil()
     testDownTo()
     testStep()
     testForInArray()
+    testRangeChar()
+    testRangeLong()
+    testRangeCharDownTo()
+    testForDestructuringDataClass()
+    testForDestructuringWithDiscard()
     println("done")
 }

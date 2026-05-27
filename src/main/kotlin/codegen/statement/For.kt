@@ -17,6 +17,43 @@ private fun CCodeGen.emitForVarBlock(varName: String, varKtcType: KtcType, body:
     popScope()
     }
 
+/* Determines the C type and PrimKind for a range loop variable based on the
+range endpoints. Defaults to Int when the inferred type isn't a known
+ordinal primitive. Supports Int (default), Long, Char, and the unsigned
+integer kinds — anything iterable as a counter. */
+private fun CCodeGen.rangeElementType(range: BinExpr): Pair<String, KtcType.PrimKind> {
+    val lt  = inferExprTypeKtc(range.left)?.stripNullable
+    val rt  = inferExprTypeKtc(range.right)?.stripNullable
+    // Prefer Long over Int if either side is Long; Char only when both sides are Char.
+    val vKind = when {
+        (lt as? KtcType.Prim)?.kind == KtcType.PrimKind.Long ||
+        (rt as? KtcType.Prim)?.kind == KtcType.PrimKind.Long  -> KtcType.PrimKind.Long
+        (lt as? KtcType.Prim)?.kind == KtcType.PrimKind.ULong ||
+        (rt as? KtcType.Prim)?.kind == KtcType.PrimKind.ULong -> KtcType.PrimKind.ULong
+        (lt as? KtcType.Prim)?.kind == KtcType.PrimKind.UInt  ||
+        (rt as? KtcType.Prim)?.kind == KtcType.PrimKind.UInt  -> KtcType.PrimKind.UInt
+        (lt as? KtcType.Prim)?.kind == KtcType.PrimKind.Char  &&
+        (rt as? KtcType.Prim)?.kind == KtcType.PrimKind.Char  -> KtcType.PrimKind.Char
+        else                                                   -> KtcType.PrimKind.Int
+    }
+    val vCType = when (vKind) {
+        KtcType.PrimKind.Long  -> "ktc_Long"
+        KtcType.PrimKind.ULong -> "ktc_ULong"
+        KtcType.PrimKind.UInt  -> "ktc_UInt"
+        KtcType.PrimKind.Char  -> "ktc_Char"
+        else                    -> "ktc_Int"
+    }
+    return vCType to vKind
+}
+
+/* When the for-loop binds a destructuring pattern `for ((a, b) in pairs)`,
+the parser stashes the names in s.destructureNames and gives the iteration
+variable a synthetic name ($ditem_a_b). The body must start by decomposing
+that temp into the user-visible names — same shape as `val (a, b) = $ditem`. */
+private fun destructuredBody(s: ForStmt): Block =
+    if (s.destructureNames.isEmpty()) s.body
+    else Block(listOf(DestructuringDeclStmt(s.destructureNames, NameExpr(s.varName), mutable = false)) + s.body.stmts)
+
 internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
     loopDepth++
     val iter = s.iter
@@ -33,23 +70,26 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
     // for (i in a..b)   inclusive range
     when (rangeExpr) {
         is BinExpr if rangeExpr.op == ".." -> {
+            val (vCType, vPrim) = rangeElementType(rangeExpr)
             val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
-            impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} <= ${genExpr(rangeExpr.right)}; $inc) {")
-            emitForVarBlock(s.varName, KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
+            impl.appendLine("${ind}for ($vCType ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} <= ${genExpr(rangeExpr.right)}; $inc) {")
+            emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
             impl.appendLine("$ind}")
         }
         // for (i in a until b)  or  for (i in a..<b)
         is BinExpr if (rangeExpr.op == "until" || rangeExpr.op == "..<") -> {
+            val (vCType, vPrim) = rangeElementType(rangeExpr)
             val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
-            impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} < ${genExpr(rangeExpr.right)}; $inc) {")
-            emitForVarBlock(s.varName, KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
+            impl.appendLine("${ind}for ($vCType ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} < ${genExpr(rangeExpr.right)}; $inc) {")
+            emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
             impl.appendLine("$ind}")
         }
         // for (i in a downTo b)
         is BinExpr if rangeExpr.op == "downTo" -> {
+            val (vCType, vPrim) = rangeElementType(rangeExpr)
             val dec = if (step != null) "${s.varName} -= $step" else "${s.varName}--"
-            impl.appendLine("${ind}for (ktc_Int ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} >= ${genExpr(rangeExpr.right)}; $dec) {")
-            emitForVarBlock(s.varName, KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
+            impl.appendLine("${ind}for ($vCType ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} >= ${genExpr(rangeExpr.right)}; $dec) {")
+            emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
             impl.appendLine("$ind}")
         }
         // for (item in array/collection)  — iterate over elements
@@ -94,7 +134,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                     val elemCType = cTypeStr(elemKtType)
                     impl.appendLine("$ind    $elemCType ${s.varName} = ${typeFlatName(iterClass)}_next(&$iterVar);")
                 }
-                emitForVarBlock(s.varName, elemKtType, s.body, ind, method)
+                emitForVarBlock(s.varName, elemKtType, destructuredBody(s), ind, method)
                 impl.appendLine("$ind}")
             } else {
                 // Array: use .len / trampoline size and direct or .ptr indexing
@@ -108,7 +148,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 val vElemAccess = if (vIsTrampolined || vIsSizedArr) "$arrExpr[$idx]" else "$arrExpr.ptr[$idx]"
                 impl.appendLine("${ind}for (ktc_Int $idx = 0; $idx < $sizeExpr; $idx++) {")
                 impl.appendLine("$ind    $elemType ${s.varName} = $vElemAccess;")
-                emitForVarBlock(s.varName, arrTypeKtc?.asArr?.elem ?: KtcType.Prim(KtcType.PrimKind.Int), s.body, ind, method)
+                emitForVarBlock(s.varName, arrTypeKtc?.asArr?.elem ?: KtcType.Prim(KtcType.PrimKind.Int), destructuredBody(s), ind, method)
                 impl.appendLine("$ind}")
             }
         }

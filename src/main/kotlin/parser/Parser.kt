@@ -555,12 +555,24 @@ class Parser(private val tokens: List<Token>) {
     private fun parseForStmt(): ForStmt {
         expect(TokenType.FOR)
         expect(TokenType.LPAREN); nesting++; skipNL()
-        val varName = expectIdent()
+        // Optional destructuring: `for ((a, b) in pairs)` — collect names,
+        // generate a synthetic temp name for the iterator element binding.
+        val vDestructure = mutableListOf<String>()
+        val varName: String
+        if (at(TokenType.LPAREN)) {
+            advance(); skipNL()
+            vDestructure += expectIdent()
+            while (at(TokenType.COMMA)) { advance(); skipNL(); vDestructure += expectIdent() }
+            skipNL(); expect(TokenType.RPAREN); skipNL()
+            varName = "\$ditem_" + vDestructure.joinToString("_")
+        } else {
+            varName = expectIdent()
+        }
         expect(TokenType.IN); skipNL()
         val iter = parseExpr()
         expect(TokenType.RPAREN); nesting--; skipNL()
         val body = parseBlock()
-        return ForStmt(varName, iter, body)
+        return ForStmt(varName, iter, body, destructureNames = vDestructure)
     }
 
     // ── while / do-while ─────────────────────────────────────────────
