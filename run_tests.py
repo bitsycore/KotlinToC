@@ -191,6 +191,9 @@ def find_c_compiler(inPreferred: str | None) -> str | None:
 def find_cmake() -> str | None:
 	return "cmake" if shutil.which("cmake") else None
 
+def find_ccache() -> str | None:
+	return "ccache" if shutil.which("ccache") else None
+
 # ==================
 # MARK: Subprocess helpers
 # ==================
@@ -475,6 +478,7 @@ class RunOptions:
 	extraArgs:   list[str]  = field(default_factory=list)  # transpiler flags
 	cc:          str        = ""                            # resolved compiler binary
 	cmake:       str | None = None                          # resolved cmake binary or None
+	ccache:      str | None = None                          # resolved ccache binary or None
 
 def transpile_cmd(inOpts: RunOptions, inKts: list[Path], inOut: Path, inExeName: str) -> list[str]:
 	# Builds the argv for the transpile step. Two backends: the fat JAR
@@ -563,6 +567,8 @@ def invoke_test_verbose(
 		vCfgArgs = ["-B", str(vBld), "-S", str(vOut), f"-DCMAKE_BUILD_TYPE={inOpts.cfg}"]
 		if inOpts.compiler:
 			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.compiler}")
+		if inOpts.ccache:
+			vCfgArgs.append(f"-DCMAKE_C_COMPILER_LAUNCHER={inOpts.ccache}")
 		if inOpts.staticLibc:
 			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
 		if inOpts.cmakeArgs:
@@ -622,9 +628,10 @@ def invoke_test_verbose(
 		if inOpts.ccArgs:
 			vCArgs.extend(inOpts.ccArgs.split())
 		vCArgs.extend(str(c) for c in vCSrcs)
-		pcmd(f"{inOpts.cc} -std=c11{(' ' + inOpts.ccArgs) if inOpts.ccArgs else ''} -o {vExePath} {' '.join(c.name for c in vCSrcs)}")
+		vCcCmd = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
+		pcmd(f"{' '.join(vCcCmd)} -std=c11{(' ' + inOpts.ccArgs) if inOpts.ccArgs else ''} -o {vExePath} {' '.join(c.name for c in vCSrcs)}")
 		pwrite()
-		vCo = run_streamed_capture([inOpts.cc, *vCArgs], inDimAll=True)
+		vCo = run_streamed_capture([*vCcCmd, *vCArgs], inDimAll=True)
 		pwrite()
 		if vCo.exit != 0:
 			pfail(f"Compilation failed (exit {vCo.exit})")
@@ -901,6 +908,8 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 		vCfgArgs = ["-B", str(vBld), "-S", str(vOut), f"-DCMAKE_BUILD_TYPE={inOpts.cfg}"]
 		if inOpts.compiler:
 			vCfgArgs.append(f"-DCMAKE_C_COMPILER={inOpts.compiler}")
+		if inOpts.ccache:
+			vCfgArgs.append(f"-DCMAKE_C_COMPILER_LAUNCHER={inOpts.ccache}")
 		if inOpts.staticLibc:
 			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
 		if inOpts.cmakeArgs:
@@ -927,11 +936,12 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 		vExePath = vOut / vExeName
 		if not kIsWindows and (vOut / vExe).is_dir():
 			vExePath = vOut / f"{vExe}.out"
+		vCcCmd = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
 		vCArgs = ["-std=c11", "-iquote", str(vOut), "-o", str(vExePath)]
 		if inOpts.ccArgs:
 			vCArgs.extend(inOpts.ccArgs.split())
 		vCArgs.extend(str(c) for c in vCSrcs)
-		vCo = run_capture([inOpts.cc, *vCArgs])
+		vCo = run_capture([*vCcCmd, *vCArgs])
 		if vCo.exit != 0:
 			return fail("compile failed", vCo.stdout, vCo.stderr)
 		vCompMs = vCo.ms
@@ -1156,7 +1166,8 @@ def main(inArgv: list[str]) -> int:
 	if not vCC:
 		pwrite(f"{kRed}ERROR: No C compiler found (tried gcc, clang, {'cl' if kIsWindows else 'cc'}). Install one and add it to PATH.{kRst}")
 		return 1
-	vCmake = find_cmake()
+	vCmake  = find_cmake()
+	vCcache = find_ccache()
 
 	vOpts = RunOptions(
 		buildMode  = vNs.build,
@@ -1169,10 +1180,11 @@ def main(inArgv: list[str]) -> int:
 		extraArgs  = build_extra_args(vNs),
 		cc         = vCC,
 		cmake      = vCmake,
+		ccache     = vCcache,
 	)
 
 	vAllTests = filter_tests(vAllTests, vNs.filter, vNs.exclude)
-	pinfo(f"Using C compiler: {vCC}")
+	pinfo(f"Using C compiler: {vCC}" + (f" (via {vCcache})" if vCcache else ""))
 
 	# ── --run: explicit selection (verbose) ───────────────────────
 	if vNs.run:
