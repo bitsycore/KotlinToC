@@ -416,6 +416,41 @@ internal fun CCodeGen.generate(): COutput {
 	replaceHdrPlaceholder("/* @VAR_ARR_PRIM_TYPES@ */", buildVarArrSection(varArrGuardedDecls), "typed VarArr types (primitives / external)")
 	replaceHdrPlaceholder("/* @VAR_ARR_TYPES@ */",      buildVarArrSection(varArrDecls),        "typed VarArr types (current-package user types)")
 
+	// Deduplicate string literals used 2+ times within the same .c file.
+	val vStrPattern = Regex("""ktc_core_str\("([^"]*)"\)""")
+	val vGlobalDups = mutableSetOf<String>()
+	for (vSf in vSources.values) {
+		val vPerFile = mutableMapOf<String, Int>()
+		for (vMatch in vStrPattern.findAll(vSf.content)) {
+			val vValue = vMatch.groupValues[1]
+			vPerFile[vValue] = (vPerFile[vValue] ?: 0) + 1
+		}
+		for ((vValue, vCount) in vPerFile) if (vCount >= 2) vGlobalDups += vValue
+	}
+	if (vGlobalDups.isNotEmpty()) {
+		val vStrLitSb = StringBuilder()
+		vStrLitSb.appendLine("/* ════ interned string literals ════ */")
+		var vIdx = 0
+		val vReplacements = mutableMapOf<String, String>()
+		val vPrefix = if (prefix.isNotEmpty()) prefix.trimEnd('_') else "global"
+		for (vValue in vGlobalDups.sorted()) {
+			val vName = "\$${vPrefix}_s${vIdx++}"
+			vStrLitSb.appendLine("#define $vName ktc_core_str(\"$vValue\")")
+			vReplacements["ktc_core_str(\"$vValue\")"] = vName
+		}
+		vStrLitSb.appendLine()
+		val vInsertIdx = hdr.indexOf("/* @SIZED_TYPES@ */")
+		if (vInsertIdx >= 0) hdr.insert(vInsertIdx, vStrLitSb)
+		else hdr.append(vStrLitSb)
+		for ((vCFileName, vSf) in vSources) {
+			var vContent = vSf.content
+			for ((vInline, vName) in vReplacements) {
+				vContent = vContent.replace(vInline, vName)
+			}
+			if (vContent != vSf.content) vSources[vCFileName] = SourceFile(vContent, vSf.routingPkg)
+		}
+	}
+
 	// Collapse 3+ consecutive newlines to 2 (= 1 blank line) so empty sections leave no extra whitespace.
 	return COutput(hdr.toString().replace(Regex("\n{3,}"), "\n\n"), vSources)
 	}

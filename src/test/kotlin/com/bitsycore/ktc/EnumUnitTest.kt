@@ -1,6 +1,7 @@
 package com.bitsycore.ktc
 
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
  * Tests for enum classes.
@@ -93,7 +94,10 @@ class EnumUnitTest : TranspilerTestBase() {
         """, decls = colorDecl)
         r.sourceContains("test_Main_Color_valueOf")
         r.sourceContains("ktc_core_string_eq")
-        r.sourceContains("ktc_core_str(\"GREEN\")")
+        assertTrue(
+            r.source.contains("\"GREEN\"") || r.header.contains("\"GREEN\""),
+            "Expected \"GREEN\" in source or header (may be deduped to static const)"
+        )
     }
 
     @Test fun enumValueOfHeader() {

@@ -13,14 +13,14 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 ### Quick wins
 
 - [x] **`tailrec` keyword** (S) — Lower a tail call into a `goto`-loop. Error if the marked function isn't actually tail-recursive; warn if an unmarked function could be. Works for free fns, extension fns, and methods. Arity-checked to avoid false positives on overloads. Integration test: `TailrecTest`.
-- [ ] **`when` exhaustiveness** (S–M) — Warning when a `when` on a sealed/enum subject has no `else` and doesn't cover every case. Promote to error later. Unblocks #4.
-- [ ] **`reified` type parameters** (S) — Generics already monomorphize, so `reified T` is mostly syntactic. Expose the concrete type name via a `T::class.simpleName`-like intrinsic.
+- [x] **`when` exhaustiveness** (S–M) — Warning when a `when` on an enum subject has no `else` and doesn't cover every case. Works for both statement and expression `when`. Tests in `WhenExhaustUnitTest`.
+- [x] **`reified` type parameters** (S) — Parser accepts `reified`, `out`, `in` modifiers on type parameters. `T::class.simpleName` resolves to concrete type name via `typeSubst`. Fixes explicit type arg handling on inline generic calls. Tests in `ReifiedUnitTest`.
 - [x] **Raw string literals `"""..."""`** (S) — Already worked in the lexer; covered with unit tests in `StringUnitTest.rawString*`.
 - [x] **Destructuring in `for` loops** (S) — `for ((k, v) in map) { ... }` lands a synthetic `$ditem_<names>` temp + a per-iteration destructuring-decl. Covered in `DestructuringUnitTest.forDestructuring*` and `ForLoopTest`.
 
 ### Medium effort, high value
 
-- [ ] **`inline value class`** (M) — Zero-cost wrappers (`value class UserId(val raw: Int)`). KTC's by-value default makes this nearly free — emit the underlying primitive, treat the class as a phantom type. Big win for domain-model type safety.
+- [x] **`inline value class`** (M) — Zero-cost wrappers (`value class UserId(val raw: Int)`). Parses `value class`, `inline value class`, and `@JvmInline value class`. Erases to underlying primitive at every level: variable declarations, function parameters/returns, constructor calls, property access, toString/println dispatch. Validates exactly one val property, no body properties. Tests in `ValueClassUnitTest` and `ValueClassTest`.
 - [x] **`typealias`** (M) — Parser recognizes the `typealias` keyword; AST gets `TypeAliasDecl`; collector populates `CCodeGen.typeAliases`; `CTypes.expandTypeAlias` resolves the chain transitively (cycle-detected). Worked with primitives, classes, nullable targets (`MaybeInt = Int?`), and chained aliases. Tests in `TypeAliasUnitTest`. As a side-effect, fixed a latent bug in `Var.kt`'s nullable-strip logic — it only stripped `?` when the type was *inferred* nullable, not when an explicit type resolved to nullable.
 - [x] **`by lazy { ... }`** (M) — Local lazy vals: `bool $inited + T $cache` with init-check before first access. Top-level lazy vals: `ktc_thread_once_t` + `ktc_thread_call_once()` for thread-safe initialization (SYNCHRONIZED mode by default). Supports type inference and multi-statement bodies. Tests in `LazyTest`.
 - [x] **Range operators on `Char` / `Long`** (S–M) — `'a'..'z'` and `1L..10L` (plus `until` / `downTo` / mixed-with-step) now emit the right loop-variable C type. `For.kt#rangeElementType` infers the kind from operands. Tests in `ControlFlowUnitTest.for*Char` / `for*Long` and integration coverage in `ForLoopTest`.
@@ -50,9 +50,9 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **Static-bounds elision for proven-safe literal indices** (S) — When index is a non-negative literal within a statically-known array size, the runtime `bounds_check` call is elided.
 - [ ] **Static-null elision after `?.let { ... }` / `if (p != null) { ... }`** (S–M) — Inside the smart-cast block the pointer is non-null; skip the runtime null check.
 - [x] **Skip null-check when source is `.asRef()` of a local** (S) — `isProvablyNonNull()` detects `.asRef()` origins and skips the runtime null check. Unit tests in `ElisionUnitTest`.
-- [ ] **String literal deduplication** (M) — Every `ktc_core_str("foo")` builds a fresh `{ptr, len}`. Promote to `static const ktc_String` at file scope and reuse. Smaller code, better cache locality.
-- [ ] **Collapse trivial `$ir` for single-expression inline bodies** (M) — Splice the body directly instead of declaring a result var.
-- [ ] **Constant-fold trivial integer arithmetic at transpile** (S) — Not a perf win (C compiler does it) but the emitted C is more readable.
+- [x] **String literal deduplication** (M) — Post-processing pass in `generate()`: scans each `.c` file for `ktc_core_str("...")` used 2+ times, promotes them to `#define $pkg_sN ktc_core_str("...")` in the package header. Package-prefixed names avoid cross-header collisions. `#define` avoids MSVC compound-literal-at-file-scope issue.
+- [x] **Collapse trivial `$ir` for single-expression inline bodies** (M) — `tryGenInlineExpr` splices single-expression inline bodies directly without `$ir` temp var. Tests in `ElisionUnitTest`.
+- [x] **Constant-fold trivial integer arithmetic at transpile** (S) — `IntLit op IntLit` for `+`, `-`, `*`, `/`, `%` folded at transpile time. Tests in `ElisionUnitTest`.
 
 ### Whole-program
 
@@ -88,7 +88,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 The next items, picked for value/effort ratio:
 
 1. ~~**`tailrec`**~~ — done.
-2. **`inline value class`** (M) — big type-safety win, KTC's by-value semantics make it nearly free.
+2. ~~**`inline value class`**~~ — done.
 3. ~~**Static null/bounds elision**~~ — done.
 4. **Colored error messages with caret** (M) — DX win, every subsequent task benefits.
 5. ~~**`--check` flag**~~ — done.
