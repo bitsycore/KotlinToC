@@ -133,11 +133,11 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     if (varName != null) {
         // Local variable
         if (lookupVar(varName) != null && !isMutable(varName)) {
-            codegenError("Val cannot be reassigned: '$varName'")
+            codegenError("E041", "Val cannot be reassigned: '$varName'")
         }
         // Top-level property
         if (varName in valTopProps) {
-            codegenError("Val cannot be reassigned: '$varName'")
+            codegenError("E041", "Val cannot be reassigned: '$varName'")
         }
     }
     // Class property via obj.field
@@ -174,13 +174,13 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
                     return
                     }
                 if (propName in ci.privateSetProps && currentClass != className) {
-                    codegenError("Cannot set '$propName': setter is private in '${className}'")
+                    codegenError("E042", "Cannot set '$propName': setter is private in '${className}'")
                 }
                 if (propName in ci.privateProps && currentClass != className) {
-                    codegenError("Cannot access '$propName': it is private in '${className}'")
+                    codegenError("E040", "Cannot access '$propName': it is private in '${className}'")
                 }
                 if (ci.isValProp(propName)) {
-                    codegenError("Val cannot be reassigned: '$propName'")
+                    codegenError("E041", "Val cannot be reassigned: '$propName'")
                 }
             }
         }

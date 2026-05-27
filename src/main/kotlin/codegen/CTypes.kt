@@ -61,7 +61,7 @@ internal fun CCodeGen.expandTypeAlias(inT: TypeRef): TypeRef? {
 	while (true) {
 		val vTarget = typeAliases[vCur.name] ?: return vCur
 		if (!vSeen.add(vCur.name)) {
-			codegenError("typealias cycle involving '${vCur.name}'")
+			codegenError("E002", "typealias cycle involving '${vCur.name}'")
 			return null
 		}
 		// Merge: target supplies the name + its own typeArgs (alias args are dropped
@@ -223,7 +223,7 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	// classes/enums/interfaces/objects, generic params, nested classes). Anything else
 	// is a typo or a missing declaration — refuse rather than pass it through to C.
 	if (!isKnownTypeName(t.name))
-		codegenError("Unknown type '${t.name}'. Not a class, interface, enum, object, primitive, or generic type parameter — did you forget to import it or mistype the name?")
+		codegenError("E001", "Unknown type '${t.name}'. Not a class, interface, enum, object, primitive, or generic type parameter — did you forget to import it or mistype the name?")
 	return t.name
 	}
 

@@ -188,14 +188,14 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
 			for (p in d.ctorParams) {
 				if ((p.isVal || p.isVar) && p.type.isRawArray()) {
-					codegenError("Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
+					codegenError("E011", "Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}
 			for (p in d.members.filterIsInstance<PropDecl>()) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {
 					currentStmtLine = p.line; currentStmtCol = 0
-					codegenError("Class property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
+					codegenError("E011", "Class property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
 				}
 			val vCtorProps = d.ctorParams.filter { it.isVal || it.isVar }.map { vP ->  // ctor val/var props
@@ -236,16 +236,16 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			for (vProp in vAllProps) {
 				val vT = vProp.typeRef ?: continue
 				if (vT.name == d.name && !vT.isRefType() && vT.name != "Array" && vT.name != "RawArray") {
-					codegenError("Class '${d.name}' has property '${vProp.name}' of its own type — infinite struct size. " +
+					codegenError("E010", "Class '${d.name}' has property '${vProp.name}' of its own type — infinite struct size. " +
 						"Use Ref<${d.name}> (pointer), Array<${d.name}>, or RawArray<${d.name}> to indirect.")
 				}
 			}
 			if (d.isValue) {
 				val vValProps = vCtorProps.filter { it.isVal }
 				if (vValProps.size != 1)
-					codegenError("Value class '${d.name}' must have exactly one val property in its constructor")
+					codegenError("E030", "Value class '${d.name}' must have exactly one val property in its constructor")
 				if (vBodyProps.isNotEmpty())
-					codegenError("Value class '${d.name}' cannot have body properties")
+					codegenError("E031", "Value class '${d.name}' cannot have body properties")
 			}
 			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue)
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
@@ -417,10 +417,10 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// frame, so the array storage lives in scope long enough for the
 			// caller to consume it). Mirrors the String return rule.
 			if (d.returnType != null && d.returnType.isRawArray() && !d.isInline) {
-				codegenError("Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use Ref<Array<T>>, @Size(N) Array<T>, or mark the function `inline`.")
+				codegenError("E022", "Function '${d.name}' cannot return raw array type '${d.returnType.name}'. Use Ref<Array<T>>, @Size(N) Array<T>, or mark the function `inline`.")
 				}
 			if (d.returnType != null && d.returnType.name == "Any" && !d.returnType.isRefType()) {
-				codegenError("Function '${d.name}' cannot return value-type 'Any'. Use Ref<Any> instead")
+				codegenError("E021", "Function '${d.name}' cannot return value-type 'Any'. Use Ref<Any> instead")
 				}
 			// Bare String returns are unsafe outside inline functions and toString overrides:
 			// the String's internal buffer would live in the callee's frame and become a
@@ -433,7 +433,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				&& !d.isInline && d.name != "toString"
 				&& !returnsOnlyStringLiterals(d.body)
 			) {
-				codegenError("Function '${d.name}' cannot return value-type 'String' " +
+				codegenError("E020", "Function '${d.name}' cannot return value-type 'String' " +
 					"(its internal buffer would die at function exit). " +
 					"Use one of: Ref<String>, @Size(N) String, or mark the function `inline`.")
 				}
@@ -442,7 +442,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// only see captured locals on the dead caller frame. Require
 			// inline so the function body is expanded into the caller.
 			if (d.returnType != null && d.returnType.funcParams != null && !d.isInline) {
-				codegenError("Function '${d.name}' returns a function type (lambda) — not supported outside inline functions. " +
+				codegenError("E023", "Function '${d.name}' returns a function type (lambda) — not supported outside inline functions. " +
 					"Mark '${d.name}' as `inline` so its body is expanded at the call site (KTC has no closure heap allocation).")
 			}
 			// inline + vararg: inline expansion doesn't reify the vararg array on

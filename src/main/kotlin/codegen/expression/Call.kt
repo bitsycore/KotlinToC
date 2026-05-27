@@ -328,7 +328,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // before emitting a call that would only fail at the C compiler with a confusing
     // "implicit declaration" error.
     if (!isKnownCallName(vName)) {
-        codegenError("Unresolved function call '$vName(...)' — no top-level function, method, extension, constructor, generic, or imported symbol with that name.")
+        codegenError("E051", "Unresolved function call '$vName(...)' — no top-level function, method, extension, constructor, generic, or imported symbol with that name.")
     }
 
     return "${funCName(vName)}($vExpandedArgs)"

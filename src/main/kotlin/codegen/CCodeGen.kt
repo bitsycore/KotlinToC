@@ -819,6 +819,10 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         error("${loc}${"error".wrapRed()}: $inMsg$snippet")
     }
 
+    override fun codegenError(inCode: String, inMsg: String): Nothing {
+        codegenError("[$inCode] $inMsg")
+    }
+
     /* Print a non-fatal warning with the same source-context display as codegenError. */
     override fun codegenWarning(inMsg: String) {
         if (strict) {

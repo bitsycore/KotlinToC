@@ -59,7 +59,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         val isIndirectArray = innerKtc is KtcType.Ptr && innerKtc.inner is KtcType.Arr
         if (!isIndirectArray && innerKtc !is KtcType.Arr) {
             val recvSrc = (e.obj as? NameExpr)?.name ?: e.obj.toString()
-            codegenError("Only safe (?.) access is allowed on a nullable receiver of type '$recvType': $recvSrc.${e.name}")
+            codegenError("E060", "Only safe (?.) access is allowed on a nullable receiver of type '$recvType': $recvSrc.${e.name}")
         }
     }
 

@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.FunDecl
 import com.bitsycore.ktc.ast.KtFile
 import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.codegen.COutput
+import com.bitsycore.ktc.codegen.ErrorCatalog
 import com.bitsycore.ktc.codegen.collectAndScan
 import com.bitsycore.ktc.codegen.dumpSemantics
 import com.bitsycore.ktc.codegen.generate
@@ -192,6 +193,7 @@ fun main(args: Array<String>) {
         System.err.println("  A module.ktc.toml or directory containing one can be given instead of .kt files.")
         System.err.println("  --version                    Print version info and exit")
         System.err.println("  --check                      Validate source (lex + parse + collect), skip C emission")
+        System.err.println("  --explain <code>             Print a detailed explanation for an error/warning code (e.g. E020, W002)")
         System.err.println("  --strict                     Promote all warnings to errors")
         System.err.println("  --diagnostics=json           Output errors/warnings as JSON (for editor/LSP integration)")
         System.err.println("  -W<name>                     Enable warning <name> (e.g. -Wshadow)")
@@ -219,6 +221,21 @@ fun main(args: Array<String>) {
     if (args.size == 1 && args[0] == "--version") {
         val version = aClass.getPackage()?.implementationVersion ?: "1.0-SNAPSHOT"
         println("ktc $version")
+        return
+    }
+
+    // ── --explain: print error/warning explanation ──────────────────
+    if (args.size == 2 && args[0] == "--explain") {
+        val entry = ErrorCatalog.lookup(args[1])
+        if (entry != null) {
+            println("${entry.code}: ${entry.title}")
+            println()
+            println(entry.explanation)
+        } else {
+            System.err.println("Unknown error code '${args[1]}'.")
+            System.err.println("Valid codes: ${ErrorCatalog.allCodes().joinToString(", ") { it.code }}")
+            exitProcess(1)
+        }
         return
     }
 

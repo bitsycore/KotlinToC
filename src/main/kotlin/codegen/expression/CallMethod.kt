@@ -226,7 +226,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		if (effectiveDecl == null && !starExtFunDecls.any { it.name == method }
 			&& method !in kClassReceiverIntrinsics
 		) {
-			codegenError("Unknown method '$method' on receiver of type '${vClassInfo.baseName}' — no matching method, extension function, or operator.")
+			codegenError("E050", "Unknown method '$method' on receiver of type '${vClassInfo.baseName}' — no matching method, extension function, or operator.")
 		}
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.isRefType() == true
@@ -398,7 +398,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	if (vRecvName != null && (classes.containsKey(vRecvName) || interfaces.containsKey(vRecvName)
 			|| objects.containsKey(vRecvName) || enums.containsKey(vRecvName))
 	) {
-		codegenError("Unknown method '$method' on receiver of type '${recvType ?: vRecvName}' — no matching method, extension function, operator, or intrinsic.")
+		codegenError("E050", "Unknown method '$method' on receiver of type '${recvType ?: vRecvName}' — no matching method, extension function, operator, or intrinsic.")
 	}
 	return "$recv.$method($argStr)"   // fallback
 	}

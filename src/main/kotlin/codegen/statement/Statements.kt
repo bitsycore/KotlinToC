@@ -44,7 +44,7 @@ internal fun CCodeGen.checkPtrValueBoundary(
 	val vDeclName = inDeclKtc.toInternalStr
 	val vExprName = inExprKtc.toInternalStr
 	val vFix = if (vDeclIsPtr) ".asRef()" else ".refValue"
-	codegenError(
+	codegenError("E070",
 		"Ref↔value boundary for $inWhere: declared '$vDeclName' but initializer is '$vExprName'. " +
 		"Use '$vFix' to make the conversion explicit."
 	)

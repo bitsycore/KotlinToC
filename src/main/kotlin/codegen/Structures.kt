@@ -286,6 +286,7 @@ internal interface SymbolReader
 
 	/* Error reporting */
 	fun codegenError(inMsg: String): Nothing                       // throw a fatal codegen error
+	fun codegenError(inCode: String, inMsg: String): Nothing       // throw with stable error code
 	fun codegenWarning(inMsg: String)                              // emit a non-fatal warning
 	fun codegenWarning(inName: String, inMsg: String)              // emit a named warning (can be toggled with -Wno-<name>)
 	}

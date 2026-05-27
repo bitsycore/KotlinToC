@@ -67,7 +67,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **`--check`** (S) — Lex + parse + collect for each package, skip code emission. Prints `OK` or error.
 - [x] **Colored error messages with source caret** (M) — `Stmt` now carries `col`; `sourceSnippet` renders a `^` caret at the column position; `locationPrefix` includes `file:line:col:` when column is available.
 - [x] **`--diagnostics=json`** (M) — `--diagnostics=json` outputs errors/warnings as a JSON array with severity, message, file, line, col. Suppresses human-readable output.
-- [ ] **`--explain <error-code>`** (M) — Stable error codes (e.g., `E0042`: "Cannot return value-type String") with a longer explanation. Discoverability.
+- [x] **`--explain <error-code>`** (M) — `ErrorCatalog.kt` maps 30+ codes (E001–E101, W001–W008) to detailed explanations. Key errors tagged with `[Exx]` prefix. `--explain E020` prints the full explanation.
 - [x] **`-W<name>` / `-Wno-<name>`** (M) — Per-warning controls. Named warnings: `shadow`, `nullable-ref`, `tailrec-inline`, `tailrec-suggestion`, `const-condition`, `exhaustive-when`, `null-check`, `safe-call`. Default all-on; `-Wno-<name>` suppresses.
 - [x] **`--strict`** (S) — `codegenWarning()` promotes to `codegenError()` when `--strict` is on. Passed through `run_tests.py --strict`.
 
