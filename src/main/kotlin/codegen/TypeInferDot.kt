@@ -24,6 +24,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 			else             -> null
 			}
 		}
+	if (e.obj is ClassRefExpr && e.name in setOf("simpleName", "qualifiedName")) return KtcType.Str
 	if (e.obj is NameExpr && enums.containsKey(e.obj.name)) return parseResolvedTypeName(e.obj.name)
 	val vDotObjInfo = resolveDotObjInfo(e)
 	if (vDotObjInfo != null) {

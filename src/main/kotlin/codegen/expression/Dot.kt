@@ -29,6 +29,16 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         }
     }
 
+    // T::class.simpleName / T::class.qualifiedName
+    if (e.obj is ClassRefExpr) {
+        val resolved = typeSubst[e.obj.typeName] ?: e.obj.typeName
+        return when (e.name) {
+            "simpleName"    -> "ktc_core_str(\"$resolved\")"
+            "qualifiedName" -> "ktc_core_str(\"$resolved\")"
+            else            -> codegenError("${e.obj.typeName}::class only supports .simpleName and .qualifiedName, not .${e.name}")
+        }
+    }
+
     val recvType = inferExprType(e.obj)                                               // String? receiver type (string-based)
     val recvTypeKtc = inferExprTypeKtc(e.obj)                                         // KtcType? receiver type
     val recvTypeCoreKtc = recvTypeKtc.stripNullable   // KtcType? stripped of Nullable wrapper

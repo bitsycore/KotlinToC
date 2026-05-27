@@ -139,10 +139,14 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     if (vInlineDecl != null) {
         val vSubst = if (vInlineDecl.typeParams.isNotEmpty()) {
             val s = mutableMapOf<String, String>()
-            for ((vI, vParam) in vInlineDecl.params.withIndex()) {
-                if (vI >= vArgs.size) break
-                val vArgType = inferExprType(vArgs[vI].expr)?.removeSuffix("?") ?: continue
-                matchTypeParam(vParam.type, vArgType, vInlineDecl.typeParams.toSet(), s)
+            if (e.typeArgs.isNotEmpty() && e.typeArgs.size == vInlineDecl.typeParams.size) {
+                vInlineDecl.typeParams.zip(e.typeArgs).forEach { (tp, ta) -> s[tp] = ta.name }
+            } else {
+                for ((vI, vParam) in vInlineDecl.params.withIndex()) {
+                    if (vI >= vArgs.size) break
+                    val vArgType = inferExprType(vArgs[vI].expr)?.removeSuffix("?") ?: continue
+                    matchTypeParam(vParam.type, vArgType, vInlineDecl.typeParams.toSet(), s)
+                }
             }
             s.ifEmpty { null }
         } else null

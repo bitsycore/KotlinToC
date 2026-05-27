@@ -318,6 +318,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
     }
 
     is FunRefExpr -> funCName(e.name)    // ::functionName → C function pointer
+    is ClassRefExpr -> codegenError("T::class is only supported as T::class.simpleName or T::class.qualifiedName")
     is LambdaExpr -> error("Lambda can only be passed to an inline function, not used as a standalone expression")
 }
 

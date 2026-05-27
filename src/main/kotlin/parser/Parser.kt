@@ -127,11 +127,13 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
         expect(TokenType.FUN)
-        // Parse optional type parameters: fun <T, U> name(...)
+        // Parse optional type parameters: fun <reified T, U> name(...)
         val typeParams = if (at(TokenType.LT)) {
             advance(); nesting++; skipNL()
+            skipTypeParamModifiers()
             val params = mutableListOf(expectIdent())
-            while (at(TokenType.COMMA)) { advance(); skipNL(); params += expectIdent() }
+            skipTypeParamBound()
+            while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
             expect(TokenType.GT); nesting--
             params
         } else emptyList()
@@ -202,11 +204,13 @@ class Parser(private val tokens: List<Token>) {
 
     private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false): ClassDecl {
         val name = expectIdent()
-        // Parse type parameters: class Foo<T, U>(...)
+        // Parse type parameters: class Foo<out T, in U>(...)
         val typeParams = if (at(TokenType.LT)) {
             advance(); nesting++; skipNL()
+            skipTypeParamModifiers()
             val params = mutableListOf(expectIdent())
-            while (at(TokenType.COMMA)) { advance(); skipNL(); params += expectIdent() }
+            skipTypeParamBound()
+            while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
             expect(TokenType.GT); nesting--
             params
         } else emptyList()
@@ -335,11 +339,13 @@ class Parser(private val tokens: List<Token>) {
     private fun parseInterfaceDecl(): InterfaceDecl {
         expect(TokenType.INTERFACE)
         val name = expectIdent()
-        // Parse type parameters: interface Foo<T, U>
+        // Parse type parameters: interface Foo<out T, in U>
         val typeParams = if (at(TokenType.LT)) {
             advance(); nesting++; skipNL()
+            skipTypeParamModifiers()
             val params = mutableListOf(expectIdent())
-            while (at(TokenType.COMMA)) { advance(); skipNL(); params += expectIdent() }
+            skipTypeParamBound()
+            while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
             expect(TokenType.GT); nesting--
             params
         } else emptyList()
@@ -801,6 +807,10 @@ class Parser(private val tokens: List<Token>) {
                     expect(TokenType.RBRACKET); nesting--
                     IndexExpr(e, idx)
                 }
+                at(TokenType.COLON_COLON) && e is NameExpr && peek().type == TokenType.CLASS -> {
+                    advance(); advance() // skip :: and class
+                    ClassRefExpr(e.name)
+                }
                 at(TokenType.EXCL_EXCL) -> { advance(); NotNullExpr(e) }
                 at(TokenType.PLUS_PLUS)  -> { advance(); PostfixExpr(e, "++") }
                 at(TokenType.MINUS_MINUS) -> { advance(); PostfixExpr(e, "--") }
@@ -1027,6 +1037,18 @@ class Parser(private val tokens: List<Token>) {
         while (at(TokenType.COMMA)) { advance(); skipNL(); args += parseTypeRefOrStar() }
         expect(TokenType.GT); nesting--
         return args
+    }
+
+    private fun skipTypeParamModifiers() {
+        while (true) {
+            if (at(TokenType.IDENT) && cur().value in setOf("reified", "out")) { advance(); continue }
+            if (at(TokenType.IN)) { advance(); continue }
+            break
+        }
+    }
+
+    private fun skipTypeParamBound() {
+        if (at(TokenType.COLON)) { advance(); skipNL(); parseTypeRef() }
     }
 
     /** Parse a type reference or star projection (*). Star is represented as TypeRef("*"). */

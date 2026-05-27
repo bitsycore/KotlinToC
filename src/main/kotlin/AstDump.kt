@@ -204,6 +204,7 @@ internal fun dumpExpr(e: Expr): String = when (e) {
 	is IsCheckExpr   -> "${dumpExpr(e.expr)} ${if (e.negated) "!is" else "is"} ${dumpTypeRef(e.type)}"
 	is CastExpr      -> "${dumpExpr(e.expr)} as ${dumpTypeRef(e.type)}"
 	is FunRefExpr    -> "::${e.name}"
+	is ClassRefExpr  -> "${e.typeName}::class"
 	is LambdaExpr    -> {
 		val vParams = if (e.params.isNotEmpty()) e.params.joinToString(", ") + " -> " else ""
 		val vBody   = e.body.joinToString("; ") { dumpStmt(it, 0).trim() }

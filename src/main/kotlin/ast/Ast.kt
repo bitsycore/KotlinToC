@@ -216,6 +216,7 @@ data class ElvisExpr(val left: Expr, val right: Expr) : Expr()   // ?:
 data class IsCheckExpr(val expr: Expr, val type: TypeRef, val negated: Boolean) : Expr()
 data class CastExpr(val expr: Expr, val type: TypeRef, val safe: Boolean = false) : Expr()
 data class FunRefExpr(val name: String) : Expr()   // ::functionName
+data class ClassRefExpr(val typeName: String) : Expr()   // Type::class
 data class LambdaExpr(val params: List<String>, val body: List<Stmt>) : Expr()
 
 // ═══════════════════════════ Helpers ═══════════════════════════

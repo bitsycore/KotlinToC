@@ -95,6 +95,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 			"Fun($params)->$ret"
 			} else null
 		}
+	is ClassRefExpr -> "KClass"
 	is LambdaExpr -> null
 	}
 
