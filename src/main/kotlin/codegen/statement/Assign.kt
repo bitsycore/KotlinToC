@@ -133,7 +133,12 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     if (varName != null) {
         // Local variable
         if (lookupVar(varName) != null && !isMutable(varName)) {
-            codegenError("E041", "Val cannot be reassigned: '$varName'")
+            val vLocal = lookupLocalVar(varName)
+            if (vLocal?.isParam == true) {
+                codegenError("E043", "Parameter cannot be reassigned: '$varName' (Kotlin parameters are read-only)")
+            } else {
+                codegenError("E041", "Val cannot be reassigned: '$varName'")
+            }
         }
         // Top-level property
         if (varName in valTopProps) {

@@ -85,12 +85,11 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - No coroutines (`suspend`, `async`), no reflection (no `KClass`, `::class`), no `java.lang.*`.
 - No `inner class` with implicit outer-instance capture. Nested classes are fine; they're emitted as `Outer$Inner`.
 - No general property delegation (`by`). `by lazy { ... }` is supported for local and top-level vals (thread-safe via `ktc_thread_call_once` for top-level).
-- No `inline value class` / `@JvmInline`.
+- No `inline value class`.
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
 - No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.
 - `RawArray<T>` is never bounds-checked (no length carried). `Array<T>` / `String` / `@Size(N)` indexing IS checked by default — see "Bounds checking" above.
 - `private` fields and methods are enforced across class boundaries (codegen error on access from outside). `internal` is not enforced.
-- Parameters are not enforced read-only — `fun foo(x: Int) { x = 5 }` compiles even though Kotlin makes params `val`.
 - Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.
 
 ## Module system

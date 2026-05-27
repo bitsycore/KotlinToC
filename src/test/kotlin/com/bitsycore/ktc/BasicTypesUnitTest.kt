@@ -122,6 +122,36 @@ class BasicTypesUnitTest : TranspilerTestBase() {
         r.sourceContains("v.x = 99.0f;")
     }
 
+    // ── parameter reassignment ───────────────────────────────────────
+
+    @Test fun paramReassignError() {
+        val src = """
+            package test.Main
+            fun foo(x: Int): Int { x = 5; return x }
+            fun main() {}
+        """.trimIndent()
+        transpileExpectError(src, "Parameter cannot be reassigned: 'x'")
+    }
+
+    @Test fun paramCompoundAssignError() {
+        val src = """
+            package test.Main
+            fun foo(x: Int): Int { x += 1; return x }
+            fun main() {}
+        """.trimIndent()
+        transpileExpectError(src, "Parameter cannot be reassigned: 'x'")
+    }
+
+    @Test fun paramReadOnlyOk() {
+        val src = """
+            package test.Main
+            fun foo(x: Int): Int { val y = x + 1; return y }
+            fun main() { println(foo(3)) }
+        """.trimIndent()
+        val r = transpile(src)
+        r.sourceContains("y = (x + 1);")
+    }
+
     // ── private set ──────────────────────────────────────────────────
 
     @Test fun privateSetInternalWrite() {

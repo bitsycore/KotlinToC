@@ -36,7 +36,8 @@ internal data class LocalVar(
 	val mutable:   Boolean = false, // true for var, false for val
 	val optional:  Boolean = false, // true when stored as Optional struct (value-nullable T?)
 	val arraySize: Int?    = null,  // compile-time element count for array variables
-	val cName:     String? = null   // C expression to read this symbol; null means use the variable name
+	val cName:     String? = null,  // C expression to read this symbol; null means use the variable name
+	val isParam:   Boolean = false  // true when this is a function parameter (Kotlin params are read-only)
 	)
 
 // ═══════════════════════════════════════════════════════════════════

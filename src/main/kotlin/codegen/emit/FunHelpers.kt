@@ -64,11 +64,12 @@ internal fun CCodeGen.registerParams(params: List<Param>) {
 		val ktc = resolveTypeName(p.type)
 		val str = ktc.toInternalStr
 		val isNullable = p.type.isEffectivelyNullable()
-		defineVar(p.name, when {
+		val finalKtc = parseResolvedTypeName(when {
 			p.isVararg   -> "${str}Array"
 			isNullable   -> "${str}?"
 			else         -> str
 			})
+		defineVar(p.name, LocalVar(ktc = finalKtc, isParam = true))
 		if (isNullable && isValueNullableKtc(KtcType.Nullable(ktc))) markOptional(p.name)
 		}
 	}

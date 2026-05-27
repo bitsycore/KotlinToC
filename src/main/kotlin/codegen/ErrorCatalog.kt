@@ -122,6 +122,16 @@ object ErrorCatalog {
 			The property's setter is declared 'private set' and cannot be written
 			from outside its declaring class.
 			""".trimIndent()),
+		Entry("E043", "Parameter reassignment",
+			"""
+			Function parameters are read-only in Kotlin — assignment to a parameter
+			inside the function body is rejected. Introduce a local var if you need
+			a mutable copy:
+			  fun foo(x: Int) {
+			      var v = x        // copy into a mutable local
+			      v = 5
+			  }
+			""".trimIndent()),
 
 		// ── Call errors ──────────────────────────────────────────
 		Entry("E050", "Unknown method on receiver",
