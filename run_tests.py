@@ -384,6 +384,65 @@ def cmd_clean() -> int:
 		return 1
 	return 0
 
+def cmd_init(inName: str) -> int:
+	# Scaffold a new integration test directory with module.ktc.toml and a starter .kt file.
+	# Place under integration/intrinsic/ by default; user can move it afterwards.
+	vTestDir = kTestsDir / "intrinsic" / inName
+	if vTestDir.exists():
+		pwrite(f"{kRed}ERROR: test directory already exists: {vTestDir}{kRst}")
+		return 1
+	vTestDir.mkdir(parents=True)
+	vToml = vTestDir / "module.ktc.toml"
+	vToml.write_text("autoFindMain = true\n")
+	vKt = vTestDir / f"{inName}.kt"
+	vKt.write_text(
+		f"package {inName}\n"
+		f"\n"
+		f"fun main() {{\n"
+		f"\tprintln(\"Hello from {inName}\")\n"
+		f"}}\n"
+	)
+	ppass(f"Created {vTestDir.relative_to(kRoot)}")
+	pinfo(f"{vToml.relative_to(kRoot)}")
+	pinfo(f"{vKt.relative_to(kRoot)}")
+	return 0
+
+def cmd_bench(inTestQuery: str, inN: int, inAllTests: list, inOpts) -> int:
+	# Run a test N times and report min/median/p95 timing stats.
+	import statistics
+	vMatches = resolve_test_query(inTestQuery, inAllTests)
+	if not vMatches:
+		pwrite(f"{kRed}ERROR: test not found: {inTestQuery}{kRst}")
+		return 1
+	vT = vMatches[0]
+	pwrite(f"\n{kCyan}Benchmarking {vT.relPath} ({inN} iterations){kRst}")
+	invoke_build(inOpts.buildMode, False)
+	vKtcTimes  = []
+	vCompTimes = []
+	vRunTimes  = []
+	for vI in range(inN):
+		vR = invoke_test_verbose(vT, inOpts)
+		if vR.status == "fail":
+			pwrite(f"{kRed}  Iteration {vI + 1} FAILED — aborting benchmark{kRst}")
+			return 1
+		vKtcTimes.append(vR.ktcMs)
+		vCompTimes.append(vR.compileMs)
+		vRunTimes.append(vR.runMs)
+		pwrite(f"  [{vI + 1}/{inN}] ktc: {format_ms(vR.ktcMs)}  comp: {format_ms(vR.compileMs)}  run: {format_ms(vR.runMs)}")
+	def stats(inLabel: str, inVals: list[int]) -> None:
+		vSorted = sorted(inVals)
+		vMin    = vSorted[0]
+		vMedian = statistics.median(vSorted)
+		vP95Idx = max(0, int(len(vSorted) * 0.95) - 1)
+		vP95    = vSorted[vP95Idx]
+		vMean   = statistics.mean(vSorted)
+		pwrite(f"  {inLabel:8s}  min: {format_ms(vMin):>8s}  median: {format_ms(int(vMedian)):>8s}  p95: {format_ms(vP95):>8s}  mean: {format_ms(int(vMean)):>8s}")
+	pwrite(f"\n{kCyan}Results ({inN} iterations):{kRst}")
+	stats("ktc",     vKtcTimes)
+	stats("compile", vCompTimes)
+	stats("run",     vRunTimes)
+	return 0
+
 # ==================
 # MARK: Build (Gradle / ProGuard)
 # ==================
@@ -525,10 +584,13 @@ class TestOutcome:
 	#  pass     — transpile + compile + run all succeeded.
 	#  skip     — required toolchain/library missing (e.g. cmake or a system lib).
 	#  fail     — any step failed.
-	name:    str
-	status:  str
-	timing:  str        = ""
-	warning: str        = ""
+	name:      str
+	status:    str
+	timing:    str   = ""
+	warning:   str   = ""
+	ktcMs:     int   = 0
+	compileMs: int   = 0
+	runMs:     int   = 0
 
 def invoke_test_verbose(
 	inTest:   TestDir,
@@ -729,7 +791,7 @@ def invoke_test_verbose(
 		pwrite(f"  {kDYellow}PASS{kRst} Program exited - memory leaks detected  {kRed}LEAK{kRst}  {kGray}(run: {format_ms(vRMs)}){kRst}")
 	else:
 		pwrite(f"  {kGreen}PASS{kRst} Program exited successfully (code 0)  {kGray}(run: {format_ms(vRMs)}){kRst}")
-	return TestOutcome(name=vName, status="pass")
+	return TestOutcome(name=vName, status="pass", ktcMs=vTr.ms, compileMs=vCompMs, runMs=vRMs)
 
 # ==================
 # MARK: Single test (concise, used by parallel suite)
@@ -1000,7 +1062,8 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 		vFinal = f"  {kGreen}PASS{kRst} {kGreen}{vName}{kRst}  {vTiming}"
 	vLines = [vFinal] + [f"       {kYellow}{vW}{kRst}" for vW in vWarnings]
 	inProgress.finish(vName, vLines)
-	return TestOutcome(name=vName, status="pass", timing=vTiming)
+	return TestOutcome(name=vName, status="pass", timing=vTiming,
+		ktcMs=vTr.ms, compileMs=vCompMs, runMs=vRunRes.ms)
 
 # ==================
 # MARK: Suite
@@ -1145,6 +1208,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("--disposed",         default="NO", choices=["NO", "ASSERT", "LOG"], help="Use-after-dispose behavior")
 	vP.add_argument("--double-dispose",   default="NO", choices=["NO", "ASSERT", "LOG"], help="Double-dispose behavior")
 	vP.add_argument("--transpiler-args",  default="", help="Extra raw transpiler args appended at the end")
+	# Subcommands
+	vP.add_argument("--bench", default="", help="Run a test N times and report timing stats (e.g. --bench TestName [-n 10])")
+	vP.add_argument("-n", type=int, default=5, help="Number of iterations for --bench (default: 5)")
+	vP.add_argument("command", nargs="?", default=None, help="Subcommand: 'init <name>' scaffolds a new test")
+	vP.add_argument("init_name", nargs="?", default=None, help="Name for the new test (used with 'init')")
 	return vP
 
 def build_extra_args(inNs: argparse.Namespace) -> list[str]:
@@ -1166,7 +1234,7 @@ def build_extra_args(inNs: argparse.Namespace) -> list[str]:
 # to write `--cc-args=-g` instead of the more natural `--cc-args "-g"`. The
 # preprocessor below normalizes the latter into the former before argparse
 # sees the argv.
-kStringValueOpts = {"--cc-args", "--cmake-args", "--transpiler-args", "--run", "--compiler", "--cfg", "--skip", "--filter", "--exclude"}
+kStringValueOpts = {"--cc-args", "--cmake-args", "--transpiler-args", "--run", "--compiler", "--cfg", "--skip", "--filter", "--exclude", "--bench"}
 
 def normalize_argv(inArgv: list[str]) -> list[str]:
 	# Walks the argv and folds `--cc-args VALUE` into `--cc-args=VALUE` when
@@ -1187,6 +1255,14 @@ def normalize_argv(inArgv: list[str]) -> list[str]:
 
 def main(inArgv: list[str]) -> int:
 	vNs = build_arg_parser().parse_args(normalize_argv(inArgv))
+
+	# ── init subcommand ──────────────────────────────────────────
+	if vNs.command == "init":
+		vName = vNs.init_name
+		if not vName:
+			pwrite(f"{kRed}ERROR: usage: run_tests.py init <TestName>{kRst}")
+			return 1
+		return cmd_init(vName)
 
 	if vNs.clean:
 		return cmd_clean()
@@ -1228,6 +1304,10 @@ def main(inArgv: list[str]) -> int:
 	if vCcache: vCompInfo += f" (via {vCcache})"
 	if vNinja:  vCompInfo += f" [ninja]"
 	pinfo(vCompInfo)
+
+	# ── --bench: benchmark a test ─────────────────────────────────
+	if vNs.bench:
+		return cmd_bench(vNs.bench, vNs.n, vAllTests, vOpts)
 
 	# ── --run: explicit selection (verbose) ───────────────────────
 	if vNs.run:

@@ -65,7 +65,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 - [x] **`--version`** (S) — Prints `ktc <version>` from JAR manifest.
 - [x] **`--check`** (S) — Lex + parse + collect for each package, skip code emission. Prints `OK` or error.
-- [ ] **Colored error messages with source caret** (M) — Upgrade `file:line` + 3-line snippet to clang/rustc style with column underline.
+- [x] **Colored error messages with source caret** (M) — `Stmt` now carries `col`; `sourceSnippet` renders a `^` caret at the column position; `locationPrefix` includes `file:line:col:` when column is available.
 - [ ] **`--diagnostics=json`** (M) — Machine-readable error output for editor / LSP integration.
 - [ ] **`--explain <error-code>`** (M) — Stable error codes (e.g., `E0042`: "Cannot return value-type String") with a longer explanation. Discoverability.
 - [ ] **`-W<name>` / `-Wno-<name>`** (M) — Per-warning controls so the user can opt out of specific warnings without going binary on `--no-check-bounds`.
@@ -76,12 +76,12 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **`--list`** (S) — Prints all discovered tests (respects `--filter`/`--exclude`).
 - [x] **`--filter <glob>`** / **`--exclude <glob>`** (S) — Glob matching against test relPath or name. Works with `--list` and full runs.
 - [x] **`--fail-fast`** (S) — Stops after first failure; cancels pending futures in parallel mode.
-- [ ] **`--bench <test> [-n N]`** (M) — Run a test N times, report min/median/p95 of ktc/comp/run timings. Catches codegen perf regressions.
+- [x] **`--bench <test> [-n N]`** (M) — `--bench TestName -n 10` runs a test N times and reports min/median/p95/mean of ktc/compile/run timings.
 - [ ] **`--watch`** (M) — Re-run tests when a `.kt` file changes. Drives a fast inner-loop dev workflow.
 - [ ] **Shell completion script** (S) — Generate bash/zsh completion for `--run <test-name>` from the discovered test list.
 - [x] **`NO_COLOR` env var support** (S) — `_gNoColor` flag disables all ANSI escapes and live progress when `NO_COLOR` is set or stdout is not a tty.
 - [ ] **HTML test report** (M) — `--report html` writes a summary in `build/test-report.html` with timings, errors, and captured stdout/stderr.
-- [ ] **`init <name>` subcommand** (M) — `python run_tests.py init MyApp` scaffolds a new test directory with `module.ktc.toml` and a starter `.kt`.
+- [x] **`init <name>` subcommand** (M) — `python run_tests.py init MyTest` creates `integration/intrinsic/MyTest/` with `module.ktc.toml` and a starter `.kt` file.
 
 ## Recommended order
 
@@ -90,10 +90,10 @@ The next items, picked for value/effort ratio:
 1. ~~**`tailrec`**~~ — done.
 2. ~~**`inline value class`**~~ — done.
 3. ~~**Static null/bounds elision**~~ — done.
-4. **Colored error messages with caret** (M) — DX win, every subsequent task benefits.
+4. ~~**Colored error messages with caret**~~ — done. Column tracking on `Stmt`, caret display in `sourceSnippet`.
 5. ~~**`--check` flag**~~ — done.
 6. ~~**ccache integration**~~ — done.
-7. **`when` exhaustiveness** (S–M) — type-safety, unblocks several follow-ups.
+7. ~~**`when` exhaustiveness**~~ — done.
 8. ~~**`--filter` + `--list`**~~ — done.
 
 Defer the rest until usage patterns make them worth it.
