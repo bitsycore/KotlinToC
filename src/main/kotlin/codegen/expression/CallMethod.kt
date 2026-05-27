@@ -169,6 +169,10 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val allArgs = if (argStr.isEmpty()) recv else "$recv, $argStr"
 			return "${vIfaceInfo.flatName}_$method($allArgs)"
 			}
+		// @SimpleUnion: no vtable — inline dispatch through type ID
+		if (vIfaceInfo.name in simpleUnionInterfaces) {
+			return genSimpleUnionDispatch(vIfaceInfo.name, recv, method, argStr)
+			}
 		val isIfacePtr  = rawRecvTypeKtc is KtcType.Ptr
 		val vSelfArg    = if (isIfacePtr) "$recv.obj" else ifaceVtableSelf(vIfaceInfo.name, recv)
 		val vtAccess    = if (isIfacePtr) "((${cIface}_vt*)$recv.vt)" else "$recv.vt"
@@ -457,3 +461,31 @@ private val kClassReceiverIntrinsics = setOf(
 	"inc", "dec", "unaryMinus", "unaryPlus", "not",
 	"rangeTo", "invoke",
 )
+
+// @SimpleUnion inline dispatch: no vtable, dispatch Any methods through typeId if-else chain
+internal fun CCodeGen.genSimpleUnionDispatch(ifaceName: String, recv: String, method: String, extraArgs: String): String {
+	val impls = interfaceImplementors[ifaceName] ?: return "0"
+	val t = tmp()
+	val retType = when (method) {
+		"hashCode" -> "ktc_Int"
+		"equals" -> "ktc_Bool"
+		else -> null
+		}
+	if (retType != null) {
+		preStmts += "$retType $t;"
+		}
+	for ((i, implName) in impls.withIndex()) {
+		val cImpl = typeFlatName(implName)
+		val dataName = "${cImpl}_data"
+		val keyword = if (i == 0) "if" else "} else if"
+		preStmts += "$keyword (KTC_GET_TYPEID($recv.__typeId) == ${cImpl}_TYPE_ID) {"
+		val selfArg = "&$recv.data.$dataName"
+		val allArgs = if (extraArgs.isEmpty()) selfArg else "$selfArg, $extraArgs"
+		if (retType != null)
+			preStmts += "    $t = ${cImpl}_$method($allArgs);"
+		else
+			preStmts += "    ${cImpl}_$method($allArgs);"
+		}
+	preStmts += "}"
+	return if (retType != null) t else ""
+	}

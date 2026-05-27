@@ -407,7 +407,8 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                         val dataName = ifaceDataName(exprType)
                         impl.appendLine("$ind$t.data.$dataName = $expr;")
                     }
-                    impl.appendLine("$ind$t.vt = &${cExprType}_${retIface}_vt;")
+                    if (retIface !in simpleUnionInterfaces)
+                        impl.appendLine("$ind$t.vt = &${cExprType}_${retIface}_vt;")
                     impl.appendLine("${ind}return $t;")
                 } else {
                     // Auto-wrap Any return → ktc_Any trampoline

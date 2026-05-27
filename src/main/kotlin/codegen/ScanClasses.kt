@@ -281,6 +281,7 @@ internal fun CCodeGen.materializeGenericInterface(t: TypeRef) {
 	interfaces[mangledName] = IfaceInfo(mangledName, methods, properties, emptyList(), resolvedSupers)
 	getTypeId(mangledName)
 	interfaces[mangledName]?.pkg = interfaces[baseName]?.pkg ?: prefix
+	if (baseName in simpleUnionInterfaces) simpleUnionInterfaces += mangledName
 	for (superRef in resolvedSupers) materializeGenericInterface(superRef)
 	}
 

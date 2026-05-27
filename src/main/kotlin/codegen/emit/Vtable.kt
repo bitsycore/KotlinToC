@@ -107,10 +107,13 @@ internal fun CCodeGen.ifaceAsInit(
 	): String {
 	val vDataName = ifaceDataName(className)
 	val vTypeIdField = ".__typeId = ${cClass}_TYPE_ID"
+	val vIsSimple = ifaceName in simpleUnionInterfaces
 	return if (isImplCrossPkg(ifaceName, className))
-		"($cIface){$vTypeIdField, .vt = &${cClass}_${ifaceName}_vt}"
+		if (vIsSimple) "($cIface){$vTypeIdField}"
+		else "($cIface){$vTypeIdField, .vt = &${cClass}_${ifaceName}_vt}"
 	else
-		"($cIface){$vTypeIdField, .data.$vDataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
+		if (vIsSimple) "($cIface){$vTypeIdField, .data.$vDataName = *\$self}"
+		else "($cIface){$vTypeIdField, .data.$vDataName = *\$self, .vt = &${cClass}_${ifaceName}_vt}"
 	}
 
 /* Emit vtables for a concrete class implementing the given super interfaces.
@@ -162,10 +165,13 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(
 				}
 			}
 
-		// static vtable instance
-		if (!implsOnly) hdr.appendLine("extern const ${vCIface}_vt KTC_RELATED(${vIfaceName}_vt);")
-		if (!declsOnly) {
-			emitVtable(vCClass, vCIface, vIfaceName, className, vAllProps, vAllMethods)
+		// static vtable instance (skip for @SimpleUnion — no vtable)
+		val vIsSimpleUnion = vIfaceName in simpleUnionInterfaces
+		if (!vIsSimpleUnion) {
+			if (!implsOnly) hdr.appendLine("extern const ${vCIface}_vt KTC_RELATED(${vIfaceName}_vt);")
+			if (!declsOnly) {
+				emitVtable(vCClass, vCIface, vIfaceName, className, vAllProps, vAllMethods)
+				}
 			}
 
 		// as_IfaceName cast function
@@ -263,7 +269,8 @@ internal fun CCodeGen.emitTransitiveIfaceHdrDecls(
 			val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
 			hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(KTC_TYPE_NAME* \$self);")
 			}
-		hdr.appendLine("extern const ${vCSuperName}_vt KTC_RELATED(${vSuperName}_vt);")
+		if (vSuperName !in simpleUnionInterfaces)
+			hdr.appendLine("extern const ${vCSuperName}_vt KTC_RELATED(${vSuperName}_vt);")
 		hdr.appendLine("KTC_METHOD($vCSuperName, as_${vSuperName})(KTC_TYPE_NAME* \$self);")
 		emitTransitiveIfaceHdrDecls(vSuperIface, inByIface)
 		}

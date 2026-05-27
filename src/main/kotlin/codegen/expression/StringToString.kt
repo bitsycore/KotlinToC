@@ -233,8 +233,10 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 				"ktc_core_str($buf)"
 				} else if (hasIface) {
 				val buf = tmp()
+				val hcExpr = if (base2 in simpleUnionInterfaces) genSimpleUnionDispatch(base2, recv, "hashCode", "")
+					else "$recv.vt->hashCode(${ifaceVtableSelf(base2, recv)})"
 				preStmts += "ktc_Char ${buf}[$sz];"
-				preStmts += "snprintf($buf, $sz, \"%s@%x\", \"${ktDisplayName(base2)}\", $recv.vt->hashCode(${ifaceVtableSelf(base2, recv)}));"
+				preStmts += "snprintf($buf, $sz, \"%s@%x\", \"${ktDisplayName(base2)}\", $hcExpr);"
 				"ktc_core_str($buf)"
 				} else {
 				"ktc_core_str(\"<$type>\")"
@@ -290,8 +292,10 @@ internal fun CCodeGen.genToStringInto(recv: String, type: String, sb: String): S
 					}
 				} else if (hasIface) {
 				val buf = tmp()
+				val hcExpr = if (base in simpleUnionInterfaces) genSimpleUnionDispatch(base, recv, "hashCode", "")
+					else "$recv.vt->hashCode(${ifaceVtableSelf(base, recv)})"
 				preStmts += "ktc_Char ${buf}[64];"
-				preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(base)}\", $recv.vt->hashCode(${ifaceVtableSelf(base, recv)}));"
+				preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(base)}\", $hcExpr);"
 				preStmts += "ktc_core_sb_append_cstr(&$sb, $buf);"
 				} else {
 				preStmts += "ktc_core_sb_append_str(&$sb, ktc_core_str(\"<$type>\"));"
@@ -362,8 +366,10 @@ internal fun CCodeGen.genSbAppendKtc(sbRef: String, expr: String, type: KtcType)
 					"ktc_core_sb_append_cstr($sbRef, $buf);"
 					} else if (interfaces.containsKey(baseName)) {
 					val buf = tmp()
+					val hcExpr = if (baseName in simpleUnionInterfaces) genSimpleUnionDispatch(baseName, expr, "hashCode", "")
+						else "$expr.vt->hashCode(${ifaceVtableSelf(baseName, expr)})"
 					preStmts += "ktc_Char ${buf}[64];"
-					preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(baseName)}\", $expr.vt->hashCode(${ifaceVtableSelf(baseName, expr)}));"
+					preStmts += "snprintf($buf, 64, \"%s@%x\", \"${ktDisplayName(baseName)}\", $hcExpr);"
 					"ktc_core_sb_append_cstr($sbRef, $buf);"
 					} else "ktc_core_sb_append_str($sbRef, ktc_core_str(\"<$typeStr>\"));"
 				}

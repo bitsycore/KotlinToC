@@ -92,7 +92,7 @@ internal fun CCodeGen.generate(): COutput {
 		val cName = typeFlatName(name)
 		val vSrc  = declSourceFile[name]?.let { " // $it" } ?: ""
 		vFwdDecls.add(FwdDecl(cName, vSrc))
-		vFwdDecls.add(FwdDecl("${cName}_vt", vSrc))
+		if (name !in simpleUnionInterfaces) vFwdDecls.add(FwdDecl("${cName}_vt", vSrc))
 		val vComponents = mangledComponents[name]
 		if (vComponents != null) {
 			val (vGenBase, vTypeArgs) = vComponents

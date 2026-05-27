@@ -125,6 +125,21 @@
 #define KTC_INTERFACE(VTABLE_BODY, CONCRETE_TYPES) \
 	__KTC_INTERFACE_IMPL(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME, VTABLE_BODY, CONCRETE_TYPES)
 
+/*
+ * KTC_SIMPLE_UNION(CONCRETE_TYPES): defines a tagged union with no vtable.
+ * Used for @SimpleUnion sealed interfaces — zero overhead vs hand-written C union.
+ * Layout: { ktc_UInt __typeId; union { variants... } data; }
+ */
+#define __KTC_SIMPLE_UNION_IMPL(CLS_, CLS_OPT_, CONCRETE_TYPES) \
+	typedef struct CLS_ { \
+		ktc_UInt __typeId; \
+		union { CONCRETE_TYPES(KTC_UNION_MEMBER) } data; \
+	} CLS_; \
+	KTC_DEFINE_OPT_NAMED(CLS_, CLS_OPT_)
+
+#define KTC_SIMPLE_UNION(CONCRETE_TYPES) \
+	__KTC_SIMPLE_UNION_IMPL(KTC_TYPE_NAME, KTC_OPT_TYPE_NAME, CONCRETE_TYPES)
+
 // ===================================================================
 // DEFINITIONS MACROS
 // ===================================================================

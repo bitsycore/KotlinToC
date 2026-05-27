@@ -90,7 +90,10 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
     val allProps = collectAllIfaceProperties(info)
     val vtableHasDispose = allMethods.any { it.name == "dispose" }
 
-    if (samePkgImpls.isNotEmpty() || crossPkgImpls.isNotEmpty()) {
+    val isSimpleUnion = info.name in simpleUnionInterfaces
+    if (isSimpleUnion && (samePkgImpls.isNotEmpty() || crossPkgImpls.isNotEmpty())) {
+        hdr.appendLine("KTC_SIMPLE_UNION(CLS_TYPES);")
+    } else if (samePkgImpls.isNotEmpty() || crossPkgImpls.isNotEmpty()) {
         hdr.appendLine("KTC_INTERFACE({")
         emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
         hdr.appendLine("}, CLS_TYPES);")

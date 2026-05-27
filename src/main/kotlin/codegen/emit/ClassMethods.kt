@@ -43,7 +43,8 @@ internal fun CCodeGen.emitSuperInterfaceHdrDecls(
 			val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
 			hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(KTC_TYPE_NAME* \$self);")
 			}
-		hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
+		if (vIfaceName !in simpleUnionInterfaces)
+			hdr.appendLine("extern const ${cIface}_vt KTC_RELATED(${vIfaceName}_vt);")
 		hdr.appendLine("KTC_METHOD($cIface, as_${vIfaceName})(KTC_TYPE_NAME* \$self);")
 		emitTransitiveIfaceHdrDecls(vIface, vByIface)
 		}

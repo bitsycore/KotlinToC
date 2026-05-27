@@ -320,6 +320,11 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 		is InterfaceDecl -> {
 			interfaces[d.name] = IfaceInfo(d.name, d.methods, d.properties, d.typeParams, d.superInterfaces)
 			getTypeId(d.name)
+			if (d.annotations.any { it.name == "SimpleUnion" }) {
+				if (d.methods.isNotEmpty() || d.properties.isNotEmpty())
+					codegenError("@SimpleUnion interface '${d.name}' must have no methods or properties")
+				simpleUnionInterfaces += d.name
+				}
 			if (d.typeParams.isNotEmpty()) {
 				genericIfaceDecls[d.name] = d
 				allGenericTypeParamNames += d.typeParams

@@ -142,6 +142,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val extensionFuns = mutableMapOf<String, MutableList<FunDecl>>()
     internal val extensionProps = mutableMapOf<String, MutableList<PropDecl>>()  // extension properties: recvName → props
     override val interfaces = mutableMapOf<String, IfaceInfo>()
+    internal val simpleUnionInterfaces = mutableSetOf<String>()
     // Type ID registry: each class/interface gets an incrementing integer ID for is/as checks
     internal val typeIds = mutableMapOf<String, Int>()
     internal var nextTypeId = 14  // 0-13 reserved for builtin types (ktc_core.h)

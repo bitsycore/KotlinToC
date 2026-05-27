@@ -119,6 +119,12 @@ class Parser(private val tokens: List<Token>) {
                         advance(); advance()
                         parseClassDecl(isData = false, annotations = anns, isValue = true)
                     }
+                    at(TokenType.SEALED) -> {
+                        advance()
+                        if (at(TokenType.INTERFACE)) parseInterfaceDecl(isSealed = true, annotations = anns)
+                        else { advance(); parseClassDecl(isData = false, annotations = anns, isSealed = true) }
+                    }
+                    at(TokenType.INTERFACE) -> parseInterfaceDecl(annotations = anns)
                     else -> error("Annotations @${anns.joinToString(" ") { it.name }} before '${cur().value}' are not supported")
                 }
             }
@@ -343,7 +349,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── interface ─────────────────────────────────────────────────────
 
-    private fun parseInterfaceDecl(isSealed: Boolean = false): InterfaceDecl {
+    private fun parseInterfaceDecl(isSealed: Boolean = false, annotations: List<Annotation> = emptyList()): InterfaceDecl {
         expect(TokenType.INTERFACE)
         val name = expectIdent()
         // Parse type parameters: interface Foo<out T, in U>
@@ -389,7 +395,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return InterfaceDecl(name, methods, properties, typeParams, superInterfaces, nestedClasses, isSealed)
+        return InterfaceDecl(name, methods, properties, typeParams, superInterfaces, nestedClasses, isSealed, annotations)
     }
 
     // ── object ───────────────────────────────────────────────────────

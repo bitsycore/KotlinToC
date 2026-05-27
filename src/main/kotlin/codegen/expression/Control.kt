@@ -47,7 +47,8 @@ internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concrete
             val dataName = ifaceDataName(concreteType)
             preStmts += "$indent$tempVar.data.$dataName = $valExpr;"
         }
-        preStmts += "$indent$tempVar.vt = &${cConcrete}_${ifaceName}_vt;"
+        if (ifaceName !in simpleUnionInterfaces)
+            preStmts += "$indent$tempVar.vt = &${cConcrete}_${ifaceName}_vt;"
         }
     }
 
