@@ -78,7 +78,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **`--fail-fast`** (S) — Stops after first failure; cancels pending futures in parallel mode.
 - [x] **`--bench <test> [-n N]`** (M) — `--bench TestName -n 10` runs a test N times and reports min/median/p95/mean of ktc/compile/run timings.
 - [ ] **`--watch`** (M) — Re-run tests when a `.kt` file changes. Drives a fast inner-loop dev workflow.
-- [ ] **Shell completion script** (S) — Generate bash/zsh completion for `--run <test-name>` from the discovered test list.
+- [x] **Shell completion script** (S) — `--completions bash|zsh|fish` prints a completion script. Completes flags + test names for `--run`/`--bench`/`--filter`.
 - [x] **`NO_COLOR` env var support** (S) — `_gNoColor` flag disables all ANSI escapes and live progress when `NO_COLOR` is set or stdout is not a tty.
 - [ ] **HTML test report** (M) — `--report html` writes a summary in `build/test-report.html` with timings, errors, and captured stdout/stderr.
 - [x] **`init <name>` subcommand** (M) — `python run_tests.py init MyTest` creates `integration/intrinsic/MyTest/` with `module.ktc.toml` and a starter `.kt` file.

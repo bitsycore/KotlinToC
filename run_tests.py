@@ -407,6 +407,65 @@ def cmd_init(inName: str) -> int:
 	pinfo(f"{vKt.relative_to(kRoot)}")
 	return 0
 
+def cmd_completions(inShell: str) -> int:
+	# Generate a shell completion script for test names.
+	vTests = find_test_dirs()
+	vNames = " ".join(t.name for t in vTests)
+	if inShell == "bash":
+		print(f"""\
+_run_tests_completions() {{
+    local cur opts tests
+    COMPREPLY=()
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    opts="--run --skip --list --filter --exclude --fail-fast --build --rebuild --clean --compiler --cc-args --cmake-args --cfg --static-libc --gui --mem-track --ast --dump-semantics --strict --disposed --double-dispose --transpiler-args --bench -n --completions init"
+    tests="{vNames}"
+    case "${{COMP_WORDS[COMP_CWORD-1]}}" in
+        --run|--bench|--filter|--exclude)
+            COMPREPLY=( $(compgen -W "$tests" -- "$cur") )
+            return 0 ;;
+        --skip)
+            COMPREPLY=( $(compgen -W "unit" -- "$cur") )
+            return 0 ;;
+        --build)
+            COMPREPLY=( $(compgen -W "jar gradle proguard" -- "$cur") )
+            return 0 ;;
+        --completions)
+            COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
+            return 0 ;;
+    esac
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}}
+complete -F _run_tests_completions run_tests.py
+complete -F _run_tests_completions python3 run_tests.py""")
+	elif inShell == "zsh":
+		vTestList = " ".join(f"'{t.name}'" for t in vTests)
+		print(f"""\
+#compdef run_tests.py
+_run_tests() {{
+    local -a tests opts
+    tests=({vTestList})
+    opts=(--run --skip --list --filter --exclude --fail-fast --build --rebuild --clean --compiler --cc-args --cmake-args --cfg --static-libc --gui --mem-track --ast --dump-semantics --strict --disposed --double-dispose --transpiler-args --bench -n --completions init)
+    case "$words[CURRENT-1]" in
+        --run|--bench|--filter|--exclude) _describe 'test' tests ;;
+        --skip) compadd unit ;;
+        --build) compadd jar gradle proguard ;;
+        --completions) compadd bash zsh fish ;;
+        *) compadd "${{opts[@]}}" ;;
+    esac
+}}
+compdef _run_tests run_tests.py""")
+	elif inShell == "fish":
+		print("# Fish completions for run_tests.py")
+		print("complete -c run_tests.py -l run -x -a '(run_tests.py --list 2>/dev/null)'")
+		print("complete -c run_tests.py -l bench -x -a '(run_tests.py --list 2>/dev/null)'")
+		print("complete -c run_tests.py -l skip -x -a 'unit'")
+		print("complete -c run_tests.py -l build -x -a 'jar gradle proguard'")
+		print("complete -c run_tests.py -l completions -x -a 'bash zsh fish'")
+		for opt in ["list", "fail-fast", "rebuild", "clean", "static-libc", "gui",
+					"mem-track", "ast", "dump-semantics", "strict"]:
+			print(f"complete -c run_tests.py -l {opt}")
+	return 0
+
 def cmd_bench(inTestQuery: str, inN: int, inAllTests: list, inOpts) -> int:
 	# Run a test N times and report min/median/p95 timing stats.
 	import statistics
@@ -1211,6 +1270,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	# Subcommands
 	vP.add_argument("--bench", default="", help="Run a test N times and report timing stats (e.g. --bench TestName [-n 10])")
 	vP.add_argument("-n", type=int, default=5, help="Number of iterations for --bench (default: 5)")
+	vP.add_argument("--completions", default="", choices=["", "bash", "zsh", "fish"], help="Print shell completion script and exit")
 	vP.add_argument("command", nargs="?", default=None, help="Subcommand: 'init <name>' scaffolds a new test")
 	vP.add_argument("init_name", nargs="?", default=None, help="Name for the new test (used with 'init')")
 	return vP
@@ -1263,6 +1323,10 @@ def main(inArgv: list[str]) -> int:
 			pwrite(f"{kRed}ERROR: usage: run_tests.py init <TestName>{kRst}")
 			return 1
 		return cmd_init(vName)
+
+	# ── --completions: print shell completion script ──────────────
+	if vNs.completions:
+		return cmd_completions(vNs.completions)
 
 	if vNs.clean:
 		return cmd_clean()
