@@ -1197,11 +1197,12 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 @dataclass
 class SuiteResult:
 	# Aggregated counts and lists from a suite run.
-	passed:       int       = 0
-	failed:       int       = 0
-	skipped:      int       = 0
-	failedNames:  list[str] = field(default_factory=list)
-	skippedNames: list[str] = field(default_factory=list)
+	passed:       int              = 0
+	failed:       int              = 0
+	skipped:      int              = 0
+	failedNames:  list[str]        = field(default_factory=list)
+	skippedNames: list[str]        = field(default_factory=list)
+	outcomes:     list[TestOutcome] = field(default_factory=list)
 
 def run_unit_tests() -> bool:
 	# Returns True on success. Streams gradle output directly.
@@ -1237,6 +1238,7 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool, inFa
 		vFutures = [vEx.submit(invoke_test_concise, vT, inOpts, vProgress) for vT in inTests]
 		for vF in as_completed(vFutures):
 			vOut = vF.result()
+			vRes.outcomes.append(vOut)
 			if   vOut.status == "pass": vRes.passed += 1
 			elif vOut.status == "skip": vRes.skipped += 1; vRes.skippedNames.append(vOut.name)
 			else:                       vRes.failed  += 1; vRes.failedNames.append(vOut.name)
@@ -1245,6 +1247,7 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool, inFa
 				for vPending in vFutures:
 					vPending.cancel()
 	vProgress.done()
+	vRes.outcomes.sort(key=lambda inO: inO.name)
 	return vRes
 
 def show_summary(inRes: SuiteResult) -> int:
@@ -1270,6 +1273,73 @@ def show_summary(inRes: SuiteResult) -> int:
 		for vN in inRes.skippedNames:
 			pwrite(f"    {kYellow}- {vN}{kRst}")
 	return 1 if inRes.failed else 0
+
+def write_html_report(inRes: SuiteResult, inPath: Path) -> None:
+	import html as htmlmod
+	import datetime
+	vNow   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+	vTotal = inRes.passed + inRes.failed + inRes.skipped
+	vRows  = []
+	for vO in inRes.outcomes:
+		if   vO.status == "pass": vCls = "pass"
+		elif vO.status == "skip": vCls = "skip"
+		else:                     vCls = "fail"
+		vName = htmlmod.escape(vO.name)
+		vRows.append(
+			f'<tr class="{vCls}"><td>{vName}</td>'
+			f'<td class="status">{vO.status.upper()}</td>'
+			f'<td class="num">{vO.ktcMs}</td>'
+			f'<td class="num">{vO.compileMs}</td>'
+			f'<td class="num">{vO.runMs}</td>'
+			f'<td class="num">{vO.ktcMs + vO.compileMs + vO.runMs}</td></tr>'
+		)
+	vBody = "\n".join(vRows)
+	vHtml = f"""\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>KTC Test Report</title>
+<style>
+body {{ font-family: system-ui, sans-serif; margin: 2em; background: #fafafa; color: #222; }}
+h1 {{ margin-bottom: .2em; }}
+.meta {{ color: #666; margin-bottom: 1.5em; }}
+.summary {{ display: flex; gap: 2em; margin-bottom: 1.5em; }}
+.summary .box {{ padding: .6em 1.2em; border-radius: 6px; font-size: 1.1em; font-weight: 600; }}
+.box.passed {{ background: #d4edda; color: #155724; }}
+.box.failed {{ background: #f8d7da; color: #721c24; }}
+.box.skipped {{ background: #fff3cd; color: #856404; }}
+.box.total {{ background: #d1ecf1; color: #0c5460; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ text-align: left; padding: .5em .8em; border-bottom: 1px solid #ddd; }}
+th {{ background: #e9ecef; position: sticky; top: 0; }}
+td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+td.status {{ font-weight: 600; }}
+tr.pass td.status {{ color: #28a745; }}
+tr.fail td.status {{ color: #dc3545; }}
+tr.skip td.status {{ color: #ffc107; }}
+tr:hover {{ background: #f1f1f1; }}
+</style>
+</head>
+<body>
+<h1>KTC Test Report</h1>
+<p class="meta">Generated {vNow}</p>
+<div class="summary">
+  <div class="box total">Total: {vTotal}</div>
+  <div class="box passed">Passed: {inRes.passed}</div>
+  <div class="box failed">Failed: {inRes.failed}</div>
+  <div class="box skipped">Skipped: {inRes.skipped}</div>
+</div>
+<table>
+<thead><tr><th>Test</th><th>Status</th><th>KTC (ms)</th><th>Compile (ms)</th><th>Run (ms)</th><th>Total (ms)</th></tr></thead>
+<tbody>
+{vBody}
+</tbody>
+</table>
+</body>
+</html>"""
+	inPath.parent.mkdir(parents=True, exist_ok=True)
+	inPath.write_text(vHtml, encoding="utf-8")
 
 # ==================
 # MARK: Test matching
@@ -1339,6 +1409,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("-n", type=int, default=5, help="Number of iterations for --bench (default: 5)")
 	vP.add_argument("--completions", default="", choices=["", "bash", "zsh", "fish"], help="Print shell completion script and exit")
 	vP.add_argument("--watch", action="store_true", help="Re-run tests when .kt files change")
+	vP.add_argument("--report", default="", choices=["", "html"], help="Write test report (html) to build/test-report.html")
 	vP.add_argument("command", nargs="?", default=None, help="Subcommand: 'init <name>' scaffolds a new test")
 	vP.add_argument("init_name", nargs="?", default=None, help="Name for the new test (used with 'init')")
 	return vP
@@ -1466,20 +1537,31 @@ def main(inArgv: list[str]) -> int:
 	# ── Default: full suite ───────────────────────────────────────
 	vSkipUnit = vNs.skip_unit or vNs.skip == "unit"
 
+	vReportPath = kRoot / "build" / "test-report.html" if vNs.report == "html" else None
+
+	def emit_report(inRes: SuiteResult) -> None:
+		if vReportPath and inRes.outcomes:
+			write_html_report(inRes, vReportPath)
+			pwrite(f"  Report: {vReportPath}")
+
 	def run_once():
 		invoke_build(vOpts.buildMode, False)
 		vRes = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
 		show_summary(vRes)
+		emit_report(vRes)
 
 	if vNs.watch:
 		invoke_build(vOpts.buildMode, vNs.rebuild)
 		vRes = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
 		show_summary(vRes)
+		emit_report(vRes)
 		return cmd_watch(run_once)
 
 	invoke_build(vOpts.buildMode, vNs.rebuild)
-	vRes      = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
-	return show_summary(vRes)
+	vRes = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
+	vCode = show_summary(vRes)
+	emit_report(vRes)
+	return vCode
 
 if __name__ == "__main__":
 	sys.exit(main(sys.argv[1:]))

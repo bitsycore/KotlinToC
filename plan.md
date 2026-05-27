@@ -80,7 +80,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **`--watch`** (M) — `--watch` polls `src/` and `integration/` for `.kt` changes and re-runs the full suite. Ctrl+C to stop.
 - [x] **Shell completion script** (S) — `--completions bash|zsh|fish` prints a completion script. Completes flags + test names for `--run`/`--bench`/`--filter`.
 - [x] **`NO_COLOR` env var support** (S) — `_gNoColor` flag disables all ANSI escapes and live progress when `NO_COLOR` is set or stdout is not a tty.
-- [ ] **HTML test report** (M) — `--report html` writes a summary in `build/test-report.html` with timings, errors, and captured stdout/stderr.
+- [x] **HTML test report** (M) — `--report html` writes `build/test-report.html` with per-test status, KTC/compile/run timings, and a summary header. Works with `--watch` and standalone runs.
 - [x] **`init <name>` subcommand** (M) — `python run_tests.py init MyTest` creates `integration/intrinsic/MyTest/` with `module.ktc.toml` and a starter `.kt` file.
 
 ## Recommended order
