@@ -173,6 +173,14 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
             return "${ifaceUnionAccess(currentExtRecvType!!, vNarrowedSelf, "\$self")}.$fieldName"
         }
     }
+    // $this narrowed from interface in inline body (this.field after is-check)
+    if (e.obj is ThisExpr && lambdaParamSubst.containsKey("\$this")) {
+        val vOrigIface = isIfaceSmartCastVar("\$this")
+        if (vOrigIface != null) {
+            val vNarrowedType = lookupVar("\$this")!!
+            return "${ifaceUnionAccess(vOrigIface, vNarrowedType, recv)}.$fieldName"
+        }
+    }
 
     // Computed property with custom getter: inline the getter expression
     val vDotClassInfo = classInfoFor(recvTypeCoreKtc)
@@ -197,6 +205,35 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
             return vResult
             }
         }
+
+    // Inline extension property: expand getter in place
+    val vRecvType = recvType?.removeSuffix("?")
+    if (vRecvType != null) {
+        var vExtProp = extensionProps[vRecvType]?.find { it.name == e.name && it.getter != null && it.isInline }
+        // Fallback: for monomorphized generic types (e.g. Result_Int), check the base template name
+        if (vExtProp == null) {
+            val vBase = mangledComponents[vRecvType]?.first
+                ?: genericIfaceDecls.keys.find { vRecvType.startsWith("${it}_") }
+                ?: genericClassDecls.keys.find { vRecvType.startsWith("${it}_") }
+            if (vBase != null) vExtProp = extensionProps[vBase]?.find { it.name == e.name && it.getter != null && it.isInline }
+        }
+        if (vExtProp != null) {
+            pushScope()
+            defineVar("\$self", vRecvType)
+            lambdaParamSubst["\$self"] = recv
+            val vSavedThis = lambdaParamSubst["\$this"]
+            val vSavedThisType = lambdaParamTypes["\$this"]
+            lambdaParamSubst["\$this"] = recv
+            lambdaParamTypes["\$this"] = vRecvType
+            defineVar("\$this", vRecvType)
+            val vResult = genExpr(vExtProp.getter!!)
+            if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
+            if (vSavedThisType != null) lambdaParamTypes["\$this"] = vSavedThisType else lambdaParamTypes.remove("\$this")
+            lambdaParamSubst.remove("\$self")
+            popScope()
+            return vResult
+        }
+    }
 
     return "$recv.${fieldName}"
 }

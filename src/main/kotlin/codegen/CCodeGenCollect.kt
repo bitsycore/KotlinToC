@@ -343,6 +343,11 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					vNested.typeParams, vNested.secondaryCtors)
 				collectDecl(vFlat)
 				}
+			if (d.companionMembers.isNotEmpty()) {
+				val vCompanionName = "${d.name}\$Companion"
+				classCompanions[d.name] = vCompanionName
+				collectDecl(ObjectDecl(vCompanionName, d.companionMembers))
+				}
 			}
 
 		is ObjectDecl -> {

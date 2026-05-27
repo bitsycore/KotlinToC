@@ -129,6 +129,8 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val deferredHdrLines = mutableMapOf<String, MutableList<Pair<String, String>>>()
     internal val lambdaParamTypes = mutableMapOf<String, String>()  // lambda param name → Kotlin type, used by inferExprType so .size etc. resolve correctly
     internal var inlineReturnVar: String? = null  // result var name (value pos), "" (stmt pos), null (not inside inline)
+    internal var inlineReturnOptCType: String? = null // when non-null, inline return result is optional → wrap with optSome/optNone
+    internal var inlineReturnUnionType: String? = null // when non-null, inline return type is a @SimpleUnion sealed interface → wrap subclass with _as_
     internal var inlineEndLabel: String? = null   // goto label after the inline block to handle early return
     internal var inlineLabelUsed: Boolean = false // true if at least one goto to inlineEndLabel was emitted
     internal var currentInd: String = "    "  // current emit indentation, kept in sync by emitStmt
@@ -974,22 +976,24 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
      *  Disambiguates first by receiver type, then by argument count. */
     internal fun findInlineExtFun(name: String, receiverType: String?, argCount: Int = -1): FunDecl? {
         val vCandidates = inlineExtFunDecls[name] ?: return null
-        if (vCandidates.size == 1) return vCandidates[0]
         val vFlat = receiverType?.replace('.', '$')
-        val vByReceiver = if (vFlat != null) {
+        val vPool = if (vFlat != null) {
             vCandidates.filter { decl ->
                 val vRecv = decl.receiver ?: return@filter true
                 val vRecvFlat = vRecv.name.replace('.', '$')
-                vRecvFlat == vFlat || vRecv.name == receiverType
+                vRecvFlat == vFlat || vRecv.name == receiverType ||
+                    (decl.typeParams.isNotEmpty() && (
+                        genericClassDecls.containsKey(vRecvFlat) && vFlat.startsWith("${vRecvFlat}_") ||
+                        genericIfaceDecls.containsKey(vRecvFlat) && vFlat.startsWith("${vRecvFlat}_") ||
+                        vRecv.name in decl.typeParams))
             }
         } else vCandidates
-        val vPool = vByReceiver.ifEmpty { vCandidates }
-        if (vPool.size == 1) return vPool[0]
+        if (vPool.isEmpty()) return null
         if (argCount >= 0) {
             val vExact = vPool.find { it.params.size == argCount }
             if (vExact != null) return vExact
         }
-        return vPool[0]
+        return vPool.firstOrNull()
         }
 
     // ═══════════════════════════ Public entry ═════════════════════════

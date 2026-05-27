@@ -15,6 +15,39 @@ import com.bitsycore.ktc.types.KtcType
 internal fun CCodeGen.genCall(e: CallExpr): String {
     // ── Method call: DotExpr receiver ────────────────────────────
     if (e.callee is DotExpr) {
+        // Companion inline method: Result.success<Int>(99) → inline the body
+        val vDotObjName = (e.callee.obj as? NameExpr)?.name
+        val vCompanionName = vDotObjName?.let { classCompanions[it] }
+        if (vCompanionName != null) {
+            val vCompanionInline = inlineFunDecls[e.callee.name]?.find {
+                objects[vCompanionName]?.methods?.any { m -> m.name == e.callee.name } == true
+            }
+            if (vCompanionInline != null) {
+                val vSubst = if (vCompanionInline.typeParams.isNotEmpty()) {
+                    val s = mutableMapOf<String, String>()
+                    if (e.typeArgs.isNotEmpty() && e.typeArgs.size == vCompanionInline.typeParams.size)
+                        vCompanionInline.typeParams.zip(e.typeArgs).forEach { (tp, ta) -> s[tp] = ta.name }
+                    s.ifEmpty { null }
+                } else null
+                return withTypeSubst(vSubst) {
+                    if (vCompanionInline.returnType == null) {
+                        emitInlineCall(vCompanionInline, e.args, currentInd, false)
+                        ""
+                    } else {
+                        val vRetIfaceType = resolveTypeName(vCompanionInline.returnType).toInternalStr
+                        val vUnionType = if (interfaces.containsKey(vRetIfaceType)) vRetIfaceType else null
+                        tryGenInlineExpr(vCompanionInline, e.args)
+                            ?: run {
+                                val vResultName = "\$ir${inlineCounter++}"
+                                impl.appendLine("$currentInd${cType(vCompanionInline.returnType)} $vResultName;")
+                                emitInlineCall(vCompanionInline, e.args, currentInd, false, resultVar = vResultName,
+                                    resultUnionType = vUnionType)
+                                vResultName
+                            }
+                    }
+                }
+            }
+        }
         // Inline extension function call in value position
         val vRecvKtTypeForLookup = inferExprType(e.callee.obj)?.removeSuffix("?")
         val vInlineExt = findInlineExtFun(e.callee.name, vRecvKtTypeForLookup, e.args.size)
@@ -31,8 +64,14 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     tryGenInlineExpr(vInlineExt, e.args, receiverExpr = vRecvExpr, receiverType = vRecvKtType)
                         ?: run {
                             val vResultName = "\$ir${inlineCounter++}"
-                            impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-                            emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType, resultVar = vResultName)
+                            val vIsRetNullable = vRetType.nullable && !vRetType.isRefType()
+                            val vCRetType = if (vIsRetNullable) {
+                                val vInnerKtc = resolveTypeName(vRetType.copy(nullable = false))
+                                optCTypeName(vInnerKtc.toInternalStr)
+                            } else cType(vRetType)
+                            impl.appendLine("$currentInd$vCRetType $vResultName;")
+                            emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType,
+                                resultVar = vResultName, resultOptCType = if (vIsRetNullable) vCRetType else null)
                             vResultName
                         }
                 }

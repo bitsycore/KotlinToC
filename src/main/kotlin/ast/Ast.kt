@@ -77,7 +77,8 @@ data class InterfaceDecl(
     val superInterfaces: List<TypeRef> = emptyList(),
     val nestedClasses: List<ClassDecl> = emptyList(),
     val isSealed: Boolean = false,
-    val annotations: List<Annotation> = emptyList()
+    val annotations: List<Annotation> = emptyList(),
+    val companionMembers: List<Decl> = emptyList()
 ) : Decl()
 
 data class ObjectDecl(

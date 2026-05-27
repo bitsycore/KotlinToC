@@ -373,6 +373,7 @@ class Parser(private val tokens: List<Token>) {
         val methods = mutableListOf<FunDecl>()
         val properties = mutableListOf<PropDecl>()
         val nestedClasses = mutableListOf<ClassDecl>()
+        var companionMembers: List<Decl> = emptyList()
         if (at(TokenType.LBRACE)) {
             advance(); nesting++; skipNL()
             while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
@@ -388,6 +389,11 @@ class Parser(private val tokens: List<Token>) {
                     at(TokenType.VAR) -> properties += parsePropDecl(mutable = true)
                     at(TokenType.DATA) -> { advance(); expect(TokenType.CLASS); nestedClasses += parseClassDecl(isData = true) }
                     at(TokenType.CLASS) -> { advance(); nestedClasses += parseClassDecl(isData = false) }
+                    at(TokenType.IDENT) && cur().value == "companion" && peek().type == TokenType.OBJECT -> {
+                        advance()
+                        val obj = parseCompanionObjectDecl()
+                        companionMembers = obj.members
+                    }
                     else -> error("Expected fun, val, var, or class in interface body at ${cur()}")
                 }
                 skipNL()
@@ -395,7 +401,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return InterfaceDecl(name, methods, properties, typeParams, superInterfaces, nestedClasses, isSealed, annotations)
+        return InterfaceDecl(name, methods, properties, typeParams, superInterfaces, nestedClasses, isSealed, annotations, companionMembers)
     }
 
     // ── object ───────────────────────────────────────────────────────
@@ -489,10 +495,24 @@ class Parser(private val tokens: List<Token>) {
         val line = cur().line
         val typeAnnotations = if (preAnnotations.isEmpty()) parseAnnotations() else emptyList()
         advance()   // skip val/var
+        // Skip type parameters on extension properties: val <T> Receiver<T>.name
+        if (at(TokenType.LT)) {
+            advance(); nesting++
+            while (!at(TokenType.GT) && !at(TokenType.EOF)) advance()
+            expect(TokenType.GT); nesting--
+        }
         // Extension property: val Receiver.name get() = expr
         val receiver: TypeRef?
         val name: String
         val vFirstName = expectIdent()
+        // Skip type args on receiver: Result<T>.name
+        val vRecvTypeArgs = mutableListOf<TypeRef>()
+        if (at(TokenType.LT)) {
+            advance(); nesting++; skipNL()
+            vRecvTypeArgs += parseTypeRef()
+            while (at(TokenType.COMMA)) { advance(); skipNL(); vRecvTypeArgs += parseTypeRef() }
+            expect(TokenType.GT); nesting--
+        }
         if (at(TokenType.DOT)) {
             advance()
             // Build full receiver name chain (e.g. SDL3.Event)
@@ -500,7 +520,7 @@ class Parser(private val tokens: List<Token>) {
             while (at(TokenType.DOT)) { advance(); vParts += expectIdent() }
             val vRecvName = vParts.dropLast(1).joinToString(".")
             name = vParts.last()
-            receiver = TypeRef(vRecvName)
+            receiver = TypeRef(vRecvName, typeArgs = vRecvTypeArgs)
         } else {
             receiver = null
             name = vFirstName

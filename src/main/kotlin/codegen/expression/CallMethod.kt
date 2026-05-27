@@ -169,6 +169,16 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val allArgs = if (argStr.isEmpty()) recv else "$recv, $argStr"
 			return "${vIfaceInfo.flatName}_$method($allArgs)"
 			}
+		val genericExtOnIface = genericFunDecls.find {
+			it.name == method && it.receiver != null && (
+				it.receiver.name == vIfaceInfo.baseName ||
+				(genericIfaceDecls.containsKey(it.receiver.name) && vIfaceInfo.baseName.startsWith("${it.receiver.name}_"))
+				)
+			}
+		if (genericExtOnIface != null) {
+			val allArgs = if (argStr.isEmpty()) recv else "$recv, $argStr"
+			return "${vIfaceInfo.flatName}_$method($allArgs)"
+			}
 		// @SimpleUnion: no vtable — inline dispatch through type ID
 		if (vIfaceInfo.name in simpleUnionInterfaces) {
 			return genSimpleUnionDispatch(vIfaceInfo.name, recv, method, argStr)

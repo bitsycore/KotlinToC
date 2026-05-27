@@ -63,5 +63,39 @@ fun main() {
 		println("multi: ${ri.value} ${rf.value}")
 	}
 
+	// Companion factory methods
+	val fc1 = Result.success<Int>(99)
+	val fc2 = Result.failure<Int>(7)
+	if (fc1 is Result.Success) {
+		println("companion success: ${fc1.value}")
+	} else {
+		error("FAIL: companion success")
+	}
+	if (fc2 is Result.Failure) {
+		println("companion failure: ${fc2.errorCode}")
+	} else {
+		error("FAIL: companion failure")
+	}
+
+	// isSuccess / isFailure inline extension properties
+	if (!ok.isSuccess) error("FAIL: ok.isSuccess")
+	if (ok.isFailure) error("FAIL: ok.isFailure should be false")
+	if (err.isSuccess) error("FAIL: err.isSuccess should be false")
+	if (!err.isFailure) error("FAIL: err.isFailure")
+	println("isSuccess/isFailure: ok")
+
+	// getOrNull / errorCodeOrNull extension functions
+	val gn1 = ok.getOrNull()
+	val gn2 = err.getOrNull()
+	if (gn1 == null) error("FAIL: ok.getOrNull should not be null")
+	if (gn2 != null) error("FAIL: err.getOrNull should be null")
+	println("getOrNull: $gn1")
+
+	val ec1 = ok.errorCodeOrNull()
+	val ec2 = err.errorCodeOrNull()
+	if (ec1 != null) error("FAIL: ok.errorCodeOrNull should be null")
+	if (ec2 == null) error("FAIL: err.errorCodeOrNull should not be null")
+	println("errorCodeOrNull: $ec2")
+
 	println("done")
 }

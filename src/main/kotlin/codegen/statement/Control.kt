@@ -47,8 +47,9 @@ internal fun CCodeGen.extractSmartCasts(cond: Expr, forElse: Boolean = false): L
 			}
 		}
 	fun tryThisCastTo(target: String) {
-		val current = currentExtRecvType ?: return
-		if (current != target) casts.add("\$self" to target)
+		val current = currentExtRecvType ?: lambdaParamTypes["\$this"] ?: return
+		val castKey = if (currentExtRecvType != null) "\$self" else "\$this"
+		if (current != target) casts.add(castKey to target)
 		}
 
 	val nullOp = if (forElse) "==" else "!="  // null check op for this branch direction

@@ -322,6 +322,17 @@ internal fun CCodeGen.matchTypeParam(
 	// Generic interface param: List<T>, arg=ArrayList_Int → T=Int
 	if (paramType.typeArgs.isNotEmpty() && genericIfaceDecls.containsKey(paramType.name)) {
 		val baseType = argType.trimEnd('*', '?')
+		// Direct match: argType IS the monomorphized interface (e.g. Result_Int for Result<T>)
+		if (baseType.startsWith(paramType.name + "_")) {
+			val components = mangledComponents[baseType]
+			if (components != null) {
+				val (_, typeArgs) = components
+				for ((i, typeArg) in paramType.typeArgs.withIndex()) {
+					if (typeArg.name in typeParams && i < typeArgs.size) subst[typeArg.name] = typeArgs[i]
+					}
+				return
+				}
+			}
 		val classIfaces = classInterfaces[baseType] ?: return
 		for (ifaceName in classIfaces) {
 			if (ifaceName.startsWith(paramType.name + "_")) {

@@ -322,7 +322,20 @@ internal fun inferInlineFunSubst(
     val vTypeParams = inDecl.typeParams.toSet() // set of type-param names for O(1) lookup
     if (inReceiverType != null && inDecl.receiver != null) {
         val vRecvParamName = inDecl.receiver.name // type param name used as receiver (e.g. "A")
-        if (vRecvParamName in vTypeParams) vSubst[vRecvParamName] = inReceiverType.removeSuffix("?")
+        if (vRecvParamName in vTypeParams) {
+            vSubst[vRecvParamName] = inReceiverType.removeSuffix("?")
+        } else if (inDecl.receiver.typeArgs.isNotEmpty()) {
+            // Generic receiver: Result<T> with concrete Result_Int → extract T→Int
+            val vPrefix = "${vRecvParamName}_"
+            val vConcrete = inReceiverType.removeSuffix("?")
+            if (vConcrete.startsWith(vPrefix)) {
+                val vArgStr = vConcrete.removePrefix(vPrefix)
+                val vParts = vArgStr.split("_")
+                inDecl.receiver.typeArgs.forEachIndexed { i, tArg ->
+                    if (tArg.name in vTypeParams && i < vParts.size) vSubst[tArg.name] = vParts[i]
+                }
+            }
+        }
     }
     inDecl.params.forEachIndexed { vIdx, vParam ->
         val vArgType = inArgTypes.getOrNull(vIdx)?.removeSuffix("?") ?: return@forEachIndexed

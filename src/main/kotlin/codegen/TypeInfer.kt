@@ -22,7 +22,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	is CharLit   -> "Char"
 	is StrLit, is StrTemplateExpr -> "String"
 	is NullLit   -> null
-	is ThisExpr  -> lambdaParamTypes["\$this"] ?: lookupVar("\$self") ?: currentExtRecvType ?: currentClass
+	is ThisExpr  -> lookupVar("\$this") ?: lambdaParamTypes["\$this"] ?: lookupVar("\$self") ?: currentExtRecvType ?: currentClass
 	is NameExpr  -> lambdaParamTypes[e.name] ?: lookupVar(e.name) ?: run {
 		if (enums.containsKey(e.name)) e.name
 		else if (objects.containsKey(e.name)) e.name

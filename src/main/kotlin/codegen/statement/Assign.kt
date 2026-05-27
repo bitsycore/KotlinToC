@@ -259,17 +259,35 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
     if (endLabel != null) {
         // Inside an inline body expansion: assign result (if any), then jump to end label
         val retVar = inlineReturnVar ?: ""
+        val retOpt = inlineReturnOptCType
+        val retUnion = inlineReturnUnionType
         if (s.value != null) {
             if (retVar.isNotEmpty()) {
-                val expr = genExpr(s.value)
-                flushPreStmts(ind)
-                impl.appendLine("$ind$retVar = $expr;")
+                if (s.value is NullLit && retOpt != null) {
+                    impl.appendLine("$ind$retVar = ${optNone(retOpt)};")
+                } else {
+                    val expr = genExpr(s.value)
+                    flushPreStmts(ind)
+                    if (retOpt != null) impl.appendLine("$ind$retVar = ${optSome(retOpt, expr)};")
+                    else if (retUnion != null) {
+                        val exprType = inferExprType(s.value)
+                        if (exprType != null && exprType != retUnion && classes.containsKey(exprType) &&
+                            classInterfaces[exprType]?.contains(retUnion) == true) {
+                            val backing = tmp()
+                            impl.appendLine("$ind${typeFlatName(exprType)} $backing = $expr;")
+                            impl.appendLine("$ind$retVar = ${typeFlatName(exprType)}_as_$retUnion(&$backing);")
+                        } else impl.appendLine("$ind$retVar = $expr;")
+                    }
+                    else impl.appendLine("$ind$retVar = $expr;")
+                }
             } else {
                 // Statement position: execute for side effects only
                 val expr = genExpr(s.value)
                 flushPreStmts(ind)
                 if (expr.isNotEmpty()) impl.appendLine("$ind(void)($expr);")
             }
+        } else if (retVar.isNotEmpty() && retOpt != null) {
+            impl.appendLine("$ind$retVar = ${optNone(retOpt)};")
         }
         impl.appendLine("${ind}goto $endLabel;")
         inlineLabelUsed = true

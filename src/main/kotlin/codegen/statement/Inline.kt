@@ -57,7 +57,9 @@ internal fun CCodeGen.emitInlineCall(
 	method: Boolean,
 	receiverExpr: String? = null,
 	receiverType: String? = null,
-	resultVar: String? = null
+	resultVar: String? = null,
+	resultOptCType: String? = null,
+	resultUnionType: String? = null
 	) {
 	val body = decl.body ?: return
 	val vInlineId  = inlineCounter++
@@ -74,9 +76,13 @@ internal fun CCodeGen.emitInlineCall(
 	val vSavedLambdas  = activeLambdas
 	val vNewLambdas    = activeLambdas.toMutableMap()
 	val vSavedRetVar    = inlineReturnVar
+	val vSavedRetOpt    = inlineReturnOptCType
+	val vSavedRetUnion  = inlineReturnUnionType
 	val vSavedEndLabel  = inlineEndLabel
 	val vSavedLabelUsed = inlineLabelUsed
-	inlineReturnVar  = resultVar ?: ""
+	inlineReturnVar      = resultVar ?: ""
+	inlineReturnOptCType = resultOptCType
+	inlineReturnUnionType = resultUnionType
 	inlineEndLabel   = vLabelName
 	inlineLabelUsed  = false
 
@@ -84,7 +90,10 @@ internal fun CCodeGen.emitInlineCall(
 	val vSavedThis     = lambdaParamSubst["\$this"]
 	val vSavedThisType = lambdaParamTypes["\$this"]
 	if (receiverExpr != null) lambdaParamSubst["\$this"] = receiverExpr
-	if (receiverType != null) lambdaParamTypes["\$this"] = receiverType
+	if (receiverType != null) {
+		lambdaParamTypes["\$this"] = receiverType
+		defineVar("\$this", receiverType)
+		}
 
 	// Bind each parameter: lambda params go into activeLambdas, value params become locals.
 	// Two-pass approach: evaluate all argument expressions first, then declare parameter variables.
@@ -132,10 +141,12 @@ internal fun CCodeGen.emitInlineCall(
 	emitBlock(body, ind, method)
 
 	if (inlineLabelUsed) impl.appendLine("$ind$vLabelName:;")
-	activeLambdas   = vSavedLambdas
-	inlineReturnVar  = vSavedRetVar
-	inlineEndLabel   = vSavedEndLabel
-	inlineLabelUsed  = vSavedLabelUsed
+	activeLambdas        = vSavedLambdas
+	inlineReturnVar      = vSavedRetVar
+	inlineReturnOptCType = vSavedRetOpt
+	inlineReturnUnionType = vSavedRetUnion
+	inlineEndLabel       = vSavedEndLabel
+	inlineLabelUsed      = vSavedLabelUsed
 	if (receiverExpr != null) {
 		if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
 		}
@@ -212,8 +223,21 @@ internal fun CCodeGen.tryGenInlineExpr(
 		if (isValueNullable) markOptional(param.name)
 	}
 
-	val result = genExpr(retExpr)
+	var result = genExpr(retExpr)
 	flushPreStmts(ind)
+
+	// @SimpleUnion: when the inline return type is a sealed interface but the expression
+	// produces a subclass, wrap with the subclass_as_interface conversion
+	if (decl.returnType != null) {
+		val retIfaceType = resolveTypeName(decl.returnType).toInternalStr
+		val exprType = inferExprType(retExpr)
+		if (exprType != null && exprType != retIfaceType && interfaces.containsKey(retIfaceType) &&
+			classes.containsKey(exprType) && classInterfaces[exprType]?.contains(retIfaceType) == true) {
+			val backing = tmp()
+			impl.appendLine("$ind${typeFlatName(exprType)} $backing = $result;")
+			result = "${typeFlatName(exprType)}_as_$retIfaceType(&$backing)"
+		}
+	}
 
 	popScope()
 

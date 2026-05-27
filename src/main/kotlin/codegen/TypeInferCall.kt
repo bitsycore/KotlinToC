@@ -29,6 +29,13 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 }
                 return mangledGenericName(flatCallee, resolvedArgs)
             }
+            // Generic nested class ctor without explicit type args: infer from typeSubst
+            if (genericClassDecls.containsKey(flatCallee) && e.typeArgs.isEmpty() && typeSubst.isNotEmpty()) {
+                val decl = genericClassDecls[flatCallee]!!
+                val resolvedArgs = decl.typeParams.map { typeSubst[it] ?: it }
+                if (resolvedArgs.none { it in allGenericTypeParamNames })
+                    return mangledGenericName(flatCallee, resolvedArgs)
+            }
             if (classes.containsKey(flatCallee)) return flatCallee
         }
         // Class(args).allocWith(allocator) → Ref<ClassType> (type/args come from the receiver ctor call)
@@ -167,6 +174,16 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             val vPkgFun = findCrossPackageFun(e.callee.obj.name, e.callee.name)
             if (vPkgFun != null && vPkgFun.first.returnType != null)
                 return resolveTypeRefStr(vPkgFun.first.returnType!!)
+            // Companion method with explicit type args: substitute into return type
+            val vCompName = classCompanions[e.callee.obj.name]
+            if (vCompName != null && e.typeArgs.isNotEmpty()) {
+                val vMethod = objects[vCompName]?.methods?.find { it.name == e.callee.name }
+                if (vMethod?.returnType != null && vMethod.typeParams.isNotEmpty()) {
+                    val vSubst = mutableMapOf<String, String>()
+                    vMethod.typeParams.zip(e.typeArgs).forEach { (tp, ta) -> vSubst[tp] = resolveTypeNameStr(ta) }
+                    return withTypeSubst(vSubst) { resolveTypeRefStr(vMethod.returnType) }
+                }
+            }
             }
         return inferMethodReturnType(e.callee, e.args)
         }
@@ -309,9 +326,14 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
             val typeArgNames = extFun.typeParams.map { subst[it] ?: it }
             val mangledName  = "${extFun.name}_${typeArgNames.joinToString("_")}"
             genericFunConcreteReturn[mangledName]?.let { return it }
-            return withTypeSubst(subst) { resolveTypeName(extFun.returnType).toInternalStr }
+            val result = withTypeSubst(subst) { resolveTypeName(extFun.returnType) }
+            return if (extFun.returnType.nullable) KtcType.Nullable(result).toInternalStr else result.toInternalStr
         }
-        return if (extFun.returnType != null) resolveTypeName(extFun.returnType).toInternalStr else "Unit"
+        if (extFun.returnType != null) {
+            val result = resolveTypeName(extFun.returnType)
+            return if (extFun.returnType.nullable) KtcType.Nullable(result).toInternalStr else result.toInternalStr
+        }
+        return "Unit"
     }
     // Generic extension on a generic class — e.g. `fun <T> Pair<T,T>.toList(...)` applied to
     // Pair_Int_Int. The flat receiver type (Pair_Int_Int) is in `classes` (monomorphized) but
@@ -324,7 +346,8 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
         val genericExt = genericFunDecls.find { gf ->
             gf.name == method && gf.receiver != null && (
                 gf.receiver.name == recvBase ||
-                (genericClassDecls.containsKey(gf.receiver.name) && recvBase.startsWith("${gf.receiver.name}_"))
+                (genericClassDecls.containsKey(gf.receiver.name) && recvBase.startsWith("${gf.receiver.name}_")) ||
+                (genericIfaceDecls.containsKey(gf.receiver.name) && recvBase.startsWith("${gf.receiver.name}_"))
             )
         }
         if (genericExt != null && genericExt.returnType != null) {
@@ -335,12 +358,11 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
                 val argType = args.getOrNull(i)?.expr?.let { inferExprType(it) } ?: continue
                 matchTypeParam(p.type, argType, typeParamSet, subst)
             }
-            // If the function's concrete return is known (forwarded to a generic that returns a
-            // concrete class), use it. Otherwise resolve under the subst.
             val typeArgNames = genericExt.typeParams.map { subst[it] ?: it }
             val mangledName  = "${genericExt.name}_${typeArgNames.joinToString("_")}"
             genericFunConcreteReturn[mangledName]?.let { return it }
-            return withTypeSubst(subst) { resolveTypeName(genericExt.returnType).toInternalStr }
+            val result = withTypeSubst(subst) { resolveTypeName(genericExt.returnType) }
+            return if (genericExt.returnType.nullable) KtcType.Nullable(result).toInternalStr else result.toInternalStr
         }
     }
     if (recvType in enums) {
