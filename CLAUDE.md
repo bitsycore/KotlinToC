@@ -89,7 +89,7 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
 - No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.
 - `RawArray<T>` is never bounds-checked (no length carried). `Array<T>` / `String` / `@Size(N)` indexing IS checked by default — see "Bounds checking" above.
-- `private` fields and methods are enforced across class boundaries (codegen error on access from outside). `internal` is not enforced.
+- `private` fields and methods are enforced across class boundaries (codegen error on access from outside). `internal` on classes and top-level functions is enforced per-package (cross-package access is rejected with E044).
 - Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.
 
 ## Module system

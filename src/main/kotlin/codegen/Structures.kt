@@ -52,6 +52,7 @@ internal data class PropertyDef(
     val isVal: Boolean,                      // true = val (immutable), false = var
     val isPrivate: Boolean = false,          // private visibility
     val isPrivateSet: Boolean = false,       // private set modifier
+    val isInternal: Boolean = false,         // internal visibility (cross-package)
     val isOverride: Boolean = false,         // override modifier
     val isConstructorParam: Boolean = false, // true = declared in primary ctor
     val initExpr: Expr? = null,              // initializer expression (body props)
@@ -70,7 +71,8 @@ internal data class ClassInfo(
     val initBlocks: List<Block> = emptyList(),                 // init { } blocks
     override val typeParams: List<String> = emptyList(),       // generic type parameters
     override var pkg: String = "",                             // set during collectDecls; mutable for post-construction assignment
-    val isValue: Boolean = false                               // inline value class flag
+    val isValue: Boolean = false,                              // inline value class flag
+    val isInternal: Boolean = false                            // internal visibility (cross-package access blocked)
 ) : TypeDef {
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = when {

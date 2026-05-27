@@ -111,8 +111,14 @@ internal fun CCodeGen.collectDecls() {
 				is InterfaceDecl -> interfaces[d.name]?.pkg = fpfx
 				is ObjectDecl    -> { objects[d.name]?.pkg = fpfx; declOrigPkg[d.name] = f.pkg ?: "" }
 				is FunDecl -> {
-					if (d.receiver == null)
+					if (d.receiver == null) {
 						funNames[d.name] = "$fpfx${d.name}"   // cross-file C name
+						if (d.isInternal) internalFunPkgs[d.name] = f.pkg ?: ""
+						}
+					}
+				is PropDecl -> {
+					if (d.receiver == null && d.isInternal)
+						internalTopPropPkgs[d.name] = f.pkg ?: ""
 					}
 				else -> {}
 				}
@@ -222,6 +228,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					isVal = !vP.mutable,
 					isPrivate = vP.isPrivate,
 					isPrivateSet = vP.isPrivateSet,
+					isInternal = vP.isInternal,
 					initExpr = vP.init,
 					line = vP.line,
 					getter = vP.getter,
@@ -247,7 +254,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				if (vBodyProps.isNotEmpty())
 					codegenError("E031", "Value class '${d.name}' cannot have body properties")
 			}
-			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue)
+			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue, isInternal = d.isInternal)
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
 				// Mirror the function-level rule: inline methods may return bare

@@ -12,7 +12,6 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 - [ ] Can you make that enum can be @SimpleEnum and so be just simple enum like now and that other enum can be more complexe and be class (like in kotlin) with real instance that have full Any and other stuff ?
 - [ ] **Sealed-subclass exhaustiveness in type inference** (M) — `when` exhaustiveness on enums is in (`WhenExhaustUnitTest`). Extend it to sealed-class / sealed-interface subjects, then let `when` expression types be inferred without an `else` branch.
-- [ ] **`internal` visibility enforcement** (S) — `private` is already enforced across class boundaries. `internal` is currently accepted but ignored. Decide on the module boundary: MODULE BOUNDARY IS CHOSED BY USER (per `module.ktc.toml`? per package? per source root?) then reject access outside that boundary.
 
 ## Codegen
 

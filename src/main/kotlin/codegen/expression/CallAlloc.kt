@@ -216,6 +216,19 @@ internal fun CCodeGen.genCtorCallOrNull(
 				}
 		}
 
+	// Internal visibility check: a class marked `internal` cannot be instantiated
+	// from a different package than the one it was declared in.
+	val vTargetCi = classes[vResolvedName]
+	if (vTargetCi != null && vTargetCi.isInternal) {
+		val vTargetPkg = declOrigPkg[vResolvedName] ?: ""
+		val vCurrentPkg = file.pkg ?: ""
+		if (vTargetPkg.isNotEmpty() && vTargetPkg != vCurrentPkg) {
+			codegenError("E044",
+				"Cannot instantiate '$vResolvedName': declared internal in package '$vTargetPkg' " +
+				"(accessed from '$vCurrentPkg')")
+		}
+	}
+
 	// Value class constructor: unwrap to the single argument expression
 	val vValueCi = classes[vResolvedName]
 	if (vValueCi != null && vValueCi.isValue && inArgs.size == 1) {

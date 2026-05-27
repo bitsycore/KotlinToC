@@ -292,6 +292,17 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     }
 
     // ── Regular function call — fill defaults and dispatch ────────
+    // Internal visibility check: top-level fun marked `internal` cannot be called
+    // from a different package than the one it was declared in.
+    val vInternalFunPkg = internalFunPkgs[vName]
+    if (vInternalFunPkg != null) {
+        val vCurrentPkg = file.pkg ?: ""
+        if (vInternalFunPkg.isNotEmpty() && vInternalFunPkg != vCurrentPkg) {
+            codegenError("E044",
+                "Cannot call '$vName': declared internal in package '$vInternalFunPkg' " +
+                "(accessed from '$vCurrentPkg')")
+        }
+    }
     val vSig = funSigs[vName]
     val vFilledArgs =
         if (vSig != null) fillDefaults(vArgs, vSig.params, vSig.params.associate { it.name to it.default }) else vArgs

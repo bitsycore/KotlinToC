@@ -43,6 +43,7 @@ data class FunDecl(
     val typeParams: List<String> = emptyList(),
     val isOperator: Boolean = false,
     val isPrivate: Boolean = false,
+    val isInternal: Boolean = false,
     val isInline: Boolean = false,
     val isOverride: Boolean = false,
     val isInfix: Boolean = false,
@@ -61,7 +62,8 @@ data class ClassDecl(
     val secondaryCtors: List<SecondaryCtor> = emptyList(),
     val annotations: List<Annotation> = emptyList(),
     val isValue: Boolean = false,
-    val isSealed: Boolean = false
+    val isSealed: Boolean = false,
+    val isInternal: Boolean = false
 ) : Decl()
 
 data class EnumDecl(
@@ -103,6 +105,7 @@ data class PropDecl(
     val line: Int = 0,
     val isPrivate: Boolean = false,
     val isPrivateSet: Boolean = false,
+    val isInternal: Boolean = false,
     val annotations: List<Annotation> = emptyList(),
     val receiver: TypeRef? = null,     // extension property: val Receiver.name
     val getter: Expr? = null,          // get() = expr

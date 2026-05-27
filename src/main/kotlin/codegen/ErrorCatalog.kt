@@ -132,6 +132,23 @@ object ErrorCatalog {
 			      v = 5
 			  }
 			""".trimIndent()),
+		Entry("E044", "Internal visibility violation",
+			"""
+			A declaration marked `internal` is only accessible from within the
+			same package. Accessing it from a different package is rejected:
+			  package foo
+			  internal class Secret(val x: Int)
+
+			  package bar
+			  val s = Secret(1)    // error E044 — Secret is internal to 'foo'
+
+			If you intended the declaration to be accessible across packages,
+			remove the `internal` modifier (it becomes public). If you intended
+			the access to stay within `foo`, move the caller into `foo` as well.
+
+			KTC enforces `internal` on a per-package boundary by default; this
+			differs from Kotlin/JVM where the boundary is per Gradle module.
+			""".trimIndent()),
 
 		// ── Call errors ──────────────────────────────────────────
 		Entry("E050", "Unknown method on receiver",

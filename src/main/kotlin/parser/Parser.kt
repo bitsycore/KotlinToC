@@ -61,7 +61,7 @@ class Parser(private val tokens: List<Token>) {
             if (at(TokenType.COMMENT)) { advance(); skipTerminator(); continue }
             break
         }
-        // track 'override', 'operator', 'infix', 'inline' and 'private' modifiers
+        // track 'override', 'operator', 'infix', 'inline', 'private', 'internal' modifiers
         val isOverride = at(TokenType.OVERRIDE)
         if (isOverride) advance()
         val isOperator = at(TokenType.IDENT) && cur().value == "operator"
@@ -70,6 +70,9 @@ class Parser(private val tokens: List<Token>) {
         if (isInfix) advance()
         val isPrivate = at(TokenType.PRIVATE)
         if (isPrivate) advance()
+        val isInternal = at(TokenType.INTERNAL)
+        if (isInternal) advance()
+        if (isPrivate && isInternal) error("'private' and 'internal' are mutually exclusive on the same declaration")
         val isTailrec = at(TokenType.TAILREC)
         if (isTailrec) advance()
         val isInlineExplicit = at(TokenType.IDENT) && cur().value == "inline" && peek().type in setOf(TokenType.FUN, TokenType.VAL, TokenType.VAR, TokenType.CLASS)
@@ -80,9 +83,9 @@ class Parser(private val tokens: List<Token>) {
         if (isSealed) advance()
         val isInline = isInlineExplicit || isInfix
         return when {
-            at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec)
-            at(TokenType.DATA)   -> { if (isPrivate) error("private with data not supported"); advance(); expect(TokenType.CLASS); parseClassDecl(isData = true) }
-            at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false, isValue = isValue, isSealed = isSealed) }
+            at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInternal = isInternal, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec)
+            at(TokenType.DATA)   -> { if (isPrivate) error("private with data not supported"); advance(); expect(TokenType.CLASS); parseClassDecl(isData = true, isInternal = isInternal) }
+            at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false, isValue = isValue, isSealed = isSealed, isInternal = isInternal) }
             at(TokenType.IDENT) && cur().value == "annotation" && peek().type == TokenType.CLASS -> {
                 advance(); advance(); parseClassDecl(isData = false)
             }
@@ -94,35 +97,35 @@ class Parser(private val tokens: List<Token>) {
                 parseCompanionObjectDecl()
             }
             at(TokenType.OBJECT) -> parseObjectDecl()
-            at(TokenType.VAL)    -> parsePropDecl(mutable = false, isPrivate = isPrivate, isInline = isInlineExplicit)
-            at(TokenType.VAR)    -> parsePropDecl(mutable = true, isPrivate = isPrivate, isInline = isInlineExplicit)
+            at(TokenType.VAL)    -> parsePropDecl(mutable = false, isPrivate = isPrivate, isInternal = isInternal, isInline = isInlineExplicit)
+            at(TokenType.VAR)    -> parsePropDecl(mutable = true, isPrivate = isPrivate, isInternal = isInternal, isInline = isInlineExplicit)
             at(TokenType.AT) -> {
                 val anns = parseAnnotations()
                 when {
-                    at(TokenType.VAL)    -> parsePropDecl(mutable = false, preAnnotations = anns, isPrivate = isPrivate, isInline = isInlineExplicit)
-                    at(TokenType.VAR)    -> parsePropDecl(mutable = true, preAnnotations = anns, isPrivate = isPrivate, isInline = isInlineExplicit)
+                    at(TokenType.VAL)    -> parsePropDecl(mutable = false, preAnnotations = anns, isPrivate = isPrivate, isInternal = isInternal, isInline = isInlineExplicit)
+                    at(TokenType.VAR)    -> parsePropDecl(mutable = true, preAnnotations = anns, isPrivate = isPrivate, isInternal = isInternal, isInline = isInlineExplicit)
                     at(TokenType.OBJECT) -> parseObjectDecl(anns)
                     at(TokenType.IDENT) && cur().value == "companion" && peek().type == TokenType.OBJECT -> {
                         advance()
                         parseCompanionObjectDecl(anns)
                     }
                     at(TokenType.FUN) -> parseFunDecl(
-                        isOperator = isOperator, isPrivate = isPrivate, isInline = isInline,
+                        isOperator = isOperator, isPrivate = isPrivate, isInternal = isInternal, isInline = isInline,
                         isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec, annotations = anns
                     )
                     at(TokenType.DATA) -> {
                         advance(); expect(TokenType.CLASS)
-                        parseClassDecl(isData = true, annotations = anns)
+                        parseClassDecl(isData = true, annotations = anns, isInternal = isInternal)
                     }
-                    at(TokenType.CLASS) -> { advance(); parseClassDecl(isData = false, annotations = anns, isValue = isValue) }
+                    at(TokenType.CLASS) -> { advance(); parseClassDecl(isData = false, annotations = anns, isValue = isValue, isInternal = isInternal) }
                     at(TokenType.IDENT) && cur().value == "value" && peek().type == TokenType.CLASS -> {
                         advance(); advance()
-                        parseClassDecl(isData = false, annotations = anns, isValue = true)
+                        parseClassDecl(isData = false, annotations = anns, isValue = true, isInternal = isInternal)
                     }
                     at(TokenType.SEALED) -> {
                         advance()
                         if (at(TokenType.INTERFACE)) parseInterfaceDecl(isSealed = true, annotations = anns)
-                        else { advance(); parseClassDecl(isData = false, annotations = anns, isSealed = true) }
+                        else { advance(); parseClassDecl(isData = false, annotations = anns, isSealed = true, isInternal = isInternal) }
                     }
                     at(TokenType.INTERFACE) -> parseInterfaceDecl(annotations = anns)
                     else -> error("Annotations @${anns.joinToString(" ") { it.name }} before '${cur().value}' are not supported")
@@ -135,7 +138,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── fun ──────────────────────────────────────────────────────────
 
-    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
+    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInternal: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
         expect(TokenType.FUN)
         // Parse optional type parameters: fun <reified T, U> name(...)
         val typeParams = if (at(TokenType.LT)) {
@@ -189,7 +192,7 @@ class Parser(private val tokens: List<Token>) {
             else -> null
         }
         skipTerminator()
-        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInline, isOverride, isInfix, isTailrec, annotations)
+        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInternal, isInline, isOverride, isInfix, isTailrec, annotations)
     }
 
     private fun parseParamList(): List<Param> {
@@ -212,7 +215,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── class / data class ───────────────────────────────────────────
 
-    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false, isSealed: Boolean = false): ClassDecl {
+    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false, isSealed: Boolean = false, isInternal: Boolean = false): ClassDecl {
         val name = expectIdent()
         // Parse type parameters: class Foo<out T, in U>(...)
         val typeParams = if (at(TokenType.LT)) {
@@ -262,7 +265,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations, isValue, isSealed)
+        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations, isValue, isSealed, isInternal)
     }
 
     private fun parseCtorParams(): List<CtorParam> {
@@ -491,7 +494,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── val / var (top-level or class-level property) ────────────────
 
-    private fun parsePropDecl(mutable: Boolean, preAnnotations: List<Annotation> = emptyList(), isPrivate: Boolean = false, isInline: Boolean = false): PropDecl {
+    private fun parsePropDecl(mutable: Boolean, preAnnotations: List<Annotation> = emptyList(), isPrivate: Boolean = false, isInternal: Boolean = false, isInline: Boolean = false): PropDecl {
         val line = cur().line
         val typeAnnotations = if (preAnnotations.isEmpty()) parseAnnotations() else emptyList()
         advance()   // skip val/var
@@ -584,7 +587,7 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         skipTerminator()
-        return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations,
+        return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, isInternal = isInternal, annotations = preAnnotations,
             receiver = receiver, getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody, isInline = isInline, lazyInit = lazyInit)
     }
 
