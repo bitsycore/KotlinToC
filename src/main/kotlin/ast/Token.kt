@@ -19,7 +19,7 @@ enum class TokenType {
     IN, IS, AS,
     NULL, TRUE, FALSE,
     THIS, INIT, INTERFACE, OVERRIDE, PRIVATE, SET, GET,
-    TYPEALIAS, TAILREC,
+    TYPEALIAS, TAILREC, SEALED,
 
     // Identifier
     IDENT,
@@ -90,4 +90,5 @@ val KEYWORDS: Map<String, TokenType> = mapOf(
     "private"  to TokenType.PRIVATE,
     "typealias" to TokenType.TYPEALIAS,
     "tailrec"   to TokenType.TAILREC,
+    "sealed"    to TokenType.SEALED,
 )

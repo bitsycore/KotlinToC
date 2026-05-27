@@ -28,7 +28,7 @@ internal fun dumpDecl(d: Decl, depth: Int): String {
 
 		is ClassDecl -> {
 			val vTps = if (d.typeParams.isNotEmpty()) "<${d.typeParams.joinToString(", ")}>" else ""
-			val vDs  = if (d.isData) "data " else ""
+			val vDs  = if (d.isSealed) "sealed " else if (d.isData) "data " else ""
 			val vIfs = if (d.superInterfaces.isNotEmpty()) " : ${d.superInterfaces.joinToString(", ") { dumpTypeRef(it) }}" else ""
 			vSb.appendLine("${vId}${vDs}class ${d.name}$vTps$vIfs")
 			for (cp in d.ctorParams) vSb.appendLine("${indent(depth + 1)}ctor ${dumpCtorParam(cp)}")

@@ -60,7 +60,8 @@ data class ClassDecl(
     val typeParams: List<String> = emptyList(),
     val secondaryCtors: List<SecondaryCtor> = emptyList(),
     val annotations: List<Annotation> = emptyList(),
-    val isValue: Boolean = false
+    val isValue: Boolean = false,
+    val isSealed: Boolean = false
 ) : Decl()
 
 data class EnumDecl(

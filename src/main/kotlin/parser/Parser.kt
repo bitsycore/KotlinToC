@@ -76,11 +76,13 @@ class Parser(private val tokens: List<Token>) {
         if (isInlineExplicit) advance()
         val isValue = at(TokenType.IDENT) && cur().value == "value" && peek().type == TokenType.CLASS
         if (isValue) advance()
+        val isSealed = at(TokenType.SEALED)
+        if (isSealed) advance()
         val isInline = isInlineExplicit || isInfix
         return when {
             at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec)
             at(TokenType.DATA)   -> { if (isPrivate) error("private with data not supported"); advance(); expect(TokenType.CLASS); parseClassDecl(isData = true) }
-            at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false, isValue = isValue) }
+            at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false, isValue = isValue, isSealed = isSealed) }
             at(TokenType.IDENT) && cur().value == "annotation" && peek().type == TokenType.CLASS -> {
                 advance(); advance(); parseClassDecl(isData = false)
             }
@@ -204,7 +206,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── class / data class ───────────────────────────────────────────
 
-    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false): ClassDecl {
+    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false, isSealed: Boolean = false): ClassDecl {
         val name = expectIdent()
         // Parse type parameters: class Foo<out T, in U>(...)
         val typeParams = if (at(TokenType.LT)) {
@@ -222,12 +224,15 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RPAREN); nesting--
             p
         } else emptyList()
-        // Parse super interfaces:  : Iface1<T>, Iface2
+        // Parse super interfaces/classes:  : Iface1<T>, Iface2, SealedParent()
         val superInterfaces = mutableListOf<TypeRef>()
         if (at(TokenType.COLON)) {
             advance(); skipNL()
             superInterfaces += parseTypeRef()
-            while (at(TokenType.COMMA)) { advance(); skipNL(); superInterfaces += parseTypeRef() }
+            if (at(TokenType.LPAREN)) { advance(); expect(TokenType.RPAREN) }
+            while (at(TokenType.COMMA)) { advance(); skipNL(); superInterfaces += parseTypeRef()
+                if (at(TokenType.LPAREN)) { advance(); expect(TokenType.RPAREN) }
+            }
         }
         skipNL()
         val members = mutableListOf<Decl>()
@@ -251,7 +256,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations, isValue)
+        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations, isValue, isSealed)
     }
 
     private fun parseCtorParams(): List<CtorParam> {
