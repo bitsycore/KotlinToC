@@ -151,43 +151,37 @@ class String {
 inline fun String.first(): Char = this[0]
 
 /** Last character. Throws on empty string via the bounds check. */
-inline fun String.last(): Char = this[length - 1]
+inline fun String.last(): Char = this[this.length - 1]
 
-/** First character, or null if the string is empty. */
-inline fun String.firstOrNull(): Char? = if (length == 0) null else this[0]
-
-/** Last character, or null if the string is empty. */
-inline fun String.lastOrNull(): Char? = if (length == 0) null else this[length - 1]
-
-/** Returns the character at [index], or null if out of range. */
-inline fun String.getOrNull(index: Int): Char? =
-	if (index < 0 || index >= length) null else this[index]
+/* Note: firstOrNull / lastOrNull / getOrNull are implemented as codegen
+intrinsics (see CallMethodBuiltins.kt) because inline expansion can't yet
+type a result variable as a `ktc_Char$Opt` (Optional<Char>). */
 
 /** Returns the character at [index], or [defaultValue] applied to [index] if out of range. */
 inline fun String.getOrElse(index: Int, defaultValue: (Int) -> Char): Char =
-	if (index < 0 || index >= length) defaultValue(index) else this[index]
+	if (index < 0 || index >= this.length) defaultValue(index) else this[index]
 
 // ── Slicing (substring view, no copy) ─────────────────────
 
-/** First [n] characters (clamped to length). */
+/** First [n] characters (clamped to this.length). */
 inline fun String.take(n: Int): String =
-	if (n >= length) this else this.substring(0, if (n < 0) 0 else n)
+	if (n >= this.length) this else this.substring(0, if (n < 0) 0 else n)
 
-/** Last [n] characters (clamped to length). */
+/** Last [n] characters (clamped to this.length). */
 inline fun String.takeLast(n: Int): String {
 	if (n <= 0) return ""
-	val vStart = length - n
-	return if (vStart <= 0) this else this.substring(vStart, length)
+	val vStart = this.length - n
+	return if (vStart <= 0) this else this.substring(vStart, this.length)
 }
 
 /** Drops the first [n] characters. */
 inline fun String.drop(n: Int): String =
-	if (n >= length) "" else this.substring(if (n < 0) 0 else n, length)
+	if (n >= this.length) "" else this.substring(if (n < 0) 0 else n, this.length)
 
 /** Drops the last [n] characters. */
 inline fun String.dropLast(n: Int): String {
-	if (n >= length) return ""
-	return this.substring(0, length - if (n < 0) 0 else n)
+	if (n >= this.length) return ""
+	return this.substring(0, this.length - if (n < 0) 0 else n)
 }
 
 // ── Trim (substring view, no copy) ────────────────────────
@@ -195,12 +189,12 @@ inline fun String.dropLast(n: Int): String {
 /** Removes leading and trailing ASCII whitespace. Returns a view of this. */
 inline fun String.trim(): String {
 	var vStart = 0
-	while (vStart < length) {
+	while (vStart < this.length) {
 		val c = this[vStart]
 		if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break
 		vStart++
 	}
-	var vEnd = length
+	var vEnd = this.length
 	while (vEnd > vStart) {
 		val c = this[vEnd - 1]
 		if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break
@@ -212,17 +206,17 @@ inline fun String.trim(): String {
 /** Removes leading ASCII whitespace. */
 inline fun String.trimStart(): String {
 	var vStart = 0
-	while (vStart < length) {
+	while (vStart < this.length) {
 		val c = this[vStart]
 		if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break
 		vStart++
 	}
-	return this.substring(vStart, length)
+	return this.substring(vStart, this.length)
 }
 
 /** Removes trailing ASCII whitespace. */
 inline fun String.trimEnd(): String {
-	var vEnd = length
+	var vEnd = this.length
 	while (vEnd > 0) {
 		val c = this[vEnd - 1]
 		if (c != ' ' && c != '\t' && c != '\n' && c != '\r') break
@@ -236,7 +230,7 @@ inline fun String.trimEnd(): String {
 /** True when the string is empty or contains only ASCII whitespace. */
 inline fun String.isBlank(): Boolean {
 	var i = 0
-	while (i < length) {
+	while (i < this.length) {
 		val c = this[i]
 		if (c != ' ' && c != '\t' && c != '\n' && c != '\r') return false
 		i++
@@ -245,4 +239,4 @@ inline fun String.isBlank(): Boolean {
 }
 
 /** True when the string contains at least one non-whitespace character. */
-inline fun String.isNotBlank(): Boolean = !isBlank()
+inline fun String.isNotBlank(): Boolean = !this.isBlank()

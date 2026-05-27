@@ -270,6 +270,38 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		"toBooleanStrictOrNull" -> if (inRecvTypeKtc is KtcType.Str)
 			return tmpStrToNumOptional(inRecv, "ktc_Bool", "toBooleanStrictOrNull")
 
+		"compareTo" -> if (inRecvTypeKtc is KtcType.Str && inArgs.size == 1) {
+			val vOther = genExpr(inArgs[0].expr)
+			return "ktc_core_string_cmp($inRecv, $vOther)"
+			}
+
+		// Nullable-returning helpers. Inline expansion can't type a result
+		// variable as ktc_Char$Opt yet, so these build the Optional directly.
+		"firstOrNull" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vT = tmp()
+			preStmts += "ktc_Char\$Opt $vT;"
+			preStmts += "if (($inRecv).len == 0) { $vT.tag = ktc_NONE; } else { $vT.tag = ktc_SOME; $vT.value = ($inRecv).ptr[0]; }"
+			markOptional(vT)
+			return vT
+			}
+
+		"lastOrNull" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vT = tmp()
+			preStmts += "ktc_Char\$Opt $vT;"
+			preStmts += "if (($inRecv).len == 0) { $vT.tag = ktc_NONE; } else { $vT.tag = ktc_SOME; $vT.value = ($inRecv).ptr[($inRecv).len - 1]; }"
+			markOptional(vT)
+			return vT
+			}
+
+		"getOrNull" -> if (inRecvTypeKtc is KtcType.Str && inArgs.size == 1) {
+			val vIdx = genExpr(inArgs[0].expr)
+			val vT = tmp()
+			preStmts += "ktc_Char\$Opt $vT;"
+			preStmts += "{ ktc_Int ${vT}_i = ($vIdx); if (${vT}_i < 0 || ${vT}_i >= ($inRecv).len) { $vT.tag = ktc_NONE; } else { $vT.tag = ktc_SOME; $vT.value = ($inRecv).ptr[${vT}_i]; } }"
+			markOptional(vT)
+			return vT
+			}
+
 		"toBooleanStrict" -> if (inRecvTypeKtc is KtcType.Str) {
 			val vT = tmp()
 			preStmts += "ktc_Bool $vT = false;"

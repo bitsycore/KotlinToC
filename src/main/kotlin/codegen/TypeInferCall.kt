@@ -242,12 +242,21 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
         }
     }
     if (recvType.removeSuffix("?") == "String") {
-        return when (method) {
-            "substring" -> "String"
-            "startsWith", "endsWith", "contains", "isEmpty", "isNotEmpty" -> "Boolean"
-            "indexOf" -> "Int"
+        val vBuiltin = when (method) {
+            "substring",
+            "reversed", "lowercase", "uppercase",
+            "repeat", "replace", "padStart", "padEnd" -> "String"
+            "startsWith", "endsWith", "contains", "isEmpty", "isNotEmpty",
+            "toBooleanStrict" -> "Boolean"
+            "toBooleanStrictOrNull" -> "Boolean?"
+            "firstOrNull", "lastOrNull", "getOrNull" -> "Char?"
+            "indexOf", "lastIndexOf", "compareTo" -> "Int"
             else -> null
         }
+        // Only short-circuit on a builtin match. Otherwise fall through so
+        // user-defined extension functions on String (take/drop/trim/...
+        // from stdlib Strings.kt) can be resolved via extensionFuns below.
+        if (vBuiltin != null) return vBuiltin
     }
     val pointerBase = (recvKtcCorePtr as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
     if (pointerBase != null) {
