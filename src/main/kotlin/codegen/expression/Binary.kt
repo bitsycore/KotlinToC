@@ -279,6 +279,23 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     if ((e.op == "/" || e.op == "%") && e.right is IntLit && e.right.value == 0L) {
         codegenError("Division by zero: constant 0 used as divisor in '${e.op}' expression")
     }
+    // Constant-fold when both sides are integer literals
+    if (e.left is IntLit && e.right is IntLit && e.op in setOf("+", "-", "*", "/", "%")) {
+        val vL = e.left.value
+        val vR = e.right.value
+        val vResult = when (e.op) {
+            "+"  -> vL + vR
+            "-"  -> vL - vR
+            "*"  -> vL * vR
+            "/"  -> vL / vR
+            "%"  -> vL % vR
+            else -> null
+        }
+        if (vResult != null) {
+            val vSuffix = if (lt == "Long") "LL" else ""
+            return if (vResult < 0) "($vResult$vSuffix)" else "$vResult$vSuffix"
+        }
+    }
     return "(${genExpr(e.left)} ${e.op} ${genExpr(e.right)})"
 }
 
