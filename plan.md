@@ -48,7 +48,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 ### Emitted C quality
 
 - [x] **Static-bounds elision for proven-safe literal indices** (S) — When index is a non-negative literal within a statically-known array size, the runtime `bounds_check` call is elided.
-- [ ] **Static-null elision after `?.let { ... }` / `if (p != null) { ... }`** (S–M) — Inside the smart-cast block the pointer is non-null; skip the runtime null check.
+- [x] **Static-null elision after `if (p != null) { ... }`** (S–M) — Inside a smart-cast block, `isProvablyNonNull` detects that the variable was narrowed from `Nullable` and skips the runtime null check. Only applies to smart-cast narrowed variables, not all `Ptr` types. Tests in `ElisionUnitTest`.
 - [x] **Skip null-check when source is `.asRef()` of a local** (S) — `isProvablyNonNull()` detects `.asRef()` origins and skips the runtime null check. Unit tests in `ElisionUnitTest`.
 - [x] **String literal deduplication** (M) — Post-processing pass in `generate()`: scans each `.c` file for `ktc_core_str("...")` used 2+ times, promotes them to `#define $pkg_sN ktc_core_str("...")` in the package header. Package-prefixed names avoid cross-header collisions. `#define` avoids MSVC compound-literal-at-file-scope issue.
 - [x] **Collapse trivial `$ir` for single-expression inline bodies** (M) — `tryGenInlineExpr` splices single-expression inline bodies directly without `$ir` temp var. Tests in `ElisionUnitTest`.

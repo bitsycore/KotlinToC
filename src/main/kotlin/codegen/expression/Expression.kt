@@ -412,11 +412,21 @@ internal fun CCodeGen.wrapNullCheck(inPtrExpr: String, inDerefExpr: String, inRe
 	return inDerefExpr
 }
 
-// .asRef() of any expression produces &x, which is never NULL.
-// allocWith() of known non-null allocators could be added later.
 internal fun CCodeGen.isProvablyNonNull(inExpr: Expr): Boolean {
 	if (inExpr is CallExpr && inExpr.callee is DotExpr && (inExpr.callee as DotExpr).name == "asRef")
 		return true
+	// After smart-cast in `if (p != null)`, Nullable(Ptr(T)) narrows to Ptr(T).
+	// Only elide when an outer scope had a nullable variant — not for all Ptr params.
+	if (inExpr is NameExpr) {
+		val ktc = lookupVarKtc(inExpr.name)
+		if (ktc is KtcType.Ptr) {
+			for (i in scopes.size - 2 downTo 0) {
+				val outer = scopes[i][inExpr.name]?.ktc ?: continue
+				if (outer is KtcType.Nullable) return true
+				return false
+			}
+		}
+	}
 	return false
 }
 

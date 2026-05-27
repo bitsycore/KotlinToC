@@ -24,6 +24,36 @@ class ElisionUnitTest : TranspilerTestBase() {
 		r.sourceNotContains("null_check")
 	}
 
+	@Test fun nullCheckElidedAfterSmartCast() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val p: Ref<Int?> = 42.asRef()
+				if (p != null) {
+					println(p.refValue)
+				}
+			}
+		""")
+		r.sourceContains("if (p != NULL)")
+		// Inside the if block, the null_check should be elided (smart-cast narrows to non-nullable)
+		val ifBlock = r.source.substringAfter("if (p != NULL)").substringBefore("}")
+		kotlin.test.assertFalse(ifBlock.contains("null_check"), "Expected no null_check inside if (p != null) block")
+	}
+
+	@Test fun nullCheckKeptOnNonNullRef() {
+		val r = transpile("""
+			package test.Main
+			fun useRef(p: Ref<Int>) {
+				println(p.refValue)
+			}
+			fun main(args: Array<String>) {
+				var x = 42
+				useRef(x.asRef())
+			}
+		""")
+		r.sourceContains("null_check")
+	}
+
 	// ── Trivial inline body collapse ─────────────────────────────────
 
 	@Test fun singleExprInlineNoIrVar() {
