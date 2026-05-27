@@ -162,6 +162,29 @@ internal fun CCodeGen.checkWhenExhaustiveness(e: WhenExpr) {
 	if (e.subject == null) return
 	if (e.branches.any { it.conds == null }) return
 	val subjType = inferExprTypeKtc(e.subject) ?: return
+	val vSubjName = subjType.stripNullable.toInternalStr
+
+	// Sealed class / sealed interface exhaustiveness: each branch's IsCond
+	// target narrows the subject to a concrete subclass. Cover all listed
+	// subclasses and the `when` is exhaustive.
+	val vIsSealed = classes[vSubjName]?.isSealed == true || interfaces[vSubjName]?.isSealed == true
+	if (vIsSealed) {
+		val vKnownSubs = sealedSubclasses[vSubjName] ?: emptyList()
+		if (vKnownSubs.isNotEmpty()) {
+			val vCovered = mutableSetOf<String>()
+			for (br in e.branches) for (cond in br.conds ?: continue) {
+				if (cond is IsCond && !cond.negated) vCovered += cond.type.name
+				}
+			val vMissing = vKnownSubs.filter { it !in vCovered }
+			if (vMissing.isNotEmpty()) {
+				val kind = if (classes[vSubjName]?.isSealed == true) "sealed class" else "sealed interface"
+				codegenWarning("exhaustive-when",
+					"'when' on $kind $vSubjName is not exhaustive; missing: ${vMissing.joinToString(", ")} — add an 'else' branch or handle all subclasses")
+			}
+		}
+		return
+	}
+
 	val enumInfo = enumInfoFor(subjType) ?: enums[subjType.toInternalStr] ?: return
 	val covered = mutableSetOf<String>()
 	for (br in e.branches) {

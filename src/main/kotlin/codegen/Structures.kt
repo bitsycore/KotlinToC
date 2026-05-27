@@ -72,7 +72,8 @@ internal data class ClassInfo(
     override val typeParams: List<String> = emptyList(),       // generic type parameters
     override var pkg: String = "",                             // set during collectDecls; mutable for post-construction assignment
     val isValue: Boolean = false,                              // inline value class flag
-    val isInternal: Boolean = false                            // internal visibility (cross-package access blocked)
+    val isInternal: Boolean = false,                           // internal visibility (cross-package access blocked)
+    val isSealed: Boolean = false                              // sealed class — closed hierarchy, enables exhaustive `when`
 ) : TypeDef {
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = when {
@@ -149,7 +150,8 @@ internal data class IfaceInfo(
     val propDecls: List<PropDecl> = emptyList(),                  // declared properties (AST PropDecl form)
     override val typeParams: List<String> = emptyList(),          // generic type parameters
     val superInterfaces: List<TypeRef> = emptyList(),             // super interface refs
-    override var pkg: String = ""                                 // set during collectDecls
+    override var pkg: String = "",                                // set during collectDecls
+    val isSealed: Boolean = false                                 // sealed interface — closed hierarchy, enables exhaustive `when`
 ) : TypeDef {
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = KtcType.UserKind.Interface

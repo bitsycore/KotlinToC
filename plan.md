@@ -11,7 +11,6 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 ## Kotlin features
 
 - [ ] Can you make that enum can be @SimpleEnum and so be just simple enum like now and that other enum can be more complexe and be class (like in kotlin) with real instance that have full Any and other stuff ?
-- [ ] **Sealed-subclass exhaustiveness in type inference** (M) — `when` exhaustiveness on enums is in (`WhenExhaustUnitTest`). Extend it to sealed-class / sealed-interface subjects, then let `when` expression types be inferred without an `else` branch.
 
 ## Codegen
 

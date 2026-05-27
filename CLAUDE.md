@@ -87,7 +87,7 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - No general property delegation (`by`). `by lazy { ... }` is supported for local and top-level vals (thread-safe via `ktc_thread_call_once` for top-level).
 - No `inline value class`.
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
-- No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.
+- Exhaustiveness for `when` is warned on enums (each entry covered) and on sealed classes / sealed interfaces (each direct subclass covered via `is` branches). Adding an `else` branch silences the warning.
 - `RawArray<T>` is never bounds-checked (no length carried). `Array<T>` / `String` / `@Size(N)` indexing IS checked by default — see "Bounds checking" above.
 - `private` fields and methods are enforced across class boundaries (codegen error on access from outside). `internal` on classes and top-level functions is enforced per-package (cross-package access is rejected with E044).
 - Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.

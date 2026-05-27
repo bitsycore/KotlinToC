@@ -95,4 +95,84 @@ class WhenExhaustUnitTest : TranspilerTestBase() {
 		""")
 		r.hasNoWarnings()
 	}
+
+	// ── sealed-class / sealed-interface exhaustiveness ──────────────
+
+	@Test fun exhaustiveSealedInterfaceNoWarning() {
+		val r = transpile("""
+			package test.Main
+			sealed interface Shape
+			class Circle(val r: Float) : Shape
+			class Square(val side: Float) : Shape
+			fun area(s: Shape): Float = when (s) {
+				is Circle -> s.r
+				is Square -> s.side
+			}
+			fun main(args: Array<String>) { println(area(Circle(1.0f))) }
+		""")
+		r.hasNoWarnings()
+	}
+
+	@Test fun nonExhaustiveSealedInterfaceWarns() {
+		val r = transpile("""
+			package test.Main
+			sealed interface Shape
+			class Circle(val r: Float) : Shape
+			class Square(val side: Float) : Shape
+			class Triangle(val base: Float) : Shape
+			fun area(s: Shape): Float = when (s) {
+				is Circle -> s.r
+				is Square -> s.side
+			}
+			fun main(args: Array<String>) { println(area(Circle(1.0f))) }
+		""")
+		r.hasWarnings(1)
+	}
+
+	@Test fun exhaustiveSealedClassNoWarning() {
+		val r = transpile("""
+			package test.Main
+			sealed class Animal
+			class Cat : Animal()
+			class Dog : Animal()
+			fun greet(a: Animal): Int = when (a) {
+				is Cat -> 1
+				is Dog -> 2
+			}
+			fun main(args: Array<String>) { println(greet(Cat())) }
+		""")
+		r.hasNoWarnings()
+	}
+
+	@Test fun nonExhaustiveSealedClassWarns() {
+		val r = transpile("""
+			package test.Main
+			sealed class Animal
+			class Cat : Animal()
+			class Dog : Animal()
+			class Fish : Animal()
+			fun greet(a: Animal): Int = when (a) {
+				is Cat -> 1
+				is Dog -> 2
+			}
+			fun main(args: Array<String>) { println(greet(Cat())) }
+		""")
+		r.hasWarnings(1)
+	}
+
+	@Test fun sealedWhenWithElseNoWarning() {
+		val r = transpile("""
+			package test.Main
+			sealed interface Op
+			class Add : Op
+			class Sub : Op
+			class Mul : Op
+			fun apply(o: Op): Int = when (o) {
+				is Add -> 1
+				else -> 0
+			}
+			fun main(args: Array<String>) { println(apply(Add())) }
+		""")
+		r.hasNoWarnings()
+	}
 }

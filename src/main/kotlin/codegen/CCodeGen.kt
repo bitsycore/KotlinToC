@@ -141,6 +141,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val topPropDecls = mutableMapOf<String, PropDecl>()  // top-level prop name → decl (for type inference)
     internal val internalFunPkgs = mutableMapOf<String, String>()  // top-level internal fun name → its declaring pkg (visibility enforcement)
     internal val internalTopPropPkgs = mutableMapOf<String, String>()  // top-level internal prop name → its declaring pkg
+    internal val sealedSubclasses = mutableMapOf<String, MutableList<String>>()  // sealed type name → known direct subclass names (for `when` exhaustiveness)
     internal val lazyInitBlocks = mutableMapOf<String, Block>()  // local lazy vars: name → init body
     internal val lazyTopProps = mutableSetOf<String>()  // top-level lazy props (use thread-safe init)
     internal val extensionFuns = mutableMapOf<String, MutableList<FunDecl>>()

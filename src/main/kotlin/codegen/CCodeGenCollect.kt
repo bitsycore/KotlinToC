@@ -184,6 +184,18 @@ internal fun CCodeGen.collectDecls() {
 			oi.pkg = classes[vParent]?.pkg ?: objects[vParent]?.pkg ?: prefix
 			}
 		}
+	// Index sealed subclasses for `when` exhaustiveness. For each class C, every
+	// supertype that is a sealed class or sealed interface gets C added to its
+	// known-subclass list. Names in superInterfaces may refer to either kind.
+	sealedSubclasses.clear()
+	for ((name, ci) in classes) {
+		val vDecl = allClassDecls[name] ?: continue
+		for (vSuper in vDecl.superInterfaces) {
+			val vSn = vSuper.name
+			val vIsSealed = classes[vSn]?.isSealed == true || interfaces[vSn]?.isSealed == true
+			if (vIsSealed) sealedSubclasses.getOrPut(vSn) { mutableListOf() }.add(name)
+			}
+		}
 	}
 
 /* Register a single declaration into the appropriate symbol table.
@@ -254,7 +266,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				if (vBodyProps.isNotEmpty())
 					codegenError("E031", "Value class '${d.name}' cannot have body properties")
 			}
-			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue, isInternal = d.isInternal)
+			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue, isInternal = d.isInternal, isSealed = d.isSealed)
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
 				// Mirror the function-level rule: inline methods may return bare
@@ -325,7 +337,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 		is EnumDecl  -> enums[d.name] = EnumInfo(d.name, d.entries)
 
 		is InterfaceDecl -> {
-			interfaces[d.name] = IfaceInfo(d.name, d.methods, d.properties, d.typeParams, d.superInterfaces)
+			interfaces[d.name] = IfaceInfo(d.name, d.methods, d.properties, d.typeParams, d.superInterfaces, isSealed = d.isSealed)
 			getTypeId(d.name)
 			if (d.annotations.any { it.name == "SimpleUnion" }) {
 				if (d.methods.isNotEmpty() || d.properties.isNotEmpty())
