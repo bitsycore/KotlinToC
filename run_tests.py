@@ -502,6 +502,36 @@ def cmd_bench(inTestQuery: str, inN: int, inAllTests: list, inOpts) -> int:
 	stats("run",     vRunTimes)
 	return 0
 
+def snapshot_kt_mtimes() -> dict[str, float]:
+	# Collect mtime of every .kt file under src/ and integration/.
+	vResult: dict[str, float] = {}
+	for vDir in [kRoot / "src", kTestsDir]:
+		if not vDir.is_dir():
+			continue
+		for vKt in vDir.rglob("*.kt"):
+			vResult[str(vKt)] = vKt.stat().st_mtime
+	return vResult
+
+def cmd_watch(inRunFn) -> int:
+	# Poll for .kt changes and re-run tests.
+	vPrev = snapshot_kt_mtimes()
+	pwrite(f"{kCyan}Watching for .kt changes (Ctrl+C to stop)...{kRst}")
+	try:
+		while True:
+			time.sleep(1)
+			vCurr = snapshot_kt_mtimes()
+			vChanged = []
+			for vPath, vMt in vCurr.items():
+				if vPath not in vPrev or vPrev[vPath] != vMt:
+					vChanged.append(Path(vPath).name)
+			if vChanged:
+				pwrite(f"\n{kYellow}Changed: {', '.join(vChanged[:5])}{kRst}")
+				inRunFn()
+				vPrev = snapshot_kt_mtimes()
+	except KeyboardInterrupt:
+		pwrite(f"\n{kCyan}Watch stopped.{kRst}")
+	return 0
+
 # ==================
 # MARK: Build (Gradle / ProGuard)
 # ==================
@@ -1271,6 +1301,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("--bench", default="", help="Run a test N times and report timing stats (e.g. --bench TestName [-n 10])")
 	vP.add_argument("-n", type=int, default=5, help="Number of iterations for --bench (default: 5)")
 	vP.add_argument("--completions", default="", choices=["", "bash", "zsh", "fish"], help="Print shell completion script and exit")
+	vP.add_argument("--watch", action="store_true", help="Re-run tests when .kt files change")
 	vP.add_argument("command", nargs="?", default=None, help="Subcommand: 'init <name>' scaffolds a new test")
 	vP.add_argument("init_name", nargs="?", default=None, help="Name for the new test (used with 'init')")
 	return vP
@@ -1395,8 +1426,20 @@ def main(inArgv: list[str]) -> int:
 		return 1 if vAnyFail else 0
 
 	# ── Default: full suite ───────────────────────────────────────
-	invoke_build(vOpts.buildMode, vNs.rebuild)
 	vSkipUnit = vNs.skip_unit or vNs.skip == "unit"
+
+	def run_once():
+		invoke_build(vOpts.buildMode, False)
+		vRes = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
+		show_summary(vRes)
+
+	if vNs.watch:
+		invoke_build(vOpts.buildMode, vNs.rebuild)
+		vRes = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
+		show_summary(vRes)
+		return cmd_watch(run_once)
+
+	invoke_build(vOpts.buildMode, vNs.rebuild)
 	vRes      = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
 	return show_summary(vRes)
 

@@ -77,7 +77,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **`--filter <glob>`** / **`--exclude <glob>`** (S) — Glob matching against test relPath or name. Works with `--list` and full runs.
 - [x] **`--fail-fast`** (S) — Stops after first failure; cancels pending futures in parallel mode.
 - [x] **`--bench <test> [-n N]`** (M) — `--bench TestName -n 10` runs a test N times and reports min/median/p95/mean of ktc/compile/run timings.
-- [ ] **`--watch`** (M) — Re-run tests when a `.kt` file changes. Drives a fast inner-loop dev workflow.
+- [x] **`--watch`** (M) — `--watch` polls `src/` and `integration/` for `.kt` changes and re-runs the full suite. Ctrl+C to stop.
 - [x] **Shell completion script** (S) — `--completions bash|zsh|fish` prints a completion script. Completes flags + test names for `--run`/`--bench`/`--filter`.
 - [x] **`NO_COLOR` env var support** (S) — `_gNoColor` flag disables all ANSI escapes and live progress when `NO_COLOR` is set or stdout is not a tty.
 - [ ] **HTML test report** (M) — `--report html` writes a summary in `build/test-report.html` with timings, errors, and captured stdout/stderr.
