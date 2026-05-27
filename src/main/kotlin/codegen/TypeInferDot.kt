@@ -58,6 +58,17 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	if (e.name == "runeLen" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
 	if (e.name == "name"    && recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) return KtcType.Str
 	if (e.name == "ordinal" && recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) return KtcType.Prim(KtcType.PrimKind.Int)
+	// Full-enum ctor-param / body-property type lookup
+	if (recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) {
+		val vEi = enums[recvTypeCoreKtc.baseName]
+		if (vEi != null && !vEi.isSimple) {
+			val vProp = (vEi.ctorParams + vEi.bodyProps).find { it.name == e.name }
+			if (vProp != null) {
+				val vKtc = resolveTypeName(vProp.typeRef)
+				return if (vProp.typeRef.nullable) KtcType.Nullable(vKtc) else vKtc
+				}
+			}
+		}
 	val indirectBase = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
 	if (indirectBase != null) {
 		val ci = classes[indirectBase] ?: return null

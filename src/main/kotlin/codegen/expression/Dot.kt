@@ -119,11 +119,17 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     if (e.name == "ptr" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "$recv.ptr"
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"
     if (e.name == "runeLen" && recvTypeKtc is KtcType.Str) return "ktc_core_str_runeLen($recv)"
-    // Enum .ordinal → the int value itself
+    // Enum .ordinal — simple enum: the int value itself; full enum: .ordinal field on the struct
     val vOrdinalEnumInfo = enumInfoFor(recvTypeCoreKtc)                               // non-null if receiver is an enum (for ordinal/name)
-    if (e.name == "ordinal" && vOrdinalEnumInfo != null) return recv
-    // Enum .name → lookup in names array
-    if (e.name == "name" && vOrdinalEnumInfo != null) return "${vOrdinalEnumInfo.flatName}_names[($recv)]"
+    if (e.name == "ordinal" && vOrdinalEnumInfo != null)
+        return if (vOrdinalEnumInfo.isSimple) recv else "$recv.ordinal"
+    // Enum .name — simple enum: names[ordinal]; full enum: .name field on the struct
+    if (e.name == "name" && vOrdinalEnumInfo != null)
+        return if (vOrdinalEnumInfo.isSimple) "${vOrdinalEnumInfo.flatName}_names[($recv)]" else "$recv.name"
+    // Full enum: ctor-param or body property field access (e.g. Op.PLUS.sym → ...PLUS.sym)
+    if (vOrdinalEnumInfo != null && !vOrdinalEnumInfo.isSimple) {
+        if (vOrdinalEnumInfo.properties.any { it.name == e.name }) return "$recv.${e.name}"
+    }
 
     // String.lastIndex → s.len - 1 (Kotlin stdlib extension property).
     if (e.name == "lastIndex" && recvTypeKtc is KtcType.Str) return "($recv.len - 1)"

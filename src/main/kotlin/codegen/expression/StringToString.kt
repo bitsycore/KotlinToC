@@ -97,6 +97,11 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 	}
 	val cName  = typeFlatName(base)
 	val isPtr  = parseResolvedTypeName(type) is KtcType.Ptr
+	// Enum toString: simple → names[ordinal], full → struct.name (the entry name as a ktc_String).
+	val ei = enums[base]
+	if (ei != null) {
+		return if (ei.isSimple) "${cName}_names[$recv]" else "($recv).name"
+		}
 	if (classes.containsKey(base) && classes[base]!!.isData) {
 		val maxLen = toStringMaxLen(base)
 		if (maxLen != null && maxLen <= 512) {
@@ -349,6 +354,14 @@ internal fun CCodeGen.genSbAppendKtc(sbRef: String, expr: String, type: KtcType)
 					return genSbAppendKtc(sbRef, expr, underlyingType)
 				}
 			}
+			if (type.kind == KtcType.UserKind.Enum) {
+				val ei = enums[type.baseName]
+				val cName = typeFlatName(type.baseName)
+				return if (ei != null && !ei.isSimple)
+					"ktc_core_sb_append_str($sbRef, ($expr).name);"
+				else
+					"ktc_core_sb_append_str($sbRef, ${cName}_names[$expr]);"
+				}
 			if (type.kind == KtcType.UserKind.DataClass) {
 				val baseName = type.baseName
 				if (classes.containsKey(baseName)) {

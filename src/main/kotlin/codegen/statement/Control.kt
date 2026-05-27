@@ -207,8 +207,13 @@ internal fun CCodeGen.checkWhenExhaustiveness(e: WhenExpr) {
 
 internal fun CCodeGen.genWhenCond(c: WhenCond, subject: Expr?): String {
 	val subj = if (subject != null) genExpr(subject) else ""
+	val vSubjEnum = if (subject != null) enumInfoFor(inferExprTypeKtc(subject).stripNullable) else null
 	return when (c) {
-		is ExprCond -> if (subject != null) "$subj == ${genExpr(c.expr)}" else genExpr(c.expr)
+		is ExprCond -> when {
+			subject == null                                       -> genExpr(c.expr)
+			vSubjEnum != null && !vSubjEnum.isSimple              -> "$subj.ordinal == ${genExpr(c.expr)}.ordinal"
+			else                                                  -> "$subj == ${genExpr(c.expr)}"
+			}
 		is InCond -> {
 			val range = c.expr
 			val neg = if (c.negated) "!" else ""

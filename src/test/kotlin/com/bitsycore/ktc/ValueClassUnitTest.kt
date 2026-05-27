@@ -44,18 +44,6 @@ class ValueClassUnitTest : TranspilerTestBase() {
 		r.sourceContains("ktc_Float d")
 	}
 
-	@Test fun jvmInlineAnnotation() {
-		val r = transpile("""
-			package test.Main
-			@JvmInline value class Token(val raw: String)
-			fun main(args: Array<String>) {
-				val t = Token("abc")
-				println(t.raw)
-			}
-		""")
-		r.sourceContains("ktc_String t =")
-	}
-
 	@Test fun valueClassMultiplePropsError() {
 		transpileExpectError("""
 			package test.Main

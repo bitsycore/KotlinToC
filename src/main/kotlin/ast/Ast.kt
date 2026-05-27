@@ -66,10 +66,21 @@ data class ClassDecl(
     val isInternal: Boolean = false
 ) : Decl()
 
+/* Per-entry data for an enum:
+   name  — entry identifier (e.g. PLUS)
+   args  — arguments passed to the enum's primary constructor for this entry
+           (empty for simple enums) */
+data class EnumEntry(
+    val name: String,
+    val args: List<Arg> = emptyList()
+)
+
 data class EnumDecl(
     val name: String,
-    val entries: List<String>,
-    val annotations: List<Annotation> = emptyList()
+    val entries: List<EnumEntry>,
+    val annotations: List<Annotation> = emptyList(),
+    val ctorParams: List<CtorParam> = emptyList(),  // primary ctor params (empty = simple enum)
+    val members: List<Decl> = emptyList()           // body methods/properties after `;`
 ) : Decl()
 
 data class InterfaceDecl(

@@ -204,6 +204,11 @@ internal fun CCodeGen.tryGenInlineExpr(
 	if (receiverType != null) lambdaParamTypes["\$this"] = receiverType
 
 	pushScope()
+	// Shadow any outer `$this` binding from an enclosing inline call so this inline's
+	// receiver type wins for `this.x` lookups (otherwise nested inline-expansions resolve
+	// `this` to the wrong type — e.g. drawRoundedRect.this leaks into the arg-eval scope
+	// where box.grow() is being inlined, and `this.x` would resolve via the outer receiver).
+	if (receiverType != null) defineVar("\$this", receiverType)
 
 	callArgs.forEachIndexed { i, arg ->
 		val param = decl.params.getOrNull(i) ?: return@forEachIndexed

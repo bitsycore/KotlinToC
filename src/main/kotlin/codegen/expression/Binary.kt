@@ -174,6 +174,13 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     // Class == / != → ClassName_equals (all classes, not just data)
     // Also handles Ref<T> types by resolving to base class and dereferencing
     val ltKtc2 = inferExprTypeKtc(e.left)
+    // Full-enum == / != — compare by ordinal (simple enums fall through to plain int compare).
+    val ltEnumInfo = enumInfoFor(ltKtc2)
+    if ((e.op == "==" || e.op == "!=") && ltEnumInfo != null && !ltEnumInfo.isSimple) {
+        val leftExpr  = genExpr(e.left)
+        val rightExpr = genExpr(e.right)
+        return "($leftExpr.ordinal ${e.op} $rightExpr.ordinal)"
+    }
     var isPtr = false
     val classKeyFromKtc: String? = when (ltKtc2) {
         is KtcType.Ptr -> { isPtr = true; (ltKtc2.inner as? KtcType.User)?.baseName }

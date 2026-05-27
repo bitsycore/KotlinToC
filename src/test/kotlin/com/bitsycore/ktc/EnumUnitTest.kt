@@ -139,31 +139,7 @@ class EnumUnitTest : TranspilerTestBase() {
         r.sourceContains("_names[")
     }
 
-    // ── full-enum syntax rejection (Phase 0; full enums tracked in plan.md) ──
-
-    @Test fun enumCtorParamsError() {
-        transpileExpectError("""
-            package test.Main
-            enum class Op(val sym: String) { PLUS, MINUS }
-            fun main() {}
-        """.trimIndent(), "constructor parameters")
-    }
-
-    @Test fun enumEntryArgsError() {
-        transpileExpectError("""
-            package test.Main
-            enum class Op { PLUS("+") }
-            fun main() {}
-        """.trimIndent(), "constructor arguments")
-    }
-
-    @Test fun enumBodyMembersError() {
-        transpileExpectError("""
-            package test.Main
-            enum class Op { PLUS, MINUS; fun describe() = "?" }
-            fun main() {}
-        """.trimIndent(), "body members")
-    }
+    // ── @SimpleEnum opt-in (forces C-int form, must have no ctor/body) ──
 
     @Test fun simpleEnumAnnotationOk() {
         val r = transpile("""
@@ -172,5 +148,103 @@ class EnumUnitTest : TranspilerTestBase() {
             fun main(args: Array<String>) { val d = Dir.UP; println(d.name) }
         """.trimIndent())
         r.sourceContains("test_Main_Dir_UP")
+        r.headerContains("KTC_ENUM(")
+    }
+
+    @Test fun simpleEnumCtorParamsError() {
+        transpileExpectError("""
+            package test.Main
+            @SimpleEnum enum class Op(val sym: String) { PLUS, MINUS }
+            fun main() {}
+        """.trimIndent(), "no constructor parameters")
+    }
+
+    @Test fun simpleEnumBodyMembersError() {
+        transpileExpectError("""
+            package test.Main
+            @SimpleEnum enum class Op { PLUS, MINUS; fun describe() = "?" }
+            fun main() {}
+        """.trimIndent(), "no body members")
+    }
+
+    // ── Full enums: struct representation with ctor params, per-entry args, body methods ──
+
+    private val opDecl = """enum class Op(val sym: String) { PLUS("+"), MINUS("-"), TIMES("*") }"""
+
+    @Test fun fullEnumStructTypedef() {
+        val r = transpileMain("val op = Op.PLUS", decls = opDecl)
+        r.headerContains("typedef struct test_Main_Op")
+        r.headerContains("ktc_String sym;")
+        r.headerContains("ktc_Int    ordinal;")
+        r.headerContains("ktc_String name;")
+        r.headerContains("extern const test_Main_Op test_Main_Op_PLUS;")
+    }
+
+    @Test fun fullEnumEntryInitializers() {
+        val r = transpileMain("val op = Op.PLUS", decls = opDecl)
+        r.sourceContains("const test_Main_Op test_Main_Op_PLUS = {")
+        r.sourceContains("const test_Main_Op test_Main_Op_MINUS = {")
+        r.sourceContains("const test_Main_Op test_Main_Op_TIMES = {")
+    }
+
+    @Test fun fullEnumCtorParamAccess() {
+        val r = transpileMain("""
+            val op = Op.PLUS
+            val s = op.sym
+        """, decls = opDecl)
+        r.sourceContains(".sym")
+    }
+
+    @Test fun fullEnumEqualityViaOrdinal() {
+        val r = transpileMain("""
+            val a = Op.PLUS
+            val b = Op.MINUS
+            val same = a == b
+        """, decls = opDecl)
+        r.sourceContains(".ordinal ==")
+    }
+
+    @Test fun fullEnumWhenViaOrdinal() {
+        val r = transpileMain("""
+            val a = Op.PLUS
+            when (a) {
+                Op.PLUS  -> println("p")
+                Op.MINUS -> println("m")
+                Op.TIMES -> println("t")
+            }
+        """, decls = opDecl)
+        r.sourceContains(".ordinal ==")
+    }
+
+    @Test fun fullEnumWithBodyMethod() {
+        val r = transpile("""
+            package test.Main
+            enum class Op(val sym: String) {
+                PLUS("+"), MINUS("-");
+                fun pretty(): String = sym
+            }
+            fun main(args: Array<String>) {
+                val op = Op.PLUS
+                println(op.pretty())
+            }
+        """.trimIndent())
+        r.headerContains("KTC_METHOD(ktc_String, pretty)")
+        r.sourceContains("test_Main_Op_pretty(test_Main_Op \$self)")
+    }
+
+    @Test fun fullEnumMethodCallEmitsReceiver() {
+        val r = transpile("""
+            package test.Main
+            enum class Op(val sym: String) {
+                PLUS("+"), MINUS("-");
+                fun render(): String = sym
+            }
+            fun main(args: Array<String>) {
+                val op = Op.PLUS
+                val s = op.render()
+                println(s)
+            }
+        """.trimIndent())
+        r.sourceContains("test_Main_Op_render(op)")
     }
 }

@@ -112,14 +112,19 @@ internal data class ClassInfo(
 }
 
 internal data class EnumInfo(
-    val name: String,            // enum name
-    val entries: List<String>,   // enum entry names
-    override var pkg: String = ""         // set during collectDecls
+    val name: String,                                              // enum name
+    val entries: List<String>,                                     // enum entry names (in declaration order)
+    override var pkg: String = "",                                 // set during collectDecls
+    val ctorParams: List<PropertyDef> = emptyList(),               // primary ctor val/var props (empty for simple enums)
+    val entryArgs: Map<String, List<Expr>> = emptyMap(),           // per-entry ctor argument expressions (empty for simple enums)
+    val bodyProps: List<PropertyDef> = emptyList(),                // body-declared properties (val/var) on the enum
+    val enumMethods: MutableList<FunDecl> = mutableListOf(),       // body-declared methods on the enum
+    val isSimple: Boolean = true                                   // true → C-int representation; false → struct representation
 ) : TypeDef {
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = KtcType.UserKind.Enum
-    override val methods: List<FunDecl> get() = emptyList()
-    override val properties: List<PropertyDef> get() = emptyList()
+    override val methods: List<FunDecl> get() = enumMethods
+    override val properties: List<PropertyDef> get() = ctorParams + bodyProps
     override val typeParams: List<String> get() = emptyList()
     override val superTypeDefs: List<TypeDef> get() = emptyList()
 }

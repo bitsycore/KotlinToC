@@ -457,7 +457,10 @@ internal fun SymbolReader.printfArg(expr: String, ktc: KtcType): String = when (
 	is KtcType.Str -> "(ktc_Int)($expr).len, ($expr).ptr"
 	is KtcType.User if ktc.kind == KtcType.UserKind.Enum -> {
 		val cName = typeFlatName(ktc.baseName)
-		"(ktc_Int)${cName}_names[($expr)].len, ${cName}_names[($expr)].ptr"
+		val ei    = enums[ktc.baseName]
+		// Simple enum: int ordinal → index names[]. Full enum: struct → read .name.
+		if (ei != null && !ei.isSimple) "(ktc_Int)($expr).name.len, ($expr).name.ptr"
+		else "(ktc_Int)${cName}_names[($expr)].len, ${cName}_names[($expr)].ptr"
 		}
 	else -> expr
 	}

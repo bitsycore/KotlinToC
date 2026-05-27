@@ -100,8 +100,13 @@ internal fun CCodeGen.genPrintCall(args: List<Arg>, newline: Boolean): String {
 		}
 	if (t in enums) {
 		val cName    = typeFlatName(t)
+		val ei       = enums[t]!!
 		val safeExpr = if (!isSimpleCExpr(expr)) { val vTmp = tmp(); preStmts += "$cName $vTmp = ($expr);"; vTmp } else expr
-		return "printf(\"%.*s$nl\", (ktc_Int)${cName}_names[$safeExpr].len, ${cName}_names[$safeExpr].ptr)"
+		// Simple enum: int ordinal → index names[]. Full enum: struct value → read .name.
+		return if (ei.isSimple)
+			"printf(\"%.*s$nl\", (ktc_Int)${cName}_names[$safeExpr].len, ${cName}_names[$safeExpr].ptr)"
+		else
+			"printf(\"%.*s$nl\", (ktc_Int)($safeExpr).name.len, ($safeExpr).name.ptr)"
 		}
 	val fmt = printfFmt(tKtcCore) + nl
 	val a   = printfArg(expr, tKtcCore)
@@ -131,10 +136,15 @@ internal fun CCodeGen.genPrintfFromTemplate(tmpl: StrTemplateExpr, nl: String): 
 						}
 					is KtcType.User if tKtcCore.kind == KtcType.UserKind.Enum -> {
 						val cName = typeFlatName(tKtcCore.baseName)
+						val ei    = enums[tKtcCore.baseName]
 						val s = if (!isSimpleCExpr(exprStr)) {
 							val v = tmp(); preStmts += "$cName $v = ($exprStr);"; v
 							} else exprStr
-						argsList += "(ktc_Int)${cName}_names[$s].len, ${cName}_names[$s].ptr"
+						// Simple enum: $s is the int ordinal → index into names[]. Full enum: $s is a struct → read .name.
+						if (ei != null && !ei.isSimple)
+							argsList += "(ktc_Int)($s).name.len, ($s).name.ptr"
+						else
+							argsList += "(ktc_Int)${cName}_names[$s].len, ${cName}_names[$s].ptr"
 						}
 					else -> argsList += printfArg(exprStr, tKtcCore)
 					}

@@ -37,7 +37,7 @@ internal fun dumpDecl(d: Decl, depth: Int): String {
 			}
 
 		is EnumDecl -> {
-			vSb.appendLine("${vId}enum ${d.name} { ${d.entries.joinToString(", ")} }")
+			vSb.appendLine("${vId}enum ${d.name} { ${d.entries.joinToString(", ") { it.name }} }")
 			}
 
 		is InterfaceDecl -> {

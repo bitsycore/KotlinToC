@@ -1,12 +1,6 @@
 package com.bitsycore.ktc.codegen.expression
 
-import com.bitsycore.ktc.ast.DotExpr
-import com.bitsycore.ktc.ast.Expr
-import com.bitsycore.ktc.ast.IndexExpr
-import com.bitsycore.ktc.ast.NameExpr
-import com.bitsycore.ktc.ast.ExprStmt
-import com.bitsycore.ktc.ast.ReturnStmt
-import com.bitsycore.ktc.ast.Stmt
+import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.codegen.cTypeStr
 import com.bitsycore.ktc.codegen.inferExprTypeKtc
@@ -80,6 +74,10 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 			val vOp = if (selfIsPointer) "->" else "."
 			return "\$self$vOp$vFieldName"
 			}
+		// Bare enum entry inside an enum method (e.g. `PLUS` in `when (this) { PLUS -> ... }`):
+		// resolve to the qualified const struct (e.g. `prefix_Op_PLUS`).
+		val vEi = enums[currentClass]
+		if (vEi != null && e.name in vEi.entries) return "${vEi.flatName}_${e.name}"
 		}
 	return e.name
 	}

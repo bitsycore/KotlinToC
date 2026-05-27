@@ -366,10 +366,14 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
         }
     }
     if (recvType in enums) {
+        val ei = enums[recvType]!!
         when (method) {
             "values" -> return "${recvType}Array"
             "valueOf" -> return recvType
         }
+        // Instance method on a full enum — look up the declared return type.
+        val vEnumMethod = ei.enumMethods.find { it.name == method }
+        if (vEnumMethod != null) return resolveMethodReturnType(recvType, vEnumMethod.returnType)
     }
     return null
 }

@@ -76,10 +76,16 @@ internal fun CCodeGen.registerParams(params: List<Param>) {
 
 /**
  * Registers all class fields from [ci] in the current scope as [LocalVar] descriptors.
+ * Computed (getter-only) properties have no backing field, so they are skipped here —
+ * registering them with a phony `$self->name` cName would both produce spurious shadow
+ * warnings on params of the same name and bypass getter inlining at access sites.
  * [selfPrefix] is the C access prefix — use `"\$self->"` for pointer self, `"\$self."` for value self.
  */
 internal fun CCodeGen.registerClassFields(ci: ClassInfo, selfPrefix: String) {
-	for ((name, type) in ci.props) {
+	for (prop in ci.properties) {
+		if (prop.getter != null) continue                            // computed property — no backing field
+		val name = prop.name
+		val type = prop.typeRef
 		val ktc        = resolveTypeName(type)
 		if (scopes.last().containsKey(name)) continue  // don't shadow params
 		val cFieldName = if (name in ci.privateProps) "PRIV_$name" else name

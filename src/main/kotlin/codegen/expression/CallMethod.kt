@@ -328,20 +328,33 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 
 	val vEnumInfo = enumInfoFor(recvTypeKtc)
 	if (vEnumInfo != null) {
-		when (method) {
-			"values" -> {
+		// Static-like dispatch: receiver IS the enum type name (e.g. Op.values()).
+		val vIsStatic = dot.obj is NameExpr && enums.containsKey(dot.obj.name)
+		when {
+			method == "values"  && vIsStatic -> {
 				enumValuesCalled.add(vEnumInfo.baseName)
 				return "{${vEnumInfo.flatName}_values, ${vEnumInfo.flatName}_values\$len}"
 				}
 
-			"valueOf" -> {
+			method == "valueOf" && vIsStatic -> {
 				val vValOfArgStr = args.joinToString(", ") { genExpr(it.expr) }
 				enumValuesCalled.add(vEnumInfo.baseName)
 				enumValueOfCalled.add(vEnumInfo.baseName)
 				return "${vEnumInfo.flatName}_valueOf($vValOfArgStr)"
 				}
 
-			else -> return "${vEnumInfo.flatName}_$method"
+			else -> {
+				// Instance method on a full enum: pass the receiver by-value as $self.
+				val vInstanceMethod = vEnumInfo.enumMethods.find { it.name == method }
+				if (vInstanceMethod != null && !vEnumInfo.isSimple) {
+					val vFnName  = resolvedFnName(vInstanceMethod, vEnumInfo.enumMethods)
+					val vArgsStr = prepareArgs(args, vInstanceMethod, vEnumInfo.name)
+					val vAllArgs = if (vArgsStr.isEmpty()) recv else "$recv, $vArgsStr"
+					return "${vEnumInfo.flatName}_$vFnName($vAllArgs)"
+					}
+				// Fallback (unknown method): legacy behavior, return prefixed identifier.
+				return "${vEnumInfo.flatName}_$method"
+				}
 			}
 		}
 

@@ -6,8 +6,6 @@ import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.codegen.statement.checkWhenExhaustiveness
 import com.bitsycore.ktc.codegen.statement.extractSmartCasts
 import com.bitsycore.ktc.codegen.statement.genWhenCond
-import com.bitsycore.ktc.codegen.statement.pushSmartCasts
-import com.bitsycore.ktc.codegen.statement.popSmartCasts
 import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.findCommonInterface(type1: String?, type2: String?): String? {
@@ -231,14 +229,18 @@ internal fun CCodeGen.genWhenExpr(e: WhenExpr): String {
     val allSimple = !hasNarrowingBranch && e.branches.all { blockAsSingleExpr(it.body) != null }
     if (allSimple) {
         val sb = StringBuilder()
-        for (br in e.branches) {
+        val hasElse = e.branches.any { it.conds == null }
+        for ((bi, br) in e.branches.withIndex()) {
             val narrowedType = narrowSubjectForBranch(br, subjName)
             if (narrowedType != null) {
                 pushScope(); defineVar(subjName!!, narrowedType)
             }
             val expr = genExpr(blockAsSingleExpr(br.body)!!)
             if (narrowedType != null) popScope()
-            if (br.conds == null) {
+            // Exhaustive when without else: drop the last branch's condition, since the
+            // exhaustiveness check guaranteed it always matches when the others didn't.
+            val isLastNoElse = !hasElse && bi == e.branches.lastIndex
+            if (br.conds == null || isLastNoElse) {
                 sb.append(expr)
             } else {
                 val cond = br.conds.joinToString(" || ") { genWhenCond(it, e.subject) }

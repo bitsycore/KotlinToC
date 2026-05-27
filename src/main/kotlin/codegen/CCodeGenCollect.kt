@@ -334,7 +334,57 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				}
 			}
 
-		is EnumDecl  -> enums[d.name] = EnumInfo(d.name, d.entries)
+		is EnumDecl  -> {
+			val vSimpleMarker = d.annotations.any { it.name == "SimpleEnum" }
+			val vHasFullForm  = d.ctorParams.isNotEmpty() || d.members.isNotEmpty() || d.entries.any { it.args.isNotEmpty() }
+			val vIsSimple     = vSimpleMarker || !vHasFullForm
+			val vCtorProps    = d.ctorParams.filter { it.isVal || it.isVar }.map { vP ->
+				PropertyDef(
+					name               = vP.name,
+					typeRef            = vP.type,
+					isVal              = vP.isVal,
+					isPrivate          = vP.isPrivate,
+					isConstructorParam = true
+					)
+				}
+			val vBodyProps    = d.members.filterIsInstance<PropDecl>().map { vP ->
+				PropertyDef(
+					name         = vP.name,
+					typeRef      = vP.type ?: inferInitType(vP.init),
+					isVal        = !vP.mutable,
+					isPrivate    = vP.isPrivate,
+					isPrivateSet = vP.isPrivateSet,
+					isInternal   = vP.isInternal,
+					initExpr     = vP.init,
+					line         = vP.line,
+					getter       = vP.getter,
+					setterParam  = vP.setterParam,
+					setterBody   = vP.setterBody
+					)
+				}
+			val vEntryArgs    = d.entries.associate { it.name to it.args.map { a -> a.expr } }
+			val vEntryNames   = d.entries.map { it.name }
+			val vEi = EnumInfo(
+				name       = d.name,
+				entries    = vEntryNames,
+				ctorParams = vCtorProps,
+				entryArgs  = vEntryArgs,
+				bodyProps  = vBodyProps,
+				isSimple   = vIsSimple
+				)
+			for (m in d.members) if (m is FunDecl && m.receiver == null) vEi.enumMethods += m
+			enums[d.name] = vEi
+			getTypeId(d.name)
+			// Validate per-entry argument counts against ctor params (only for full enums).
+			if (!vIsSimple && d.ctorParams.isNotEmpty()) {
+				for (entry in d.entries) {
+					if (entry.args.size != d.ctorParams.size) {
+						codegenError("Enum entry '${d.name}.${entry.name}' supplies ${entry.args.size} argument(s); " +
+							"primary constructor of '${d.name}' expects ${d.ctorParams.size}")
+						}
+					}
+				}
+			}
 
 		is InterfaceDecl -> {
 			interfaces[d.name] = IfaceInfo(d.name, d.methods, d.properties, d.typeParams, d.superInterfaces, isSealed = d.isSealed)
@@ -408,8 +458,12 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					val vRecv = resolveNestedObjName(m.receiver.name, d.name)
 					extensionFuns.getOrPut(vRecv) { mutableListOf() }.add(m)
 					classes[vRecv]?.methods?.add(m)
-					funSigs["${vRecv}.${m.name}"] = FunSig(m.params, m.returnType)
-					if (m.isInline || m.isInfix) inlineExtFunDecls.getOrPut(m.name) { mutableListOf() }.add(m)
+					funSigs["${vRecv}.${m.name}"] = FunSig(m.params, m.receiver.let { _ -> m.returnType })
+					// For object-nested ext funs the receiver was written unqualified
+					// (e.g. `Window.foo()` inside `object SDL3`); rewrite to the flat
+					// nested name so inline-ext dispatch matches the call site's type.
+					val vResolvedRecv = if (vRecv != m.receiver.name) m.copy(receiver = m.receiver.copy(name = vRecv)) else m
+					if (m.isInline || m.isInfix) inlineExtFunDecls.getOrPut(m.name) { mutableListOf() }.add(vResolvedRecv)
 					}
 				}
 			objects[d.name] = oi

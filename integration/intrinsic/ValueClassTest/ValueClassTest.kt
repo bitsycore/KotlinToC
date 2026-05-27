@@ -2,7 +2,7 @@ package ValueClassTest
 
 value class UserId(val raw: Int)
 value class Meters(val value: Float)
-@JvmInline value class Token(val raw: String)
+value class Token(val raw: String)
 
 fun showId(id: UserId) {
 	println("id=$id")
