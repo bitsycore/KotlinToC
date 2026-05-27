@@ -77,6 +77,7 @@ internal fun topoSortClassDecls(decls: List<Decl>): List<Decl> {
 
 internal fun CCodeGen.emitClass(d: ClassDecl) {
 	val ci = classes[d.name]!!
+	if (ci.isValue) return
 	val cName = ci.flatName
 	val kind = if (d.isData) "data class" else "class"
 	val vOptName = "${cName}\$Opt"

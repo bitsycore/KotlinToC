@@ -59,7 +59,8 @@ data class ClassDecl(
     val superInterfaces: List<TypeRef> = emptyList(),
     val typeParams: List<String> = emptyList(),
     val secondaryCtors: List<SecondaryCtor> = emptyList(),
-    val annotations: List<Annotation> = emptyList()  // declaration-level annotations (e.g. @DocumentationOnly)
+    val annotations: List<Annotation> = emptyList(),
+    val isValue: Boolean = false
 ) : Decl()
 
 data class EnumDecl(

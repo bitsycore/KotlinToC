@@ -89,7 +89,7 @@ internal sealed class KtcType {
 
     // ── User-defined class / interface / enum / object ──────────────────
 
-    enum class UserKind { Class, DataClass, Object, Interface, Enum }
+    enum class UserKind { Class, DataClass, ValueClass, Object, Interface, Enum }
 
     data class User(
         val decl: TypeDef,                         // backing declaration descriptor

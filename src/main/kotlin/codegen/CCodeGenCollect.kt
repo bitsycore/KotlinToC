@@ -240,7 +240,14 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 						"Use Ref<${d.name}> (pointer), Array<${d.name}>, or RawArray<${d.name}> to indirect.")
 				}
 			}
-			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams)
+			if (d.isValue) {
+				val vValProps = vCtorProps.filter { it.isVal }
+				if (vValProps.size != 1)
+					codegenError("Value class '${d.name}' must have exactly one val property in its constructor")
+				if (vBodyProps.isNotEmpty())
+					codegenError("Value class '${d.name}' cannot have body properties")
+			}
+			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue)
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
 				// Mirror the function-level rule: inline methods may return bare

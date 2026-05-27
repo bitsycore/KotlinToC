@@ -340,11 +340,12 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		}
 	if (classes.containsKey(resolved) || objects.containsKey(resolved) || interfaces.containsKey(resolved)) {
 		val kind = when {
-			classes[resolved]?.isData == true -> KtcType.UserKind.DataClass
-			objects.containsKey(resolved)     -> KtcType.UserKind.Object
-			enums.containsKey(resolved)       -> KtcType.UserKind.Enum
-			interfaces.containsKey(resolved)  -> KtcType.UserKind.Interface
-			else                              -> KtcType.UserKind.Class
+			classes[resolved]?.isValue == true -> KtcType.UserKind.ValueClass
+			classes[resolved]?.isData == true  -> KtcType.UserKind.DataClass
+			objects.containsKey(resolved)      -> KtcType.UserKind.Object
+			enums.containsKey(resolved)        -> KtcType.UserKind.Enum
+			interfaces.containsKey(resolved)   -> KtcType.UserKind.Interface
+			else                               -> KtcType.UserKind.Class
 			}
 		return userType(resolved, kind)
 		}
@@ -355,6 +356,12 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 
 internal fun CCodeGen.cTypeStr(t: String): String {
 	if (t == "ktc_IfacePtr" || t.startsWith("ktc_IfacePtr:")) return "ktc_IfacePtr"
+	// Value class: resolve to the underlying property's C type
+	val vValCi = classes[t]
+	if (vValCi != null && vValCi.isValue) {
+		val vUnderlyingName = vValCi.ctorProps.first().typeRef.name
+		return cTypeStr(vUnderlyingName)
+	}
 	return cTypeStr(parseResolvedTypeName(t))
 	}
 
@@ -364,10 +371,16 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 	is KtcType.Str  -> ktc.toCType()
 	is KtcType.Void -> ktc.toCType()
 	is KtcType.Any  -> ktc.toCType()
-	is KtcType.User -> when (ktc.baseName) {
-		"Any"       -> "ktc_Any"
-		"ktc_StrBuf" -> "ktc_StrBuf"
-		"AnyPtr"    -> "void*"
+	is KtcType.User -> when {
+		ktc.baseName == "Any"       -> "ktc_Any"
+		ktc.baseName == "ktc_StrBuf" -> "ktc_StrBuf"
+		ktc.baseName == "AnyPtr"    -> "void*"
+		ktc.kind == KtcType.UserKind.ValueClass -> {
+			val vUnderlyingName = classes[ktc.baseName]?.ctorProps?.firstOrNull()?.typeRef?.name ?: "Int"
+			for (vK in KtcType.PrimKind.entries) if (vUnderlyingName == vK.name) return cTypeStr(KtcType.Prim(vK))
+			if (vUnderlyingName == "String") return cTypeStr(KtcType.Str)
+			typeFlatName(vUnderlyingName)
+		}
 		else        -> ktc.toCType()
 		}
 	is KtcType.Ptr -> {

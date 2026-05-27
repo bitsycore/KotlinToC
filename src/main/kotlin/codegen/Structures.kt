@@ -68,10 +68,15 @@ internal data class ClassInfo(
     override val methods: MutableList<FunDecl> = mutableListOf(), // declared methods
     val initBlocks: List<Block> = emptyList(),                 // init { } blocks
     override val typeParams: List<String> = emptyList(),       // generic type parameters
-    override var pkg: String = ""                              // set during collectDecls; mutable for post-construction assignment
+    override var pkg: String = "",                             // set during collectDecls; mutable for post-construction assignment
+    val isValue: Boolean = false                               // inline value class flag
 ) : TypeDef {
     override val baseName: String get() = name
-    override val kind: KtcType.UserKind get() = if (isData) KtcType.UserKind.DataClass else KtcType.UserKind.Class
+    override val kind: KtcType.UserKind get() = when {
+        isValue -> KtcType.UserKind.ValueClass
+        isData  -> KtcType.UserKind.DataClass
+        else    -> KtcType.UserKind.Class
+    }
     override val superTypeDefs: List<TypeDef> get() = emptyList()
 
     /** ctor val/var props (subset of properties with isConstructorParam=true) */

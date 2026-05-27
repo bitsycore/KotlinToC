@@ -28,6 +28,10 @@ internal fun CCodeGen.toStringMaxLen(baseType: String, visited: MutableSet<Strin
 	val primMax = kToStringPrimitiveMaxLen[t]
 	if (primMax != null) { visited.remove(t); return primMax }
 	val ci = classes[t]
+	if (ci != null && ci.isValue) {
+		val underlyingName = ci.ctorProps.first().typeRef.name
+		visited.remove(t); return toStringMaxLen(underlyingName, visited)
+	}
 	if (ci != null && ci.isData) {
 		var total = t.length + 2  // "Name(" + ")"
 		for ((i, prop) in ci.props.withIndex()) {
@@ -87,6 +91,10 @@ internal fun CCodeGen.genToStringKtc(recv: String, type: KtcType): String = genT
 
 internal fun CCodeGen.genToString(recv: String, type: String): String {
 	val base   = type.removeSuffix("*").removeSuffix("?")
+	val valCi  = classes[base]
+	if (valCi != null && valCi.isValue) {
+		return genToString(recv, valCi.ctorProps.first().typeRef.name)
+	}
 	val cName  = typeFlatName(base)
 	val isPtr  = parseResolvedTypeName(type) is KtcType.Ptr
 	if (classes.containsKey(base) && classes[base]!!.isData) {
@@ -238,6 +246,10 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 // ── toString into a StringBuffer (single pass) ──────────────────────────
 
 internal fun CCodeGen.genToStringInto(recv: String, type: String, sb: String): String {
+	val valCi = classes[type]
+	if (valCi != null && valCi.isValue) {
+		return genToStringInto(recv, valCi.ctorProps.first().typeRef.name, sb)
+	}
 	if (classes.containsKey(type) && classes[type]!!.isData) {
 		val vTmp = tmp()
 		preStmts += "${cTypeStr(type)} $vTmp = ($recv);"
@@ -326,6 +338,13 @@ internal fun CCodeGen.genSbAppendKtc(sbRef: String, expr: String, type: KtcType)
 			}
 		is KtcType.Str  -> "ktc_core_sb_append_str($sbRef, $expr);"
 		is KtcType.User -> {
+			if (type.kind == KtcType.UserKind.ValueClass) {
+				val ci = classes[type.baseName]
+				if (ci != null) {
+					val underlyingType = parseResolvedTypeName(ci.ctorProps.first().typeRef.name)
+					return genSbAppendKtc(sbRef, expr, underlyingType)
+				}
+			}
 			if (type.kind == KtcType.UserKind.DataClass) {
 				val baseName = type.baseName
 				if (classes.containsKey(baseName)) {

@@ -34,6 +34,13 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     val recvTypeCoreKtc = recvTypeKtc.stripNullable   // KtcType? stripped of Nullable wrapper
     val recv = genExpr(e.obj)
 
+    // Value class property access: the value IS the underlying type, just return receiver
+    if (recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.ValueClass) {
+        val vVci = classes[recvTypeCoreKtc.baseName]
+        if (vVci != null && vVci.ctorProps.any { it.name == e.name })
+            return recv
+    }
+
     // Reject non-safe access on nullable receiver (enum/object/companion are never nullable)
     // Allow array types (plain or indirect) where size/index access is safe
     val isEnumOrObj = e.obj is NameExpr && (enums.containsKey(e.obj.name) || objects.containsKey(e.obj.name) || classCompanions.containsKey(e.obj.name))

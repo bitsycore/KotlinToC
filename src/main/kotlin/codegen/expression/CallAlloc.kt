@@ -216,6 +216,12 @@ internal fun CCodeGen.genCtorCallOrNull(
 				}
 		}
 
+	// Value class constructor: unwrap to the single argument expression
+	val vValueCi = classes[vResolvedName]
+	if (vValueCi != null && vValueCi.isValue && inArgs.size == 1) {
+		return genExpr(inArgs[0].expr)
+	}
+
 	val vEffectiveTypeArgs = inCall.typeArgs.ifEmpty { allocTargetType?.typeArgs ?: emptyList() }
 
 	// Generic class constructor: explicit type args or LHS inference
