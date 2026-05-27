@@ -132,6 +132,7 @@ class Lexer(private val src: String) {
                 return
             }
             val c = cur()
+            if (c == '\r') { advance(); if (pos < src.length && cur() == '\n') { sb.append('\n'); line++; col = 1; advance() } else { sb.append('\n'); line++; col = 1 }; continue }
             if (c == '\n') { line++; col = 1 }
             sb.append(c); advance()
         }

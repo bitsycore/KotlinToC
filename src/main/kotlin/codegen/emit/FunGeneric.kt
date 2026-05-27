@@ -25,7 +25,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 			val hasReceiver = f.receiver != null
 			val concreteRet = genericFunConcreteReturn[mangledName]
 			val cName = if (hasReceiver) {
-				val recvKtc  = resolveTypeName(f.receiver!!)
+				val recvKtc  = resolveTypeName(f.receiver)
 				val recvName = (recvKtc as? KtcType.Ptr)?.inner?.let { (it as? KtcType.User)?.baseName }
 					?: recvKtc.toInternalStr.removeSuffix("*").removeSuffix("?")
 				if (f.receiver.isRefType()) {
@@ -35,7 +35,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 				} else funCName(mangledName)
 			val baseParams = expandParams(f.params)
 			val selfParam  = if (hasReceiver) {
-				val selfRecvKtc = resolveTypeName(f.receiver!!)
+				val selfRecvKtc = resolveTypeName(f.receiver)
 				val ct = if (f.receiver.nullable && selfRecvKtc !is KtcType.Ptr && selfRecvKtc !is KtcType.Nullable)
 					optCTypeName(selfRecvKtc.toInternalStr) else cType(f.receiver)
 				"$ct \$self"
@@ -55,7 +55,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 
 			pushScope()
 			if (hasReceiver) {
-				val recvResolved = resolveTypeName(f.receiver!!)
+				val recvResolved = resolveTypeName(f.receiver)
 				val recvFull     = recvResolved.toInternalStr
 				val recvName     = recvFull.removeSuffix("?")
 				val isClassType  = classes.containsKey(recvName)
