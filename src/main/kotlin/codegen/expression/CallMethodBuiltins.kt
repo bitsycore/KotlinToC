@@ -335,8 +335,10 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 						val vPointerBase = (inRecvTypeKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
 						if (vPointerBase != null) {
 							"${typeFlatName(vPointerBase)}_hashCode($inRecv)"
+							} else if (inRecvType!! in simpleUnionInterfaces) {
+							genSimpleUnionDispatch(inRecvType, inRecv, "hashCode", "")
 							} else {
-							"${typeFlatName(inRecvType!!)}_hashCode(&($inRecv))"
+							"${typeFlatName(inRecvType)}_hashCode(&($inRecv))"
 							}
 						}
 					}

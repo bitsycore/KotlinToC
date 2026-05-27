@@ -194,6 +194,14 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         val eq = "${typeFlatName(classKey)}_equals($l, $r)"
         return if (e.op == "==") eq else "!$eq"
     }
+    // @SimpleUnion == / != → inline dispatch through type ID + concrete equals
+    val simpleUnionKey = lt?.takeIf { it in simpleUnionInterfaces }
+    if ((e.op == "==" || e.op == "!=") && simpleUnionKey != null) {
+        val leftExpr = genExpr(e.left)
+        val rightExpr = genExpr(e.right)
+        val eq = genSimpleUnionDispatch(simpleUnionKey, leftExpr, "equals", rightExpr)
+        return if (e.op == "==") eq else "!$eq"
+    }
     // String == → ktc_core_string_eq
     val ltKtc3 = inferExprTypeKtc(e.left)
     if (e.op == "==" && ltKtc3 is KtcType.Str) {

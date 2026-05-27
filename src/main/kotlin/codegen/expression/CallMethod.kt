@@ -466,9 +466,22 @@ private val kClassReceiverIntrinsics = setOf(
 internal fun CCodeGen.genSimpleUnionDispatch(ifaceName: String, recv: String, method: String, extraArgs: String): String {
 	val impls = interfaceImplementors[ifaceName] ?: return "0"
 	val t = tmp()
+	if (method == "equals") {
+		preStmts += "ktc_Bool $t;"
+		preStmts += "if (KTC_GET_TYPEID($recv.__typeId) != KTC_GET_TYPEID($extraArgs.__typeId)) {"
+		preStmts += "    $t = false;"
+		for ((i, implName) in impls.withIndex()) {
+			val cImpl = typeFlatName(implName)
+			val dataName = "${cImpl}_data"
+			val keyword = if (i == 0) "} else if" else "} else if"
+			preStmts += "$keyword (KTC_GET_TYPEID($recv.__typeId) == ${cImpl}_TYPE_ID) {"
+			preStmts += "    $t = ${cImpl}_equals($recv.data.$dataName, $extraArgs.data.$dataName);"
+			}
+		preStmts += "}"
+		return t
+		}
 	val retType = when (method) {
 		"hashCode" -> "ktc_Int"
-		"equals" -> "ktc_Bool"
 		else -> null
 		}
 	if (retType != null) {
