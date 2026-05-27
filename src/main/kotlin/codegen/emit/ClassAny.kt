@@ -17,7 +17,7 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
 	hdr.appendLine("KTC_METHOD(ktc_Bool, equals)(KTC_TYPE_NAME a, KTC_TYPE_NAME b);")
 	impl.appendLine("// ══ fun equals ══")
 	impl.appendLine("ktc_Bool ${cName}_equals($cName a, $cName b) {")
-	val eqs = ci.props.filter { (_, type) ->
+	val eqs = ci.storedProps.filter { (_, type) ->
 		val innerName = if (type.name == "Ref" && type.typeArgs.isNotEmpty()) type.typeArgs[0].name else type.name
 		!(type.isRefType() && interfaces.containsKey(innerName))
 		}.joinToString(" && ") { (name, type) ->
@@ -66,7 +66,7 @@ internal fun CCodeGen.emitDataClassToString(ktName: String, cName: String, ci: C
 	hdr.appendLine("KTC_METHOD(void, toString)(KTC_TYPE_NAME* \$self, ktc_StrBuf* sb);${maxComment}")
 	impl.appendLine("// ══ fun toString() ══")
 	impl.appendLine("void ${cName}_toString($cName* \$self, ktc_StrBuf* sb) {")
-	for ((i, prop) in ci.props.withIndex()) {
+	for ((i, prop) in ci.storedProps.withIndex()) {
 		val (name, type) = prop
 		val fieldName = if (name in ci.privateProps) "PRIV_$name" else name
 		val vKtcTs    = resolveTypeName(type)
@@ -92,9 +92,9 @@ internal fun CCodeGen.emitImplicitHashCode(
 	hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(KTC_TYPE_NAME* \$self);")
 	impl.appendLine("// ══ fun hashCode(): Int ══")
 	impl.appendLine("ktc_Int ${cName}_hashCode($cName* \$self) {")
-	if (isData && ci.props.isNotEmpty()) {
+	if (isData && ci.storedProps.isNotEmpty()) {
 		impl.appendLine("    ktc_Int h = 0;")
-		for ((name, type) in ci.props) {
+		for ((name, type) in ci.storedProps) {
 			val vKtcHash   = resolveTypeName(type)
 			val fieldName  = if (name in ci.privateProps) "PRIV_$name" else name
 			val hashExpr   = if (type.nullable && vKtcHash !is KtcType.Ptr) {

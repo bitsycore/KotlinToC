@@ -29,7 +29,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 - [ ] **Sealed-subclass exhaustiveness in type inference** (M) — Once `when` exhaustiveness is in, `when` expression types can be inferred without an `else` branch.
 - [x] **`object : Interface` (anonymous object expressions)** (M) — Parser generates synthetic `$anon_N` ObjectDecl hoisted to file decls, codegen reuses existing object+vtable infrastructure. Tests in `AnonObjectUnitTest` and `AnonObjectTest`.
-- [ ] **`Result<T>` stdlib type** (M) — `Result<Vec2>` for fallible operations. Needs a convention for `runCatching`.
+- [x] **`Result<T>` stdlib type** (M) — `data class Result<T>(val value: T, val errorCode: Int)` with computed `isSuccess`/`isFailure`. Monomorphized per type arg. Tests in `ResultUnitTest` and `ResultTest`. Also fixed data class `hashCode`/`equals`/`toString` to skip computed properties (`storedProps`).
 - [x] **Cross-class private visibility enforcement** (M) — `currentClass` tracked at codegen; private fields, methods, and `private set` are rejected at access sites. Unit tests in `PrivateUnitTest`.
 
 ### Out of scope
@@ -56,8 +56,8 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 ### Whole-program
 
-- [ ] **Dead-function elimination for unused generic instantiations** (M) — `genericFunInstantiations` records every requested mangling, but some are never called. Walk the call graph and prune.
-- [ ] **Combine package files when total LOC is small** (M) — One .c per package can mean many tiny TUs. Merge below a threshold to reduce linker work.
+- [~] **Dead-function elimination for unused generic instantiations** — Skipped; the C compiler/linker already handles this.
+- [~] **Combine package files when total LOC is small** — Skipped; the C compiler/linker already handles this.
 
 ## CLI / tooling
 

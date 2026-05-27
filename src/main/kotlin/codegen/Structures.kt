@@ -88,6 +88,9 @@ internal data class ClassInfo(
     /** all props as name→typeRef pairs for combined iteration */
     val props: List<Pair<String, TypeRef>> get() = properties.map { it.name to it.typeRef }
 
+    /** props with backing storage (excludes computed getters) */
+    val storedProps: List<Pair<String, TypeRef>> get() = properties.filter { it.getter == null }.map { it.name to it.typeRef }
+
     /** names of private properties */
     val privateProps: Set<String> get() = properties.filter { it.isPrivate }.map { it.name }.toSet()
 
