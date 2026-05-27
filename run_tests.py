@@ -9,6 +9,10 @@ Usage:
     python3 run_tests.py --run HashMapTest          # Single test, verbose
     python3 run_tests.py --run Test1,Test2          # Multiple tests, verbose
     python3 run_tests.py --skip unit                # Skip unit tests
+    python3 run_tests.py --list                     # Print all discovered tests and exit
+    python3 run_tests.py --filter "stdlib/*"        # Run only tests matching glob
+    python3 run_tests.py --exclude "Sdl3*"          # Exclude tests matching glob
+    python3 run_tests.py --fail-fast                # Stop after first failure
     python3 run_tests.py --run game --gui           # Open window for interactive test
     python3 run_tests.py --run game --mem-track     # Pass --mem-track to transpiler
     python3 run_tests.py --run game --ast
@@ -26,6 +30,7 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import os
 import re
 import shutil
@@ -66,15 +71,16 @@ for vStream in (sys.stdout, sys.stderr):
 	except (AttributeError, ValueError):
 		pass
 
-# ANSI colors. The plain `kRst` resets everything; the rest are foreground codes.
-kRed     = "\033[31m"
-kGreen   = "\033[32m"
-kYellow  = "\033[33m"
-kDYellow = "\033[33m"
-kCyan    = "\033[36m"
-kGray    = "\033[90m"
-kWhite   = "\033[97m"
-kRst     = "\033[0m"
+# ANSI colors. Disabled when NO_COLOR env var is set or stdout is not a tty.
+_gNoColor = os.environ.get("NO_COLOR") is not None or not sys.stdout.isatty()
+kRed     = "" if _gNoColor else "\033[31m"
+kGreen   = "" if _gNoColor else "\033[32m"
+kYellow  = "" if _gNoColor else "\033[33m"
+kDYellow = "" if _gNoColor else "\033[33m"
+kCyan    = "" if _gNoColor else "\033[36m"
+kGray    = "" if _gNoColor else "\033[90m"
+kWhite   = "" if _gNoColor else "\033[97m"
+kRst     = "" if _gNoColor else "\033[0m"
 
 # ==================
 # MARK: Print helpers
@@ -738,7 +744,7 @@ class LiveProgress:
 		self.active:     dict[str, str] = {}  # ordered name → current status text
 		self.lineCount   = 0                  # rows currently drawn in the live area
 		self.lock        = threading.Lock()
-		self.isLive      = sys.stdout.isatty()
+		self.isLive      = sys.stdout.isatty() and not _gNoColor
 		self.width       = len(str(inTotal))
 
 	def _erase_active(self) -> None:
@@ -971,7 +977,7 @@ def run_unit_tests() -> bool:
 	pfail("Unit tests had failures")
 	return False
 
-def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> SuiteResult:
+def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool, inFailFast: bool = False) -> SuiteResult:
 	# Optionally runs unit tests then dispatches integration tests in parallel.
 	# Workers update a LiveProgress instance as their phases complete so the
 	# user sees per-test progress (RUN → ktc → comp → run → PASS) in real time
@@ -981,6 +987,8 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> S
 		if not run_unit_tests():
 			vRes.failed += 1
 			vRes.failedNames.append("unit-tests")
+			if inFailFast:
+				return vRes
 	psection("Integration Tests")
 	if not inTests:
 		pinfo("No tests to run.")
@@ -988,6 +996,7 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> S
 
 	vProgress = LiveProgress(len(inTests))
 	vWorkers  = max(1, (os.cpu_count() or 4))
+	vAbort    = False
 	with ThreadPoolExecutor(max_workers=vWorkers) as vEx:
 		vFutures = [vEx.submit(invoke_test_concise, vT, inOpts, vProgress) for vT in inTests]
 		for vF in as_completed(vFutures):
@@ -995,6 +1004,10 @@ def run_suite(inTests: list[TestDir], inOpts: RunOptions, inSkipUnit: bool) -> S
 			if   vOut.status == "pass": vRes.passed += 1
 			elif vOut.status == "skip": vRes.skipped += 1; vRes.skippedNames.append(vOut.name)
 			else:                       vRes.failed  += 1; vRes.failedNames.append(vOut.name)
+			if inFailFast and vRes.failed > 0 and not vAbort:
+				vAbort = True
+				for vPending in vFutures:
+					vPending.cancel()
 	vProgress.done()
 	return vRes
 
@@ -1035,6 +1048,14 @@ def resolve_test_query(inQuery: str, inAll: list[TestDir]) -> list[TestDir]:
 		return []
 	return [t for t in inAll if t.name == vQ or t.relPath == vQ]
 
+def filter_tests(inTests: list[TestDir], inFilter: str, inExclude: str) -> list[TestDir]:
+	vResult = inTests
+	if inFilter:
+		vResult = [t for t in vResult if fnmatch.fnmatch(t.relPath, inFilter) or fnmatch.fnmatch(t.name, inFilter)]
+	if inExclude:
+		vResult = [t for t in vResult if not fnmatch.fnmatch(t.relPath, inExclude) and not fnmatch.fnmatch(t.name, inExclude)]
+	return vResult
+
 # ==================
 # MARK: CLI
 # ==================
@@ -1052,6 +1073,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("--run",  default="", help="Run named test(s) (comma-separated)")
 	vP.add_argument("--skip", default="", choices=["", "unit"], help="Skip a phase ('unit' to skip unit tests)")
 	vP.add_argument("--skip-unit", action="store_true", help="Alias for --skip unit")
+	vP.add_argument("--list", action="store_true", help="Print all discovered tests and exit")
+	vP.add_argument("--filter", default="", help="Glob pattern to select tests (e.g. 'stdlib/*')")
+	vP.add_argument("--exclude", default="", help="Glob pattern to exclude tests")
+	vP.add_argument("--fail-fast", action="store_true", help="Stop after the first failure")
 	# Build
 	vP.add_argument("--build", default="jar", choices=["jar", "gradle", "proguard"], help="Build mode")
 	vP.add_argument("--rebuild", action="store_true", help="Force clean rebuild of the JAR")
@@ -1091,7 +1116,7 @@ def build_extra_args(inNs: argparse.Namespace) -> list[str]:
 # to write `--cc-args=-g` instead of the more natural `--cc-args "-g"`. The
 # preprocessor below normalizes the latter into the former before argparse
 # sees the argv.
-kStringValueOpts = {"--cc-args", "--cmake-args", "--transpiler-args", "--run", "--compiler", "--cfg", "--skip"}
+kStringValueOpts = {"--cc-args", "--cmake-args", "--transpiler-args", "--run", "--compiler", "--cfg", "--skip", "--filter", "--exclude"}
 
 def normalize_argv(inArgv: list[str]) -> list[str]:
 	# Walks the argv and folds `--cc-args VALUE` into `--cc-args=VALUE` when
@@ -1116,6 +1141,15 @@ def main(inArgv: list[str]) -> int:
 	if vNs.clean:
 		return cmd_clean()
 
+	vAllTests = find_test_dirs()
+
+	# ── --list: print all discovered tests and exit ───────────────
+	if vNs.list:
+		vFiltered = filter_tests(vAllTests, vNs.filter, vNs.exclude)
+		for vT in vFiltered:
+			pwrite(vT.relPath)
+		return 0
+
 	vCC = find_c_compiler(vNs.compiler or None)
 	if not vCC:
 		pwrite(f"{kRed}ERROR: No C compiler found (tried gcc, clang, {'cl' if kIsWindows else 'cc'}). Install one and add it to PATH.{kRst}")
@@ -1135,7 +1169,7 @@ def main(inArgv: list[str]) -> int:
 		cmake      = vCmake,
 	)
 
-	vAllTests = find_test_dirs()
+	vAllTests = filter_tests(vAllTests, vNs.filter, vNs.exclude)
 	pinfo(f"Using C compiler: {vCC}")
 
 	# ── --run: explicit selection (verbose) ───────────────────────
@@ -1155,12 +1189,14 @@ def main(inArgv: list[str]) -> int:
 			for vT in vMatches:
 				if invoke_test_verbose(vT, vOpts).status == "fail":
 					vAnyFail = True
+					if vNs.fail_fast:
+						return 1
 		return 1 if vAnyFail else 0
 
 	# ── Default: full suite ───────────────────────────────────────
 	invoke_build(vOpts.buildMode, vNs.rebuild)
 	vSkipUnit = vNs.skip_unit or vNs.skip == "unit"
-	vRes      = run_suite(vAllTests, vOpts, vSkipUnit)
+	vRes      = run_suite(vAllTests, vOpts, vSkipUnit, vNs.fail_fast)
 	return show_summary(vRes)
 
 if __name__ == "__main__":
