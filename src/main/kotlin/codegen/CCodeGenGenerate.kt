@@ -165,15 +165,33 @@ internal fun CCodeGen.generate(): COutput {
 			firstClass = false
 			captureForDecl(d.name) { emitObject(d) }
 			}
+		is InterfaceDecl -> {
+			for (vNested in d.nestedClasses) {
+				val vFlatName = "${d.name}$${vNested.name}"
+				if (vNested.typeParams.isEmpty()) {
+					if (!firstClass) hdr.appendLine()
+					firstClass = false
+					captureForDecl(vFlatName) {
+						val vAlreadyImpl = vNested.superInterfaces.any { it.name == d.name }
+						val vSuperIfaces = if (vAlreadyImpl) vNested.superInterfaces else {
+							val vIfaceRef = if (d.typeParams.isNotEmpty())
+								TypeRef(d.name, typeArgs = d.typeParams.map { TypeRef(it) })
+							else TypeRef(d.name)
+							vNested.superInterfaces + vIfaceRef
+							}
+						emitClass(ClassDecl(vFlatName, vNested.isData, vNested.ctorParams,
+							vNested.members, vNested.initBlocks, vSuperIfaces,
+							vNested.typeParams, vNested.secondaryCtors))
+						}
+					}
+				}
+			}
 		else -> {}
 		}
 
 	// User-package VarArr types — after non-generic type defs, before monomorphized generics.
 	hdr.appendLine()
 	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
-	// Union types — after VarArr so all member types are visible.
-	hdr.appendLine()
-	hdr.appendLine("/* @UNION_TYPES@ */")
 
 	// Pre-pass: register classInterfaces for objects and all monomorphized generic classes.
 	for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty())
@@ -220,6 +238,16 @@ internal fun CCodeGen.generate(): COutput {
 		captureForDecl(d.name) { emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true) }
 	for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty())
 		captureForDecl(d.name) { emitInterfaceVtablesForClass(d.name, d.superInterfaces, implsOnly = true) }
+	for (d in file.decls) if (d is InterfaceDecl) {
+		for (vNested in d.nestedClasses) if (vNested.typeParams.isEmpty()) {
+			val vFlatName = "${d.name}$${vNested.name}"
+			val vIfaces = classInterfaces[vFlatName] ?: continue
+			if (vIfaces.isNotEmpty()) {
+				val vIfaceRefs = vIfaces.map { TypeRef(it) }
+				captureForDecl(vFlatName) { emitInterfaceVtablesForClass(vFlatName, vIfaceRefs, implsOnly = true) }
+				}
+			}
+		}
 	for ((baseName, instantiations) in genericInstantiations) {
 		val templateDecl = genericClassDecls[baseName] ?: continue
 		if (templateDecl.superInterfaces.isEmpty()) continue
@@ -418,28 +446,6 @@ internal fun CCodeGen.generate(): COutput {
 		}
 	replaceHdrPlaceholder("/* @VAR_ARR_PRIM_TYPES@ */", buildVarArrSection(varArrGuardedDecls), "typed VarArr types (primitives / external)")
 	replaceHdrPlaceholder("/* @VAR_ARR_TYPES@ */",      buildVarArrSection(varArrDecls),        "typed VarArr types (current-package user types)")
-
-	// Union typedefs
-	fun buildUnionSection(inTypes: Set<List<String>>): StringBuilder {
-		val vSb = StringBuilder()
-		for (vMembers in inTypes.sortedBy { it.joinToString("_") }) {
-			val vName = unionTypeRef(vMembers)
-			val vGuard = "KTC_UNION_DEF_$vName"
-			vSb.appendLine("#ifndef $vGuard")
-			vSb.appendLine("#define $vGuard")
-			vSb.appendLine("typedef struct $vName {")
-			vSb.appendLine("    ktc_Int id;")
-			vSb.appendLine("    union {")
-			for ((i, vMemberC) in vMembers.withIndex())
-				vSb.appendLine("        $vMemberC _$i;")
-			vSb.appendLine("    } data;")
-			vSb.appendLine("} $vName;")
-			vSb.appendLine("#endif")
-			}
-		return vSb
-		}
-	val vAllUnions = (unionGuardedDecls + unionDecls).toSet()
-	replaceHdrPlaceholder("/* @UNION_TYPES@ */", buildUnionSection(vAllUnions), "Union types")
 
 	// Deduplicate string literals used 2+ times within the same .c file.
 	val vStrPattern = Regex("""ktc_core_str\("([^"]*)"\)""")

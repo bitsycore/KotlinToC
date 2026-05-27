@@ -74,7 +74,9 @@ data class InterfaceDecl(
     val methods: List<FunDecl>,
     val properties: List<PropDecl> = emptyList(),
     val typeParams: List<String> = emptyList(),
-    val superInterfaces: List<TypeRef> = emptyList()
+    val superInterfaces: List<TypeRef> = emptyList(),
+    val nestedClasses: List<ClassDecl> = emptyList(),
+    val isSealed: Boolean = false
 ) : Decl()
 
 data class ObjectDecl(

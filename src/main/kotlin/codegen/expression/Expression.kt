@@ -213,6 +213,8 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val inner = genExpr(e.expr)
         val exprKtc = inferExprTypeKtc(e.expr)
         val exprKtcCore = exprKtc.stripNullable
+        // Resolve generic nested class against monomorphized interface (e.g. Result$Ok → Result$Ok_Int)
+        val resolvedTarget = resolveMonoNestedClass(target, exprKtcCore?.toInternalStr ?: "")
         // ktc_IfacePtr is a value struct even though the KTC type is Ptr<Interface>
         val isIfacePtr = exprKtcCore is KtcType.Ptr && exprKtcCore.inner is KtcType.User && exprKtcCore.inner.kind == KtcType.UserKind.Interface
         val memOp = if (exprKtcCore is KtcType.Ptr && !isIfacePtr) "->" else "."
@@ -220,8 +222,8 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
         val vIsIfaceInfo = ifaceInfoFor(targetKtc)                                    // non-null if target is an interface
         val vTypeIdRef   = typeIdExpr(exprKtcCore, inner, memOp)                      // null → concrete class (static type)
         val check = if (vIsClassInfo != null) {
-            if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == ${vIsClassInfo.flatName}_TYPE_ID"
-            else "${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${vIsClassInfo.flatName}_TYPE_ID"
+            if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == ${typeFlatName(resolvedTarget)}_TYPE_ID"
+            else "${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${typeFlatName(resolvedTarget)}_TYPE_ID"
         } else if (vIsIfaceInfo != null) {
             val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
             if (impls.isEmpty()) "false"

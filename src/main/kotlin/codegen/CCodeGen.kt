@@ -551,13 +551,26 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         return null
         }
 
+    /* When the is-check target is a generic nested class (e.g. Result$Ok) and the
+    expression's type is a monomorphized interface (e.g. Result_Int), resolve to the
+    concrete monomorphized variant (Result$Ok_Int). */
+    internal fun resolveMonoNestedClass(inTarget: String, inIfaceType: String): String {
+        if (!genericClassDecls.containsKey(inTarget)) return inTarget
+        val vComponents = mangledComponents[inIfaceType] ?: return inTarget
+        val (vIfaceBase, vTypeArgs) = vComponents
+        if (!genericIfaceDecls.containsKey(vIfaceBase) || !inTarget.startsWith("$vIfaceBase$")) return inTarget
+        val vMono = mangledGenericName(inTarget, vTypeArgs)
+        return if (classes.containsKey(vMono)) vMono else inTarget
+        }
+
     /* Generates the C expression to access the union data field for a narrowed interface variable. */
     internal fun ifaceUnionAccess(inIfaceName: String, inNarrowedClass: String, inRecv: String): String
         {
-        return if (isImplCrossPkg(inIfaceName, inNarrowedClass))
-            "(*(${typeFlatName(inNarrowedClass)}*)&$inRecv.data)"
+        val vResolved = resolveMonoNestedClass(inNarrowedClass, inIfaceName)
+        return if (isImplCrossPkg(inIfaceName, vResolved))
+            "(*(${typeFlatName(vResolved)}*)&$inRecv.data)"
         else {
-            val vDataName = "${typeFlatName(inNarrowedClass)}_data"
+            val vDataName = "${typeFlatName(vResolved)}_data"
             "$inRecv.data.$vDataName"
             }
         }
@@ -739,12 +752,6 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val varArrDecls = mutableSetOf<String>()                        // unguarded: current-pkg user types
     /* Same but emitted WITH #ifndef guard for primitives and external types. */
     internal val varArrGuardedDecls = mutableSetOf<String>()                 // guarded: primitives / external types
-
-    // ── Union (tagged union) type registry ───────────────────────────
-    /* Lists of member C type strings for each Union<A,B,...> instantiation.
-    Split into guarded (primitive members only) and unguarded (user-type members). */
-    internal val unionDecls = mutableSetOf<List<String>>()
-    internal val unionGuardedDecls = mutableSetOf<List<String>>()
 
     // ── Sized array param tracking ────────────────────────────────────
     /* Names of @Size(N) array params that arrived as ktc_Array_T_N structs and were

@@ -345,27 +345,6 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			}
 		}
 
-	// ── Union methods ─────────────────────────────────────────────────
-	if (inRecvTypeKtc != null) {
-		val vUnion = inRecvTypeKtc.stripNullable as? KtcType.Union
-		if (vUnion != null) {
-			val vGetMatch = Regex("^get(\\d+)$").matchEntire(vMethod)
-			if (vGetMatch != null) {
-				val vIdx = vGetMatch.groupValues[1].toInt() - 1
-				if (vIdx < 0 || vIdx >= vUnion.members.size)
-					codegenError("Union has no member at index ${vIdx + 1} (has ${vUnion.members.size} members)")
-				return "$inRecv.data._$vIdx"
-				}
-			val vIsMatch = Regex("^is(\\d+)$").matchEntire(vMethod)
-			if (vIsMatch != null) {
-				val vIdx = vIsMatch.groupValues[1].toInt() - 1
-				if (vIdx < 0 || vIdx >= vUnion.members.size)
-					codegenError("Union has no member at index ${vIdx + 1} (has ${vUnion.members.size} members)")
-				return "($inRecv.id == $vIdx)"
-				}
-			}
-		}
-
 	// ── Array methods ─────────────────────────────────────────────────
 
 	if (vMethod == "size" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike) {

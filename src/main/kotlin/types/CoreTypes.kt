@@ -142,18 +142,6 @@ internal sealed class KtcType {
         override fun toCType() = "void*"
     }
 
-    // ── Tagged union ─────────────────────────────────────────────────
-    /* Union<A, B, …> magic type: a C tagged union with an `id` discriminant
-    and a `data` anonymous union holding one member at a time. */
-    data class Union(val members: List<KtcType>) : KtcType() {
-        override fun toCType(): String {
-            val sanitized = members.joinToString("_") {
-                it.toCType().replace('$', '_').replace('*', 'p').replace(' ', '_')
-            }
-            return "ktc_Union_$sanitized"
-        }
-    }
-
     // ── C interop external type ───────────────────────────────────────
     /* Opaque external C type referenced via 'c.TypeName' syntax.
     The cName is emitted verbatim as the C type (e.g. "SDL_Window", "SDL_FRect").
@@ -210,7 +198,6 @@ internal sealed class KtcType {
                 else -> "${vInner.toInternalStr}*"                      // "Vec2*"
             }
 
-            is Union    -> "Union<${members.joinToString(",") { it.toInternalStr }}>"
             is Nullable -> "${inner.toInternalStr}?"             // "Int?", "Vec2?", "Vec2*?"
             is COpaque  -> "c:$cName"                             // "c:SDL_Window", "c:SDL_FRect"
         }

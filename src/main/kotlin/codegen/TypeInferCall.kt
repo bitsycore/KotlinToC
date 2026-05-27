@@ -22,14 +22,14 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
 
         val flatCallee = flattenDotCallee(e.callee)
         if (flatCallee != null) {
-            if (classes.containsKey(flatCallee)) return flatCallee
-            if (genericClassDecls.containsKey(flatCallee)) {
+            if (genericClassDecls.containsKey(flatCallee) && e.typeArgs.isNotEmpty()) {
                 val resolvedArgs = e.typeArgs.map { t ->
                     val sub = substituteTypeParams(t)
                     if (sub.nullable) "${resolveTypeNameStr(sub)}?" else resolveTypeNameStr(sub)
                 }
                 return mangledGenericName(flatCallee, resolvedArgs)
             }
+            if (classes.containsKey(flatCallee)) return flatCallee
         }
         // Class(args).allocWith(allocator) → Ref<ClassType> (type/args come from the receiver ctor call)
         if (e.callee.name == "allocWith" && e.callee.obj is CallExpr) {
@@ -114,12 +114,6 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
         if (name == "Array" && e.typeArgs.isNotEmpty()) {
             val elemName = resolveTypeName(e.typeArgs[0]).toInternalStr
             return "${elemName}Array"
-        }
-        // Union1<A,B>(value), Union2<A,B>(value), … → Union<A,B>
-        val vUnionCtorMatch = Regex("^Union(\\d+)$").matchEntire(name)
-        if (vUnionCtorMatch != null && e.typeArgs.size >= 2) {
-            val vMembers = e.typeArgs.map { resolveTypeName(it) }
-            return KtcType.Union(vMembers).toInternalStr
         }
         // Generic function call: resolve return type with type substitution
         val genFun = genericFunDecls.find { it.name == name }
@@ -226,17 +220,6 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     if (method == "hashCode") return "Int"
     if (method == "inv") return recvType
     val recvKtc = parseResolvedTypeName(recvType)
-    // Union methods: get1..N → member type, is1..N → Boolean
-    val vUnionKtc = recvKtc.stripNullable as? KtcType.Union
-    if (vUnionKtc != null) {
-        val vGetMatch = Regex("^get(\\d+)$").matchEntire(method)
-        if (vGetMatch != null) {
-            val vIdx = vGetMatch.groupValues[1].toInt() - 1
-            if (vIdx in vUnionKtc.members.indices) return vUnionKtc.members[vIdx].toInternalStr
-        }
-        val vIsMatch = Regex("^is(\\d+)$").matchEntire(method)
-        if (vIsMatch != null) return "Boolean"
-    }
     // RawArray<T> (T*): asArray(n) → Ref<Array<T>>; resizeWith returns the bare pointer unchanged.
     if (method == "asArray" || method == "resizeWith") {
         val core = recvKtc.stripNullable

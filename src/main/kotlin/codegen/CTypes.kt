@@ -96,14 +96,6 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 		val vRet      = resolveTypeName(vSubstituted.funcReturn)               // return type
 		return KtcType.Func(vParams, vRet, receiver = vReceiver)
 		}
-	// Union<A, B, …>: build KtcType.Union directly (magic type, no class declaration)
-	if (vSubstituted.name == "Union" && vSubstituted.typeArgs.isNotEmpty()) {
-		val vMembers    = vSubstituted.typeArgs.map { resolveTypeName(it) }
-		val vMemberCTypes = vMembers.map { cTypeStr(it) }
-		unionTypeName(vMemberCTypes)
-		val vBase = KtcType.Union(vMembers)
-		return if (vSubstituted.nullable) KtcType.Nullable(vBase) else vBase
-		}
 	val vResolved = resolveTypeNameStr(inT)                      // string-based resolution (legacy bridge)
 	// For Ref<T>, pass the rewritten inner TypeRef so parseResolvedTypeName sees the real type name.
 	// For everything else, pass the de-aliased TypeRef so an alias like `typealias X = Int?` resolves
@@ -198,15 +190,6 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	if (t.name == "StringBuffer" && t.typeArgs.isEmpty()
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer"))
 		return "ktc_StrBuf"
-	if (t.name == "Union" && t.typeArgs.isNotEmpty()) {
-		val vMemberCTypes = t.typeArgs.map { cTypeStr(resolveTypeName(it)) }
-		return unionTypeName(vMemberCTypes)
-		}
-	// Union1<A,B>, Union2<A,B> etc. — constructor names resolve to the Union type
-	if (t.name.startsWith("Union") && t.name.drop(5).toIntOrNull() != null && t.typeArgs.isNotEmpty()) {
-		val vMemberCTypes = t.typeArgs.map { cTypeStr(resolveTypeName(it)) }
-		return unionTypeName(vMemberCTypes)
-		}
 	if (t.name == "Array" && t.typeArgs.isNotEmpty()) {
 		val vElemRef      = t.typeArgs[0]
 		val vNullableElem = vElemRef.nullable
@@ -253,7 +236,6 @@ private fun CCodeGen.isKnownTypeName(inName: String): Boolean {
 	// Already-resolved C forms: pointers (`Foo*`), nullables (`Foo?`), iface trampolines (`ktc_IfacePtr:T`)
 	if (inName.contains('*') || inName.contains('?') || inName.contains(':')) return true
 	if (inName in kBuiltinTypeNames) return true
-	if (inName.startsWith("Union") && inName.drop(5).toIntOrNull() != null) return true
 	if (classes.containsKey(inName)) return true
 	if (objects.containsKey(inName)) return true
 	if (interfaces.containsKey(inName)) return true
@@ -276,7 +258,7 @@ private val kBuiltinTypeNames = setOf(
 	"Byte", "Short", "Int", "Long", "UByte", "UShort", "UInt", "ULong",
 	"Float", "Double", "Boolean", "Char", "Rune",
 	"String", "StringBuffer", "Any", "Unit", "Nothing", "void",
-	"Array", "RawArray", "AnyPtr", "Ref", "Union",
+	"Array", "RawArray", "AnyPtr", "Ref",
 	"IntArray", "LongArray", "FloatArray", "DoubleArray",
 	"BooleanArray", "CharArray", "ByteArray", "ShortArray",
 	"UIntArray", "ULongArray", "UByteArray", "UShortArray",
@@ -324,14 +306,6 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		}
 	if (resolved.endsWith("?")) return KtcType.Nullable(parseResolvedTypeName(resolved.dropLast(1)))
 	if (resolved.startsWith("Fun(")) return KtcType.Func(emptyList(), KtcType.Void)
-	// "Union<Int,String>" → KtcType.Union (produced by toInternalStr)
-	if (resolved.startsWith("Union<") && resolved.endsWith(">")) {
-		val vInner   = resolved.removePrefix("Union<").removeSuffix(">")
-		val vMembers = splitUnionTypeArgs(vInner).map { parseResolvedTypeName(it.trim()) }
-		return KtcType.Union(vMembers)
-		}
-	// "ktc_Union_..." → KtcType.Union fallback from C type name
-	if (resolved.startsWith("ktc_Union_")) return KtcType.User(com.bitsycore.ktc.types.BuiltinTypeDef(resolved, pkg = ""))
 	// "c:SDL_Window" → COpaque (produced by resolveTypeNameInnerStr for c.* type refs)
 	if (resolved.startsWith("c:")) {
 			val vCName = resolved.removePrefix("c:")
@@ -376,23 +350,6 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		return userType(resolved, kind)
 		}
 	return userType(resolved)
-	}
-
-/* Split a comma-separated type arg string, respecting nested angle brackets.
-e.g. "Int,Union<Float,Long>,String" → ["Int", "Union<Float,Long>", "String"] */
-private fun splitUnionTypeArgs(inStr: String): List<String> {
-	val vResult = mutableListOf<String>()
-	var vDepth  = 0
-	var vStart  = 0
-	for ((i, c) in inStr.withIndex()) {
-		when (c) {
-			'<' -> vDepth++
-			'>' -> vDepth--
-			',' -> if (vDepth == 0) { vResult.add(inStr.substring(vStart, i)); vStart = i + 1 }
-			}
-		}
-	vResult.add(inStr.substring(vStart))
-	return vResult
 	}
 
 // ═══════════════════════════ C type strings ════════════════════════
@@ -442,7 +399,6 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 		if (inner is KtcType.Ptr) cTypeStr(inner) else optCTypeName(inner.toInternalStr)
 		}
 	is KtcType.Func -> "void*"
-	is KtcType.Union -> ktc.toCType()
 	is KtcType.COpaque -> ktc.cName
 	}
 
@@ -462,7 +418,6 @@ internal fun CCodeGen.defaultVal(t: KtcType): String = when (t) {
 	is KtcType.Str  -> "ktc_core_str(\"\")"
 	is KtcType.Ptr    -> "NULL"
 	is KtcType.COpaque -> "(${t.cName}){0}"
-	is KtcType.Union -> "(${t.toCType()}){0, {0}}"
 	else -> {
 		val ct = cTypeStr(t.toInternalStr.removeSuffix("?"))
 		"($ct){0}"
@@ -492,7 +447,6 @@ internal fun SymbolReader.printfFmt(ktc: KtcType): String = when (ktc) {
 	is KtcType.Ptr      -> "%p"
 	is KtcType.Nullable -> if (ktc.inner is KtcType.Ptr) "%p" else printfFmt(ktc.inner)
 	is KtcType.User     -> "%.*s"
-	is KtcType.Union    -> "Union(id=%\" PRId32 \")"
 	is KtcType.COpaque  -> "%p"
 	else                -> "%.*s"
 	}
@@ -505,6 +459,5 @@ internal fun SymbolReader.printfArg(expr: String, ktc: KtcType): String = when (
 		val cName = typeFlatName(ktc.baseName)
 		"(ktc_Int)${cName}_names[($expr)].len, ${cName}_names[($expr)].ptr"
 		}
-	is KtcType.Union -> "$expr.id"
 	else -> expr
 	}

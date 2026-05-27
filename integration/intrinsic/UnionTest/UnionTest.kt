@@ -1,68 +1,109 @@
 package UnionTest
 
-fun makeIntOrFloat(flag: Boolean): Union<Int, Float> {
-	if (flag) return Union1<Int, Float>(42)
-	return Union2<Int, Float>(3.14f)
+sealed interface Shape {
+	data class Circle(val radius: Float) : Shape
+	data class Rect(val w: Float, val h: Float) : Shape
+	data class Triangle(val a: Float, val b: Float, val c: Float) : Shape
 }
 
-fun describeUnion(u: Union<Int, Float>): String {
-	if (u.is1()) return "int"
-	return "float"
+fun printShape(s: Shape) {
+	when (s) {
+		is Shape.Circle -> println("circle r=${s.radius}")
+		is Shape.Rect -> println("rect ${s.w}x${s.h}")
+		is Shape.Triangle -> println("triangle")
+	}
+}
+
+sealed interface Result<T> {
+	data class Ok<T>(val value: T) : Result<T>
+	data class Err<T>(val message: String) : Result<T>
+}
+
+fun divide(a: Int, b: Int): Result<Int> {
+	if (b == 0) return Result.Err<Int>("division by zero")
+	return Result.Ok<Int>(a / b)
+}
+
+fun safeSqrt(x: Float): Result<Float> {
+	if (x < 0.0f) return Result.Err<Float>("negative input")
+	return Result.Ok<Float>(x)
 }
 
 fun main() {
-	// Basic construction and id check
-	val u1 = Union1<Int, Float>(42)
-	val u2 = Union2<Int, Float>(3.14f)
-	if (u1.id != 0) error("FAIL: u1.id should be 0")
-	if (u2.id != 1) error("FAIL: u2.id should be 1")
-	println("ids: ${u1.id} ${u2.id}")
-
-	// Value access
-	val v1: Int = u1.get1()
-	val v2: Float = u2.get2()
-	if (v1 != 42) error("FAIL: u1.get1() should be 42")
-	if (v2 < 3.13f || v2 > 3.15f) error("FAIL: u2.get2() should be ~3.14")
-	println("values: $v1 $v2")
-
-	// Boolean checks
-	if (!u1.is1()) error("FAIL: u1.is1() should be true")
-	if (u1.is2()) error("FAIL: u1.is2() should be false")
-	if (u2.is1()) error("FAIL: u2.is1() should be false")
-	if (!u2.is2()) error("FAIL: u2.is2() should be true")
-	println("checks ok")
-
-	// Function returning Union
-	val r1 = makeIntOrFloat(true)
-	val r2 = makeIntOrFloat(false)
-	if (!r1.is1()) error("FAIL: r1 should be int")
-	if (!r2.is2()) error("FAIL: r2 should be float")
-	if (r1.get1() != 42) error("FAIL: r1 value")
-	println("return: ${r1.get1()}")
-
-	// Union as parameter
-	if (describeUnion(u1) != "int") error("FAIL: describeUnion(u1)")
-	if (describeUnion(u2) != "float") error("FAIL: describeUnion(u2)")
-	println("param ok")
-
-	// Three-member union
-	val t1 = Union1<Int, Float, Boolean>(100)
-	val t2 = Union2<Int, Float, Boolean>(2.5f)
-	val t3 = Union3<Int, Float, Boolean>(true)
-	if (t1.id != 0 || t2.id != 1 || t3.id != 2) error("FAIL: 3-member ids")
-	if (t1.get1() != 100) error("FAIL: t1.get1()")
-	if (t3.get3() != true) error("FAIL: t3.get3()")
-	println("triple: ${t1.get1()} ${t2.get2()} ${t3.get3()}")
-
-	// When-style dispatch
-	val u = Union2<Int, Float>(9.0f)
-	val result = if (u.is1()) {
-		u.get1() * 10
+	// Basic sealed interface construction and is-check
+	val c: Shape = Shape.Circle(3.14f)
+	val r: Shape = Shape.Rect(10.0f, 20.0f)
+	if (c is Shape.Circle) {
+		println("circle: ${c.radius}")
 	} else {
-		u.get2().toInt() + 1
+		error("FAIL: c should be Circle")
 	}
-	if (result != 10) error("FAIL: when dispatch result should be 10")
-	println("dispatch: $result")
+	if (r is Shape.Rect) {
+		println("rect: ${r.w} ${r.h}")
+	} else {
+		error("FAIL: r should be Rect")
+	}
+
+	// !is check
+	if (c !is Shape.Rect) {
+		println("negated ok")
+	} else {
+		error("FAIL: c should not be Rect")
+	}
+
+	// when + is smart cast
+	when (c) {
+		is Shape.Circle -> println("when circle: ${c.radius}")
+		is Shape.Rect -> println("when rect")
+		is Shape.Triangle -> println("when triangle")
+	}
+
+	// Function receiving sealed interface
+	printShape(c)
+	printShape(r)
+
+	// Three-variant sealed interface
+	val t: Shape = Shape.Triangle(3.0f, 4.0f, 5.0f)
+	if (t is Shape.Triangle) {
+		println("triple: ${t.a}")
+	} else {
+		error("FAIL: t should be Triangle")
+	}
+
+	// Result-like pattern: divide with sealed interface
+	val d1 = divide(10, 2)
+	val d2 = divide(10, 0)
+	if (d1 is Result.Ok) {
+		if (d1.value != 5) error("FAIL: divide 10/2 should be 5")
+		println("divide ok: ${d1.value}")
+	} else {
+		error("FAIL: divide 10/2 should succeed")
+	}
+	if (d2 is Result.Err) {
+		println("divide err: ${d2.message}")
+	} else {
+		error("FAIL: divide 10/0 should fail")
+	}
+
+	// Result-like pattern: safeSqrt
+	val s1 = safeSqrt(4.0f)
+	val s2 = safeSqrt(-1.0f)
+	if (s1 is Result.Ok) {
+		println("sqrt ok: ${s1.value}")
+	} else {
+		error("FAIL: safeSqrt(4) should succeed")
+	}
+	if (s2 is Result.Err) {
+		println("sqrt err: ${s2.message}")
+	} else {
+		error("FAIL: safeSqrt(-1) should fail")
+	}
+
+	// When-style dispatch on result
+	when (d1) {
+		is Result.Ok -> println("result: value=${d1.value}")
+		is Result.Err -> println("result: error=${d1.message}")
+	}
 
 	println("done")
 }

@@ -123,6 +123,18 @@ internal fun CCodeGen.scanTypeRefForGenerics(t: TypeRef?, skip: Set<String> = em
 			recordGenericInstantiation(t.name, concreteArgs)
 			}
 		}
+	// Generic interface type ref (e.g. Result<Int>) → instantiate all nested classes
+	val ifaceDecl = genericIfaceDecls[t.name]
+	if (ifaceDecl != null && t.typeArgs.isNotEmpty()) {
+		val concreteArgs = t.typeArgs.map { if (it.nullable) "${it.name}?" else it.name }
+		if (concreteArgs.none { it.trimEnd('?') in skip || it == "*" }) {
+			for (nested in ifaceDecl.nestedClasses) {
+				val flatName = "${t.name}$${nested.name}"
+				if (genericClassDecls.containsKey(flatName))
+					recordGenericInstantiation(flatName, concreteArgs)
+				}
+			}
+		}
 	for (arg in t.typeArgs) scanTypeRefForGenerics(arg, skip)
 	}
 
@@ -131,6 +143,12 @@ internal fun CCodeGen.scanExprForGenerics(e: Expr?, skip: Set<String> = emptySet
 	when (e) {
 		is CallExpr -> {
 			val name = (e.callee as? NameExpr)?.name
+			// Resolve dotted callee (e.g. Result.Ok → Result$Ok)
+			val dotCallee = e.callee as? DotExpr
+			val dotName = if (dotCallee != null) {
+				val objName = (dotCallee.obj as? NameExpr)?.name
+				if (objName != null) "$objName$${dotCallee.name}" else null
+				} else null
 			for (ta in e.typeArgs) {
 				if (ta.typeArgs.isNotEmpty() && classes.containsKey(ta.name) && classes[ta.name]!!.isGeneric) {
 					val concreteArgs = ta.typeArgs.map { if (it.nullable) "${it.name}?" else it.name }
@@ -139,10 +157,11 @@ internal fun CCodeGen.scanExprForGenerics(e: Expr?, skip: Set<String> = emptySet
 						}
 					}
 				}
-			if (name != null && classes.containsKey(name) && classes[name]!!.isGeneric && e.typeArgs.isNotEmpty()) {
+			val effectiveName = name ?: dotName
+			if (effectiveName != null && classes.containsKey(effectiveName) && classes[effectiveName]!!.isGeneric && e.typeArgs.isNotEmpty()) {
 				val concreteArgs = e.typeArgs.map { if (it.nullable) "${it.name}?" else it.name }
 				if (concreteArgs.none { it.trimEnd('?') in skip || it == "*" }) {
-					recordGenericInstantiation(name, concreteArgs)
+					recordGenericInstantiation(effectiveName, concreteArgs)
 					}
 				}
 			for (a in e.args) scanExprForGenerics(a.expr, skip)

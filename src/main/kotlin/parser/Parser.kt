@@ -87,7 +87,7 @@ class Parser(private val tokens: List<Token>) {
                 advance(); advance(); parseClassDecl(isData = false)
             }
             at(TokenType.ENUM)   -> { advance(); expect(TokenType.CLASS); parseEnumDecl() }
-            at(TokenType.INTERFACE) -> parseInterfaceDecl()
+            at(TokenType.INTERFACE) -> parseInterfaceDecl(isSealed = isSealed)
             at(TokenType.TYPEALIAS) -> parseTypeAliasDecl()
             at(TokenType.IDENT) && cur().value == "companion" && peek().type == TokenType.OBJECT -> {
                 advance()  // consume "companion"
@@ -343,7 +343,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── interface ─────────────────────────────────────────────────────
 
-    private fun parseInterfaceDecl(): InterfaceDecl {
+    private fun parseInterfaceDecl(isSealed: Boolean = false): InterfaceDecl {
         expect(TokenType.INTERFACE)
         val name = expectIdent()
         // Parse type parameters: interface Foo<out T, in U>
@@ -366,6 +366,7 @@ class Parser(private val tokens: List<Token>) {
         skipNL()
         val methods = mutableListOf<FunDecl>()
         val properties = mutableListOf<PropDecl>()
+        val nestedClasses = mutableListOf<ClassDecl>()
         if (at(TokenType.LBRACE)) {
             advance(); nesting++; skipNL()
             while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
@@ -379,14 +380,16 @@ class Parser(private val tokens: List<Token>) {
                     at(TokenType.FUN) -> methods += parseFunDecl(isOperator = isOp)
                     at(TokenType.VAL) -> properties += parsePropDecl(mutable = false)
                     at(TokenType.VAR) -> properties += parsePropDecl(mutable = true)
-                    else -> error("Expected fun, val, or var in interface body at ${cur()}")
+                    at(TokenType.DATA) -> { advance(); expect(TokenType.CLASS); nestedClasses += parseClassDecl(isData = true) }
+                    at(TokenType.CLASS) -> { advance(); nestedClasses += parseClassDecl(isData = false) }
+                    else -> error("Expected fun, val, var, or class in interface body at ${cur()}")
                 }
                 skipNL()
             }
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return InterfaceDecl(name, methods, properties, typeParams, superInterfaces)
+        return InterfaceDecl(name, methods, properties, typeParams, superInterfaces, nestedClasses, isSealed)
     }
 
     // ── object ───────────────────────────────────────────────────────
@@ -812,8 +815,8 @@ class Parser(private val tokens: List<Token>) {
                         CallExpr(e, allArgs)
                     }
                 }
-                // Type-parameterized call: malloc<Int>(n)  or  Array<Int>.method(args)
-                at(TokenType.LT) && e is NameExpr && looksLikeTypeArgs() -> {
+                // Type-parameterized call: malloc<Int>(n)  or  Array<Int>.method(args)  or  Result.Ok<Int>(x)
+                at(TokenType.LT) && (e is NameExpr || e is DotExpr) && looksLikeTypeArgs() -> {
                     val typeArgs = parseTypeArgList()
                     if (at(TokenType.DOT)) {
                         // Array<Int>.method(args)

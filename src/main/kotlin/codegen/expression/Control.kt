@@ -4,7 +4,10 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.codegen.statement.checkWhenExhaustiveness
+import com.bitsycore.ktc.codegen.statement.extractSmartCasts
 import com.bitsycore.ktc.codegen.statement.genWhenCond
+import com.bitsycore.ktc.codegen.statement.pushSmartCasts
+import com.bitsycore.ktc.codegen.statement.popSmartCasts
 import com.bitsycore.ktc.types.KtcType
 
 internal fun CCodeGen.findCommonInterface(type1: String?, type2: String?): String? {
@@ -70,25 +73,49 @@ internal fun CCodeGen.genIfExpr(e: IfExpr): String {
         return t
     }
 
-    // Simple case: both branches are single expressions → ternary
+    val thenCasts = extractSmartCasts(e.cond)
+    val elseCasts = extractSmartCasts(e.cond, forElse = true)
+    val hasSmartCasts = thenCasts.isNotEmpty() || elseCasts.isNotEmpty()
+
+    // Simple case: both branches are single expressions → ternary (only when no smart-cast needed)
     val thenExpr = blockAsSingleExpr(e.then)
     val elseExpr = if (e.els != null) blockAsSingleExpr(e.els) else null
-    if (thenExpr != null && (e.els == null || elseExpr != null)) {
+    if (!hasSmartCasts && thenExpr != null && (e.els == null || elseExpr != null)) {
         val thenStr = genExpr(thenExpr)
         val elseStr = if (elseExpr != null) genExpr(elseExpr) else "0"
         return "(${genExpr(e.cond)} ? $thenStr : $elseStr)"
     }
 
-    // Complex case: multi-statement bodies → hoist to temp
+    // Complex case or smart-cast needed: hoist to temp
     val t = tmp()
     val retType = inferIfExprType(e) ?: "Int"
     val ct = cTypeStr(retType)
     preStmts += "$ct $t;"
     preStmts += "if (${genExpr(e.cond)}) {"
+    if (thenCasts.isNotEmpty()) {
+        for ((name, type) in thenCasts) preStmts += "    // smart-cast: '$name' narrowed to '$type'"
+        pushScope()
+        for ((name, type) in thenCasts) {
+            val ktc = parseResolvedTypeName(type)
+            val cName = if (ktc is KtcType.Ptr) "((${ktc.toCType()})${lookupCName(name)})" else lookupLocalVar(name)?.cName
+            defineVar(name, LocalVar(ktc = ktc, mutable = false, cName = cName))
+        }
+    }
     emitBlockIntoTemp(e.then, t, "    ")
+    if (thenCasts.isNotEmpty()) popScope()
     if (e.els != null) {
         preStmts += "} else {"
+        if (elseCasts.isNotEmpty()) {
+            for ((name, type) in elseCasts) preStmts += "    // smart-cast: '$name' narrowed to '$type'"
+            pushScope()
+            for ((name, type) in elseCasts) {
+                val ktc = parseResolvedTypeName(type)
+                val cName = if (ktc is KtcType.Ptr) "((${ktc.toCType()})${lookupCName(name)})" else lookupLocalVar(name)?.cName
+                defineVar(name, LocalVar(ktc = ktc, mutable = false, cName = cName))
+            }
+        }
         emitBlockIntoTemp(e.els, t, "    ")
+        if (elseCasts.isNotEmpty()) popScope()
     }
     preStmts += "}"
     return t
@@ -256,7 +283,8 @@ internal fun CCodeGen.narrowSubjectForBranch(br: WhenBranch, subjName: String?):
     val current = currentKtc.toInternalStr
     // Don't narrow pointer types (Any* etc.) — they need original type for ->data dereference
     if (currentKtc is KtcType.Ptr) return null
-    return if (current != target) target else null
+    val resolved = resolveMonoNestedClass(target, currentKtc.stripNullable.toInternalStr)
+    return if (current != resolved) resolved else null
 }
 
 internal fun CCodeGen.inferWhenExprType(e: WhenExpr): String? {

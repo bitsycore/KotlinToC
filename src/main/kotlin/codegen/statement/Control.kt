@@ -33,12 +33,14 @@ internal fun CCodeGen.extractSmartCasts(cond: Expr, forElse: Boolean = false): L
 		val ktc = lookupVarKtc(name)
 		// Allow narrowing for trampoline Any, and for Ref<Any> → Ref<Concrete>
 			if (ktc != null && ktc.toInternalStr != target) {
+				val vExprType = ktc.stripNullable.toInternalStr
+				val vResolvedTarget = resolveMonoNestedClass(target, vExprType)
 				val vNarrowed: String? = when {
 					// Ptr(Any) → value type (goes through .data deref in genName)
-					ktc is KtcType.Ptr && ktc.inner is KtcType.Any -> target
+					ktc is KtcType.Ptr && ktc.inner is KtcType.Any -> vResolvedTarget
 					// Nullable(Ptr(Any)) → pointer type (guard pattern, points to object)
-					ktc is KtcType.Nullable && ktc.inner is KtcType.Ptr && ktc.inner.inner is KtcType.Any -> "${target}*"
-					ktc !is KtcType.Ptr -> target
+					ktc is KtcType.Nullable && ktc.inner is KtcType.Ptr && ktc.inner.inner is KtcType.Any -> "${vResolvedTarget}*"
+					ktc !is KtcType.Ptr -> vResolvedTarget
 					else -> null
 					}
 			if (vNarrowed != null) casts.add(name to vNarrowed)
@@ -79,6 +81,7 @@ internal fun CCodeGen.pushSmartCasts(casts: List<Pair<String, String>>, ind: Str
 	pushScope()
 		for ((name, type) in casts) {
 			val vKtc = parseResolvedTypeName(type)
+			val vExistingKtc = lookupVarKtc(name)
 			val vExistingCName = lookupLocalVar(name)?.cName
 			// For pointer narrows (Ref<Any> → Ref<Concrete>), emit a C cast
 			val vCName = if (vKtc is KtcType.Ptr) "((${vKtc.toCType()})${lookupCName(name)})" else vExistingCName
@@ -138,7 +141,12 @@ internal fun CCodeGen.emitWhenStmt(e: WhenExpr, ind: String, method: Boolean) {
 			}
 		val narrowCasts = if (br.conds != null && subjName != null && !isMutable(subjName)) {
 			val isCond = br.conds.find { it is IsCond && !it.negated } as? IsCond
-			if (isCond != null) listOf(subjName to resolveTypeName(isCond.type).toInternalStr)
+			if (isCond != null) {
+				val vTarget = resolveTypeName(isCond.type).toInternalStr
+				val vSubjKtc = inferExprTypeKtc(e.subject!!)
+				val vResolved = resolveMonoNestedClass(vTarget, vSubjKtc.stripNullable?.toInternalStr ?: "")
+				listOf(subjName to vResolved)
+				}
 			else emptyList()
 			} else emptyList()
 		pushSmartCasts(narrowCasts, ind)
@@ -190,11 +198,12 @@ internal fun CCodeGen.genWhenCond(c: WhenCond, subject: Expr?): String {
 			val target = targetKtc.toInternalStr
 			val exprKtc = if (subject != null) inferExprTypeKtc(subject) else null
 			val exprKtcCore = exprKtc.stripNullable
+			val resolvedTarget = resolveMonoNestedClass(target, exprKtcCore?.toInternalStr ?: "")
 			val memOp = if (exprKtcCore is KtcType.Ptr) "->" else "."
 			val vTypeIdRef = typeIdExpr(exprKtcCore, subj, memOp)
-			val check = if (classes.containsKey(target)) {
-				if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == ${typeFlatName(target)}_TYPE_ID"
-				else "${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${typeFlatName(target)}_TYPE_ID"
+			val check = if (classes.containsKey(target) || classes.containsKey(resolvedTarget)) {
+				if (vTypeIdRef != null) "KTC_GET_TYPEID($vTypeIdRef) == ${typeFlatName(resolvedTarget)}_TYPE_ID"
+				else "${typeFlatName((exprKtcCore as? KtcType.User)?.baseName ?: "")}_TYPE_ID == ${typeFlatName(resolvedTarget)}_TYPE_ID"
 				} else if (interfaces.containsKey(target)) {
 				val impls = classInterfaces.filter { (_, ifaces) -> target in ifaces }.keys
 				if (impls.isEmpty()) "false"

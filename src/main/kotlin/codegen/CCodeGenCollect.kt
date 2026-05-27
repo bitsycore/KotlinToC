@@ -324,6 +324,20 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				genericIfaceDecls[d.name] = d
 				allGenericTypeParamNames += d.typeParams
 				}
+			for (vNested in d.nestedClasses) {
+				val vFlatName = "${d.name}$${vNested.name}"
+				val vAlreadyImpl = vNested.superInterfaces.any { it.name == d.name }
+				val vSuperIfaces = if (vAlreadyImpl) vNested.superInterfaces else {
+					val vIfaceRef = if (d.typeParams.isNotEmpty())
+						TypeRef(d.name, typeArgs = d.typeParams.map { TypeRef(it) })
+					else TypeRef(d.name)
+					vNested.superInterfaces + vIfaceRef
+					}
+				val vFlat = ClassDecl(vFlatName, vNested.isData, vNested.ctorParams,
+					vNested.members, vNested.initBlocks, vSuperIfaces,
+					vNested.typeParams, vNested.secondaryCtors)
+				collectDecl(vFlat)
+				}
 			}
 
 		is ObjectDecl -> {

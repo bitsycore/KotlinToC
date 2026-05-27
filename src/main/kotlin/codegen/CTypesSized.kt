@@ -83,18 +83,4 @@ internal fun CCodeGen.varArrTypeName(inElemCType: String): String {
 internal fun varArrTypeRef(inElemCType: String): String =
 	"ktc_VarArr_${sanitizeForVarArrName(inElemCType)}"
 
-// ═══════════════════════════ Union type registration ═════════════
-
-/* Registers a tagged-union typedef and returns the C struct type name.
-inMemberCTypes: ordered C type strings for each union variant. */
-internal fun CCodeGen.unionTypeName(inMemberCTypes: List<String>): String {
-	val vHasPkgType = inMemberCTypes.any { isCurrentPkgUserType(it) }
-	if (vHasPkgType) unionDecls.add(inMemberCTypes)
-	else unionGuardedDecls.add(inMemberCTypes)
-	return unionTypeRef(inMemberCTypes)
-	}
-
-/* Returns the Union typedef name WITHOUT registering it. */
-internal fun unionTypeRef(inMemberCTypes: List<String>): String =
-	"ktc_Union_${inMemberCTypes.joinToString("_") { sanitizeForVarArrName(it) }}"
 

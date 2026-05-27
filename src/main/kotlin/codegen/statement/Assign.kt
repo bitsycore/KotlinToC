@@ -399,6 +399,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     val crossPkg = isImplCrossPkg(retIface, exprType)
                     val t = tmp()
                     impl.appendLine("$ind${cIface} $t;")
+                    impl.appendLine("$ind$t.__typeId = ${cExprType}_TYPE_ID;")
                     if (crossPkg) {
                         val cType = if (objects.containsKey(exprType)) "${cExprType}_t" else cExprType
                         impl.appendLine("$ind*($cType*)&$t.data = $expr;")
