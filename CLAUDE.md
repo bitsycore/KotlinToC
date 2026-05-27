@@ -88,6 +88,7 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - No `inline value class`.
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
 - Exhaustiveness for `when` is warned on enums (each entry covered) and on sealed classes / sealed interfaces (each direct subclass covered via `is` branches). Adding an `else` branch silences the warning.
+- Enums are simple-only: no constructor params, no per-entry args, no body methods. `@SimpleEnum` is accepted as a forward-compat marker (currently a no-op). Full Kotlin-style enums are tracked in plan.md as an L-sized roadmap; advanced syntax (`enum class Op(val sym: String)`, per-entry args, body content after `;`) is rejected at parse time with an explanatory error.
 - `RawArray<T>` is never bounds-checked (no length carried). `Array<T>` / `String` / `@Size(N)` indexing IS checked by default — see "Bounds checking" above.
 - `private` fields and methods are enforced across class boundaries (codegen error on access from outside). `internal` on classes and top-level functions is enforced per-package (cross-package access is rejected with E044).
 - Direct self-recursive class layouts (`class Node(val next: Node)`) are rejected — must indirect through `Ref<Node>`, `Array<Node>`, or `RawArray<Node>`.

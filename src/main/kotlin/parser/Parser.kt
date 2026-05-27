@@ -128,6 +128,7 @@ class Parser(private val tokens: List<Token>) {
                         else { advance(); parseClassDecl(isData = false, annotations = anns, isSealed = true, isInternal = isInternal) }
                     }
                     at(TokenType.INTERFACE) -> parseInterfaceDecl(annotations = anns)
+                    at(TokenType.ENUM) -> { advance(); expect(TokenType.CLASS); parseEnumDecl(annotations = anns) }
                     else -> error("Annotations @${anns.joinToString(" ") { it.name }} before '${cur().value}' are not supported")
                 }
             }
@@ -320,20 +321,49 @@ class Parser(private val tokens: List<Token>) {
 
     // ── enum class ───────────────────────────────────────────────────
 
-    private fun parseEnumDecl(): EnumDecl {
+    private fun parseEnumDecl(annotations: List<Annotation> = emptyList()): EnumDecl {
         val name = expectIdent()
+        // Constructor params on enum: `enum class Op(val sym: String) { ... }`.
+        // KTC currently only supports the simple form (no ctor, no body) — emit a
+        // clear error so the user isn't surprised by silently dropped declarations.
+        if (at(TokenType.LPAREN)) {
+            error("Enum '$name' has constructor parameters — full enums (with ctor params, per-entry args, or body methods) are not yet supported by KTC. " +
+                "Use a plain enum without parameters: `enum class $name { A, B }`. " +
+                "Track full-enum support in plan.md.")
+        }
         expect(TokenType.LBRACE); nesting++; skipNL()
         val entries = mutableListOf<String>()
         while (!at(TokenType.RBRACE) && !at(TokenType.EOF) && !at(TokenType.SEMICOLON)) {
-            entries += expectIdent()
+            val vEntry = expectIdent()
+            // Per-entry constructor args: `PLUS("+")`. Same diagnostic as above.
+            if (at(TokenType.LPAREN)) {
+                error("Enum entry '${name}.$vEntry' has constructor arguments — full enums (with ctor params, per-entry args, or body methods) are not yet supported by KTC.")
+            }
+            // Per-entry override block: `PLUS { override fun apply(...) = ... }`. Same.
+            if (at(TokenType.LBRACE)) {
+                error("Enum entry '${name}.$vEntry' has an override body — full enums (with ctor params, per-entry args, or body methods) are not yet supported by KTC.")
+            }
+            entries += vEntry
             if (at(TokenType.COMMA)) { advance(); skipNL() } else break
         }
-        skipNL()
-        // optional trailing ; and members — skip for now
-        while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) advance()
+        // skipNL() consumes both newlines AND semicolons; check SEMICOLON first
+        // so we can distinguish `;` (potential body separator) from a trailing newline.
+        while (at(TokenType.NEWLINE)) advance()
+        if (at(TokenType.SEMICOLON)) {
+            advance()
+            while (at(TokenType.NEWLINE) || at(TokenType.SEMICOLON)) advance()
+            if (!at(TokenType.RBRACE)) {
+                error("Enum '$name' has body members — full enums (with ctor params, per-entry args, or body methods) are not yet supported by KTC. " +
+                    "Remove the body or move the helpers to a top-level function.")
+            }
+        }
         expect(TokenType.RBRACE); nesting--
         skipTerminator()
-        return EnumDecl(name, entries)
+        // @SimpleEnum is a forward-compat marker: today every enum is simple, so the
+        // annotation is currently a no-op. When full enums land it will assert the
+        // current behavior is preserved (no ctor, no body) — useful when the default
+        // shifts to full enums and users want to keep zero-overhead form explicitly.
+        return EnumDecl(name, entries, annotations)
     }
 
     // ── typealias ────────────────────────────────────────────────────

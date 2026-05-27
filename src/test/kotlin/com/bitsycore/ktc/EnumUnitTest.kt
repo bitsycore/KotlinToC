@@ -138,4 +138,39 @@ class EnumUnitTest : TranspilerTestBase() {
         """, decls = colorDecl)
         r.sourceContains("_names[")
     }
+
+    // ── full-enum syntax rejection (Phase 0; full enums tracked in plan.md) ──
+
+    @Test fun enumCtorParamsError() {
+        transpileExpectError("""
+            package test.Main
+            enum class Op(val sym: String) { PLUS, MINUS }
+            fun main() {}
+        """.trimIndent(), "constructor parameters")
+    }
+
+    @Test fun enumEntryArgsError() {
+        transpileExpectError("""
+            package test.Main
+            enum class Op { PLUS("+") }
+            fun main() {}
+        """.trimIndent(), "constructor arguments")
+    }
+
+    @Test fun enumBodyMembersError() {
+        transpileExpectError("""
+            package test.Main
+            enum class Op { PLUS, MINUS; fun describe() = "?" }
+            fun main() {}
+        """.trimIndent(), "body members")
+    }
+
+    @Test fun simpleEnumAnnotationOk() {
+        val r = transpile("""
+            package test.Main
+            @SimpleEnum enum class Dir { UP, DOWN }
+            fun main(args: Array<String>) { val d = Dir.UP; println(d.name) }
+        """.trimIndent())
+        r.sourceContains("test_Main_Dir_UP")
+    }
 }

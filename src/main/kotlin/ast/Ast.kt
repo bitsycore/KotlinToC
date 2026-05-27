@@ -68,7 +68,8 @@ data class ClassDecl(
 
 data class EnumDecl(
     val name: String,
-    val entries: List<String>
+    val entries: List<String>,
+    val annotations: List<Annotation> = emptyList()
 ) : Decl()
 
 data class InterfaceDecl(
