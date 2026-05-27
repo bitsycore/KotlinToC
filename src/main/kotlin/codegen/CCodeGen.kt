@@ -3,6 +3,9 @@ package com.bitsycore.ktc.codegen
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.types.KtcType
+import com.bitsycore.ktc.utils.wrapBold
+import com.bitsycore.ktc.utils.wrapGray
+import com.bitsycore.ktc.utils.wrapRed
 import com.bitsycore.ktc.utils.wrapYellow
 
 /* Compute a file-relative #include path.
@@ -781,14 +784,16 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         if (line <= 0 || sourceLines.isEmpty()) return ""
         val sb = StringBuilder()
         sb.appendLine()
-        val from = maxOf(0, line - 3)
-        val to = minOf(sourceLines.size, line + 2)
+        val from = maxOf(0, line - 2)
+        val to = minOf(sourceLines.size, line + 1)
         for (i in from until to) {
             val lineNum = i + 1
-            val marker = if (lineNum == line) {
-                if (errorMarker) ">>>" else ">>>".wrapYellow()
-            } else "   "
-            sb.appendLine("$marker %4d | %s".format(lineNum, sourceLines[i]))
+            if (lineNum == line) {
+                val marker = if (errorMarker) ">>>".wrapRed() else ">>>".wrapYellow()
+                sb.appendLine("$marker %4d | %s".format(lineNum, sourceLines[i].wrapBold()))
+            } else {
+                sb.appendLine("    %4d | %s".format(lineNum, sourceLines[i].wrapGray()))
+            }
         }
         return sb.toString().trimEnd()
     }
@@ -798,7 +803,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         val line = currentStmtLine
         val loc = locationPrefix(line)
         val snippet = sourceSnippet(line, errorMarker = true)
-        error("${loc}$inMsg$snippet")
+        error("${loc}${"error".wrapRed()}: $inMsg$snippet")
     }
 
     /* Print a non-fatal warning with the same source-context display as codegenError. */

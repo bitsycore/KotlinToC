@@ -525,7 +525,7 @@ fun main(args: Array<String>) {
                     sourceFileName = srcName)
                 gen.collectAndScan()
             } catch (e: Exception) {
-                System.err.println("Error in '$srcName': ${e.message}")
+                System.err.println(e.message)
                 hasError = true
             }
         }
@@ -582,8 +582,7 @@ fun main(args: Array<String>) {
                 sourceFileName = srcName
             ).generate()
         } catch (e: Exception) {
-            System.err.println("CodeGen error in '$srcName': ${e.message}")
-            e.printStackTrace()
+            System.err.println(e.message)
             exitProcess(1)
         }
 

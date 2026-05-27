@@ -143,7 +143,7 @@ class BasicTypesUnitTest : TranspilerTestBase() {
                     private set
             }
         """.trimIndent()
-        transpileMainExpectError("val p = Player(\"Alice\")\np.health = 50", "Var with private set cannot be reassigned outside its class: 'health'", decls = decls)
+        transpileMainExpectError("val p = Player(\"Alice\")\np.health = 50", "Cannot set 'health': setter is private in 'Player'", decls = decls)
     }
 
     @Test fun privateSetOnValError() {
