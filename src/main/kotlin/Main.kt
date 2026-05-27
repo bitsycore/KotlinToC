@@ -164,6 +164,27 @@ private fun resolveModules(seeds: List<String>, aClass: Class<*>): List<String> 
     return result
 }
 
+private fun printDiagnosticsJson(inDiags: List<CCodeGen.Diagnostic>) {
+    fun escapeJson(s: String): String = buildString {
+        for (c in s) when {
+            c == '\\' -> append("\\\\")
+            c == '"'  -> append("\\\"")
+            c == '\n' -> append("\\n")
+            c == '\t' -> append("\\t")
+            c == '\r' -> append("\\r")
+            c.code < 0x20 -> append("\\u%04x".format(c.code))
+            else -> append(c)
+        }
+    }
+    val out = java.io.PrintStream(System.out, true, "UTF-8")
+    out.println("[")
+    for ((idx, d) in inDiags.withIndex()) {
+        val comma = if (idx < inDiags.size - 1) "," else ""
+        out.println("""  {"severity":"${d.severity}","message":"${escapeJson(d.message)}","file":"${escapeJson(d.file)}","line":${d.line},"col":${d.col}}$comma""")
+    }
+    out.println("]")
+}
+
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         System.err.println("Usage: ktc <file.kt...|module.ktc.toml|dir/> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
@@ -172,6 +193,7 @@ fun main(args: Array<String>) {
         System.err.println("  --version                    Print version info and exit")
         System.err.println("  --check                      Validate source (lex + parse + collect), skip C emission")
         System.err.println("  --strict                     Promote all warnings to errors")
+        System.err.println("  --diagnostics=json           Output errors/warnings as JSON (for editor/LSP integration)")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
         System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
@@ -211,6 +233,7 @@ fun main(args: Array<String>) {
     var dumpSemantics = false
     var checkOnly = false
     var strict = false
+    var diagnosticsJson = false
     var i = 0
     while (i < args.size) {
         if (args[i] == "-o" && i + 1 < args.size) {
@@ -257,6 +280,9 @@ fun main(args: Array<String>) {
             i++
         } else if (args[i] == "--strict") {
             strict = true
+            i++
+        } else if (args[i] == "--diagnostics=json") {
+            diagnosticsJson = true
             i++
         } else if (args[i] == "--version") {
             i++
@@ -506,6 +532,7 @@ fun main(args: Array<String>) {
         val allAsts = parsedFiles.map { it.ast }.filter { !it.documentationOnly }
         val byPkg = parsedFiles.groupBy { it.ast.pkg ?: it.file.nameWithoutExtension }
         var hasError = false
+        val allDiagnostics = mutableListOf<CCodeGen.Diagnostic>()
         for ((_, group) in byPkg) {
             val realGroup = group.filter { !it.ast.documentationOnly }
             if (realGroup.isEmpty()) continue
@@ -522,12 +549,19 @@ fun main(args: Array<String>) {
                     doubleDisposeMode = doubleDisposeMode,
                     checkBounds = checkBounds, checkNull = checkNull,
                     strict = strict,
-                    sourceFileName = srcName)
+                    sourceFileName = srcName,
+                    diagnosticsJson = diagnosticsJson)
                 gen.collectAndScan()
+                allDiagnostics += gen.diagnostics
             } catch (e: Exception) {
-                System.err.println(e.message)
+                if (!diagnosticsJson) System.err.println(e.message)
                 hasError = true
             }
+        }
+        if (diagnosticsJson) {
+            printDiagnosticsJson(allDiagnostics)
+            if (hasError) exitProcess(1)
+            return
         }
         if (hasError) exitProcess(1)
         println("OK")
@@ -552,6 +586,7 @@ fun main(args: Array<String>) {
     val tracker = OutputTracker(outDir)
 
     val allAsts = parsedFiles.map { it.ast }.filter { !it.documentationOnly }
+    val allDiagnostics = mutableListOf<CCodeGen.Diagnostic>()
     val ktcOutputNames = mutableListOf<String>()  // paths relative to ktc/  (e.g. "std/Heap")
     val userOutputNames = mutableListOf<String>() // paths relative to outDir (e.g. "com/example/Point")
 
@@ -569,7 +604,7 @@ fun main(args: Array<String>) {
 
         val output: COutput
         try {
-            output = CCodeGen(
+            val gen = CCodeGen(
                 mergedFile,
                 allAsts,
                 mergedSourceLines,
@@ -579,10 +614,17 @@ fun main(args: Array<String>) {
                 checkBounds = checkBounds,
                 checkNull = checkNull,
                 strict = strict,
-                sourceFileName = srcName
-            ).generate()
+                sourceFileName = srcName,
+                diagnosticsJson = diagnosticsJson
+            )
+            output = gen.generate()
+            allDiagnostics += gen.diagnostics
         } catch (e: Exception) {
-            System.err.println(e.message)
+            if (diagnosticsJson) {
+                printDiagnosticsJson(allDiagnostics)
+            } else {
+                System.err.println(e.message)
+            }
             exitProcess(1)
         }
 
@@ -600,7 +642,7 @@ fun main(args: Array<String>) {
             else -> outDir
             }
         val headerFile  = File(pkgHdrDir, "_package_.h")
-        if (tracker.write(headerFile, output.header)) println("  wrote ${headerFile.path}")
+        if (tracker.write(headerFile, output.header) && !diagnosticsJson) println("  wrote ${headerFile.path}")
 
         // Write each .c file to the directory determined by its routingPkg
         for ((vFileName, vSourceFile) in output.sources) {
@@ -626,7 +668,7 @@ fun main(args: Array<String>) {
                 userOutputNames += vRelBase
                 }
             val vOutputFile = File(vFileSrcDir, vFileName)
-            if (tracker.write(vOutputFile, vSourceFile.content)) println("  wrote ${vOutputFile.path}")
+            if (tracker.write(vOutputFile, vSourceFile.content) && !diagnosticsJson) println("  wrote ${vOutputFile.path}")
             }
     }
 
@@ -755,7 +797,7 @@ fun main(args: Array<String>) {
             append("}")
         }
         val vMainCFile = File(outDir, "main.c")
-        if (tracker.write(vMainCFile, vMainC)) println("  wrote ${vMainCFile.path}")
+        if (tracker.write(vMainCFile, vMainC) && !diagnosticsJson) println("  wrote ${vMainCFile.path}")
         userOutputNames += "main"
         vGeneratedMainC = true
     }
@@ -796,8 +838,13 @@ fun main(args: Array<String>) {
     // what lets the C compiler keep its incremental cache: unchanged files
     // weren't rewritten, so their mtimes weren't bumped.
     val vRemoved = tracker.cleanupStale()
-    for (vR in vRemoved) println("  removed (stale) $vR")
+    if (!diagnosticsJson) for (vR in vRemoved) println("  removed (stale) $vR")
 
-    println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")
-    println("  or: cmake -B build . && cmake --build build")
+    if (diagnosticsJson && allDiagnostics.isNotEmpty()) {
+        printDiagnosticsJson(allDiagnostics)
+    }
+    if (!diagnosticsJson) {
+        println("Done. Compile with:  cc -std=c11 -iquote . -o $mainBase $ktcSources $userSources")
+        println("  or: cmake -B build . && cmake --build build")
+    }
 }

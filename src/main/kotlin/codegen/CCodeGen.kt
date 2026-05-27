@@ -22,7 +22,7 @@ internal fun relIncludePath(inFromDir: String, inToPath: String): String {
 	return if (vUps == 0) vDown else "../".repeat(vUps) + vDown
 }
 
-internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val checkBounds: Boolean = true, val checkNull: Boolean = true, val strict: Boolean = false, val sourceFileName: String = "") : SymbolReader {
+internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(), val sourceLines: List<String> = emptyList(), val memTrack: Boolean = false, val disposedMode: String = "NO", val doubleDisposeMode: String = "NO", val checkBounds: Boolean = true, val checkNull: Boolean = true, val strict: Boolean = false, val sourceFileName: String = "", val diagnosticsJson: Boolean = false) : SymbolReader {
 
     // ── Package prefix ───────────────────────────────────────────────
     override val prefix: String = file.pkg?.replace('.', '_')?.plus("_") ?: ""
@@ -811,6 +811,9 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     override fun codegenError(inMsg: String): Nothing {
         val line = currentStmtLine
         val col = currentStmtCol
+        if (diagnosticsJson) {
+            diagnostics += Diagnostic("error", inMsg, currentSourceFile, line, col)
+        }
         val loc = locationPrefix(line, col)
         val snippet = sourceSnippet(line, col, errorMarker = true)
         error("${loc}${"error".wrapRed()}: $inMsg$snippet")
@@ -824,14 +827,26 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         }
         val line = currentStmtLine
         val col = currentStmtCol
+        diagnosticWarningCount++
+        if (diagnosticsJson) {
+            diagnostics += Diagnostic("warning", inMsg, currentSourceFile, line, col)
+            return
+        }
         val loc = locationPrefix(line, col)
         val snippet = sourceSnippet(line, col)
-
         System.err.print("${loc}${"warning".wrapYellow()}: $inMsg$snippet\n")
-        diagnosticWarningCount++
     }
 
     internal var diagnosticWarningCount: Int = 0  // total warnings emitted this file
+
+    data class Diagnostic(
+        val severity: String,  // "error" or "warning"
+        val message: String,
+        val file: String,
+        val line: Int,
+        val col: Int
+    )
+    internal val diagnostics: MutableList<Diagnostic> = mutableListOf()
 
     // ── Defer stack (LIFO: last deferred = first to execute) ─────────
     internal val deferStack: MutableList<Block>

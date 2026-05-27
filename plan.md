@@ -66,7 +66,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 - [x] **`--version`** (S) — Prints `ktc <version>` from JAR manifest.
 - [x] **`--check`** (S) — Lex + parse + collect for each package, skip code emission. Prints `OK` or error.
 - [x] **Colored error messages with source caret** (M) — `Stmt` now carries `col`; `sourceSnippet` renders a `^` caret at the column position; `locationPrefix` includes `file:line:col:` when column is available.
-- [ ] **`--diagnostics=json`** (M) — Machine-readable error output for editor / LSP integration.
+- [x] **`--diagnostics=json`** (M) — `--diagnostics=json` outputs errors/warnings as a JSON array with severity, message, file, line, col. Suppresses human-readable output.
 - [ ] **`--explain <error-code>`** (M) — Stable error codes (e.g., `E0042`: "Cannot return value-type String") with a longer explanation. Discoverability.
 - [ ] **`-W<name>` / `-Wno-<name>`** (M) — Per-warning controls so the user can opt out of specific warnings without going binary on `--no-check-bounds`.
 - [x] **`--strict`** (S) — `codegenWarning()` promotes to `codegenError()` when `--strict` is on. Passed through `run_tests.py --strict`.
