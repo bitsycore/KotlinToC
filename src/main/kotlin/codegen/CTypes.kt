@@ -49,6 +49,36 @@ internal fun SymbolReader.typeRefToStr(t: TypeRef?): String {
 	return "${t.name}$args$nullable"
 	}
 
+/* Substitutes typealiases in a TypeRef's name. An alias target may itself be
+an alias; we walk the chain up to a small depth, aborting on cycles. The
+substituted TypeRef inherits the original's nullability, typeArgs (when the
+alias doesn't carry its own), and annotations. Returns null only if a cycle
+is detected (which is also reported via codegenError). */
+internal fun CCodeGen.expandTypeAlias(inT: TypeRef): TypeRef? {
+	if (typeAliases.isEmpty()) return inT
+	var vCur = inT
+	val vSeen = mutableSetOf<String>()
+	while (true) {
+		val vTarget = typeAliases[vCur.name] ?: return vCur
+		if (!vSeen.add(vCur.name)) {
+			codegenError("typealias cycle involving '${vCur.name}'")
+			return null
+		}
+		// Merge: target supplies the name + its own typeArgs (alias args are dropped
+		// because we don't support parametric aliases yet); the original carries
+		// nullability and annotations forward.
+		vCur = TypeRef(
+			name        = vTarget.name,
+			nullable    = vCur.nullable || vTarget.nullable,
+			typeArgs    = if (vCur.typeArgs.isNotEmpty() && vTarget.typeArgs.isEmpty()) vCur.typeArgs else vTarget.typeArgs,
+			funcParams  = vTarget.funcParams ?: vCur.funcParams,
+			funcReturn  = vTarget.funcReturn ?: vCur.funcReturn,
+			funcReceiver= vTarget.funcReceiver ?: vCur.funcReceiver,
+			annotations = (vCur.annotations + vTarget.annotations).distinctBy { it.name },
+		)
+	}
+}
+
 // ═══════════════════════════ resolveTypeName ══════════════════════
 
 /*
@@ -57,7 +87,8 @@ Handles function types directly; bridges through resolveTypeNameStr for all othe
 */
 internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 	if (inT == null) return KtcType.Prim(KtcType.PrimKind.Int) // default to Int for null TypeRef
-	val vSubstituted = substituteTypeParams(inT)                 // apply type-param substitutions
+	val vDealiased = expandTypeAlias(inT) ?: return KtcType.Prim(KtcType.PrimKind.Int)
+	val vSubstituted = substituteTypeParams(vDealiased)          // apply type-param substitutions
 	// Function types: build KtcType.Func directly to preserve param info and receiver
 	if (vSubstituted.funcParams != null) {
 		val vReceiver = vSubstituted.funcReceiver?.let { resolveTypeName(it) } // extension receiver or null
@@ -66,13 +97,15 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 		return KtcType.Func(vParams, vRet, receiver = vReceiver)
 		}
 	val vResolved = resolveTypeNameStr(inT)                      // string-based resolution (legacy bridge)
-	// For Ref<T>, pass the rewritten inner TypeRef so parseResolvedTypeName sees the real type name
+	// For Ref<T>, pass the rewritten inner TypeRef so parseResolvedTypeName sees the real type name.
+	// For everything else, pass the de-aliased TypeRef so an alias like `typealias X = Int?` resolves
+	// to the primitive instead of being treated as a user type named `X`.
 	val vTypeRefForParsing = if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.isNotEmpty()) {
 		val vInner = vSubstituted.typeArgs[0]
 		TypeRef(vInner.name, vInner.nullable || vSubstituted.nullable, vInner.typeArgs,
 			vInner.funcParams, vInner.funcReturn, vInner.funcReceiver,
 			vInner.annotations + Annotation("Ptr"))
-		} else inT
+		} else vDealiased
 	val base      = parseResolvedTypeName(vResolved, vTypeRefForParsing)
 	// Preserve nullability from type substitution (e.g. T→Int? produces nullable=true on vSubstituted)
 	val isSubstNullable = vSubstituted.nullable && !inT.nullable
@@ -88,7 +121,11 @@ internal fun CCodeGen.resolveTypeRefStr(typeRef: TypeRef): String {
 /* Resolve a TypeRef to its internal string type name (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 	if (t == null) return "Int"
-	val vSubstituted = substituteTypeParams(t)                   // type-param-substituted copy
+	// typealias substitution happens before everything else: an alias that
+	// resolves to another alias resolves transitively. Cycles abort with
+	// an explicit error rather than stack-overflowing.
+	val vDealiased = expandTypeAlias(t) ?: return "Int"
+	val vSubstituted = substituteTypeParams(vDealiased)          // type-param-substituted copy
 	// Ref<T> → rewrite to inner type with @Ptr annotation and re-resolve
 	if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.isNotEmpty()) {
 		val vInner = vSubstituted.typeArgs[0]

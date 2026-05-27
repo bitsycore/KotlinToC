@@ -118,8 +118,12 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val vKtcCore = vKtc.stripNullable
     val tRaw = vKtc.toInternalStr                                                                    // string type (for structural checks — retained during migration)
     val inferredNullable = s.type == null && vKtc is KtcType.Nullable
-    // Strip ? suffix for nullable types; it gets added back at defineVar and optCTypeName
-    val t = if (inferredNullable) tRaw.removeSuffix("?") else tRaw
+    // Strip ? suffix when vKtc is itself nullable. Two cases:
+    //   1. Inferred nullable (init was a NullLit / nullable expression).
+    //   2. Explicit type that resolved to nullable (e.g. `typealias MaybeInt = Int?`
+    //      where s.type is `MaybeInt` without `?` but the expansion adds nullability).
+    // The downstream optCTypeName / defineVar paths re-append the `?` themselves.
+    val t = if (vKtc is KtcType.Nullable) tRaw.removeSuffix("?") else tRaw
 
     // Pointer↔value boundary: require explicit .ptr()/.value() when crossing.
     if (s.type != null && s.init != null) checkPtrValueBoundary(s.type, vKtc, vKtcKtc, s.init, "variable '${s.name}'")

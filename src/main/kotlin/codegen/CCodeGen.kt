@@ -239,6 +239,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // Reverse map: mangled class name → (baseName, typeArgs) for generic instances.
     override val mangledComponents = mutableMapOf<String, Pair<String, List<String>>>()
 
+    /* `typealias Name = TargetType` substitution map. The collector populates
+    this from TypeAliasDecl; type resolution consults it before falling through
+    to class/interface/enum lookups. Aliases of aliases resolve transitively;
+    cycles abort with codegenError. */
+    internal val typeAliases = mutableMapOf<String, TypeRef>()
+
     /* Mangle a generic class name with concrete type args: MyList + ["Int?"] → "MyList_Int$Opt" */
     override fun mangledGenericName(inBaseName: String, inTypeArgs: List<String>): String {
         val vSanitized  = inTypeArgs.joinToString("_") { it.replace("?", "\$Opt") }  // sanitized type arg string

@@ -500,6 +500,16 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				if (d.annotations.any { it.name == "Tls" }) tlsProps.add(d.name)
 				}
 			}
+
+		is TypeAliasDecl -> {
+			// Register the alias for later substitution at type-resolution sites.
+			// Refuse re-declaration so accidental shadowing produces a clear error.
+			val vExisting = typeAliases[d.name]
+			if (vExisting != null && vExisting != d.target) {
+				codegenError("typealias '${d.name}' is declared more than once with different targets")
+			}
+			typeAliases[d.name] = d.target
+			}
 		}
 	}
 

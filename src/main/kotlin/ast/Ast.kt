@@ -81,6 +81,13 @@ data class ObjectDecl(
     val superInterfaces: List<TypeRef> = emptyList()
 ) : Decl()
 
+/* `typealias Name = Target`. Resolved by substitution during type resolution
+— no codegen emission. */
+data class TypeAliasDecl(
+    val name:   String,
+    val target: TypeRef
+) : Decl()
+
 data class PropDecl(
     val name: String,
     val type: TypeRef?,

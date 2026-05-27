@@ -21,7 +21,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 ### Medium effort, high value
 
 - [ ] **`inline value class`** (M) — Zero-cost wrappers (`value class UserId(val raw: Int)`). KTC's by-value default makes this nearly free — emit the underlying primitive, treat the class as a phantom type. Big win for domain-model type safety.
-- [ ] **`typealias`** (M) — Parser-side substitution map. Cleans up FFI signatures (`typealias SDL_Window = c.SDL_Window`) and long generic chains.
+- [x] **`typealias`** (M) — Parser recognizes the `typealias` keyword; AST gets `TypeAliasDecl`; collector populates `CCodeGen.typeAliases`; `CTypes.expandTypeAlias` resolves the chain transitively (cycle-detected). Worked with primitives, classes, nullable targets (`MaybeInt = Int?`), and chained aliases. Tests in `TypeAliasUnitTest`. As a side-effect, fixed a latent bug in `Var.kt`'s nullable-strip logic — it only stripped `?` when the type was *inferred* nullable, not when an explicit type resolved to nullable.
 - [ ] **`by lazy { ... }`** (M) — Lower to `bool $name$inited; T $name$cache;` with a check on first access. Consider thread-safety variant for `LazyThreadSafetyMode.SYNCHRONIZED`.
 - [x] **Range operators on `Char` / `Long`** (S–M) — `'a'..'z'` and `1L..10L` (plus `until` / `downTo` / mixed-with-step) now emit the right loop-variable C type. `For.kt#rangeElementType` infers the kind from operands. Tests in `ControlFlowUnitTest.for*Char` / `for*Long` and integration coverage in `ForLoopTest`.
 

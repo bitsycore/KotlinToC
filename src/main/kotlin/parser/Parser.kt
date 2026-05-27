@@ -80,6 +80,7 @@ class Parser(private val tokens: List<Token>) {
             }
             at(TokenType.ENUM)   -> { advance(); expect(TokenType.CLASS); parseEnumDecl() }
             at(TokenType.INTERFACE) -> parseInterfaceDecl()
+            at(TokenType.TYPEALIAS) -> parseTypeAliasDecl()
             at(TokenType.IDENT) && cur().value == "companion" && peek().type == TokenType.OBJECT -> {
                 advance()  // consume "companion"
                 parseCompanionObjectDecl()
@@ -305,6 +306,20 @@ class Parser(private val tokens: List<Token>) {
         expect(TokenType.RBRACE); nesting--
         skipTerminator()
         return EnumDecl(name, entries)
+    }
+
+    // ── typealias ────────────────────────────────────────────────────
+
+    /* `typealias Name = TargetType` — resolved by substitution during
+     * type-name resolution. Generic alias parameters (`typealias Foo<T> = ...`)
+     * are not supported (use the underlying type directly). */
+    private fun parseTypeAliasDecl(): TypeAliasDecl {
+        expect(TokenType.TYPEALIAS); skipNL()
+        val vName = expectIdent(); skipNL()
+        expect(TokenType.EQ); skipNL()
+        val vTarget = parseTypeRef()
+        skipTerminator()
+        return TypeAliasDecl(vName, vTarget)
     }
 
     // ── interface ─────────────────────────────────────────────────────

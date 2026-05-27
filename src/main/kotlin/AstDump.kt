@@ -59,6 +59,8 @@ internal fun dumpDecl(d: Decl, depth: Int): String {
 			val vInit = if (d.init != null) " = ${dumpExpr(d.init)}" else ""
 			vSb.appendLine("${vId}$vMut ${d.name}$vTp$vInit")
 			}
+
+		is TypeAliasDecl -> vSb.appendLine("${vId}typealias ${d.name} = ${dumpTypeRef(d.target)}")
 		}
 	return vSb.toString()
 	}
