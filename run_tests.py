@@ -1093,6 +1093,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("--mem-track",       action="store_true", help="Pass --mem-track to the transpiler")
 	vP.add_argument("--ast",             action="store_true", help="Pass --ast to the transpiler")
 	vP.add_argument("--dump-semantics",  action="store_true", help="Pass --dump-semantics to the transpiler")
+	vP.add_argument("--strict",          action="store_true", help="Pass --strict to the transpiler (warnings become errors)")
 	vP.add_argument("--disposed",         default="NO", choices=["NO", "ASSERT", "LOG"], help="Use-after-dispose behavior")
 	vP.add_argument("--double-dispose",   default="NO", choices=["NO", "ASSERT", "LOG"], help="Double-dispose behavior")
 	vP.add_argument("--transpiler-args",  default="", help="Extra raw transpiler args appended at the end")
@@ -1105,6 +1106,7 @@ def build_extra_args(inNs: argparse.Namespace) -> list[str]:
 	if inNs.mem_track:      vExtras.append("--mem-track")
 	if inNs.ast:            vExtras.append("--ast")
 	if inNs.dump_semantics: vExtras.append("--dump-semantics")
+	if inNs.strict:         vExtras.append("--strict")
 	if inNs.disposed       != "NO": vExtras.append(f"--disposed={inNs.disposed}")
 	if inNs.double_dispose != "NO": vExtras.append(f"--double-dispose={inNs.double_dispose}")
 	if inNs.transpiler_args:

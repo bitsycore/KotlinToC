@@ -169,6 +169,9 @@ fun main(args: Array<String>) {
         System.err.println("Usage: ktc <file.kt...|module.ktc.toml|dir/> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
         System.err.println("  Transpiles Kotlin subset files to C11.")
         System.err.println("  A module.ktc.toml or directory containing one can be given instead of .kt files.")
+        System.err.println("  --version                    Print version info and exit")
+        System.err.println("  --check                      Validate source (lex + parse + collect), skip C emission")
+        System.err.println("  --strict                     Promote all warnings to errors")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
         System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
@@ -186,6 +189,13 @@ fun main(args: Array<String>) {
         exitProcess(1)
     }
 
+    // ── --version: print version and exit early ─────────────────────
+    if (args.size == 1 && args[0] == "--version") {
+        val version = aClass.getPackage()?.implementationVersion ?: "1.0-SNAPSHOT"
+        println("ktc $version")
+        return
+    }
+
     // Parse args: collect .kt files and flags
     val inputPaths = mutableListOf<String>()
     val moduleNames = mutableListOf<String>()
@@ -199,6 +209,8 @@ fun main(args: Array<String>) {
     var nameOverride: String? = null  // --name exe-name
     var dumpAst = false
     var dumpSemantics = false
+    var checkOnly = false
+    var strict = false
     var i = 0
     while (i < args.size) {
         if (args[i] == "-o" && i + 1 < args.size) {
@@ -239,6 +251,14 @@ fun main(args: Array<String>) {
             i++
         } else if (args[i] == "--dump-semantics") {
             dumpSemantics = true
+            i++
+        } else if (args[i] == "--check") {
+            checkOnly = true
+            i++
+        } else if (args[i] == "--strict") {
+            strict = true
+            i++
+        } else if (args[i] == "--version") {
             i++
         } else {
             inputPaths += args[i]
@@ -481,6 +501,39 @@ fun main(args: Array<String>) {
         return
     }
 
+    // ── --check: validate without emitting code ───────────────────────
+    if (checkOnly) {
+        val allAsts = parsedFiles.map { it.ast }.filter { !it.documentationOnly }
+        val byPkg = parsedFiles.groupBy { it.ast.pkg ?: it.file.nameWithoutExtension }
+        var hasError = false
+        for ((_, group) in byPkg) {
+            val realGroup = group.filter { !it.ast.documentationOnly }
+            if (realGroup.isEmpty()) continue
+            val mergedImports  = realGroup.flatMap { it.ast.imports }.distinct()
+            val mergedDecls    = realGroup.flatMap { it.ast.decls }
+            val mergedIncludes = realGroup.flatMap { it.ast.cIncludes }.distinct()
+            val mergedFile     = KtFile(realGroup.first().ast.pkg, mergedImports, mergedDecls, cIncludes = mergedIncludes)
+            val mergedSourceLines = realGroup.flatMap { it.sourceLines }
+            val srcName = if (realGroup.size == 1) realGroup.first().file.name else "${realGroup.first().ast.pkg}.kt"
+            try {
+                val gen = CCodeGen(
+                    mergedFile, allAsts, mergedSourceLines,
+                    memTrack = memTrack, disposedMode = disposedMode,
+                    doubleDisposeMode = doubleDisposeMode,
+                    checkBounds = checkBounds, checkNull = checkNull,
+                    strict = strict,
+                    sourceFileName = srcName)
+                gen.collectAndScan()
+            } catch (e: Exception) {
+                System.err.println("Error in '$srcName': ${e.message}")
+                hasError = true
+            }
+        }
+        if (hasError) exitProcess(1)
+        println("OK")
+        return
+    }
+
     // ── Group files by package ───────────────────────────────────────
     // Files with the same package are merged into a single output unit.
     // Files with different packages produce separate .c/.h outputs.
@@ -525,6 +578,7 @@ fun main(args: Array<String>) {
                 doubleDisposeMode = doubleDisposeMode,
                 checkBounds = checkBounds,
                 checkNull = checkNull,
+                strict = strict,
                 sourceFileName = srcName
             ).generate()
         } catch (e: Exception) {
