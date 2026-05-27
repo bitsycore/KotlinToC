@@ -26,6 +26,20 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	is NameExpr  -> lambdaParamTypes[e.name] ?: lookupVar(e.name) ?: run {
 		if (enums.containsKey(e.name)) e.name
 		else if (objects.containsKey(e.name)) e.name
+		else if (e.name in topPropDecls) {
+			val pd = topPropDecls[e.name]!!
+			if (pd.type != null) resolveTypeName(pd.type).toInternalStr
+			else if (pd.lazyInit != null) {
+				val lastStmt = pd.lazyInit.stmts.lastOrNull()
+				val lastExpr = when (lastStmt) {
+					is ExprStmt   -> lastStmt.expr
+					is ReturnStmt -> lastStmt.value
+					else          -> null
+				}
+				if (lastExpr != null) inferExprType(lastExpr) else null
+			}
+			else inferExprType(pd.init)
+		}
 		else {
 			val vNarrowedSelf = if (currentExtRecvType != null && interfaces.containsKey(currentExtRecvType))
 				lookupVar("\$self") else null

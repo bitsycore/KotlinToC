@@ -84,7 +84,7 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 ## Limitations vs Kotlin (intentional)
 - No coroutines (`suspend`, `async`), no reflection (no `KClass`, `::class`), no `java.lang.*`.
 - No `inner class` with implicit outer-instance capture. Nested classes are fine; they're emitted as `Outer$Inner`.
-- No `by lazy` / property delegation, no `typealias`.
+- No general property delegation (`by`). `by lazy { ... }` is supported for local and top-level vals (thread-safe via `ktc_thread_call_once` for top-level).
 - No `inline value class` / `@JvmInline`.
 - No variance modifiers (`in`/`out`) enforced; generic substitution is purely positional.
 - No exhaustiveness check for `when` on sealed classes or enums — add an `else` branch yourself if you need totality.

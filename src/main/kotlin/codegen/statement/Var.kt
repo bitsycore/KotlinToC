@@ -101,6 +101,11 @@ internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
 }
 
 internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
+    // by lazy { body } — emit bool flag + uninitialized cache; defer init to first access
+    if (s.lazyInit != null) {
+        emitLazyLocalDecl(s, ind)
+        return
+    }
     // c.init() or c.SDL_FRect() → bare C declaration, no initializer
     if (s.init != null && isCPassthroughCall(s.init) && s.init is CallExpr && s.init.args.isEmpty()) {
         val vName = (s.init.callee as DotExpr).name
@@ -403,4 +408,23 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             }
         }
     }
+}
+
+// by lazy { body } for local variables: emit bool flag + uninitialized cache
+private fun CCodeGen.emitLazyLocalDecl(s: VarDeclStmt, ind: String) {
+	val block = s.lazyInit!!
+	val lastStmt = block.stmts.lastOrNull()
+	val lastExpr = when (lastStmt) {
+		is ExprStmt   -> lastStmt.expr
+		is ReturnStmt -> lastStmt.value
+		else -> null
+	} ?: codegenError("lazy initializer for '${s.name}' must end with an expression")
+
+	val vKtc = if (s.type != null) resolveTypeName(s.type) else inferExprTypeKtc(lastExpr)
+		?: codegenError("Cannot infer type for lazy property '${s.name}' — add an explicit type annotation")
+	val ct = cTypeStr(vKtc)
+	defineVar(s.name, LocalVar(ktc = vKtc, mutable = false))
+	impl.appendLine("${ind}bool ${s.name}\$inited = false;")
+	impl.appendLine("$ind$ct ${s.name}\$cache;")
+	lazyInitBlocks[s.name] = block
 }

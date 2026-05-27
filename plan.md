@@ -12,7 +12,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 ### Quick wins
 
-- [ ] **`tailrec` keyword** (S) — Lower a tail call into a `goto`-loop. Warn if the marked function isn't actually tail-recursive.
+- [x] **`tailrec` keyword** (S) — Lower a tail call into a `goto`-loop. Error if the marked function isn't actually tail-recursive; warn if an unmarked function could be. Works for free fns, extension fns, and methods. Arity-checked to avoid false positives on overloads. Integration test: `TailrecTest`.
 - [ ] **`when` exhaustiveness** (S–M) — Warning when a `when` on a sealed/enum subject has no `else` and doesn't cover every case. Promote to error later. Unblocks #4.
 - [ ] **`reified` type parameters** (S) — Generics already monomorphize, so `reified T` is mostly syntactic. Expose the concrete type name via a `T::class.simpleName`-like intrinsic.
 - [x] **Raw string literals `"""..."""`** (S) — Already worked in the lexer; covered with unit tests in `StringUnitTest.rawString*`.
@@ -22,7 +22,7 @@ Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **
 
 - [ ] **`inline value class`** (M) — Zero-cost wrappers (`value class UserId(val raw: Int)`). KTC's by-value default makes this nearly free — emit the underlying primitive, treat the class as a phantom type. Big win for domain-model type safety.
 - [x] **`typealias`** (M) — Parser recognizes the `typealias` keyword; AST gets `TypeAliasDecl`; collector populates `CCodeGen.typeAliases`; `CTypes.expandTypeAlias` resolves the chain transitively (cycle-detected). Worked with primitives, classes, nullable targets (`MaybeInt = Int?`), and chained aliases. Tests in `TypeAliasUnitTest`. As a side-effect, fixed a latent bug in `Var.kt`'s nullable-strip logic — it only stripped `?` when the type was *inferred* nullable, not when an explicit type resolved to nullable.
-- [ ] **`by lazy { ... }`** (M) — Lower to `bool $name$inited; T $name$cache;` with a check on first access. Consider thread-safety variant for `LazyThreadSafetyMode.SYNCHRONIZED`.
+- [x] **`by lazy { ... }`** (M) — Local lazy vals: `bool $inited + T $cache` with init-check before first access. Top-level lazy vals: `ktc_thread_once_t` + `ktc_thread_call_once()` for thread-safe initialization (SYNCHRONIZED mode by default). Supports type inference and multi-statement bodies. Tests in `LazyTest`.
 - [x] **Range operators on `Char` / `Long`** (S–M) — `'a'..'z'` and `1L..10L` (plus `until` / `downTo` / mixed-with-step) now emit the right loop-variable C type. `For.kt#rangeElementType` infers the kind from operands. Tests in `ControlFlowUnitTest.for*Char` / `for*Long` and integration coverage in `ForLoopTest`.
 
 ### Larger

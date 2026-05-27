@@ -4,9 +4,13 @@ import com.bitsycore.ktc.ast.DotExpr
 import com.bitsycore.ktc.ast.Expr
 import com.bitsycore.ktc.ast.IndexExpr
 import com.bitsycore.ktc.ast.NameExpr
+import com.bitsycore.ktc.ast.ExprStmt
+import com.bitsycore.ktc.ast.ReturnStmt
+import com.bitsycore.ktc.ast.Stmt
 import com.bitsycore.ktc.codegen.CCodeGen
 import com.bitsycore.ktc.codegen.cTypeStr
 import com.bitsycore.ktc.codegen.inferExprTypeKtc
+import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.codegen.stripNullable
 import com.bitsycore.ktc.types.KtcType
 
@@ -16,6 +20,16 @@ import com.bitsycore.ktc.types.KtcType
 internal fun CCodeGen.genName(e: NameExpr): String {
 	val vSubst  = lambdaParamSubst[e.name]
 	if (vSubst != null) return vSubst
+	// Lazy local variable: emit init-check before the expression
+	if (e.name in lazyInitBlocks) {
+		emitLazyInitCheck(e.name)
+		return "${e.name}\$cache"
+	}
+	// Lazy top-level property: call ensure_init before access
+	if (e.name in lazyTopProps) {
+		preStmts += "${typeFlatName(e.name)}_\$ensure_init();"
+		return "${typeFlatName(e.name)}\$cache"
+	}
 	val vCurType = lookupVar(e.name)
 	val vCurKtc  = lookupVarKtc(e.name)
 	// Check if it's a known variable in scope
@@ -102,3 +116,48 @@ internal fun CCodeGen.genLValue(e: Expr): String {
 		else -> genExpr(e)
 		}
 	}
+
+// Emit the lazy init-check for a local variable into preStmts
+private fun CCodeGen.emitLazyInitCheck(name: String) {
+	val block = lazyInitBlocks[name] ?: return
+	val stmts = block.stmts
+	val lastStmt = stmts.lastOrNull() ?: return
+	val lastExpr = when (lastStmt) {
+		is ExprStmt   -> lastStmt.expr
+		is ReturnStmt -> lastStmt.value
+		else          -> null
+	} ?: return
+
+	// Save current preStmts, generate the init expression (which may produce its own preStmts)
+	val savedPreStmts = preStmts.toList()
+	preStmts.clear()
+
+	// Generate intermediate statements (all except the last) into a temporary impl section
+	val savedImpl = impl
+	val tmpImpl = StringBuilder()
+	impl = tmpImpl
+	for (i in 0 until stmts.size - 1) {
+		emitStmt(stmts[i], "")
+	}
+	impl = savedImpl
+
+	// Generate the last expression
+	val initExpr = genExpr(lastExpr)
+	val initPreStmts = preStmts.toList()
+	preStmts.clear()
+
+	// Restore saved preStmts and build the lazy init block
+	preStmts.addAll(savedPreStmts)
+	preStmts += "if (!${name}\$inited) {"
+	// Intermediate statements from the body
+	for (line in tmpImpl.toString().lines().filter { it.isNotBlank() }) {
+		preStmts += "    $line"
+	}
+	// Pre-statements from the last expression
+	for (s in initPreStmts) {
+		preStmts += "    $s"
+	}
+	preStmts += "    ${name}\$cache = $initExpr;"
+	preStmts += "    ${name}\$inited = true;"
+	preStmts += "}"
+}

@@ -132,6 +132,11 @@ internal fun CCodeGen.emitFunBodyAndClose(
 	}
 
 internal fun CCodeGen.emitTopProp(d: PropDecl) {
+	// by lazy { body } — thread-safe lazy initialization
+	if (d.lazyInit != null) {
+		emitLazyTopProp(d)
+		return
+	}
 	val vKtc = if (d.type != null) resolveTypeName(d.type) else inferExprTypeKtc(d.init) // KtcType of prop
 	val t    = vKtc?.toInternalStr ?: (inferExprType(d.init) ?: "Int")
 	val ct   = cTypeStr(t)
@@ -146,5 +151,48 @@ internal fun CCodeGen.emitTopProp(d: PropDecl) {
 		hdr.appendLine("extern $tls$ct $cName;")
 		impl.appendLine("$tls$mutComment$ct $cName = ${defaultVal(parseResolvedTypeName(t))};")
 		}
+	impl.appendLine()
+	}
+
+private fun CCodeGen.emitLazyTopProp(d: PropDecl) {
+	val block = d.lazyInit!!
+	val stmts = block.stmts
+	val lastStmt = stmts.lastOrNull()
+	val lastExpr = when (lastStmt) {
+		is ExprStmt   -> lastStmt.expr
+		is ReturnStmt -> lastStmt.value
+		else -> null
+	} ?: codegenError("lazy initializer for '${d.name}' must end with an expression")
+
+	val vKtc = if (d.type != null) resolveTypeName(d.type) else inferExprTypeKtc(lastExpr)
+		?: codegenError("Cannot infer type for lazy property '${d.name}' — add an explicit type annotation")
+	val ct = cTypeStr(vKtc)
+	val cName = typeFlatName(d.name)
+
+	lazyTopProps.add(d.name)
+
+	// Static storage: once flag + cache
+	impl.appendLine("static ktc_thread_once_t ${cName}\$once = KTC_THREAD_ONCE_INIT;")
+	impl.appendLine("static $ct ${cName}\$cache;")
+	impl.appendLine()
+
+	// Init function — runs exactly once across all threads
+	impl.appendLine("static void ${cName}_lazy_init(void) {")
+	pushScope()
+	for (i in 0 until stmts.size - 1) {
+		emitStmt(stmts[i], "    ")
+	}
+	val initExpr = genExpr(lastExpr)
+	flushPreStmts("    ")
+	impl.appendLine("    ${cName}\$cache = $initExpr;")
+	popScope()
+	impl.appendLine("}")
+	impl.appendLine()
+
+	// Ensure-init function called before each access (ktc_thread_call_once is fast-path after first init)
+	hdr.appendLine("void ${cName}_\$ensure_init(void);")
+	impl.appendLine("void ${cName}_\$ensure_init(void) {")
+	impl.appendLine("    ktc_thread_call_once(&${cName}\$once, ${cName}_lazy_init);")
+	impl.appendLine("}")
 	impl.appendLine()
 	}

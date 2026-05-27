@@ -496,7 +496,9 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				extensionProps.getOrPut(recvName) { mutableListOf() }.add(d)
 				} else {
 				topProps.add(d.name)
+				topPropDecls[d.name] = d
 				if (!d.mutable) valTopProps.add(d.name)
+				if (d.lazyInit != null) lazyTopProps.add(d.name)
 				if (d.annotations.any { it.name == "Tls" }) tlsProps.add(d.name)
 				}
 			}

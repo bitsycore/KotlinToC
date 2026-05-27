@@ -102,7 +102,8 @@ data class PropDecl(
     val getter: Expr? = null,          // get() = expr
     val setterParam: String? = null,   // set(param)
     val setterBody: Block? = null,     // set(param) { body }
-    val isInline: Boolean = false      // inline val: getter expanded at access site (extension props only)
+    val isInline: Boolean = false,     // inline val: getter expanded at access site (extension props only)
+    val lazyInit: Block? = null        // by lazy { body }
 ) : Decl()
 
 // ═══════════════════════════ Parameters ═══════════════════════════
@@ -145,7 +146,8 @@ data class VarDeclStmt(
     val name: String,
     val type: TypeRef?,
     val init: Expr?,
-    val mutable: Boolean
+    val mutable: Boolean,
+    val lazyInit: Block? = null
 ) : Stmt()
 
 /* Destructuring decl: `val (a, b, ...) = expr` / `var (...) = expr`.

@@ -479,7 +479,20 @@ class Parser(private val tokens: List<Token>) {
         val vHasAccessor = vGetter != null || vSetterBody != null
         if (!vHasAccessor) pos = vSaved  // rollback if no getter/setter found
 
-        val init = if (!vHasAccessor && at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
+        // by lazy { body }
+        var lazyInit: Block? = null
+        if (!vHasAccessor && at(TokenType.IDENT) && cur().value == "by") {
+            val savedBy = pos
+            advance(); skipNL()
+            if (at(TokenType.IDENT) && cur().value == "lazy") {
+                if (mutable) error("'by lazy' is not allowed on 'var' declarations")
+                advance(); skipNL()
+                lazyInit = parseBlock()
+            } else {
+                pos = savedBy
+            }
+        }
+        val init = if (lazyInit == null && !vHasAccessor && at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
         var isPrivateSet = false
         if (!isPrivate) {
             if (at(TokenType.NEWLINE)) advance()
@@ -498,7 +511,7 @@ class Parser(private val tokens: List<Token>) {
         }
         skipTerminator()
         return PropDecl(name, type, init, mutable, line, isPrivate, isPrivateSet, annotations = preAnnotations,
-            receiver = receiver, getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody, isInline = isInline)
+            receiver = receiver, getter = vGetter, setterParam = vSetterParam, setterBody = vSetterBody, isInline = isInline, lazyInit = lazyInit)
     }
 
     // ═══════════════════════════ Statements ═══════════════════════════
@@ -551,6 +564,18 @@ class Parser(private val tokens: List<Token>) {
         }
         val name = expectIdent()
         val type = if (at(TokenType.COLON)) { advance(); skipNL(); parseTypeRef() } else null
+        // by lazy { body }
+        if (at(TokenType.IDENT) && cur().value == "by") {
+            val savedBy = pos
+            advance(); skipNL()
+            if (at(TokenType.IDENT) && cur().value == "lazy") {
+                if (mutable) error("'by lazy' is not allowed on 'var' declarations")
+                advance(); skipNL()
+                val body = parseBlock()
+                return VarDeclStmt(name, type, null, mutable, lazyInit = body)
+            }
+            pos = savedBy
+        }
         val init = if (at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
         return VarDeclStmt(name, type, init, mutable)
     }
