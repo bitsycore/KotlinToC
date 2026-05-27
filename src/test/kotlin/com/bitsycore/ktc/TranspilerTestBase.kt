@@ -37,7 +37,8 @@ open class TranspilerTestBase {
     data class TranspileResult(
         val header: String,
         val source: String,
-        val pkg: String
+        val pkg: String,
+        val warningCount: Int = 0
     ) {
         override fun toString(): String {
             return "$header\n$source"
@@ -99,11 +100,13 @@ open class TranspilerTestBase {
         val tokens = Lexer(source).tokenize()
         val ast = Parser(tokens).parseFile()
         val allAsts = listOf(ast)
-        val output = CCodeGen(ast, allAsts, source.lines()).generate()
+        val gen = CCodeGen(ast, allAsts, source.lines())
+        val output = gen.generate()
         val result = TranspileResult(
             header = output.header,
             source = output.sources.values.joinToString("\n") { it.content },
-            pkg = ast.pkg ?: "test"
+            pkg = ast.pkg ?: "test",
+            warningCount = gen.diagnosticWarningCount
         )
         if (verifyCompile) verifyCompiles(result)
         return result
@@ -391,6 +394,14 @@ open class TranspilerTestBase {
             regex.containsMatchIn(header),
             message ?: "Expected C header to match:\n  «${regex.pattern}»\n\nActual header:\n$header"
         )
+    }
+
+    protected fun TranspileResult.hasWarnings(expected: Int = 1) {
+        assertEquals(expected, warningCount, "Expected $expected warning(s), got $warningCount")
+    }
+
+    protected fun TranspileResult.hasNoWarnings() {
+        assertEquals(0, warningCount, "Expected no warnings, got $warningCount")
     }
 
     /** Assert transpilation fails with an error containing [expectedMsg]. */

@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.expression
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.ifaceDataName
+import com.bitsycore.ktc.codegen.statement.checkWhenExhaustiveness
 import com.bitsycore.ktc.codegen.statement.genWhenCond
 import com.bitsycore.ktc.types.KtcType
 
@@ -146,6 +147,7 @@ internal fun CCodeGen.inferBlockType(b: Block): String? {
 // ── when expression (nested ternary or temp) ──────────────────────
 
 internal fun CCodeGen.genWhenExpr(e: WhenExpr): String {
+    checkWhenExhaustiveness(e)
     // ThisExpr subject maps to $self; NameExpr subject maps to its variable name
     val subjName = when (e.subject) {
         is NameExpr -> e.subject.name

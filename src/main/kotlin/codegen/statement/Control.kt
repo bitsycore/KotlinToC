@@ -146,7 +146,32 @@ internal fun CCodeGen.emitWhenStmt(e: WhenExpr, ind: String, method: Boolean) {
 		popSmartCasts(narrowCasts)
 		impl.appendLine("$ind}")
 		}
+	checkWhenExhaustiveness(e)
 	}
+
+internal fun CCodeGen.checkWhenExhaustiveness(e: WhenExpr) {
+	if (e.subject == null) return
+	if (e.branches.any { it.conds == null }) return
+	val subjType = inferExprTypeKtc(e.subject) ?: return
+	val enumInfo = enumInfoFor(subjType) ?: enums[subjType.toInternalStr] ?: return
+	val covered = mutableSetOf<String>()
+	for (br in e.branches) {
+		for (cond in br.conds ?: continue) {
+			if (cond !is ExprCond) continue
+			val entry = when (val expr = cond.expr) {
+				is DotExpr -> expr.name
+				is NameExpr -> expr.name
+				else -> null
+			}
+			if (entry != null) covered += entry
+		}
+	}
+	val missing = enumInfo.entries.filter { it !in covered }
+	if (missing.isNotEmpty()) {
+		val names = missing.joinToString(", ")
+		codegenWarning("'when' on enum ${enumInfo.name} is not exhaustive; missing: $names — add an 'else' branch or handle all entries")
+	}
+}
 
 internal fun CCodeGen.genWhenCond(c: WhenCond, subject: Expr?): String {
 	val subj = if (subject != null) genExpr(subject) else ""
