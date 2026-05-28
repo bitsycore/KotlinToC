@@ -180,6 +180,9 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 	when (d) {
 		is ClassDecl -> {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
+			val vDupCtor = d.ctorParams.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }?.key
+			if (vDupCtor != null) codegenError("E014", "Duplicate constructor parameter '$vDupCtor' in class '${d.name}'")
+			for (vP in d.ctorParams) validateSizeAnnotation(vP.type)
 			for (p in d.ctorParams) {
 				if ((p.isVal || p.isVar) && p.type.isRawArray()) {
 					codegenError("E011", "Class property '${p.name}' cannot have raw array type '${p.type.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
@@ -191,6 +194,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					currentStmtLine = p.line; currentStmtCol = 0
 					codegenError("E011", "Class property '${p.name}' cannot have raw array type '${propType.name}'. Use Ref<Array<T>> or @Size(N) Array<T> instead")
 					}
+				validateSizeAnnotation(p.type)
 				}
 			val vCtorProps = d.ctorParams.filter { it.isVal || it.isVar }.map { vP ->  // ctor val/var props
 				PropertyDef(
@@ -338,6 +342,8 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					setterBody   = vP.setterBody
 					)
 				}
+			val vDupEntry = d.entries.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }?.key
+			if (vDupEntry != null) codegenError("E013", "Duplicate enum entry '$vDupEntry' in '${d.name}'")
 			val vEntryArgs    = d.entries.associate { it.name to it.args.map { a -> a.expr } }
 			val vEntryNames   = d.entries.map { it.name }
 			val vEi = EnumInfo(
@@ -472,6 +478,11 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 
 		is FunDecl -> {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
+			val vDupParam = d.params.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }?.key
+			if (vDupParam != null) codegenError("E014", "Duplicate parameter '$vDupParam' in function '${d.name}'")
+			validateSizeAnnotation(d.returnType)
+			validateSizeAnnotation(d.receiver)
+			for (vP in d.params) validateSizeAnnotation(vP.type)
 			// Normalize Ref<T> in receiver and params to @Ptr T so all downstream code uses the uniform form
 			val needsRecvNorm = d.receiver != null && d.receiver.name == "Ref" && d.receiver.typeArgs.isNotEmpty()
 			val needsParamNorm = d.params.any { it.type.name == "Ref" && it.type.typeArgs.isNotEmpty() }
@@ -639,6 +650,25 @@ internal fun CCodeGen.findOverload(inName: String, inArgs: List<Arg>, inSiblings
 			}
 		}
 	return vByCount.firstOrNull()
+	}
+
+/* Validate @Size(N) annotations on the given TypeRef and its type args.
+   N must be a positive integer literal — @Size(0) yields an empty C array and
+   negatives are nonsense. Reports E012 on the first violation. */
+internal fun CCodeGen.validateSizeAnnotation(inRef: TypeRef?) {
+	if (inRef == null) return
+	val vAnn = inRef.annotations.find { it.name == "Size" }
+	if (vAnn != null) {
+		if (vAnn.args.isEmpty()) {
+			codegenError("E012", "@Size requires an integer argument on type '${inRef.name}'")
+			}
+		val vN = inRef.getSizeAnnotation()
+		if (vN == null) codegenError("E012", "@Size(...) on '${inRef.name}' must be an integer literal")
+		else if (vN <= 0) codegenError("E012", "@Size($vN) on '${inRef.name}' must be positive")
+		}
+	for (vArg in inRef.typeArgs) validateSizeAnnotation(vArg)
+	inRef.funcReturn?.let { validateSizeAnnotation(it) }
+	inRef.funcParams?.forEach { validateSizeAnnotation(it) }
 	}
 
 /* Re-key entries in [inMap] whose key contains '.' to the dollar-form when the

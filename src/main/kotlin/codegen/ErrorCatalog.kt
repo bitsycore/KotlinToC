@@ -228,6 +228,35 @@ object ErrorCatalog {
 			'continue' can only be used inside loop bodies.
 			""".trimIndent()),
 
+		// ── Declarations ──────────────────────────────────────────
+		Entry("E012", "Invalid @Size value",
+			"""
+			The @Size(N) annotation requires a positive integer constant.
+			Negative values, zero, or non-integer-literal arguments are rejected
+			because the C struct layout that backs @Size(N) needs a concrete
+			compile-time length:
+
+			  @Size(0)  fun f(): IntArray   // error — empty array is UB in C
+			  @Size(-3) fun g(): IntArray   // error — meaningless length
+			""".trimIndent()),
+		Entry("E013", "Duplicate enum entry",
+			"""
+			Two entries in the same enum class share the same identifier:
+
+			  enum class Color { RED, RED }   // error
+
+			Each entry name must be unique within the enum.
+			""".trimIndent()),
+		Entry("E014", "Duplicate parameter name",
+			"""
+			A function or constructor declares two parameters with the same name:
+
+			  fun f(x: Int, x: Int)               // error
+			  class P(val a: Int, val a: Int)      // error
+
+			Rename one of the conflicting parameters.
+			""".trimIndent()),
+
 		// ── Interface / override ─────────────────────────────────
 		Entry("E100", "Missing interface implementation",
 			"""

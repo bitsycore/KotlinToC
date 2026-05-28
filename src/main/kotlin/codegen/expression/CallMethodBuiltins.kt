@@ -468,20 +468,20 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 	if (vMethod == "fill" && inRecvTypeKtc != null) {
 		val vCore = inRecvTypeKtc.stripNullable
 		// Array<T>.fill(element, fromIndex = 0, toIndex = size) — length known from VarArr / @Size / trampoline.
-		if (vCore != null && vCore.isArrayLike && inArgs.size in 1..3) {
+		if (vCore.isArrayLike && inArgs.size in 1..3) {
 			val vElemC   = arrayElementCTypeKtc(vCore)
 			val vObjName = (inDot.obj as? NameExpr)?.name
 			val vIsTramp = vObjName != null && vObjName in trampolinedParams
-			val vIsSized = vCore.asArr?.sized != null
+			val vSizedN  = vCore.asArr?.sized
 			val vPtr = when {
-				vIsTramp -> "local\$$vObjName"
-				vIsSized -> inRecv
-				else     -> "($inRecv).ptr"
+				vIsTramp        -> "local\$$vObjName"
+				vSizedN != null -> inRecv
+				else            -> "($inRecv).ptr"
 				}
 			val vLen = when {
-				vIsTramp -> arrayParamSizeExpr(vObjName!!)
-				vIsSized -> vCore.asArr!!.sized.toString()
-				else     -> "($inRecv).len"
+				vIsTramp        -> arrayParamSizeExpr(vObjName)
+				vSizedN != null -> vSizedN.toString()
+				else            -> "($inRecv).len"
 				}
 			val vFrom = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else null
 			val vTo   = if (inArgs.size >= 3) genExpr(inArgs[2].expr) else vLen

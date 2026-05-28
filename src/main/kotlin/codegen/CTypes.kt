@@ -312,9 +312,7 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 			cOpaqueTypes += vCName
 			return KtcType.COpaque(vCName)
 			}
-	for (kind in KtcType.PrimKind.entries) {
-		if (resolved == kind.name) return KtcType.Prim(kind)
-		}
+	KtcType.PrimKind.byName(resolved)?.let { return KtcType.Prim(it) }
 	if (resolved == "String")   return KtcType.Str
 	if (resolved == "void" || resolved == "Nothing" || resolved == "Unit") return KtcType.Void
 	if (resolved == "Any")      return KtcType.Any
@@ -327,13 +325,14 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 	// Array types: IntArray, ByteArray, Vec2Array, etc.
 	if (resolved.endsWith("Array") && resolved.length > 5) {
 		val elemName = resolved.removeSuffix("Array")
-		val elem = when (elemName) {
-			in KtcType.PrimKind.entries.map { it.name } -> KtcType.Prim(KtcType.PrimKind.valueOf(elemName))
-			"String" -> KtcType.Str
+		val vPrim = KtcType.PrimKind.byName(elemName)
+		val elem = when {
+			vPrim != null -> KtcType.Prim(vPrim)
+			elemName == "String" -> KtcType.Str
 			else -> userType(elemName)
 			}
 		val sized         = t?.getSizeAnnotation()
-		val isTypedArray  = elemName in KtcType.PrimKind.entries.map { it.name } || elemName == "String"
+		val isTypedArray  = vPrim != null || elemName == "String"
 			|| classArrayTypes.contains(elemName) || enums.containsKey(elemName)
 		val arr = KtcType.Arr(elem, sized = sized)
 		return if (isTypedArray) KtcType.Ptr(arr) else arr
@@ -377,7 +376,7 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 		ktc.baseName == "AnyPtr"    -> "void*"
 		ktc.kind == KtcType.UserKind.ValueClass -> {
 			val vUnderlyingName = classes[ktc.baseName]?.ctorProps?.firstOrNull()?.typeRef?.name ?: "Int"
-			for (vK in KtcType.PrimKind.entries) if (vUnderlyingName == vK.name) return cTypeStr(KtcType.Prim(vK))
+			KtcType.PrimKind.byName(vUnderlyingName)?.let { return cTypeStr(KtcType.Prim(it)) }
 			if (vUnderlyingName == "String") return cTypeStr(KtcType.Str)
 			typeFlatName(vUnderlyingName)
 		}

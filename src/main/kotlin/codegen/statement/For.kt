@@ -55,6 +55,8 @@ private fun destructuredBody(s: ForStmt): Block =
     else Block(listOf(DestructuringDeclStmt(s.destructureNames, NameExpr(s.varName), mutable = false)) + s.body.stmts)
 
 internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
+    if (isEmptyBlock(s.body))
+        codegenWarning("empty-body", "Empty 'for' body — the loop has no effect.")
     loopDepth++
     val iter = s.iter
     // Unwrap "step" wrapper: (rangeExpr step N)

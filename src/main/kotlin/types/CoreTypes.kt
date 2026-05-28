@@ -66,7 +66,15 @@ internal sealed class KtcType {
         }
     }
 
-    enum class PrimKind { Byte, Short, Int, Long, UByte, UShort, UInt, ULong, Float, Double, Boolean, Char, Rune }
+    enum class PrimKind { Byte, Short, Int, Long, UByte, UShort, UInt, ULong, Float, Double, Boolean, Char, Rune;
+        companion object {
+            /* Names of every PrimKind, cached as a Set so callers can do O(1) membership tests
+               instead of rebuilding a List on every call. */
+            val namesSet: Set<String> = entries.mapTo(mutableSetOf()) { it.name }
+            /* Lookup by name; null when [inName] is not a known primitive name. */
+            fun byName(inName: String): PrimKind? = if (inName in namesSet) valueOf(inName) else null
+        }
+    }
 
     // ── String ───────────────────────────────────────────────────────
 

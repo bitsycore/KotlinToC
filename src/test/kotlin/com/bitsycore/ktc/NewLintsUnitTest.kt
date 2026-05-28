@@ -137,4 +137,72 @@ class NewLintsUnitTest : TranspilerTestBase() {
 		""")
 		assert(r.warningCount >= 1) { "Expected at least one warning, got ${r.warningCount}" }
 	}
+
+	// ── E012: invalid @Size value ─────────────────────────────────────
+
+	@Test fun zeroSizeRejected() {
+		transpileExpectError("""
+			package test.Main
+			fun f(): @Size(0) IntArray = intArrayOf()
+			fun main(args: Array<String>) { f() }
+		""", "E012")
+	}
+
+	@Test fun negativeSizeRejected() {
+		transpileExpectError("""
+			package test.Main
+			fun f(): @Size(-2) IntArray = intArrayOf()
+			fun main(args: Array<String>) { f() }
+		""", "E012")
+	}
+
+	@Test fun positiveSizeOk() {
+		val r = transpile("""
+			package test.Main
+			fun f(): @Size(4) IntArray = intArrayOf(1,2,3,4)
+			fun main(args: Array<String>) { val a = f(); println(a.size) }
+		""")
+		r.hasNoWarnings()
+	}
+
+	// ── E013: duplicate enum entry ────────────────────────────────────
+
+	@Test fun duplicateEnumEntryRejected() {
+		transpileExpectError("""
+			package test.Main
+			enum class Color { RED, GREEN, RED }
+			fun main(args: Array<String>) { val c = Color.RED; println(c.ordinal) }
+		""", "E013")
+	}
+
+	// ── E014: duplicate parameter ─────────────────────────────────────
+
+	@Test fun duplicateFunctionParameterRejected() {
+		transpileExpectError("""
+			package test.Main
+			fun f(x: Int, x: Int): Int = x
+			fun main(args: Array<String>) { println(f(1, 2)) }
+		""", "E014")
+	}
+
+	@Test fun duplicateCtorParameterRejected() {
+		transpileExpectError("""
+			package test.Main
+			class P(val a: Int, val a: Int)
+			fun main(args: Array<String>) { val p = P(1, 2); println(p.a) }
+		""", "E014")
+	}
+
+	// ── empty for body ────────────────────────────────────────────────
+
+	@Test fun emptyForBodyWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				for (i in 1..5) {
+				}
+			}
+		""")
+		r.hasWarnings(1)
+	}
 }
