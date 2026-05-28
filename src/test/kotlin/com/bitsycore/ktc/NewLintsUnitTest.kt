@@ -256,6 +256,59 @@ class NewLintsUnitTest : TranspilerTestBase() {
 		assert(r.warningCount >= 1) { "Expected at least one warning, got ${r.warningCount}" }
 	}
 
+	// ── W014 self-comparison ──────────────────────────────────────────
+
+	@Test fun selfComparisonWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 5
+				if (x == x) println("yes")
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected at least one warning, got ${r.warningCount}" }
+	}
+
+	@Test fun floatSelfCompareNotWarned() {
+		// NaN != NaN is intentional — float self-compare must not fire.
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 1.5
+				if (x != x) println("nan")
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
+	// ── W015 identical branches ───────────────────────────────────────
+
+	@Test fun identicalBranchesWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 5
+				if (x > 0) {
+					println("hi")
+				} else {
+					println("hi")
+				}
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected at least one warning, got ${r.warningCount}" }
+	}
+
+	@Test fun distinctBranchesNoWarning() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 5
+				if (x > 0) println("pos") else println("neg")
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
 	// ── unreachable branch after else ─────────────────────────────────
 
 	@Test fun branchAfterElseRejected() {

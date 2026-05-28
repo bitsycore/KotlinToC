@@ -201,7 +201,7 @@ fun main(args: Array<String>) {
         System.err.println("                               Names: shadow, nullable-ref, tailrec-inline, tailrec-suggestion,")
         System.err.println("                                      const-condition, exhaustive-when, null-check, safe-call,")
         System.err.println("                                      bounds, sized-array-truncate, empty-body, redundant-bang,")
-        System.err.println("                                      self-assign")
+        System.err.println("                                      self-assign, self-compare, identical-branches")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
         System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")

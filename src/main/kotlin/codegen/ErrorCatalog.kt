@@ -381,6 +381,29 @@ object ErrorCatalog {
 
 			Suppress with: -Wno-redundant-bang
 			""".trimIndent()),
+		Entry("W014", "Self-comparison",
+			"""
+			A comparison operator is applied to the same variable on both sides:
+
+			  if (x == x) { ... }    // W014 — always true
+			  if (i != i) { ... }    // W014 — always false
+
+			Usually a typo or a leftover from a refactor. Float / Double are
+			excluded because NaN != NaN is intentional.
+
+			Suppress with: -Wno-self-compare
+			""".trimIndent()),
+		Entry("W015", "Identical if/else branches",
+			"""
+			The 'then' and 'else' branches of an 'if' contain the same
+			statements, so the condition has no observable effect:
+
+			  if (cond) { x = 1 } else { x = 1 }    // W015
+
+			Remove the conditional or fix one of the branches.
+
+			Suppress with: -Wno-identical-branches
+			""".trimIndent()),
 		Entry("W013", "Self-assignment",
 			"""
 			An assignment statement reads and writes the same simple variable

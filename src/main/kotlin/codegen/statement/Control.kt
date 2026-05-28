@@ -102,6 +102,8 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 		}
 	if (isEmptyBlock(e.then)) codegenWarning("empty-body", "Empty 'if' body — has no effect.")
 	if (e.els != null && isEmptyBlock(e.els)) codegenWarning("empty-body", "Empty 'else' body — has no effect.")
+	if (e.els != null && !isEmptyBlock(e.then) && blocksMatch(e.then, e.els))
+		codegenWarning("identical-branches", "Both 'if' and 'else' branches are identical — the condition has no effect.")
 	impl.appendLine("${ind}if (${genExprFlushed(e.cond, ind)}) {")
 	val thenCasts = extractSmartCasts(e.cond)
 	pushSmartCasts(thenCasts, ind)
@@ -129,6 +131,15 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 /* True if a block has no statements (or only comments — those don't run). */
 internal fun isEmptyBlock(inBlock: Block): Boolean =
 	inBlock.stmts.none { it !is CommentStmt }
+
+/* Structural equality of two blocks, ignoring comments and the per-Stmt
+   line/col metadata. Used to spot identical if/else branches. */
+internal fun blocksMatch(inA: Block, inB: Block): Boolean {
+	val vA = inA.stmts.filter { it !is CommentStmt }
+	val vB = inB.stmts.filter { it !is CommentStmt }
+	if (vA.size != vB.size) return false
+	return vA.zip(vB).all { (a, b) -> a == b }
+	}
 
 // ── when (as statement) ──────────────────────────────────────────
 

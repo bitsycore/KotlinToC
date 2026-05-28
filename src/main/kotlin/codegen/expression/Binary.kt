@@ -7,7 +7,21 @@ import com.bitsycore.ktc.codegen.statement.emitInlineCall
 import com.bitsycore.ktc.codegen.statement.tryGenInlineExpr
 import com.bitsycore.ktc.types.KtcType
 
+/* Binary operators that compare two operands and would be tautological when
+   applied to the exact same variable. Float kinds are excluded at the call site
+   because NaN != NaN is intentional. */
+private val kTautologyOps = setOf("==", "!=", "<=", ">=", "<", ">")
+private val kFloatKinds   = setOf(KtcType.PrimKind.Float, KtcType.PrimKind.Double)
+
 internal fun CCodeGen.genBin(e: BinExpr): String {
+    // Tautological comparison of a name against itself (e.g. `x == x`, `i >= i`).
+    // Always true (or always false for !=). Skip for float NaN-sensitive ops on
+    // unknown types — we restrict to primitive integer / char / boolean receivers.
+    if (e.op in kTautologyOps && e.left is NameExpr && e.right is NameExpr && e.left.name == e.right.name) {
+        val vKtc = inferExprTypeKtc(e.left)
+        if (vKtc is KtcType.Prim && vKtc.kind !in kFloatKinds)
+            codegenWarning("self-compare", "Comparing '${e.left.name}' to itself with '${e.op}' is ${if (e.op == "!=") "always false" else "always true"}")
+    }
     val lt = inferExprType(e.left)
     // User-defined infix inline extension function dispatch (covers `to`,
     // `toStd`-style functions, and any user-declared infix extension).
