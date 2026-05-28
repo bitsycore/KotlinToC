@@ -143,8 +143,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                 val idx = genExpr(e.index)
                 val vIdxSelfArg = ifaceVtableSelf(vIdxIfaceInfo.name, recv)
                 if (ifaceMethod.returnType?.nullable == true) {
-                    val retBase = resolveMethodReturnType(vIdxIfaceInfo.baseName, ifaceMethod.returnType).removeSuffix("?")
-                    tmpOptional(retBase, "$recv.vt->get($vIdxSelfArg, $idx)")
+                    genNullableMethodCall(vIdxIfaceInfo.baseName, "$recv.vt->get", "$vIdxSelfArg, $idx", ifaceMethod)
                 } else {
                     "$recv.vt->get($vIdxSelfArg, $idx)"
                 }
