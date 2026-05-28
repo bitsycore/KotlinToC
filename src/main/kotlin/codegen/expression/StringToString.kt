@@ -6,6 +6,20 @@ import com.bitsycore.ktc.types.KtcType
 
 // toString dispatch, max-length inference, and StringBuffer append helpers.
 
+/* Integer primitive toString lowering descriptor:
+   (ktc_core_sb_append_* function name, stack buffer size in bytes).
+   Mapped over genToString's `when (type)` to avoid 8 near-identical branches. */
+private val kIntegerToStringInfo: Map<String, Pair<String, Int>> = mapOf(
+	"Byte"    to ("ktc_core_sb_append_byte"   to 6),
+	"Short"   to ("ktc_core_sb_append_short"  to 7),
+	"Int"     to ("ktc_core_sb_append_int"    to 12),
+	"Long"    to ("ktc_core_sb_append_long"   to 21),
+	"UByte"   to ("ktc_core_sb_append_ubyte"  to 4),
+	"UShort"  to ("ktc_core_sb_append_ushort" to 6),
+	"UInt"    to ("ktc_core_sb_append_uint"   to 11),
+	"ULong"   to ("ktc_core_sb_append_ulong"  to 21),
+	)
+
 private val kToStringPrimitiveMaxLen = mapOf(
 	"Boolean" to 5,   // "false"
 	"Byte"    to 4,   // "-128"
@@ -85,6 +99,16 @@ internal fun CCodeGen.templateMaxLen(tmpl: StrTemplateExpr): Int? {
 	return total
 	}
 
+/* Stamp out an integer-toString lowering for [recv]: a stack buffer of [inSz]
+   chars wrapped in a ktc_StrBuf, then [inAppendFn]() appends the digits. */
+private fun CCodeGen.emitIntegerToString(recv: String, inAppendFn: String, inSz: Int): String {
+	val buf = tmp()
+	preStmts += "ktc_Char ${buf}[$inSz];"
+	preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $inSz};"
+	preStmts += "$inAppendFn(&${buf}_sb, $recv);"
+	return "ktc_core_sb_to_string(&${buf}_sb)"
+	}
+
 // ── toString dispatch ────────────────────────────────────────────────────
 
 internal fun CCodeGen.genToStringKtc(recv: String, type: KtcType): String = genToString(recv, type.toInternalStr)
@@ -151,55 +175,10 @@ internal fun CCodeGen.genToString(recv: String, type: String): String {
 			}
 		return "ktc_core_sb_to_string(&${buf}_sb)"
 		}
+	kIntegerToStringInfo[type]?.let { (appendFn, sz) ->
+		return emitIntegerToString(recv, appendFn, sz)
+		}
 	return when (type) {
-		"Byte" -> {
-			val buf = tmp(); val sz = 6
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_byte(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"Short" -> {
-			val buf = tmp(); val sz = 7
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_short(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"Int" -> {
-			val buf = tmp(); val sz = 12
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_int(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"Long" -> {
-			val buf = tmp(); val sz = 21
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_long(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"UByte" -> {
-			val buf = tmp(); val sz = 4
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_ubyte(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"UShort" -> {
-			val buf = tmp(); val sz = 6
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_ushort(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"UInt" -> {
-			val buf = tmp(); val sz = 11
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_uint(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
-		"ULong" -> {
-			val buf = tmp(); val sz = 21
-			preStmts += "ktc_Char ${buf}[$sz];"; preStmts += "ktc_StrBuf ${buf}_sb = {${buf}, 0, $sz};"
-			preStmts += "ktc_core_sb_append_ulong(&${buf}_sb, $recv);"
-			"ktc_core_sb_to_string(&${buf}_sb)"
-			}
 		"Float" -> {
 			val buf = tmp()
 			preStmts += "ktc_Char ${buf}[24];"
