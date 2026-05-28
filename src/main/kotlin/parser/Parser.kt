@@ -1179,6 +1179,7 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.DOT)
             if (at(TokenType.LPAREN)) {
                 val saved = pos
+                val savedNesting = nesting
                 try {
                     advance(); nesting++; skipNL()
                     val paramTypes = mutableListOf<TypeRef>()
@@ -1195,6 +1196,7 @@ class Parser(private val tokens: List<Token>) {
                     }
                 } catch (_: Exception) { }
                 pos = saved
+                nesting = savedNesting   // restore nesting on backtrack — the body above already adjusted it on success
             } else {
                 pos = savedForReceiver  // not a receiver function type — let parseQualifiedName handle it
             }
@@ -1202,6 +1204,7 @@ class Parser(private val tokens: List<Token>) {
         // Function type: (T, T, ...) -> R
         if (at(TokenType.LPAREN)) {
             val saved = pos
+            val savedNesting = nesting
             try {
                 advance(); nesting++; skipNL()
                 val paramTypes = mutableListOf<TypeRef>()
@@ -1219,6 +1222,7 @@ class Parser(private val tokens: List<Token>) {
             } catch (_: Exception) { }
             // Not a function type — rollback (shouldn't normally happen in type position)
             pos = saved
+            nesting = savedNesting
         }
         val name = parseQualifiedName()
         val typeArgs = if (at(TokenType.LT)) {

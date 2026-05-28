@@ -219,7 +219,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     //   - interface overrides  → "implements X" section (one per interface)
     //   - Any overrides        → "implements Any" section
     //   - everything else      → "methods" section
-    val vAnyMethodNames  = setOf("toString", "hashCode", "dispose")
+    val vAnyMethodNames  = kAnyMethodNames
     val vIfaceMethodNames = d.superInterfaces.flatMap { ref ->
         val vN = resolveIfaceName(ref)
         val vI = interfaces[vN] ?: return@flatMap emptyList<String>()

@@ -493,11 +493,10 @@ internal fun CCodeGen.genSimpleUnionDispatch(ifaceName: String, recv: String, me
 		preStmts += "ktc_Bool $t;"
 		preStmts += "if (KTC_GET_TYPEID($recv.__typeId) != KTC_GET_TYPEID($extraArgs.__typeId)) {"
 		preStmts += "    $t = false;"
-		for ((i, implName) in impls.withIndex()) {
+		for (implName in impls) {
 			val cImpl = typeFlatName(implName)
 			val dataName = "${cImpl}_data"
-			val keyword = if (i == 0) "} else if" else "} else if"
-			preStmts += "$keyword (KTC_GET_TYPEID($recv.__typeId) == ${cImpl}_TYPE_ID) {"
+			preStmts += "} else if (KTC_GET_TYPEID($recv.__typeId) == ${cImpl}_TYPE_ID) {"
 			preStmts += "    $t = ${cImpl}_equals($recv.data.$dataName, $extraArgs.data.$dataName);"
 			}
 		preStmts += "}"

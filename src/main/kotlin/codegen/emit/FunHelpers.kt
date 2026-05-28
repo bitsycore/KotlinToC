@@ -10,6 +10,10 @@ import com.bitsycore.ktc.types.KtcType
 // Shared helpers for function/method emit — return-type analysis, scope registration,
 // and class method section grouping.
 
+/* Method names inherited from Any. Each can be explicitly overridden by a class
+   or object and is auto-generated when missing. */
+internal val kAnyMethodNames: Set<String> = setOf("dispose", "toString", "hashCode")
+
 /**
  * Computes all return-type fnCtx fields from [f] and returns the C return type string.
  *
@@ -135,7 +139,7 @@ internal fun CCodeGen.emitClassNonAnyMethods(
 	members: List<Decl>,
 	ci: ClassInfo
 	): Boolean {
-	val anyMethodNames = setOf("dispose", "toString", "hashCode")
+	val anyMethodNames = kAnyMethodNames
 	val (ifaceOrder, methodsByIface) = groupMethodsByIface(superInterfaces, members, anyMethodNames)
 
 	currentClass  = className
@@ -180,7 +184,7 @@ internal fun CCodeGen.emitImplicitNullReturn(ind: String) {
 	}
 
 internal fun CCodeGen.emitClassAnyOverrides(className: String, members: List<Decl>, ci: ClassInfo) {
-	val anyMethodNames = setOf("dispose", "toString", "hashCode")
+	val anyMethodNames = kAnyMethodNames
 	currentClass  = className
 	selfIsPointer = true
 	pushScope()
