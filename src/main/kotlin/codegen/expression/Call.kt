@@ -15,6 +15,15 @@ import com.bitsycore.ktc.types.KtcType
 internal fun CCodeGen.genCall(e: CallExpr): String {
     // ── Method call: DotExpr receiver ────────────────────────────
     if (e.callee is DotExpr) {
+        // expr.cast<T>() — unchecked C-level reinterpret cast. Useful for the
+        // C-interop edges where the type system can't express `const T*` ↔ `T*`,
+        // `FILE*` ↔ `void*`, etc. Emits `((T)(expr))` directly; no runtime check.
+        // The last type argument is taken as the target type so `cast<X>()` (one
+        // arg) and `cast<Src, Dst>()` (explicit source + dest) both work.
+        if (e.callee.name == "cast" && e.typeArgs.isNotEmpty() && e.args.isEmpty()) {
+            val vTargetCType = cType(e.typeArgs.last())
+            return "(($vTargetCType)(${genExpr(e.callee.obj)}))"
+        }
         // Companion inline method: Result.success<Int>(99) → inline the body
         val vDotObjName = (e.callee.obj as? NameExpr)?.name
         val vCompanionName = vDotObjName?.let { classCompanions[it] }

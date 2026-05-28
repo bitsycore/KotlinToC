@@ -106,3 +106,18 @@ object C
 inline fun <T> C.zeroed(vararg params: Any): T
 inline fun <T> C.init(vararg params: Any): T
 inline fun <T> C.addr(value: T): Ref<T>
+
+/**
+Unchecked C-level reinterpret cast. Emits `((T)(expr))` in the generated C
+with no runtime check. Use this for C-interop edges where the type system
+can't express the conversion — `const T*` ↔ `T*`, `FILE*` ↔ `void*`,
+`Ref<T>` ↔ `Ref<U>`, primitive-to-primitive bit reinterpretation, etc.
+
+Misuse will produce undefined behavior; the cast is exactly as safe (and
+as dangerous) as the equivalent C cast.
+
+    val fp: AnyPtr        = ...
+    val file: Ref<C.FILE> = fp.cast<Ref<C.FILE>>()
+    val data: RawArray<Byte> = strPtr.cast<RawArray<Byte>>()
+ */
+inline fun <T, R> T.cast(): R

@@ -18,6 +18,12 @@ fun testPathBasics() {
 	// the LHS isn't evaluated twice. `Path("x").parent` returns null (no slash).
 	val noParent = Path("x").parent?.s
 	if (noParent != null) error("FAIL: expected null parent.s, got $noParent")
+
+	// `.cast<T>()` — unchecked reinterpret. Round-trips a Long through Int and
+	// back to confirm the emission produces a usable C cast expression.
+	val raw: Long = 42L
+	val asInt: Int = raw.cast<Long, Int>()
+	if (asInt != 42) error("FAIL Long.cast<Int>: $asInt")
 	if (p.isAbsolute)              error("FAIL Path.isAbsolute (relative)")
 
 	val a = Path("/tmp/x")
