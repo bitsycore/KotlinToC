@@ -13,6 +13,11 @@ fun testPathBasics() {
 	// unwrap path for value-type Optional returns.
 	val pParent = p.parent!!
 	if (pParent.s != "foo/bar") error("FAIL Path.parent: ${pParent.s}")
+
+	// `?.` on a function-result nullable — exercises the spill-to-temp path so
+	// the LHS isn't evaluated twice. `Path("x").parent` returns null (no slash).
+	val noParent = Path("x").parent?.s
+	if (noParent != null) error("FAIL: expected null parent.s, got $noParent")
 	if (p.isAbsolute)              error("FAIL Path.isAbsolute (relative)")
 
 	val a = Path("/tmp/x")

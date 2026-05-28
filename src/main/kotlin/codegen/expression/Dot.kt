@@ -255,13 +255,33 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
         val vSrc = (e.obj as? NameExpr)?.name ?: "expression"
         codegenWarning("safe-call", "Safe call '?.' on non-nullable '$recvType' ($vSrc) is redundant; use '.' instead")
     }
-    val recv = genExpr(e.obj)
+    val rawRecv = genExpr(e.obj)
     val recvName = (e.obj as? NameExpr)?.name
     val isThis = e.obj is ThisExpr
     val isValueNullRecv = recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
 
+    // If the receiver isn't a bare name/this, materialize it into a temp first —
+    // otherwise the null guard and the field access would each re-evaluate the
+    // receiver expression (calling functions twice, etc.) and produce broken C.
+    val recv: String
+    if (isThis || recvName != null) {
+        recv = rawRecv
+    } else {
+        val vT = tmp()
+        val vTypeStr = recvTypeKtc?.toInternalStr ?: recvType
+        val vCType = when {
+            vTypeStr == null -> "ktc_Int"
+            recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
+                -> optCTypeName(recvTypeKtc.inner.toInternalStr)
+            else -> cTypeStr(vTypeStr.removeSuffix("?"))
+            }
+        preStmts += "$vCType $vT = $rawRecv;"
+        recv = vT
+        }
+
     // Determine the null guard expression
-    val guard = if (isThis || recvName != null) nullGuardExpr(recvTypeKtc ?: KtcType.Prim(KtcType.PrimKind.Int), recv, recvName ?: recv, isThis) else "${recv}\$has"
+    val guard = if (isThis || recvName != null) nullGuardExpr(recvTypeKtc ?: KtcType.Prim(KtcType.PrimKind.Int), recv, recvName ?: recv, isThis)
+                else nullGuardExpr(recvTypeKtc ?: KtcType.Prim(KtcType.PrimKind.Int), recv, recv, false)
 
     // Unwrapped receiver expression for field access (unwrap Optional if needed)
     val recvVal = if (isValueNullRecv) "$recv.value" else recv

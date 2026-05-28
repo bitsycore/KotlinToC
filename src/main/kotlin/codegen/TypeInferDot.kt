@@ -74,7 +74,11 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 		val ci = classes[indirectBase] ?: return null
 		return resolvePropTypeKtc(ci.props, e.name)
 		}
-	val ci = classes[recvType] ?: return null
+	// Strip a trailing `?` so `Path?.s` resolves to Path's `s` property.
+	// `?.` codegen passes us the DotExpr wrapper of a nullable receiver and
+	// expects us to dig out the underlying class's field type — without
+	// removing the suffix we'd miss the class lookup and fall back to Int.
+	val ci = classes[recvType.removeSuffix("?")] ?: return null
 	return resolvePropTypeKtc(ci.props, e.name)
 	}
 
