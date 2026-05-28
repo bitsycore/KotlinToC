@@ -331,8 +331,38 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             return if (vResult < 0) "($vResult$vSuffix)" else "$vResult$vSuffix"
         }
     }
+    // Arithmetic operator overload dispatch: when the LHS has a class type that
+    // declares `operator fun plus / minus / times / div / rem(...)`, route the
+    // expression through that method. Member methods AND operator extension
+    // functions are both checked, so `dir / "name"` works whether the operator
+    // is on the class or in an extension file. Falls back to the literal
+    // primitive operator when neither is present.
+    val vOpMethod = kBinOpToMethod[e.op]
+    if (vOpMethod != null) {
+        val vRecvKtc = inferExprTypeKtc(e.left)
+        val vClassName = (vRecvKtc.stripNullable as? KtcType.User)?.baseName
+        val vClassInfo = if (vClassName != null) classes[vClassName] else null
+        val vMemberMatch = vClassInfo != null && vClassInfo.methods.any { it.name == vOpMethod && it.isOperator }
+        val vExtMatch = vClassName != null && (
+            extensionFuns[vClassName]?.any { it.name == vOpMethod && it.isOperator } == true ||
+            inlineExtFunDecls[vOpMethod]?.any { it.receiver?.name == vClassName && it.isOperator } == true
+            )
+        if (vMemberMatch || vExtMatch) {
+            return genExpr(CallExpr(DotExpr(e.left, vOpMethod), listOf(Arg(expr = e.right))))
+        }
+    }
     return "(${genExpr(e.left)} ${e.op} ${genExpr(e.right)})"
 }
+
+/* Token → operator-fun name for the arithmetic operators that can be overloaded.
+   `compareTo` (==, <, >, etc.) is handled separately in the comparison paths. */
+private val kBinOpToMethod = mapOf(
+    "+" to "plus",
+    "-" to "minus",
+    "*" to "times",
+    "/" to "div",
+    "%" to "rem"
+)
 
 /*
 Infers a typeSubst map for a generic inline extension function from the receiver

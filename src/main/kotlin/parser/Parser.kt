@@ -62,25 +62,32 @@ class Parser(private val tokens: List<Token>) {
             break
         }
         // track 'override', 'operator', 'infix', 'inline', 'private', 'internal' modifiers
-        val isOverride = at(TokenType.OVERRIDE)
-        if (isOverride) advance()
-        val isOperator = at(TokenType.IDENT) && cur().value == "operator"
-        if (isOperator) advance()
-        val isInfix = at(TokenType.IDENT) && cur().value == "infix"
-        if (isInfix) advance()
-        val isPrivate = at(TokenType.PRIVATE)
-        if (isPrivate) advance()
-        val isInternal = at(TokenType.INTERNAL)
-        if (isInternal) advance()
+        // Modifiers can appear in any order — Kotlin doesn't impose a canonical order
+        // and users naturally write `inline operator fun` (matching the JetBrains
+        // docs) as often as `operator inline fun`. Loop until we stop seeing one.
+        var isOverride = false; var isOperator = false; var isInfix = false
+        var isPrivate = false; var isInternal = false; var isTailrec = false
+        var isInlineExplicit = false; var isValue = false; var isSealed = false
+        loop@ while (true) {
+            when {
+                at(TokenType.OVERRIDE) -> { isOverride = true; advance() }
+                at(TokenType.IDENT) && cur().value == "operator" -> { isOperator = true; advance() }
+                at(TokenType.IDENT) && cur().value == "infix"    -> { isInfix    = true; advance() }
+                at(TokenType.PRIVATE)  -> { isPrivate  = true; advance() }
+                at(TokenType.INTERNAL) -> { isInternal = true; advance() }
+                at(TokenType.TAILREC)  -> { isTailrec  = true; advance() }
+                at(TokenType.IDENT) && cur().value == "inline" &&
+                    peek().type in setOf(TokenType.FUN, TokenType.VAL, TokenType.VAR, TokenType.CLASS,
+                                         TokenType.IDENT, TokenType.PRIVATE, TokenType.INTERNAL,
+                                         TokenType.TAILREC, TokenType.OVERRIDE)
+                    -> { isInlineExplicit = true; advance() }
+                at(TokenType.IDENT) && cur().value == "value" && peek().type == TokenType.CLASS
+                    -> { isValue = true; advance() }
+                at(TokenType.SEALED) -> { isSealed = true; advance() }
+                else -> break@loop
+            }
+        }
         if (isPrivate && isInternal) error("'private' and 'internal' are mutually exclusive on the same declaration")
-        val isTailrec = at(TokenType.TAILREC)
-        if (isTailrec) advance()
-        val isInlineExplicit = at(TokenType.IDENT) && cur().value == "inline" && peek().type in setOf(TokenType.FUN, TokenType.VAL, TokenType.VAR, TokenType.CLASS)
-        if (isInlineExplicit) advance()
-        val isValue = at(TokenType.IDENT) && cur().value == "value" && peek().type == TokenType.CLASS
-        if (isValue) advance()
-        val isSealed = at(TokenType.SEALED)
-        if (isSealed) advance()
         val isInline = isInlineExplicit || isInfix
         return when {
             at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInternal = isInternal, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec)

@@ -42,6 +42,11 @@ at the call site by the current codegen.
  */
 inline fun Path.child(inChild: String): Path = joinPath(this, inChild)
 
+/** Okio-style join: `path / "sub"` ≡ `path.child("sub")`. Inline for the same
+   reason `child` is — the joined String's alloca buffer must live in the
+   caller's frame. */
+inline operator fun Path.div(inChild: String): Path = joinPath(this, inChild)
+
 /** Sugar — construct a Path from a string. */
 inline fun pathOf(inS: String): Path = Path(inS)
 

@@ -28,15 +28,14 @@ fun testPathBasics() {
 	if (!w.isAbsolute) error("FAIL Path.isAbsolute (drive)")
 	if (w.extension != "txt") error("FAIL Path drive ext")
 
-	// Join — use intermediates to avoid chained-rvalue codegen quirks.
-	val j0 = Path("a")
-	val j1 = j0.child("b")
-	val j = j1.child("c.dat")
+	// Chained method calls AND operator overload — `path / "sub"` dispatches
+	// to Path.div, then chains again. Exercises both the &-of-rvalue spill
+	// and the new operator-overload dispatch in genBin.
+	val j = Path("a") / "b" / "c.dat"
 	if (j.s != "a/b/c.dat") error("FAIL Path join: ${j.s}")
 
 	// Joining an absolute child replaces the receiver (Okio semantics)
-	val rBase = Path("a/b")
-	val r = rBase.child("/etc/passwd")
+	val r = Path("a/b") / "/etc/passwd"
 	if (r.s != "/etc/passwd") error("FAIL Path abs-child replace: ${r.s}")
 }
 
