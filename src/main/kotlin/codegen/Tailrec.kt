@@ -133,8 +133,8 @@ internal fun CCodeGen.setupTailrec(f: FunDecl, hasReceiver: Boolean = false, sel
 // ════════════════════════════ Tail-call detection + trampoline ═══════════════════════════
 
 internal fun CCodeGen.asTailrecSelfCall(expr: Expr?): CallExpr? {
-	if (tailrecFnName == null || expr !is CallExpr) return null
-	val fnName = tailrecFnName!!
+	val fnName = tailrecFnName ?: return null
+	if (expr !is CallExpr) return null
 	val match = when (val c = expr.callee) {
 		is NameExpr -> c.name == fnName
 		is DotExpr  -> c.name == fnName
