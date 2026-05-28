@@ -84,19 +84,25 @@ internal fun CCodeGen.generate(): COutput {
 		for (iface in ifaces) interfaceImplementors.getOrPut(iface) { mutableListOf() }.add(className)
 		}
 
-	// Forward-declare all concrete interface types and monomorphized generic class types.
+	// Forward-declare all concrete interface types and monomorphized generic class types,
+	// plus every concrete (non-generic) class — so functions can take/return any user type
+	// regardless of declaration order in the source file.
 	data class FwdDecl(val vCName: String, val vSrc: String) // one forward declaration line
 	val vFwdDecls = mutableListOf<FwdDecl>()
+	val vSeenFwdNames = mutableSetOf<String>()
+	fun addFwd(cName: String, vSrc: String) {
+		if (vSeenFwdNames.add(cName)) vFwdDecls.add(FwdDecl(cName, vSrc))
+		}
 	for ((name, info) in interfaces) {
 		if (info.typeParams.isNotEmpty()) continue
 		val cName = typeFlatName(name)
 		val vSrc  = declSourceFile[name]?.let { " // $it" } ?: ""
-		vFwdDecls.add(FwdDecl(cName, vSrc))
-		if (name !in simpleUnionInterfaces) vFwdDecls.add(FwdDecl("${cName}_vt", vSrc))
+		addFwd(cName, vSrc)
+		if (name !in simpleUnionInterfaces) addFwd("${cName}_vt", vSrc)
 		val vComponents = mangledComponents[name]
 		if (vComponents != null) {
 			val (vGenBase, vTypeArgs) = vComponents
-			vFwdDecls.add(FwdDecl(genericOptionalCName(vGenBase, vTypeArgs), vSrc))
+			addFwd(genericOptionalCName(vGenBase, vTypeArgs), vSrc)
 			}
 		}
 	for ((baseName, instantiations) in genericInstantiations) {
@@ -105,8 +111,17 @@ internal fun CCodeGen.generate(): COutput {
 			val vMangledName = mangledGenericName(baseName, typeArgs)
 			val vCName = typeFlatName(vMangledName)
 			val vSrc   = declSourceFile[baseName]?.let { " // $it" } ?: ""
-			vFwdDecls.add(FwdDecl(vCName, vSrc))
-			vFwdDecls.add(FwdDecl(genericOptionalCName(baseName, typeArgs), vSrc))
+			addFwd(vCName, vSrc)
+			addFwd(genericOptionalCName(baseName, typeArgs), vSrc)
+			}
+		}
+	// Concrete (non-generic) class declarations from the current file — fwd-decl their
+	// flat C struct name so signatures elsewhere in the same package can use them
+	// before the body declaration appears.
+	for (d in file.decls) {
+		if (d is ClassDecl && d.typeParams.isEmpty() && !d.annotations.any { it.name == "DocumentationOnly" }) {
+			val vSrc = declSourceFile[d.name]?.let { " // $it" } ?: ""
+			addFwd(typeFlatName(d.name), vSrc)
 			}
 		}
 	if (vFwdDecls.isNotEmpty()) {

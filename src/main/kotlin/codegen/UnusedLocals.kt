@@ -16,13 +16,14 @@ internal data class LocalUsage(
 	var writeCount:  Int = 0     // counts reassignments after the initializer
 	)
 
-// Recognize `c.addr(name)` — returns the name being address-of'd, else null.
-// `c` here is the C interop namespace; `addr` takes a value lvalue and returns its &.
+// Recognize `C.addr(name)` / `c.addr(name)` — returns the name being address-of'd, else null.
+// `C` is the C-interop namespace (lowercase `c` accepted for backward compat); `addr` takes
+// a value lvalue and returns its &.
 private fun addressOfTargetName(inCall: CallExpr): String? {
 	val vCallee = inCall.callee as? DotExpr ?: return null
 	if (vCallee.name != "addr") return null
 	val vRecv = vCallee.obj as? NameExpr ?: return null
-	if (vRecv.name != "c") return null
+	if (!isCInteropName(vRecv.name)) return null
 	val vArg = inCall.args.firstOrNull()?.expr as? NameExpr ?: return null
 	return vArg.name
 	}

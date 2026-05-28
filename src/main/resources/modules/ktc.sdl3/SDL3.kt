@@ -7,41 +7,41 @@ object SDL3 {
     // ==================
     // Window
 
-    class Window(val handle: Ref<c.SDL_Window>) {
+    class Window(val handle: Ref<C.SDL_Window>) {
         constructor(title: String, width: Int, height: Int, flags: Int = 0)
                 : this(createWindow(title, width, height, flags))
     }
 
-    private inline fun createWindow(title: String, width: Int, height: Int, flags: Int = 0): Ref<c.SDL_Window> {
-        val vHandle: Ref<c.SDL_Window> = c.SDL_CreateWindow(title.ptr, width, height, flags)
-        if (!vHandle) error("SDL_CreateWindow failed: ${c.SDL_GetError()}")
+    private inline fun createWindow(title: String, width: Int, height: Int, flags: Int = 0): Ref<C.SDL_Window> {
+        val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.ptr, width, height, flags)
+        if (!vHandle) error("SDL_CreateWindow failed: ${C.SDL_GetError()}")
         return vHandle
     }
 
     // ==================
     // Renderer
 
-    data class Renderer(val handle: Ref<c.SDL_Renderer>) {
+    data class Renderer(val handle: Ref<C.SDL_Renderer>) {
         constructor(window: Window) : this(window.createRenderer())
     }
 
-    private inline fun Window.createRenderer(): Ref<c.SDL_Renderer> {
-        val vHandle: Ref<c.SDL_Renderer> = c.SDL_CreateRenderer(this.handle, c.NULL)
-        if (!vHandle) error("SDL_CreateRenderer failed: ${c.SDL_GetError()}")
+    private inline fun Window.createRenderer(): Ref<C.SDL_Renderer> {
+        val vHandle: Ref<C.SDL_Renderer> = C.SDL_CreateRenderer(this.handle, C.NULL)
+        if (!vHandle) error("SDL_CreateRenderer failed: ${C.SDL_GetError()}")
         return vHandle
     }
 
     // ===================
     // FRect
 
-    class FRect(val sdl: c.SDL_FRect) {
+    class FRect(val sdl: C.SDL_FRect) {
 
         val x get() = sdl.x
         val y get() = sdl.y
         val w get() = sdl.w
         val h get() = sdl.h
 
-        constructor(x: Float, y: Float, w: Float, h: Float) : this(c.SDL_FRect(x, y, w, h))
+        constructor(x: Float, y: Float, w: Float, h: Float) : this(C.SDL_FRect(x, y, w, h))
 
         override fun toString(): String {
             return "FRect(x=${sdl.x}, y=${sdl.y}, w=${sdl.w}, h=${sdl.h})"
@@ -71,14 +71,14 @@ object SDL3 {
     // ===================
     // Rect (integer)
 
-    class Rect(val sdl: c.SDL_Rect) {
+    class Rect(val sdl: C.SDL_Rect) {
 
         val x get() = sdl.x
         val y get() = sdl.y
         val w get() = sdl.w
         val h get() = sdl.h
 
-        constructor(x: Int, y: Int, w: Int, h: Int) : this(c.SDL_Rect(x, y, w, h))
+        constructor(x: Int, y: Int, w: Int, h: Int) : this(C.SDL_Rect(x, y, w, h))
 
         override fun toString(): String = "Rect(x=${sdl.x}, y=${sdl.y}, w=${sdl.w}, h=${sdl.h})"
 
@@ -105,12 +105,12 @@ object SDL3 {
     // ===================
     // FPoint
 
-    class FPoint(val sdl: c.SDL_FPoint) {
+    class FPoint(val sdl: C.SDL_FPoint) {
 
         val x get() = sdl.x
         val y get() = sdl.y
 
-        constructor(x: Float, y: Float) : this(c.SDL_FPoint(x, y))
+        constructor(x: Float, y: Float) : this(C.SDL_FPoint(x, y))
 
         override fun toString(): String = "FPoint(x=${sdl.x}, y=${sdl.y})"
 
@@ -130,17 +130,17 @@ object SDL3 {
     // ===================
     // Color
 
-    class Color(val sdl: c.SDL_Color) {
+    class Color(val sdl: C.SDL_Color) {
 
         val r get() = sdl.r
         val g get() = sdl.g
         val b get() = sdl.b
         val a get() = sdl.a
 
-        constructor(r: UByte, g: UByte, b: UByte, a: UByte) : this(c.SDL_Color(r, g, b, a))
+        constructor(r: UByte, g: UByte, b: UByte, a: UByte) : this(C.SDL_Color(r, g, b, a))
 
         constructor(color: UInt) : this(
-            c.SDL_Color(
+            C.SDL_Color(
                 ((color shr 24) and 0xFFu).toUByte(),
                 ((color shr 16) and 0xFFu).toUByte(),
                 ((color shr 8) and 0xFFu).toUByte(),
@@ -173,17 +173,17 @@ object SDL3 {
     // ===================
     // FColor
 
-    class FColor(val sdl: c.SDL_FColor) {
+    class FColor(val sdl: C.SDL_FColor) {
 
         val r get() = sdl.r
         val g get() = sdl.g
         val b get() = sdl.b
         val a get() = sdl.a
 
-        constructor(r: Float, g: Float, b: Float, a: Float) : this(c.SDL_FColor(r, g, b, a))
+        constructor(r: Float, g: Float, b: Float, a: Float) : this(C.SDL_FColor(r, g, b, a))
 
         constructor(color: UInt) : this(
-            c.SDL_FColor(
+            C.SDL_FColor(
                 ((color shr 24) and 0xFFu).toUByte() / 255.0f,
                 ((color shr 16) and 0xFFu).toUByte() / 255.0f,
                 ((color shr 8) and 0xFFu).toUByte() / 255.0f,
@@ -216,11 +216,11 @@ object SDL3 {
     // ===================
     // Texture
 
-    class Texture(val handle: Ref<c.SDL_Texture>) {
+    class Texture(val handle: Ref<C.SDL_Texture>) {
         fun size(): FPoint {
             var w = 0.0f
             var h = 0.0f
-            c.SDL_GetTextureSize(this.handle, c.addr(w), c.addr(h))
+            C.SDL_GetTextureSize(this.handle, C.addr(w), C.addr(h))
             return FPoint(w, h)
         }
     }
@@ -228,32 +228,32 @@ object SDL3 {
     // ==================
     // Cursor
 
-    class Cursor(val handle: Ref<c.SDL_Cursor>)
+    class Cursor(val handle: Ref<C.SDL_Cursor>)
 
     // ==================
     // Lib init
 
-    fun initialize(flags: Int = c.SDL_INIT_VIDEO) {
-        if (!c.SDL_Init(flags)) error("SDL_Init failed: ${c.SDL_GetError()}")
+    fun initialize(flags: Int = C.SDL_INIT_VIDEO) {
+        if (!C.SDL_Init(flags)) error("SDL_Init failed: ${C.SDL_GetError()}")
     }
 
-    fun quit() { c.SDL_Quit() }
+    fun quit() { C.SDL_Quit() }
 
     /** Milliseconds elapsed since SDL_Init. */
-    fun ticks(): Long = c.SDL_GetTicks()
+    fun ticks(): Long = C.SDL_GetTicks()
 
     /** Sleep for at least ms milliseconds. */
-    fun delay(ms: Int) { c.SDL_Delay(ms) }
+    fun delay(ms: Int) { C.SDL_Delay(ms) }
 
     /** High-resolution counter value (use with performanceFrequency for timing). */
-    fun performanceCounter(): Long = c.SDL_GetPerformanceCounter()
+    fun performanceCounter(): Long = C.SDL_GetPerformanceCounter()
 
     /** Ticks per second of the high-resolution counter. */
-    fun performanceFrequency(): Long = c.SDL_GetPerformanceFrequency()
+    fun performanceFrequency(): Long = C.SDL_GetPerformanceFrequency()
 
     /** Show a simple modal message box. */
     fun showMessageBox(flags: Int, title: String, message: String, window: Window) {
-        c.SDL_ShowSimpleMessageBox(flags, title.ptr, message.ptr, window.handle)
+        C.SDL_ShowSimpleMessageBox(flags, title.ptr, message.ptr, window.handle)
     }
 
     @Namespace object Event

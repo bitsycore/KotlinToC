@@ -17,10 +17,10 @@ fun printHash(hash: @Size(32) ByteArray) {
     val hex = "0123456789abcdef"
     for (i in 0 until 32) {
         val v = hash[i].toInt() and 0xff
-        c.putchar(hex[v ushr 4].toInt())
-        c.putchar(hex[v and 0xf].toInt())
+        C.putchar(hex[v ushr 4].toInt())
+        C.putchar(hex[v and 0xf].toInt())
     }
-    c.putchar('\n'.toInt())
+    C.putchar('\n'.toInt())
 }
 
 fun testEmpty() {

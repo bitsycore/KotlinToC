@@ -14,8 +14,10 @@ private fun CCodeGen.thisFieldName(name: String, obj: Expr): String =
 		} else name
 
 internal fun CCodeGen.genDot(e: DotExpr): String {
-    // C package passthrough: c.EXIT_SUCCESS → EXIT_SUCCESS, c.NULL → NULL
-    if (e.obj is NameExpr && e.obj.name == "c" && lookupVar("c") == null) {
+    // C package passthrough: C.EXIT_SUCCESS → EXIT_SUCCESS, C.NULL → NULL.
+    // The interop namespace is `C` (uppercase); lowercase `c` is accepted for
+    // backward compatibility — both resolve identically.
+    if (e.obj is NameExpr && isCInteropName(e.obj.name) && lookupVar(e.obj.name) == null) {
         return e.name
     }
     // Macro compile-time callsite info: expands to the Kotlin source file/line at the call site

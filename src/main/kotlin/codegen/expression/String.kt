@@ -14,7 +14,7 @@ internal fun CCodeGen.isCPassthroughCall(expr: Expr): Boolean {
     if (callee !is DotExpr) return false
     val obj = callee.obj
     if (obj !is NameExpr) return false
-    return obj.name == "c" && lookupVar("c") == null
+    return isCInteropName(obj.name) && lookupVar(obj.name) == null
 }
 
 internal fun CCodeGen.genPrintln(args: List<Arg>): String {

@@ -12,14 +12,14 @@ inline fun SDL3.Renderer.drawCircle(cx: Float, cy: Float, radius: Float) {
 	var y = radius
 	var d = 1.25f - radius
 	while (x <= y) {
-		c.SDL_RenderPoint(this.handle, cx + x, cy + y)
-		c.SDL_RenderPoint(this.handle, cx - x, cy + y)
-		c.SDL_RenderPoint(this.handle, cx + x, cy - y)
-		c.SDL_RenderPoint(this.handle, cx - x, cy - y)
-		c.SDL_RenderPoint(this.handle, cx + y, cy + x)
-		c.SDL_RenderPoint(this.handle, cx - y, cy + x)
-		c.SDL_RenderPoint(this.handle, cx + y, cy - x)
-		c.SDL_RenderPoint(this.handle, cx - y, cy - x)
+		C.SDL_RenderPoint(this.handle, cx + x, cy + y)
+		C.SDL_RenderPoint(this.handle, cx - x, cy + y)
+		C.SDL_RenderPoint(this.handle, cx + x, cy - y)
+		C.SDL_RenderPoint(this.handle, cx - x, cy - y)
+		C.SDL_RenderPoint(this.handle, cx + y, cy + x)
+		C.SDL_RenderPoint(this.handle, cx - y, cy + x)
+		C.SDL_RenderPoint(this.handle, cx + y, cy - x)
+		C.SDL_RenderPoint(this.handle, cx - y, cy - x)
 		if (d < 0.0f) {
 			d += 2.0f * x + 3.0f
 		} else {
@@ -34,9 +34,9 @@ inline fun SDL3.Renderer.drawCircle(cx: Float, cy: Float, radius: Float) {
 inline fun SDL3.Renderer.fillCircle(cx: Float, cy: Float, radius: Float) {
 	var y = -radius
 	while (y <= radius) {
-		val halfW: Float = c.sqrtf(radius * radius - y * y)
+		val halfW: Float = C.sqrtf(radius * radius - y * y)
 		val lineRect = SDL3.FRect(cx - halfW, cy + y, halfW * 2.0f, 1.0f)
-		c.SDL_RenderFillRect(this.handle, c.addr(lineRect.sdl))
+		C.SDL_RenderFillRect(this.handle, C.addr(lineRect.sdl))
 		y += 1.0f
 	}
 }
@@ -53,24 +53,24 @@ inline fun SDL3.Renderer.fillRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val r = if (radius > rect.w / 2.0f) rect.w / 2.0f else if (radius > rect.h / 2.0f) rect.h / 2.0f else radius
 	// Centre column (full height, between the corner arcs)
 	val midRect = SDL3.FRect(rect.x + r, rect.y, rect.w - r * 2.0f, rect.h)
-	c.SDL_RenderFillRect(this.handle, c.addr(midRect.sdl))
+	C.SDL_RenderFillRect(this.handle, C.addr(midRect.sdl))
 	// Left and right strips (inner band, excluding the corner arcs)
 	val leftRect  = SDL3.FRect(rect.x,              rect.y + r, r, rect.h - r * 2.0f)
 	val rightRect = SDL3.FRect(rect.x + rect.w - r, rect.y + r, r, rect.h - r * 2.0f)
-	c.SDL_RenderFillRect(this.handle, c.addr(leftRect.sdl))
-	c.SDL_RenderFillRect(this.handle, c.addr(rightRect.sdl))
+	C.SDL_RenderFillRect(this.handle, C.addr(leftRect.sdl))
+	C.SDL_RenderFillRect(this.handle, C.addr(rightRect.sdl))
 	// Corner arcs — scanline per row, all 4 corners in one loop
 	var qy = 0.0f
 	while (qy <= r) {
-		val hw: Float = c.sqrtf(r * r - qy * qy)
+		val hw: Float = C.sqrtf(r * r - qy * qy)
 		val tlr = SDL3.FRect(rect.x + r - hw,          rect.y + r - qy,          hw, 1.0f)
 		val trr = SDL3.FRect(rect.x + rect.w - r,       rect.y + r - qy,          hw, 1.0f)
 		val blr = SDL3.FRect(rect.x + r - hw,           rect.y + rect.h - r + qy, hw, 1.0f)
 		val brr = SDL3.FRect(rect.x + rect.w - r,       rect.y + rect.h - r + qy, hw, 1.0f)
-		c.SDL_RenderFillRect(this.handle, c.addr(tlr.sdl))
-		c.SDL_RenderFillRect(this.handle, c.addr(trr.sdl))
-		c.SDL_RenderFillRect(this.handle, c.addr(blr.sdl))
-		c.SDL_RenderFillRect(this.handle, c.addr(brr.sdl))
+		C.SDL_RenderFillRect(this.handle, C.addr(tlr.sdl))
+		C.SDL_RenderFillRect(this.handle, C.addr(trr.sdl))
+		C.SDL_RenderFillRect(this.handle, C.addr(blr.sdl))
+		C.SDL_RenderFillRect(this.handle, C.addr(brr.sdl))
 		qy += 1.0f
 	}
 }
@@ -88,9 +88,9 @@ inline fun SDL3.Renderer.fillTriangle(
     x1: Float, y1: Float, r1: Float, g1: Float, b1: Float, a1: Float,
     x2: Float, y2: Float, r2: Float, g2: Float, b2: Float, a2: Float
 ) {
-    var v0: c.SDL_Vertex = c.init()
-    var v1: c.SDL_Vertex = c.init()
-    var v2: c.SDL_Vertex = c.init()
+    var v0: C.SDL_Vertex = C.init()
+    var v1: C.SDL_Vertex = C.init()
+    var v2: C.SDL_Vertex = C.init()
     v0.position.x = x0; v0.position.y = y0
     v0.color.r = r0; v0.color.g = g0; v0.color.b = b0; v0.color.a = a0
     v1.position.x = x1; v1.position.y = y1
@@ -98,7 +98,7 @@ inline fun SDL3.Renderer.fillTriangle(
     v2.position.x = x2; v2.position.y = y2
     v2.color.r = r2; v2.color.g = g2; v2.color.b = b2; v2.color.a = a2
     val verts = arrayOf(v0, v1, v2)
-    c.SDL_RenderGeometry(this.handle, c.NULL, verts.ptr, 3, c.NULL, 0)
+    C.SDL_RenderGeometry(this.handle, C.NULL, verts.ptr, 3, C.NULL, 0)
 }
 
 /** Fill a uniformly colored triangle (convenience overload). */
@@ -139,8 +139,8 @@ inline fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val xEnd    = rect.x + rect.w - r
 	var ex = xStart
 	while (ex <= xEnd) {
-		c.SDL_RenderPoint(this.handle, ex, topY)
-		c.SDL_RenderPoint(this.handle, ex, bottomY)
+		C.SDL_RenderPoint(this.handle, ex, topY)
+		C.SDL_RenderPoint(this.handle, ex, bottomY)
 		ex += 1.0f
 	}
 	val leftX  = rect.x
@@ -149,8 +149,8 @@ inline fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val yEnd   = rect.y + rect.h - r
 	var ey = yStart
 	while (ey <= yEnd) {
-		c.SDL_RenderPoint(this.handle, leftX,  ey)
-		c.SDL_RenderPoint(this.handle, rightX, ey)
+		C.SDL_RenderPoint(this.handle, leftX,  ey)
+		C.SDL_RenderPoint(this.handle, rightX, ey)
 		ey += 1.0f
 	}
 	// Corner arc centres
@@ -163,10 +163,10 @@ inline fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	var py = r
 	var d = 1.25f - r
 	while (px <= py) {
-		c.SDL_RenderPoint(this.handle, tlx - px, tly - py); c.SDL_RenderPoint(this.handle, tlx - py, tly - px)
-		c.SDL_RenderPoint(this.handle, trx + px, try_ - py); c.SDL_RenderPoint(this.handle, trx + py, try_ - px)
-		c.SDL_RenderPoint(this.handle, blx - px, bly + py); c.SDL_RenderPoint(this.handle, blx - py, bly + px)
-		c.SDL_RenderPoint(this.handle, brx + px, bry + py); c.SDL_RenderPoint(this.handle, brx + py, bry + px)
+		C.SDL_RenderPoint(this.handle, tlx - px, tly - py); C.SDL_RenderPoint(this.handle, tlx - py, tly - px)
+		C.SDL_RenderPoint(this.handle, trx + px, try_ - py); C.SDL_RenderPoint(this.handle, trx + py, try_ - px)
+		C.SDL_RenderPoint(this.handle, blx - px, bly + py); C.SDL_RenderPoint(this.handle, blx - py, bly + px)
+		C.SDL_RenderPoint(this.handle, brx + px, bry + py); C.SDL_RenderPoint(this.handle, brx + py, bry + px)
 		if (d < 0.0f) {
 			d += 2.0f * px + 3.0f
 		} else {

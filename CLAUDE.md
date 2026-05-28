@@ -112,6 +112,13 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - Dependency sources: named (bundled JAR), relative (`./`), or URL (git clone to `~/.ktc/cache/`).
 - Bundled modules: `src/main/resources/modules/<name>/` with `module.ktc.toml` + `.kt` files + optional `module.cmake`.
 
+## Filesystem (ktc.std)
+- `Path("a/b/c.kt")` — immutable string-wrapper with `name`, `nameWithoutExtension`, `extension`, `parent`, `isAbsolute`. Forward slashes everywhere; drive-letter `C:/...` recognized as absolute.
+- `path.child("sub")` — extension method, joins a relative segment (Okio semantics: an absolute child replaces the receiver).
+- `FileSystem` is `@Namespace` — `FileSystem.exists(p)`, `.delete(p)`, `.rename(a, b)`, `.createDirectory(p)`, `.metadata(p)` (returns sentinel `FileMetadata` with `size=-1` if missing), `.source(p)` / `.sink(p, append)` (returns `FileSource` / `FileSink`; check `.isOpen`), `.writeBytes(p, ptr, n)`, `.writeUtf8(p, s)`.
+- `listDir(path) { name -> ... }` — top-level inline iterator (Win32 FindFirstFile / POSIX dirent under the hood). `.` and `..` are filtered out.
+- C side lives in `src/main/resources/ktc/core/ktc_core_fs.{h,c}` — all paths are passed as `(bytes, len)` pairs and NUL-terminated in a stack buffer (KTC_FS_PATH_MAX = 4096).
+
 ## Conventions
 - For Kotlin and KTC use standard kotlin conventions.
 - Generated C: K&R style. Doc comments with `/** */`.

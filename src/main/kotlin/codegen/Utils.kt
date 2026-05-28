@@ -9,6 +9,11 @@ Miscellaneous pure utilities used throughout C code emission.
 No CCodeGen state is required unless noted.
 */
 
+/* True if [inName] is the C-interop namespace identifier (`C`, uppercase).
+   The lowercase `c` alias was dropped — it collides too easily with locals
+   named `c` (loop variable, char, generic param). */
+internal fun isCInteropName(inName: String): Boolean = inName == "C"
+
 /* Escape a single character for use inside a C character literal (single-quoted). */
 internal fun escapeC(inChar: Char): String = when (inChar) {
     '\''     -> "\\'"

@@ -16,7 +16,7 @@ private fun CCodeGen.resolvePropTypeKtc(props: List<Pair<String, TypeRef>>, name
 internal fun CCodeGen.inferDotType(e: DotExpr): String? = inferDotTypeKtc(e)?.toInternalStr
 
 internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
-	if (e.obj is NameExpr && e.obj.name == "c" && lookupVar("c") == null) return null
+	if (e.obj is NameExpr && isCInteropName(e.obj.name) && lookupVar(e.obj.name) == null) return null
 	if (e.obj is NameExpr && e.obj.name == "Macro") {
 		return when (e.name) {
 			"FILE", "C_FILE" -> KtcType.Str

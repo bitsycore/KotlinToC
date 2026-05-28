@@ -4,7 +4,9 @@ package ktc
 /**
 C interop for KotlinToC.
 
-All C declarations are accessed through the synthetic `c` object. No import is needed.
+All C declarations are accessed through the synthetic `C` object (uppercase, to
+avoid collisions with locals commonly named `c` — loop variables, chars, generic
+type parameters, etc.). No import is needed.
 Use `@file:cInclude("header.h")` to add an `#include <header.h>` to every generated file
 in the same package.
 
@@ -39,22 +41,22 @@ Nullable `Ref<T?>` maps to `T*` and compares against NULL instead of using Optio
     fun next(): Ref<Node?>                           →  sdl3_Node* next(void)
     val fData: Ref<Array<Float>>                     →  float* fData;
 
-`c.addr(x)` produces `&x` (address-of).
-`c.NULL` is the null pointer constant.
+`C.addr(x)` produces `&x` (address-of).
+`C.NULL` is the null pointer constant.
 
 ==========
 C calls
 ==========
 
-Call any C function via `c.functionName(args)`:
+Call any C function via `C.functionName(args)`:
 
-    c.SDL_Init(c.SDL_INIT_VIDEO)
-    val vHandle: Ref<c.SDL_Window> = c.SDL_CreateWindow(title.ptr, w, h, flags)
+    C.SDL_Init(C.SDL_INIT_VIDEO)
+    val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.ptr, w, h, flags)
 
-Struct types are accessed as `c.SDL_FRect`, `c.SDL_Color`, etc.
-Struct instances: `c.SDL_FRect(x, y, w, h)` — a compound literal.
+Struct types are accessed as `C.SDL_FRect`, `C.SDL_Color`, etc.
+Struct instances: `C.SDL_FRect(x, y, w, h)` — a compound literal.
 Field access on a C struct value: `.field`.
-Pass a struct by pointer: `c.addr(myRect)`.
+Pass a struct by pointer: `C.addr(myRect)`.
 
 ==============
 Initialization
@@ -63,25 +65,25 @@ Initialization
 These forms control how variables and struct values are initialized:
 
     Syntax                    C output               Context
-    c.zeroed()                {0}                    var decl only (type inferred from LHS)
-    c.init()                  (bare declaration)     var decl only, no initializer
-    c.SDL_FRect()             (SDL_FRect){0}         works everywhere
-    c.SDL_FRect(x, y, w, h)  (SDL_FRect){x, y, w, h}  works everywhere
-    c.init(x, y, w, h)       {x, y, w, h}           var decl only (type inferred from LHS)
+    C.zeroed()                {0}                    var decl only (type inferred from LHS)
+    C.init()                  (bare declaration)     var decl only, no initializer
+    C.SDL_FRect()             (SDL_FRect){0}         works everywhere
+    C.SDL_FRect(x, y, w, h)  (SDL_FRect){x, y, w, h}  works everywhere
+    C.init(x, y, w, h)       {x, y, w, h}           var decl only (type inferred from LHS)
 
-`c.zeroed()` zero-initializes using the LHS type — equivalent to `= {0}` in C.
-`c.init()` emits a bare declaration with NO initializer (uninitialized memory).
-`c.init(x, y, z)` emits a brace-initializer list `{x, y, z}` using the LHS type.
-`c.SDL_FRect(args)` is a typed compound literal and works in any expression context.
-`c.SDL_FRect()` with no args is a zero compound literal `(SDL_FRect){0}`.
+`C.zeroed()` zero-initializes using the LHS type — equivalent to `= {0}` in C.
+`C.init()` emits a bare declaration with NO initializer (uninitialized memory).
+`C.init(x, y, z)` emits a brace-initializer list `{x, y, z}` using the LHS type.
+`C.SDL_FRect(args)` is a typed compound literal and works in any expression context.
+`C.SDL_FRect()` with no args is a zero compound literal `(SDL_FRect){0}`.
 
 Examples:
 
-    var rect: c.SDL_FRect = c.zeroed()     →  SDL_FRect rect = {0};
-    var buf: c.SDL_FRect = c.init()        →  SDL_FRect buf;          // uninitialized
-    var p: c.SDL_FPoint = c.init(1f, 2f)   →  SDL_FPoint p = {1, 2};
-    val r = c.SDL_FRect(0f, 0f, 10f, 10f) →  SDL_FRect r = (SDL_FRect){0, 0, 10, 10};
-    val z = c.SDL_FRect()                  →  SDL_FRect z = (SDL_FRect){0};
+    var rect: C.SDL_FRect = C.zeroed()     →  SDL_FRect rect = {0};
+    var buf: C.SDL_FRect = C.init()        →  SDL_FRect buf;          // uninitialized
+    var p: C.SDL_FPoint = C.init(1f, 2f)   →  SDL_FPoint p = {1, 2};
+    val r = C.SDL_FRect(0f, 0f, 10f, 10f) →  SDL_FRect r = (SDL_FRect){0, 0, 10, 10};
+    val z = C.SDL_FRect()                  →  SDL_FRect z = (SDL_FRect){0};
 
 ==========
 Strings
@@ -90,7 +92,7 @@ Strings
 `String.ptr` converts a KTC string to `const char*` (a raw C string pointer).
 Use when passing Kotlin strings to C functions expecting `const char*`.
 
-    c.SDL_SetWindowTitle(window.handle, title.ptr)
+    C.SDL_SetWindowTitle(window.handle, title.ptr)
 
 ==========
 File-level annotations
@@ -99,8 +101,8 @@ File-level annotations
     @file:cInclude("SDL3/SDL.h")        →  #include <SDL3/SDL.h> in every .c of this package
     @file:cIncludeRelative("util.h")    →  #include "util.h"
 */
-object c
+object C
 
-inline fun <T> c.zeroed(vararg params: Any): T
-inline fun <T> c.init(vararg params: Any): T
-inline fun <T> c.addr(value: T): Ref<T>
+inline fun <T> C.zeroed(vararg params: Any): T
+inline fun <T> C.init(vararg params: Any): T
+inline fun <T> C.addr(value: T): Ref<T>

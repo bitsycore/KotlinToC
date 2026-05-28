@@ -113,20 +113,71 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
     applyGuardSmartCast(s)
 }
 
-/** After `if (x == null) ... return/break/continue` (no else), narrow x from T? to T. */
+/** After `if (x == null) ... <unconditional exit>` (no else), narrow x from T? to T.
+   "Unconditional exit" = `return` / `break` / `continue`, or a call to a Nothing-returning
+   function (`error()`, `TODO()`, `throw`-equivalent) — any of which guarantee control
+   doesn't continue past the if.
+   Only applies nullability narrowings here; `is` / `!is` narrowings interact poorly with
+   the `as?` codegen on the narrowed variable, so they stay scoped to the if's THEN body. */
 internal fun CCodeGen.applyGuardSmartCast(s: Stmt) {
     if (s !is ExprStmt) return
     val ifExpr = s.expr as? IfExpr ?: return
     if (ifExpr.els != null) return  // must have no else branch
-    // Body must end with an early-exit statement
     val lastStmt = ifExpr.then.stmts.lastOrNull() ?: return
-    if (lastStmt !is ReturnStmt && lastStmt !is BreakStmt && lastStmt !is ContinueStmt) return
-    val casts = extractSmartCasts(ifExpr.cond, forElse = true)
+    val vHardExit = lastStmt is ReturnStmt || lastStmt is BreakStmt || lastStmt is ContinueStmt
+    val vNeverCall = lastStmt is ExprStmt && isNeverReturningCall(lastStmt.expr)
+    if (!vHardExit && !vNeverCall) return
+
     val outerInd = currentInd.removeSuffix("    ")
-    for ((name, nonNullType) in casts) {
-        impl.appendLine("${outerInd}// smart-cast: '$name' narrowed to '$nonNullType'")
-        narrowVarType(name, nonNullType)
+    // For `return`/`break`/`continue`: apply BOTH null and type narrowings (legacy
+    // behavior — code relies on `if (x !is T) return; x.method()`).
+    // For `error()`/`TODO()`: only null narrowings are safe. Type narrowing through a
+    // Nothing-call breaks the `as?` codegen (it doesn't see through the cast on a
+    // value-type narrowed receiver), so we leave the variable unchanged for `is`.
+    if (vHardExit) {
+        for ((name, nonNullType) in extractSmartCasts(ifExpr.cond, forElse = true)) {
+            impl.appendLine("${outerInd}// smart-cast: '$name' narrowed to '$nonNullType'")
+            narrowVarType(name, nonNullType)
+        }
+    } else {
+        forEachNullableNarrowing(ifExpr.cond) { name, nonNullType ->
+            impl.appendLine("${outerInd}// smart-cast: '$name' narrowed to '$nonNullType'")
+            narrowVarType(name, nonNullType)
+        }
     }
+}
+
+/** Walk a guard condition and call [block] for every nullability narrowing that would
+   hold AFTER the guard (i.e. the else-branch direction of the if). */
+private fun CCodeGen.forEachNullableNarrowing(inCond: Expr, inBlock: (name: String, nonNullType: String) -> Unit) {
+    when (inCond) {
+        is BinExpr -> {
+            if (inCond.op == "==") {
+                // `x == null` in the THEN exits → in the continuation, x is non-null.
+                val vName = when {
+                    inCond.right is NullLit && inCond.left  is NameExpr -> inCond.left.name
+                    inCond.left  is NullLit && inCond.right is NameExpr -> inCond.right.name
+                    else -> null
+                }
+                if (vName != null && !isMutable(vName)) {
+                    val vKtc = lookupVarKtc(vName)
+                    if (vKtc is KtcType.Nullable) inBlock(vName, vKtc.inner.toInternalStr)
+                }
+            }
+            // `||`: both branches must guarantee non-null on their own; treat the
+            // common case where one operand is the null check by simple recursion.
+            // No general handling beyond the direct `==` shape — anything fancier
+            // stays out of the smart-cast pass for now.
+        }
+        else -> {}
+    }
+}
+
+/** True if [inExpr] is a call to a function known to never return (`error`, `TODO`). */
+private fun isNeverReturningCall(inExpr: Expr): Boolean {
+    if (inExpr !is CallExpr) return false
+    val vCallee = inExpr.callee as? NameExpr ?: return false
+    return vCallee.name == "error" || vCallee.name == "TODO"
 }
 
 internal fun CCodeGen.emitBlock(b: Block, ind: String, insideMethod: Boolean = false) {

@@ -84,8 +84,8 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             if (vResult != null) return vResult
         }
 
-        // c.printf(...) → passthrough to raw C
-        if (e.callee.obj is NameExpr && e.callee.obj.name == "c" && lookupVar(e.callee.obj.name) == null) {
+        // C.printf(...) → passthrough to raw C (legacy `c.` also accepted).
+        if (e.callee.obj is NameExpr && isCInteropName(e.callee.obj.name) && lookupVar(e.callee.obj.name) == null) {
             val vCFnName = e.callee.name
             val vFnName = when {
                 memTrack && vCFnName == "malloc" -> "ktc_core_malloc"

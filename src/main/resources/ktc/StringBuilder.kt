@@ -52,6 +52,6 @@ class StringBuffer(
 	fun appendDouble(inV: Double) = error("Transpiler intrinsic")
 	fun appendBool(inV: Boolean) = error("Transpiler intrinsic")
 	fun appendChar(inV: Char) = error("Transpiler intrinsic")
-	fun appendChar(inV: Ref<c.char>) = error("Transpiler intrinsic")
+	fun appendChar(inV: Ref<C.char>) = error("Transpiler intrinsic")
 	override fun toString(): String = error("Transpiler intrinsic")
 }

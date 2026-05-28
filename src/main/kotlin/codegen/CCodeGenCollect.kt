@@ -234,7 +234,10 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// Direct recursive self-reference without Ref/array indirection produces
 			// an infinite-size struct in C. The user must indirect through Ref<T>,
 			// Array<T> (VarArr), or RawArray<T> to break the size cycle.
+			// Computed properties (those with a custom getter) have no backing field,
+			// so they don't contribute to the struct size and are exempt.
 			for (vProp in vAllProps) {
+				if (vProp.getter != null) continue
 				val vT = vProp.typeRef
 				if (vT.name == d.name && !vT.isRefType() && vT.name != "Array" && vT.name != "RawArray") {
 					codegenError("E010", "Class '${d.name}' has property '${vProp.name}' of its own type — infinite struct size. " +

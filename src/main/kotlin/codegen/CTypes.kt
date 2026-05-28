@@ -155,8 +155,9 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 
 /* Internal string-based type resolution after Ref / @Ptr stripping (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
-	// c.SDL_Window → "c:SDL_Window" (C interop external type passthrough)
-	if (t.name.startsWith("c.")) return "c:${t.name.removePrefix("c.")}"
+	// C.SDL_Window → "c:SDL_Window" (C interop external type passthrough).
+	// The "c:" prefix is purely an internal marker — the source spelling is `C.`.
+	if (t.name.startsWith("C.")) return "c:${t.name.removePrefix("C.")}"
 	// Function type: (P1, P2) -> R → "Fun(P1,P2)->R"
 	if (t.funcParams != null) {
 		val vReceiver = t.funcReceiver?.let { resolveTypeNameStr(it) + "|" } ?: ""
@@ -231,7 +232,7 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 alias, declared class/interface/enum/object, generic type parameter, or
 C-interop passthrough. Used to gate the "unknown type" refusal. */
 private fun CCodeGen.isKnownTypeName(inName: String): Boolean {
-	if (inName.startsWith("c.") || inName.startsWith("c:")) return true
+	if (inName.startsWith("C.") || inName.startsWith("c:")) return true
 	if (inName.startsWith("ktc_")) return true
 	// Already-resolved C forms: pointers (`Foo*`), nullables (`Foo?`), iface trampolines (`ktc_IfacePtr:T`)
 	if (inName.contains('*') || inName.contains('?') || inName.contains(':')) return true

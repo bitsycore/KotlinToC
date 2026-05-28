@@ -10,15 +10,15 @@ package ktc.sdl3
 inline fun SDL3.FPoint.distanceTo(other: SDL3.FPoint): Float {
     val dx = other.x - this.x
     val dy = other.y - this.y
-    return c.sqrtf(dx * dx + dy * dy)
+    return C.sqrtf(dx * dx + dy * dy)
 }
 
 /** Length of this vector from the origin. */
-inline fun SDL3.FPoint.length(): Float = c.sqrtf(this.x * this.x + this.y * this.y)
+inline fun SDL3.FPoint.length(): Float = C.sqrtf(this.x * this.x + this.y * this.y)
 
 /** Unit vector in the same direction; returns zero-vector if length is zero. */
 inline fun SDL3.FPoint.normalized(): SDL3.FPoint {
-    val len: Float = c.sqrtf(this.x * this.x + this.y * this.y)
+    val len: Float = C.sqrtf(this.x * this.x + this.y * this.y)
     if (len == 0.0f) return SDL3.FPoint(0.0f, 0.0f)
     return SDL3.FPoint(this.x / len, this.y / len)
 }

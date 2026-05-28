@@ -96,9 +96,9 @@ class SpriteState(
 		// RGB colour cycle (hue-like tint using sin waves)
 		colorTime += dt
 		val ct = colorTime
-		colorR = ((c.sinf(ct * 1.1f) * 0.5f + 0.5f) * 255.0f).toInt()
-		colorG = ((c.sinf(ct * 1.1f + 2.094f) * 0.5f + 0.5f) * 255.0f).toInt()
-		colorB = ((c.sinf(ct * 1.1f + 4.189f) * 0.5f + 0.5f) * 255.0f).toInt()
+		colorR = ((C.sinf(ct * 1.1f) * 0.5f + 0.5f) * 255.0f).toInt()
+		colorG = ((C.sinf(ct * 1.1f + 2.094f) * 0.5f + 0.5f) * 255.0f).toInt()
+		colorB = ((C.sinf(ct * 1.1f + 4.189f) * 0.5f + 0.5f) * 255.0f).toInt()
 	}
 
 	/** Rotate by spinSpeed degrees per second. */

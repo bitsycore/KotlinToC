@@ -56,8 +56,8 @@ Usage:
     }
 
     // These become plain C constants — no object instance in C:
-    inline val SDL3.Event.Quit    get() = c.SDL_EVENT_QUIT
-    inline val SDL3.Scancode.Left get() = c.SDL_SCANCODE_LEFT
+    inline val SDL3.Event.Quit    get() = C.SDL_EVENT_QUIT
+    inline val SDL3.Scancode.Left get() = C.SDL_SCANCODE_LEFT
 */
 annotation class Namespace
 

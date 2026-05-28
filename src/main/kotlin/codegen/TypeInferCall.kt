@@ -248,7 +248,7 @@ internal fun CCodeGen.resolveMethodReturnTypeKtc(inClassName: String, inReturnTy
 }
 
 internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): String? {
-    if (dot.obj is NameExpr && dot.obj.name == "c" && lookupVar(dot.obj.name) == null) return null
+    if (dot.obj is NameExpr && isCInteropName(dot.obj.name) && lookupVar(dot.obj.name) == null) return null
     val vDotObjName = (dot.obj as? NameExpr)?.name
     val vCompanionName = vDotObjName?.let { classCompanions[it] }
     if (vCompanionName != null) {

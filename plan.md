@@ -155,11 +155,60 @@ non-nullable type, `!!` is a no-op — flag it. Sibling of `W007` / `W008`.
   local/parameter declared in the current function?" — a tiny visitor on
   top of the existing `scopes` chain.
 
+## Codegen — known limitations (hit by ktc.std.FileSystem development)
+
+These don't block daily work but did force workarounds in the FileSystem module.
+Fix-when-touched, in rough priority order:
+
+### Member `inline fun` not actually inlined (M)
+`class Foo { inline fun bar(x: X): Y = ... }` emits a regular function and
+ignores the inline modifier. Extension `inline fun Foo.bar(...)` works
+correctly — the path-join code currently lives as an extension to dodge this.
+Hook: the function-emit path needs to honor `f.isInline` for member methods,
+and the call-site dispatch needs to expand the body the same way it does for
+extension methods.
+
+### `!!` on a value-type Optional doesn't unwrap (S)
+`val x: Foo = nullableFoo()!!` emits `Foo x = nullableFoo();` without
+`KTC_UNWRAP(...)`. Codegen path for `NotNullExpr` on a value-type Optional
+needs to extract `.value`. Currently sources / sinks return non-nullable
+sentinels (`FileSource.isOpen` check) to dodge this.
+
+### `?.` on a function-result that's nullable (S)
+`fn().nullableProp?.foo` evaluates `fn()` twice and concatenates the result
+into broken C. Codegen needs to spill the LHS into a temp before the safe-
+access guard. Workaround: bind to a local first.
+
+### Chained struct-method calls take `&` of an rvalue (S)
+`Path("a").child("b").child("c")` emits `child(&child(&Path(...), ...), ...)`
+where the middle `&` is applied to a returned rvalue (illegal in C). Codegen
+needs to materialize a temp variable for the intermediate result.
+
+### Smart-cast across `&&` in if condition (M)
+`if (x != null && x.field == ...)` doesn't narrow `x` in the RHS of `&&`.
+Requires lazy emission of the right-hand operand (emit `x != null` first,
+then narrow, then emit `x.field`). Existing `extractSmartCasts` already
+handles `&&` for the THEN body but not for the condition itself.
+
+### Operator overload `div` doesn't dispatch with multiple overloads (S)
+`Path / String` and `Path / Path` both declared as `operator fun div` — the
+codegen emitted literal `dir / "name"` in the C output instead of calling
+`Path_divWith*`. Current workaround: a single `.child(String)` method.
+
+### `inline val foo: T get() = expr` uses literal `$self` (S)
+The getter body is expanded with `$self.X` references that aren't
+substituted at the user call site, causing "undeclared identifier `$self`"
+in the C output. Workaround: top-level helper functions called from the
+getter.
+
+## C-interop
+
+### `.cast<T>()` for pointer reinterpretation (S)
+Needed to bypass `const char*` ↔ `void*` conversions, `FILE*` ↔ `void*`,
+and similar C-side reinterpretations that the current type system makes
+into warnings or errors.
+
 ## Kotlin features
-
-(none queued)
-
-## Codegen
 
 (none queued)
 

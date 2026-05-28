@@ -2,12 +2,7 @@ package com.bitsycore.ktc
 
 import com.bitsycore.ktc.ast.FunDecl
 import com.bitsycore.ktc.ast.KtFile
-import com.bitsycore.ktc.codegen.CCodeGen
-import com.bitsycore.ktc.codegen.COutput
-import com.bitsycore.ktc.codegen.ErrorCatalog
-import com.bitsycore.ktc.codegen.collectAndScan
-import com.bitsycore.ktc.codegen.dumpSemantics
-import com.bitsycore.ktc.codegen.generate
+import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.parser.Lexer
 import com.bitsycore.ktc.parser.Parser
 import java.io.File
@@ -836,7 +831,8 @@ fun main(args: Array<String>) {
     }
 
     // ── Copy intrinsic files to ktc/core/ ───────────────────────
-    for (vName in listOf("ktc_macro.h", "ktc_thread.h", "ktc_thread.c", "ktc_core.h", "ktc_core.c")) {
+    for (vName in listOf("ktc_macro.h", "ktc_thread.h", "ktc_thread.c", "ktc_core.h", "ktc_core.c",
+                         "ktc_core_fs.h", "ktc_core_fs.c")) {
         val vDst = File(ktcCoreDir, vName)
         val vSrc = aClass.getResourceAsStream("/ktc/core/$vName")
         if (vSrc != null) {
@@ -849,7 +845,7 @@ fun main(args: Array<String>) {
     // Build full source lists (paths relative to outDir) for compile hints and CMake.
     // ktcOutputNames are paths relative to ktc/ (e.g. "std/Heap").
     // userOutputNames are paths relative to outDir (e.g. "com/example/Point").
-    val vCoreFullSrcs = listOf("ktc/core/ktc_core.c", "ktc/core/ktc_thread.c")
+    val vCoreFullSrcs = listOf("ktc/core/ktc_core.c", "ktc/core/ktc_thread.c", "ktc/core/ktc_core_fs.c")
     val vKtcFullSrcs  = ktcOutputNames.sorted().map { "ktc/$it.c" }
     val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
     fun shellQuote(path: String) = if ('$' in path || ' ' in path) "'" + path + "'" else path

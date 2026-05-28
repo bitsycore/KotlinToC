@@ -441,3 +441,9 @@ ktc_Double ktc_core_str_toDouble(ktc_String s);
 ktc_Bool ktc_core_str_toIntOrNull(ktc_String s, ktc_Int* out);
 ktc_Bool ktc_core_str_toLongOrNull(ktc_String s, ktc_Long* out);
 ktc_Bool ktc_core_str_toDoubleOrNull(ktc_String s, ktc_Double* out);
+
+
+// Filesystem helpers — declared in ktc_core_fs.h for organization,
+// re-included here so every translation unit that pulls in ktc_core.h
+// also sees ktc.std.FileSystem prototypes.
+#include "ktc_core_fs.h"

@@ -42,7 +42,7 @@ class Arena(
     override fun allocMem(size: Int, file: String, line: Int): AnyPtr {
         val aligned = (size + 7) / 8 * 8   // round up to 8-byte alignment
         if (bytesUsed + aligned > cap) error("Arena overflow: requested $size bytes but only ${cap - bytesUsed} remaining")
-        val ptr: AnyPtr = c.ktc_ptr_at(buf, bytesUsed)
+        val ptr: AnyPtr = C.ktc_ptr_at(buf, bytesUsed)
         bytesUsed += aligned
         return ptr
     }
@@ -56,7 +56,7 @@ class Arena(
      */
     override fun reallocMem(ptr: AnyPtr, newSize: Int, file: String, line: Int): AnyPtr {
         val newPtr = allocMem(newSize, file, line)
-        c.memcpy(newPtr, ptr, newSize)
+        C.memcpy(newPtr, ptr, newSize)
         return newPtr
     }
 
@@ -73,7 +73,7 @@ class Arena(
     fun stringBuffer(capacity: Int): StringBuffer {
         val aligned = (capacity + 7) / 8 * 8   // round up to 8-byte alignment
         if (bytesUsed + aligned > cap) error("Arena overflow for StringBuffer: requested $capacity bytes but only ${cap - bytesUsed} remaining")
-        val ptr: Ref<Char?> = c.ktc_ptr_at_char(buf, bytesUsed)
+        val ptr: Ref<Char?> = C.ktc_ptr_at_char(buf, bytesUsed)
         bytesUsed += aligned
         return StringBuffer(ptr, 0, capacity)
     }
