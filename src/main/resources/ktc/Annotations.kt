@@ -60,3 +60,18 @@ Usage:
     inline val SDL3.Scancode.Left get() = c.SDL_SCANCODE_LEFT
 */
 annotation class Namespace
+
+/**
+Mark an `Allocator` object/class as requiring explicit `freeMem` on each
+allocation it hands out. Arena-style allocators that bulk-free on reset
+should NOT carry this annotation.
+
+The transpiler uses this marker to fire W018 (Discarded allocator result)
+when a call like `Foo(...).allocWith(MyAlloc)` is made and the returned
+pointer is dropped — that's a guaranteed leak when `MyAlloc` is @RequireFree.
+
+Usage:
+    @RequireFree
+    object Heap : Allocator { ... }
+*/
+annotation class RequireFree

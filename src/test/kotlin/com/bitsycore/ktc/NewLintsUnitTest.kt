@@ -40,7 +40,7 @@ class NewLintsUnitTest : TranspilerTestBase() {
 		val r = transpile("""
 			package test.Main
 			fun main(args: Array<String>) {
-				var x = 5
+				val x = 5
 				while (x > 0) {
 				}
 				println(x)
@@ -324,4 +324,184 @@ class NewLintsUnitTest : TranspilerTestBase() {
 			}
 		""", "Unreachable 'when' branch")
 	}
+
+	// ── E120: returning a Ref to a frame-local ────────────────────────
+
+	@Test fun returnRefToLocalRejected() {
+		transpileExpectError("""
+			package test.Main
+			fun makeRef(): Ref<Int> {
+				val x = 5
+				return x.asRef()
+			}
+			fun main(args: Array<String>) { println(makeRef().refValue) }
+		""", "E120")
+	}
+
+	@Test fun returnRefToParameterRejected() {
+		transpileExpectError("""
+			package test.Main
+			fun leak(p: Int): Ref<Int> = p.asRef()
+			fun main(args: Array<String>) { println(leak(7).refValue) }
+		""", "E120")
+	}
+
+	@Test fun returningHeapAllocOk() {
+		// Heap-allocated value escapes legitimately — no E120.
+		val r = transpileWithStdlib("""
+			package test.Main
+			class Box(val v: Int)
+			fun mk(): Ref<Box> = Box(3).allocWith(Heap)
+			fun main(args: Array<String>) { val p = mk(); println(p.refValue.v); Heap.freeMem(p) }
+		""")
+		// E120 not thrown; warning count may include unrelated stdlib hints, so no strict check.
+		assert(!r.toString().contains("E120")) { "E120 should not fire on a legitimate heap return" }
+	}
+
+	// ── W018: discarded allocator result ──────────────────────────────
+
+	@Test fun discardedHeapAllocWarns() {
+		val r = transpileWithStdlib("""
+			package test.Main
+			class Box(val v: Int)
+			fun main(args: Array<String>) {
+				Box(1).allocWith(Heap)
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected W018 warning, got ${r.warningCount}" }
+	}
+
+	@Test fun assignedHeapAllocNoWarn() {
+		val r = transpileWithStdlib("""
+			package test.Main
+			class Box(val v: Int)
+			fun main(args: Array<String>) {
+				val p = Box(1).allocWith(Heap)
+				Heap.freeMem(p)
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
+	// ── W033: side-effect-free expression statement ───────────────────
+
+	@Test fun arithmeticDiscardedWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val a = 2
+				val b = 3
+				a + b
+				println(a + b)
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected W033 warning, got ${r.warningCount}" }
+	}
+
+	@Test fun comparisonDiscardedWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 5
+				x == 5
+				println(x)
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected W033 warning, got ${r.warningCount}" }
+	}
+
+	@Test fun postIncrementNotWarned() {
+		// `i++` is a side effect — must NOT trigger W033.
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				var i = 0
+				i++
+				println(i)
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
+	@Test fun functionCallNotWarned() {
+		val r = transpile("""
+			package test.Main
+			fun side() { println("hi") }
+			fun main(args: Array<String>) { side() }
+		""")
+		r.hasNoWarnings()
+	}
+
+	// ── W025: unused local ────────────────────────────────────────────
+
+	@Test fun unusedValWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 5
+				println("hi")
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected W025, got ${r.warningCount}" }
+	}
+
+	@Test fun underscorePrefixedLocalNotWarned() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val _ignored = 5
+				println("hi")
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
+	@Test fun usedLocalNotWarned() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 5
+				println(x)
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
+	// ── W028: var never reassigned (could be val) ─────────────────────
+
+	@Test fun varNeverReassignedWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				var x = 5
+				println(x)
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected W028, got ${r.warningCount}" }
+	}
+
+	@Test fun varReassignedNoWarn() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				var x = 5
+				x = 6
+				println(x)
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
+	@Test fun varIncrementedNoWarn() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				var x = 0
+				x++
+				println(x)
+			}
+		""")
+		r.hasNoWarnings()
+	}
+
 }

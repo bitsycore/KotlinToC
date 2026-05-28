@@ -80,6 +80,7 @@ internal fun CCodeGen.collectDecls() {
 	objectsWithDispose.clear()
 	tlsObjects.clear()
 	tlsProps.clear()
+	requireFreeAllocators.clear()
 	// Collect from all files for cross-reference resolution
 	for (f in allFiles) {
 		if (f.documentationOnly) continue
@@ -180,6 +181,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 	when (d) {
 		is ClassDecl -> {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
+			if (d.annotations.any { it.name == "RequireFree" }) requireFreeAllocators.add(d.name)
 			val vDupCtor = d.ctorParams.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }?.key
 			if (vDupCtor != null) codegenError("E014", "Duplicate constructor parameter '$vDupCtor' in class '${d.name}'")
 			for (vP in d.ctorParams) validateSizeAnnotation(vP.type)
@@ -410,8 +412,9 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			}
 
 		is ObjectDecl -> {
-			if (d.annotations.any { it.name == "Tls" })       tlsObjects.add(d.name)
-			if (d.annotations.any { it.name == "Namespace" }) namespaceObjects.add(d.name)
+			if (d.annotations.any { it.name == "Tls" })         tlsObjects.add(d.name)
+			if (d.annotations.any { it.name == "Namespace" })   namespaceObjects.add(d.name)
+			if (d.annotations.any { it.name == "RequireFree" }) requireFreeAllocators.add(d.name)
 			for (p in d.members.filterIsInstance<PropDecl>()) {
 				val propType = p.type ?: inferInitType(p.init)
 				if (propType.isRawArray()) {

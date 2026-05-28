@@ -113,6 +113,8 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 		impl.appendLine("    ktc_core_mem_report();")
 		}
 	else if (lastStmt !is ReturnStmt) emitImplicitNullReturn("    ")
+	// W025 / W028: scan body for unused locals and never-reassigned vars.
+	f.body?.let { scanUnusedLocals(it) }
 	closeFunBody(prevState)
 	}
 
@@ -128,6 +130,8 @@ internal fun CCodeGen.emitFunBodyAndClose(
 		emitDeferredBlocks("    ", insideMethod = insideMethod)
 		if (withImplicitReturn) emitImplicitNullReturn("    ")
 		}
+	// W025 / W028: scan body for unused locals and never-reassigned vars.
+	f.body?.let { scanUnusedLocals(it) }
 	closeFunBody(prevState)
 	}
 

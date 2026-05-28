@@ -614,15 +614,18 @@ def has_user_cmake(inOut: Path) -> bool:
 	return (inOut / "ktc_user.cmake").is_file() or (inOut / "ktc_modules.cmake").is_file()
 
 def compile_direct_gcc(
-	inOpts:    RunOptions,
-	inCSrcs:   list[Path],
-	inOut:     Path,
-	inExePath: Path,
+	inOpts:        RunOptions,
+	inCSrcs:       list[Path],
+	inOut:         Path,
+	inExePath:     Path,
+	inJobsOverride: int | None = None,
 ) -> RunResult:
 	# Compiles .c sources via direct gcc/clang invocation. When jobs > 1 and
 	# there are multiple sources, compiles each .c → .o in parallel then links.
+	# Pass inJobsOverride from the suite worker to cap per-test parallelism
+	# (the outer suite ThreadPoolExecutor already saturates the CPU).
 	vCcCmd  = [inOpts.ccache, inOpts.cc] if inOpts.ccache else [inOpts.cc]
-	vJobs   = inOpts.jobs or max(1, os.cpu_count() or 4)
+	vJobs   = inJobsOverride if inJobsOverride is not None else (inOpts.jobs or max(1, os.cpu_count() or 4))
 	vCommon = ["-std=c11", "-iquote", str(inOut)]
 	if inOpts.ccArgs:
 		vCommon.extend(inOpts.ccArgs.split())
@@ -1152,8 +1155,11 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 			if re.search(r"Could not find|not found|NOTFOUND", vCfgAll, re.IGNORECASE):
 				return skip("required library not found")
 			return fail("cmake configure failed", vConfig.stdout, vConfig.stderr)
-		vJobs  = max(1, (os.cpu_count() or 4))
-		vBuild = run_capture([inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg, "--parallel", str(vJobs)])
+		# Single-threaded cmake build inside the suite worker — the outer pool
+		# already runs cpu_count tests in parallel, so per-test --parallel would
+		# multiply into hundreds of compiler processes (Windows process-limit
+		# / "insufficient memory resources" failures).
+		vBuild = run_capture([inOpts.cmake, "--build", str(vBld), "--config", inOpts.cfg, "--parallel", "1"])
 		if vBuild.exit != 0:
 			return fail("cmake build failed", vBuild.stdout, vBuild.stderr)
 		vFound = find_built_exe(vOut, vExe)
@@ -1166,7 +1172,9 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 		vExePath = vOut / vExeName
 		if not kIsWindows and (vOut / vExe).is_dir():
 			vExePath = vOut / f"{vExe}.out"
-		vCo = compile_direct_gcc(inOpts, vCSrcs, vOut, vExePath)
+		# Force jobs=1: the suite's outer ThreadPoolExecutor is already
+		# spawning cpu_count tests at once.
+		vCo = compile_direct_gcc(inOpts, vCSrcs, vOut, vExePath, inJobsOverride=1)
 		if vCo.exit != 0:
 			return fail("compile failed", vCo.stdout, vCo.stderr)
 		vCompMs = vCo.ms

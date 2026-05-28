@@ -175,11 +175,13 @@ open class TranspilerTestBase {
         val vAst = Parser(vTokens).parseFile()
             .let { it.copy(imports = (it.imports + "ktc.std.*").distinct()) }
         val vAllAsts = vStdlibAsts + vAst
-        val vOutput = CCodeGen(vAst, vAllAsts, vSource.lines()).generate()
+        val vGen = CCodeGen(vAst, vAllAsts, vSource.lines())
+        val vOutput = vGen.generate()
         val result = TranspileResult(
             header = vOutput.header,
             source = vOutput.sources.values.joinToString("\n"),
-            pkg = vAst.pkg ?: "test"
+            pkg = vAst.pkg ?: "test",
+            warningCount = vGen.diagnosticWarningCount
         )
         if (verifyCompile) verifyCompiles(result)
         return result

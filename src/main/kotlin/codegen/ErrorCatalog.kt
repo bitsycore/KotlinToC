@@ -257,6 +257,29 @@ object ErrorCatalog {
 			Rename one of the conflicting parameters.
 			""".trimIndent()),
 
+		// ── Memory safety ────────────────────────────────────────
+		Entry("E120", "Returning a Ref to a frame-local",
+			"""
+			A 'return' expression yields a Ref<T> whose address points into the
+			current function's frame — a local var, a by-value parameter, or an
+			element of a stack array. The pointer will dangle the moment the
+			function returns:
+
+			  fun f(): Ref<Int> {
+			      val x = 5
+			      return x.asRef()    // E120 — &x dies on return
+			  }
+
+			  fun g(p: Foo): Ref<Foo> = p.asRef()   // E120 — p is a callee copy
+
+			Options:
+			  - Allocate on the heap and return that:
+			      return Foo(...).allocWith(Heap)
+			  - Take a Ref<T> as a parameter instead of returning one:
+			      fun f(out: Ref<Int>) { out.refValue = 5 }
+			  - Return the value itself (T) rather than Ref<T>.
+			""".trimIndent()),
+
 		// ── Interface / override ─────────────────────────────────
 		Entry("E100", "Missing interface implementation",
 			"""
@@ -403,6 +426,73 @@ object ErrorCatalog {
 			Remove the conditional or fix one of the branches.
 
 			Suppress with: -Wno-identical-branches
+			""".trimIndent()),
+		Entry("W024", "Unreachable code",
+			"""
+			A statement follows an unconditional exit (`return`, `break`, or
+			`continue`) in the same block — the C compiler will never reach it:
+
+			  fun f() {
+			      return
+			      println("never runs")   // W024
+			  }
+
+			Most often this is intentional during debugging (early-return to
+			bisect a function); the warning surfaces it without breaking the
+			build. Either remove the dead code or move the early-exit.
+
+			Suppress with: -Wno-unreachable
+			""".trimIndent()),
+		Entry("W018", "Discarded allocator result",
+			"""
+			An allocator call (allocWith / copyWith / resizeWith) appears as an
+			expression statement — its returned pointer is dropped immediately.
+			That's a guaranteed memory leak:
+
+			  Foo(...).allocWith(Heap)         // W018 — pointer dropped
+			  arr.copyWith(Heap)               // W018 — new buffer never used
+
+			Bind the result to a variable, return it, or pass it along:
+
+			  val p = Foo(...).allocWith(Heap)
+			  return arr.copyWith(Heap)
+
+			Suppress with: -Wno-discarded-alloc
+			""".trimIndent()),
+		Entry("W025", "Unused local variable",
+			"""
+			A 'val' or 'var' is declared in a function body but is never read.
+			Assignment-only counts as unused — the value is computed, stored,
+			then never observed:
+
+			  val x = compute()    // W025 — x never used
+
+			Either delete the declaration, use the value, or rename to '_' to
+			signal an intentionally ignored binding.
+
+			Suppress with: -Wno-unused-local
+			""".trimIndent()),
+		Entry("W028", "var never reassigned — could be val",
+			"""
+			A local 'var' is initialized but never reassigned. Prefer 'val' for
+			immutable locals; the compiler can reason more aggressively about
+			values that can't change:
+
+			  var x = 5            // W028 — never reassigned
+			  println(x)
+
+			Suppress with: -Wno-could-be-val
+			""".trimIndent()),
+		Entry("W033", "Side-effect-free expression statement",
+			"""
+			An expression statement evaluates an expression and discards the
+			result, but the expression has no side effects — no call, no
+			assignment. The whole statement is dead code, usually a typo:
+
+			  a + b;          // W033 — result discarded, no effect
+			  x == 5;         // W033 — comparison result thrown away
+
+			Suppress with: -Wno-no-effect-expr
 			""".trimIndent()),
 		Entry("W013", "Self-assignment",
 			"""

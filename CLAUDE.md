@@ -28,8 +28,8 @@ Targets embedded/game/systems code.
   - `arr.resizeWith(allocator, n)`, `arr.copyWith(allocator)`, `dataClass.copyWith(...)`
   - `Array<T>.fill(value)` / `RawArray<T>.fill(count, value)` → memset when byte-sized or zero-literal, else loop
   - `Array<T>.asRaw()` → `RawArray<T>` (bare data ptr); `RawArray<T>.asArray(n)` → `Ref<Array<T>>` (VarArr) — both alias, no copy
-  - `allocator.freeMem(ref)` (e.g. `Heap.freeMem(p)`); `Heap` is the default `object : Allocator`.
-  - `Arena` is a bump allocator implementing `Allocator`.
+  - `allocator.freeMem(ref)` (e.g. `Heap.freeMem(p)`); `Heap` is the default `object : Allocator` and is tagged `@RequireFree` (the marker that drives the W018 "discarded alloc" lint).
+  - `Arena` is a bump allocator implementing `Allocator`. Arena is intentionally NOT `@RequireFree` — its allocations are bulk-freed by `reset()`, so discarding a per-alloc pointer is legitimate. Custom allocators that need explicit `freeMem` per allocation should be annotated `@RequireFree`.
 - Note: `allocWith` returns a non-null `Ref<T>`. To null-check, declare the var `Ref<T?>` explicitly.
 - `RawArray<T>` is inherently a reference type (always `T*` in C) — no `Ref<>` wrapper needed.
 

@@ -132,12 +132,15 @@ internal fun CCodeGen.applyGuardSmartCast(s: Stmt) {
 internal fun CCodeGen.emitBlock(b: Block, ind: String, insideMethod: Boolean = false) {
     for ((idx, s) in b.stmts.withIndex()) {
         emitStmt(s, "$ind    ", insideMethod)
-        // Check: unreachable code after unconditional exit
+        // W024: unreachable code after unconditional exit. Warning, not error —
+        // an early `return` is a useful debugging tool ("bisect this function by
+        // returning at line N") and breaking the build there is too aggressive.
         if (s is ReturnStmt || s is BreakStmt || s is ContinueStmt) {
             val vRemaining = b.stmts.drop(idx + 1).filter { it !is CommentStmt }
             if (vRemaining.isNotEmpty()) {
                 if (s.line > 0) { currentStmtLine = s.line; currentStmtCol = s.col }
-                codegenError("Unreachable code after '${if (s is ReturnStmt) "return" else if (s is BreakStmt) "break" else "continue"}'")
+                val vKw = when (s) { is ReturnStmt -> "return"; is BreakStmt -> "break"; else -> "continue" }
+                codegenWarning("unreachable", "Unreachable code after '$vKw'.")
             }
         }
     }
@@ -154,6 +157,9 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
     if (e is WhenExpr) {
         emitWhenStmt(e, ind, method); return
     }
+    // W018: allocator result dropped on the floor → guaranteed leak.
+    // W033: pure expression with no side effect → almost always a typo.
+    checkExprStmtForLeakOrNoEffect(e)
     // Inline function call — expand body at call site
     if (e is CallExpr && e.callee is NameExpr) {
         val name = e.callee.name
@@ -258,4 +264,59 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
     val expr = genExpr(e)
     flushPreStmts(ind)
     impl.appendLine("$ind$expr;")
+}
+
+private val kAllocatorMethods = setOf("allocWith", "copyWith", "resizeWith")
+
+// W018 / W033: classify an expression-statement.
+//   W018 fires when the expression is an allocator call whose result is dropped.
+//   W033 fires when the expression has no observable effect (binary op, name, dot,
+//   index, literal, !!, ?: on pure operands, etc. — anything that's not a call,
+//   assign, or has a child with side effects).
+internal fun CCodeGen.checkExprStmtForLeakOrNoEffect(inExpr: Expr) {
+    val vRequireFree = requireFreeAllocatorCallName(inExpr)
+    if (vRequireFree != null) {
+        val (vMethod, vAllocName) = vRequireFree
+        codegenWarning("discarded-alloc",
+            "Result of '$vMethod($vAllocName)' is dropped — $vAllocName is @RequireFree, so " +
+            "the allocation will leak. Bind it to a variable, return it, or free it explicitly.")
+        return
+    }
+    if (!hasObservableEffect(inExpr)) {
+        codegenWarning("no-effect-expr",
+            "Expression statement has no observable effect — the value is computed and discarded.")
+    }
+}
+
+// If [inExpr] is `<recv>.allocWith(A)` / `.copyWith(A)` / `.resizeWith(A, ...)` where A is
+// an allocator marked @RequireFree, return (method, allocatorName); otherwise null.
+// Arena-style allocators are intentionally exempt — they bulk-free on reset/dispose.
+private fun CCodeGen.requireFreeAllocatorCallName(inExpr: Expr): Pair<String, String>? {
+    if (inExpr !is CallExpr) return null
+    val vCallee = inExpr.callee as? DotExpr ?: return null
+    if (vCallee.name !in kAllocatorMethods) return null
+    val vAllocArg = inExpr.args.firstOrNull()?.expr as? NameExpr ?: return null
+    if (vAllocArg.name !in requireFreeAllocators) return null
+    return vCallee.name to vAllocArg.name
+}
+
+// Conservative "does this expression have side effects?" check. Returns true for
+// anything we can't prove pure: function calls, `!!` (may throw on null),
+// nested expressions that contain a side-effect anywhere. Only literals, simple
+// name/dot/index reads, and pure operators on pure operands are effect-free.
+private fun hasObservableEffect(inExpr: Expr): Boolean = when (inExpr) {
+    is CallExpr        -> true   // any call may have side effects
+    is StrTemplateExpr -> inExpr.parts.any { p -> p is ExprPart && hasObservableEffect(p.expr) }
+    is BinExpr         -> hasObservableEffect(inExpr.left) || hasObservableEffect(inExpr.right)
+    is PrefixExpr      -> inExpr.op == "++" || inExpr.op == "--" || hasObservableEffect(inExpr.expr)
+    is PostfixExpr     -> inExpr.op == "++" || inExpr.op == "--" || hasObservableEffect(inExpr.expr)
+    is NotNullExpr     -> true   // !! may throw
+    is IndexExpr       -> hasObservableEffect(inExpr.obj) || hasObservableEffect(inExpr.index)
+    is DotExpr         -> hasObservableEffect(inExpr.obj)
+    is SafeDotExpr     -> hasObservableEffect(inExpr.obj)
+    is CastExpr        -> hasObservableEffect(inExpr.expr)
+    is IsCheckExpr     -> hasObservableEffect(inExpr.expr)
+    is ElvisExpr       -> hasObservableEffect(inExpr.left) || hasObservableEffect(inExpr.right)
+    is IfExpr, is WhenExpr -> true   // statement-form already split off above
+    else               -> false
 }

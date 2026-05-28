@@ -6,6 +6,7 @@ interface Allocator {
     fun reallocMem(ptr: AnyPtr, newSize: Int, file: String = Macro.FILE, line: Int = Macro.LINE): AnyPtr
 }
 
+@RequireFree
 object Heap : Allocator {
     override fun allocMem(size: Int, file: String, line: Int): AnyPtr {
         return c.ktc_core_malloc(size, file.ptr, line)

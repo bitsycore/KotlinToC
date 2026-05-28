@@ -510,6 +510,9 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val tlsObjects       = mutableSetOf<String>()  // object names
     internal val namespaceObjects = mutableSetOf<String>()  // @Namespace object names
     internal val tlsProps = mutableSetOf<String>()    // top-level property names
+    // @RequireFree allocator objects/classes — W018 fires when an allocator call
+    // through one of these is discarded as an expression statement (guaranteed leak).
+    internal val requireFreeAllocators = mutableSetOf<String>()
 
     // ── Trampolined array params (pass-by-value copy on stack) ────────
     // Names of array parameters whose data has been copied via alloca+memcpy.

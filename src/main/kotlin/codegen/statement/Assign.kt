@@ -263,6 +263,8 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             !currentFnReturnsArray && !currentFnReturnsSizedArray) {
             codegenError("A 'return' expression must return a value of type '$vRetBase'")
         }
+        // E120: returning a Ref<T> that points into the current frame would dangle.
+        if (s.value != null) checkReturnDoesNotEscapeFrameLocal(s.value)
     }
     if (endLabel != null) {
         // Inside an inline body expansion: assign result (if any), then jump to end label
@@ -464,4 +466,23 @@ internal fun isSelfAssignment(lhs: Expr, rhs: Expr): Boolean = when {
     lhs is ThisExpr && rhs is ThisExpr -> true
     lhs is DotExpr  && rhs is DotExpr  -> lhs.name == rhs.name && isSelfAssignment(lhs.obj, rhs.obj)
     else -> false
+}
+
+// E120 — Reject returning a Ref<T> taken from a value-type local or by-value parameter
+// of the current function. The address dies with the frame; the returned pointer dangles.
+// Only flags the obvious `return name.asRef()` shape; chained-through-local cases like
+// `val p = x.asRef(); return p` are left for a future flow-sensitive pass.
+internal fun CCodeGen.checkReturnDoesNotEscapeFrameLocal(inExpr: Expr) {
+    val vCall = inExpr as? CallExpr ?: return
+    val vCallee = vCall.callee as? DotExpr ?: return
+    if (vCallee.name != "asRef") return
+    val vRecv = vCallee.obj as? NameExpr ?: return
+    val vLocal = lookupLocalVar(vRecv.name) ?: return
+    // asRef on a Ref<T> is rejected elsewhere; the pointer there is caller-owned anyway.
+    if (vLocal.ktc is KtcType.Ptr) return
+    val vWhat = if (vLocal.isParam) "parameter" else "local"
+    codegenError("E120",
+        "Returning a Ref to $vWhat '${vRecv.name}' — its address points into this frame and " +
+        "will dangle after return. Allocate on the heap (.allocWith(Heap)) or pass an out-parameter " +
+        "(Ref<T>) instead.")
 }
