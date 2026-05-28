@@ -9,6 +9,22 @@ import com.bitsycore.ktc.types.KtcType
 // ── var / val ─────────────────────────────────────────────────────
 // Core var declaration emitter. Array-init helpers live in VarHelpers.kt.
 
+/* Literal-array builder function names (arrayOf, intArrayOf, …). Size of the
+   resulting array equals the number of arguments. */
+private val kLiteralArrayBuilders = setOf(
+	"arrayOf", "intArrayOf", "longArrayOf", "floatArrayOf", "doubleArrayOf",
+	"booleanArrayOf", "charArrayOf", "byteArrayOf", "shortArrayOf",
+	"uintArrayOf", "ulongArrayOf", "ubyteArrayOf", "ushortArrayOf"
+)
+
+/* Constructor functions for fixed-size primitive arrays (IntArray(N), …) and
+   the generic Array(n). When the size argument is a literal, it tells us the
+   compile-time element count. */
+private val kSizedArrayCtors = setOf(
+	"IntArray", "LongArray", "FloatArray", "DoubleArray",
+	"BooleanArray", "CharArray", "ByteArray", "ShortArray", "Array"
+)
+
 /* `val (a, b, ...) = expr` desugaring: evaluate [expr] once into a tmp, then bind each
    named slot to the corresponding positional ctor-param of the receiver class. */
 internal fun CCodeGen.emitDestructuringDecl(s: DestructuringDeclStmt, ind: String) {
@@ -81,16 +97,9 @@ internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
     }
     val vCallee = (inInit.callee as? NameExpr)?.name ?: return null
     // Literal arrayOf / *arrayOf — size equals argument count.
-    if (vCallee in setOf(
-            "arrayOf", "intArrayOf", "longArrayOf", "floatArrayOf", "doubleArrayOf",
-            "booleanArrayOf", "charArrayOf", "byteArrayOf", "shortArrayOf",
-            "uintArrayOf", "ulongArrayOf", "ubyteArrayOf", "ushortArrayOf"
-        )) return inInit.args.size
+    if (vCallee in kLiteralArrayBuilders) return inInit.args.size
     // IntArray(N) / LongArray(N) / etc. with a literal size — constant-size allocation.
-    if (vCallee in setOf(
-            "IntArray", "LongArray", "FloatArray", "DoubleArray",
-            "BooleanArray", "CharArray", "ByteArray", "ShortArray", "Array"
-        )) {
+    if (vCallee in kSizedArrayCtors) {
         val vArg = inInit.args.firstOrNull()?.expr
         if (vArg is IntLit)  return vArg.value.toInt()
         if (vArg is LongLit) return vArg.value.toInt()
