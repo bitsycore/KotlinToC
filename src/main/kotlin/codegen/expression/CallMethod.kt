@@ -261,17 +261,17 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 
 				isExtFun -> {
 					if (isNullableRecv && !isPtrRecv) genExtSelfArgForNullableRecv(recv, vClassInfo.baseName, ifaceConcrete, dot.obj)
-					else if (ifaceConcrete != null && !isPtrRecv) optSome(optSelfType, "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)")
+					else if (ifaceConcrete != null && !isPtrRecv) optSome(optSelfType, "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(${addressOfRecv(recv, vClassInfo.flatName)})")
 					else optSome(optSelfType, recv)
 					}
 
-				else -> optSome(optSelfType, "&$recv")
+				else -> optSome(optSelfType, addressOfRecv(recv, vClassInfo.flatName))
 				}
 			} else if (isExtFun) {
 			if (isNullableRecv && !isPtrRecv) genExtSelfArgForNullableRecv(recv, vClassInfo.baseName, ifaceConcrete, dot.obj)
-			else if (ifaceConcrete != null && !isPtrRecv) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(&$recv)"
+			else if (ifaceConcrete != null && !isPtrRecv) "${typeFlatName(vClassInfo.baseName)}_as_$ifaceConcrete(${addressOfRecv(recv, vClassInfo.flatName)})"
 			else recv
-			} else "&$recv"
+			} else addressOfRecv(recv, vClassInfo.flatName)
 
 			// Let default values (e.g. this.x) resolve to the call-site receiver
 			val vSavedThis = lambdaParamSubst["\$this"]
@@ -527,4 +527,35 @@ internal fun CCodeGen.genSimpleUnionDispatch(ifaceName: String, recv: String, me
 		}
 	preStmts += "}"
 	return if (retType != null) t else ""
+	}
+
+// Matches simple C identifiers and `$`-prefixed temps emitted by the codegen.
+// Used to decide whether a genExpr result is already a stable lvalue that we can
+// take `&` of, or an rvalue expression that needs spilling.
+// Matches simple identifiers (`x`, `\$5`), dotted member paths (`obj.field`),
+// pointer-arrow paths (`ptr->field`), and parenthesized pointer-deref forms
+// (`(*\$self)`). All are lvalues in C — `&` is legal on them.
+// Anything containing function calls, brackets, operators, or whitespace falls
+// back to the spill path.
+private val kIdentTail = "(?:[\\w\$.]|->)*"
+private val kStableExprRx = Regex(
+	"^(" +
+		"[\$A-Za-z_]$kIdentTail" +                  // bare name or chained lvalue
+		"|" +
+		"\\(\\*[\$A-Za-z_]$kIdentTail\\)" +         // `(*ptr)` deref of a name
+		")$"
+	)
+
+/* Return `&$expr` for a method-call receiver. If [inExpr] is already an lvalue
+   (simple name, member access, etc.) the address-of is emitted directly. If it's
+   an rvalue (call result, compound literal), spill it into a temp first so the
+   `&` has a real lvalue to bind to.
+
+   The C type of the spill temp is derived from [inExpectedType] (typically the
+   class's flat C name, e.g. "ktc_std_Path"). */
+internal fun CCodeGen.addressOfRecv(inExpr: String, inExpectedType: String): String {
+	if (kStableExprRx.matches(inExpr)) return "&$inExpr"
+	val vT = tmp()
+	preStmts += "$inExpectedType $vT = $inExpr;"
+	return "&$vT"
 	}

@@ -79,13 +79,27 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 			vSb.appendLine("${ind}for (ktc_Int $vItName = 0; $vItName < $vSize; $vItName++) {")
 			pushScope()
 			defineVar(vItName, "Int")
+			// Drain preStmts added by [genExpr] into vSb before the line that uses
+			// the returned expression — otherwise spill temps (e.g. from method-call
+			// receivers) would be declared after their use site.
+			fun drainPreStmtsTo(inSb: StringBuilder) {
+				if (preStmts.isEmpty()) return
+				for (p in preStmts) inSb.appendLine("$ind    $p")
+				preStmts.clear()
+				}
 			for ((vIdx, vStmt) in vLambda.body.withIndex()) {
 				val vIsLast = vIdx == vLambda.body.lastIndex
 				when {
-					vIsLast && vStmt is ExprStmt ->
-						vSb.appendLine("$ind    $vDataName[$vItName] = ${genExpr(vStmt.expr)};")
-					vStmt is ExprStmt ->
-						vSb.appendLine("$ind    (void)${genExpr(vStmt.expr)};")
+					vIsLast && vStmt is ExprStmt -> {
+						val vExpr = genExpr(vStmt.expr)
+						drainPreStmtsTo(vSb)
+						vSb.appendLine("$ind    $vDataName[$vItName] = $vExpr;")
+						}
+					vStmt is ExprStmt -> {
+						val vExpr = genExpr(vStmt.expr)
+						drainPreStmtsTo(vSb)
+						vSb.appendLine("$ind    (void)$vExpr;")
+						}
 					vStmt is VarDeclStmt -> {
 						val vTypeKtc = vStmt.type?.let { resolveTypeName(it) }
 							?: parseResolvedTypeName(inferExprType(vStmt.init) ?: "Int")
@@ -93,6 +107,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 						val vCT  = cTypeStr(vTypeKtc)
 						val vMut = if (vStmt.mutable) "" else "const "
 						val vInitExpr = vStmt.init?.let { genExpr(it) } ?: "0"
+						drainPreStmtsTo(vSb)
 						vSb.appendLine("$ind    ${vMut}$vCT ${vStmt.name} = $vInitExpr;")
 						}
 					vStmt is AssignStmt -> {
@@ -102,6 +117,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 							"+=" -> "+"; "-=" -> "-"; "*=" -> "*"; "/=" -> "/"; "%=" -> "%"
 							else -> ""
 							}
+						drainPreStmtsTo(vSb)
 						if (vOp.isNotEmpty()) vSb.appendLine("$ind    $vLhs = ($vLhs $vOp $vRhs);")
 						else                  vSb.appendLine("$ind    $vLhs = $vRhs;")
 						}
@@ -163,7 +179,11 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 	val vN          = init.args.size
 	val vDataName   = "${varName}_data"
 	val vVarArrType = varArrTypeName(vElemType)
-	return "${ind}$vElemType ${vDataName}[] = {$vArgs};\n${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vN};"
+	// Any preStmts queued by genExpr above (e.g. spill temps for chained struct
+	// method calls used as args) must land BEFORE the array initializer line —
+	// otherwise the initializer would reference temps that don't yet exist.
+	val vPre = if (preStmts.isNotEmpty()) preStmts.joinToString("\n") { "$ind$it" }.also { preStmts.clear() } + "\n" else ""
+	return "$vPre${ind}$vElemType ${vDataName}[] = {$vArgs};\n${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vN};"
 	}
 
 /* Check if an expression is a call to a function known to return nullable. */
