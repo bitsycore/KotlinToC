@@ -206,7 +206,12 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
             selfIsPointer = recvTypeCoreKtc is KtcType.Ptr
             pushScope()
             registerClassFields(vDotClassInfo, if (selfIsPointer) "$recv->" else "$recv.")
+            // Record the receiver so genName can route sibling-computed-property
+            // references through DotExpr re-dispatch instead of emitting literal
+            // `$self.X` (which has no binding in the user's frame).
+            getterReceiverStack.addLast(recv)
             val vResult = genExpr(vGetterProp.getter!!)
+            getterReceiverStack.removeLast()
             popScope()
             currentClass = vPrevClass
             selfIsPointer = vPrevSelfPtr

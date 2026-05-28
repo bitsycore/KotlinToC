@@ -504,6 +504,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var currentClass: String?  get() = fnCtx.klass;   set(v) { fnCtx.klass = v }
     internal var currentObject: String? get() = fnCtx.currentObject; set(v) { fnCtx.currentObject = v }
     internal var selfIsPointer: Boolean get() = fnCtx.selfPtr; set(v) { fnCtx.selfPtr = v }
+    // Set during inline expansion of a computed property getter at a user call site.
+    // Holds the C expression that should be substituted for `\$self` when the getter
+    // body refers to sibling properties (so `nameWithoutExtension` can reference
+    // `name` without falling back to a literal `\$self.name` that the user's frame
+    // has no binding for). Stacked so nested getter inlinings nest correctly.
+    internal val getterReceiverStack = ArrayDeque<String>()
     // Objects with dispose methods — called on main() exit
     internal val objectsWithDispose = mutableListOf<String>()  // cName of objects with dispose
     // @Tls-annotated objects and top-level properties → emit ktc_core_tls specifier

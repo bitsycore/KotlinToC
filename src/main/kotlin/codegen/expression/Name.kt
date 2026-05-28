@@ -70,6 +70,17 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 	if (currentClass != null) {
 		val vCi = classes[currentClass]
 		if (vCi != null && vCi.props.any { it.first == e.name }) {
+			val vProp = vCi.properties.find { it.name == e.name }
+			// Computed property (custom getter) — recurse through genDot so the
+			// sibling getter is expanded inline. When invoked during a getter
+			// expansion at a user call site, the recorded receiver replaces the
+			// literal `$self` lookup that would otherwise dangle.
+			if (vProp != null && vProp.getter != null) {
+				val vRecvExpr = getterReceiverStack.lastOrNull()
+				if (vRecvExpr != null) {
+					return genDot(DotExpr(NameExpr(vRecvExpr), e.name))
+					}
+				}
 			val vFieldName = if (e.name in vCi.privateProps) "PRIV_${e.name}" else e.name
 			val vOp = if (selfIsPointer) "->" else "."
 			return "\$self$vOp$vFieldName"

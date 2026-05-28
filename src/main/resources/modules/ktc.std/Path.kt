@@ -19,13 +19,13 @@ class Path(val s: String) {
 	val isAbsolute: Boolean get() = s.startsWith("/") || (s.length >= 2 && s[1] == ':')
 
 	/** The last path segment — file or directory name. */
-	val name: String get() = nameOf(s)
+	inline val name: String get() = nameOf(s)
 
 	/** Name minus the trailing dot-extension. Leading dot (hidden files) is preserved. */
-	val nameWithoutExtension: String get() = nameStripExt(nameOf(s))
+	inline val nameWithoutExtension: String get() = nameStripExt(name)
 
 	/** File extension (no leading dot), or `""` if none. Leading-dot hidden files have no extension. */
-	val extension: String get() = nameExt(nameOf(s))
+	inline val extension: String get() = nameExt(name)
 
 	/** Parent path, or `null` if this is the root or a single segment with no slash. */
 	val parent: Path? get() = pathParent(s)
