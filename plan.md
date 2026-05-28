@@ -163,10 +163,14 @@ Fix-when-touched, in rough priority order:
 ### Member `inline fun` not actually inlined (M)
 `class Foo { inline fun bar(x: X): Y = ... }` emits a regular function and
 ignores the inline modifier. Extension `inline fun Foo.bar(...)` works
-correctly — the path-join code currently lives as an extension to dodge this.
+correctly — `Path.child` and `Path.div` currently live as inline extensions
+to dodge this.
+
 Hook: the function-emit path needs to honor `f.isInline` for member methods,
 and the call-site dispatch needs to expand the body the same way it does for
-extension methods.
+extension methods — including binding both `this` (the receiver expression)
+AND bare-field references (which currently go through genName's
+`currentClass` lookup and emit `$self.field`).
 
 ### ~~`!!` on a value-type Optional doesn't unwrap~~ ✅ shipped
 NotNullExpr on a value-nullable arbitrary expression now spills the inner
