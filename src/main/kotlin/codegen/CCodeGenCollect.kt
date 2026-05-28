@@ -384,13 +384,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				}
 			for (vNested in d.nestedClasses) {
 				val vFlatName = "${d.name}$${vNested.name}"
-				val vAlreadyImpl = vNested.superInterfaces.any { it.name == d.name }
-				val vSuperIfaces = if (vAlreadyImpl) vNested.superInterfaces else {
-					val vIfaceRef = if (d.typeParams.isNotEmpty())
-						TypeRef(d.name, typeArgs = d.typeParams.map { TypeRef(it) })
-					else TypeRef(d.name)
-					vNested.superInterfaces + vIfaceRef
-					}
+				val vSuperIfaces = nestedSuperIfacesWithParent(vNested, d.name, d.typeParams)
 				val vFlat = ClassDecl(vFlatName, vNested.isData, vNested.ctorParams,
 					vNested.members, vNested.initBlocks, vSuperIfaces,
 					vNested.typeParams, vNested.secondaryCtors)
@@ -676,6 +670,22 @@ internal fun CCodeGen.validateOperatorReturnType(inF: FunDecl, inOwner: String) 
 		codegenError("Operator function '${inF.name}' on '$inOwner' must return ${vAllowed.joinToString(" or ")}, not '$vRet'")
 	}
 
+/* Build the super-interface list for a class nested inside an interface or
+   sealed parent, adding the parent as a super-interface unless the nested
+   class already lists it. The parent's type parameters are forwarded when
+   present so the synthesized TypeRef is well-formed. */
+internal fun nestedSuperIfacesWithParent(
+	inNested: ClassDecl,
+	inParentName: String,
+	inParentTypeParams: List<String>,
+	): List<TypeRef> {
+	if (inNested.superInterfaces.any { it.name == inParentName }) return inNested.superInterfaces
+	val vIfaceRef = if (inParentTypeParams.isNotEmpty())
+		TypeRef(inParentName, typeArgs = inParentTypeParams.map { TypeRef(it) })
+	else TypeRef(inParentName)
+	return inNested.superInterfaces + vIfaceRef
+	}
+
 /* Validate @Size(N) annotations on the given TypeRef and its type args.
    N must be a positive integer literal — @Size(0) yields an empty C array and
    negatives are nonsense. Reports E012 on the first violation. */
@@ -703,8 +713,8 @@ private fun <T> CCodeGen.rekeyDottedToDollar(inMap: MutableMap<String, MutableLi
 	for (vKey in vDotted) {
 		val vDollar = vKey.replace('.', '$')
 		if (classes.containsKey(vDollar) || objects.containsKey(vDollar)) {
-			inMap.getOrPut(vDollar) { mutableListOf() }.addAll(inMap.getValue(vKey))
-			inMap.remove(vKey)
+			val vOld = inMap.remove(vKey) ?: continue
+			inMap.getOrPut(vDollar) { mutableListOf() }.addAll(vOld)
 			}
 		}
 	}

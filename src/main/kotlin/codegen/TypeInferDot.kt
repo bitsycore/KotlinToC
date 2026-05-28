@@ -8,9 +8,9 @@ import com.bitsycore.ktc.types.KtcType
 
 /* Resolve a named property's KtcType from a props list, wrapping nullable properties in KtcType.Nullable. */
 private fun CCodeGen.resolvePropTypeKtc(props: List<Pair<String, TypeRef>>, name: String): KtcType? {
-	val prop = props.find { it.first == name }
-	val base = if (prop != null) resolveTypeName(prop.second) else null
-	return if (base != null && prop!!.second.nullable) KtcType.Nullable(base) else base
+	val prop = props.find { it.first == name } ?: return null
+	val base = resolveTypeName(prop.second)
+	return if (prop.second.nullable) KtcType.Nullable(base) else base
 	}
 
 internal fun CCodeGen.inferDotType(e: DotExpr): String? = inferDotTypeKtc(e)?.toInternalStr

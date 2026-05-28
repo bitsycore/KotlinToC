@@ -7,6 +7,54 @@ import com.bitsycore.ktc.types.KtcType
 
 // Return-type inference for function calls and method calls.
 
+/* Built-in method names whose return type is fixed regardless of receiver type.
+   Used by inferMethodReturnType to short-circuit before reaching class/iface lookup. */
+private val kBuiltinMethodReturns: Map<String, String> = mapOf(
+	"toString"   to "String",
+	"trimIndent" to "String",
+	"trimMargin" to "String",
+	"runeAt"     to "Rune",
+	"toInt"      to "Int",
+	"toLong"     to "Long",
+	"toFloat"    to "Float",
+	"toDouble"   to "Double",
+	"toIntOrNull"    to "Int?",
+	"toLongOrNull"   to "Long?",
+	"toFloatOrNull"  to "Float?",
+	"toDoubleOrNull" to "Double?",
+	"hashCode"   to "Int",
+	)
+
+/* Built-in String method return types. Falls through to extension-function
+   resolution when the method isn't in this table. */
+private val kStringBuiltinReturns: Map<String, String> = mapOf(
+	"substring" to "String", "reversed" to "String", "lowercase" to "String",
+	"uppercase" to "String", "repeat" to "String", "replace" to "String",
+	"padStart" to "String", "padEnd" to "String",
+	"startsWith" to "Boolean", "endsWith" to "Boolean", "contains" to "Boolean",
+	"isEmpty" to "Boolean", "isNotEmpty" to "Boolean", "toBooleanStrict" to "Boolean",
+	"toBooleanStrictOrNull" to "Boolean?",
+	"firstOrNull" to "Char?", "lastOrNull" to "Char?", "getOrNull" to "Char?",
+	"indexOf" to "Int", "lastIndexOf" to "Int", "compareTo" to "Int",
+	)
+
+/* Builder-fn and ctor-fn names that produce a primitive typed array. Looking up
+   "intArrayOf" or "IntArray" yields "IntArray" as the result type. */
+private val kPrimitiveArrayCtorTypes: Map<String, String> = mapOf(
+	"byteArrayOf"    to "ByteArray",    "ByteArray"    to "ByteArray",
+	"shortArrayOf"   to "ShortArray",   "ShortArray"   to "ShortArray",
+	"intArrayOf"     to "IntArray",     "IntArray"     to "IntArray",
+	"longArrayOf"    to "LongArray",    "LongArray"    to "LongArray",
+	"floatArrayOf"   to "FloatArray",   "FloatArray"   to "FloatArray",
+	"doubleArrayOf"  to "DoubleArray",  "DoubleArray"  to "DoubleArray",
+	"booleanArrayOf" to "BooleanArray", "BooleanArray" to "BooleanArray",
+	"charArrayOf"    to "CharArray",    "CharArray"    to "CharArray",
+	"ubyteArrayOf"   to "UByteArray",   "UByteArray"   to "UByteArray",
+	"ushortArrayOf"  to "UShortArray",  "UShortArray"  to "UShortArray",
+	"uintArrayOf"    to "UIntArray",    "UIntArray"    to "UIntArray",
+	"ulongArrayOf"   to "ULongArray",   "ULongArray"   to "ULongArray",
+	)
+
 internal fun CCodeGen.inferCallType(e: CallExpr): String? {
     // Nested class constructor: Outer.Inner(...) or A.B.C(...)
     if (e.callee is DotExpr) {
@@ -73,18 +121,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             return mangledGenericName(name, inferredArgs)
         }
         if (classes.containsKey(name)) return name
-        if (name == "byteArrayOf" || name == "ByteArray") return "ByteArray"
-        if (name == "shortArrayOf" || name == "ShortArray") return "ShortArray"
-        if (name == "intArrayOf" || name == "IntArray") return "IntArray"
-        if (name == "longArrayOf" || name == "LongArray") return "LongArray"
-        if (name == "floatArrayOf" || name == "FloatArray") return "FloatArray"
-        if (name == "doubleArrayOf" || name == "DoubleArray") return "DoubleArray"
-        if (name == "booleanArrayOf" || name == "BooleanArray") return "BooleanArray"
-        if (name == "charArrayOf" || name == "CharArray") return "CharArray"
-        if (name == "ubyteArrayOf" || name == "UByteArray") return "UByteArray"
-        if (name == "ushortArrayOf" || name == "UShortArray") return "UShortArray"
-        if (name == "uintArrayOf" || name == "UIntArray") return "UIntArray"
-        if (name == "ulongArrayOf" || name == "ULongArray") return "ULongArray"
+        kPrimitiveArrayCtorTypes[name]?.let { return it }
         if (name == "arrayOf") {
             if (e.typeArgs.isNotEmpty()) {
                 val vTypeArg = e.typeArgs[0]
@@ -163,9 +200,10 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 ?: collectAllIfaceMethods(vIfaceInfo).find { it.name == name }
             if (vIfaceMethod?.returnType != null) return resolveTypeRefStr(vIfaceMethod.returnType)
         }
-        if (currentClass != null) {
-            val vClassMethod = classes[currentClass]?.methods?.find { it.name == name }
-            if (vClassMethod?.returnType != null) return resolveMethodReturnType(currentClass!!, vClassMethod.returnType)
+        val vCurClass = currentClass
+        if (vCurClass != null) {
+            val vClassMethod = classes[vCurClass]?.methods?.find { it.name == name }
+            if (vClassMethod?.returnType != null) return resolveMethodReturnType(vCurClass, vClassMethod.returnType)
         }
     }
     if (e.callee is DotExpr) {
@@ -222,19 +260,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     val recvKtcPtr = inferExprTypeKtc(dot.obj)
     val recvKtcCorePtr = recvKtcPtr.stripNullable
     val method = dot.name
-    if (method == "toString") return "String"
-    if (method == "trimIndent") return "String"
-    if (method == "trimMargin") return "String"
-    if (method == "runeAt") return "Rune"
-    if (method == "toInt") return "Int"
-    if (method == "toLong") return "Long"
-    if (method == "toFloat") return "Float"
-    if (method == "toDouble") return "Double"
-    if (method == "toIntOrNull") return "Int?"
-    if (method == "toLongOrNull") return "Long?"
-    if (method == "toFloatOrNull") return "Float?"
-    if (method == "toDoubleOrNull") return "Double?"
-    if (method == "hashCode") return "Int"
+    kBuiltinMethodReturns[method]?.let { return it }
     if (method == "inv") return recvType
     val recvKtc = parseResolvedTypeName(recvType)
     // RawArray<T> (T*): asArray(n) → Ref<Array<T>>; resizeWith returns the bare pointer unchanged.
@@ -259,21 +285,10 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
         }
     }
     if (recvType.removeSuffix("?") == "String") {
-        val vBuiltin = when (method) {
-            "substring",
-            "reversed", "lowercase", "uppercase",
-            "repeat", "replace", "padStart", "padEnd" -> "String"
-            "startsWith", "endsWith", "contains", "isEmpty", "isNotEmpty",
-            "toBooleanStrict" -> "Boolean"
-            "toBooleanStrictOrNull" -> "Boolean?"
-            "firstOrNull", "lastOrNull", "getOrNull" -> "Char?"
-            "indexOf", "lastIndexOf", "compareTo" -> "Int"
-            else -> null
-        }
         // Only short-circuit on a builtin match. Otherwise fall through so
         // user-defined extension functions on String (take/drop/trim/...
         // from stdlib Strings.kt) can be resolved via extensionFuns below.
-        if (vBuiltin != null) return vBuiltin
+        kStringBuiltinReturns[method]?.let { return it }
     }
     val pointerBase = (recvKtcCorePtr as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
     if (pointerBase != null) {

@@ -172,7 +172,6 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
                     val vVal = genExpr(s.value)
                     val vValKtc = inferExprTypeKtc(s.value)
                     if (vValKtc != null) defineVar(vSetterProp.setterParam, LocalVar(ktc = vValKtc))
-                    val vValExpr = lookupCName(vSetterProp.setterParam)
                     // Emit setter body statements, replacing 'value' with the actual value
                     val vPrevSubst = lambdaParamSubst.toMap()
                     lambdaParamSubst[vSetterProp.setterParam] = vVal

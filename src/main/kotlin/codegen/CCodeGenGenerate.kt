@@ -172,13 +172,7 @@ internal fun CCodeGen.generate(): COutput {
 					if (!firstClass) hdr.appendLine()
 					firstClass = false
 					captureForDecl(vFlatName) {
-						val vAlreadyImpl = vNested.superInterfaces.any { it.name == d.name }
-						val vSuperIfaces = if (vAlreadyImpl) vNested.superInterfaces else {
-							val vIfaceRef = if (d.typeParams.isNotEmpty())
-								TypeRef(d.name, typeArgs = d.typeParams.map { TypeRef(it) })
-							else TypeRef(d.name)
-							vNested.superInterfaces + vIfaceRef
-							}
+						val vSuperIfaces = nestedSuperIfacesWithParent(vNested, d.name, d.typeParams)
 						emitClass(ClassDecl(vFlatName, vNested.isData, vNested.ctorParams,
 							vNested.members, vNested.initBlocks, vSuperIfaces,
 							vNested.typeParams, vNested.secondaryCtors))
@@ -196,19 +190,8 @@ internal fun CCodeGen.generate(): COutput {
 	// Pre-pass: register classInterfaces for objects and all monomorphized generic classes.
 	for (d in file.decls) if (d is ObjectDecl && d.superInterfaces.isNotEmpty())
 		classInterfaces[d.name] = d.superInterfaces.map { it.name }
-	for ((baseName, instantiations) in genericInstantiations) {
-		val templateDecl = genericClassDecls[baseName] ?: continue
-		if (templateDecl.superInterfaces.isEmpty()) continue
-		for (typeArgs in instantiations) {
-			val mangledName = mangledGenericName(baseName, typeArgs)
-			val ci          = classes[mangledName] ?: continue
-			val subst       = ci.typeParams.ifEmpty { templateDecl.typeParams }.zip(typeArgs).toMap()
-				.ifEmpty { genericTypeBindings[mangledName] ?: emptyMap() }
-			val resolvedIfaces = templateDecl.superInterfaces.map { substituteTypeRef(it, subst) }
-			typeSubst = subst
-			classInterfaces[mangledName] = resolvedIfaces.map { resolveTypeNameStr(it) }
-			typeSubst = emptyMap()
-			}
+	forEachMonomorphizedSuperIfaces { mangledName, resolvedIfaces ->
+		classInterfaces[mangledName] = resolvedIfaces.map { resolveTypeNameStr(it) }
 		}
 	// Rebuild interfaceImplementors with generic classes included.
 	interfaceImplementors.clear()
@@ -248,19 +231,8 @@ internal fun CCodeGen.generate(): COutput {
 				}
 			}
 		}
-	for ((baseName, instantiations) in genericInstantiations) {
-		val templateDecl = genericClassDecls[baseName] ?: continue
-		if (templateDecl.superInterfaces.isEmpty()) continue
-		for (typeArgs in instantiations) {
-			val mangledName = mangledGenericName(baseName, typeArgs)
-			val ci          = classes[mangledName] ?: continue
-			val subst       = ci.typeParams.ifEmpty { templateDecl.typeParams }.zip(typeArgs).toMap()
-				.ifEmpty { genericTypeBindings[mangledName] ?: emptyMap() }
-			val resolvedIfaces = templateDecl.superInterfaces.map { substituteTypeRef(it, subst) }
-			typeSubst = subst
-			captureForDecl(mangledName) { emitInterfaceVtablesForClass(mangledName, resolvedIfaces, implsOnly = true) }
-			typeSubst = emptyMap()
-			}
+	forEachMonomorphizedSuperIfaces { mangledName, resolvedIfaces ->
+		captureForDecl(mangledName) { emitInterfaceVtablesForClass(mangledName, resolvedIfaces, implsOnly = true) }
 		}
 
 	// Emit complete interface blocks (vtable + tagged union + $Opt).
@@ -484,4 +456,27 @@ internal fun CCodeGen.generate(): COutput {
 
 	// Collapse 3+ consecutive newlines to 2 (= 1 blank line) so empty sections leave no extra whitespace.
 	return COutput(hdr.toString().replace(Regex("\n{3,}"), "\n\n"), vSources)
+	}
+
+/* Iterate every monomorphized generic-class instantiation that declares super
+   interfaces. Sets up the typeSubst around [inAction] so codegen helpers see the
+   correct substitution while resolving interface type names. Skips when the
+   ClassInfo or class template can't be looked up. */
+private inline fun CCodeGen.forEachMonomorphizedSuperIfaces(
+	inAction: (mangledName: String, resolvedIfaces: List<TypeRef>) -> Unit
+	) {
+	for ((vBaseName, vInstantiations) in genericInstantiations) {
+		val vTemplateDecl = genericClassDecls[vBaseName] ?: continue
+		if (vTemplateDecl.superInterfaces.isEmpty()) continue
+		for (vTypeArgs in vInstantiations) {
+			val vMangledName = mangledGenericName(vBaseName, vTypeArgs)
+			val vCi          = classes[vMangledName] ?: continue
+			val vSubst       = vCi.typeParams.ifEmpty { vTemplateDecl.typeParams }.zip(vTypeArgs).toMap()
+				.ifEmpty { genericTypeBindings[vMangledName] ?: emptyMap() }
+			val vResolved    = vTemplateDecl.superInterfaces.map { substituteTypeRef(it, vSubst) }
+			typeSubst = vSubst
+			inAction(vMangledName, vResolved)
+			typeSubst = emptyMap()
+			}
+		}
 	}
