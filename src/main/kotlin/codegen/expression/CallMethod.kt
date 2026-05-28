@@ -213,7 +213,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		if (method == "copy" && vClassInfo.isData) return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
 		if (method == "asRef") {
 			val t = tmp()
-			preStmts += "${vClassInfo.flatName}* $t = &$recv;"
+			preStmts += "${vClassInfo.flatName}* $t = ${addressOfRecv(recv, vClassInfo.flatName)};"
 			return t
 			}
 
@@ -395,13 +395,13 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			return "${typeFlatName(extFunOwner)}_$vExtFnName($allArgs)"
 			}
 		if (method == "dispose" && (classes.containsKey(recvType) || enums.containsKey(recvType) || objects.containsKey(recvType))) {
-			val selfExpr = if (recvTypeKtc is KtcType.Ptr) recv else "&$recv"
 			val base     = (recvTypeKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName ?: recvType
+			val selfExpr = if (recvTypeKtc is KtcType.Ptr) recv else addressOfRecv(recv, typeFlatName(base ?: ""))
 			return "${typeFlatName(base)}_dispose($selfExpr)"
 			}
 		if (classes.containsKey(recvType) && starExtFunDecls.any { it.name == method }) {
-			val selfExpr = if (recvTypeKtc is KtcType.Ptr) recv else "&$recv"
 			val base     = (recvTypeKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName ?: recvType
+			val selfExpr = if (recvTypeKtc is KtcType.Ptr) recv else addressOfRecv(recv, typeFlatName(base ?: ""))
 			val allArgs  = if (argStr.isEmpty()) selfExpr else "$selfExpr, $argStr"
 			return "${typeFlatName(base)}_$method($allArgs)"
 			}
@@ -411,7 +411,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	if (method == "asRef" && recvType != null) {
 		val cType = cTypeStr(recvType)
 		val t     = tmp()
-		preStmts += "$cType* $t = &$recv;"
+		preStmts += "$cType* $t = ${addressOfRecv(recv, cType)};"
 		return t
 		}
 
