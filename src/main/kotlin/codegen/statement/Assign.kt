@@ -14,6 +14,10 @@ import com.bitsycore.ktc.types.KtcType
 // ── assignment ───────────────────────────────────────────────────
 
 internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
+    // Self-assignment: x = x (or this.f = this.f). Always a no-op and almost certainly a typo.
+    if (s.op == "=" && isSelfAssignment(s.target, s.value)) {
+        codegenWarning("self-assign", "Self-assignment has no effect")
+    }
 
     // safe dot assignment: this?.x = value → if ($self$has) { (*$self).x = value; }
     if (s.target is SafeDotExpr) {
@@ -452,4 +456,13 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             impl.appendLine("${ind}return;")
         }
     }
+}
+
+/* True when [lhs] and [rhs] refer to the exact same simple variable or dotted path,
+   so the assignment is a no-op. Handles NameExpr, ThisExpr, and DotExpr chains. */
+internal fun isSelfAssignment(lhs: Expr, rhs: Expr): Boolean = when {
+    lhs is NameExpr && rhs is NameExpr -> lhs.name == rhs.name
+    lhs is ThisExpr && rhs is ThisExpr -> true
+    lhs is DotExpr  && rhs is DotExpr  -> lhs.name == rhs.name && isSelfAssignment(lhs.obj, rhs.obj)
+    else -> false
 }

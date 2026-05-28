@@ -199,7 +199,9 @@ fun main(args: Array<String>) {
         System.err.println("  -W<name>                     Enable warning <name> (e.g. -Wshadow)")
         System.err.println("  -Wno-<name>                  Disable warning <name> (e.g. -Wno-safe-call)")
         System.err.println("                               Names: shadow, nullable-ref, tailrec-inline, tailrec-suggestion,")
-        System.err.println("                                      const-condition, exhaustive-when, null-check, safe-call")
+        System.err.println("                                      const-condition, exhaustive-when, null-check, safe-call,")
+        System.err.println("                                      bounds, sized-array-truncate, empty-body, redundant-bang,")
+        System.err.println("                                      self-assign")
         System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
         System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
         System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
@@ -744,9 +746,10 @@ fun main(args: Array<String>) {
 
     if (mainOverride != null && mainOverride != "__auto__") {
         // --main "a.b.c.funName" or main = "a.b.c.funName" in module.ktc.toml
-        val vDotIdx  = mainOverride!!.lastIndexOf('.')                      // split point
-        val vOvrPkg  = if (vDotIdx > 0) mainOverride!!.substring(0, vDotIdx) else ""  // package part
-        val vOvrName = mainOverride!!.substring(vDotIdx + 1)                // function name part
+        val vMain    = mainOverride
+        val vDotIdx  = vMain.lastIndexOf('.')                                // split point
+        val vOvrPkg  = if (vDotIdx > 0) vMain.substring(0, vDotIdx) else ""  // package part
+        val vOvrName = vMain.substring(vDotIdx + 1)                          // function name part
         val vFound   = vNonDocFiles
             .filter { it.ast.pkg == vOvrPkg.ifEmpty { null } || (vOvrPkg.isEmpty() && it.ast.pkg == null) }
             .flatMap { ps -> ps.ast.decls.filterIsInstance<FunDecl>()

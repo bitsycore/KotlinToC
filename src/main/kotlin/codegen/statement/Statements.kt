@@ -73,6 +73,10 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
         is ExprStmt -> emitExprStmt(s, ind, insideMethod)
         is ForStmt -> emitFor(s, ind, insideMethod)
         is WhileStmt -> {
+            if (s.cond is BoolLit && !s.cond.value)
+                codegenWarning("const-condition", "Condition is always false — 'while' body never runs.")
+            if (isEmptyBlock(s.body))
+                codegenWarning("empty-body", "Empty 'while' body — consider removing the loop.")
             loopDepth++
             impl.appendLine("${ind}while (${genExprFlushed(s.cond, ind)}) {")
             emitBlock(s.body, ind, insideMethod)
@@ -81,6 +85,10 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
         }
 
         is DoWhileStmt -> {
+            if (s.cond is BoolLit && !s.cond.value)
+                codegenWarning("const-condition", "Condition is always false — 'do-while' will run exactly once.")
+            if (isEmptyBlock(s.body))
+                codegenWarning("empty-body", "Empty 'do-while' body — consider removing the loop.")
             loopDepth++
             impl.appendLine("${ind}do {")
             emitBlock(s.body, ind, insideMethod)

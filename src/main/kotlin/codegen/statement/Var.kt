@@ -139,9 +139,9 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         if (vTargetSize != null) {
             val vInitSize = inferInitArraySize(s.init) // null = unknown at transpile time
             if (vInitSize != null && vInitSize > vTargetSize)
-                error("Cannot assign @Size($vInitSize) array to @Size($vTargetSize) variable '${s.name}': source has more elements than the target (would truncate). Use .copyOf($vTargetSize) to truncate explicitly.")
+                codegenError("Cannot assign @Size($vInitSize) array to @Size($vTargetSize) variable '${s.name}': source has more elements than the target (would truncate). Use .copyOf($vTargetSize) to truncate explicitly.")
             if (vInitSize == null) {
-                System.err.println("WARNING [$currentSourceFile]: Assigning array of unknown compile-time size to @Size($vTargetSize) variable '${s.name}' — applying implicit .copyOf($vTargetSize) to guarantee bounds safety. Use .copyOf($vTargetSize) explicitly to suppress this warning.")
+                codegenWarning("sized-array-truncate", "Assigning array of unknown compile-time size to @Size($vTargetSize) variable '${s.name}' — applying implicit .copyOf($vTargetSize) to guarantee bounds safety. Use .copyOf($vTargetSize) explicitly to suppress this warning.")
                 // Implicitly apply .copyOf(N) so the stored slice is always exactly N elements.
                 val vSyntheticInit = CallExpr(
                     callee = DotExpr(obj = s.init, name = "copyOf"),

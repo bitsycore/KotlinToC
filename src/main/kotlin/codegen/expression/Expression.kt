@@ -162,7 +162,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                 //   2. Type carries @Size(N) → use the literal N.
                 //   3. Fallback to sizeof — only safe for true stack arrays (not pointers).
                 val vLen = when {
-                    vIsTrampolined && vObjName != null -> arrayParamSizeExpr(vObjName)
+                    vIsTrampolined                     -> arrayParamSizeExpr(vObjName)
                     vSizedN != null                    -> vSizedN.toString()
                     else                                -> "(sizeof($vA)/sizeof(($vA)[0]))"
                 }
@@ -390,7 +390,7 @@ private fun CCodeGen.isStaticallySafe(inIdxAst: Expr, inObjAst: Expr): Boolean {
 	if (vIdx < 0) return false
 	val vObjKtc = inferExprTypeKtc(inObjAst)?.stripNullable
 	val vLen: Long = when {
-		vObjKtc is KtcType.Arr && vObjKtc.sized != null -> vObjKtc.sized!!.toLong()
+		vObjKtc is KtcType.Arr && vObjKtc.sized != null -> vObjKtc.sized.toLong()
 		inObjAst is StrLit -> inObjAst.value.length.toLong()
 		else -> return false
 	}
@@ -415,7 +415,7 @@ internal fun CCodeGen.wrapNullCheck(inPtrExpr: String, inDerefExpr: String, inRe
 }
 
 internal fun CCodeGen.isProvablyNonNull(inExpr: Expr): Boolean {
-	if (inExpr is CallExpr && inExpr.callee is DotExpr && (inExpr.callee as DotExpr).name == "asRef")
+	if (inExpr is CallExpr && inExpr.callee is DotExpr && inExpr.callee.name == "asRef")
 		return true
 	// After smart-cast in `if (p != null)`, Nullable(Ptr(T)) narrows to Ptr(T).
 	// Only elide when an outer scope had a nullable variant — not for all Ptr params.
@@ -451,11 +451,12 @@ when checkBounds is on. */
 internal fun CCodeGen.staticBoundsCheck(inObj: Expr, inIdx: Expr, inObjTypeCore: KtcType?) {
 	val vIdxVal = when (inIdx) {
 		is IntLit -> inIdx.value
+		is PrefixExpr if inIdx.op == "-" && inIdx.expr is IntLit -> -inIdx.expr.value
 		else -> return
 	}
 	// Determine statically-known length.
 	val vKnownLen: Long? = when {
-		inObjTypeCore is KtcType.Arr && inObjTypeCore.sized != null -> inObjTypeCore.sized!!.toLong()
+		inObjTypeCore is KtcType.Arr && inObjTypeCore.sized != null -> inObjTypeCore.sized.toLong()
 		inObj is StrLit -> inObj.value.length.toLong()
 		// Note: inferring length from a NameExpr would need flow analysis
 		// against the declared `IntArray(N)` initializer — left for the
@@ -464,10 +465,8 @@ internal fun CCodeGen.staticBoundsCheck(inObj: Expr, inIdx: Expr, inObjTypeCore:
 	}
 	if (vKnownLen == null) return
 	if (vIdxVal < 0) {
-		System.err.println("WARNING [$currentSourceFile:$currentStmtLine]: " +
-			"array index $vIdxVal is negative — always out of bounds.")
+		codegenWarning("bounds", "array index $vIdxVal is negative — always out of bounds.")
 	} else if (vIdxVal >= vKnownLen) {
-		System.err.println("WARNING [$currentSourceFile:$currentStmtLine]: " +
-			"array index $vIdxVal is out of bounds for length $vKnownLen.")
+		codegenWarning("bounds", "array index $vIdxVal is out of bounds for length $vKnownLen.")
 	}
 }

@@ -305,6 +305,65 @@ object ErrorCatalog {
 
 			Suppress with: -Wno-safe-call
 			""".trimIndent()),
+		Entry("W009", "Out-of-bounds static index",
+			"""
+			An array or string index that is a literal integer falls outside the
+			statically known length:
+			  val s = "abc"
+			  val c = s[5]    // W009 — string length is 3
+
+			The runtime bounds check (default on) will catch the same access; this
+			warning surfaces it at transpile time so it can be fixed sooner.
+
+			Suppress with: -Wno-bounds
+			""".trimIndent()),
+		Entry("W010", "Implicit @Size truncation",
+			"""
+			Assigning an array of unknown compile-time size into a @Size(N)
+			variable cannot be statically proven to fit, so an implicit
+			.copyOf(N) is inserted to clamp the source to exactly N elements.
+
+			Add .copyOf(N) explicitly to silence the warning and document the
+			truncation.
+
+			Suppress with: -Wno-sized-array-truncate
+			""".trimIndent()),
+		Entry("W011", "Empty control-flow body",
+			"""
+			An if / else / when / while / for body has no statements. Either the
+			intent was to leave a TODO (use a comment), the surrounding logic
+			is dead, or the branch was added by mistake.
+
+			  if (cond) {
+			      // empty — does nothing
+			  }
+
+			Suppress with: -Wno-empty-body
+			""".trimIndent()),
+		Entry("W012", "!! on literal null",
+			"""
+			Applying '!!' to a literal null aborts unconditionally — the value is
+			always null and the assertion always fires:
+
+			  val x = null!!    // W012 — always throws NullPointerException
+
+			This is almost always a typo or stub left over from refactoring.
+			Replace with a real value or throw an explicit error.
+
+			Suppress with: -Wno-redundant-bang
+			""".trimIndent()),
+		Entry("W013", "Self-assignment",
+			"""
+			An assignment statement reads and writes the same simple variable
+			or property without using it on the right-hand side:
+
+			  x = x          // W013 — no effect
+
+			This usually indicates a typo (the intended source name differs from
+			the target) or stale code left over from a refactor.
+
+			Suppress with: -Wno-self-assign
+			""".trimIndent()),
 	)
 
 	private val byCode = entries.associateBy { it.code }

@@ -100,6 +100,8 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 		val v = e.cond.value
 		codegenWarning("const-condition", "Condition is always ${if (v) "true" else "false"}")
 		}
+	if (isEmptyBlock(e.then)) codegenWarning("empty-body", "Empty 'if' body — has no effect.")
+	if (e.els != null && isEmptyBlock(e.els)) codegenWarning("empty-body", "Empty 'else' body — has no effect.")
 	impl.appendLine("${ind}if (${genExprFlushed(e.cond, ind)}) {")
 	val thenCasts = extractSmartCasts(e.cond)
 	pushSmartCasts(thenCasts, ind)
@@ -123,6 +125,10 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 		}
 	impl.appendLine("$ind}")
 	}
+
+/* True if a block has no statements (or only comments — those don't run). */
+internal fun isEmptyBlock(inBlock: Block): Boolean =
+	inBlock.stmts.none { it !is CommentStmt }
 
 // ── when (as statement) ──────────────────────────────────────────
 

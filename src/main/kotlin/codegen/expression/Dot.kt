@@ -70,11 +70,11 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     }
     // Resolve nested object property chain (e.g. SDL3.Event.Quit → getter value)
     if (e.obj is DotExpr) {
-        var vCur2: DotExpr = e.obj as DotExpr
+        var vCur2: DotExpr = e.obj
         val vParts2 = mutableListOf(vCur2.name)
-        while (vCur2.obj is DotExpr) { vCur2 = vCur2.obj as DotExpr; vParts2.add(vCur2.name) }
+        while (vCur2.obj is DotExpr) { vCur2 = vCur2.obj; vParts2.add(vCur2.name) }
         if (vCur2.obj is NameExpr) {
-            vParts2.add((vCur2.obj as NameExpr).name)
+            vParts2.add(vCur2.obj.name)
             vParts2.reverse()
             val vFullObj = vParts2.joinToString("$")
             val vOi = objects[vFullObj]
@@ -136,7 +136,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
 
     // p.refValue → dereference pointer (*p), optionally guarded by --check-null
     if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) {
-        val inner = (recvTypeCoreKtc as KtcType.Ptr).inner
+        val inner = recvTypeCoreKtc.inner
         if (inner is KtcType.User && objects.containsKey(inner.baseName))
             codegenError("Cannot access .refValue on object '${inner.baseName}' — objects are always Ref")
         return wrapNullCheck(recv, "(*$recv)", e.obj)
@@ -298,6 +298,8 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
 // ── !! (not-null assertion) ─────────────────────────────────────────
 
 internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
+    if (e.expr is NullLit)
+        codegenWarning("redundant-bang", "'!!' on literal 'null' always throws NullPointerException")
     val inner = genExpr(e.expr)
     val innerType = inferExprType(e.expr)
     val innerKtc = inferExprTypeKtc(e.expr)
@@ -310,7 +312,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
 
     if (isPtr) {
         // VarArr nullable (Ref<Array<T>?>): use .ptr field for null check
-        val isVarArr = innerKtcCore is KtcType.Ptr && innerKtcCore.inner.let {
+        val isVarArr = innerKtcCore.inner.let {
             it is KtcType.Arr && it.sized == null
             }
         if (isVarArr) {
