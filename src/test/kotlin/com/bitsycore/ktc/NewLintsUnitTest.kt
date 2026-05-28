@@ -193,6 +193,39 @@ class NewLintsUnitTest : TranspilerTestBase() {
 		""", "E014")
 	}
 
+	// ── operator return-type validation ──────────────────────────────
+
+	@Test fun equalsWithWrongReturnRejected() {
+		transpileExpectError("""
+			package test.Main
+			class Foo(val x: Int) {
+				operator fun equals(other: Any?): Int = if (other is Foo) 1 else 0
+			}
+			fun main(args: Array<String>) { val f = Foo(1); println(f.x) }
+		""", "must return Boolean")
+	}
+
+	@Test fun compareToWithWrongReturnRejected() {
+		transpileExpectError("""
+			package test.Main
+			class Foo(val x: Int) {
+				operator fun compareTo(other: Foo): Boolean = x == other.x
+			}
+			fun main(args: Array<String>) { val f = Foo(1); println(f.x) }
+		""", "must return Int")
+	}
+
+	@Test fun compareToReturningIntOk() {
+		val r = transpile("""
+			package test.Main
+			class Foo(val x: Int) {
+				operator fun compareTo(other: Foo): Int = x - other.x
+			}
+			fun main(args: Array<String>) { val f = Foo(1); println(f.x) }
+		""")
+		r.hasNoWarnings()
+	}
+
 	// ── empty for body ────────────────────────────────────────────────
 
 	@Test fun emptyForBodyWarns() {

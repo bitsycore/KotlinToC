@@ -260,6 +260,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 						codegenError("Operator function '${m.name}' has wrong arity (${m.params.size}); " +
 							"valid arity for '${m.name}' is ${vExpected.joinToString(" or ")}.")
 					}
+					validateOperatorReturnType(m, d.name)
 				}
 				ci.methods += m
 				}
@@ -289,10 +290,11 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 						}
 					}
 				// Check for bogus override on methods that don't match any interface
+				// equals/hashCode/toString come implicitly from Any; dispose is KTC-specific.
 				val allIfaceMethodNames = d.superInterfaces.flatMap { ifaceRef ->
 					val ifaceName = resolveIfaceName(ifaceRef)
 					interfaces[ifaceName]?.let { collectAllIfaceMethods(it).map { m -> m.name } } ?: emptyList()
-					}.toSet() + "dispose" + "hashCode"
+					}.toSet() + setOf("dispose", "hashCode", "equals", "toString")
 				for (m in ci.methods) {
 					if (m.isOverride && m.name !in allIfaceMethodNames) {
 						codegenError("Method '${m.name}' is marked 'override' but does not override any interface method")
@@ -650,6 +652,28 @@ internal fun CCodeGen.findOverload(inName: String, inArgs: List<Arg>, inSiblings
 			}
 		}
 	return vByCount.firstOrNull()
+	}
+
+/* Expected return-type names for operator functions whose contract pins the
+   return type. Iterator-protocol entries are validated only when the method
+   is marked `operator`; user-defined sequences that imitate the protocol can
+   pick their own return types. */
+private val kOperatorReturnTypes: Map<String, Set<String>> = mapOf(
+	"equals"    to setOf("Boolean"),
+	"compareTo" to setOf("Int"),
+	"contains"  to setOf("Boolean"),
+	"hasNext"   to setOf("Boolean"),
+	"not"       to setOf("Boolean"),
+	)
+
+/* Validate operator function return types against the well-known contract.
+   Missing return type (declared as Unit) and unrelated names skip; callers
+   already enforce arity via kOperatorArity. */
+internal fun CCodeGen.validateOperatorReturnType(inF: FunDecl, inOwner: String) {
+	val vAllowed = kOperatorReturnTypes[inF.name] ?: return
+	val vRet = inF.returnType?.name ?: "Unit"
+	if (vRet !in vAllowed)
+		codegenError("Operator function '${inF.name}' on '$inOwner' must return ${vAllowed.joinToString(" or ")}, not '$vRet'")
 	}
 
 /* Validate @Size(N) annotations on the given TypeRef and its type args.
