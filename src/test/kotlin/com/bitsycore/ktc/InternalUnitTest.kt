@@ -52,7 +52,7 @@ class InternalUnitTest : TranspilerTestBase() {
             "package bar\nimport foo.Secret\nfun main() { val s = Secret(1); println(s.v) }\n"
         )
         assertTrue(msg?.contains("E044") == true, "expected E044 on cross-pkg internal access, got: $msg")
-        assertTrue(msg?.contains("Secret") == true, "error should name 'Secret', got: $msg")
+        assertTrue(msg.contains("Secret"), "error should name 'Secret', got: $msg")
     }
 
     @Test fun internalFunCrossPkgError() {
@@ -61,7 +61,7 @@ class InternalUnitTest : TranspilerTestBase() {
             "package bar\nimport foo.secretFn\nfun main() { println(secretFn()) }\n"
         )
         assertTrue(msg?.contains("E044") == true, "expected E044 on cross-pkg internal fn call, got: $msg")
-        assertTrue(msg?.contains("secretFn") == true, "error should name 'secretFn', got: $msg")
+        assertTrue(msg.contains("secretFn"), "error should name 'secretFn', got: $msg")
     }
 
     @Test fun internalFunSamePkgOk() {

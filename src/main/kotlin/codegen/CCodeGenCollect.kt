@@ -128,22 +128,8 @@ internal fun CCodeGen.collectDecls() {
 	// Needed when the extension file is processed before its receiver's definition file in the
 	// cross-reference pass: e.g. "SDL3.Renderer" → "SDL3$Renderer" once classes["SDL3$Renderer"]
 	// is populated, or "SDL3.Event" → "SDL3$Event" once objects["SDL3$Event"] is populated.
-	val vDottedPropKeys = extensionProps.keys.filter { '.' in it }.toList()
-	for (key in vDottedPropKeys) {
-		val dollarKey = key.replace('.', '$')
-		if (classes.containsKey(dollarKey) || objects.containsKey(dollarKey)) {
-			extensionProps.getOrPut(dollarKey) { mutableListOf() }.addAll(extensionProps[key]!!)
-			extensionProps.remove(key)
-			}
-		}
-	val vDottedFunKeys = extensionFuns.keys.filter { '.' in it }.toList()
-	for (key in vDottedFunKeys) {
-		val dollarKey = key.replace('.', '$')
-		if (classes.containsKey(dollarKey) || objects.containsKey(dollarKey)) {
-			extensionFuns.getOrPut(dollarKey) { mutableListOf() }.addAll(extensionFuns[key]!!)
-			extensionFuns.remove(key)
-			}
-		}
+	rekeyDottedToDollar(extensionProps)
+	rekeyDottedToDollar(extensionFuns)
 	// Set pkg for nested classes whose pkg wasn't explicitly set
 	for ((name, ci) in classes) {
 		if ('$' in name && ci.pkg.isEmpty()) {
@@ -172,18 +158,8 @@ internal fun CCodeGen.collectDecls() {
 			}
 		}
 	// Sync pkg for nested classes/objects after the current-file pass
-	for ((name, ci) in classes) {
-		if ('$' in name) {
-			val vParent = name.substringBefore('$')
-			ci.pkg = classes[vParent]?.pkg ?: objects[vParent]?.pkg ?: prefix
-			}
-		}
-	for ((name, oi) in objects) {
-		if ('$' in name) {
-			val vParent = name.substringBefore('$')
-			oi.pkg = classes[vParent]?.pkg ?: objects[vParent]?.pkg ?: prefix
-			}
-		}
+	for ((name, ci) in classes) if ('$' in name) ci.pkg = nestedParentPkg(name)
+	for ((name, oi) in objects) if ('$' in name) oi.pkg = nestedParentPkg(name)
 	// Index sealed subclasses for `when` exhaustiveness. For each class C, every
 	// supertype that is a sealed class or sealed interface gets C added to its
 	// known-subclass list. Names in superInterfaces may refer to either kind.
@@ -253,7 +229,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// an infinite-size struct in C. The user must indirect through Ref<T>,
 			// Array<T> (VarArr), or RawArray<T> to break the size cycle.
 			for (vProp in vAllProps) {
-				val vT = vProp.typeRef ?: continue
+				val vT = vProp.typeRef
 				if (vT.name == d.name && !vT.isRefType() && vT.name != "Array" && vT.name != "RawArray") {
 					codegenError("E010", "Class '${d.name}' has property '${vProp.name}' of its own type — infinite struct size. " +
 						"Use Ref<${d.name}> (pointer), Array<${d.name}>, or RawArray<${d.name}> to indirect.")
@@ -500,7 +476,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			val needsRecvNorm = d.receiver != null && d.receiver.name == "Ref" && d.receiver.typeArgs.isNotEmpty()
 			val needsParamNorm = d.params.any { it.type.name == "Ref" && it.type.typeArgs.isNotEmpty() }
 			if (needsRecvNorm || needsParamNorm) {
-				val normRecv = if (needsRecvNorm) d.receiver!!.normalizeRef() else d.receiver
+				val normRecv = if (needsRecvNorm) d.receiver.normalizeRef() else d.receiver
 				val normParams = if (needsParamNorm) d.params.map {
 					if (it.type.name == "Ref" && it.type.typeArgs.isNotEmpty()) it.copy(type = it.type.normalizeRef())
 					else it
@@ -663,4 +639,25 @@ internal fun CCodeGen.findOverload(inName: String, inArgs: List<Arg>, inSiblings
 			}
 		}
 	return vByCount.firstOrNull()
+	}
+
+/* Re-key entries in [inMap] whose key contains '.' to the dollar-form when the
+   dollar-form names a known class or object. Used to normalize extension-fn /
+   extension-prop keys after cross-file collection. Idempotent. */
+private fun <T> CCodeGen.rekeyDottedToDollar(inMap: MutableMap<String, MutableList<T>>) {
+	val vDotted = inMap.keys.filter { '.' in it }.toList()
+	for (vKey in vDotted) {
+		val vDollar = vKey.replace('.', '$')
+		if (classes.containsKey(vDollar) || objects.containsKey(vDollar)) {
+			inMap.getOrPut(vDollar) { mutableListOf() }.addAll(inMap.getValue(vKey))
+			inMap.remove(vKey)
+			}
+		}
+	}
+
+/* Resolve the package for a nested class/object name "Parent$Child" by looking
+   up the parent class or object. Falls back to the current-file prefix. */
+private fun CCodeGen.nestedParentPkg(inName: String): String {
+	val vParent = inName.substringBefore('$')
+	return classes[vParent]?.pkg ?: objects[vParent]?.pkg ?: prefix
 	}

@@ -1100,9 +1100,7 @@ class Parser(private val tokens: List<Token>) {
         noNewlineExpr = true
         val body = if (at(TokenType.LBRACE)) parseBlock() else {
             // Single-statement body: may be an assignment (x = y) or expression call
-            val vStmt = parseStmt()
-            if (vStmt is ExprStmt) Block(listOf(vStmt))
-            else Block(listOf(vStmt))
+            Block(listOf(parseStmt()))
             }
         noNewlineExpr = prevNoNL
         return WhenBranch(conds, body)
