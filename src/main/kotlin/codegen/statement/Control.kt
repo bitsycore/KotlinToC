@@ -138,7 +138,13 @@ internal fun CCodeGen.emitWhenStmt(e: WhenExpr, ind: String, method: Boolean) {
 		is ThisExpr -> "\$self"
 		else        -> null
 		}
+	// Branches after the first 'else' are unreachable — the dispatch lowers to if/else if/else.
+	val vElseIdx = e.branches.indexOfFirst { it.conds == null }
+	if (vElseIdx in 0 until e.branches.size - 1)
+		codegenError("Unreachable 'when' branch after 'else'")
 	for ((bi, br) in e.branches.withIndex()) {
+		if (isEmptyBlock(br.body))
+			codegenWarning("empty-body", "Empty 'when' branch body — has no effect.")
 		if (br.conds == null) {
 			impl.appendLine("${ind}else {")
 			} else {

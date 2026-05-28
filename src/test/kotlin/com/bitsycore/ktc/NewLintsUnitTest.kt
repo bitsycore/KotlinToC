@@ -238,4 +238,37 @@ class NewLintsUnitTest : TranspilerTestBase() {
 		""")
 		r.hasWarnings(1)
 	}
+
+	// ── empty when branch ─────────────────────────────────────────────
+
+	@Test fun emptyWhenBranchBodyWarns() {
+		val r = transpile("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 3
+				when (x) {
+					1 -> println("one")
+					2 -> {}
+					else -> println("other")
+				}
+			}
+		""")
+		assert(r.warningCount >= 1) { "Expected at least one warning, got ${r.warningCount}" }
+	}
+
+	// ── unreachable branch after else ─────────────────────────────────
+
+	@Test fun branchAfterElseRejected() {
+		transpileExpectError("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val x = 3
+				when (x) {
+					1 -> println("one")
+					else -> println("else")
+					2 -> println("two")
+				}
+			}
+		""", "Unreachable 'when' branch")
+	}
 }
