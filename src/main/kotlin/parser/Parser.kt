@@ -341,12 +341,21 @@ class Parser(private val tokens: List<Token>) {
                 expect(TokenType.RPAREN); nesting--
                 a
             } else emptyList()
-            // Per-entry override body block: `PLUS { override fun apply(...) = ... }` — Phase 3, not yet supported.
+            // Per-entry override body block: `PLUS { override fun apply(...) = ... }`.
+            val vOverrides = mutableListOf<FunDecl>()
             if (at(TokenType.LBRACE)) {
-                error("Enum entry '${name}.$vEntry' has an override body — per-entry overrides are not yet supported by KTC. " +
-                    "Track full-enum overrides (Phase 3) in plan.md.")
+                advance(); nesting++; skipNL()
+                while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
+                    if (at(TokenType.COMMENT)) { advance(); skipTerminator(); continue }
+                    val vDecl = parseDecl()
+                    if (vDecl !is FunDecl)
+                        error("Enum entry '${name}.$vEntry' body only supports function declarations (got ${vDecl::class.simpleName}).")
+                    vOverrides += vDecl
+                    skipNL()
+                }
+                expect(TokenType.RBRACE); nesting--
             }
-            entries += EnumEntry(vEntry, vEntryArgs)
+            entries += EnumEntry(vEntry, vEntryArgs, vOverrides)
             if (at(TokenType.COMMA)) { advance(); skipNL() } else break
         }
         // skipNL() consumes both newlines AND semicolons; check SEMICOLON first

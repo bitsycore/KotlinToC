@@ -67,12 +67,15 @@ data class ClassDecl(
 ) : Decl()
 
 /* Per-entry data for an enum:
-   name  — entry identifier (e.g. PLUS)
-   args  — arguments passed to the enum's primary constructor for this entry
-           (empty for simple enums) */
+   name      — entry identifier (e.g. PLUS)
+   args      — arguments passed to the enum's primary constructor for this entry
+               (empty for simple enums)
+   overrides — body-block per-entry method overrides (Phase 3):
+               `PLUS { override fun apply(a, b) = a + b }` */
 data class EnumEntry(
     val name: String,
-    val args: List<Arg> = emptyList()
+    val args: List<Arg> = emptyList(),
+    val overrides: List<FunDecl> = emptyList()
 )
 
 data class EnumDecl(

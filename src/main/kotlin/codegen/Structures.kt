@@ -119,8 +119,11 @@ internal data class EnumInfo(
     val entryArgs: Map<String, List<Expr>> = emptyMap(),           // per-entry ctor argument expressions (empty for simple enums)
     val bodyProps: List<PropertyDef> = emptyList(),                // body-declared properties (val/var) on the enum
     val enumMethods: MutableList<FunDecl> = mutableListOf(),       // body-declared methods on the enum
+    val entryOverrides: Map<String, List<FunDecl>> = emptyMap(),   // per-entry method overrides (Phase 3)
     val isSimple: Boolean = true                                   // true → C-int representation; false → struct representation
 ) : TypeDef {
+    /** Names of body methods that have at least one per-entry override — these dispatch through the entry vtable. */
+    val virtualMethodNames: Set<String> get() = entryOverrides.values.flatten().map { it.name }.toSet()
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = KtcType.UserKind.Enum
     override val methods: List<FunDecl> get() = enumMethods

@@ -53,14 +53,21 @@ private fun CCodeGen.emitSimpleEnum(d: EnumDecl, ei: EnumInfo) {
 // ──────────────────────────────────────────────────────────────────
 
 private fun CCodeGen.emitFullEnum(d: EnumDecl, ei: EnumInfo) {
-	val cName = ei.flatName
-	val n     = d.entries.size
+	val cName       = ei.flatName
+	val n           = d.entries.size
+	val vVirtuals   = ei.enumMethods.filter { it.name in ei.virtualMethodNames && !it.isInline }
+	val vHasVtable  = vVirtuals.isNotEmpty()
 
 	hdr.appendLine(classBlockHeader("enum class", d.name, emptyList(), emptyList(), file.pkg ?: "", currentSourceFile, cName))
 	hdr.appendLine("#define KTC_TYPE_NAME $cName")
 	hdr.appendLine("KTC_TYPE_ID(${typeIds[d.name]!!})")
 	hdr.appendLine()
-	// Struct body: ctor-param fields, body-stored fields, then ordinal/name.
+	// Forward-declare the vtable struct so the enum struct can hold a pointer to it.
+	if (vHasVtable) {
+		hdr.appendLine("typedef struct ${cName}_vt ${cName}_vt;")
+		hdr.appendLine()
+		}
+	// Struct body: ctor-param fields, body-stored fields, then ordinal/name (+ vtable if any virtuals).
 	hdr.appendLine("typedef struct $cName {")
 	for (p in ei.ctorParams) {
 		val vKtc = resolveTypeName(p.typeRef)
@@ -75,6 +82,7 @@ private fun CCodeGen.emitFullEnum(d: EnumDecl, ei: EnumInfo) {
 		}
 	hdr.appendLine("    ktc_Int    ordinal;")
 	hdr.appendLine("    ktc_String name;")
+	if (vHasVtable) hdr.appendLine("    const ${cName}_vt* vtable;")
 	hdr.appendLine("} $cName;")
 	hdr.appendLine()
 
@@ -86,9 +94,36 @@ private fun CCodeGen.emitFullEnum(d: EnumDecl, ei: EnumInfo) {
 	hdr.appendLine("extern const ktc_Int KTC_RELATED(values\$len);")
 	hdr.appendLine("KTC_METHOD(KTC_TYPE_NAME, valueOf)(ktc_String name);")
 
-	// Emit entry constants in .c.
+	// Emit per-entry override function declarations (must appear before vtable constants reference them).
+	if (vHasVtable) {
+		for (entry in d.entries) {
+			val vOvrs = ei.entryOverrides[entry.name] ?: continue
+			for (vOvr in vOvrs) emitEnumEntryOverride(d.name, entry.name, vOvr)
+			}
+		// Vtable struct definition (after the enum struct is complete, so signatures can take it by value).
+		hdr.appendLine()
+		hdr.appendLine("struct ${cName}_vt {")
+		for (m in vVirtuals) hdr.appendLine("    ${virtualSlotDecl(cName, m)}")
+		hdr.appendLine("};")
+		hdr.appendLine()
+		for (entry in d.entries) hdr.appendLine("extern const ${cName}_vt ${cName}_${entry.name}_vt;")
+		}
+
+	// Emit entry constants in .c (+ per-entry vtable instances if any virtuals).
 	impl.appendLine(boxSection("entries"))
 	impl.appendLine()
+	if (vHasVtable) {
+		for (entry in d.entries) {
+			val vOvrs = ei.entryOverrides[entry.name] ?: emptyList()
+			val vSlots = vVirtuals.joinToString(", ") { vM ->
+				val vEntryOvr = vOvrs.firstOrNull { it.name == vM.name }
+				if (vEntryOvr != null) "${cName}_${entry.name}_${resolvedFnName(vEntryOvr, ei.enumMethods)}"
+				else                   "${cName}_${resolvedFnName(vM, ei.enumMethods)}"
+				}
+			impl.appendLine("const ${cName}_vt ${cName}_${entry.name}_vt = { $vSlots };")
+			}
+		impl.appendLine()
+		}
 	for ((vOrd, entry) in d.entries.withIndex()) {
 		val vArgs    = ei.entryArgs[entry.name] ?: emptyList()
 		val vCtorPs  = ei.ctorParams
@@ -106,6 +141,7 @@ private fun CCodeGen.emitFullEnum(d: EnumDecl, ei: EnumInfo) {
 			}
 		vInits += "$vOrd"
 		vInits += "ktc_core_str(\"${entry.name}\")"
+		if (vHasVtable) vInits += "&${cName}_${entry.name}_vt"
 		impl.appendLine("const $cName ${cName}_${entry.name} = { ${vInits.joinToString(", ")} };")
 		}
 	impl.appendLine()
@@ -123,6 +159,52 @@ private fun CCodeGen.emitFullEnum(d: EnumDecl, ei: EnumInfo) {
 	hdr.appendLine()
 	hdr.appendLine("#undef KTC_TYPE_NAME")
 	hdr.appendLine(classBlockFooter("enum class", d.name, emptyList()))
+	}
+
+// Build the function-pointer slot declaration for one virtual method.
+// e.g. `ktc_Int (*apply)(Op $self, ktc_Int a, ktc_Int b);`
+private fun CCodeGen.virtualSlotDecl(inCName: String, inF: FunDecl): String {
+	val vPrev   = saveFunState()
+	val vCRet   = computeReturnInfo(inF, inF.body?.let { inferBlockType(it) })
+	val vExtra  = expandParams(inF.params)
+	val vParams = if (vExtra.isNotEmpty()) "$inCName \$self, $vExtra" else "$inCName \$self"
+	restoreFunState(vPrev)
+	return "$vCRet (*${inF.name})($vParams);"
+	}
+
+// Emit a per-entry override function: same C signature as the default body method,
+// but mangled `<Enum>_<Entry>_<methodName>` so it can be slotted into the entry's vtable.
+private fun CCodeGen.emitEnumEntryOverride(inEnumName: String, inEntryName: String, inF: FunDecl) {
+	if (inF.isInline) codegenError("Enum entry '$inEnumName.$inEntryName' override '${inF.name}' cannot be inline")
+	val ei         = enums[inEnumName]!!
+	val cName      = ei.flatName
+	val vBaseName  = resolvedFnName(inF, ei.enumMethods)
+	val vFullName  = "${cName}_${inEntryName}_$vBaseName"
+	val selfParam  = "$cName \$self"
+	val extra      = expandParams(inF.params)
+	val allParams  = if (extra.isNotEmpty()) "$selfParam, $extra" else selfParam
+
+	val paramSig = inF.params.joinToString(", ") { p -> "${p.name}: ${typeRefToStr(p.type)}" }
+	val retSig   = inF.returnType?.let { ": ${typeRefToStr(it)}" } ?: ""
+	impl.appendLine("// ══ $inEntryName override fun ${inF.name}($paramSig)$retSig ══")
+
+	val prevState = saveFunState()
+	val cRet      = computeReturnInfo(inF, inF.body?.let { inferBlockType(it) })
+	implFwd.appendLine("$cRet $vFullName($allParams);")
+	impl.appendLine("$cRet $vFullName($allParams) {")
+
+	pushScope()
+	registerParams(inF.params)
+	for (p in ei.ctorParams + ei.bodyProps) {
+		if (scopes.last().containsKey(p.name)) continue
+		val vKtc   = resolveTypeName(p.typeRef)
+		val vIsOpt = p.typeRef.nullable && !p.typeRef.isRefType() && !vKtc.isArrayLike
+		defineVar(p.name, LocalVar(ktc = vKtc, mutable = !p.isVal, optional = vIsOpt, cName = "\$self.${p.name}"))
+		}
+	currentClass  = inEnumName
+	selfIsPointer = false
+	emitArrayParamCopies(inF.params, "    ")
+	emitFunBodyAndClose(inF, prevState, insideMethod = true)
 	}
 
 // Emit a single enum method: takes the enum value by-value as $self.

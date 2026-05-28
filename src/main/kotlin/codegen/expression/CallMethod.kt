@@ -347,9 +347,13 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				// Instance method on a full enum: pass the receiver by-value as $self.
 				val vInstanceMethod = vEnumInfo.enumMethods.find { it.name == method }
 				if (vInstanceMethod != null && !vEnumInfo.isSimple) {
-					val vFnName  = resolvedFnName(vInstanceMethod, vEnumInfo.enumMethods)
 					val vArgsStr = prepareArgs(args, vInstanceMethod, vEnumInfo.name)
 					val vAllArgs = if (vArgsStr.isEmpty()) recv else "$recv, $vArgsStr"
+					// Virtual dispatch through the entry vtable when any entry overrides this method.
+					if (method in vEnumInfo.virtualMethodNames) {
+						return "$recv.vtable->$method($vAllArgs)"
+						}
+					val vFnName  = resolvedFnName(vInstanceMethod, vEnumInfo.enumMethods)
 					return "${vEnumInfo.flatName}_$vFnName($vAllArgs)"
 					}
 				// Fallback (unknown method): legacy behavior, return prefixed identifier.

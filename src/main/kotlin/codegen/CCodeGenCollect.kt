@@ -348,17 +348,29 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			if (vDupEntry != null) codegenError("E013", "Duplicate enum entry '$vDupEntry' in '${d.name}'")
 			val vEntryArgs    = d.entries.associate { it.name to it.args.map { a -> a.expr } }
 			val vEntryNames   = d.entries.map { it.name }
+			val vEntryOvr     = d.entries.filter { it.overrides.isNotEmpty() }.associate { it.name to it.overrides }
 			val vEi = EnumInfo(
-				name       = d.name,
-				entries    = vEntryNames,
-				ctorParams = vCtorProps,
-				entryArgs  = vEntryArgs,
-				bodyProps  = vBodyProps,
-				isSimple   = vIsSimple
+				name           = d.name,
+				entries        = vEntryNames,
+				ctorParams     = vCtorProps,
+				entryArgs      = vEntryArgs,
+				bodyProps      = vBodyProps,
+				entryOverrides = vEntryOvr,
+				isSimple       = vIsSimple
 				)
 			for (m in d.members) if (m is FunDecl && m.receiver == null) vEi.enumMethods += m
 			enums[d.name] = vEi
 			getTypeId(d.name)
+			// Per-entry overrides require a matching body method on the enum (the default impl).
+			if (vEntryOvr.isNotEmpty()) {
+				if (vIsSimple) codegenError("Enum '${d.name}' has per-entry overrides but is a @SimpleEnum — overrides require the full struct form")
+				val vBodyMethodNames = vEi.enumMethods.map { it.name }.toSet()
+				for ((vEntryName, vOvrs) in vEntryOvr) for (vOvr in vOvrs) {
+					if (vOvr.name !in vBodyMethodNames) {
+						codegenError("Enum entry '${d.name}.$vEntryName' overrides '${vOvr.name}' but the enum has no body method named '${vOvr.name}'")
+						}
+					}
+				}
 			// Validate per-entry argument counts against ctor params (only for full enums).
 			if (!vIsSimple && d.ctorParams.isNotEmpty()) {
 				for (entry in d.entries) {
