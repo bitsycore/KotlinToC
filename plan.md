@@ -191,23 +191,24 @@ Requires lazy emission of the right-hand operand (emit `x != null` first,
 then narrow, then emit `x.field`). Existing `extractSmartCasts` already
 handles `&&` for the THEN body but not for the condition itself.
 
-### Operator overload `div` doesn't dispatch with multiple overloads (S)
-`Path / String` and `Path / Path` both declared as `operator fun div` — the
-codegen emitted literal `dir / "name"` in the C output instead of calling
-`Path_divWith*`. Current workaround: a single `.child(String)` method.
+### ~~Operator overload doesn't dispatch on class types~~ ✅ shipped
+genBin now maps `+ - * / %` to `plus/minus/times/div/rem` and routes
+through genMethodCall when the LHS class declares a matching operator
+fun (member or extension). Parser also relaxed to accept either ordering
+of `inline operator fun`.
 
-### `inline val foo: T get() = expr` uses literal `$self` (S)
-The getter body is expanded with `$self.X` references that aren't
-substituted at the user call site, causing "undeclared identifier `$self`"
-in the C output. Workaround: top-level helper functions called from the
-getter.
+### ~~`inline val foo: T get() = expr` sibling-prop reference~~ ✅ shipped
+A `getterReceiverStack` tracks the active getter's receiver during inline
+expansion. genName, when resolving a name that maps to a sibling computed
+property, recurses through genDot with that receiver instead of emitting
+literal `$self.X`.
 
 ## C-interop
 
-### `.cast<T>()` for pointer reinterpretation (S)
-Needed to bypass `const char*` ↔ `void*` conversions, `FILE*` ↔ `void*`,
-and similar C-side reinterpretations that the current type system makes
-into warnings or errors.
+### ~~`.cast<T>()` for pointer reinterpretation~~ ✅ shipped
+`inline fun <T, R> T.cast(): R` is declared in `ktc/CInterop.kt` and
+lowers to `((T)(expr))`. Works for `Ref<...>`, primitive narrowing,
+opaque-pointer round-trips.
 
 ## Kotlin features
 
