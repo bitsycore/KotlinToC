@@ -549,7 +549,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 						"valid arity for '${d.name}' is ${vExpected.joinToString(" or ")}.")
 				}
 			}
-			val effectiveReturnType = d.returnType ?: d.body?.let { inferredTypeRef(inferBlockType(it)) }
+			val effectiveReturnType = d.returnType ?: d.body?.let { inferBlockType(it)?.let { name -> TypeRef(name) } }
 			when {
 				d.typeParams.isNotEmpty() -> {
 					// Generic function template — store for monomorphization

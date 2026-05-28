@@ -1,20 +1,19 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.types.KtcType
 
 // Pre-scan passes for generic class instantiation discovery and materialization.
 
+private val kArrayElemPrimitives: Set<String> = KtcType.PrimKind.namesSet + "String"
+
 /** Pre-scan AST for Array<T> type references to populate classArrayTypes. */
 internal fun CCodeGen.scanForClassArrayTypes() {
-	val primitives = setOf(
-		"Byte", "Short", "Int", "Long", "Float", "Double", "Boolean", "Char",
-		"UByte", "UShort", "UInt", "ULong", "String"
-		)
 	fun checkType(t: TypeRef?) {
 		if (t == null) return
 		if (t.name == "Array" && t.typeArgs.isNotEmpty()) {
 			val elem = t.typeArgs[0].name.replace('.', '$')
-			if (elem !in primitives) classArrayTypes.add(elem)
+			if (elem !in kArrayElemPrimitives) classArrayTypes.add(elem)
 			}
 		}
 	fun scanExpr(e: Expr?) {
@@ -30,7 +29,7 @@ internal fun CCodeGen.scanForClassArrayTypes() {
 				}
 			if (name == "arrayOfNulls" && e.typeArgs.isNotEmpty()) {
 				val elem = e.typeArgs[0].name.replace('.', '$')
-				if (elem !in primitives) classArrayTypes.add(elem)
+				if (elem !in kArrayElemPrimitives) classArrayTypes.add(elem)
 				}
 			for (arg in e.args) scanExpr(arg.expr)
 			}

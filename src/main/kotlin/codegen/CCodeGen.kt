@@ -92,11 +92,6 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         return inName
         }
 
-    internal fun inferredTypeRef(typeName: String?): TypeRef? {
-        if (typeName == null) return null
-        return TypeRef(typeName)
-    }
-
     /* Convert internal type name to Kotlin display name: "Wrapper_String" → "Wrapper<String>" */
     internal fun ktDisplayName(internal: String): String {
         // Generic class instantiation: find base name and split by _

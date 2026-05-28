@@ -54,7 +54,7 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				enumValuesCalled.add(vResolved)
 				return "{${vFlat}_values, ${vFlat}_values\$len}"
 				}
-			error("enumValues requires a type argument")
+			codegenError("enumValues requires a type argument")
 			}
 
 		"enumValueOf" -> {
@@ -66,7 +66,7 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 				val vNameExpr = genExpr(inArgs[0].expr)
 				return "${typeFlatName(vResolved)}_valueOf($vNameExpr)"
 				}
-			error("enumValueOf requires a type argument and a name")
+			codegenError("enumValueOf requires a type argument and a name")
 			}
 
 		"ByteArray"    -> return genNewArray("ktc_Byte",   inArgs)
