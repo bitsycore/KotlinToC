@@ -168,21 +168,22 @@ Hook: the function-emit path needs to honor `f.isInline` for member methods,
 and the call-site dispatch needs to expand the body the same way it does for
 extension methods.
 
-### `!!` on a value-type Optional doesn't unwrap (S)
-`val x: Foo = nullableFoo()!!` emits `Foo x = nullableFoo();` without
-`KTC_UNWRAP(...)`. Codegen path for `NotNullExpr` on a value-type Optional
-needs to extract `.value`. Currently sources / sinks return non-nullable
-sentinels (`FileSource.isOpen` check) to dodge this.
+### ~~`!!` on a value-type Optional doesn't unwrap~~ ✅ shipped
+NotNullExpr on a value-nullable arbitrary expression now spills the inner
+value into a temp, checks the Optional tag, and returns the unwrapped
+`.value`. Previously only worked when `!!` was applied to a NameExpr.
 
-### `?.` on a function-result that's nullable (S)
-`fn().nullableProp?.foo` evaluates `fn()` twice and concatenates the result
-into broken C. Codegen needs to spill the LHS into a temp before the safe-
-access guard. Workaround: bind to a local first.
+### ~~`?.` on a function-result that's nullable~~ ✅ shipped
+genSafeDot now spills non-Name/Self receivers into a temp before evaluating
+the guard and the field access. Also fixes inferDotTypeKtc to strip trailing
+`?` when looking up the receiver's class. Previously, function-result
+receivers were evaluated twice and the safe-access path defaulted to Int.
 
-### Chained struct-method calls take `&` of an rvalue (S)
-`Path("a").child("b").child("c")` emits `child(&child(&Path(...), ...), ...)`
-where the middle `&` is applied to a returned rvalue (illegal in C). Codegen
-needs to materialize a temp variable for the intermediate result.
+### ~~Chained struct-method calls take `&` of an rvalue~~ ✅ shipped
+All `&recv` sites in CallMethod.kt (regular dispatch, asRef, dispose,
+star-ext) now route through `addressOfRecv()`, which detects stable
+lvalues (bare name, `obj.field`, `ptr->field`, `(*ptr)`) and only spills
+non-lvalue receivers into a temp before taking the address.
 
 ### Smart-cast across `&&` in if condition (M)
 `if (x != null && x.field == ...)` doesn't narrow `x` in the RHS of `&&`.
