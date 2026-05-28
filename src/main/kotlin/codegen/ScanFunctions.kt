@@ -14,36 +14,29 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 	val genFunsByName = genericFunDecls.associateBy { it.name }
 	if (genFunsByName.isEmpty()) return
 
-	fun inferTypeArgsFromCall(f: FunDecl, callArgs: List<Arg>, explicitTypeArgs: List<TypeRef>): List<String>? {
-		if (explicitTypeArgs.isNotEmpty()) return explicitTypeArgs.map { it.name }
-		val subst = mutableMapOf<String, String>() // accumulated type param substitutions
-		for ((i, param) in f.params.withIndex()) {
-			if (i >= callArgs.size) break
-			val argExpr = callArgs[i].expr
-			val argType = inferExprType(argExpr) ?: continue
-			inferExprTypeKtc(argExpr)
+	/* Infer type args for a call to f. If inRecvType is non-null, also matches against f.receiver. */
+	fun inferTypeArgs(
+		inF              : FunDecl,
+		inCallArgs       : List<Arg>,
+		inExplicitTypeArgs: List<TypeRef>,
+		inRecvType       : String? = null
+		): List<String>? {
+		if (inExplicitTypeArgs.isNotEmpty()) return inExplicitTypeArgs.map { it.name }
+		val vSubst = mutableMapOf<String, String>() // accumulated type param substitutions
+		if (inRecvType != null && inF.receiver != null) {
+			materializeGenericInstantiations()
+			matchTypeParam(inF.receiver, inRecvType, inF.typeParams.toSet(), vSubst)
+			}
+		for ((i, vParam) in inF.params.withIndex()) {
+			if (i >= inCallArgs.size) break
+			val vArgExpr = inCallArgs[i].expr
+			val vArgType = inferExprType(vArgExpr) ?: continue
+			inferExprTypeKtc(vArgExpr)
 			/* Materialize before matching so genericTypeBindings is populated. */
 			materializeGenericInstantiations()
-			matchTypeParam(param.type, argType, f.typeParams.toSet(), subst)
+			matchTypeParam(vParam.type, vArgType, inF.typeParams.toSet(), vSubst)
 			}
-		if (subst.size == f.typeParams.size) return f.typeParams.map { subst[it]!! }
-		return null
-		}
-
-	fun inferTypeArgsFromReceiver(f: FunDecl, recvType: String, callArgs: List<Arg>, explicitTypeArgs: List<TypeRef>): List<String>? {
-		if (explicitTypeArgs.isNotEmpty()) return explicitTypeArgs.map { it.name }
-		val subst = mutableMapOf<String, String>() // accumulated type param substitutions
-		materializeGenericInstantiations()
-		if (f.receiver != null) matchTypeParam(f.receiver, recvType, f.typeParams.toSet(), subst)
-		for ((i, param) in f.params.withIndex()) {
-			if (i >= callArgs.size) break
-			val argExpr = callArgs[i].expr
-			val argType = inferExprType(argExpr) ?: continue
-			inferExprTypeKtc(argExpr)
-			materializeGenericInstantiations()
-			matchTypeParam(param.type, argType, f.typeParams.toSet(), subst)
-			}
-		if (subst.size == f.typeParams.size) return f.typeParams.map { subst[it]!! }
+		if (vSubst.size == inF.typeParams.size) return inF.typeParams.map { vSubst[it]!! }
 		return null
 		}
 
@@ -56,7 +49,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 					val name = (e.callee as? NameExpr)?.name
 					if (name != null && genFunsByName.containsKey(name)) {
 						val f = genFunsByName[name]!!
-						val typeArgs = inferTypeArgsFromCall(f, e.args, e.typeArgs)
+						val typeArgs = inferTypeArgs(f, e.args, e.typeArgs)
 						if (typeArgs != null) genericFunInstantiations.getOrPut(name) { mutableSetOf() }.add(typeArgs)
 						}
 					if (e.callee is DotExpr) {
@@ -66,7 +59,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 							val recvType = inferExprType(e.callee.obj)
 							inferExprTypeKtc(e.callee.obj)
 							val typeArgs = if (f.receiver != null && recvType != null) {
-								inferTypeArgsFromReceiver(f, recvType, e.args, e.typeArgs)
+								inferTypeArgs(f, e.args, e.typeArgs, recvType)
 								} else null
 							if (typeArgs != null) {
 								genericFunInstantiations.getOrPut(dotName) { mutableSetOf() }.add(typeArgs)
@@ -86,7 +79,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 						val vRecvType = inferExprType(e.left)
 						inferExprTypeKtc(e.left)
 						if (vRecvType != null) {
-							val vArgs = inferTypeArgsFromReceiver(vInfixDecl, vRecvType, listOf(Arg(expr = e.right)), emptyList())
+							val vArgs = inferTypeArgs(vInfixDecl, listOf(Arg(expr = e.right)), emptyList(), vRecvType)
 							if (vArgs != null) genericFunInstantiations.getOrPut(e.op) { mutableSetOf() }.add(vArgs)
 							}
 						}
