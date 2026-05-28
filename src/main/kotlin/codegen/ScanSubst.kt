@@ -91,7 +91,7 @@ internal fun CCodeGen.scanExprWithSubst(e: Expr?, subst: Map<String, String>): B
 					if (resolvedArgs.none { it in allGenericTypeParamNames }) {
 						val existing = genericFunInstantiations[name]
 						if (existing == null || resolvedArgs !in existing) {
-							genericFunInstantiations.getOrPut(name) { mutableSetOf() }.add(resolvedArgs)
+							recordGenericFunInstantiation(name, resolvedArgs)
 							found = true
 							}
 						}
@@ -227,7 +227,7 @@ internal fun CCodeGen.inferConcreteReturnClass(body: Block?, subst: Map<String, 
 		val forwardedTypeArgs = forwardedDecl.typeParams.map { forwardedSubst[it] ?: it }
 		val existing = genericFunInstantiations[calleeName]
 		if (existing == null || forwardedTypeArgs !in existing) {
-			genericFunInstantiations.getOrPut(calleeName) { mutableSetOf() }.add(forwardedTypeArgs)
+			recordGenericFunInstantiation(calleeName, forwardedTypeArgs)
 			}
 		val forwardedMangled = "${calleeName}_${forwardedTypeArgs.joinToString("_")}"
 		return genericFunConcreteReturn[forwardedMangled]

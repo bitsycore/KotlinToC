@@ -10,7 +10,7 @@ Resolves type args from mangledComponents and inserts them into genericFunInstan
 private fun CCodeGen.recordIfaceExtInstantiation(decl: FunDecl, concrete: String) {
 	val components = mangledComponents[concrete]?.second
 	val tArgs = List(decl.typeParams.size) { i -> components?.getOrNull(i) ?: "Int" }
-	genericFunInstantiations.getOrPut(decl.name) { mutableSetOf() }.add(tArgs)
+	recordGenericFunInstantiation(decl.name, tArgs)
 	}
 
 /* Search the interfaces implemented by [className] for a generic extension function named [method].

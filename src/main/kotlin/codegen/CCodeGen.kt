@@ -183,6 +183,10 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val starExtFunDecls = mutableListOf<FunDecl>()
     // Concrete instantiations of generic functions: mangledName → (FunDecl, typeSubst)
     internal val genericFunInstantiations = mutableMapOf<String, MutableSet<List<String>>>()
+    /* Record a concrete instantiation of a generic function (idempotent). */
+    internal fun recordGenericFunInstantiation(inName: String, inTypeArgs: List<String>) {
+        genericFunInstantiations.getOrPut(inName) { mutableSetOf() }.add(inTypeArgs)
+        }
     // Maps mangled generic function name → concrete class return type when the declared return
     // type is an interface but the body returns a concrete class (enables stack return)
     internal val genericFunConcreteReturn = mutableMapOf<String, String>()

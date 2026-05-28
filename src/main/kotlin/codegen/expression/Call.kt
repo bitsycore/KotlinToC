@@ -280,7 +280,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         }
         if (vTypeArgNames != null) {
             val vMangled   = "${vName}_${vTypeArgNames.joinToString("_")}"
-            genericFunInstantiations.getOrPut(vName) { mutableSetOf() }.add(vTypeArgNames)
+            recordGenericFunInstantiation(vName, vTypeArgNames)
             val vNewSubst = vGenFun.typeParams.zip(vTypeArgNames).toMap()
             val (vExpandedArgs, vSized) = withTypeSubst(vNewSubst) {
                 val ea = prepareArgs(vArgs, vGenFun)

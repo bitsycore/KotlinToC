@@ -50,7 +50,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 					if (name != null && genFunsByName.containsKey(name)) {
 						val f = genFunsByName[name]!!
 						val typeArgs = inferTypeArgs(f, e.args, e.typeArgs)
-						if (typeArgs != null) genericFunInstantiations.getOrPut(name) { mutableSetOf() }.add(typeArgs)
+						if (typeArgs != null) recordGenericFunInstantiation(name, typeArgs)
 						}
 					if (e.callee is DotExpr) {
 						val dotName = e.callee.name
@@ -62,7 +62,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 								inferTypeArgs(f, e.args, e.typeArgs, recvType)
 								} else null
 							if (typeArgs != null) {
-								genericFunInstantiations.getOrPut(dotName) { mutableSetOf() }.add(typeArgs)
+								recordGenericFunInstantiation(dotName, typeArgs)
 								val mangledRecvName = substituteTypeRef(f.receiver!!, f.typeParams.zip(typeArgs).toMap()).let {
 									resolveTypeName(it).toInternalStr
 									}
@@ -80,7 +80,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 						inferExprTypeKtc(e.left)
 						if (vRecvType != null) {
 							val vArgs = inferTypeArgs(vInfixDecl, listOf(Arg(expr = e.right)), emptyList(), vRecvType)
-							if (vArgs != null) genericFunInstantiations.getOrPut(e.op) { mutableSetOf() }.add(vArgs)
+							if (vArgs != null) recordGenericFunInstantiation(e.op, vArgs)
 							}
 						}
 					scanExpr(e.left); scanExpr(e.right)
