@@ -9,9 +9,9 @@ fun testPathBasics() {
 	if (p.name != "baz.kt")        error("FAIL Path.name")
 	if (p.nameWithoutExtension != "baz") error("FAIL Path.nameWithoutExtension")
 	if (p.extension != "kt")       error("FAIL Path.extension")
-	val pParent = p.parent
-	if (pParent == null) error("FAIL Path.parent is null")
-	// After if-null-error, pParent is smart-cast to non-null.
+	// `!!` on a function/property result that's nullable — exercises the
+	// unwrap path for value-type Optional returns.
+	val pParent = p.parent!!
 	if (pParent.s != "foo/bar") error("FAIL Path.parent: ${pParent.s}")
 	if (p.isAbsolute)              error("FAIL Path.isAbsolute (relative)")
 

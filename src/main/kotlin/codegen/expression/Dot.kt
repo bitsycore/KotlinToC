@@ -349,6 +349,18 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
         return "$name.value"
     }
 
+    // Value-nullable arbitrary expression (e.g. `metadata(p)!!`): spill to a temp,
+    // check its Optional tag, then return the inner `.value`. Without this fall-through,
+    // a chained `!!` on a function-result of `T?` ends up assigned to a `T` lvalue
+    // without unwrapping — the C compiler then complains about struct/value mismatch.
+    if (innerKtc is KtcType.Nullable && isValueNullableKtc(innerKtc)) {
+        val t = tmp()
+        val vOptCType = optCTypeName(innerKtc.inner.toInternalStr)
+        preStmts += "$vOptCType $t = $inner;"
+        preStmts += "if ($t.tag == ktc_NONE) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+        return "$t.value"
+    }
+
     // Check: !! on a type that inference knows is non-nullable — always a bug
     // Exclude smart-cast variables: they are stored as Optional but narrowed in scope (isOptional guard).
     val isSmartCastNarrowed = e.expr is NameExpr && isOptional(e.expr.name)
