@@ -297,9 +297,12 @@ expansion-side twin of B11; both halves now prefer the type-matching candidate).
 transcendental layer (sqrt/pow/floor/ceil/sin/cos) — needs `<math.h>` available in user TUs (either
 add the include to ktc_core.h, or provide `ktc_core_*` wrappers); deferred pending that decision.
 
-### [ ] U5 — No String split/lines/replace(String,String)/removePrefix/substringBefore (M)
-Strings.kt. Add zero-alloc inline `split(delim){…}` / `lines{…}` yielding substring views + pure-view
-`removePrefix/removeSuffix/substringBefore/substringAfter`; `replace(String,String)` via StringBuffer.
+### [~] U5 — String view ops (partial) (M)
+Shipped pure-view inline extensions in Strings.kt: `removePrefix`/`removeSuffix`/`substringBefore`/
+`substringAfter`/`substringBeforeLast`/`substringAfterLast` (Char delimiter; + `StringViewTest`).
+STILL TODO: `split(delim){…}` / `lines{…}` (zero-alloc inline iterator yielding views) and
+`replace(String,String)` (needs a StringBuffer). Char-vs-String delimiter overloads are blocked until
+`findInlineExtFun` disambiguates extension overloads by arg type (today: receiver + arity only).
 
 ### [ ] U6 — No `Set` type; Map missing getOrPut/getOrDefault/keys/values/forEach (M)
 Add `HashSet<T>` (thin over HashMap or dedicated) + `Map.forEach`, `getOrPut` (single-probe member),

@@ -240,3 +240,42 @@ inline fun String.isBlank(): Boolean {
 
 /** True when the string contains at least one non-whitespace character. */
 inline fun String.isNotBlank(): Boolean = !this.isBlank()
+
+// ==================
+// MARK: Prefix / suffix / delimiter views
+// ==================
+// All return a substring VIEW into the receiver's backing buffer (no allocation). Single-overload
+// signatures only: findInlineExtFun disambiguates extension overloads by receiver + arg count, not
+// arg type, so Char-vs-String variants of the same arity would be ambiguous (see plan.md).
+
+/** This string with [prefix] removed if it starts with it; otherwise unchanged. */
+inline fun String.removePrefix(prefix: String): String =
+	if (this.startsWith(prefix)) this.substring(prefix.length, this.length) else this
+
+/** This string with [suffix] removed if it ends with it; otherwise unchanged. */
+inline fun String.removeSuffix(suffix: String): String =
+	if (this.endsWith(suffix)) this.substring(0, this.length - suffix.length) else this
+
+/** The part before the first [delimiter]; the whole string if the delimiter is absent. */
+inline fun String.substringBefore(delimiter: Char): String {
+	val i = this.indexOf(delimiter)
+	return if (i < 0) this else this.substring(0, i)
+}
+
+/** The part after the first [delimiter]; the whole string if the delimiter is absent. */
+inline fun String.substringAfter(delimiter: Char): String {
+	val i = this.indexOf(delimiter)
+	return if (i < 0) this else this.substring(i + 1, this.length)
+}
+
+/** The part after the last [delimiter]; the whole string if the delimiter is absent. */
+inline fun String.substringAfterLast(delimiter: Char): String {
+	val i = this.lastIndexOf(delimiter)
+	return if (i < 0) this else this.substring(i + 1, this.length)
+}
+
+/** The part before the last [delimiter]; the whole string if the delimiter is absent. */
+inline fun String.substringBeforeLast(delimiter: Char): String {
+	val i = this.lastIndexOf(delimiter)
+	return if (i < 0) this else this.substring(0, i)
+}
