@@ -54,46 +54,64 @@ private fun destructuredBody(s: ForStmt): Block =
     if (s.destructureNames.isEmpty()) s.body
     else Block(listOf(DestructuringDeclStmt(s.destructureNames, NameExpr(s.varName), mutable = false)) + s.body.stmts)
 
+/* True for loop endpoints / steps that are safe to inline into the loop header without a
+   re-evaluation hazard: compile-time literals and immutable-val names. Everything else must be
+   hoisted to a temp so it is evaluated exactly once — Kotlin builds the range/progression once,
+   so a mutable name, a property read, or a call must NOT be re-read on every iteration. */
+private fun CCodeGen.isTrivialLoopBound(e: Expr): Boolean = when (e) {
+    is IntLit, is LongLit, is UIntLit, is ULongLit, is CharLit -> true
+    is NameExpr -> !isMutable(e.name)
+    else -> false
+}
+
+/* Emit a counted range loop `for (T i = start; i <cmp> end; i <op>= step)`. The start is inlined
+   into the once-run init; the end and step are hoisted into temps unless trivial (B6). preStmts
+   queued by any endpoint are flushed before the loop header. */
+private fun CCodeGen.emitCountedRangeLoop(
+    s: ForStmt, range: BinExpr, cmp: String, descending: Boolean, stepExpr: Expr?, ind: String, method: Boolean
+) {
+    val (vCType, vPrim) = rangeElementType(range)
+    val vStartC = genExpr(range.left)
+    val vEndC   = genExpr(range.right)
+    val vStepC  = stepExpr?.let { genExpr(it) }
+    flushPreStmts(ind)
+    val vEnd  = if (isTrivialLoopBound(range.right)) vEndC
+                else { val t = tmp(); impl.appendLine("$ind$vCType $t = $vEndC;"); t }
+    val vStep = if (stepExpr == null) null
+                else if (isTrivialLoopBound(stepExpr)) vStepC
+                else { val t = tmp(); impl.appendLine("$ind$vCType $t = $vStepC;"); t }
+    val opStr = if (vStep != null) (if (descending) "${s.varName} -= $vStep" else "${s.varName} += $vStep")
+                else               (if (descending) "${s.varName}--"          else "${s.varName}++")
+    impl.appendLine("${ind}for ($vCType ${s.varName} = $vStartC; ${s.varName} $cmp $vEnd; $opStr) {")
+    emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
+    impl.appendLine("$ind}")
+}
+
 internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
     if (isEmptyBlock(s.body))
         codegenWarning("empty-body", "Empty 'for' body — the loop has no effect.")
     loopDepth++
     val iter = s.iter
-    // Unwrap "step" wrapper: (rangeExpr step N)
-    val step: String?
+    // Unwrap "step" wrapper: (rangeExpr step N) — keep the AST so the step amount can be hoisted.
+    val stepExpr: Expr?
     val rangeExpr: Expr
     if (iter is BinExpr && iter.op == "step") {
-        step = genExpr(iter.right)
+        stepExpr = iter.right
         rangeExpr = iter.left
     } else {
-        step = null
+        stepExpr = null
         rangeExpr = iter
     }
     // for (i in a..b)   inclusive range
     when (rangeExpr) {
-        is BinExpr if rangeExpr.op == ".." -> {
-            val (vCType, vPrim) = rangeElementType(rangeExpr)
-            val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
-            impl.appendLine("${ind}for ($vCType ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} <= ${genExpr(rangeExpr.right)}; $inc) {")
-            emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
-            impl.appendLine("$ind}")
-        }
+        is BinExpr if rangeExpr.op == ".." ->
+            emitCountedRangeLoop(s, rangeExpr, "<=", descending = false, stepExpr, ind, method)
         // for (i in a until b)  or  for (i in a..<b)
-        is BinExpr if (rangeExpr.op == "until" || rangeExpr.op == "..<") -> {
-            val (vCType, vPrim) = rangeElementType(rangeExpr)
-            val inc = if (step != null) "${s.varName} += $step" else "${s.varName}++"
-            impl.appendLine("${ind}for ($vCType ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} < ${genExpr(rangeExpr.right)}; $inc) {")
-            emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
-            impl.appendLine("$ind}")
-        }
+        is BinExpr if (rangeExpr.op == "until" || rangeExpr.op == "..<") ->
+            emitCountedRangeLoop(s, rangeExpr, "<", descending = false, stepExpr, ind, method)
         // for (i in a downTo b)
-        is BinExpr if rangeExpr.op == "downTo" -> {
-            val (vCType, vPrim) = rangeElementType(rangeExpr)
-            val dec = if (step != null) "${s.varName} -= $step" else "${s.varName}--"
-            impl.appendLine("${ind}for ($vCType ${s.varName} = ${genExpr(rangeExpr.left)}; ${s.varName} >= ${genExpr(rangeExpr.right)}; $dec) {")
-            emitForVarBlock(s.varName, KtcType.Prim(vPrim), s.body, ind, method)
-            impl.appendLine("$ind}")
-        }
+        is BinExpr if rangeExpr.op == "downTo" ->
+            emitCountedRangeLoop(s, rangeExpr, ">=", descending = true, stepExpr, ind, method)
         // for (item in array/collection)  — iterate over elements
         else -> {
             val arrType    = inferExprType(rangeExpr)
@@ -140,12 +158,18 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
                 impl.appendLine("$ind}")
             } else {
                 // Array: use .len / trampoline size and direct or .ptr indexing
-                val arrExpr     = genExpr(rangeExpr)
+                val arrExpr0    = genExpr(rangeExpr)
+                flushPreStmts(ind)   // B7: emit any receiver preStmts BEFORE the loop header, not inside the body
                 val idx         = tmp()
                 val elemType    = if (arrTypeKtc != null) arrayElementCTypeKtc(arrTypeKtc) else "ktc_Int"
                 val arrOrigName = (rangeExpr as? NameExpr)?.name
                 val vIsTrampolined = arrOrigName != null && arrOrigName in trampolinedParams // @Size trampolined: local ptr
                 val vIsSizedArr    = arrTypeKtc?.asArr?.sized != null                  // fixed-size C array
+                // B7: spill a non-trivial VarArr receiver once. It is read for the bound (.len) and
+                // for every element (.ptr[i]); an inline call/getter receiver would otherwise run on
+                // each access. A bare name / field read / already-spilled temp needs no copy.
+                val arrExpr = if (rangeExpr is NameExpr || vIsTrampolined || vIsSizedArr || '(' !in arrExpr0) arrExpr0
+                              else { val t = tmp(); impl.appendLine("$ind${varArrTypeName(elemType)} $t = $arrExpr0;"); t }
                 val sizeExpr    = if (vIsTrampolined) arrayParamSizeExpr(arrOrigName) else "${arrExpr}.len"
                 val vElemAccess = if (vIsTrampolined || vIsSizedArr) "$arrExpr[$idx]" else "$arrExpr.ptr[$idx]"
                 impl.appendLine("${ind}for (ktc_Int $idx = 0; $idx < $sizeExpr; $idx++) {")

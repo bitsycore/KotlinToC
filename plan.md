@@ -64,12 +64,12 @@ Map.kt:174-180 passes `pairs.size` straight in; 0 pairs → `% 0` SIGFPE on firs
 `mutableMapOf` already guards. Fix: `val cap = if (pairs.size == 0) 8 else pairs.size * 2`, and
 clamp `capacity >= 1` (better `>= 8`) inside the HashMap init for defence in depth.
 
-### [ ] B6 — Range-loop right endpoint re-evaluated every iteration (S)
+### [x] B6 — Range-loop right endpoint re-evaluated every iteration (S)
 For.kt:77/85/93 inline `genExpr(rangeExpr.right)` into the loop condition, so `for (i in 0..f())`
 calls `f()` N+1 times (semantics divergence + perf). Fix: hoist the endpoint (and `step`) into a
 temp before the loop, `flushPreStmts` first; skip the temp only for literals / immutable names.
 
-### [ ] B7 — Collection for-loop receiver: preStmts not flushed → use-before-declaration (M)
+### [x] B7 — Collection for-loop receiver: preStmts not flushed → use-before-declaration (M)
 For.kt:143 (`arrExpr = genExpr(rangeExpr)`) never flushes preStmts before splicing `.len`/`.ptr`
 into the header. A receiver that spills (e.g. `@Size(N)`-array-returning call) emits temp decls
 *inside* the loop body, after use → **gcc rejects it**. Fix: `flushPreStmts(ind)` + spill the
