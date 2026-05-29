@@ -179,8 +179,16 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         vInlineCandidates == null -> null
         vInlineCandidates.size == 1 -> vInlineCandidates[0]
         else -> {
-            val vExact = vInlineCandidates.find { it.params.size == vArgs.size }
-            vExact ?: vInlineCandidates.minByOrNull { kotlin.math.abs(it.params.size - vArgs.size) }
+            val vArity = vInlineCandidates.filter { it.params.size == vArgs.size }
+            // Among same-arity candidates, prefer the one whose resolved param types match the
+            // inferred arg types, so a type-differentiated overload set (e.g. maxOf(Int,Int) vs
+            // maxOf(Double,Double)) doesn't always pick the first. A null (un-inferable) arg or a
+            // generic type-param wildcards that position, so generic inline funcs keep arity-only.
+            val vArgTypes = vArgs.map { inferExprType(it.expr) }
+            val vTyped = vArity.find { decl ->
+                decl.params.indices.all { i -> vArgTypes[i]?.let { it == resolveTypeRefStr(decl.params[i].type) } ?: true }
+            }
+            vTyped ?: vArity.firstOrNull() ?: vInlineCandidates.minByOrNull { kotlin.math.abs(it.params.size - vArgs.size) }
         }
     }
     if (vInlineDecl != null) {

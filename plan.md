@@ -289,9 +289,13 @@ overloads). If default-arg-to-global-object isn't expressible yet, that codegen 
 ### [x] U3 — `Char` lacks isDigit/isLetter/isWhitespace/digitToInt/case predicates (S)
 Primitives.kt:31-63. Add inline ASCII-fast-path predicates — every tokenizer needs them.
 
-### [ ] U4 — No numeric/math helpers: abs, min/maxOf, coerceIn, sqrt/pow/floor/… (M)
-Add Math.kt: inline `maxOf`/`minOf`/`abs`/`coerceIn`/`coerceAtLeast`/`coerceAtMost` + thin inline forwards
-to `<math.h>` so app code doesn't reach into `C.*` for game/embedded math.
+### [~] U4 — numeric/math helpers (partial) (M)
+Shipped `ktc/Math.kt`: inline `maxOf`/`minOf`/`abs`/`coerceIn`/`coerceAtLeast`/`coerceAtMost` for
+Int/Long/Float/Double (+ `MathTest`). Required fixing inline free-function overload selection to be
+type-aware (Call.kt was arity-only, so `maxOf(2.5,1.5)` picked the Int overload and truncated — the
+expansion-side twin of B11; both halves now prefer the type-matching candidate). STILL TODO: the
+transcendental layer (sqrt/pow/floor/ceil/sin/cos) — needs `<math.h>` available in user TUs (either
+add the include to ktc_core.h, or provide `ktc_core_*` wrappers); deferred pending that decision.
 
 ### [ ] U5 — No String split/lines/replace(String,String)/removePrefix/substringBefore (M)
 Strings.kt. Add zero-alloc inline `split(delim){…}` / `lines{…}` yielding substring views + pure-view
