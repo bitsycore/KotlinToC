@@ -28,9 +28,9 @@ Each item below is marked `[x]` when shipped this pass.
   `inline fun Char.digitToIntOrNull(): Int?` invoked as `'x'.digitToIntOrNull()` emits a literal
   `'x'.digitToIntOrNull()` and wrongly wraps the result in `KTC_SOME` — uncompilable C. Same family
   as the member-inline-fun gap (§8). Blocks `digitToIntOrNull` and similar. (M)
-- **D3 — top-level `var` write emits an unprefixed LHS inside a same-package function.**
-  Reading a top-level `var g` inside a function yields the prefixed `Pkg_g`, but assigning `g = …`
-  emits a bare `g` (undeclared in C). Read/write prefixing is asymmetric for top-level vars. (S)
+- **D3 — top-level `var` write emits an unprefixed LHS inside a same-package function.** ✅ FIXED
+  `genLValue`'s NameExpr case now applies the package prefix for a top-level prop (mirrors the read
+  path); the write side was emitting a bare, undeclared C name. Test: `TopVarWriteTest`.
 
 ═══════════════════════════════════════════════════════════════════════
 ## 1. Correctness bugs (verified — produce wrong or uncompilable C)

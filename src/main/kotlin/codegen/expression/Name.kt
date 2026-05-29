@@ -96,7 +96,11 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 /* Generate the C l-value expression for an assignment target. */
 internal fun CCodeGen.genLValue(e: Expr): String {
 	return when (e) {
-		is NameExpr -> lookupCName(e.name)
+		// A top-level property (not shadowed by a local) needs the package prefix on the WRITE side
+		// too — the read path (genName) prefixes it, but lookupCName only knows locals and would
+		// otherwise emit a bare (undeclared) name on the assignment LHS.
+		is NameExpr -> if (lookupVarKtc(e.name) == null && e.name in topProps) typeFlatName(e.name)
+		               else lookupCName(e.name)
 
 		is DotExpr -> {
 			if (e.obj is NameExpr && objects.containsKey(e.obj.name))
