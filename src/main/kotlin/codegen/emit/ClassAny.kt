@@ -17,10 +17,7 @@ internal fun CCodeGen.emitClassEquals(cName: String, ci: ClassInfo) {
 	hdr.appendLine("KTC_METHOD(ktc_Bool, equals)(KTC_TYPE_NAME a, KTC_TYPE_NAME b);")
 	impl.appendLine("// ══ fun equals ══")
 	impl.appendLine("ktc_Bool ${cName}_equals($cName a, $cName b) {")
-	val eqs = ci.storedProps.filter { (_, type) ->
-		val innerName = if (type.name == "Ref" && type.typeArgs.isNotEmpty()) type.typeArgs[0].name else type.name
-		!(type.isRefType() && interfaces.containsKey(innerName))
-		}.joinToString(" && ") { (name, type) ->
+	val eqs = ci.hashEqProps(interfaces.keys).joinToString(" && ") { (name, type) ->
 		val fieldName = if (name in ci.privateProps) "PRIV_$name" else name
 		val vKtcEq    = resolveTypeName(type)
 		val vTStr     = vKtcEq.toInternalStr
@@ -92,9 +89,10 @@ internal fun CCodeGen.emitImplicitHashCode(
 	hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(KTC_TYPE_NAME* \$self);")
 	impl.appendLine("// ══ fun hashCode(): Int ══")
 	impl.appendLine("ktc_Int ${cName}_hashCode($cName* \$self) {")
-	if (isData && ci.storedProps.isNotEmpty()) {
+	val vHashProps = ci.hashEqProps(interfaces.keys)  // same field set as equals — must stay in sync
+	if (isData && vHashProps.isNotEmpty()) {
 		impl.appendLine("    ktc_Int h = 0;")
-		for ((name, type) in ci.storedProps) {
+		for ((name, type) in vHashProps) {
 			val vKtcHash   = resolveTypeName(type)
 			val fieldName  = if (name in ci.privateProps) "PRIV_$name" else name
 			val hashExpr   = if (type.nullable && vKtcHash !is KtcType.Ptr) {
@@ -186,19 +184,21 @@ internal fun CCodeGen.emitAnyVtable(
 			impl.appendLine("}")
 			}
 	impl.appendLine()
-	if (members.none { it is FunDecl && it.name == "dispose" }) {
+	val vNoDisposeOverride = members.none { it is FunDecl && it.name == "dispose" }
+	val vTracksDispose     = disposedMode != "NO" || doubleDisposeMode != "NO"
+	// When there's no dispose override AND no dispose-tracking, the per-class dispose trampoline
+	// would be a pure no-op identical to the shared ktc_core_noop_dispose (already used by iface
+	// vtables) — point the Any-vtable slot straight at it instead of emitting a redundant function.
+	val vUseSharedNoopDispose = vNoDisposeOverride && !vTracksDispose
+	if (!vUseSharedNoopDispose) {
 		impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")
-		if (disposedMode != "NO" || doubleDisposeMode != "NO")
+		if (vNoDisposeOverride)
 			impl.appendLine("    KTC_MARK_DISPOSED(($cName*)\$self);")
 		else
-			impl.appendLine("    (void)\$self;")
+			impl.appendLine("    ${cName}_dispose(($cName*)\$self);")
 		impl.appendLine("}")
-		} else {
-		impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")
-		impl.appendLine("    ${cName}_dispose(($cName*)\$self);")
-		impl.appendLine("}")
+		impl.appendLine()
 		}
-	impl.appendLine()
 	impl.appendLine("static void* ${cName}_copyWith_any(void* \$self, void* alloc) {")
 	impl.appendLine("    ktc_Allocator* a = (ktc_Allocator*)alloc;")
 	impl.appendLine("    $cName* dst = ($cName*)a->vt->allocMem((void*)&a->data, sizeof($cName), ${ktSrcStr()});")
@@ -212,7 +212,7 @@ internal fun CCodeGen.emitAnyVtable(
 	impl.appendLine("    (void (*)(void*, void*)) ${cName}_toString_any,")
 	impl.appendLine("    (ktc_Int (*)(void*)) ${cName}_hashCode_any,")
 	impl.appendLine("    (ktc_Bool (*)(void*, void*)) ${cName}_equals_any,")
-	impl.appendLine("    (void (*)(void*)) ${cName}_dispose_any,")
+	impl.appendLine("    (void (*)(void*)) ${if (vUseSharedNoopDispose) "ktc_core_noop_dispose" else "${cName}_dispose_any"},")
 	impl.appendLine("    (void* (*)(void*, void*)) ${cName}_copyWith_any,")
 	impl.appendLine("};")
 	impl.appendLine()

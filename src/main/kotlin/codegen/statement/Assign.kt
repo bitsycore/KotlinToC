@@ -256,7 +256,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         // Check: return with a value from a Unit (void) function
         val vRetBase = currentFnReturnBaseType()
         if (s.value != null && s.value !is NullLit && vRetBase == "Unit") {
-            codegenError("Cannot return a value from a Unit function")
+            codegenError("E024", "Cannot return a value from a Unit function")
         }
         // Check: bare 'return' (no value) from a non-Unit non-Any function
         if (s.value == null && vRetBase != "" && vRetBase != "Unit" && vRetBase != "Any" &&

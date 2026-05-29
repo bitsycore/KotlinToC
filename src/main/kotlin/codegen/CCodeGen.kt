@@ -423,7 +423,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         return when (typeName) {
             "Byte", "UByte"                           -> Pair(1, 1)
             "Short", "UShort"                         -> Pair(2, 2)
-            "Int", "UInt", "Float", "Bool", "Char"   -> Pair(4, 4)
+            "Int", "UInt", "Float", "Boolean", "Char" -> Pair(4, 4)
             "Long", "ULong", "Double"                 -> Pair(8, 8)
             "String"                                  -> Pair(16, 8)
             "AnyPtr"                                  -> Pair(8, 8)

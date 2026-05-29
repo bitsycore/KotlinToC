@@ -418,10 +418,10 @@ internal fun CCodeGen.defaultVal(t: KtcType): String = when (t) {
 	is KtcType.Str  -> "ktc_core_str(\"\")"
 	is KtcType.Ptr    -> "NULL"
 	is KtcType.COpaque -> "(${t.cName}){0}"
-	else -> {
-		val ct = cTypeStr(t.toInternalStr.removeSuffix("?"))
-		"($ct){0}"
-		}
+	// A nullable Ref is a plain pointer → NULL; other types zero-init their C type.
+	// Match on the structured KtcType instead of the toInternalStr/removeSuffix("?") detour.
+	is KtcType.Nullable -> if (t.inner is KtcType.Ptr) "NULL" else "(${cTypeStr(t.stripNullable)}){0}"
+	else -> "(${cTypeStr(t.stripNullable)}){0}"
 	}
 
 // ═══════════════════════════ printf helpers ════════════════════════

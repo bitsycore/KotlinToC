@@ -502,8 +502,18 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vIdx        = inArgs.getOrNull(0)?.let { genExpr(it.expr) } ?: "0"
 		val vRecvName   = (inDot.obj as? NameExpr)?.name
 		val vIsTramp    = vRecvName != null && vRecvName in trampolinedParams
-		val vIsSized    = inRecvTypeKtc.asArr?.sized != null
-		val vAccessExpr = if (vIsTramp || vIsSized) "$inRecv[$vIdx]" else "$inRecv.ptr[$vIdx]"
+		val vSizedN     = inRecvTypeKtc.asArr?.sized
+		val vIsSized    = vSizedN != null
+		// arr.get(i)/set(i,v) are the method spelling of arr[i] — apply the SAME default-ON bounds
+		// check the IndexExpr path applies, so the safety net isn't silently lost. (RawArray, having
+		// no length, is excluded by the isArrayLike guard and stays unchecked, same as bare-pointer [].)
+		val vLen = when {
+			vIsTramp        -> arrayParamSizeExpr(vRecvName)
+			vSizedN != null -> vSizedN.toString()
+			else            -> "($inRecv).len"
+			}
+		val vCheckedIdx = wrapBoundsIdx(vIdx, vLen, inArgs.getOrNull(0)?.expr, inDot.obj)
+		val vAccessExpr = if (vIsTramp || vIsSized) "$inRecv[$vCheckedIdx]" else "$inRecv.ptr[$vCheckedIdx]"
 		if (vMethod == "get") return vAccessExpr
 		val vValExpr = inArgs.getOrNull(1)?.let { genExpr(it.expr) } ?: "0"
 		return "($vAccessExpr = $vValExpr)"

@@ -97,11 +97,11 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
         }
 
         is BreakStmt -> {
-            if (loopDepth == 0) codegenError("'break' outside of a loop")
+            if (loopDepth == 0) codegenError("E090", "'break' outside of a loop")
             impl.appendLine("${ind}break;")
         }
         is ContinueStmt -> {
-            if (loopDepth == 0) codegenError("'continue' outside of a loop")
+            if (loopDepth == 0) codegenError("E091", "'continue' outside of a loop")
             impl.appendLine("${ind}continue;")
         }
         is DeferStmt -> deferStack.add(s.body)

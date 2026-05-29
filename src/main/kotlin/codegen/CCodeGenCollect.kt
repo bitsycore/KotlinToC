@@ -283,15 +283,15 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 					for (m in collectAllIfaceMethods(iface)) {
 						val impl = classMethodNames[m.name]
 						when {
-							impl == null      -> codegenError("Class '${d.name}' must implement '${m.name}' from interface '$ifaceName'")
-							!impl.isOverride  -> codegenError("Method '${m.name}' in class '${d.name}' must be marked 'override'")
+							impl == null      -> codegenError("E100", "Class '${d.name}' must implement '${m.name}' from interface '$ifaceName'")
+							!impl.isOverride  -> codegenError("E101", "Method '${m.name}' in class '${d.name}' must be marked 'override'")
 							}
 						}
 					}
 				// dispose() and hashCode() are implicitly overrides — always require the keyword
 				for (m in ci.methods) {
 					if ((m.name == "dispose" || m.name == "hashCode") && !m.isOverride) {
-						codegenError("Method '${m.name}' in class '${d.name}' must be marked 'override'")
+						codegenError("E101", "Method '${m.name}' in class '${d.name}' must be marked 'override'")
 						}
 					}
 				// Check for bogus override on methods that don't match any interface
@@ -467,7 +467,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// dispose()/hashCode() are implicitly overrides — require the keyword (current file, non-stdlib)
 			if (validate && file.pkg != "ktc.std") {
 				for (m in d.members) if (m is FunDecl && (m.name == "dispose" || m.name == "hashCode") && !m.isOverride) {
-					codegenError("Method '${m.name}' in object '${d.name}' must be marked 'override'")
+					codegenError("E101", "Method '${m.name}' in object '${d.name}' must be marked 'override'")
 					}
 				}
 			// Track objects with dispose for auto-call on main exit (current file only)

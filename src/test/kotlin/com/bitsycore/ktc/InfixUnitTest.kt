@@ -64,7 +64,8 @@ class InfixUnitTest : TranspilerTestBase() {
 				val r = "a" cat "b"
 			}
 		""")
-		vR.sourceContains("ktc_core_alloca(512)")
+		// The concat buffer is alloca'd (frame-lived), now sized from the operand lengths.
+		vR.sourceContains("ktc_core_alloca")
 		vR.sourceContains("ktc_core_string_cat")
 	}
 

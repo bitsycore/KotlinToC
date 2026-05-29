@@ -258,7 +258,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 				preStmts += "$vStructType $vWrap;"
 				preStmts += "memcpy($vWrap.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); $vWrap.len = ($expr).len;"
 				parts += vWrap
-				} else if (isArrayType(paramType)) {
+				} else if (paramTypeKtc.asArr != null) {  // Arr or Ptr(Arr) — structural, not endsWith("Array")
 				if (param.type.hasSizeAnnotation()) {
 					// @Size(N) array param — wrap pointer into ktc_Array_T_N value struct
 					val vElemKtc    = paramTypeKtc.asArr!!.elem  // element KtcType

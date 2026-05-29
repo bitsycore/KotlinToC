@@ -118,7 +118,7 @@ internal fun CCodeGen.fillDefaults(
 
 	// Check: too many positional arguments (only for non-vararg functions)
 	if (!hasVararg && args.none { it.name != null } && args.size > nonVarargCount) {
-		codegenError("Too many arguments for '$funName': expected $nonVarargCount, got ${args.size}")
+		codegenError("E053", "Too many arguments for '$funName': expected $nonVarargCount, got ${args.size}")
 		}
 
 	if (args.size >= params.size) return args
@@ -130,7 +130,7 @@ internal fun CCodeGen.fillDefaults(
 			.drop(args.size)
 			.filter { !it.isVararg && defaults[it.name] == null }
 		if (requiredMissing.isNotEmpty()) {
-			codegenError("Missing required argument(s) for '$funName': ${requiredMissing.joinToString(", ") { it.name }}")
+			codegenError("E052", "Missing required argument(s) for '$funName': ${requiredMissing.joinToString(", ") { it.name }}")
 			}
 		}
 

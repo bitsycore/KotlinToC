@@ -1,223 +1,372 @@
 # KTC plan
 
-Working backlog of proposed improvements across three axes:
+Working backlog. Rebuilt 2026-05-30 from a full multi-agent review of the
+transpiler (140 findings, 19 bugs independently verified). Shipped items have
+been pruned. Each item carries a size estimate: **S** ≈ one commit, **M** ≈ a
+few commits, **L** ≈ multi-session refactor. `[x]` = done this pass.
 
-- **Kotlin features** — Kotlin source-language compatibility gaps.
-- **Codegen** — quality, size, and speed of the emitted C.
-- **CLI / tooling** — transpiler flags and the `run_tests.py` harness.
-- **Diagnostics** — new compile-time warnings/errors. Memory-safety checks first.
+Axes (per the standing objectives):
+- **Correctness** — emitted C must compile and match Kotlin semantics.
+- **Codegen** — quality, size, speed of the emitted C.
+- **Type-safety / DRY** — push `KtcType`, kill string round-trips, factor duplicates.
+- **Ease-of-use** — std-lib + CLI gaps that make KTC hard to use.
+- **Diagnostics** — memory-safety lints (carried over from the prior backlog).
 
-Each item has a size estimate: **S** ≈ one commit, **M** ≈ a few commits, **L** ≈ multi-session refactor.
+## Done this pass (2026-05-30)
+Shipped + green (unit + all integration tests pass): **B1, B2, B3, B4, B5, B11, B13** (correctness);
+**C1, C2, C3, C4, C5** (CLI/diagnostics); **O1, O6, O7** (codegen); **R1, R4, R5, R6, R7, R8, R9, R18**
+(type-safety/DRY); **U3, U9, U10** (ease-of-use, new `ktc/Chars.kt` + `CharPredicateTest`).
+Each item below is marked `[x]` when shipped this pass.
 
-## Diagnostics — memory safety (high priority)
+### Discovered while implementing (new findings, not yet fixed)
+- **D1 — inline extension fun on a PRIMITIVE receiver is silently dropped when declared in a
+  `@file:DocumentationOnly` file.** Primitives.kt / Arrays.kt are doc-only intrinsic stubs; their
+  declarations are NOT collected. Real extensions must live in a normal core file (Strings.kt,
+  the new Chars.kt). Worth a hard error/warning when a non-stub `inline fun` body appears in a
+  `@file:DocumentationOnly` file so this isn't a silent footgun. (S)
+- **D2 — nullable-returning inline extension on a primitive receiver isn't expanded.**
+  `inline fun Char.digitToIntOrNull(): Int?` invoked as `'x'.digitToIntOrNull()` emits a literal
+  `'x'.digitToIntOrNull()` and wrongly wraps the result in `KTC_SOME` — uncompilable C. Same family
+  as the member-inline-fun gap (§8). Blocks `digitToIntOrNull` and similar. (M)
+- **D3 — top-level `var` write emits an unprefixed LHS inside a same-package function.**
+  Reading a top-level `var g` inside a function yields the prefixed `Pkg_g`, but assigning `g = …`
+  emits a bare `g` (undeclared in C). Read/write prefixing is asymmetric for top-level vars. (S)
 
-KTC has no GC and no borrow checker. The checks below catch the most common
-ways a hand-rolled allocator-based program rots: dangling pointers, leaks,
-use-after-free, double-free. None require flow-sensitive whole-program
-analysis — each is a local pattern match on the AST plus the existing scope
-tables, in the spirit of `clang -Wreturn-stack-address`.
+═══════════════════════════════════════════════════════════════════════
+## 1. Correctness bugs (verified — produce wrong or uncompilable C)
+═══════════════════════════════════════════════════════════════════════
 
-Numbering continues from the current `W015` / `E101`.
+### [x] B1 — Data-class `hashCode` hashes interface-`Ref` fields that `equals` excludes (S)
+`emitClassEquals` (ClassAny.kt:20-23) skips `Ref<Interface>` fields; `emitImplicitHashCode`
+(ClassAny.kt:95-107) does not, then `hashFieldExprKtc` (:245 `Ptr` arm) emits
+`(uintptr_t)(ktc_IfacePtr struct)` → **non-compilable C** for any data class with an
+interface-Ref field. Fix: factor the equals field-selection predicate into a shared
+`ClassInfo.hashEqFields(interfaces)` helper used by both emitters.
 
-### ~~E120 — Returning Ref<T> derived from a frame-local~~ ✅ shipped
-Implemented for the obvious `return local.asRef()` / `return param.asRef()`
-case. Chained-through-local (`val p = x.asRef(); return p`) is left for a
-future flow-sensitive pass.
+### [x] B2 — `arr.get(i)` / `arr.set(i,v)` builtins skip the bounds check `arr[i]` applies (S)
+CallMethodBuiltins.kt:501-510 builds `$inRecv.ptr[$vIdx]` from a raw index, never routing
+through `wrapBoundsIdx` — silently defeats the default-ON bounds net for the method spelling
+of `operator[]`. Fix: compute the length expr like the sibling `fill` block (481-485) and
+route the index through `wrapBoundsIdx` + optional `staticBoundsCheck`. RawArray stays unchecked.
 
-### W016 — Storing local.asRef() into a longer-lived location (M)
-Warn on assigning `local.asRef()` (or `localArr[i].asRef()`) into:
-- a field of an object whose receiver is `Ref<T>` (heap-allocated),
-- a top-level (object/global) property,
-- a `MutableList` / collection element.
-Heuristic, not sound — but catches the obvious patterns without inventing
-lifetimes. Suppress with `-Wno-escaping-ref`.
+### [x] B3 — Unknown enum method falls through to a bare C identifier instead of E050 (S)
+CallMethod.kt:359-360 returns `"${vEnumInfo.flatName}_$method"` (no call, no args) for any
+unresolved enum method, emitting e.g. `Op_foo;` → confusing C error. Fix: try
+`extensionFuns[enum]` first, else `codegenError("E050", …)` mirroring the class branch.
 
-### W017 — Returning a String built by concatenation from a non-inline fn (S)
-E020 already rejects bare `String` returns from non-inline functions. Extend
-the check: when an inline function returns `s + t` and that inline is called
-from a non-inline that *also* returns it, the alloca buffer escapes one
-frame further than the user expects. Warn on the inner inline so users see
-the right call site. Suppress: `-Wno-alloca-escape`.
+### [x] B4 — `Array.get()` element-type inference via string-suffix is wrong for value-element arrays (S)
+TypeInferCall.kt:276-279: `endsWith("Array*")` is dead (internal form has no `*`), and
+`removeSuffix("*")` leaves `Vec2Array` unchanged → returns the array type as its own element type.
+Fix: replace the whole branch with `arrayElementKtTypeKtc(recvKtc)` (already used 2 lines below).
 
-### ~~W018 — discarded allocator result on `@RequireFree` allocator~~ ✅ shipped
-Generalized to any allocator object/class tagged `@RequireFree`. `Heap` is
-marked; arena-style allocators (bulk-free on reset) are intentionally not
-marked and therefore exempt.
+### [x] B5 — `mapOf(allocator)` with zero pairs builds a capacity-0 HashMap → modulo-by-zero (S)
+Map.kt:174-180 passes `pairs.size` straight in; 0 pairs → `% 0` SIGFPE on first get/containsKey.
+`mutableMapOf` already guards. Fix: `val cap = if (pairs.size == 0) 8 else pairs.size * 2`, and
+clamp `capacity >= 1` (better `>= 8`) inside the HashMap init for defence in depth.
 
-### W019 — Overwriting a Heap-allocated var without `freeMem` (M)
-For `var p = X.allocWith(Heap); ...; p = Y.allocWith(Heap)`: if no
-`Heap.freeMem(p)` (or equivalent) appears between the two assignments,
-the first allocation is unreachable. Requires a per-block linear pass on
-locals tagged "currently holds owning Heap pointer." Limit scope to a
-single function body to keep it tractable. Suppress: `-Wno-realloc-leak`.
+### [ ] B6 — Range-loop right endpoint re-evaluated every iteration (S)
+For.kt:77/85/93 inline `genExpr(rangeExpr.right)` into the loop condition, so `for (i in 0..f())`
+calls `f()` N+1 times (semantics divergence + perf). Fix: hoist the endpoint (and `step`) into a
+temp before the loop, `flushPreStmts` first; skip the temp only for literals / immutable names.
 
-### W020 / E122 — Use after `freeMem` (M)
-After `Heap.freeMem(p)`, any read of `p` (`p.refValue`, `p.field`, passing
-`p` as an arg, calling a method on it) in the same block is a UAF. Treat
-intervening reassignment to `p` as "reset." Promote to **E122** when the
-use is statically in the same basic block as the free with no branches
-between — that case is unambiguous.
+### [ ] B7 — Collection for-loop receiver: preStmts not flushed → use-before-declaration (M)
+For.kt:143 (`arrExpr = genExpr(rangeExpr)`) never flushes preStmts before splicing `.len`/`.ptr`
+into the header. A receiver that spills (e.g. `@Size(N)`-array-returning call) emits temp decls
+*inside* the loop body, after use → **gcc rejects it**. Fix: `flushPreStmts(ind)` + spill the
+receiver to one temp (skip temp for NameExpr / trampolined param). Mirror the iterator path (:106).
 
-### E123 — Double `freeMem` (S)
-Two `Heap.freeMem(p)` calls on the same local in the same block with no
-reassignment of `p` between them. Hard error — the second free is UB.
+### [ ] B8 — String-template / print double-evaluate side-effecting non-String interpolations (M)
+Two-pass (count then fill) paths emit each part's `sbAppend` twice: `genStrTemplate` (String.kt:196,
+268-283) and `emitPrintTemplateViaStrBuf` (Print.kt:213-230). Side-effecting `${f()}` runs twice
+(verified: `counter=2`). Fix: spill *any* non-simple ExprPart value into a typed temp before the
+passes so both reference the temp; same fix inside `genSbAppendKtc`'s nullable branch (StringToString.kt:298-309).
 
-### W021 — `freeMem` on a non-Heap reference (S)
-`Heap.freeMem(local.asRef())` or `Heap.freeMem(stackRef)` passes a stack
-pointer to the allocator. Detect when the argument expression is an
-`asRef` of a local, a parameter that wasn't allocated via `allocWith`,
-or any `Ref<T>` that the function received as an in-parameter (we can't
-prove ownership, but the user almost certainly didn't mean to free a
-borrowed pointer). Suppress: `-Wno-free-non-heap`.
+### [ ] B9 — Fallback-to-`Int` masks generic ctor-arg inference failure → mis-monomorphization (M)
+TypeInferCall.kt:119 and its codegen twin CallAlloc.kt:263 do `inferExprType(arg) ?: "Int"`, then
+`recordGenericInstantiation` with the wrong type-arg → struct materialized with `T=ktc_Int`, silent
+wrong-size C, no diagnostic. Fix: both sites must use the same resolution; on inference failure fall
+back to declared/recorded type args, else `codegenError`. Propagate `null` (not `"Int"`) at
+TypeInferCall.kt:132, TypeInferDot.kt:112, ArraysMapping.kt:67.
 
-### W022 — `Arena` declared but never `.reset()` / `.dispose()` (S)
-Per-function `Arena` locals that are never reset or disposed leak the
-whole bump region on return (unless the arena's backing buffer is itself
-stack-allocated, which we can detect). Heuristic warning; suppress with
-`-Wno-arena-unfreed`.
+### [ ] B10 — `Func` type loses all params/return on the string round-trip → uncompilable C (M)
+parseResolvedTypeName (CTypes.kt:309) does `Fun(...)` → `Func(emptyList(), Void)`, discarding the
+encoded signature. `val f = ::add; f(2,3)` emits `void (*f)(void)` → gcc errors. Fix: reconstruct
+`Func` from the `Fun(recv|p1,p2)->R` string (extend `parseFuncType` to split the receiver), or route
+function-type inference through `resolveTypeName`/TypeRef so it never hits the string branch.
 
-### W023 — Heap pointer leaves scope without escape (M)
-Local `val p = X.allocWith(Heap)` that is neither returned, passed to a
-function, stored in a field, nor freed before the end of its scope. Same
-flavor as W019 but for the end-of-scope case. Will have false positives
-(intentionally one-shot allocations), so warning-only.
+### [x] B11 — Inline-overload return-type inference compares resolved args vs raw param `.name` (S)
+TypeInferCall.kt:188-193 compares `inferExprType(arg)` (resolved, e.g. `"Foo*"`/`"IntArray"`) against
+`decl.params[i].type.name` (raw spelling, e.g. `"Foo"`/`"Array"`) → only bare value params ever match;
+Ref/array/generic params silently fall back to the first candidate's return type. Fix: compare against
+`resolveTypeRefStr(decl.params[i].type)`; long-term share one `pickInlineOverload(name,args)` with Call.kt.
 
-### E124 — `freeMem` on a `Ref<T>` that came from `&array[i]` (S)
-Indexing into a heap-allocated array and freeing the element pointer
-corrupts the allocator. Detect when the freed expression is
-`arr[i].asRef()`. Hard error — there is no legitimate use.
+### [ ] B12 — Member `infix fun` mis-parsed (regex misses it) AND not dispatched in codegen (M)
+Main.kt:492 regex requires a receiver dot → member infix funcs never enter `INFIX_IDS`, so `a combine b`
+mis-parses into 3 statements (only the hard-coded seed names work). Even when parsed, `genBin` only
+dispatches extension/arithmetic operators, so a member `infix and` lowers to raw `(a & b)` on structs.
+Fix: (1) derive `INFIX_IDS` from parsed `FunDecl.isInfix` over all files (drop the regex); (2) in
+`genBin`, route an op that matches a member infix method through `genMethodCall`.
 
-## Diagnostics — correctness / dead code (medium priority)
+### [x] B13 — Lexer drops column in 6 of 7 error sites (S)
+Lexer.kt:119,139,158,159,361,364 emit `"… at line $line"` while col is tracked (only :314 includes it).
+Fix: append `col $col` to all six to match. (The larger "no recovery / ParseException / multi-error"
+item is M and tracked under §6.)
 
-### ~~W024 — Unreachable code~~ — already shipped (as a hard error)
-Existing `codegenError("Unreachable code after '...'")` in
-`statement/Statements.kt:emitBlock` already rejects this case at error
-severity. No additional work needed unless we want to downgrade to a
-warning.
+═══════════════════════════════════════════════════════════════════════
+## 2. CLI / diagnostics correctness
+═══════════════════════════════════════════════════════════════════════
 
-### ~~W025 — Unused local variable~~ ✅ shipped
-AST-walk in `UnusedLocals.kt`. Skips `_`-prefixed names. Suppress with
-`-Wno-unused-local`.
+### [x] C1 — 9 error codes defined in catalog but emitted WITHOUT the `[Exxx]` prefix (M)
+E024/E052/E053/E080/E081/E090/E091/E100/E101 all use the no-code `codegenError(msg)` overload, so
+`--explain` is undiscoverable for them. Sites: Assign.kt:259, CallSafe.kt:121/133, Tailrec.kt:110/112/164,
+Statements.kt:100/104, CCodeGenCollect.kt:286/287/294/470. Fix: route each through `codegenError(code,msg)`;
+add a guard test asserting every catalog code is referenced by ≥1 emit site.
 
-### W026 — Unused parameter (S)
-Skip parameters of `override fun` (signature is fixed), `it` in lambdas,
-and names starting with `_`. Otherwise warn. Suppress: `-Wno-unused-param`.
+### [x] C2 — `-Wno-<name>` help list out of sync with emitted warnings (S)
+Main.kt:196-199 lists 15 names; codegen emits 5 more (`unreachable`, `discarded-alloc`, `no-effect-expr`,
+`unused-local`, `could-be-val`). Fix: stopgap add the 5; better, derive the list from ErrorCatalog
+(`warnName` field) so the three-way drift can't recur.
 
-### W027 — Unused private function / property (S)
-A `private` top-level function or class private method/property with zero
-references after the whole-file collect pass. We already build the call
-graph for monomorphization — same data answers this.
+### [x] C3 — Unknown flags silently swallowed as input file paths (S)
+Main.kt:314-317 terminal `else` appends ANY token to `inputPaths`; `--no-check-bound` (typo) → generic
+"file not found" with the flag silently dropped. Fix: in the else, if `startsWith("-")` and not a known
+flag → `"unknown option"` + exit(2).
 
-### ~~W028 — `var` never reassigned → suggest `val`~~ ✅ shipped
-Same scanner as W025. Counts `++`/`--`, `=`, compound-assign, and method
-calls on the receiver as writes; passing as a function argument does NOT
-count (could be a Ref<T> out-param, but most arg passes are by-value
-reads). Suppress: `-Wno-could-be-val`.
+### [x] C4 — `--disposed` / `--double-dispose` accept any value unvalidated (S)
+Main.kt:279-284 sets the mode from raw input with no `ASSERT|LOG|NO` check → half-configured silent state.
+Fix: validate both against the set right after parsing; error + exit(1) otherwise.
 
-### W029 — Dead store (S)
-`x = a; x = b;` with no read of `x` between — first store is dead. Restrict
-to single-block straight-line cases to avoid false positives.
+### [x] C5 — `--version`/`--explain` only work as sole/first args; no `--help`/`-h` (S)
+Main.kt:218/225 gate on exact `args.size`; `--help` falls through to "file not found". Fix: scan for these
+in a pre-pass; factor `printUsage()` and trigger on `--help`/`-h`/empty-args/unknown-flag.
 
-### W030 — Duplicate `when` branch / overlapping `is` branches (S)
-- `when (x) { 1 -> ...; 1 -> ... }` — second unreachable.
-- `when (a) { is Animal -> ...; is Dog -> ... }` where `Dog : Animal` —
-  the `Dog` branch is shadowed by the earlier supertype branch.
+═══════════════════════════════════════════════════════════════════════
+## 3. Generated-C optimization
+═══════════════════════════════════════════════════════════════════════
 
-### W031 — Redundant `else` on exhaustive `when` (S)
-Complement to existing `W006` (non-exhaustive when). When all enum entries
-or sealed subclasses are covered, the `else` is dead. Suppress:
-`-Wno-redundant-else`.
+### [x] O1 — `String +` concat hard-codes `alloca(512)`: truncates long, wastes short (M)
+genStringConcat (Binary.kt:405-412) always `alloca(512)` + `ktc_core_string_cat(buf,512,…)` →
+silent truncation >511 bytes, 512 B of frame per `+` node. Fix: size from operands —
+`alloca((a).len + (b).len + 1)` at runtime (both are `{ptr,len}`), or reuse the StrBuf machinery the
+template path uses. Add a `bufsz<=1` guard in `ktc_core_string_cat` (ktc_core.c:411) for the derived-size case.
 
-### W032 — Implicit narrowing in arithmetic / assignment (S)
-Assigning `Long` → `Int`, `Int` → `Byte`, `Double` → `Float` without an
-explicit `.toInt()` / `.toByte()` / etc. Kotlin already rejects this; KTC
-currently accepts some forms silently. At minimum warn on assignment and
-on argument passing where the parameter type is narrower than the arg.
+### [ ] O2 — String builtins duplicate a non-lvalue receiver (side effects + 2-4× bloat) (M)
+CallMethodBuiltins.kt:163-206 (startsWith/endsWith/contains/indexOf/substring/…) interpolate `inRecv`
+2-4×; a computed-getter / method receiver is evaluated repeatedly. Fix: when `inRecv` isn't a stable
+lvalue (reuse `kStableExprRx`), spill once into a `ktc_String` temp.
 
-### ~~W033 — Side-effect-free expression statement~~ ✅ shipped
-Conservative: anything containing a call, `!!`, `++`/`--` is treated as
-having a side effect. Suppress: `-Wno-no-effect-expr`.
+### [ ] O3 — `when` on Int/enum subject emits an if/else-if chain instead of a C `switch` (L)
+Control.kt (genWhenCond / emitWhenStmt) lowers constant-Int/enum branches to an O(n) `==` chain.
+Fix: when subject present and every non-else branch is a single constant Int/Char/enum equality on it,
+emit `switch (subject) { case K: … default: … }`; fall back to the chain otherwise. Covers stmt + expr forms.
 
-### W034 — `!!` on a value the compiler can prove non-null (S)
-Complement to `W012` (`!!` on literal null). If the receiver is a
-non-nullable type, `!!` is a no-op — flag it. Sibling of `W007` / `W008`.
+### [ ] O4 — Constant index on statically-known-length String/Array still emits a runtime bounds check (M)
+`isStaticallySafe` (Expression.kt:388-398) only elides for `@Size(N)` and `StrLit[k]`. `val s="abc"; s[0]`
+and let-bound array literals still pay a runtime check. Fix: track an optional const length on `LocalVar`
+and elide when index < known length.
 
-## Diagnostics — implementation notes
+### [ ] O5 — `const`-correctness on read-only receivers; large value `equals` by-value (M)
+`*_toString(T* $self)`, getters, `hashCode` never mark `$self` `const T*`; `equals(T a, T b)` copies two
+full structs. Fix: emit `const T*` for non-mutating method receivers; pass `equals` operands as `const T*`
+above a size threshold.
 
-- All new codes need an entry in `codegen/ErrorCatalog.kt`.
-- Suppression flag name (`-Wno-xxx`) must be wired in `Options.kt` /
-  warning-emit helpers.
-- Tests: each diagnostic gets a `src/test/kotlin/.../W0xxTest.kt` snippet
-  using `TranspilerTestBase` that asserts the code appears in compiler
-  output.
-- For lifetime/escape checks (E120, E121, W016, W019, W020/E122, E123,
-  W021, W023, E124) the common helper is "does this expression name a
-  local/parameter declared in the current function?" — a tiny visitor on
-  top of the existing `scopes` chain.
+### [x] O6 — `ktc_core.h` drags `<windows.h>`/`<dbghelp.h>` into every TU on Windows (S)
+ktc_core.h:13-15 unconditionally includes windows.h; only ktc_core.c uses Win32. Fix: move the includes
+into ktc_core.c (with `WIN32_LEAN_AND_MEAN`); header keeps only the `__declspec` TLS macro.
 
-## Codegen — known limitations (hit by ktc.std.FileSystem development)
+### [x] O7 — Per-class no-op `_dispose_any` emitted instead of reusing `ktc_core_noop_dispose` (S)
+ClassAny.kt emits a fresh `{ (void)$self; }` dispose trampoline per class; the shared
+`ktc_core_noop_dispose` already exists (and iface vtables use it). Fix: point the Any-vtable dispose slot
+at it when the class has no dispose override.
 
-These don't block daily work but did force workarounds in the FileSystem module.
-Fix-when-touched, in rough priority order:
+### [ ] O8 — copyWith alloc-failure path leaves `{NULL, len>0}` (bounds check then NULL-deref) (S)
+CallMethodBuiltins.kt:443-465: on alloc failure the VarArr keeps a nonzero len with a NULL ptr. Fix:
+`${ptr} ? $vSrcLen : 0` so a failed copy is an empty array, matching the `{NULL,0}` convention.
 
-### Member `inline fun` not actually inlined (M)
-`class Foo { inline fun bar(x: X): Y = ... }` emits a regular function and
-ignores the inline modifier. Extension `inline fun Foo.bar(...)` works
-correctly — `Path.child` and `Path.div` currently live as inline extensions
-to dodge this.
+### [ ] O9 — `repeat()` alloca size can overflow `ktc_Int` before the 64 KB clamp (S)
+CallMethodBuiltins.kt:231-239 computes `len*n+1` in `ktc_Int` (can wrap negative) then tests `> 65536`.
+Fix: compute in `size_t` / guard `n<=0` before the multiply.
 
-Hook: the function-emit path needs to honor `f.isInline` for member methods,
-and the call-site dispatch needs to expand the body the same way it does for
-extension methods — including binding both `this` (the receiver expression)
-AND bare-field references (which currently go through genName's
-`currentClass` lookup and emit `$self.field`).
+### [ ] O10 — Cross-pkg interface cast designated-init zeroes the union then memcpy overwrites it (S)
+Vtable.kt:192-198/238-244. Minor: set header fields after the memcpy on an uninitialized local.
 
-### ~~`!!` on a value-type Optional doesn't unwrap~~ ✅ shipped
-NotNullExpr on a value-nullable arbitrary expression now spills the inner
-value into a temp, checks the Optional tag, and returns the unwrapped
-`.value`. Previously only worked when `!!` was applied to a NameExpr.
+═══════════════════════════════════════════════════════════════════════
+## 4. Type-safety & DRY refactors
+═══════════════════════════════════════════════════════════════════════
 
-### ~~`?.` on a function-result that's nullable~~ ✅ shipped
-genSafeDot now spills non-Name/Self receivers into a temp before evaluating
-the guard and the field access. Also fixes inferDotTypeKtc to strip trailing
-`?` when looking up the receiver's class. Previously, function-result
-receivers were evaluated twice and the safe-access path defaulted to Int.
+### [x] R1 — `genBin` re-infers the same operand type 5+ times (M)
+Binary.kt:21/149/196/233/342 each call `inferExprTypeKtc(e.left)` (a full recursive walk, not a lookup),
+plus `inferExprType` at 25/31. Fix: compute `ltKtc`/`rtKtc` once at the top and thread through; derive the
+string form via `.toInternalStr` where still needed.
 
-### ~~Chained struct-method calls take `&` of an rvalue~~ ✅ shipped
-All `&recv` sites in CallMethod.kt (regular dispatch, asRef, dispose,
-star-ext) now route through `addressOfRecv()`, which detects stable
-lvalues (bare name, `obj.field`, `ptr->field`, `(*ptr)`) and only spills
-non-lvalue receivers into a temp before taking the address.
+### [ ] R2 — `ktc_IfacePtr` literal construction copy-pasted across 5 sites (M)
+CallAlloc.kt:45, CallMethod.kt:151/153, CallArgs.kt:214, CallMethodBuiltins.kt:414/459 — already drifted.
+Fix: one `ifacePtrLiteral(typeId, cConcrete, ifaceName, objExpr, nullable)` helper; all sites call it.
 
-### Smart-cast across `&&` in if condition (M)
-`if (x != null && x.field == ...)` doesn't narrow `x` in the RHS of `&&`.
-Requires lazy emission of the right-hand operand (emit `x != null` first,
-then narrow, then emit `x.field`). Existing `extractSmartCasts` already
-handles `&&` for the THEN body but not for the condition itself.
+### [ ] R3 — Allocator→IfacePtr resolution duplicated in resizeWith/copyWith vs CallAlloc (M)
+CallMethodBuiltins.kt:404-417 / 450-462 vs CallAlloc.kt:57-117. Fix: extract one
+`resolveAllocatorIface(argExpr, evaledExpr)` (the `AllocResolution` class is 90% of it).
 
-### ~~Operator overload doesn't dispatch on class types~~ ✅ shipped
-genBin now maps `+ - * / %` to `plus/minus/times/div/rem` and routes
-through genMethodCall when the LHS class declares a matching operator
-fun (member or extension). Parser also relaxed to accept either ordering
-of `inline operator fun`.
+### [x] R4 — Four hand-inlined copies of `elemCTypeStr` in CTypesParams (S)
+CTypesParams.kt:38-40/47-48/84-86/102-104 reimplement the existing `elemCTypeStr` (CTypes.kt:406). Fix:
+call it. Removes another `toInternalStr` detour per site.
 
-### ~~`inline val foo: T get() = expr` sibling-prop reference~~ ✅ shipped
-A `getterReceiverStack` tracks the active getter's receiver during inline
-expansion. genName, when resolving a name that maps to a sibling computed
-property, recurses through genDot with that receiver instead of emitting
-literal `$self.X`.
+### [x] R5 — `defaultVal` round-trips User/Nullable/Arr through a string (S)
+CTypes.kt:421-424 `cTypeStr(t.toInternalStr.removeSuffix("?"))` inside a function holding the KtcType.
+Fix: `cTypeStr(t.stripNullable)`; handle `Nullable(Ptr)` → `NULL` explicitly.
 
-## C-interop
+### [x] R6 — `isArrayType()` string match where the KtcType is already in hand (S)
+CallArgs.kt:261, Var.kt:189 use `endsWith("Array")` while `paramTypeKtc.asArr`/`isArrayLike` is computed.
+Fix: switch to the structural check (also fixes misclassifying user types ending in "Array").
 
-### ~~`.cast<T>()` for pointer reinterpretation~~ ✅ shipped
-`inline fun <T, R> T.cast(): R` is declared in `ktc/CInterop.kt` and
-lowers to `((T)(expr))`. Works for `Ref<...>`, primitive narrowing,
-opaque-pointer round-trips.
+### [x] R7 — `in`/`!in` range fallback uses `rt.endsWith("Range")` (S)
+Binary.kt:288 — a user `DateRange` is misclassified as an int range → wrong C. Fix: match the actual
+range KtcType / only take the lo-hi path when `e.right` is a genuine `rangeTo` BinExpr.
 
-## Kotlin features
+### [x] R8 — `CastExpr` inference uses raw `e.type.name` (no alias/nested/Ref resolution) (S)
+TypeInfer.kt:89. Fix: `resolveTypeRefStr(e.type)` (and `…Nullable` for safe casts).
 
-(none queued)
+### [x] R9 — `kBooleanOps` set rebuilt on every BinExpr inference (S)
+TypeInfer.kt:62 allocates a fresh `setOf(...)` per call on a hot path. Fix: hoist to a file-level `val`.
 
-## CLI / tooling
+### [ ] R10 — `Parser.INFIX_IDS` is process-global mutable state (M)
+Parser.kt:1285 companion `var`, mutated from Main.kt — leaks across files, not re-entrant. Fix: make it a
+constructor `val` instance field (folds into B12's AST-driven registration).
 
-(none queued)
+### [ ] R11 — Type-parameter list parse duplicated across fun/class/interface (S)
+Parser.kt:152-160/229-237/419-427 verbatim. Fix: `parseTypeParamList()`.
+
+### [ ] R12 — `emitClass` and `emitGenericClass` are ~90% duplicate and have drifted (M)
+Class.kt:78-133 vs ClassGeneric.kt:17-71 — diverged Any-member ordering + data-class toString coverage.
+Fix: extract one `emitClassBody(ci, decl, isGeneric, displayName, optName, typeArgsForFooter)`.
+
+### [ ] R13 — Any-vtable trampoline emission duplicated between ClassAny.kt and Object.kt (M)
+ClassAny.kt:154-224 vs Object.kt:388-432 — char-identical AnyVt literal + `as_Any`. Fix: extract
+`emitAnyVtableLiteralAndCast(cName, selfTypeExpr)` + a 5-stub builder parameterized by per-method body.
+
+### [ ] R14 — `collectAndScan()` sequence duplicated verbatim inside `generate()` (S)
+CCodeGenGenerate.kt:9-16 vs 76-80 — drift risk between `--check` and emit. Fix: one `scanAll()` helper.
+
+### [ ] R15 — Inline-return state (5 fields) hand-saved/restored on CCodeGen (M)
+CCodeGen.kt:126-130; Inline.kt:78-87/145-149. Fix: move into `FunctionContext` + delegate props, fold the
+manual save/restore into `saveFunState`/`restoreFunState`.
+
+### [ ] R16 — Trampolined-param ptr/len + receiver mem-op/.ptr/.len resolution duplicated (M)
+CallMethodBuiltins.kt:378-385/432-439/476-485/361-366/503-506; Dot.kt:118-150, Name.kt:108-122,
+Expression.kt:154-176 (genSafeDot already drifted). Fix: `arrayDataPtrFor`/`arrayLenFor` + `memOp(ktc)`
+helpers used everywhere.
+
+### [ ] R17 — Four near-identical recursive AST walkers across the scan files (L)
+ScanClasses/ScanSubst/ScanFunctions each re-walk the full Expr/Stmt hierarchy and have drifted (missing
+LambdaExpr / node kinds). Fix: one generic `walkExpr`/`walkStmt` visitor; express the passes as callbacks.
+
+### [x] R18 — Stale `stringToKtc` doc references; `estimateTypeSizeAlign` matches "Bool" not "Boolean" (S)
+TypeInfer.kt:106 + CoreTypes.kt:181 reference a non-existent `stringToKtc`. CCodeGen.kt:426 sizes Boolean
+as 8/8 (matches "Bool", but `toInternalStr` yields "Boolean") → over-sized cross-pkg buffer. Fix both.
+
+### [ ] R19 — Overload/secondary-ctor/generic-fun mangling strips `*`/`?` from strings → Ref vs value collide (M)
+CCodeGenCollect.kt:628 (`methodName`), Class.kt:138 (`secondaryCtorName`), FunGeneric.kt:29-33 — a `Foo` and
+`Ref<Foo>` param mangle to the same C symbol. Fix: include a pointer/ref marker; drive off KtcType structure.
+
+### [ ] R20 — Smaller DRY wins (S each, batch)
+parseDeclBody (Parser object/anon/companion loops), finishExprOrAssign + ASSIGN_OPS set, maybeTrailingLambda
+helper, collapse skipNL/skipTerminator, npeStmt helper (Dot.kt genNotNull ×6), topLevelSrcKey `|`-sentinel
+helper, Math/array name-builder de-dup (ArraysMapping ↔ PrimKind), CmakeGen comment `deps.ktc.toml`→`module.ktc.toml`.
+
+═══════════════════════════════════════════════════════════════════════
+## 5. Ease-of-use / missing std-lib + features
+═══════════════════════════════════════════════════════════════════════
+
+### [ ] U1 — No functional collection ops (the biggest usability gap) (M)
+List/MutableList have only size/get/set/add/remove/contains/indexOf/iterator. Add inline extensions
+(zero-cost, lambdas are inline-only): forEach, map, filter, any/all/none, count, sum/sumOf, min/maxOrNull,
+first/last/firstOrNull, fold/reduce, joinToString (allocator/StringBuffer param), in-place sort().
+
+### [ ] U2 — Collection/Map factories force an explicit allocator at every call site (M)
+`listOf(Heap.asRef(), 1, 2, 3)` everywhere. Add a default `allocator = Heap.asRef()` (or no-allocator
+overloads). If default-arg-to-global-object isn't expressible yet, that codegen feature unblocks this win.
+
+### [x] U3 — `Char` lacks isDigit/isLetter/isWhitespace/digitToInt/case predicates (S)
+Primitives.kt:31-63. Add inline ASCII-fast-path predicates — every tokenizer needs them.
+
+### [ ] U4 — No numeric/math helpers: abs, min/maxOf, coerceIn, sqrt/pow/floor/… (M)
+Add Math.kt: inline `maxOf`/`minOf`/`abs`/`coerceIn`/`coerceAtLeast`/`coerceAtMost` + thin inline forwards
+to `<math.h>` so app code doesn't reach into `C.*` for game/embedded math.
+
+### [ ] U5 — No String split/lines/replace(String,String)/removePrefix/substringBefore (M)
+Strings.kt. Add zero-alloc inline `split(delim){…}` / `lines{…}` yielding substring views + pure-view
+`removePrefix/removeSuffix/substringBefore/substringAfter`; `replace(String,String)` via StringBuffer.
+
+### [ ] U6 — No `Set` type; Map missing getOrPut/getOrDefault/keys/values/forEach (M)
+Add `HashSet<T>` (thin over HashMap or dedicated) + `Map.forEach`, `getOrPut` (single-probe member),
+`getOrDefault`.
+
+### [ ] U7 — No Array transform/search helpers (indexOf/contains/sort/forEachIndexed) (M)
+Arrays.kt has only the memory ops. Add inline query/transform extensions (in-place / read-only, no alloc).
+
+### [ ] U8 — `Result` carries only an Int errorCode; thin combinator surface (M)
+Generalize to a message/typed payload; add inline getOrElse/getOrDefault/map/fold/onSuccess/onFailure.
+
+### [x] U9 — Random range methods: modulo bias + `% 0` / wrong sign on inverted range (S)
+Random.kt:22-59 — guard `until>from`, mask to non-negative, document/avoid bias.
+
+### [x] U10 — `ktc_core_rand_range` threshold math fragile; `-bound` on unsigned (S)
+ktc_core.c:41-56 — write `(ktc_UInt)(0u - bound) % bound` with a comment, early-return for `bound==1`.
+
+═══════════════════════════════════════════════════════════════════════
+## 6. Larger architectural roadmap (L — deliberate, multi-session)
+═══════════════════════════════════════════════════════════════════════
+
+- **A1 — Make `KtcType` the canonical inference output.** Invert `inferExprType`/`inferExprTypeKtc`
+  so the KtcType core is canonical and `inferExprType(e) = inferExprTypeKtc(e)?.toInternalStr`
+  (the Dot path already does this). Removes the @Size-loss workarounds, the Func-loss (B10), and the
+  structural double-inference. Then collapse the three TypeRef→type pipelines (resolveTypeName /
+  resolveTypeNameStr / parseResolvedTypeName) into one, deleting the dead `KtcType.from` companion or
+  promoting it to the single resolver.
+- **A2 — Memoize inference** keyed on (Expr identity, scope/subst generation), bumped on scope push/pop
+  and `withTypeSubst`. 181 call-sites re-infer the same nodes per `genExpr` pass.
+- **A3 — Parser error recovery:** `ParseException`/`LexException` + panic-mode skip to NEWLINE/RBRACE +
+  multi-error aggregation in Main (today the first error aborts the file). Replace the exception-driven
+  function-type backtracking (Parser.kt:1199-1242) with non-throwing lookahead.
+- **A4 — Operator domain as a sealed `BinOp`/`UnOp`/`AssignOp`** instead of raw `String` on AST nodes.
+
+═══════════════════════════════════════════════════════════════════════
+## 7. Diagnostics — memory-safety lints (carried over, not yet shipped)
+═══════════════════════════════════════════════════════════════════════
+
+Local AST + scope-table pattern matches (clang `-Wreturn-stack-address` spirit). Numbering continues
+from the current `W015`/`E101`. Common helper: "does this expression name a local/param of the current fn?".
+
+- **W016** (M) — storing `local.asRef()` into a longer-lived location (object field on a heap receiver,
+  top-level prop, collection element). `-Wno-escaping-ref`.
+- **W017** (S) — String built by concat returned from a non-inline fn one frame further than expected.
+  `-Wno-alloca-escape`.
+- **W019** (M) — overwriting a Heap-allocated `var` without `freeMem` between the two assignments. `-Wno-realloc-leak`.
+- **W020 / E122** (M) — use after `freeMem` in the same block (promote to E122 when unambiguous straight-line).
+- **E123** (S) — double `freeMem` on the same local with no reassignment between.
+- **W021** (S) — `freeMem` on a non-Heap reference (asRef of a local/param/borrowed Ref). `-Wno-free-non-heap`.
+- **W022** (S) — `Arena` local never `.reset()`/`.dispose()`. `-Wno-arena-unfreed`.
+- **W023** (M) — Heap pointer leaves scope without escape (not returned/passed/stored/freed).
+- **E124** (S) — `freeMem(arr[i].asRef())` (freeing an array-element pointer).
+- **W026** (S) — unused parameter (skip `override`, `it`, `_`-prefixed). `-Wno-unused-param`.
+- **W027** (S) — unused private function / property (reuse the call-graph from monomorphization).
+- **W029** (S) — dead store (`x=a; x=b;` no read between, single block).
+- **W030** (S) — duplicate `when` branch / overlapping `is` branch (subtype shadowed by supertype).
+- **W031** (S) — redundant `else` on an exhaustive `when`. `-Wno-redundant-else`.
+- **W032** (S) — implicit narrowing (`Long`→`Int`, `Double`→`Float`) without explicit `.toX()`.
+- **W034** (S) — `!!` on a value the compiler can prove non-null.
+
+Implementation notes: each new code needs an `ErrorCatalog.kt` entry; each `-Wno-xxx` must be wired in
+Main.kt + the help list (see C2); each gets a `TranspilerTestBase` snippet test asserting the message.
+
+═══════════════════════════════════════════════════════════════════════
+## 8. Codegen items carried from the prior backlog
+═══════════════════════════════════════════════════════════════════════
+
+- **Member `inline fun` not actually inlined** (M) — `class Foo { inline fun bar() = … }` emits a regular
+  function. Extension inline funcs work; `Path.child`/`listDir` live as top-level inline extensions to dodge
+  this (see U-note). Honor `f.isInline` for members in the function-emit path and expand the body at the
+  call site (bind `this` and bare-field refs).
+- **Smart-cast across `&&` in an `if` condition** (M) — `if (x != null && x.field == …)` doesn't narrow `x`
+  in the RHS. Needs lazy emission of the RHS operand (`extractSmartCasts` already handles `&&` for the THEN
+  body but not the condition itself).

@@ -10,6 +10,10 @@ import com.bitsycore.ktc.types.KtcType
 // Call/method return types are in TypeInferCall.kt.
 // Dot/index field types are in TypeInferDot.kt.
 
+// Binary operators whose result is always Boolean. File-level constant so it isn't
+// reallocated on every BinExpr inference (one of the hottest codegen paths).
+private val kBooleanResultOps = setOf("==", "!=", "<", ">", "<=", ">=", "&&", "||", "in", "!in")
+
 internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	null         -> null
 	is IntLit    -> "Int"
@@ -59,7 +63,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 			}
 		}
 	is BinExpr -> {
-		if (e.op in setOf("==", "!=", "<", ">", "<=", ">=", "&&", "||", "in", "!in")) "Boolean"
+		if (e.op in kBooleanResultOps) "Boolean"
 		else if (e.op == "..") "IntRange"
 		else {
 			// All infix functions (including `to` → Pair from stdlib) resolve
@@ -86,7 +90,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	is NotNullExpr  -> inferExprType(e.expr)?.removeSuffix("?")
 	is ElvisExpr    -> (inferExprType(e.left) ?: inferExprType(e.right))?.removeSuffix("?")
 	is IsCheckExpr  -> "Boolean"
-	is CastExpr     -> if (e.safe) e.type.name + "?" else e.type.name
+	is CastExpr     -> if (e.safe) KtcType.Nullable(resolveTypeName(e.type)).toInternalStr else resolveTypeRefStr(e.type)
 	is FunRefExpr -> {
 		val sig = funSigs[e.name]
 		if (sig != null) {

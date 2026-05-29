@@ -10,10 +10,11 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <errno.h>
-#if defined(_WIN32)
-    #include <windows.h>
-#endif
 #include <time.h>
+// NOTE: <windows.h> is intentionally NOT included here. Nothing in this header needs it
+// (ktc_core_tls uses the __declspec/_Thread_local keyword, not a Win32 type), and pulling it
+// into every generated translation unit on Windows bloats per-TU compile time. The only user
+// of the Win32 API is ktc_core.c, which includes <windows.h> itself.
 
 // ══════════════════════════════════════════════════════════════════
 // MARK: Types

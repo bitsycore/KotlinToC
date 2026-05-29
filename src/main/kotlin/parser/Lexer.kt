@@ -116,7 +116,7 @@ class Lexer(private val src: String) {
                 else -> { sb.append(c); advance() }
             }
         }
-        error("Unterminated string at line $line")
+        error("Unterminated string at line $line col $col")
     }
 
     // ── Raw string content ("""...""") ────────────────────────────────
@@ -136,7 +136,7 @@ class Lexer(private val src: String) {
             if (c == '\n') { line++; col = 1 }
             sb.append(c); advance()
         }
-        error("Unterminated raw string at line $line")
+        error("Unterminated raw string at line $line col $col")
     }
 
     private fun ensureTmplStarted(sb: StringBuilder) {
@@ -155,8 +155,8 @@ class Lexer(private val src: String) {
     private fun lexChar() {
         advance()                           // skip opening '
         val ch = if (cur() == '\\') readEscape() else { val c = cur(); advance(); c }
-        if (pos < src.length && cur() == '\'') advance() else error("Unterminated char at line $line")
-        if (ch.code > 0xFF) error("Multi-byte character '$ch' not supported in C (char is 8-bit) at line $line")
+        if (pos < src.length && cur() == '\'') advance() else error("Unterminated char at line $line col $col")
+        if (ch.code > 0xFF) error("Multi-byte character '$ch' not supported in C (char is 8-bit) at line $line col $col")
         emit(TokenType.CHAR_LIT, ch.toString())
     }
 
@@ -358,10 +358,10 @@ class Lexer(private val src: String) {
             // Read 4 hex digits
             val hexDigits = StringBuilder()
             repeat(4) {
-                if (pos >= src.length) error("Unterminated unicode escape at line $line")
+                if (pos >= src.length) error("Unterminated unicode escape at line $line col $col")
                 val h = cur()
                 if (!h.isDigit() && h !in 'a'..'f' && h !in 'A'..'F')
-                    error("Invalid unicode escape at line $line")
+                    error("Invalid unicode escape at line $line col $col")
                 hexDigits.append(h)
                 advance()
             }

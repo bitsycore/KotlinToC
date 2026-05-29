@@ -356,8 +356,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 					val vFnName  = resolvedFnName(vInstanceMethod, vEnumInfo.enumMethods)
 					return "${vEnumInfo.flatName}_$vFnName($vAllArgs)"
 					}
-				// Fallback (unknown method): legacy behavior, return prefixed identifier.
-				return "${vEnumInfo.flatName}_$method"
+				// No values/valueOf/instance-method match: fall through to the extension-function
+				// resolution path and, failing that, the E050 catch-all below — instead of emitting
+				// a bare "Enum_method" identifier that only fails at the C compiler.
 				}
 			}
 		}

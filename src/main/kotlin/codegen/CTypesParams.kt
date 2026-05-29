@@ -35,17 +35,13 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
                     vKtc is KtcType.Ptr -> {
                         // Ref<Array<T>>: treat same as regular Array<T> — ktc_VarArr_T
                         val vInnerArr = vKtc.inner.asArr!!
-                        val vElemCType =
-                            if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr)
-                            else cTypeStr(vInnerArr.elem)
+                        val vElemCType = elemCTypeStr(vInnerArr.elem)
                         vParts += "${varArrTypeName(vElemCType)} $vName"
                     }
 
                     else -> {
                         // Regular Array<T>: typed VarArr struct (no companion)
-                        val vArrElem = vKtc.asArr!!.elem
-                        val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr)
-                        else cTypeStr(vArrElem)
+                        val vElemCType = elemCTypeStr(vKtc.asArr!!.elem)
                         vParts += "${varArrTypeName(vElemCType)} $vName"
                     }
                 }
@@ -81,9 +77,7 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
                 if (vInnerArr != null && vInnerArr.sized == null) {
                     // Ref<Array<T>>: treat same as regular ktc_VarArr_T (no raw pointer ABI)
                     val vNullComment = if (vIsNullable) " /** nullable */" else ""
-                    val vElemCType =
-                        if (vInnerArr.elem is KtcType.Nullable) optCTypeName(vInnerArr.elem.inner.toInternalStr)
-                        else cTypeStr(vInnerArr.elem)
+                    val vElemCType = elemCTypeStr(vInnerArr.elem)
                     vParts += "${varArrTypeName(vElemCType)} ${vP.name}$vNullComment"
                 } else {
                     // Ref<non-array> or Ref<@Size array>: keep as raw pointer
@@ -99,9 +93,7 @@ internal fun CCodeGen.expandParams(inParams: List<Param>): String {
                     vParts += "${sizedArrayCTypeName(vElemCType, vSize)} ${vP.name}"
                 } else {
                     val vNullComment = if (vP.type.isEffectivelyNullable()) " /** nullable */" else ""
-                    val vArrElem = vKtc.asArr!!.elem
-                    val vElemCType = if (vArrElem is KtcType.Nullable) optCTypeName(vArrElem.inner.toInternalStr)
-                    else cTypeStr(vArrElem)
+                    val vElemCType = elemCTypeStr(vKtc.asArr!!.elem)
                     vParts += "${varArrTypeName(vElemCType)} ${vP.name}$vNullComment /** ${vElemCType}[] */"
                 }
             }

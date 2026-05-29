@@ -185,8 +185,10 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         else -> typeIsNullable || s.init is NullLit || isNullableReturningCall(s.init) || inferredNullable
     }
 
-    // Nullable array (Array<T>?): uses VarArr struct, null = .ptr == NULL
-    val isNullableArray = isArrayType(t) && !isPointer &&
+    // Nullable array (Array<T>?): uses VarArr struct, null = .ptr == NULL.
+    // Use the structured KtcType (matches the rest of this function) — a string endsWith("Array")
+    // check would miss typealiased / generic-substituted array element types.
+    val isNullableArray = vKtcCore.isArrayLike && !isPointer &&
             (typeIsNullable || s.init is NullLit || inferredNullable)
 
     // Nullable Any: trampoline, null = data == NULL

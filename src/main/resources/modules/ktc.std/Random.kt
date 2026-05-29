@@ -21,7 +21,8 @@ object Random {
 	*/
 	fun nextInt(until: Int = 0): Int {
 		if (until <= 0) return C.ktc_core_rand(state.asRef(), inc.asRef())
-		return C.ktc_core_rand(state.asRef(), inc.asRef()) % until
+		// Unbiased rejection sampling, guaranteed non-negative and in [0, until).
+		return C.ktc_core_rand_range(state.asRef(), inc.asRef(), until)
 	}
 
 	/**
@@ -29,7 +30,8 @@ object Random {
 	Matches Kotlin's Random.nextInt(from: Int, until: Int).
 	*/
 	fun nextInt(from: Int, until: Int): Int {
-		return from + C.ktc_core_rand(state.asRef(), inc.asRef()) % (until - from)
+		if (until <= from) error("Random.nextInt: empty range")
+		return from + C.ktc_core_rand_range(state.asRef(), inc.asRef(), until - from)
 	}
 
 	/**

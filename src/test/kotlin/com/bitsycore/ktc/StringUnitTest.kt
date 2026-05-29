@@ -143,9 +143,10 @@ class StringUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("ktc_core_string_cat")
         // Buffer is alloca'd so it survives any enclosing inline `{ }` block — see
-        // genStringConcat for why a stack array won't do.
-        r.sourceMatches(Regex("""ktc_Char\* \$\w+ = \(ktc_Char\*\)ktc_core_alloca\(512\);"""))
-        r.sourceMatches(Regex("""ktc_core_string_cat\(\$\w+, 512, a, b\)"""))
+        // genStringConcat for why a stack array won't do. It is sized exactly to the
+        // operands' runtime lengths (+1 NUL), not a fixed 512 cap (no truncation, no waste).
+        r.sourceMatches(Regex("""ktc_Char\* \$\w+ = \(ktc_Char\*\)ktc_core_alloca\(\$\w+\.len \+ \$\w+\.len \+ 1\);"""))
+        r.sourceMatches(Regex("""ktc_core_string_cat\(\$\w+, \$\w+\.len \+ \$\w+\.len \+ 1, \$\w+, \$\w+\)"""))
     }
 
     // ── toIntOrNull ──────────────────────────────────────────────────

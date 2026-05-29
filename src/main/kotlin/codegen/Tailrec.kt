@@ -107,9 +107,9 @@ internal fun CCodeGen.validateTailrec(f: FunDecl) {
 	}
 	val a = analyzeTailrec(f.body, f.name, f.params)
 	if (a.allCalls == 0)
-		codegenError("'tailrec' modifier on '${f.name}' is pointless: function doesn't call itself")
+		codegenError("E080", "'tailrec' modifier on '${f.name}' is pointless: function doesn't call itself")
 	if (a.nonTailCalls > 0)
-		codegenError("Recursive call to '${f.name}' is not a tail call - rewrite each recursive call as 'return ${f.name}(...)' at the end of a branch")
+		codegenError("E081", "Recursive call to '${f.name}' is not a tail call - rewrite each recursive call as 'return ${f.name}(...)' at the end of a branch")
 }
 
 internal fun CCodeGen.suggestTailrec(f: FunDecl) {
@@ -161,7 +161,7 @@ internal fun CCodeGen.emitTailrecTrampoline(call: CallExpr, ind: String) {
 	for (i in params.indices) {
 		if (argExprs[i] == null)
 			argExprs[i] = params[i].default
-				?: codegenError("Missing argument '${params[i].name}' in tailrec call")
+				?: codegenError("E052", "Missing argument '${params[i].name}' in tailrec call")
 	}
 
 	// Evaluate all arg expressions to temps first (avoids aliasing during reassignment)

@@ -1,5 +1,8 @@
 #define KTC_MEM_TRACK
 #include "ktc_core.h"
+#if defined(_WIN32)
+    #include <windows.h>   /* Win32 API: stack trace (dbghelp), QueryPerformanceCounter, console code page */
+#endif
 #include <math.h>
 
 // ══════════════════════════════════════════════════════════════════
@@ -43,9 +46,11 @@ ktc_UInt ktc_core_rand_range(
     ktc_ULong* inc,
     ktc_UInt bound
 ) {
-    if (bound == 0) return 0;
+    if (bound <= 1) return 0;  /* only value in [0,1) is 0; also avoids the threshold loop */
 
-    ktc_UInt threshold = -bound % bound;
+    /* Lemire/PCG rejection threshold = 2^32 mod bound, written as (0u - bound) % bound.
+       The explicit 0u keeps the subtraction unsigned (silences -Wsign-conversion). */
+    ktc_UInt threshold = (ktc_UInt)(0u - bound) % bound;
 
     for (;;) {
         ktc_UInt r = ktc_core_rand(state, inc);
@@ -414,6 +419,12 @@ ktc_String ktc_core_string_cat(
     ktc_String a,
     ktc_String b
 ) {
+    /* Guard tiny/zero buffers: without this, bufsz==0 makes vALen wrap to -1 and the
+       memcpy below copies (size_t)-1 bytes. With a right-sized buffer bufsz>=1 always. */
+    if (bufsz <= 1) {
+        if (buf && bufsz >= 1) buf[0] = '\0';
+        return (ktc_String){ buf, 0 };
+    }
     bufsz--;
     ktc_Int vALen = a.len < bufsz     ? a.len     : bufsz;
     ktc_Int vBLen = b.len < bufsz - vALen ? b.len : bufsz - vALen;

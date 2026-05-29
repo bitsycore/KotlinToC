@@ -189,7 +189,9 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             val vMatch = vInlineCandidates.find { decl ->
                 decl.returnType != null && decl.receiver == null &&
                 decl.params.size == vArgTypes.size &&
-                decl.params.indices.all { i -> vArgTypes[i] == decl.params[i].type.name }
+                // Compare against the RESOLVED param type ("Foo*"/"IntArray"/...) — the raw TypeRef.name
+                // ("Foo"/"Array"/"T") never matches a resolved arg type. A null (un-inferable) arg is a wildcard.
+                decl.params.indices.all { i -> vArgTypes[i]?.let { it == resolveTypeRefStr(decl.params[i].type) } ?: true }
             } ?: vInlineCandidates.firstOrNull { it.returnType != null && it.receiver == null }
             if (vMatch?.returnType != null) return resolveTypeRefStr(vMatch.returnType)
         }
@@ -273,11 +275,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     if (isArrayPtr) {
         return when (method) {
             "size" -> "Int"
-            "get" -> {
-                val base = recvType.removeSuffix("?")
-                if (base.endsWith("Array*")) base.removeSuffix("Array*") else base.removeSuffix("*")
-            }
-
+            "get" -> arrayElementKtTypeKtc(recvKtc)  // true element type (e.g. Int / Vec2), via the structured KtcType
             "asRef", "copyWith", "resizeWith" -> recvType
             "asRaw" -> "${arrayElementKtTypeKtc(recvKtc)}*"
             "set" -> "Unit"

@@ -14,12 +14,15 @@ private val kTautologyOps = setOf("==", "!=", "<=", ">=", "<", ">")
 private val kFloatKinds   = setOf(KtcType.PrimKind.Float, KtcType.PrimKind.Double)
 
 internal fun CCodeGen.genBin(e: BinExpr): String {
+    // Infer the left operand's type ONCE. It is consulted ~5× below, and for any non-NameExpr
+    // operand inferExprTypeKtc is a full recursive re-inference (not a cheap lookup), so the
+    // old per-site calls walked the same subtree repeatedly (quadratically for nested binaries).
+    val ltKtc = inferExprTypeKtc(e.left)
     // Tautological comparison of a name against itself (e.g. `x == x`, `i >= i`).
     // Always true (or always false for !=). Skip for float NaN-sensitive ops on
     // unknown types — we restrict to primitive integer / char / boolean receivers.
     if (e.op in kTautologyOps && e.left is NameExpr && e.right is NameExpr && e.left.name == e.right.name) {
-        val vKtc = inferExprTypeKtc(e.left)
-        if (vKtc is KtcType.Prim && vKtc.kind !in kFloatKinds)
+        if (ltKtc is KtcType.Prim && ltKtc.kind !in kFloatKinds)
             codegenWarning("self-compare", "Comparing '${e.left.name}' to itself with '${e.op}' is ${if (e.op == "!=") "always false" else "always true"}")
     }
     val lt = inferExprType(e.left)
@@ -146,7 +149,6 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         return "(${genPtr(e.left)} == ${genPtr(e.right)})"
         }
     if (e.op in setOf("==", "!=", "<", ">", "<=", ">=")) {
-        val ltKtc = inferExprTypeKtc(e.left)
         val rtKtc = inferExprTypeKtc(e.right)
         // Both are nullable value types — compare tags and values
         if (ltKtc is KtcType.Nullable && isValueNullableKtc(ltKtc) &&
@@ -193,7 +195,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     }
     // Class == / != → ClassName_equals (all classes, not just data)
     // Also handles Ref<T> types by resolving to base class and dereferencing
-    val ltKtc2 = inferExprTypeKtc(e.left)
+    val ltKtc2 = ltKtc
     // Full-enum == / != — compare by ordinal (simple enums fall through to plain int compare).
     val ltEnumInfo = enumInfoFor(ltKtc2)
     if ((e.op == "==" || e.op == "!=") && ltEnumInfo != null && !ltEnumInfo.isSimple) {
@@ -230,7 +232,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         return if (e.op == "==") eq else "!$eq"
     }
     // String == → ktc_core_string_eq
-    val ltKtc3 = inferExprTypeKtc(e.left)
+    val ltKtc3 = ltKtc
     if (e.op == "==" && ltKtc3 is KtcType.Str) {
         return "ktc_core_string_eq(${genExpr(e.left)}, ${genExpr(e.right)})"
     }
@@ -247,7 +249,6 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     }
     // in / !in → operator contains() dispatch on class or interface
     if (e.op == "in" || e.op == "!in") {
-        val rt = inferExprType(e.right)                                               // String? right-side type
         val rtKtc = inferExprTypeKtc(e.right)                                         // KtcType? right-side type
         val rtCoreKtc = rtKtc.stripNullable                 // KtcType? stripped Nullable
         val negated = e.op == "!in"
@@ -284,10 +285,12 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
                 return if (negated) "!$call" else call
             }
         }
-        // Fallback: range-based `in` for IntRange, etc.
-        if (rt != null && (rt == "IntRange" || rt.endsWith("Range"))) {
-            val lo = genExpr((e.right as? BinExpr)?.left ?: e.right)
-            val hi = genExpr((e.right as? BinExpr)?.right ?: e.right)
+        // Fallback: range-based `in` for a literal `a..b` range expression.
+        // Match the rangeTo BinExpr structurally — a name-suffix test (endsWith("Range"))
+        // would misclassify a user type whose name happens to end in "Range".
+        if (e.right is BinExpr && e.right.op == "..") {
+            val lo = genExpr(e.right.left)
+            val hi = genExpr(e.right.right)
             val v = genExpr(e.left)
             return if (negated) "($v < $lo || $v > $hi)" else "($v >= $lo && $v <= $hi)"
         }
@@ -339,7 +342,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     // primitive operator when neither is present.
     val vOpMethod = kBinOpToMethod[e.op]
     if (vOpMethod != null) {
-        val vRecvKtc = inferExprTypeKtc(e.left)
+        val vRecvKtc = ltKtc
         val vClassName = (vRecvKtc.stripNullable as? KtcType.User)?.baseName
         val vClassInfo = if (vClassName != null) classes[vClassName] else null
         val vMemberMatch = vClassInfo != null && vClassInfo.methods.any { it.name == vOpMethod && it.isOperator }
@@ -403,10 +406,17 @@ internal fun inferInlineFunSubst(
 }
 
 internal fun CCodeGen.genStringConcat(e: BinExpr): String {
-    val buf = tmp()
-    // alloca, not a stack array: the buffer must live in the enclosing function's
-    // frame so a String built here survives any surrounding inline `{ }` block and
-    // can be safely returned from inline functions back to the caller.
-    preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca(512);"
-    return "ktc_core_string_cat($buf, 512, ${genExpr(e.left)}, ${genExpr(e.right)})"
+    val vLeft  = tmp()
+    val vRight = tmp()
+    val buf    = tmp()
+    // Spill both operands once so we can size the buffer from their runtime lengths
+    // (and so a side-effecting operand is evaluated exactly once).
+    preStmts += "ktc_String $vLeft = ${genExpr(e.left)};"
+    preStmts += "ktc_String $vRight = ${genExpr(e.right)};"
+    // alloca, not a stack array: the buffer must live in the enclosing function's frame so a
+    // String built here survives any surrounding inline `{ }` block and can be safely returned
+    // from inline functions. Sized exactly to the operands (+1 NUL) — no fixed 512 cap, so no
+    // silent truncation of long concatenations and no 512-byte waste for short ones.
+    preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca($vLeft.len + $vRight.len + 1);"
+    return "ktc_core_string_cat($buf, $vLeft.len + $vRight.len + 1, $vLeft, $vRight)"
 }

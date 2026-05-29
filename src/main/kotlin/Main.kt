@@ -181,55 +181,84 @@ private fun printDiagnosticsJson(inDiags: List<CCodeGen.Diagnostic>) {
     out.println("]")
 }
 
+// All warning names that codegen can emit (kept in sync with codegenWarning(name, ...) call sites).
+// These are the valid -W<name> / -Wno-<name> suffixes.
+private val kWarningNames = listOf(
+    "shadow", "nullable-ref", "tailrec-inline", "tailrec-suggestion",
+    "const-condition", "exhaustive-when", "null-check", "safe-call",
+    "bounds", "sized-array-truncate", "empty-body", "redundant-bang",
+    "self-assign", "self-compare", "identical-branches",
+    "unreachable", "discarded-alloc", "no-effect-expr", "unused-local", "could-be-val",
+)
+
+// Valid values for --disposed / --double-dispose.
+private val kDisposeModes = setOf("ASSERT", "LOG", "NO")
+
+/* Print the full CLI usage to the given stream. */
+fun printUsage(inOut: java.io.PrintStream) {
+    inOut.println("Usage: ktc <file.kt...|module.ktc.toml|dir/> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
+    inOut.println("  Transpiles Kotlin subset files to C11.")
+    inOut.println("  A module.ktc.toml or directory containing one can be given instead of .kt files.")
+    inOut.println("  --help, -h                   Print this usage and exit")
+    inOut.println("  --version                    Print version info and exit")
+    inOut.println("  --check                      Validate source (lex + parse + collect), skip C emission")
+    inOut.println("  --explain <code>             Print a detailed explanation for an error/warning code (e.g. E020, W002)")
+    inOut.println("  --strict                     Promote all warnings to errors")
+    inOut.println("  --diagnostics=json           Output errors/warnings as JSON (for editor/LSP integration)")
+    inOut.println("  -W<name>                     Enable warning <name> (e.g. -Wshadow)")
+    inOut.println("  -Wno-<name>                  Disable warning <name> (e.g. -Wno-safe-call)")
+    // Wrap the warning-name list at ~70 cols so --help stays readable.
+    val vChunks = kWarningNames.chunked(4)
+    vChunks.forEachIndexed { vIdx, vChunk ->
+        val vLabel = if (vIdx == 0) "Names: " else "       "
+        inOut.println("                               $vLabel${vChunk.joinToString(", ")}${if (vIdx < vChunks.lastIndex) "," else ""}")
+    }
+    inOut.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
+    inOut.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
+    inOut.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
+    inOut.println("  --check-null                 Runtime null-deref check on every .refValue access (default ON)")
+    inOut.println("  --no-check-null              Disable runtime null-deref checks (faster, but null .refValue is UB)")
+    inOut.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
+    inOut.println("  --double-dispose=ASSERT|LOG|NO  Double-dispose: abort / log+continue / ignore (default: NO)")
+    inOut.println("  --main <qualified.name>      Select the entry point by qualified name (e.g. com.example.Main.run)")
+    inOut.println("                               Required when multiple main-compatible functions exist.")
+    inOut.println("                               Valid signatures: fun <name>(), fun <name>(): Int,")
+    inOut.println("                                                 fun <name>(args: Array<String>),")
+    inOut.println("                                                 fun <name>(args: Array<String>): Int")
+    inOut.println("  --ast                        Dump parsed AST and exit (no C output)")
+    inOut.println("  --dump-semantics             Dump AST + semantic analysis and exit")
+}
+
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println("Usage: ktc <file.kt...|module.ktc.toml|dir/> [-o <output_dir>] [--module <name>] [--name <exe>] [--mem-track] [--disposed=ASSERT|LOG|NO] [--double-dispose=ASSERT|LOG|NO] [--main <qualified.name>] [--ast] [--dump-semantics]")
-        System.err.println("  Transpiles Kotlin subset files to C11.")
-        System.err.println("  A module.ktc.toml or directory containing one can be given instead of .kt files.")
-        System.err.println("  --version                    Print version info and exit")
-        System.err.println("  --check                      Validate source (lex + parse + collect), skip C emission")
-        System.err.println("  --explain <code>             Print a detailed explanation for an error/warning code (e.g. E020, W002)")
-        System.err.println("  --strict                     Promote all warnings to errors")
-        System.err.println("  --diagnostics=json           Output errors/warnings as JSON (for editor/LSP integration)")
-        System.err.println("  -W<name>                     Enable warning <name> (e.g. -Wshadow)")
-        System.err.println("  -Wno-<name>                  Disable warning <name> (e.g. -Wno-safe-call)")
-        System.err.println("                               Names: shadow, nullable-ref, tailrec-inline, tailrec-suggestion,")
-        System.err.println("                                      const-condition, exhaustive-when, null-check, safe-call,")
-        System.err.println("                                      bounds, sized-array-truncate, empty-body, redundant-bang,")
-        System.err.println("                                      self-assign, self-compare, identical-branches")
-        System.err.println("  --mem-track                  Enable allocation tracking (alloc/free counts + leak report)")
-        System.err.println("  --check-bounds               Runtime bounds check on every array/string [] access (default ON)")
-        System.err.println("  --no-check-bounds            Disable runtime bounds checks (faster, but out-of-range is UB)")
-        System.err.println("  --check-null                 Runtime null-deref check on every .refValue access (default ON)")
-        System.err.println("  --no-check-null              Disable runtime null-deref checks (faster, but null .refValue is UB)")
-        System.err.println("  --disposed=ASSERT|LOG|NO     Use-after-dispose: abort / log+continue / ignore (default: NO)")
-        System.err.println("  --double-dispose=ASSERT|LOG|NO  Double-dispose: abort / log+continue / ignore (default: NO)")
-        System.err.println("  --main <qualified.name>      Select the entry point by qualified name (e.g. com.example.Main.run)")
-        System.err.println("                               Required when multiple main-compatible functions exist.")
-        System.err.println("                               Valid signatures: fun <name>(), fun <name>(): Int,")
-        System.err.println("                                                 fun <name>(args: Array<String>),")
-        System.err.println("                                                 fun <name>(args: Array<String>): Int")
-        System.err.println("  --ast                        Dump parsed AST and exit (no C output)")
-        System.err.println("  --dump-semantics             Dump AST + semantic analysis and exit")
+        printUsage(System.err)
         exitProcess(1)
     }
 
-    // ── --version: print version and exit early ─────────────────────
-    if (args.size == 1 && args[0] == "--version") {
+    // ── --help / -h: print usage to stdout and exit cleanly (any position) ──
+    if ("--help" in args || "-h" in args) {
+        printUsage(System.out)
+        return
+    }
+
+    // ── --version: print version and exit early (any position) ──────
+    if ("--version" in args) {
         val version = aClass.getPackage()?.implementationVersion ?: "1.0-SNAPSHOT"
         println("ktc $version")
         return
     }
 
-    // ── --explain: print error/warning explanation ──────────────────
-    if (args.size == 2 && args[0] == "--explain") {
-        val entry = ErrorCatalog.lookup(args[1])
+    // ── --explain: print error/warning explanation (any position) ───
+    val explainIdx = args.indexOf("--explain")
+    if (explainIdx >= 0) {
+        val code = args.getOrNull(explainIdx + 1)
+        val entry = code?.let { ErrorCatalog.lookup(it) }
         if (entry != null) {
             println("${entry.code}: ${entry.title}")
             println()
             println(entry.explanation)
         } else {
-            System.err.println("Unknown error code '${args[1]}'.")
+            System.err.println("Unknown error code '${code ?: ""}'.")
             System.err.println("Valid codes: ${ErrorCatalog.allCodes().joinToString(", ") { it.code }}")
             exitProcess(1)
         }
@@ -311,10 +340,25 @@ fun main(args: Array<String>) {
             i++
         } else if (args[i] == "--version") {
             i++
+        } else if (args[i].startsWith("-")) {
+            // Any unrecognized dash-prefixed token is a mistyped/unknown flag, not an input path.
+            System.err.println("Error: unknown option '${args[i]}'")
+            System.err.println("Run 'ktc --help' for the list of options.")
+            exitProcess(2)
         } else {
             inputPaths += args[i]
             i++
         }
+    }
+
+    // Validate enum-valued flags before doing any work (silent bad values otherwise half-configure codegen).
+    if (disposedMode !in kDisposeModes) {
+        System.err.println("Error: --disposed must be ASSERT|LOG|NO, got '$disposedMode'")
+        exitProcess(1)
+    }
+    if (doubleDisposeMode !in kDisposeModes) {
+        System.err.println("Error: --double-dispose must be ASSERT|LOG|NO, got '$doubleDisposeMode'")
+        exitProcess(1)
     }
 
     if (inputPaths.isEmpty()) {

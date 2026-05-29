@@ -172,7 +172,9 @@ class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity:
 }
 
 fun <K,V> mapOf(allocator: Ref<Allocator>, vararg pairs: Pair<K, V>): Map<K, V> {
-	val map = HashMap<K, V>(allocator, pairs.size)
+	// capacity must never be 0: every read does key.hashCode() % capacity (modulo-by-zero is UB).
+	val notZero = if (pairs.size == 0) 8 else pairs.size * 2
+	val map = HashMap<K, V>(allocator, notZero)
 	for (p in pairs) {
 		map.put(p.first, p.second)
 	}
