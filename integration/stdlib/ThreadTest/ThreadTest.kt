@@ -12,9 +12,9 @@ fun worker(arg: AnyPtr) {
 	val ctx = arg.cast<Ref<Ctx>>()
 	var i = 0
 	while (i < 1000) {
-		ctx.refValue.lock.lock()
-		ctx.refValue.counter = ctx.refValue.counter + 1
-		ctx.refValue.lock.unlock()
+		ctx.refValue.lock.withLock {
+			ctx.refValue.counter = ctx.refValue.counter + 1
+		}
 		i = i + 1
 	}
 }
@@ -23,12 +23,20 @@ fun main(): Int {
 	val ctx = Ctx(0, Mutex()).allocWith(Heap)
 	val arg = ctx.cast<AnyPtr>()
 
-	val t0 = startThread(::worker, arg)
-	val t1 = startThread(::worker, arg)
-	val t2 = startThread(::worker, arg)
-	val t3 = startThread(::worker, arg)
+	// thread(...) constructs and starts immediately (kotlin.concurrent.thread analogue).
+	val t0 = thread(::worker, arg)
+	val t1 = thread(::worker, arg)
+	// Construct-then-start to exercise the Thread(...).start() path too.
+	val t2 = Thread(::worker, arg)
+	val t3 = Thread(::worker, arg)
+	t2.start()
+	t3.start()
 
-	if (!t0.isStarted || !t1.isStarted || !t2.isStarted || !t3.isStarted) {
+	// Current-thread helpers (companion): give the workers a moment, hint a reschedule.
+	Thread.yield()
+	Thread.sleep(1)
+
+	if (!t0.isAlive || !t1.isAlive || !t2.isAlive || !t3.isAlive) {
 		println("ThreadTest FAILED: a thread failed to start")
 		return 2
 	}
@@ -38,8 +46,10 @@ fun main(): Int {
 	t2.join()
 	t3.join()
 
+	// Value-returning withLock (R = Int): read the final counter under the lock.
+	val total = ctx.refValue.lock.withLock { ctx.refValue.counter }
+
 	ctx.refValue.lock.destroy()
-	val total = ctx.refValue.counter
 	Heap.freeMem(ctx)
 
 	if (total != 4000) {
