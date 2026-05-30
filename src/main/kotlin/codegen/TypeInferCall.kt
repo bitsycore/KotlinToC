@@ -67,6 +67,12 @@ private val kPrimitiveArrayCtorTypes: Map<String, String> = mapOf(
 	)
 
 internal fun CCodeGen.inferCallType(e: CallExpr): String? {
+    if (e.callee is DotExpr) {
+        // expr.cast<T>() reinterprets to the (last) type argument — mirror the codegen in Call.kt so
+        // `val x = e.cast<T>()` infers x as T instead of falling back to Int. (D6)
+        if (e.callee.name == "cast" && e.typeArgs.isNotEmpty() && e.args.isEmpty())
+            return resolveTypeName(e.typeArgs.last()).toInternalStr
+    }
     // Nested class constructor: Outer.Inner(...) or A.B.C(...)
     if (e.callee is DotExpr) {
         fun flattenDotCallee(callee: Expr): String? {

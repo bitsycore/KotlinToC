@@ -9,7 +9,7 @@ class Ctx(var counter: Int, val lock: Mutex)
 
 // Thread entry — a top-level (AnyPtr) -> Unit. Recover the shared context from the opaque arg.
 fun worker(arg: AnyPtr) {
-	val ctx: Ref<Ctx> = arg.cast<Ref<Ctx>>()
+	val ctx = arg.cast<Ref<Ctx>>()
 	var i = 0
 	while (i < 1000) {
 		ctx.refValue.lock.lock()
@@ -21,7 +21,7 @@ fun worker(arg: AnyPtr) {
 
 fun main(): Int {
 	val ctx = Ctx(0, Mutex()).allocWith(Heap)
-	val arg: AnyPtr = ctx.cast<AnyPtr>()
+	val arg = ctx.cast<AnyPtr>()
 
 	val t0 = startThread(::worker, arg)
 	val t1 = startThread(::worker, arg)

@@ -55,11 +55,11 @@ not constant`. Such initializers must be deferred to `ktc_core_mainInit()` (as o
 is). Workaround: initialize inside a function and pass the value via a context. Surfaced building the
 Thread API (the ThreadTest uses a heap context instead).
 
-### D6 — `expr.cast<T>()` return type inferred as `Int` (S)
-The cast CODEGEN is correct (`(T_ctype)(expr)`), but `inferExprType` of a `cast` call doesn't return the
-type argument, so `val x = e.cast<T>()` mistypes `x` (falls back to `Int`). Fix: in call-type inference,
-a method named `cast` with one type arg returns the resolved type arg. Workaround: annotate the variable
-(`val x: T = e.cast<T>()`). Surfaced building the Thread API.
+### D6 — `expr.cast<T>()` return type inferred as `Int` ✅ FIXED
+The cast codegen was already correct (`(T_ctype)(expr)`), but `inferCallType` didn't recognise `cast`,
+so `val x = e.cast<T>()` mistyped `x` as `Int`. Fixed: `inferCallType` now returns the (last) type
+argument for a `cast` call, mirroring the codegen — `val x = e.cast<T>()` infers as `T` with no
+annotation. ThreadTest relies on it (`arg.cast<Ref<Ctx>>()`, `ctx.cast<AnyPtr>()`).
 
 ═══════════════════════════════════════════════════════════════════════
 ## 2. Generated-C optimization
