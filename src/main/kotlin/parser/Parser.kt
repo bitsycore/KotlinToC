@@ -146,18 +146,23 @@ class Parser(private val tokens: List<Token>) {
 
     // ── fun ──────────────────────────────────────────────────────────
 
+    // Parse an optional `<A, B, …>` type-parameter list, skipping variance/reified modifiers and
+    // bounds. Returns the parameter names, or an empty list when no `<` follows. (R11)
+    private fun parseTypeParamList(): List<String> {
+        if (!at(TokenType.LT)) return emptyList()
+        advance(); nesting++; skipNL()
+        skipTypeParamModifiers()
+        val params = mutableListOf(expectIdent())
+        skipTypeParamBound()
+        while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
+        expect(TokenType.GT); nesting--
+        return params
+    }
+
     private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInternal: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
         expect(TokenType.FUN)
         // Parse optional type parameters: fun <reified T, U> name(...)
-        val typeParams = if (at(TokenType.LT)) {
-            advance(); nesting++; skipNL()
-            skipTypeParamModifiers()
-            val params = mutableListOf(expectIdent())
-            skipTypeParamBound()
-            while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
-            expect(TokenType.GT); nesting--
-            params
-        } else emptyList()
+        val typeParams = parseTypeParamList()
         // Parse annotations (@Size(N), etc.)
         val firstAnnotations = parseAnnotations()
         val firstName = expectIdent()
@@ -226,15 +231,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false, isSealed: Boolean = false, isInternal: Boolean = false): ClassDecl {
         val name = expectIdent()
         // Parse type parameters: class Foo<out T, in U>(...)
-        val typeParams = if (at(TokenType.LT)) {
-            advance(); nesting++; skipNL()
-            skipTypeParamModifiers()
-            val params = mutableListOf(expectIdent())
-            skipTypeParamBound()
-            while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
-            expect(TokenType.GT); nesting--
-            params
-        } else emptyList()
+        val typeParams = parseTypeParamList()
         val ctorParams = if (at(TokenType.LPAREN)) {
             advance(); nesting++
             val p = parseCtorParams()
@@ -416,15 +413,7 @@ class Parser(private val tokens: List<Token>) {
         expect(TokenType.INTERFACE)
         val name = expectIdent()
         // Parse type parameters: interface Foo<out T, in U>
-        val typeParams = if (at(TokenType.LT)) {
-            advance(); nesting++; skipNL()
-            skipTypeParamModifiers()
-            val params = mutableListOf(expectIdent())
-            skipTypeParamBound()
-            while (at(TokenType.COMMA)) { advance(); skipNL(); skipTypeParamModifiers(); params += expectIdent(); skipTypeParamBound() }
-            expect(TokenType.GT); nesting--
-            params
-        } else emptyList()
+        val typeParams = parseTypeParamList()
         // Parse super interfaces: : SuperIface<T>, OtherIface
         val superInterfaces = mutableListOf<TypeRef>()
         if (at(TokenType.COLON)) {

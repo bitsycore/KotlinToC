@@ -8,6 +8,12 @@ import com.bitsycore.ktc.codegen.emit.*
 
 internal fun CCodeGen.collectAndScan() {
 	collectDecls()
+	scanAll()
+	}
+
+/* The scan/materialize sequence shared by collectAndScan() (the --check pass) and generate() —
+kept in one place so the two paths can't drift. (R14) */
+private fun CCodeGen.scanAll() {
 	scanForClassArrayTypes()
 	scanForGenericInstantiations()
 	materializeGenericInstantiations()
@@ -73,11 +79,7 @@ internal fun CCodeGen.generate(): COutput {
 	hdr.appendLine("/* @SIZED_TYPES@ */")
 	hdr.appendLine()
 
-	scanForClassArrayTypes()
-	scanForGenericInstantiations()
-	materializeGenericInstantiations()
-	scanForGenericFunCalls()
-	runGenericScanFixedPoint()
+	scanAll()
 
 	// Build interfaceImplementors early so emitClass/emitObject can query it (e.g. copyWith_any).
 	for ((className, ifaces) in classInterfaces) {

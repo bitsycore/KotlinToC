@@ -25,7 +25,8 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   O7 (shared `ktc_core_noop_dispose`).
 - **Type-safety/DRY:** R1 (`genBin` infer-once), R4 (`elemCTypeStr` reuse), R5 (`defaultVal` no string
   round-trip), R6 (structural array check), R7 (real range KtcType for `in`), R8 (`CastExpr` resolved
-  infer), R9 (hoisted `kBooleanResultOps`), R18 (stale `stringToKtc` doc / Boolean sizing).
+  infer), R9 (hoisted `kBooleanResultOps`), R11 (`parseTypeParamList` dedup), R14 (`scanAll` dedup),
+  R18 (stale `stringToKtc` doc / Boolean sizing), R20-partial (CmakeGen `module.ktc.toml` comment).
 - **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold). U4/U5 partial (see §3).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
   GenericInferUnitTest, TopVarWriteTest, MathTest, StringViewTest.
@@ -96,9 +97,6 @@ CallMethodBuiltins.kt:404-417 / 450-462 vs CallAlloc.kt:57-117. Fix: extract one
 Parser.kt:1285 companion `var`, mutated from Main.kt — leaks across files, not re-entrant. Fix: make it a
 constructor `val` instance field (folds into B12's AST-driven registration).
 
-### R11 — Type-parameter list parse duplicated across fun/class/interface (S)
-Parser.kt:152-160/229-237/419-427 verbatim. Fix: `parseTypeParamList()`.
-
 ### R12 — `emitClass` and `emitGenericClass` are ~90% duplicate and have drifted (M)
 Class.kt:78-133 vs ClassGeneric.kt:17-71 — diverged Any-member ordering + data-class toString coverage.
 Fix: extract one `emitClassBody(ci, decl, isGeneric, displayName, optName, typeArgsForFooter)`.
@@ -106,9 +104,6 @@ Fix: extract one `emitClassBody(ci, decl, isGeneric, displayName, optName, typeA
 ### R13 — Any-vtable trampoline emission duplicated between ClassAny.kt and Object.kt (M)
 ClassAny.kt:154-224 vs Object.kt:388-432 — char-identical AnyVt literal + `as_Any`. Fix: extract
 `emitAnyVtableLiteralAndCast(cName, selfTypeExpr)` + a 5-stub builder parameterized by per-method body.
-
-### R14 — `collectAndScan()` sequence duplicated verbatim inside `generate()` (S)
-CCodeGenGenerate.kt:9-16 vs 76-80 — drift risk between `--check` and emit. Fix: one `scanAll()` helper.
 
 ### R15 — Inline-return state (5 fields) hand-saved/restored on CCodeGen (M)
 CCodeGen.kt:126-130; Inline.kt:78-87/145-149. Fix: move into `FunctionContext` + delegate props, fold the
@@ -127,10 +122,11 @@ LambdaExpr / node kinds). Fix: one generic `walkExpr`/`walkStmt` visitor; expres
 CCodeGenCollect.kt:628 (`methodName`), Class.kt:138 (`secondaryCtorName`), FunGeneric.kt:29-33 — a `Foo` and
 `Ref<Foo>` param mangle to the same C symbol. Fix: include a pointer/ref marker; drive off KtcType structure.
 
-### R20 — Smaller DRY wins (S each, batch)
-parseDeclBody (Parser object/anon/companion loops), finishExprOrAssign + ASSIGN_OPS set, maybeTrailingLambda
-helper, collapse skipNL/skipTerminator, npeStmt helper (Dot.kt genNotNull ×6), topLevelSrcKey `|`-sentinel
-helper, Math/array name-builder de-dup (ArraysMapping ↔ PrimKind), CmakeGen comment `deps.ktc.toml`→`module.ktc.toml`.
+### R20 — Smaller DRY wins (S each, batch) — partially done
+Remaining: parseDeclBody (Parser object/anon/companion loops), finishExprOrAssign + ASSIGN_OPS set,
+maybeTrailingLambda helper, collapse skipNL/skipTerminator, npeStmt helper (Dot.kt genNotNull ×6),
+topLevelSrcKey `|`-sentinel helper, Math/array name-builder de-dup (ArraysMapping ↔ PrimKind).
+(Done: CmakeGen comment `deps.ktc.toml`→`module.ktc.toml`.)
 
 ═══════════════════════════════════════════════════════════════════════
 ## 4. Ease-of-use / missing std-lib + features
