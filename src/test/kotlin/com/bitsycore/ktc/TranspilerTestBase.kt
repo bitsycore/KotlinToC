@@ -112,8 +112,9 @@ open class TranspilerTestBase {
         return result
     }
 
-    /* Pre-scan source text for infix function names and add them to Parser.INFIX_IDS. */
-    private val vInfixNameRx = Regex("""\binfix\s+fun\b[^(.]+\.(\w+)\s*\(""")
+    /* Pre-scan source text for infix function names and add them to Parser.INFIX_IDS.
+       Catches both extension (`infix fun Recv.name(`) and member (`infix fun name(`) forms. (B12) */
+    private val vInfixNameRx = Regex("""\binfix\s+fun\b[^(]*?(\w+)\s*\(""")
     private fun prescanInfix(inSource: String) {
         vInfixNameRx.findAll(inSource).forEach { vMatch -> Parser.INFIX_IDS.add(vMatch.groupValues[1]) }
     }

@@ -59,6 +59,18 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             }
         }
     }
+    // Member infix function dispatch: `a combine b` where `combine` is an `infix fun` declared in a's
+    // class / interface / enum → route through the method call a.combine(b). Without this a member
+    // infix lowers to a raw C binary op on the structs (or a built-in like `and` mis-fires). (B12)
+    if (e.op.isNotEmpty() && (e.op[0].isLetter() || e.op[0] == '_')) {
+        val vRecvClass = (ltKtc?.stripNullable as? KtcType.User)?.baseName
+        val vIsMemberInfix = vRecvClass != null && (
+            classes[vRecvClass]?.methods?.any { it.name == e.op && it.isInfix } == true ||
+            interfaces[vRecvClass]?.methods?.any { it.name == e.op && it.isInfix } == true ||
+            enums[vRecvClass]?.methods?.any { it.name == e.op && it.isInfix } == true
+            )
+        if (vIsMemberInfix) return genExpr(CallExpr(DotExpr(e.left, e.op), listOf(Arg(expr = e.right))))
+    }
     // null comparison
     if ((e.op == "==" || e.op == "!=") && (e.left is NullLit || e.right is NullLit)) {
         val nonNull = if (e.left is NullLit) e.right else e.left

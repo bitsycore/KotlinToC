@@ -14,7 +14,8 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
 - **Correctness:** B1 (data-class hashCode/equals field parity), B2 (`arr.get/set` bounds check),
   B3 (unknown-enum-method → E050), B4 (Array.get element-type infer), B5 (`mapOf` 0-pairs capacity),
   B6 (range-loop endpoint hoist), B7 (collection for-loop preStmt flush), B8 (template/print eval-once),
-  B10 (function-pointer signature round-trip), B11 (inline-overload return-type infer), B13 (lexer column).
+  B10 (function-pointer signature round-trip), B11 (inline-overload return-type infer),
+  B12 (member `infix fun` parse + dispatch), B13 (lexer column).
 - **Discovered & fixed:** D1 (per-decl `@DocumentationOnly` — see note), D2 (value-nullable `if`
   branch-wise Optional), D3 (top-level `var` write prefix), D4 (value-nullable `when` branch-wise Optional).
 - **CLI/diagnostics:** C1 (`[Exxx]` prefixes), C2 (`-Wno-` list sync), C3 (unknown-flag reject),
@@ -25,8 +26,8 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   round-trip), R6 (structural array check), R7 (real range KtcType for `in`), R8 (`CastExpr` resolved
   infer), R9 (hoisted `kBooleanResultOps`), R18 (stale `stringToKtc` doc / Boolean sizing).
 - **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold). U4/U5 partial (see §3).
-- **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, TopVarWriteTest,
-  MathTest, StringViewTest.
+- **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
+  TopVarWriteTest, MathTest, StringViewTest.
 
 **Design note (D1):** doc-only is now per-declaration `@DocumentationOnly`, not whole-file
 `@file:DocumentationOnly` — a file may mix intrinsic stubs (marked per class/fun) with real `inline`
@@ -43,13 +44,6 @@ TypeInferCall.kt:119 and its codegen twin CallAlloc.kt:263 do `inferExprType(arg
 wrong-size C, no diagnostic. Fix: both sites must use the same resolution; on inference failure fall
 back to declared/recorded type args, else `codegenError`. Propagate `null` (not `"Int"`) at
 TypeInferCall.kt:132, TypeInferDot.kt:112, ArraysMapping.kt:67.
-
-### B12 — Member `infix fun` mis-parsed (regex misses it) AND not dispatched in codegen (M)
-Main.kt:492 regex requires a receiver dot → member infix funcs never enter `INFIX_IDS`, so `a combine b`
-mis-parses into 3 statements (only the hard-coded seed names work). Even when parsed, `genBin` only
-dispatches extension/arithmetic operators, so a member `infix and` lowers to raw `(a & b)` on structs.
-Fix: (1) derive `INFIX_IDS` from parsed `FunDecl.isInfix` over all files (drop the regex); (2) in
-`genBin`, route an op that matches a member infix method through `genMethodCall`. (Folds in R10.)
 
 ═══════════════════════════════════════════════════════════════════════
 ## 2. Generated-C optimization

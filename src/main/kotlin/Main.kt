@@ -532,8 +532,10 @@ fun main(args: Array<String>) {
         vRawSources += RawSource(inputFile, inputFile.name, inputFile.readText(), false)
     }
 
-    // Pre-scan all sources for infix function names (must happen before any parsing)
-    val vInfixNameRx = Regex("""\binfix\s+fun\b[^(.]+\.(\w+)\s*\(""") // matches: infix fun <T> Recv.name(
+    // Pre-scan all sources for infix function names (must happen before any parsing).
+    // Matches both `infix fun <T> Recv.name(` (extension) and `infix fun name(` (member) — the
+    // method name is the last identifier before the parameter `(`. (B12)
+    val vInfixNameRx = Regex("""\binfix\s+fun\b[^(]*?(\w+)\s*\(""")
     for (vRaw in vRawSources) {
         vInfixNameRx.findAll(vRaw.vSource).forEach { vMatch ->
             Parser.INFIX_IDS.add(vMatch.groupValues[1]) // register as infix operator name

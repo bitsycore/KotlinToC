@@ -76,7 +76,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 				val vArgType    = inferExprType(e.right)
 				val vSubst  = if (vInfixDecl.typeParams.isNotEmpty()) inferInlineFunSubst(vInfixDecl, vRecvType, listOf(vArgType)) else null
 				withTypeSubst(vSubst) { resolveTypeName(vInfixDecl.returnType).toInternalStr }
-				} else inferExprType(e.left)
+				} else memberInfixReturnType(e) ?: inferExprType(e.left)
 			}
 		}
 	is PrefixExpr   -> if (e.op == "!") "Boolean" else inferExprType(e.expr)
@@ -102,6 +102,18 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	is ClassRefExpr -> "KClass"
 	is LambdaExpr -> null
 	is ObjectExpr -> e.syntheticName
+	}
+
+/* If [e] is a member-infix BinExpr (`a name b` where `name` is an `infix fun` member of a's
+class / interface / enum), returns that method's resolved return type; else null. Mirrors the
+member-infix dispatch in genBin. (B12) */
+internal fun CCodeGen.memberInfixReturnType(e: BinExpr): String? {
+	if (e.op.isEmpty() || !(e.op[0].isLetter() || e.op[0] == '_')) return null
+	val vRecvClass = (inferExprTypeKtc(e.left)?.stripNullable as? KtcType.User)?.baseName ?: return null
+	val vMethod = classes[vRecvClass]?.methods?.firstOrNull { it.name == e.op && it.isInfix }
+		?: interfaces[vRecvClass]?.methods?.firstOrNull { it.name == e.op && it.isInfix }
+		?: enums[vRecvClass]?.methods?.firstOrNull { it.name == e.op && it.isInfix }
+	return vMethod?.returnType?.let { resolveTypeName(it).toInternalStr }
 	}
 
 /*
