@@ -76,6 +76,13 @@ internal fun CCodeGen.coerceBranchToOpt(inBranch: Expr?, inOptType: String): Str
     }
 }
 
+// The value-Optional C type name for a value-nullable internal type ("Int?" → ktc_Int$Opt), else
+// null (non-nullable, or a Ref/Array/Any whose null is a bare NULL pointer, not an Optional).
+internal fun CCodeGen.valueOptTypeOf(inType: String?): String? {
+    if (inType == null) return null
+    return if (isValueNullableKtc(parseResolvedTypeName(inType))) optCTypeName(inType) else null
+}
+
 // ── if expression (as C ternary or temp) ─────────────────────────
 
 internal fun CCodeGen.genIfExpr(e: IfExpr): String {
@@ -123,7 +130,7 @@ internal fun CCodeGen.genIfExpr(e: IfExpr): String {
     val t = tmp()
     val retType = inferIfExprType(e) ?: "Int"
     // Value-nullable result → the temp is the Optional struct and each branch lowers into it. (D2)
-    val vOptType = parseResolvedTypeName(retType).let { if (isValueNullableKtc(it)) optCTypeName(retType) else null }
+    val vOptType = valueOptTypeOf(retType)
     val ct = vOptType ?: cTypeStr(retType)
     preStmts += "$ct $t;"
     preStmts += "if (${genExpr(e.cond)}) {"
@@ -299,6 +306,8 @@ internal fun CCodeGen.genWhenExpr(e: WhenExpr): String {
     // Check if all branches are single-expression → nested ternary (only when no narrowing needed)
     val allSimple = !hasNarrowingBranch && e.branches.all { blockAsSingleExpr(it.body) != null }
     if (allSimple) {
+        // Value-nullable when (a `null` branch): lower each branch into the Optional. (D4)
+        val vOptType = if (e.branches.any { blockAsSingleExpr(it.body) is NullLit }) valueOptTypeOf(inferWhenExprType(e)) else null
         val sb = StringBuilder()
         val hasElse = e.branches.any { it.conds == null }
         for ((bi, br) in e.branches.withIndex()) {
@@ -306,7 +315,8 @@ internal fun CCodeGen.genWhenExpr(e: WhenExpr): String {
             if (narrowedType != null) {
                 pushScope(); defineVar(subjName!!, narrowedType)
             }
-            val expr = genExpr(blockAsSingleExpr(br.body)!!)
+            val brExpr = blockAsSingleExpr(br.body)!!
+            val expr = if (vOptType != null) coerceBranchToOpt(brExpr, vOptType) else genExpr(brExpr)
             if (narrowedType != null) popScope()
             // Exhaustive when without else: drop the last branch's condition, since the
             // exhaustiveness check guaranteed it always matches when the others didn't.
@@ -324,7 +334,9 @@ internal fun CCodeGen.genWhenExpr(e: WhenExpr): String {
     // Complex case: hoist to temp
     val t = tmp()
     val retType = inferWhenExprType(e) ?: "Int"
-    val ct = cTypeStr(retType)
+    // Value-nullable result → the temp is the Optional struct and each branch lowers into it. (D4)
+    val vOptType = if (e.branches.any { blockAsSingleExpr(it.body) is NullLit }) valueOptTypeOf(retType) else null
+    val ct = vOptType ?: cTypeStr(retType)
     preStmts += "$ct $t;"
     for ((bi, br) in e.branches.withIndex()) {
         if (br.conds == null) {
@@ -340,7 +352,7 @@ internal fun CCodeGen.genWhenExpr(e: WhenExpr): String {
             preStmts += "    // smart-cast: '$subjName' narrowed to '$narrowedType'"
             pushScope(); defineVar(subjName!!, narrowedType)
         }
-        emitBlockIntoTemp(br.body, t, "    ")
+        emitBlockIntoTemp(br.body, t, "    ", vOptType)
         if (narrowedType != null) popScope()
     }
     preStmts += "}"
@@ -363,7 +375,18 @@ internal fun CCodeGen.narrowSubjectForBranch(br: WhenBranch, subjName: String?):
 
 internal fun CCodeGen.inferWhenExprType(e: WhenExpr): String? {
     val types = e.branches.mapNotNull { inferBlockType(it.body) }
-    if (types.isEmpty()) return null
+    // A `null` branch makes the whole when-expression nullable (the value branch's type made
+    // nullable), so value-typed branches lower into an Optional rather than a bare value. (D4)
+    val vHasNullBranch = e.branches.any { blockAsSingleExpr(it.body) is NullLit }
+    if (types.isEmpty()) {
+        if (vHasNullBranch) {
+            val vBase = e.branches.firstNotNullOfOrNull { br ->
+                if (blockAsSingleExpr(br.body) is NullLit) null else inferBlockTypeScoped(br.body)
+            }
+            if (vBase != null) return if (vBase.endsWith("?")) vBase else "$vBase?"
+        }
+        return null
+    }
     if (types.distinct().size > 1) {
         var common: Set<String>? = null
         for (t in types) {
@@ -373,7 +396,8 @@ internal fun CCodeGen.inferWhenExprType(e: WhenExpr): String? {
         }
         if (!common.isNullOrEmpty()) return common.first()
     }
-    return types.first()
+    val vBase = types.first()
+    return if (vHasNullBranch && !vBase.endsWith("?")) "$vBase?" else vBase
 }
 
 /* Returns true when expr contains no function calls — safe to evaluate multiple times without side effects. */

@@ -39,11 +39,11 @@ Each item below is marked `[x]` when shipped this pass.
   promotes a null-branch `if` to nullable (with a scoped re-inference so a block branch's own locals
   resolve); `emitBlockIntoTemp` coerces the hoisted temp. Covers simple/reversed/`String?`/complex-block/
   inline-ext forms. Test: `intrinsic/NullableIfTest`.
-- **D4 — `when`-expression with a `null` branch has the same value-nullable mis-lowering as D2.**
-  `genWhenExpr` / `inferWhenExprType` don't yet push Optional wrapping into branches, so
-  `when { … -> value; else -> null }` returning `T?` repeats the D2 bug. Mirror the D2 fix: promote to
-  nullable on a null branch, coerce each branch via the shared `coerceBranchToOpt`, size the hoisted
-  temp as the Optional. (S–M, mechanical given D2's helpers)
+- **D4 — `when`-expression with a `null` branch had the same value-nullable mis-lowering as D2.** ✅ FIXED
+  Mirrored the D2 fix in `genWhenExpr` / `inferWhenExprType`: a `null` branch promotes the when to
+  nullable (scoped re-inference for block branches), and the nested-ternary and hoist-to-temp paths
+  coerce each branch via the shared `coerceBranchToOpt` / `valueOptTypeOf` helpers. Covered by added
+  `when` cases in `intrinsic/NullableIfTest`.
 - **D3 — top-level `var` write emits an unprefixed LHS inside a same-package function.** ✅ FIXED
   `genLValue`'s NameExpr case now applies the package prefix for a top-level prop (mirrors the read
   path); the write side was emitting a bare, undeclared C name. Test: `TopVarWriteTest`.

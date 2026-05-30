@@ -25,6 +25,22 @@ fun doubledDigitOrNull(c: Char): Int? =
 // Inline extension on a primitive receiver — the original D2 case.
 inline fun Char.toDigitOrNull(): Int? = if (this >= '0' && this <= '9') this.toInt() - '0'.toInt() else null
 
+// when-expression, value-nullable via a `null` else (nested-ternary form). (D4)
+fun gradeOrNull(score: Int): Char? = when {
+	score >= 90 -> 'A'
+	score >= 80 -> 'B'
+	else -> null
+}
+
+// when-expression, value-nullable, with a multi-statement value branch (temp-hoist form). (D4)
+fun absDigitOrNull(c: Char): Int? = when {
+	c >= '0' && c <= '9' -> {
+		val d = c.toInt() - '0'.toInt()
+		d
+	}
+	else -> null
+}
+
 fun main(): Int {
 	var vOk = true
 
@@ -48,6 +64,13 @@ fun main(): Int {
 	vOk = vOk && ('9'.toDigitOrNull() ?: -1) == 9
 	val vc = 'z'
 	vOk = vOk && (vc.toDigitOrNull() ?: -1) == -1
+
+	// when-expression value-nullable forms (D4): value branches and the null else.
+	vOk = vOk && (gradeOrNull(95) ?: ' ') == 'A'
+	vOk = vOk && (gradeOrNull(85) ?: ' ') == 'B'
+	vOk = vOk && (gradeOrNull(50) ?: '?') == '?'   // null else -> default
+	vOk = vOk && (absDigitOrNull('6') ?: -1) == 6
+	vOk = vOk && (absDigitOrNull('q') ?: -1) == -1 // null else -> default (was SOME(0) before)
 
 	if (!vOk) {
 		println("NullableIfTest FAILED")
