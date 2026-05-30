@@ -186,7 +186,9 @@ internal fun CCodeGen.emitPrintTemplateViaStrBuf(tmpl: StrTemplateExpr, ind: Str
 
             is ExprPart -> {
                 val tKtc = inferExprTypeKtc(part.expr) ?: KtcType.Prim(KtcType.PrimKind.Int)
-                val expr = genExpr(part.expr)
+                // Evaluate a non-trivial value exactly once across the count/fill passes and the
+                // nullable tag+value embedding. (B8)
+                val expr = spillTemplatePart(genExpr(part.expr), tKtc)
                 parts += PartData(sbAppend = genSbAppendKtc("&${buf}_sb", expr, tKtc))
             }
         }

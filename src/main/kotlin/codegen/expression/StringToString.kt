@@ -291,6 +291,27 @@ internal fun CCodeGen.genToStringInto(recv: String, type: String, sb: String): S
 
 // ── StrBuf append helper ─────────────────────────────────────────────────
 
+// Spill a non-trivial interpolated value into a temp (declared via preStmts) so it is evaluated
+// exactly once: the two-pass count/fill template lowering emits each append twice, and the nullable
+// append embeds the value twice (tag check + value), so `${f()}` would otherwise run f() 2–4×. (B8)
+// Returns the expression to use downstream — the temp name, or the original when it is a simple
+// expression or a form that must stay a bare name (the generic-optional `name$has` dual variable).
+internal fun CCodeGen.spillTemplatePart(inExpr: String, inType: KtcType): String {
+	val vCanSpill = when {
+		inType !is KtcType.Nullable -> true
+		isValueNullableKtc(inType)  -> true
+		inType.inner is KtcType.Ptr -> true
+		else                        -> false
+	}
+	if (isSimpleCExpr(inExpr) || !vCanSpill) return inExpr
+	val vCType = when {
+		inType is KtcType.Nullable && isValueNullableKtc(inType) -> optCTypeName(inType.inner.toInternalStr)
+		inType is KtcType.Nullable                              -> cTypeStr(inType.inner)
+		else                                                    -> cTypeStr(inType)
+	}
+	val v = tmp(); preStmts += "$vCType $v = ($inExpr);"; return v
+}
+
 internal fun CCodeGen.genSbAppend(sbRef: String, expr: String, type: String): String =
 	genSbAppendKtc(sbRef, expr, parseResolvedTypeName(type))
 

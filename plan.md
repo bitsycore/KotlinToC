@@ -91,11 +91,14 @@ into the header. A receiver that spills (e.g. `@Size(N)`-array-returning call) e
 *inside* the loop body, after use → **gcc rejects it**. Fix: `flushPreStmts(ind)` + spill the
 receiver to one temp (skip temp for NameExpr / trampolined param). Mirror the iterator path (:106).
 
-### [ ] B8 — String-template / print double-evaluate side-effecting non-String interpolations (M)
-Two-pass (count then fill) paths emit each part's `sbAppend` twice: `genStrTemplate` (String.kt:196,
-268-283) and `emitPrintTemplateViaStrBuf` (Print.kt:213-230). Side-effecting `${f()}` runs twice
-(verified: `counter=2`). Fix: spill *any* non-simple ExprPart value into a typed temp before the
-passes so both reference the temp; same fix inside `genSbAppendKtc`'s nullable branch (StringToString.kt:298-309).
+### [x] B8 — String-template / print double-evaluate side-effecting non-String interpolations (M)
+Two manifestations: the two-pass (count+fill) fallback emitted each part's `sbAppend` twice, AND
+`genSbAppendKtc`'s nullable branch embeds the value twice (tag check + value) even in single-pass, so
+`${f()}` ran f() 2–4×. Fix: a shared `spillTemplatePart(expr, ktc)` (StringToString.kt) spills any
+non-simple interpolated value into a typed temp (value-Optional for value-nullable, pointer for
+ref-nullable; skips the generic-optional `name$has` form) before the append is built, so every pass
+and the nullable embedding reference the one temp. Wired into `genStrTemplate` (String.kt) and
+`emitPrintTemplateViaStrBuf` (Print.kt). Test: `intrinsic/TemplateEvalTest`.
 
 ### [ ] B9 — Fallback-to-`Int` masks generic ctor-arg inference failure → mis-monomorphization (M)
 TypeInferCall.kt:119 and its codegen twin CallAlloc.kt:263 do `inferExprType(arg) ?: "Int"`, then

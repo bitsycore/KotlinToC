@@ -193,16 +193,18 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 			is ExprPart -> {
 				val isCPassthroughS = isCPassthroughCall(part.expr)
 				val tKtc = inferExprTypeKtc(part.expr) ?: if (isCPassthroughS) KtcType.Str else KtcType.Prim(KtcType.PrimKind.Int)
+				val isCPassNullInfer = isCPassthroughS && inferExprTypeKtc(part.expr) == null
 				var expr = genExpr(part.expr)
+
+				// Evaluate a non-trivial interpolated value exactly once (count/fill passes + nullable
+				// append would otherwise re-run it). (B8)
+				if (!isCPassNullInfer) expr = spillTemplatePart(expr, tKtc)
 
 				// Compute size contribution for computed-size single-pass optimization
 				var sizeContrib: String? = null
-				if (!(isCPassthroughS && inferExprTypeKtc(part.expr) == null) && tKtc !is KtcType.Nullable) {
+				if (!isCPassNullInfer && tKtc !is KtcType.Nullable) {
 					val tCore = tKtc.stripNullable
 					if (tCore is KtcType.Str) {
-						if (!isSimpleCExpr(expr)) {
-							val v = tmp(); preStmts += "ktc_String $v = ($expr);"; expr = v
-						}
 						sizeContrib = "($expr).len"
 					} else {
 						val t = inferExprType(part.expr)
@@ -213,7 +215,7 @@ internal fun CCodeGen.genStrTemplate(e: StrTemplateExpr): String {
 					}
 				}
 
-				val append = if (isCPassthroughS && inferExprTypeKtc(part.expr) == null)
+				val append = if (isCPassNullInfer)
 					"ktc_core_sb_append_cstr(&${buf}_sb, $expr);"
 				else genSbAppendKtc("&${buf}_sb", expr, tKtc)
 				parts += PartData(sbAppend = append, sizeContrib = sizeContrib)
