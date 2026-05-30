@@ -1,6 +1,6 @@
 package CharPredicateTest
 
-// Exercises the ASCII Char predicates added to ktc/Chars.kt.
+// Exercises the ASCII Char predicates in ktc/Primitives.kt.
 // main returns a non-zero exit code if any check fails (the harness treats that as a failure).
 
 fun main(): Int {

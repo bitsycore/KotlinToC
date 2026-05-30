@@ -15,15 +15,20 @@ Axes (per the standing objectives):
 ## Done this pass (2026-05-30)
 Shipped + green (unit + all integration tests pass): **B1, B2, B3, B4, B5, B11, B13** (correctness);
 **C1, C2, C3, C4, C5** (CLI/diagnostics); **O1, O6, O7** (codegen); **R1, R4, R5, R6, R7, R8, R9, R18**
-(type-safety/DRY); **U3, U9, U10** (ease-of-use, new `ktc/Chars.kt` + `CharPredicateTest`).
+(type-safety/DRY); **U3, U9, U10** (ease-of-use, Char predicates in `ktc/Primitives.kt` + `CharPredicateTest`).
 Each item below is marked `[x]` when shipped this pass.
 
 ### Discovered while implementing (new findings, not yet fixed)
-- **D1 — inline extension fun on a PRIMITIVE receiver is silently dropped when declared in a
-  `@file:DocumentationOnly` file.** Primitives.kt / Arrays.kt are doc-only intrinsic stubs; their
-  declarations are NOT collected. Real extensions must live in a normal core file (Strings.kt,
-  the new Chars.kt). Worth a hard error/warning when a non-stub `inline fun` body appears in a
-  `@file:DocumentationOnly` file so this isn't a silent footgun. (S)
+- **D1 — inline extension fun on a PRIMITIVE receiver was silently dropped in a
+  `@file:DocumentationOnly` file.** ✅ FIXED (per-decl `@DocumentationOnly`, no hard error — user decision)
+  Decision: a doc-only file is legitimate, so no hard error. The refinement is to mark
+  documentation-only at the *declaration* granularity, not the whole file. `Primitives.kt` is now a
+  normal collected file whose intrinsic stub classes each carry `@DocumentationOnly` (the same
+  mechanism already proven by `class String` in `Strings.kt`); real `inline` extensions now live
+  alongside their type instead of needing a separate side file. The ASCII Char predicates moved from
+  the old `Chars.kt` into `Primitives.kt` next to `class Char` (`Chars.kt` deleted), and `Math.kt`'s
+  "must live in a real file" note was removed. `Arrays.kt` is still `@file:DocumentationOnly`
+  (100% stubs today — convert it the same way the first time it needs a real helper, e.g. U7).
 - **D2 — nullable-returning inline extension on a primitive receiver isn't expanded.**
   `inline fun Char.digitToIntOrNull(): Int?` invoked as `'x'.digitToIntOrNull()` emits a literal
   `'x'.digitToIntOrNull()` and wrongly wraps the result in `KTC_SOME` — uncompilable C. Same family
