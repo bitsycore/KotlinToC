@@ -306,7 +306,20 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		return KtcType.Ptr(parseResolvedTypeName(base, t))
 		}
 	if (resolved.endsWith("?")) return KtcType.Nullable(parseResolvedTypeName(resolved.dropLast(1)))
-	if (resolved.startsWith("Fun(")) return KtcType.Func(emptyList(), KtcType.Void)
+	if (resolved.startsWith("Fun(")) {
+		// Reconstruct the signature from "Fun(P1,P2)->R" / "Fun(Recv|P1,P2)->R" instead of dropping
+		// it, so a function reference (`val f = ::add`) gets a correctly-typed C function pointer
+		// rather than `void (*f)(void)`. (B10)
+		val vInner    = resolved.removePrefix("Fun(")
+		val vParenEnd = vInner.indexOf(")->")
+		if (vParenEnd < 0) return KtcType.Func(emptyList(), KtcType.Void)
+		val vParamStr = vInner.substring(0, vParenEnd)
+		val vRetStr   = vInner.substring(vParenEnd + 3)
+		val vReceiver = if (vParamStr.contains("|")) parseResolvedTypeName(vParamStr.substringBefore("|")) else null
+		val vRest     = if (vParamStr.contains("|")) vParamStr.substringAfter("|") else vParamStr
+		val vParams   = if (vRest.isEmpty()) emptyList() else vRest.split(",").map { parseResolvedTypeName(it) }
+		return KtcType.Func(vParams, parseResolvedTypeName(vRetStr), receiver = vReceiver)
+		}
 	// "c:SDL_Window" → COpaque (produced by resolveTypeNameInnerStr for c.* type refs)
 	if (resolved.startsWith("c:")) {
 			val vCName = resolved.removePrefix("c:")

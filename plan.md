@@ -107,11 +107,13 @@ wrong-size C, no diagnostic. Fix: both sites must use the same resolution; on in
 back to declared/recorded type args, else `codegenError`. Propagate `null` (not `"Int"`) at
 TypeInferCall.kt:132, TypeInferDot.kt:112, ArraysMapping.kt:67.
 
-### [ ] B10 — `Func` type loses all params/return on the string round-trip → uncompilable C (M)
-parseResolvedTypeName (CTypes.kt:309) does `Fun(...)` → `Func(emptyList(), Void)`, discarding the
-encoded signature. `val f = ::add; f(2,3)` emits `void (*f)(void)` → gcc errors. Fix: reconstruct
-`Func` from the `Fun(recv|p1,p2)->R` string (extend `parseFuncType` to split the receiver), or route
-function-type inference through `resolveTypeName`/TypeRef so it never hits the string branch.
+### [x] B10 — `Func` type loses all params/return on the string round-trip → uncompilable C (M)
+parseResolvedTypeName (CTypes.kt:309) did `Fun(...)` → `Func(emptyList(), Void)`, discarding the
+encoded signature, so `val f = ::add; f(2,3)` emitted `void (*f)(void)` → gcc errors. Fixed: that
+branch now reconstructs the signature from the `Fun(P1,P2)->R` / `Fun(Recv|P1,P2)->R` string
+(receiver split off and parsed into `Func.receiver`, params/ret via `parseResolvedTypeName`), yielding
+`ktc_Int (*f)(ktc_Int, ktc_Int)`. Test: `intrinsic/FunRefTest`. (Naive comma-split shares the existing
+`parseFuncType` limitation for higher-order/generic-comma params; the structural cure is A1.)
 
 ### [x] B11 — Inline-overload return-type inference compares resolved args vs raw param `.name` (S)
 TypeInferCall.kt:188-193 compares `inferExprType(arg)` (resolved, e.g. `"Foo*"`/`"IntArray"`) against
