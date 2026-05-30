@@ -14,8 +14,9 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
 - **Correctness:** B1 (data-class hashCode/equals field parity), B2 (`arr.get/set` bounds check),
   B3 (unknown-enum-method → E050), B4 (Array.get element-type infer), B5 (`mapOf` 0-pairs capacity),
   B6 (range-loop endpoint hoist), B7 (collection for-loop preStmt flush), B8 (template/print eval-once),
-  B10 (function-pointer signature round-trip), B11 (inline-overload return-type infer),
-  B12 (member `infix fun` parse + dispatch), B13 (lexer column).
+  B9 (generic ctor-arg inference → E045 instead of silent T=Int), B10 (function-pointer signature
+  round-trip), B11 (inline-overload return-type infer), B12 (member `infix fun` parse + dispatch),
+  B13 (lexer column).
 - **Discovered & fixed:** D1 (per-decl `@DocumentationOnly` — see note), D2 (value-nullable `if`
   branch-wise Optional), D3 (top-level `var` write prefix), D4 (value-nullable `when` branch-wise Optional).
 - **CLI/diagnostics:** C1 (`[Exxx]` prefixes), C2 (`-Wno-` list sync), C3 (unknown-flag reject),
@@ -27,7 +28,7 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   infer), R9 (hoisted `kBooleanResultOps`), R18 (stale `stringToKtc` doc / Boolean sizing).
 - **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold). U4/U5 partial (see §3).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
-  TopVarWriteTest, MathTest, StringViewTest.
+  GenericInferUnitTest, TopVarWriteTest, MathTest, StringViewTest.
 
 **Design note (D1):** doc-only is now per-declaration `@DocumentationOnly`, not whole-file
 `@file:DocumentationOnly` — a file may mix intrinsic stubs (marked per class/fun) with real `inline`
@@ -38,12 +39,10 @@ files (by design). `Arrays.kt` stays `@file:DocumentationOnly` until it first ne
 ## 1. Correctness bugs (verified — produce wrong or uncompilable C)
 ═══════════════════════════════════════════════════════════════════════
 
-### B9 — Fallback-to-`Int` masks generic ctor-arg inference failure → mis-monomorphization (M)
-TypeInferCall.kt:119 and its codegen twin CallAlloc.kt:263 do `inferExprType(arg) ?: "Int"`, then
-`recordGenericInstantiation` with the wrong type-arg → struct materialized with `T=ktc_Int`, silent
-wrong-size C, no diagnostic. Fix: both sites must use the same resolution; on inference failure fall
-back to declared/recorded type args, else `codegenError`. Propagate `null` (not `"Int"`) at
-TypeInferCall.kt:132, TypeInferDot.kt:112, ArraysMapping.kt:67.
+All verified correctness bugs from the review are shipped (B1–B13, D1–D4 — see **Shipped**).
+Residual smaller `?: "Int"` inference fallbacks remain at TypeInferCall.kt:132 / TypeInferDot.kt:112 /
+ArraysMapping.kt:67 (the `arrayOf` element-type path, not the generic-ctor path B9 fixed); these can
+mis-type an array whose element inference fails — tighten them the same way (E045-style) if they bite.
 
 ═══════════════════════════════════════════════════════════════════════
 ## 2. Generated-C optimization

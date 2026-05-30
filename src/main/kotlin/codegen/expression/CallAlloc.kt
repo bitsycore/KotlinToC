@@ -260,7 +260,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 	if (classes.containsKey(vResolvedName) && classes[vResolvedName]!!.isGeneric && inArgs.isNotEmpty()) {
 		val vGenParams = classes[vResolvedName]!!.typeParams
 		if (vGenParams.size == inArgs.size) {
-			val vInferredArgs = inArgs.map { inferExprType(it.expr) ?: "Int" }
+			val vInferredArgs = inferGenericCtorTypeArgs(vResolvedName, inArgs)
 			val vMangled      = recordGenericInstantiation(vResolvedName, vInferredArgs)
 			materializeGenericInstantiations()
 			val vCi = classes[vMangled]

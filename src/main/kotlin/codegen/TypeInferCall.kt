@@ -7,6 +7,17 @@ import com.bitsycore.ktc.types.KtcType
 
 // Return-type inference for function calls and method calls.
 
+// Infer a generic class's type arguments from its constructor argument types when no explicit type
+// args are given. A `null` inference means the type genuinely can't be determined (e.g. `Box(null)`),
+// so error with E045 instead of silently materializing the wrong monomorphization (T=Int), which
+// produces wrong-size / uncompilable C. Shared by the inference and codegen constructor paths. (B9)
+internal fun CCodeGen.inferGenericCtorTypeArgs(inName: String, inArgs: List<Arg>): List<String> =
+	inArgs.mapIndexed { i, inArg ->
+		inferExprType(inArg.expr) ?: codegenError("E045",
+			"Cannot infer type argument for generic class '$inName' from constructor argument ${i + 1}; " +
+			"specify it explicitly, e.g. $inName<...>(...)")
+	}
+
 /* Built-in method names whose return type is fixed regardless of receiver type.
    Used by inferMethodReturnType to short-circuit before reaching class/iface lookup. */
 private val kBuiltinMethodReturns: Map<String, String> = mapOf(
@@ -116,7 +127,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
         if (classes.containsKey(name) && classes[name]!!.isGeneric && e.args.isNotEmpty()
             && classes[name]!!.typeParams.size == e.args.size
         ) {
-            val inferredArgs = e.args.map { inferExprType(it.expr) ?: "Int" }
+            val inferredArgs = inferGenericCtorTypeArgs(name, e.args)
             recordGenericInstantiation(name, inferredArgs)
             return mangledGenericName(name, inferredArgs)
         }

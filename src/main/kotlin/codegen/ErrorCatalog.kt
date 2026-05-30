@@ -149,6 +149,20 @@ object ErrorCatalog {
 			KTC enforces `internal` on a per-package boundary by default; this
 			differs from Kotlin/JVM where the boundary is per Gradle module.
 			""".trimIndent()),
+		Entry("E045", "Cannot infer generic type argument",
+			"""
+			A generic class constructor was called without explicit type arguments,
+			and the type argument could not be inferred from a constructor argument
+			(e.g. the argument is `null`, whose type is unknown):
+			  class Box<T>(val value: T)
+			  val b = Box(null)        // error E045 — T cannot be inferred from null
+
+			Specify the type argument explicitly:
+			  val b = Box<Int?>(null)
+
+			Without this, the transpiler would silently materialize the wrong
+			monomorphization (T = Int), producing wrong-size or uncompilable C.
+			""".trimIndent()),
 
 		// ── Call errors ──────────────────────────────────────────
 		Entry("E050", "Unknown method on receiver",
