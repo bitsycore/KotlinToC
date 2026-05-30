@@ -117,9 +117,9 @@ CCodeGenCollect.kt:628 (`methodName`), Class.kt:138 (`secondaryCtorName`), FunGe
 
 ### R20 — Smaller DRY wins (S each, batch) — partially done
 Remaining: parseDeclBody (Parser object/anon/companion loops), finishExprOrAssign + ASSIGN_OPS set,
-maybeTrailingLambda helper, collapse skipNL/skipTerminator, npeStmt helper (Dot.kt genNotNull ×6),
-topLevelSrcKey `|`-sentinel helper, Math/array name-builder de-dup (ArraysMapping ↔ PrimKind).
-(Done: CmakeGen comment `deps.ktc.toml`→`module.ktc.toml`.)
+maybeTrailingLambda helper, collapse skipNL/skipTerminator, topLevelSrcKey `|`-sentinel helper,
+Math/array name-builder de-dup (ArraysMapping ↔ PrimKind).
+(Done: CmakeGen `module.ktc.toml` comment; `npeGuard` helper for Dot.kt genNotNull ×6.)
 
 ═══════════════════════════════════════════════════════════════════════
 ## 4. Ease-of-use / missing std-lib + features

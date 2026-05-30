@@ -324,6 +324,10 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
 
 // ── !! (not-null assertion) ─────────────────────────────────────────
 
+/* The runtime null-check `!!` emits: abort with a NullPointerException at [inLoc] when [inCond]. (R20) */
+private fun npeGuard(inCond: String, inLoc: String): String =
+    "if ($inCond) { fprintf(stderr, \"NullPointerException: $inLoc\\n\"); exit(1); }"
+
 internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
     if (e.expr is NullLit)
         codegenWarning("redundant-bang", "'!!' on literal 'null' always throws NullPointerException")
@@ -346,30 +350,30 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
             val vElemC    = arrayElementCTypeKtc(innerKtcCore)
             val vVarArrCt = varArrTypeName(vElemC)
             if (e.expr is NameExpr) {
-                preStmts += "if (!$inner.ptr) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+                preStmts += npeGuard("!$inner.ptr", loc)
                 return inner
                 }
             val t = tmp()
             preStmts += "$vVarArrCt $t = $inner;"
-            preStmts += "if (!$t.ptr) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+            preStmts += npeGuard("!$t.ptr", loc)
             return t
             }
         val ct = cTypeStr(baseType.ifEmpty { "void*" })
         // Simple name — no temp needed
         if (e.expr is NameExpr) {
-            preStmts += "if (!$inner) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+            preStmts += npeGuard("!$inner", loc)
             return inner
         }
         val t = tmp()
         preStmts += "$ct $t = $inner;"
-        preStmts += "if (!$t) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+        preStmts += npeGuard("!$t", loc)
         return t
     }
 
     // Value-nullable variable: check Optional tag
     if (innerKtc is KtcType.Nullable && isValueNullableKtc(innerKtc) && e.expr is NameExpr) {
         val name = e.expr.name
-        preStmts += "if ($name.tag == ktc_NONE) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+        preStmts += npeGuard("$name.tag == ktc_NONE", loc)
         // Return the unwrapped value
         return "$name.value"
     }
@@ -382,7 +386,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
         val t = tmp()
         val vOptCType = optCTypeName(innerKtc.inner.toInternalStr)
         preStmts += "$vOptCType $t = $inner;"
-        preStmts += "if ($t.tag == ktc_NONE) { fprintf(stderr, \"NullPointerException: $loc\\n\"); exit(1); }"
+        preStmts += npeGuard("$t.tag == ktc_NONE", loc)
         return "$t.value"
     }
 
