@@ -211,9 +211,9 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val tIface         = tmp()
 						val argIsNullable  = argKtc is KtcType.Nullable || inferExprTypeKtc(arg.expr) is KtcType.Nullable
 						preStmts += if (argIsNullable) {
-							"ktc_IfacePtr $tIface = ($expr) ? ((ktc_IfacePtr){$typeId, (const void*)&${cConcrete}_${ifaceName}_vt, (void*)($expr)}) : ((ktc_IfacePtr){0});"
+							"ktc_IfacePtr $tIface = ($expr) ? ((ktc_IfacePtr)${ifacePtrLiteral(typeId, cConcrete, ifaceName, "(void*)($expr)")}) : ((ktc_IfacePtr){0});"
 							} else {
-							"ktc_IfacePtr $tIface = {$typeId, (const void*)&${cConcrete}_${ifaceName}_vt, $objPtr};"
+							"ktc_IfacePtr $tIface = ${ifacePtrLiteral(typeId, cConcrete, ifaceName, objPtr)};"
 							}
 						parts += tIface
 						} else {

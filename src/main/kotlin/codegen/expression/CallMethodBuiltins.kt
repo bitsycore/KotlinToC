@@ -411,7 +411,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
 			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
 				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = {$vTypeId, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
+				preStmts += "ktc_IfacePtr $vT = ${ifacePtrLiteral(vTypeId, vCConcrete, "Allocator", "(void*)&$vAllocExpr")};"
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}
@@ -456,7 +456,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			} else {
 			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
 				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = {$vTypeId, (const void*)&${vCConcrete}_Allocator_vt, (void*)&$vAllocExpr};"
+				preStmts += "ktc_IfacePtr $vT = ${ifacePtrLiteral(vTypeId, vCConcrete, "Allocator", "(void*)&$vAllocExpr")};"
 				vIfExpr = vT
 				} else { vIfExpr = vAllocExpr }
 			}

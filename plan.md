@@ -25,8 +25,9 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   O7 (shared `ktc_core_noop_dispose`).
 - **Type-safety/DRY:** R1 (`genBin` infer-once), R4 (`elemCTypeStr` reuse), R5 (`defaultVal` no string
   round-trip), R6 (structural array check), R7 (real range KtcType for `in`), R8 (`CastExpr` resolved
-  infer), R9 (hoisted `kBooleanResultOps`), R11 (`parseTypeParamList` dedup), R14 (`scanAll` dedup),
-  R18 (stale `stringToKtc` doc / Boolean sizing), R20-partial (CmakeGen `module.ktc.toml` comment).
+  infer), R9 (hoisted `kBooleanResultOps`), R2 (`ifacePtrLiteral` helper), R11 (`parseTypeParamList`
+  dedup), R14 (`scanAll` dedup), R18 (stale `stringToKtc` doc / Boolean sizing),
+  R20-partial (CmakeGen `module.ktc.toml` comment).
 - **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold). U4/U5 partial (see §3).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
   GenericInferUnitTest, TopVarWriteTest, MathTest, StringViewTest.
@@ -84,10 +85,6 @@ Vtable.kt:192-198/238-244. Minor: set header fields after the memcpy on an unini
 ═══════════════════════════════════════════════════════════════════════
 ## 3. Type-safety & DRY refactors
 ═══════════════════════════════════════════════════════════════════════
-
-### R2 — `ktc_IfacePtr` literal construction copy-pasted across 5 sites (M)
-CallAlloc.kt:45, CallMethod.kt:151/153, CallArgs.kt:214, CallMethodBuiltins.kt:414/459 — already drifted.
-Fix: one `ifacePtrLiteral(typeId, cConcrete, ifaceName, objExpr, nullable)` helper; all sites call it.
 
 ### R3 — Allocator→IfacePtr resolution duplicated in resizeWith/copyWith vs CallAlloc (M)
 CallMethodBuiltins.kt:404-417 / 450-462 vs CallAlloc.kt:57-117. Fix: extract one

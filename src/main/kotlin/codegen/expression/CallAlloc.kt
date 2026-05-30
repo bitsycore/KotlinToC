@@ -42,7 +42,7 @@ private fun CCodeGen.emitArrayInitLambda(dataPtr: String, sizeExpr: String, lamb
 private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: String) {
 	val vConcrete = typeFlatName(name)
 	val vTypeId   = getTypeId(name)
-	preStmts += "ktc_IfacePtr $t = {$vTypeId, (const void*)&${vConcrete}_Allocator_vt, (void*)&$allocExpr};"
+	preStmts += "ktc_IfacePtr $t = ${ifacePtrLiteral(vTypeId, vConcrete, "Allocator", "(void*)&$allocExpr")};"
 	}
 
 /* Resolution of an allocator argument for class-construction allocWith.

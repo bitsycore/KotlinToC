@@ -159,6 +159,12 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
 
     internal fun getTypeId(name: String): Int = typeIds.getOrPut(name) { nextTypeId++ }
 
+    /* Build a ktc_IfacePtr struct-literal body `{typeId, &Concrete_Iface_vt, obj}`. [inObj] is emitted
+       verbatim — the caller includes any `(void*)` cast / address-of. For the nullable spelling, wrap
+       the result at the call site as `(guard) ? ((ktc_IfacePtr)<body>) : ((ktc_IfacePtr){0})`. (R2) */
+    internal fun ifacePtrLiteral(inTypeId: Int, inConcrete: String, inIface: String, inObj: String): String =
+        "{$inTypeId, (const void*)&${inConcrete}_${inIface}_vt, $inObj}"
+
     /** Returns the C expression for reading the runtime typeId from [inner] given its KtcType.
      *  Returns null when the type is statically known (concrete class) — caller emits true/false. */
     internal fun typeIdExpr(exprKtcCore: KtcType?, inner: String, memOp: String): String? = when {
