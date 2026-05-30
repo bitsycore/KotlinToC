@@ -212,14 +212,18 @@ class Parser(private val tokens: List<Token>) {
         val list = mutableListOf<Param>()
         skipNL()
         while (!at(TokenType.RPAREN) && !at(TokenType.EOF)) {
-            // Check for 'vararg' modifier (contextual keyword)
-            val isVararg = at(TokenType.IDENT) && cur().value == "vararg"
-            if (isVararg) advance()
+            // Contextual modifiers: `vararg` / `noinline` (either order) before the param name.
+            var isVararg  = false
+            var isNoinline = false
+            while (at(TokenType.IDENT) && (cur().value == "vararg" || cur().value == "noinline")) {
+                if (cur().value == "vararg") isVararg = true else isNoinline = true
+                advance()
+            }
             val name = expectIdent()
             expect(TokenType.COLON); skipNL()
             val type = parseTypeRef()
             val default = if (at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
-            list += Param(name, type, default, isVararg)
+            list += Param(name, type, default, isVararg, isNoinline)
             if (at(TokenType.COMMA)) { advance(); skipNL() } else break
         }
         skipNL()

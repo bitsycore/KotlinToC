@@ -251,10 +251,17 @@ plain lambda value = closure. Today `thread { capture(...) }` is a name-keyed sp
 machinery is reusable; what must generalize:
 - **Trigger:** fire on any escaping-lambda position (a `noinline` param, a lambda used as a function-typed
   value), not the callee name `thread`. `thread.block` then becomes a normal escaping param.
-- **`noinline` keyword** on inline-fun params (parse + the inline-vs-closure decision per param).
-- **Closure representation:** a function-typed *value* must become a fat pointer `{fn, ctx}`; calls lower
-  to `clo.fn(clo.ctx, …)`. Interacts with C interop (a bare `void(*)()` sink needs a thunk). The OS-thread
-  ABI `(fn, void*)` is why `thread` avoided this.
-- **Lifetime:** Phase 1 — frame-bound closures use the thread model (alloca ctx in the defining frame, must
-  not escape it). Phase 2 — escaping/returned closures (the E023 `return (Int)->Int` case) need a heap ctx +
-  explicit free, C-style. This is the one genuinely new decision.
+- **`noinline` keyword** on inline-fun params (parse + the inline-vs-closure decision per param). [parser
+  support landed: `Param.noinline`.]
+- **Closure representation (DECIDED — functor):** each lambda lowers to its OWN specialized struct (the
+  capture fields) + a generated `R Lambda_N_invoke(Lambda_N* self, params…)`. The closure VALUE is that
+  struct (real data — passed by value or `&`), NOT a fat `{fn,ctx}` pointer and NOT type-erased; calling
+  `f(args)` → `Lambda_N_invoke(&f, args)`. This is the C++-functor model and matches what the thread
+  closure already emits (ctx struct + entry fn). Bare C function pointers stay separate (C interop / the
+  thread ABI keep `void(*)()`). A function-typed parameter that receives a closure is monomorphized per
+  closure type (KTC's existing monomorphization), since each lambda is a distinct type.
+  - inference circularity (lambda → its generated struct type) resolved by caching the generated type per
+    LambdaExpr identity, so inference and codegen agree.
+- **Lifetime:** Phase 1 — frame-bound closures use the thread model (the functor struct is alloca/stack in
+  the defining frame, must not escape it). Phase 2 — escaping/returned closures (the E023 `return (Int)->Int`
+  case) need a heap-allocated functor + explicit free, C-style.

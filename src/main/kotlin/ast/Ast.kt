@@ -136,7 +136,8 @@ data class Param(
     val name: String,
     val type: TypeRef,
     val default: Expr? = null,
-    val isVararg: Boolean = false
+    val isVararg: Boolean = false,
+    val noinline: Boolean = false   // `noinline` on an inline-fun lambda param: keep it as a closure, don't inline
 )
 
 data class CtorParam(
