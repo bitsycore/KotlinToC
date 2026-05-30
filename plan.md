@@ -18,7 +18,12 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   round-trip), B11 (inline-overload return-type infer), B12 (member `infix fun` parse + dispatch),
   B13 (lexer column).
 - **Discovered & fixed:** D1 (per-decl `@DocumentationOnly` — see note), D2 (value-nullable `if`
-  branch-wise Optional), D3 (top-level `var` write prefix), D4 (value-nullable `when` branch-wise Optional).
+  branch-wise Optional), D3 (top-level `var` write prefix), D4 (value-nullable `when` branch-wise Optional),
+  D7 (inline lambda-return type-param inference — a generic `inline fun <R>(block: () -> R): R` now binds
+  `R` from the lambda body instead of emitting the raw type-param name `Pkg_R`; covers value/extension/
+  statement positions), D8 (Unit-valued `val` bindings — `val x = <Unit expr>` emits the side effects and
+  a value-less Unit local instead of an invalid `void x = ;`; `"Unit"` now round-trips to `KtcType.Void`).
+  D7+D8 enable value-returning `run`/`with`/`let` and a generic `Mutex.withLock { … }` (returns the block result).
 - **CLI/diagnostics:** C1 (`[Exxx]` prefixes), C2 (`-Wno-` list sync), C3 (unknown-flag reject),
   C4 (`--disposed`/`--double-dispose` validation), C5 (`--help`/`-h` + flexible `--version`/`--explain`).
 - **Codegen:** O1 (`String +` derived alloca size), O6 (Win32 includes out of `ktc_core.h`),
@@ -29,7 +34,8 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   helper), R11 (`parseTypeParamList` dedup), R14 (`scanAll` dedup), R18 (stale `stringToKtc` doc /
   Boolean sizing), R20-partial (CmakeGen `module.ktc.toml` comment).
 - **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold), Thread API
-  (`ktc.std` Thread/Mutex + `startThread`/`sleepThread`/`yieldThread`, over a cross-platform
+  (`ktc.std` kotlin-like `Thread(::entry, arg).start()`/`join()`/`isAlive` + `Thread.sleep`/`Thread.yield`
+  companion + top-level `thread(…)` + `Mutex.lock`/`unlock`/`destroy`/`withLock { }`, over a cross-platform
   `ktc_core_thread_*` / `ktc_core_mutex_*` C layer — Win32 / pthread). U4/U5 partial (see §4).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
   GenericInferUnitTest, ThreadTest, TopVarWriteTest, MathTest, StringViewTest.

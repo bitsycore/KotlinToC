@@ -236,7 +236,7 @@ internal sealed class KtcType {
 
             val inner: KtcType = when {
                 base == "String" -> Str
-                base == "void" || base == "Nothing" -> Void
+                base == "void" || base == "Nothing" || base == "Unit" -> Void
                 base in primitiveNames -> Prim(PrimKind.valueOf(base))
                 base == "StringBuffer" -> User(BuiltinTypeDef("ktc_StrBuf", pkg = ""))
                 base == "RawArray" && typeRef.typeArgs.isNotEmpty() ->

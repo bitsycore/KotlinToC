@@ -129,6 +129,18 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     }
     val vKtc = if (s.type != null) resolveTypeName(s.type) else parseResolvedTypeName(inferExprType(s.init) ?: "Int") // KtcType (for C type emission)
     val vKtcKtc = inferExprTypeKtc(s.init)
+
+    // Unit/void-valued initializer (e.g. `val r = block()` in an inline body whose lambda body
+    // returns Unit): the RHS lowers to side-effecting statements with no C value. Emit those side
+    // effects and bind the name as a value-less Unit local, so later reads (`return r` in statement
+    // position) resolve to an empty C expression instead of a dangling symbol or `void r = ;`.
+    if (s.init != null && s.type == null && vKtc is KtcType.Void) {
+        val vUnitExpr = genExpr(s.init)
+        flushPreStmts(ind)
+        if (vUnitExpr.isNotBlank()) impl.appendLine("$ind(void)($vUnitExpr);")
+        defineVar(s.name, LocalVar(ktc = KtcType.Void, cName = ""))
+        return
+    }
     val vKtcCore = vKtc.stripNullable
     val tRaw = vKtc.toInternalStr                                                                    // string type (for structural checks — retained during migration)
     val inferredNullable = s.type == null && vKtc is KtcType.Nullable

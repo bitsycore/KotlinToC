@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.ast.Annotation
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
+import com.bitsycore.ktc.codegen.statement.bindLambdaReturnTypeParams
 import com.bitsycore.ktc.types.KtcType
 
 // Return-type inference for function calls and method calls.
@@ -210,7 +211,24 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
                 // ("Foo"/"Array"/"T") never matches a resolved arg type. A null (un-inferable) arg is a wildcard.
                 decl.params.indices.all { i -> vArgTypes[i]?.let { it == resolveTypeRefStr(decl.params[i].type) } ?: true }
             } ?: vInlineCandidates.firstOrNull { it.returnType != null && it.receiver == null }
-            if (vMatch?.returnType != null) return resolveTypeRefStr(vMatch.returnType)
+            if (vMatch?.returnType != null) {
+                // Bind the matched function's type params (explicit args, then value-type inference,
+                // then lambda-return inference) so a generic return like `R` resolves to its concrete
+                // type rather than the bare param name (which would mistype the binding as e.g. `P_R`).
+                if (vMatch.typeParams.isNotEmpty()) {
+                    val vSubst = typeSubst.toMutableMap()
+                    if (e.typeArgs.isNotEmpty() && e.typeArgs.size == vMatch.typeParams.size)
+                        vMatch.typeParams.zip(e.typeArgs).forEach { (tp, ta) -> vSubst[tp] = ta.name }
+                    else
+                        for ((vI, vP) in vMatch.params.withIndex()) {
+                            val vAt = vArgTypes.getOrNull(vI)?.removeSuffix("?") ?: continue
+                            matchTypeParam(vP.type, vAt, vMatch.typeParams.toSet(), vSubst)
+                        }
+                    bindLambdaReturnTypeParams(vMatch, e.args, null, vSubst)
+                    return withTypeSubst(vSubst) { resolveTypeRefStr(vMatch.returnType) }
+                }
+                return resolveTypeRefStr(vMatch.returnType)
+            }
         }
         funSigs[name]?.returnType?.let { return resolveTypeRefStr(it) }
         if (currentExtRecvType != null && interfaces.containsKey(currentExtRecvType)) {
@@ -352,6 +370,9 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
                 val argType = args.getOrNull(i)?.expr?.let { inferExprType(it) } ?: continue
                 matchTypeParam(p.type, argType, typeParamSet, subst)
             }
+            // A type param appearing only in a lambda param's return position (`block: () -> R`)
+            // isn't reachable from the value-type matching above — infer it from the lambda body.
+            bindLambdaReturnTypeParams(extFun, args, recvType.removeSuffix("?"), subst)
             // Prefer the concrete-return inference (e.g. ArrayList_Int) over the raw template return.
             val typeArgNames = extFun.typeParams.map { subst[it] ?: it }
             val mangledName  = "${extFun.name}_${typeArgNames.joinToString("_")}"
@@ -388,6 +409,8 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
                 val argType = args.getOrNull(i)?.expr?.let { inferExprType(it) } ?: continue
                 matchTypeParam(p.type, argType, typeParamSet, subst)
             }
+            // Infer a type param that appears only in a lambda param's return position (`block: () -> R`).
+            bindLambdaReturnTypeParams(genericExt, args, recvBase, subst)
             val typeArgNames = genericExt.typeParams.map { subst[it] ?: it }
             val mangledName  = "${genericExt.name}_${typeArgNames.joinToString("_")}"
             genericFunConcreteReturn[mangledName]?.let { return it }

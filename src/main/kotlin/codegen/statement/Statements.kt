@@ -233,6 +233,7 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
                     val argType = inferExprType(e.args[i].expr)?.removeSuffix("?") ?: continue
                     matchTypeParam(param.type, argType, inlineDecl.typeParams.toSet(), vSubst)
                 }
+                bindLambdaReturnTypeParams(inlineDecl, e.args, null, vSubst)
                 if (vSubst.isNotEmpty()) typeSubst = vSubst
             }
             emitInlineCall(inlineDecl, e.args, ind, method)
@@ -258,7 +259,9 @@ internal fun CCodeGen.emitExprStmt(s: ExprStmt, ind: String, method: Boolean) {
             val vSavedSubst = typeSubst
             if (inlineExt.typeParams.isNotEmpty()) {
                 val vArgTypes = e.args.map { inferExprType(it.expr) } // concrete arg types
-                typeSubst = inferInlineFunSubst(inlineExt, recvKtType, vArgTypes)
+                val vSubst = inferInlineFunSubst(inlineExt, recvKtType, vArgTypes).toMutableMap()
+                bindLambdaReturnTypeParams(inlineExt, e.args, recvKtType, vSubst)
+                typeSubst = vSubst
             }
             if (isSafe) {
                 // Safe call: guard the inline block with a null check

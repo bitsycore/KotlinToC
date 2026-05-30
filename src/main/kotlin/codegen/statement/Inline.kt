@@ -258,6 +258,54 @@ internal fun CCodeGen.tryGenInlineExpr(
 	return result
 }
 
+/* Infer the type a lambda body evaluates to — the type of its last expression, or "Unit" when the
+body ends in a statement (assignment, loop, bare `return`) or is empty. Returns null only when the
+body ends in an expression whose type can't be inferred (so the caller leaves the type param unbound
+rather than guessing). Used to bind an inline function's type parameter that appears only in a lambda
+parameter's return position (`block: () -> R`) — the value-type-only call-site inference can't see it,
+since a lambda argument itself infers to null. */
+internal fun CCodeGen.inferLambdaReturnType(
+	inLambda:       LambdaExpr,
+	inParamKtc:     List<KtcType>,
+	inReceiverType: String?
+	): String? {
+	pushScope()
+	inLambda.params.forEachIndexed { vI, vP -> inParamKtc.getOrNull(vI)?.let { defineVarKtc(vP, it) } }
+	// Implicit single `it` when the function type has one param and the lambda omits names.
+	if (inLambda.params.isEmpty() && inParamKtc.size == 1) defineVarKtc("it", inParamKtc[0])
+	if (inReceiverType != null) defineVar("\$this", inReceiverType)
+	val vType = when (val vLast = inLambda.body.lastOrNull()) {
+		is ExprStmt   -> inferExprType(vLast.expr)                                  // null = un-inferable
+		is ReturnStmt -> if (vLast.value == null) "Unit" else inferExprType(vLast.value)
+		null          -> "Unit"                                                     // empty body
+		else          -> "Unit"                                                     // trailing statement
+		}
+	popScope()
+	return vType
+	}
+
+/* Bind an inline function's type parameters that appear in a lambda parameter's return position
+(`block: () -> R`) by inferring each lambda argument's body type. Mutates [ioSubst]; the caller runs
+value-type (receiver/arg) inference first, so an already-bound param is left untouched. */
+internal fun CCodeGen.bindLambdaReturnTypeParams(
+	inDecl:         FunDecl,
+	inArgs:         List<Arg>,
+	inReceiverType: String?,
+	ioSubst:        MutableMap<String, String>
+	) {
+	val vTypeParams = inDecl.typeParams.toSet()
+	if (vTypeParams.isEmpty()) return
+	inDecl.params.forEachIndexed { vI, vParam ->
+		val vRet = vParam.type.funcReturn ?: return@forEachIndexed                  // not a function type
+		if (vRet.name !in vTypeParams || ioSubst.containsKey(vRet.name)) return@forEachIndexed
+		val vLambda = inArgs.getOrNull(vI)?.expr as? LambdaExpr ?: return@forEachIndexed
+		val vParamKtc      = (vParam.type.funcParams ?: emptyList()).map { resolveTypeName(it) }
+		val vRecvForLambda = if (vParam.type.funcReceiver != null) inReceiverType else null
+		val vInferred      = inferLambdaReturnType(vLambda, vParamKtc, vRecvForLambda) ?: return@forEachIndexed
+		ioSubst[vRet.name] = vInferred
+		}
+	}
+
 /* Expand a lambda call inside an inline body (statement position).
 Lambda params are substituted via lambdaParamSubst rather than declared as C variables,
 avoiding name-collision issues when lambda params shadow enclosing inline params. */

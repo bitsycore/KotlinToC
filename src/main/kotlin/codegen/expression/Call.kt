@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.expression
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
+import com.bitsycore.ktc.codegen.statement.bindLambdaReturnTypeParams
 import com.bitsycore.ktc.codegen.statement.emitInlineCall
 import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.codegen.statement.tryGenInlineExpr
@@ -36,10 +37,12 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     val s = mutableMapOf<String, String>()
                     if (e.typeArgs.isNotEmpty() && e.typeArgs.size == vCompanionInline.typeParams.size)
                         vCompanionInline.typeParams.zip(e.typeArgs).forEach { (tp, ta) -> s[tp] = ta.name }
+                    bindLambdaReturnTypeParams(vCompanionInline, e.args, null, s)
                     s.ifEmpty { null }
                 } else null
                 return withTypeSubst(vSubst) {
-                    if (vCompanionInline.returnType == null) {
+                    val vRetUnit = vCompanionInline.returnType != null && resolveTypeName(vCompanionInline.returnType) is KtcType.Void
+                    if (vCompanionInline.returnType == null || vRetUnit) {
                         emitInlineCall(vCompanionInline, e.args, currentInd, false)
                         ""
                     } else {
@@ -63,9 +66,14 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         if (vInlineExt != null) {
             val vRecvExpr = genExpr(e.callee.obj)
             val vRetType = vInlineExt.returnType
-            val vSubst = if (vInlineExt.typeParams.isNotEmpty()) inferInlineFunSubst(vInlineExt, vRecvKtType, e.args.map { inferExprType(it.expr) }) else null
+            val vSubst = if (vInlineExt.typeParams.isNotEmpty()) {
+                val s = inferInlineFunSubst(vInlineExt, vRecvKtType, e.args.map { inferExprType(it.expr) }).toMutableMap()
+                bindLambdaReturnTypeParams(vInlineExt, e.args, vRecvKtType, s)
+                s.ifEmpty { null }
+            } else null
             return withTypeSubst(vSubst) {
-                if (vRetType == null) {
+                val vRetUnit = vRetType != null && resolveTypeName(vRetType) is KtcType.Void
+                if (vRetType == null || vRetUnit) {
                     emitInlineCall(vInlineExt, e.args, currentInd, false, receiverExpr = vRecvExpr, receiverType = vRecvKtType)
                     ""
                 } else {
@@ -203,11 +211,13 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     matchTypeParam(vParam.type, vArgType, vInlineDecl.typeParams.toSet(), s)
                 }
             }
+            bindLambdaReturnTypeParams(vInlineDecl, e.args, null, s)
             s.ifEmpty { null }
         } else null
         val vRetType = vInlineDecl.returnType
         return withTypeSubst(vSubst) {
-            if (vRetType == null) {
+            val vRetUnit = vRetType != null && resolveTypeName(vRetType) is KtcType.Void
+            if (vRetType == null || vRetUnit) {
                 emitInlineCall(vInlineDecl, e.args, currentInd, false)
                 ""
             } else {
