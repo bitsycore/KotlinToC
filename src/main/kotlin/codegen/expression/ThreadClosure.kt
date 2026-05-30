@@ -51,7 +51,7 @@ internal fun CCodeGen.genThreadClosureOrNull(inCall: CallExpr): String? {
 	val vStartC   = vStartArg?.let { genExpr(it) }
 
 	val vCaptures = collectThreadCaptures(vLambda)
-	lintUncapturedThreadRefs(vLambda, vCaptures.map { it.name }.toSet())
+	checkUncapturedThreadRefs(vLambda, vCaptures.map { it.name }.toSet())
 
 	val vId       = threadClosureCounter++
 	val vCtxType  = funCName("ThreadCtx$vId")
@@ -100,10 +100,10 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 	return vOut
 	}
 
-/* W036: warn when a thread body reads an enclosing local/param that wasn't captured. Conservative —
-only flags names that resolve to a spawning-scope variable and are neither captured nor declared inside
-the body (globals, functions, objects, members are never flagged). */
-private fun CCodeGen.lintUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured: Set<String>) {
+/* E054: a non-inline (escaping) lambda body must capture every enclosing value it reads — capture is
+explicit in KTC. Conservative — only flags names that resolve to a spawning-scope variable and are
+neither captured nor declared inside the body (globals, functions, objects, members are never flagged). */
+private fun CCodeGen.checkUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured: Set<String>) {
 	val vDeclared = mutableSetOf("it")
 	for (vStmt in inLambda.body) collectDeclaredNames(vStmt, vDeclared)
 	val vRefs = linkedSetOf<String>()
@@ -114,8 +114,8 @@ private fun CCodeGen.lintUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured: 
 	for (vName in vRefs) {
 		if (vName in inCaptured || vName in vDeclared) continue
 		if (lookupVarKtc(vName) == null) continue                            // not a spawning-scope variable
-		codegenWarning("uncaptured", "'$vName' is used in the thread body but not captured — add capture($vName) " +
-			"(it would otherwise read uninitialized memory on the new thread)")
+		codegenError("E054", "'$vName' is used in the thread body but not captured — add capture($vName). " +
+			"KTC closures capture explicitly (it would otherwise read uninitialized memory on the new thread).")
 		}
 	}
 

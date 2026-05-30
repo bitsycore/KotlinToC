@@ -73,7 +73,8 @@ fun thread(start: Boolean = true, name: String? = null, priority: Int = -1, bloc
 /*
 Marker, inside a `thread { }` body, listing the enclosing values the body needs (KTC has no implicit
 capture). It is a no-op (and a no-op dummy in real kotlin) — the transpiler reads the argument list to
-build the thread context. Using an enclosing local that isn't captured is a `-Wuncaptured` warning.
+build the thread context. Capture is mandatory: using an enclosing local that isn't captured is an
+error (E054).
 */
 @DocumentationOnly
 fun capture(vararg values: Any?): Unit {}

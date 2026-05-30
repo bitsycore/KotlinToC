@@ -190,6 +190,18 @@ object ErrorCatalog {
 			The function call provides more arguments than the function accepts.
 			Check the function signature for the expected parameter count.
 			""".trimIndent()),
+		Entry("E054", "Uncaptured variable in closure",
+			"""
+			A non-inline (escaping) lambda — such as a thread { } body — used a variable
+			from the enclosing scope that was not captured. KTC has no implicit capture, so
+			every enclosing value the body reads must be listed explicitly with capture(...).
+
+			Add it to the capture list:
+			  thread { capture(x); ... use x ... }
+
+			Captures marshal like function arguments: a value is copied, a Ref<T> passes the
+			pointer. (Globals, top-level functions, and members are not captures.)
+			""".trimIndent()),
 
 		// ── Nullable safety ──────────────────────────────────────
 		Entry("E060", "Safe access required on nullable receiver",

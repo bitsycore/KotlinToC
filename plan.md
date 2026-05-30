@@ -42,8 +42,8 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   (KTC has no implicit capture). Captures marshal like KTC fn args (value copied, `Ref<T>` by pointer)
   into a context struct on the *spawning frame's stack* (alloca, no heap/free — join() before return,
   C-style). Lowers to a generated entry fn + the `Thread(::entry, ctx).start()` path. `capture(...)` is a
-  no-op marker; an enclosing local used but not captured is `-Wuncaptured`. See §7 for the general-closure
-  roadmap (noinline params + escaping/returned lambdas).
+  no-op marker and is MANDATORY — an enclosing local used but not captured is a hard error (E054). See §7
+  for the general-closure roadmap (noinline params + escaping/returned lambdas).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
   GenericInferUnitTest, ThreadTest, TopVarWriteTest, MathTest, StringViewTest.
 
