@@ -28,9 +28,11 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   infer), R9 (hoisted `kBooleanResultOps`), R2 (`ifacePtrLiteral` helper), R3 (`resolveAllocatorIface`
   helper), R11 (`parseTypeParamList` dedup), R14 (`scanAll` dedup), R18 (stale `stringToKtc` doc /
   Boolean sizing), R20-partial (CmakeGen `module.ktc.toml` comment).
-- **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold). U4/U5 partial (see §3).
+- **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold), Thread API
+  (`ktc.std` Thread/Mutex + `startThread`/`sleepThread`/`yieldThread`, over a cross-platform
+  `ktc_core_thread_*` / `ktc_core_mutex_*` C layer — Win32 / pthread). U4/U5 partial (see §4).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
-  GenericInferUnitTest, TopVarWriteTest, MathTest, StringViewTest.
+  GenericInferUnitTest, ThreadTest, TopVarWriteTest, MathTest, StringViewTest.
 
 **Design note (D1):** doc-only is now per-declaration `@DocumentationOnly`, not whole-file
 `@file:DocumentationOnly` — a file may mix intrinsic stubs (marked per class/fun) with real `inline`
@@ -41,10 +43,23 @@ files (by design). `Arrays.kt` stays `@file:DocumentationOnly` until it first ne
 ## 1. Correctness bugs (verified — produce wrong or uncompilable C)
 ═══════════════════════════════════════════════════════════════════════
 
-All verified correctness bugs from the review are shipped (B1–B13, D1–D4 — see **Shipped**).
+All review-found verified correctness bugs are shipped (B1–B13, D1–D4 — see **Shipped**).
 Residual smaller `?: "Int"` inference fallbacks remain at TypeInferCall.kt:132 / TypeInferDot.kt:112 /
 ArraysMapping.kt:67 (the `arrayOf` element-type path, not the generic-ctor path B9 fixed); these can
 mis-type an array whose element inference fails — tighten them the same way (E045-style) if they bite.
+
+### D5 — top-level `val`/`var` with a non-constant initializer emits invalid C (M)
+A top-level `val m = Mutex()` (or any initializer that isn't a C compile-time constant — a constructor
+call, a `C.fn()` call) is emitted as a file-scope C initializer → gcc `error: initializer element is
+not constant`. Such initializers must be deferred to `ktc_core_mainInit()` (as object/@Tls init already
+is). Workaround: initialize inside a function and pass the value via a context. Surfaced building the
+Thread API (the ThreadTest uses a heap context instead).
+
+### D6 — `expr.cast<T>()` return type inferred as `Int` (S)
+The cast CODEGEN is correct (`(T_ctype)(expr)`), but `inferExprType` of a `cast` call doesn't return the
+type argument, so `val x = e.cast<T>()` mistypes `x` (falls back to `Int`). Fix: in call-type inference,
+a method named `cast` with one type arg returns the resolved type arg. Workaround: annotate the variable
+(`val x: T = e.cast<T>()`). Surfaced building the Thread API.
 
 ═══════════════════════════════════════════════════════════════════════
 ## 2. Generated-C optimization

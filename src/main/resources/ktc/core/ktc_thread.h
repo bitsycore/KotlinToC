@@ -114,3 +114,30 @@ typedef void (*ktc_thread_once_func_t)(void);
     }
 
 #endif
+
+
+/* ==================
+ * MARK: Threads & mutexes
+ * ==================
+ *
+ * Opaque heap-allocated handles, so the Kotlin side only ever holds a void*
+ * (AnyPtr). Windows uses Win32 threads / CRITICAL_SECTION; POSIX uses pthreads
+ * (link the program with -pthread). Definitions live in ktc_thread.c.
+ */
+
+typedef void (*ktc_thread_fn_t)(void *arg);
+
+/* Start a thread running fn(arg). Returns an opaque handle, or NULL on failure. */
+void *ktc_core_thread_start(ktc_thread_fn_t fn, void *arg);
+/* Wait for the thread to finish and free its handle. Returns 0 on success, nonzero on error/NULL. */
+int   ktc_core_thread_join(void *handle);
+/* Sleep the current thread for ms milliseconds (no-op for ms <= 0). */
+void  ktc_core_thread_sleep_ms(int ms);
+/* Hint the scheduler to yield the current thread's timeslice. */
+void  ktc_core_thread_yield(void);
+
+/* Create / destroy an opaque heap-allocated mutex (returns NULL on alloc failure). */
+void *ktc_core_mutex_create(void);
+void  ktc_core_mutex_lock(void *mutex);
+void  ktc_core_mutex_unlock(void *mutex);
+void  ktc_core_mutex_destroy(void *mutex);
