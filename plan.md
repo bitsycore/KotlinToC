@@ -29,10 +29,21 @@ Each item below is marked `[x]` when shipped this pass.
   the old `Chars.kt` into `Primitives.kt` next to `class Char` (`Chars.kt` deleted), and `Math.kt`'s
   "must live in a real file" note was removed. `Arrays.kt` is still `@file:DocumentationOnly`
   (100% stubs today — convert it the same way the first time it needs a real helper, e.g. U7).
-- **D2 — nullable-returning inline extension on a primitive receiver isn't expanded.**
-  `inline fun Char.digitToIntOrNull(): Int?` invoked as `'x'.digitToIntOrNull()` emits a literal
-  `'x'.digitToIntOrNull()` and wrongly wraps the result in `KTC_SOME` — uncompilable C. Same family
-  as the member-inline-fun gap (§8). Blocks `digitToIntOrNull` and similar. (M)
+- **D2 — value-nullable `if`-expression with a `null` branch mis-lowered (uncompilable / wrong).** ✅ FIXED
+  Root cause was broader than the original inline framing: an `if (c) <value> else null` returning a
+  value-type `T?` (Int?/Char?/String?/…) didn't push the Optional wrapping into its branches. The whole
+  ternary was wrapped once → the `else null` branch became `SOME(0)` (so `x ?: d` returned 0 instead of
+  the default) in non-inline functions, and the inline-extension form emitted `cond ? value : NULL`
+  into a `ktc_T$Opt` → didn't compile at all. Fix (Control.kt): `genIfExpr` now lowers each branch into
+  the Optional (`value`→`KTC_SOME`, `null`→`KTC_NONE`) for value-nullable results; `inferIfExprType`
+  promotes a null-branch `if` to nullable (with a scoped re-inference so a block branch's own locals
+  resolve); `emitBlockIntoTemp` coerces the hoisted temp. Covers simple/reversed/`String?`/complex-block/
+  inline-ext forms. Test: `intrinsic/NullableIfTest`.
+- **D4 — `when`-expression with a `null` branch has the same value-nullable mis-lowering as D2.**
+  `genWhenExpr` / `inferWhenExprType` don't yet push Optional wrapping into branches, so
+  `when { … -> value; else -> null }` returning `T?` repeats the D2 bug. Mirror the D2 fix: promote to
+  nullable on a null branch, coerce each branch via the shared `coerceBranchToOpt`, size the hoisted
+  temp as the Optional. (S–M, mechanical given D2's helpers)
 - **D3 — top-level `var` write emits an unprefixed LHS inside a same-package function.** ✅ FIXED
   `genLValue`'s NameExpr case now applies the package prefix for a top-level prop (mirrors the read
   path); the write side was emitting a bare, undeclared C name. Test: `TopVarWriteTest`.

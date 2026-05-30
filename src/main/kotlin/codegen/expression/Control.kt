@@ -50,6 +50,32 @@ internal fun CCodeGen.emitBlockIntoTempIface(b: Block, tempVar: String, concrete
         }
     }
 
+// ── optional-wrapping for value-nullable if/when expressions (D2) ──
+
+// If exactly one branch is a `null` literal and the other is a value type whose nullable form is a
+// value-Optional (Int?/Char?/String?/…, not Ref/Array/Any), returns that Optional's C type name so
+// each branch can lower into it; otherwise null (regular if/when lowering applies).
+internal fun CCodeGen.valueNullableIfOptType(inThen: Expr?, inElse: Expr?): String? {
+    if (inThen == null || inElse == null) return null
+    val vThenNull = inThen is NullLit
+    val vElseNull = inElse is NullLit
+    if (vThenNull == vElseNull) return null
+    val vValExpr = if (vThenNull) inElse else inThen
+    val vBase = inferExprType(vValExpr)?.removeSuffix("?") ?: return null
+    return if (isValueNullableKtc(KtcType.Nullable(parseResolvedTypeName(vBase)))) optCTypeName(vBase) else null
+}
+
+// Lower one branch of a value-nullable if/when into [inOptType]: a `null` literal → NONE, an
+// already-optional value passes through, any other value is wrapped in SOME.
+internal fun CCodeGen.coerceBranchToOpt(inBranch: Expr?, inOptType: String): String = when {
+    inBranch == null || inBranch is NullLit -> optNone(inOptType)
+    else -> {
+        val vKtc = inferExprTypeKtc(inBranch)
+        if (vKtc is KtcType.Nullable && isValueNullableKtc(vKtc)) genExpr(inBranch)
+        else optSome(inOptType, genExpr(inBranch))
+    }
+}
+
 // ── if expression (as C ternary or temp) ─────────────────────────
 
 internal fun CCodeGen.genIfExpr(e: IfExpr): String {
@@ -80,6 +106,14 @@ internal fun CCodeGen.genIfExpr(e: IfExpr): String {
     val thenExpr = blockAsSingleExpr(e.then)
     val elseExpr = if (e.els != null) blockAsSingleExpr(e.els) else null
     if (!hasSmartCasts && thenExpr != null && (e.els == null || elseExpr != null)) {
+        // Value-nullable if-expr (a `null` branch): lower each branch into the Optional so the
+        // result is a proper ktc_T$Opt, not a bare-value/NULL mix that mis-wraps as SOME(0). (D2)
+        val vOptType = valueNullableIfOptType(thenExpr, elseExpr)
+        if (vOptType != null) {
+            val thenW = coerceBranchToOpt(thenExpr, vOptType)
+            val elseW = coerceBranchToOpt(elseExpr, vOptType)
+            return "(${genExpr(e.cond)} ? $thenW : $elseW)"
+        }
         val thenStr = genExpr(thenExpr)
         val elseStr = if (elseExpr != null) genExpr(elseExpr) else "0"
         return "(${genExpr(e.cond)} ? $thenStr : $elseStr)"
@@ -88,7 +122,9 @@ internal fun CCodeGen.genIfExpr(e: IfExpr): String {
     // Complex case or smart-cast needed: hoist to temp
     val t = tmp()
     val retType = inferIfExprType(e) ?: "Int"
-    val ct = cTypeStr(retType)
+    // Value-nullable result → the temp is the Optional struct and each branch lowers into it. (D2)
+    val vOptType = parseResolvedTypeName(retType).let { if (isValueNullableKtc(it)) optCTypeName(retType) else null }
+    val ct = vOptType ?: cTypeStr(retType)
     preStmts += "$ct $t;"
     preStmts += "if (${genExpr(e.cond)}) {"
     if (thenCasts.isNotEmpty()) {
@@ -100,7 +136,7 @@ internal fun CCodeGen.genIfExpr(e: IfExpr): String {
             defineVar(name, LocalVar(ktc = ktc, mutable = false, cName = cName))
         }
     }
-    emitBlockIntoTemp(e.then, t, "    ")
+    emitBlockIntoTemp(e.then, t, "    ", vOptType)
     if (thenCasts.isNotEmpty()) popScope()
     if (e.els != null) {
         preStmts += "} else {"
@@ -113,7 +149,7 @@ internal fun CCodeGen.genIfExpr(e: IfExpr): String {
                 defineVar(name, LocalVar(ktc = ktc, mutable = false, cName = cName))
             }
         }
-        emitBlockIntoTemp(e.els, t, "    ")
+        emitBlockIntoTemp(e.els, t, "    ", vOptType)
         if (elseCasts.isNotEmpty()) popScope()
     }
     preStmts += "}"
@@ -129,9 +165,13 @@ internal fun blockAsSingleExpr(b: Block): Expr? {
     return null
 }
 
-/** Emit block statements into preStmts, assigning the last expression to [tempVar]. */
-internal fun CCodeGen.emitBlockIntoTemp(b: Block, tempVar: String, indent: String) =
-    emitBlockIntoTempBase(b, indent) { expr -> preStmts += "$indent$tempVar = ${genExpr(expr)};" }
+/** Emit block statements into preStmts, assigning the last expression to [tempVar].
+ *  When [inOptType] is set the last expression is coerced into that value-Optional (D2). */
+internal fun CCodeGen.emitBlockIntoTemp(b: Block, tempVar: String, indent: String, inOptType: String? = null) =
+    emitBlockIntoTempBase(b, indent) { expr ->
+        val vVal = if (inOptType != null) coerceBranchToOpt(expr, inOptType) else genExpr(expr)
+        preStmts += "$indent$tempVar = $vVal;"
+    }
 
 /** Emit a statement into preStmts (for hoisting into if/when expression bodies). */
 internal fun CCodeGen.emitStmtToPreStmts(s: Stmt, indent: String) {
@@ -158,7 +198,38 @@ internal fun CCodeGen.inferIfExprType(e: IfExpr): String? {
     val elseType = if (e.els != null) inferBlockType(e.els) else null
     val commonIface = findCommonInterface(thenType, elseType)
     if (commonIface != null) return commonIface
+    // A `null` branch makes the whole if-expression nullable (the other branch's type made
+    // nullable), so value-typed branches lower into an Optional rather than a bare value. (D2)
+    if (e.els != null) {
+        val vThenNull = blockAsSingleExpr(e.then) is NullLit
+        val vElseNull = blockAsSingleExpr(e.els) is NullLit
+        if (vThenNull != vElseNull) {
+            // Recover the value-branch type, falling back to a scoped inference when that branch is
+            // a block whose last expression references its own locals (plain inferBlockType can't see them).
+            val vValBlock = if (vThenNull) e.els else e.then
+            val vBase = (if (vThenNull) elseType else thenType) ?: inferBlockTypeScoped(vValBlock)
+            if (vBase != null) return if (vBase.endsWith("?")) vBase else "$vBase?"
+        }
+    }
     return thenType ?: elseType
+}
+
+// Infer a block's result type with its preceding `val`/`var` locals defined in a temporary scope,
+// so the last expression's names resolve. Used only to recover the value-branch type of a
+// value-nullable if/when whose branch is a multi-statement block (D2).
+internal fun CCodeGen.inferBlockTypeScoped(b: Block): String? {
+    pushScope()
+    try {
+        for (s in b.stmts.dropLast(1)) {
+            if (s is VarDeclStmt) {
+                val vt = if (s.type != null) resolveTypeName(s.type).toInternalStr else (inferExprType(s.init) ?: "Int")
+                defineVar(s.name, vt)
+            }
+        }
+        return inferBlockType(b)
+    } finally {
+        popScope()
+    }
 }
 
 internal fun CCodeGen.inferBlockType(b: Block): String? {
