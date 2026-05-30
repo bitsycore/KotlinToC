@@ -55,15 +55,28 @@ class Thread(private val entry: (AnyPtr) -> Unit, private val arg: AnyPtr) {
 }
 
 /*
-Construct a thread running [entry] with [arg] and (by default) start it immediately, returning the
-handle — the closure-free analogue of kotlin.concurrent.thread. Pass `start = false` to defer the
-`start()` call to the caller. Check the returned `Thread.isAlive` to confirm it started.
+Run [block] on a new OS thread (kotlin.concurrent.thread shape). KTC has no closures, so this is a
+transpiler intrinsic: at the call site, every variable the body uses from the enclosing scope must be
+listed with `capture(...)`. Those are marshalled exactly like KTC function arguments — a value is
+copied, a `Ref<T>` passes just the pointer — into a context that lives on the *spawning frame's stack*
+(no heap, no free). You must `join()` before that frame returns, C-style. By default the thread is
+started immediately; pass `start = false` to start it yourself. `name` / `priority` are accepted for
+source parity with kotlin but currently have no native effect.
+
+	val t = thread { capture(ctx); ctx.refValue.counter++ }
+	t.join()
 */
-fun thread(entry: (AnyPtr) -> Unit, arg: AnyPtr, start: Boolean = true): Thread {
-	val vThread = Thread(entry, arg)
-	if (start) vThread.start()
-	return vThread
-}
+@DocumentationOnly
+fun thread(start: Boolean = true, name: String? = null, priority: Int = -1, block: () -> Unit): Thread =
+	error("ktc intrinsic: thread { } closures are lowered by the transpiler")
+
+/*
+Marker, inside a `thread { }` body, listing the enclosing values the body needs (KTC has no implicit
+capture). It is a no-op (and a no-op dummy in real kotlin) — the transpiler reads the argument list to
+build the thread context. Using an enclosing local that isn't captured is a `-Wuncaptured` warning.
+*/
+@DocumentationOnly
+fun capture(vararg values: Any?): Unit {}
 
 // ==================
 // MARK: Mutex

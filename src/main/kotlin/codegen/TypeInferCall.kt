@@ -121,6 +121,11 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
     }
     val name = (e.callee as? NameExpr)?.name
     if (name != null) {
+        // thread { } closure form (trailing block) — same return type as the thread() declaration (a Thread).
+        if (name == "thread" && e.args.lastOrNull()?.expr is LambdaExpr) {
+            funSigs["thread"]?.returnType?.let { return resolveTypeRefStr(it) }
+            return "Thread"
+        }
         if (name == "StringBuffer" && !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer")) {
             return "ktc_StrBuf"
         }

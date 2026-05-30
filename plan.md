@@ -35,8 +35,15 @@ Axes: **Correctness** (emitted C compiles & matches Kotlin) · **Codegen** (qual
   Boolean sizing), R20-partial (CmakeGen `module.ktc.toml` comment).
 - **Ease-of-use:** U3 (Char predicates), U9/U10 (Random range bias + threshold), Thread API
   (`ktc.std` kotlin-like `Thread(::entry, arg).start()`/`join()`/`isAlive` + `Thread.sleep`/`Thread.yield`
-  companion + top-level `thread(…)` + `Mutex.lock`/`unlock`/`destroy`/`withLock { }`, over a cross-platform
-  `ktc_core_thread_*` / `ktc_core_mutex_*` C layer — Win32 / pthread). U4/U5 partial (see §4).
+  companion + kotlin-shape `thread(start, name, priority) { … }` closure form + `Mutex.lock`/`unlock`/
+  `destroy`/`withLock { }`, over a cross-platform `ktc_core_thread_*` / `ktc_core_mutex_*` C layer — Win32 /
+  pthread). U4/U5 partial (see §4).
+- **Closures (thread):** `thread { capture(a, b); … }` — explicit-capture closure for the OS-thread body
+  (KTC has no implicit capture). Captures marshal like KTC fn args (value copied, `Ref<T>` by pointer)
+  into a context struct on the *spawning frame's stack* (alloca, no heap/free — join() before return,
+  C-style). Lowers to a generated entry fn + the `Thread(::entry, ctx).start()` path. `capture(...)` is a
+  no-op marker; an enclosing local used but not captured is `-Wuncaptured`. See §7 for the general-closure
+  roadmap (noinline params + escaping/returned lambdas).
 - **Tests added:** CharPredicateTest, NullableIfTest, TemplateEvalTest, FunRefTest, MemberInfixTest,
   GenericInferUnitTest, ThreadTest, TopVarWriteTest, MathTest, StringViewTest.
 
@@ -236,3 +243,18 @@ Main.kt + the help list (see C2); each gets a `TranspilerTestBase` snippet test 
 - **Smart-cast across `&&` in an `if` condition** (M) — `if (x != null && x.field == …)` doesn't narrow `x`
   in the RHS. Needs lazy emission of the RHS operand (`extractSmartCasts` already handles `&&` for the THEN
   body but not the condition itself).
+
+### General closures via explicit `capture(...)` (L — generalizes the thread closure)
+Rule: `inline fun` + lambda param = inlined (no capture); `inline fun` + `noinline` param = closure;
+plain lambda value = closure. Today `thread { capture(...) }` is a name-keyed special case
+(`expression/ThreadClosure.kt`) — the capture analysis / context-struct / entry-fn / `-Wuncaptured`
+machinery is reusable; what must generalize:
+- **Trigger:** fire on any escaping-lambda position (a `noinline` param, a lambda used as a function-typed
+  value), not the callee name `thread`. `thread.block` then becomes a normal escaping param.
+- **`noinline` keyword** on inline-fun params (parse + the inline-vs-closure decision per param).
+- **Closure representation:** a function-typed *value* must become a fat pointer `{fn, ctx}`; calls lower
+  to `clo.fn(clo.ctx, …)`. Interacts with C interop (a bare `void(*)()` sink needs a thunk). The OS-thread
+  ABI `(fn, void*)` is why `thread` avoided this.
+- **Lifetime:** Phase 1 — frame-bound closures use the thread model (alloca ctx in the defining frame, must
+  not escape it). Phase 2 — escaping/returned closures (the E023 `return (Int)->Int` case) need a heap ctx +
+  explicit free, C-style. This is the one genuinely new decision.

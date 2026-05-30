@@ -181,6 +181,9 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         ?: return "${genExpr(e.callee)}(${e.args.joinToString(", ") { genExpr(it.expr) }})"
     val vArgs = e.args
 
+    // thread { capture(...); body } — lower the lambda to a generated entry fn + stack context.
+    genThreadClosureOrNull(e)?.let { return it }
+
     // ── Inline function call in value position ────────────────────
     val vInlineCandidates = inlineFunDecls[vName]
     val vInlineDecl = when {

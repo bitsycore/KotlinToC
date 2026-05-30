@@ -189,6 +189,7 @@ private val kWarningNames = listOf(
     "bounds", "sized-array-truncate", "empty-body", "redundant-bang",
     "self-assign", "self-compare", "identical-branches",
     "unreachable", "discarded-alloc", "no-effect-expr", "unused-local", "could-be-val",
+    "uncaptured",
 )
 
 // Valid values for --disposed / --double-dispose.

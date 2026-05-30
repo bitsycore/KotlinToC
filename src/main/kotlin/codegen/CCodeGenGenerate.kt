@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.emit.*
+import com.bitsycore.ktc.codegen.expression.emitPendingThreadEntries
 
 // The main code-generation pipeline: collectAndScan() + generate().
 // Class state and utilities live in CCodeGen.kt.
@@ -299,6 +300,9 @@ internal fun CCodeGen.generate(): COutput {
 		val vSrcKey = "|${declSourceFile[f.name] ?: sourceFileName}"
 		captureForDecl(vSrcKey) { emitStarExtFunInstantiations(f) }
 		}
+	// Generated `thread { }` entry functions — flushed here, after the decl loop, so they don't nest
+	// inside the buffer of the function that spawned the thread.
+	emitPendingThreadEntries()
 	emitEnumValuesData()
 
 	// ── Assemble output ────────────────────────────────────────────────

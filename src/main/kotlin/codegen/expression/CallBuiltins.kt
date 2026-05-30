@@ -32,6 +32,10 @@ internal fun CCodeGen.genBuiltinCallOrNull(
 		"println" -> return genPrintln(inArgs)
 		"print"   -> return genPrint(inArgs)
 
+		// capture(...) is the thread-closure marker; outside a thread { } body it is a no-op (it is
+		// consumed directly by the thread-closure lowering, so this is just a safety net).
+		"capture" -> return ""
+
 		"byteArrayOf", "shortArrayOf", "intArrayOf", "longArrayOf",
 		"floatArrayOf", "doubleArrayOf", "booleanArrayOf", "charArrayOf",
 		"ubyteArrayOf", "ushortArrayOf", "uintArrayOf", "ulongArrayOf" ->
