@@ -401,20 +401,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vAllocExpr    = genExpr(inArgs[0].expr)
 		val vNewSizeExpr  = genExpr(inArgs[1].expr)
 		val vT            = tmp()
-		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
-		val vAllocCore    = vAllocKtc.stripNullable
-		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User && vAllocCore.inner.kind == KtcType.UserKind.Interface
-		val vIfExpr: String
-		if (vIsTrampoline) {
-			vIfExpr = vAllocExpr
-			} else {
-			val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
-			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
-				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = ${ifacePtrLiteral(vTypeId, vCConcrete, "Allocator", "(void*)&$vAllocExpr")};"
-				vIfExpr = vT
-				} else { vIfExpr = vAllocExpr }
-			}
+		val vIfExpr       = resolveAllocatorIface(inArgs[0].expr, vAllocExpr).ifaceExpr
 		val vIsRawArray = vRawPtrType != null
 		val vSrcPtr     = if (vIsRawArray) inRecv else "$inRecv.ptr"
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->reallocMem($vIfExpr.obj, $vSrcPtr, sizeof($vElemC) * (size_t)($vNewSizeExpr), ${ktSrcStr()});"
@@ -447,19 +434,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return vResult
 			}
 		val vT            = tmp()
-		val vAllocKtc     = inferExprTypeKtc(inArgs[0].expr)
-		val vAllocCore    = vAllocKtc.stripNullable
-		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User && vAllocCore.inner.kind == KtcType.UserKind.Interface
-		val vIfExpr: String
-		if (vIsTrampoline) {
-			vIfExpr = vAllocExpr
-			} else {
-			if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
-				val vCConcrete = typeFlatName(vAllocObjName); val vTypeId = getTypeId(vAllocObjName)
-				preStmts += "ktc_IfacePtr $vT = ${ifacePtrLiteral(vTypeId, vCConcrete, "Allocator", "(void*)&$vAllocExpr")};"
-				vIfExpr = vT
-				} else { vIfExpr = vAllocExpr }
-			}
+		val vIfExpr       = resolveAllocatorIface(inArgs[0].expr, vAllocExpr).ifaceExpr
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSrcLen), ${ktSrcStr()});"
 		preStmts += "if (${vT}_ptr) memcpy(${vT}_ptr, $vSrcPtr, (size_t)$vSrcLen * sizeof($vElemC));"
 		preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vSrcLen};"

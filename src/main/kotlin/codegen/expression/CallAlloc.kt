@@ -45,31 +45,33 @@ private fun CCodeGen.emitAllocatorIfacePtr(name: String, t: String, allocExpr: S
 	preStmts += "ktc_IfacePtr $t = ${ifacePtrLiteral(vTypeId, vConcrete, "Allocator", "(void*)&$allocExpr")};"
 	}
 
-/* Resolution of an allocator argument for class-construction allocWith.
+/* Resolution of an allocator argument for an allocWith / resizeWith / copyWith call.
 ifaceExpr is the ktc_IfacePtr expression to call through;
 ifaceCreated is true when ifaceExpr is a fresh local emitted via emitAllocatorIfacePtr;
 isTrampoline is true when the allocator arg is `Ref<Allocator>` (already a fat pointer). */
-private data class AllocResolution(val ifaceExpr: String, val ifaceCreated: Boolean, val isTrampoline: Boolean)
+internal data class AllocResolution(val ifaceExpr: String, val ifaceCreated: Boolean, val isTrampoline: Boolean)
 
-/* Resolve the allocator argument of a Foo(...).allocWith(alloc) call.
-Emits the wrapping IfacePtr preStmt when needed and returns how the call site should
-invoke the allocator (direct, wrapped, or trampoline). */
-private fun CCodeGen.resolveAllocatorForClassAlloc(inCall: CallExpr, inAllocExpr: String, inAllocObjName: String?): AllocResolution {
-	val vAllocKtc       = inferExprTypeKtc(inCall.args[0].expr)
-	val vAllocCore      = vAllocKtc.stripNullable
+/* Resolve an allocator argument to a ktc_IfacePtr the call site can dispatch through, emitting the
+wrapping IfacePtr preStmt when the argument is an allocator object or class. [inEvaledExpr] is the
+already-evaluated allocator expression. Shared by class-construction allocWith, array allocWith, and
+resizeWith / copyWith. (R3) */
+internal fun CCodeGen.resolveAllocatorIface(inAllocArgExpr: Expr, inEvaledExpr: String): AllocResolution {
+	val vAllocCore      = inferExprTypeKtc(inAllocArgExpr).stripNullable
 	val vAllocClassName = (vAllocCore as? KtcType.User)?.baseName
-	val vIsAllocObj     = inAllocObjName != null && objects.containsKey(inAllocObjName)
-		&& classInterfaces[inAllocObjName]?.contains("Allocator") == true
-	val vIsAllocClass   = vAllocClassName != null && classes.containsKey(vAllocClassName)
-		&& classInterfaces[vAllocClassName]?.contains("Allocator") == true
+	val vAllocObjName   = (inAllocArgExpr as? NameExpr)?.name
 	val vIsTrampoline   = run {
 		val vi = (vAllocCore as? KtcType.Ptr)?.inner
 		vi is KtcType.User && vi.kind == KtcType.UserKind.Interface
 		}
+	val vIsAllocObj     = vAllocObjName != null && objects.containsKey(vAllocObjName)
+		&& classInterfaces[vAllocObjName]?.contains("Allocator") == true
+	val vIsAllocClass   = vAllocClassName != null && classes.containsKey(vAllocClassName)
+		&& classInterfaces[vAllocClassName]?.contains("Allocator") == true
 	return when {
-		vIsAllocObj   -> { val vT = tmp(); emitAllocatorIfacePtr(inAllocObjName!!,   vT, inAllocExpr); AllocResolution(vT, true,  vIsTrampoline) }
-		vIsAllocClass -> { val vT = tmp(); emitAllocatorIfacePtr(vAllocClassName!!,  vT, inAllocExpr); AllocResolution(vT, true,  vIsTrampoline) }
-		else          -> AllocResolution(inAllocExpr, false, vIsTrampoline)
+		vIsTrampoline -> AllocResolution(inEvaledExpr, false, true)
+		vIsAllocObj   -> { val vT = tmp(); emitAllocatorIfacePtr(vAllocObjName!!,   vT, inEvaledExpr); AllocResolution(vT, true, false) }
+		vIsAllocClass -> { val vT = tmp(); emitAllocatorIfacePtr(vAllocClassName!!, vT, inEvaledExpr); AllocResolution(vT, true, false) }
+		else          -> AllocResolution(inEvaledExpr, false, false)
 		}
 	}
 
@@ -100,21 +102,6 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 	val vTypeArgs   = vRecvCall.typeArgs
 	val vCtorArgs   = vRecvCall.args
 	val vAllocExpr  = genExpr(inCall.args[0].expr)
-	val vAllocObjName = (inCall.args[0].expr as? NameExpr)?.name
-
-	/* Resolve allocator expression to a ktc_IfacePtr. */
-	fun resolveAllocIface(inAllocArgKtc: KtcType?): Pair<String, Boolean> {
-		val vAllocCore    = inAllocArgKtc.stripNullable
-		val vIsTrampoline = vAllocCore is KtcType.Ptr && vAllocCore.inner is KtcType.User
-			&& vAllocCore.inner.kind == KtcType.UserKind.Interface
-		if (vIsTrampoline) return Pair(vAllocExpr, false)
-		if (vAllocObjName != null && objects.containsKey(vAllocObjName)) {
-			val vT = tmp()
-			emitAllocatorIfacePtr(vAllocObjName, vT, vAllocExpr)
-			return Pair(vT, true)
-			}
-		return Pair(vAllocExpr, false)
-		}
 
 	// Array<T>(size).allocWith(allocator), Array<T>(size) { init }.allocWith(allocator),
 	// or RawArray<T>(size).allocWith(allocator)
@@ -128,8 +115,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 			}
 		val vElemC    = cTypeStr(vElemName)
 		val vSizeExpr = genExpr(vCtorArgs[0].expr)
-		val vAllocKtc = inferExprTypeKtc(inCall.args[0].expr)
-		val (vIfExpr, _) = resolveAllocIface(vAllocKtc)
+		val vIfExpr   = resolveAllocatorIface(inCall.args[0].expr, vAllocExpr).ifaceExpr
 		val vT = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSizeExpr), ${ktSrcStr()});"
 		// Array<T>(size) { init } — run the init lambda over the freshly allocated slots.
@@ -149,7 +135,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 	if (classes.containsKey(vClassName) && !classes[vClassName]!!.isGeneric) {
 		val vCName       = typeFlatName(vClassName)
 		val vCtorArgsStr = vCtorArgs.joinToString(", ") { genExpr(it.expr) }
-		val vAlloc       = resolveAllocatorForClassAlloc(inCall, vAllocExpr, vAllocObjName)
+		val vAlloc       = resolveAllocatorIface(inCall.args[0].expr, vAllocExpr)
 		return emitAllocWithConstruct(vCName, vAlloc.ifaceExpr, vAlloc.ifaceCreated, vAlloc.isTrampoline, vCtorArgsStr)
 		}
 
@@ -175,7 +161,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 						vTCtor
 						} else vArgExpr
 					}
-				val vAlloc = resolveAllocatorForClassAlloc(inCall, vAllocExpr, vAllocObjName)
+				val vAlloc = resolveAllocatorIface(inCall.args[0].expr, vAllocExpr)
 				return emitAllocWithConstruct(vCName, vAlloc.ifaceExpr, vAlloc.ifaceCreated, vAlloc.isTrampoline, vCtorArgsStr)
 				}
 			}
