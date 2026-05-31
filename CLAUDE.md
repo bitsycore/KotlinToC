@@ -77,9 +77,14 @@ Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since de
 - `get`/`set`/`invoke` have free arity (Kotlin allows multi-index access like `m[i, j]`).
 
 ## Lambdas and functional types
-- Lambdas are **inline-only**: there is no closure heap allocation, no escaping function-pointer-with-captures. A function returning a function type (`(Int) -> Int`) must be marked `inline` so the body is expanded at the call site; non-inline lambda returns are rejected at transpile.
-- Lambda parameters of inline functions are expanded in place — `let`, `apply`, `with`, `run`, `also`, `takeIf`, `repeat` all work through this mechanism.
-- Standalone lambda expressions outside of inline-function argument position are not supported.
+Two distinct lowerings, picked by context:
+- **Inline lambdas (no closure):** a lambda passed to an `inline fun` is expanded in place — `let`, `apply`, `with`, `run`, `also`, `takeIf`, `repeat` all work through this mechanism. No struct, no capture, no allocation.
+- **Capture closures (functor model):** a lambda in *value position* — assigned to a function-typed `val`, or passed to a **non-inline** function's function-typed parameter — lowers to its OWN per-lambda struct (the captured fields) plus a generated `R Closure_N_invoke(Closure_N* self, params…)`. The closure value IS that struct (real data, passed by value or `&`), NOT a fat `{fn,ctx}` pointer and NOT type-erased. Calling `f(x)` → `Closure_N_invoke(&f, x)`.
+  - **Explicit capture, always:** KTC has no implicit capture. A closure body must `capture(...)` every enclosing local it reads, or it's a hard error (**E054**). `capture(x)` captures by value (a snapshot taken when the closure is built; an existing `Ref<T>` passes its pointer). `capture(x.asRef())` captures `&x` by reference — inside the closure `x` is a `Ref<T>`, read/written via `x.refValue`, reaching the original storage.
+  - **Higher-order = monomorphization:** a non-inline function that receives a closure is specialized per closure type (the C++-template model) — each function-typed param is retyped to the functor struct (`F__Closure_N`), so `param(x)` in the body dispatches through `_invoke`. Handles multiple closure params, closure-typed-var args (`foo(g)`), and overloaded callees. Bare C function references (`::fn`) stay as plain function pointers (C interop / thread ABI).
+  - **Type inference:** an un-annotated `val f = { x: Int -> … }` infers its functor type from the lambda's own typed params + body result; the `it` shorthand needs an expected type (a `val f: (Int)->Int = { it… }` annotation or a higher-order param). `inline fun` + `noinline` param keyword is parsed (groundwork for treating that param as a closure).
+- **Lifetime — frame-bound (Phase 1):** the functor struct is stack-local in the defining frame, so a closure must not outlive that frame. Returning a function type from a non-inline function is rejected (**E023**). Escaping/returned/heap closures are Phase 2 (not yet). For thread closures the spawning frame must `join()` before it returns (the context is `alloca`'d, no heap/free). Not yet supported: cross-package higher-order callees, receiver (extension/member) closure params, generic higher-order functions, and a closure passed by named/defaulted argument.
+- A standalone lambda used as a bare expression (not assigned, not an argument) is still unsupported.
 
 ## Limitations vs Kotlin (intentional)
 - No coroutines (`suspend`, `async`), no reflection (no `KClass`, `::class`), no `java.lang.*`.

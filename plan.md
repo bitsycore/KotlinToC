@@ -244,24 +244,37 @@ Main.kt + the help list (see C2); each gets a `TranspilerTestBase` snippet test 
   in the RHS. Needs lazy emission of the RHS operand (`extractSmartCasts` already handles `&&` for the THEN
   body but not the condition itself).
 
-### General closures via explicit `capture(...)` (L — generalizes the thread closure)
-Rule: `inline fun` + lambda param = inlined (no capture); `inline fun` + `noinline` param = closure;
-plain lambda value = closure. Today `thread { capture(...) }` is a name-keyed special case
-(`expression/ThreadClosure.kt`) — the capture analysis / context-struct / entry-fn / `-Wuncaptured`
-machinery is reusable; what must generalize:
-- **Trigger:** fire on any escaping-lambda position (a `noinline` param, a lambda used as a function-typed
-  value), not the callee name `thread`. `thread.block` then becomes a normal escaping param.
-- **`noinline` keyword** on inline-fun params (parse + the inline-vs-closure decision per param). [parser
-  support landed: `Param.noinline`.]
-- **Closure representation (DECIDED — functor):** each lambda lowers to its OWN specialized struct (the
-  capture fields) + a generated `R Lambda_N_invoke(Lambda_N* self, params…)`. The closure VALUE is that
-  struct (real data — passed by value or `&`), NOT a fat `{fn,ctx}` pointer and NOT type-erased; calling
-  `f(args)` → `Lambda_N_invoke(&f, args)`. This is the C++-functor model and matches what the thread
-  closure already emits (ctx struct + entry fn). Bare C function pointers stay separate (C interop / the
-  thread ABI keep `void(*)()`). A function-typed parameter that receives a closure is monomorphized per
-  closure type (KTC's existing monomorphization), since each lambda is a distinct type.
-  - inference circularity (lambda → its generated struct type) resolved by caching the generated type per
-    LambdaExpr identity, so inference and codegen agree.
-- **Lifetime:** Phase 1 — frame-bound closures use the thread model (the functor struct is alloca/stack in
-  the defining frame, must not escape it). Phase 2 — escaping/returned closures (the E023 `return (Int)->Int`
-  case) need a heap-allocated functor + explicit free, C-style.
+### General closures via explicit `capture(...)` (generalizes the thread closure)
+Rule: `inline fun` + lambda param = inlined (no capture); plain lambda value / non-inline function-typed
+param = closure. Functor model (DECIDED): each lambda → its OWN struct (capture fields) + a generated
+`R Closure_N_invoke(Closure_N* self, params…)`; the closure VALUE is that struct (real data, by value or
+`&`), NOT a fat `{fn,ctx}` pointer and NOT type-erased; `f(args)` → `Closure_N_invoke(&f, args)`. Bare C
+function pointers stay separate (C interop / thread ABI). Shares the thread closure's capture machinery
+(`expression/ThreadClosure.kt`).
+
+**Phase 1 — SHIPPED (frame-bound; green on unit + integration):**
+- Value-position lambda on a function-typed `val` → functor + invoke; `f(x)` dispatches via the struct.
+- **Higher-order params via per-closure-type monomorphization** — `F(lambda…)` for a same-package
+  non-inline top-level F → `F__Closure_N` with each function-typed param retyped to its functor struct.
+  Handles N closure params, closure-typed-var args (`foo(g)`), and overloaded callees (findOverload).
+- **Capture modes** — `capture(x)` by value (snapshot) / shares an existing `Ref<T>`; `capture(x.asRef())`
+  by reference (binds `x` as `Ref<T>`, via `.refValue`). (Also fixed `p.refValue = v` for `Ref<primitive>`.)
+- **Closure-type inference without annotation** — `val f = { x: Int -> … }` infers the functor from typed
+  params + body result; parser now reads typed lambda params; `it` shorthand when the expected type is
+  1-param. `noinline` param keyword parses (`Param.noinline`) as groundwork.
+- Deferred-emission flushes to a fixpoint and snapshots-and-clears each pending list (a body can queue more
+  closures / chained higher-order calls — iterating the live list threw ConcurrentModificationException).
+- E023 already rejects returning a function type from a non-inline fn (the escape boundary for returns).
+- Tests: ClosureTest (+ chained), ClosureHigherOrderTest, CaptureRefTest, ClosureInferTest.
+
+**Phase 1 — still open (each falls through to normal dispatch / a clear error today):**
+- Higher-order: cross-**package** callees (same-package files are merged so they already work), receiver
+  (extension/member) closure params, generic higher-order functions, closure passed by named/defaulted arg.
+- Honor `noinline` so a `noinline` param of an `inline fun` becomes a closure instead of being inlined.
+- Escape guards (W/E): storing a frame-bound closure in a heap field / ctor param, or passing it to a
+  function that stores it. (Returns are already E023; the rest can produce a dangling capture — currently
+  a C-level type mismatch in the field case, undefined behaviour in the store-and-call case.)
+- Minor: dead-code emission of the original un-monomorphized function when only ever called with closures.
+
+**Phase 2 (L):** escaping/returned closures (the E023 `return (Int)->Int` case) — heap-allocated functor
++ explicit free, C-style.
