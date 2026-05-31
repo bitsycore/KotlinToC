@@ -243,7 +243,10 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	val vInvoke  = "${vStruct}_invoke"
 	val vCloVar  = "\$clo$vId"
 	val vRetKtc  = inFunc.ret
-	val vParams  = inLambda.params.mapIndexed { vI, vP ->
+	// `it` shorthand: a single-parameter lambda written with no parameter list (`{ it + 1 }`) names its
+	// one parameter `it` implicitly. Only when the expected type has exactly one parameter.
+	val vParamNames = if (inLambda.params.isEmpty() && inFunc.params.size == 1) listOf("it") else inLambda.params
+	val vParams  = vParamNames.mapIndexed { vI, vP ->
 		val vPKtc = inFunc.params.getOrNull(vI) ?: KtcType.Void
 		ClosureParam(cTypeStr(vPKtc), vP, vPKtc)
 		}
@@ -259,6 +262,31 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	preStmts += "$vStruct $vCloVar;"
 	for (vCap in vCaptures) preStmts += "$vCloVar.${vCap.name} = ${vCap.cExpr};"
 	return vStruct to vCloVar
+	}
+
+/* Infer a lambda's function type from its OWN annotations, with no expected type to lean on (an
+un-annotated `val f = { x: Int -> … }`): every parameter must carry an explicit type, and the result type
+is inferred from the body's trailing expression (Unit when the body ends in a statement). Returns null
+when a parameter is untyped — pure inference can't recover a parameter type without an expected type
+(use an explicit `(…) -> …` annotation on the variable, or a typed lambda parameter). */
+internal fun CCodeGen.inferLambdaFuncType(inLambda: LambdaExpr): KtcType.Func? {
+	val vParamKtcs: List<KtcType> = if (inLambda.params.isEmpty()) emptyList()
+		else {
+			if (inLambda.paramTypes.size != inLambda.params.size || inLambda.paramTypes.any { it == null }) return null
+			inLambda.paramTypes.map { resolveTypeName(it!!) }
+			}
+	// Infer the result with the parameters in scope so the trailing expression (`x + 1`) resolves them.
+	pushScope()
+	inLambda.params.forEachIndexed { vI, vP -> defineVar(vP, LocalVar(vParamKtcs.getOrElse(vI) { KtcType.Void })) }
+	val vRet = try {
+		val vBody = inLambda.body.filter { !isCaptureCall(it) }
+		when (val vLast = vBody.lastOrNull()) {
+			is ExprStmt   -> inferExprTypeKtc(vLast.expr) ?: KtcType.Void
+			is ReturnStmt -> vLast.value?.let { inferExprTypeKtc(it) } ?: KtcType.Void
+			else          -> KtcType.Void
+			}
+		} finally { popScope() }
+	return KtcType.Func(vParamKtcs, vRet)
 	}
 
 // ── Higher-order: a non-inline function called with capturing lambdas ────────────

@@ -89,18 +89,30 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         r.sourceNotContains("test_Main_square")
     }
 
-    @Test fun lambdaStandaloneErrors() {
-        // Standalone lambda expressions (`val f = { ... }`) are intentionally NOT supported:
-        // a lambda closure escaping its lexical scope would require heap-allocating an
-        // environment, which is exactly the kind of hidden allocation KTC avoids. Lambdas
-        // are only valid as arguments to inline functions.
-        // Parser rejects the typed-parameter standalone lambda syntax outright.
-        transpileExpectError("""
+    @Test fun standaloneTypedLambdaLowersToClosure() {
+        // A value-position lambda assigned to a val is a general (frame-bound) closure: it lowers to a
+        // per-lambda functor struct + a generated invoke function, and f(x) dispatches through it. The
+        // type is inferred from the lambda's own typed parameters when the variable has no annotation.
+        val r = transpile("""
             package test.Main
             fun main(args: Array<String>) {
                 val f = { x: Int -> x * 2 }
+                val y = f(21)
             }
-        """, "Expected expression")
+        """)
+        r.sourceContains("_invoke")          // generated functor invoke
+        r.sourceContains("Closure")           // per-lambda functor struct
+    }
+
+    @Test fun standaloneUninferableLambdaErrors() {
+        // Without a variable annotation AND without typed parameters there is nothing to infer the
+        // closure type from, so it is rejected with a fix-it (annotate the param or the variable).
+        transpileExpectError("""
+            package test.Main
+            fun main(args: Array<String>) {
+                val f = { x -> x * 2 }
+            }
+        """, "Cannot infer the type of lambda")
     }
 
     @Test fun stdlibLetExpansion() {

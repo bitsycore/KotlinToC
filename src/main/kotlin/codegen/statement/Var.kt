@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.statement
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genClosureValue
+import com.bitsycore.ktc.codegen.expression.inferLambdaFuncType
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.isCPassthroughCall
 import com.bitsycore.ktc.types.KtcType
@@ -128,7 +129,16 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             return
         }
     }
-    val vKtc = if (s.type != null) resolveTypeName(s.type) else parseResolvedTypeName(inferExprType(s.init) ?: "Int") // KtcType (for C type emission)
+    // KtcType for C-type emission. An un-annotated lambda val infers its functor type from the lambda's
+    // own (typed) parameters + body result, so `val f = { x: Int -> … }` lowers to a closure with no
+    // explicit `(Int) -> …` annotation (the closure path below keys off vKtc being a Func).
+    val vKtc = when {
+        s.type != null       -> resolveTypeName(s.type)
+        s.init is LambdaExpr -> inferLambdaFuncType(s.init)
+            ?: codegenError("Cannot infer the type of lambda '${s.name}' — annotate its parameters " +
+                "(e.g. { x: Int -> … }) or the variable (val ${s.name}: (…) -> … = { … }).")
+        else                 -> parseResolvedTypeName(inferExprType(s.init) ?: "Int")
+    }
     val vKtcKtc = inferExprTypeKtc(s.init)
 
     // Unit/void-valued initializer (e.g. `val r = block()` in an inline body whose lambda body

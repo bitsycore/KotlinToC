@@ -1371,11 +1371,20 @@ class Parser(private val tokens: List<Token>) {
         nesting++
         skipNL()
         val params = mutableListOf<String>()
+        val paramTypes = mutableListOf<TypeRef?>()      // index-aligned; null = untyped param
         val savedPos = pos
         try {
             while (at(TokenType.IDENT)) {
                 params += advance().value
                 skipNL()
+                // Optional `: Type` annotation: { x: Int -> … } drives closure-type inference.
+                if (at(TokenType.COLON)) {
+                    advance(); skipNL()
+                    paramTypes += parseTypeRef()
+                    skipNL()
+                } else {
+                    paramTypes += null
+                }
                 if (at(TokenType.COMMA)) { advance(); skipNL() } else break
             }
             if (at(TokenType.ARROW)) {
@@ -1383,10 +1392,12 @@ class Parser(private val tokens: List<Token>) {
             } else {
                 pos = savedPos
                 params.clear()
+                paramTypes.clear()
             }
         } catch (_: Exception) {
             pos = savedPos
             params.clear()
+            paramTypes.clear()
         }
         val stmts = mutableListOf<Stmt>()
         while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
@@ -1398,6 +1409,6 @@ class Parser(private val tokens: List<Token>) {
         }
         expect(TokenType.RBRACE)
         nesting--
-        return LambdaExpr(params, stmts)
+        return LambdaExpr(params, stmts, if (paramTypes.all { it == null }) emptyList() else paramTypes)
     }
 }

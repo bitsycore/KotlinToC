@@ -242,7 +242,10 @@ data class IsCheckExpr(val expr: Expr, val type: TypeRef, val negated: Boolean) 
 data class CastExpr(val expr: Expr, val type: TypeRef, val safe: Boolean = false) : Expr()
 data class FunRefExpr(val name: String) : Expr()   // ::functionName
 data class ClassRefExpr(val typeName: String) : Expr()   // Type::class
-data class LambdaExpr(val params: List<String>, val body: List<Stmt>) : Expr()
+// paramTypes is index-aligned with params when present (an explicit `{ x: Int -> … }` annotation), null
+// per untyped param; empty list means no params were annotated. Drives closure-type inference for an
+// un-annotated `val f = { x: Int -> … }`.
+data class LambdaExpr(val params: List<String>, val body: List<Stmt>, val paramTypes: List<TypeRef?> = emptyList()) : Expr()
 data class ObjectExpr(val syntheticName: String) : Expr()  // object : Interface { ... }
 
 // ═══════════════════════════ Helpers ═══════════════════════════
