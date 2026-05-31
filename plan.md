@@ -266,11 +266,17 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   expansion: it becomes a frame-bound capture closure (functor built at the call site) the inlined body
   can call / move to a local / pass on, while the other params still inline in place. `f(x)` on a
   closure-typed local dispatches through its `_invoke` via the variable's C name (lookupCName).
+- **Heap promotion via `copyWith`** — `closure.copyWith(allocator)` copies the functor to the heap →
+  `Ref<Closure_N>`, callable directly (`g(x)` → `Closure_N_invoke(g, x)`, no `&`) and freed with `freeMem`;
+  refused for a stack-by-ref capture (`capture(x.asRef())`). This is the allocation primitive Phase 2 needs
+  — but does NOT yet enable escape (the anonymous `Closure_N` can't be named as a return type / field, and
+  doesn't flow through generic-arg or inline-`run` return-type inference). So a heap closure is usable as a
+  local (build / call / free), not yet returned or stored.
 - Deferred-emission flushes to a fixpoint and snapshots-and-clears each pending list (a body can queue more
   closures / chained higher-order calls — iterating the live list threw ConcurrentModificationException).
 - E023 already rejects returning a function type from a non-inline fn (the escape boundary for returns).
 - Tests: ClosureTest (+ chained), ClosureHigherOrderTest, CaptureRefTest, ClosureInferTest,
-  NoinlineClosureTest.
+  NoinlineClosureTest, HeapClosureTest.
 
 **Phase 1 — still open (each falls through to normal dispatch / a clear error today):**
 - Higher-order: cross-**package** callees (same-package files are merged so they already work), receiver
@@ -280,5 +286,13 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   a C-level type mismatch in the field case, undefined behaviour in the store-and-call case.)
 - Minor: dead-code emission of the original un-monomorphized function when only ever called with closures.
 
-**Phase 2 (L):** escaping/returned closures (the E023 `return (Int)->Int` case) — heap-allocated functor
-+ explicit free, C-style.
+**Phase 2 (L):** make heap closures actually escape. The `copyWith` allocation primitive exists; what's
+missing is a way to NAME / carry the anonymous `Closure_N` type across a boundary:
+- **Nameable / inferred closure type** so a function can return `Ref<Closure_N>` (fix inline-`run` and
+  generic-arg inference to bind a type param to a closure-struct type; relax E023 to a heap-promoting
+  return), and `obj.field(x)` can dispatch a closure-ref stored in a field.
+- **Or type erasure** for heterogeneous storage (`List<(Int)->Int>`, a reassignable field): a fat pointer
+  `{env, invoke}` or reuse the interface `{obj, vt}` vtable. Needed when one field/collection holds
+  different closures.
+Plus the remaining escape guards (W/E) for storing a *frame-bound* (non-promoted) closure in a heap field
+or passing it to a storing function.

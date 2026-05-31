@@ -163,6 +163,34 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         """, "implicit parameter only when")
     }
 
+    @Test fun heapPromoteClosureViaCopyWith() {
+        // closure.copyWith(Heap) heap-promotes a frame-bound functor → Ref<Closure_N>, callable directly.
+        val r = transpile("""
+            package test.Main
+            fun main(args: Array<String>) {
+                val base = 10
+                val c = { x: Int -> capture(base); x + base }
+                val g = c.copyWith(Heap)
+                val y = g(5)
+                Heap.freeMem(g)
+            }
+        """)
+        r.sourceContains("malloc(sizeof(")
+        r.sourceContains("_invoke(g, 5)")   // called through the pointer, no &
+    }
+
+    @Test fun heapPromoteByRefCaptureErrors() {
+        // A closure that captured a stack local by reference can't be heap-promoted (would dangle).
+        transpileExpectError("""
+            package test.Main
+            fun main(args: Array<String>) {
+                var n = 5
+                val c = { x: Int -> capture(n.asRef()); x + n.refValue }
+                val g = c.copyWith(Heap)
+            }
+        """, "captured a local by reference")
+    }
+
     @Test fun stdlibLetExpansion() {
         val r = transpileMainWithStdlib("""
             val r = "hello".let { it.length }

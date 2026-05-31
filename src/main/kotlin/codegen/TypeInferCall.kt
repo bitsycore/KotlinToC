@@ -304,6 +304,8 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     val method = dot.name
     kBuiltinMethodReturns[method]?.let { return it }
     if (method == "inv") return recvType
+    // Closure functor struct: copyWith heap-promotes it and asRef addresses it → Ref<Closure_N>.
+    if (recvType in closureStructTypes && (method == "copyWith" || method == "asRef")) return "${recvType}*"
     val recvKtc = parseResolvedTypeName(recvType)
     // RawArray<T> (T*): asArray(n) → Ref<Array<T>>; resizeWith returns the bare pointer unchanged.
     if (method == "asArray" || method == "resizeWith") {

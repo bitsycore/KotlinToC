@@ -18,9 +18,10 @@ import com.bitsycore.ktc.types.KtcType
 
 // A captured variable: its name, resolved type, and the C access expression in the spawning scope.
 internal data class ThreadCapture(
-	val name:  String,    // variable name (also the context-struct field name)
-	val ktc:   KtcType,   // resolved type — drives the C field/local type
-	val cExpr: String     // C expression reading it in the spawning frame
+	val name:       String,        // variable name (also the context-struct field name)
+	val ktc:        KtcType,       // resolved type — drives the C field/local type
+	val cExpr:      String,        // C expression reading it in the spawning frame
+	val byRefLocal: Boolean = false // captured via x.asRef() — &<stack local>; can't be heap-promoted (would dangle)
 	)
 
 // A generated thread entry function, emitted after the main decl loop to avoid nesting inside the
@@ -112,7 +113,7 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 			// `x` captures x as it is; `x.asRef()` captures &x as a Ref<T> (Ptr of the base type).
 			val vKtc = if (vAsRefRecv != null) KtcType.Ptr(vBaseKtc) else vBaseKtc
 			if (vOut.any { it.name == vName }) continue                       // ignore duplicate captures
-			vOut += ThreadCapture(vName, vKtc, genExpr(vExpr))
+			vOut += ThreadCapture(vName, vKtc, genExpr(vExpr), byRefLocal = vAsRefRecv != null)
 			}
 		}
 	return vOut
@@ -274,6 +275,9 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	hdr.appendLine("${cTypeStr(vRetKtc)} $vInvoke($vStruct* self$vParamSig);")
 
 	closureStructTypes += vStruct
+	// A closure that captured a stack local by reference (capture(x.asRef())) must stay frame-bound — its
+	// captured address would dangle once heap-promoted. Mark it so copyWith refuses to promote it.
+	if (vCaptures.any { it.byRefLocal }) closureStructEscapeUnsafe += vStruct
 	pendingClosures += PendingClosure(vInvoke, vStruct, cTypeStr(vRetKtc), vRetKtc, vParams, vCaptures, inLambda.body, "|$currentSourceFile")
 
 	preStmts += "$vStruct $vCloVar;"
