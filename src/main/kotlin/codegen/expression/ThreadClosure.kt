@@ -248,58 +248,81 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	return vStruct to vCloVar
 	}
 
-// ── Higher-order: a non-inline function called with a capturing lambda ───────────
+// ── Higher-order: a non-inline function called with capturing lambdas ────────────
 //
 // Each lambda is a distinct functor type, so a function that receives one is monomorphized per closure
-// type (KTC's existing per-type specialization, the C++-template model): the closure parameter is
-// retyped to the functor struct, and inside the body `param(x)` then dispatches through the struct's
+// type (KTC's existing per-type specialization, the C++-template model): every function-typed parameter
+// is retyped to its functor struct, and inside the body `param(x)` then dispatches through the struct's
 // _invoke (handled by genCall). The closure is passed by value (its captures copied into the callee).
-// Phase 1: frame-bound only — single closure param, non-generic, non-overloaded top-level function.
+//
+// Handled: any number of function-typed params, each receiving a literal lambda OR a closure-typed local
+// (a `val g = { … }`); overloaded callees (resolved by the call's arg shape). Phase 1: frame-bound only;
+// the callee must be a non-generic, non-extension top-level function in this package. A function-typed
+// param fed a bare function reference (::fn) — not a closure — leaves the call to normal fn-pointer
+// dispatch. Not yet handled (fall through to regular dispatch): cross-package callees, receiver methods,
+// generic higher-order functions, and a closure passed by named/defaulted argument.
 
 internal data class PendingClosureFnInst(
-	val fn:         FunDecl,
-	val paramIdx:   Int,
-	val structType: String,
-	val mangled:    String,
-	val srcKey:     String
+	val fn:       FunDecl,
+	val retypes:  Map<Int, String>,   // param index → functor struct C name (retyped on re-emit)
+	val mangled:  String,
+	val srcKey:   String
 	)
 
-/* Lower `F(lambda, …)` where F is a (non-inline) top-level function with a function-typed parameter:
-generate the lambda's functor, monomorphize F for that closure type, and call the instance. Returns the
-C call expression or null when this isn't that shape (so normal dispatch handles it). */
+/* Lower `F(lambda, …)` where F is a (non-inline) top-level function with one or more function-typed
+parameters: generate each lambda's functor (or reuse a passed closure var), monomorphize F for that
+closure-type combination, and call the instance. Returns the C call expression, or null when this isn't
+that shape (so normal dispatch handles it). */
 internal fun CCodeGen.genHigherOrderClosureCallOrNull(inName: String, inArgs: List<Arg>, inCall: CallExpr): String? {
-	val vFuns = file.decls.filterIsInstance<FunDecl>().filter { it.name == inName }
-	if (vFuns.size != 1) return null                                         // skip overloaded (Phase 1)
-	val vFn = vFuns[0]
+	val vCandidates = file.decls.filterIsInstance<FunDecl>().filter { it.name == inName }
+	if (vCandidates.isEmpty()) return null
+	// Resolve the overload from the call's arg shape so an overloaded F still picks the right variant.
+	val vFn = if (vCandidates.size == 1) vCandidates[0] else findOverload(inName, inArgs, vCandidates) ?: return null
 	if (vFn.isInline || vFn.typeParams.isNotEmpty() || vFn.receiver != null) return null
-	val vIdx = vFn.params.indexOfFirst { resolveTypeName(it.type) is KtcType.Func }
-	if (vIdx < 0 || vIdx >= inArgs.size) return null
-	val vLambda = inArgs[vIdx].expr as? LambdaExpr ?: return null
-	// Only one closure param in Phase 1.
-	if (vFn.params.withIndex().count { (j, p) -> resolveTypeName(p.type) is KtcType.Func && inArgs.getOrNull(j)?.expr is LambdaExpr } != 1) return null
 
-	val vFuncType = resolveTypeName(vFn.params[vIdx].type) as KtcType.Func
-	val (vStruct, vInstance) = genClosureValue(vLambda, vFuncType)
-	val vMangled = "${inName}__$vStruct"
+	// Every function-typed parameter position must receive a closure-able positional argument: a literal
+	// lambda (→ build its functor) or a local whose type is an existing functor struct (→ reuse it). If
+	// any function-typed param gets something else (a function reference, a named/omitted arg), bail so
+	// normal fn-pointer dispatch handles the call.
+	val vFuncIdxs = vFn.params.indices.filter { resolveTypeName(vFn.params[it].type) is KtcType.Func }
+	if (vFuncIdxs.isEmpty()) return null
+	val vResolved = LinkedHashMap<Int, Pair<String, String>>()                // paramIdx → (structType, instanceExpr)
+	for (vIdx in vFuncIdxs) {
+		when (val vArgExpr = inArgs.getOrNull(vIdx)?.expr) {
+			is LambdaExpr -> {
+				val vFuncType = resolveTypeName(vFn.params[vIdx].type) as KtcType.Func
+				vResolved[vIdx] = genClosureValue(vArgExpr, vFuncType)
+				}
+			is NameExpr -> {
+				val vVarType = lookupVar(vArgExpr.name) ?: return null
+				if (vVarType !in closureStructTypes) return null
+				vResolved[vIdx] = vVarType to vArgExpr.name
+				}
+			else -> return null
+			}
+		}
+
+	// Mangle with every closure struct (param order) so distinct closure-type combos get distinct instances.
+	val vMangled = inName + vFuncIdxs.joinToString("") { "__${vResolved[it]!!.first}" }
 	if (closureFnInstNames.add(vMangled))
-		pendingClosureFnInsts += PendingClosureFnInst(vFn, vIdx, vStruct, vMangled, "|$currentSourceFile")
+		pendingClosureFnInsts += PendingClosureFnInst(vFn, vResolved.mapValues { it.value.first }, vMangled, "|$currentSourceFile")
 
-	val vArgsC = inArgs.mapIndexed { vJ, vA -> if (vJ == vIdx) vInstance else genExpr(vA.expr) }.joinToString(", ")
+	val vArgsC = inArgs.mapIndexed { vJ, vA -> vResolved[vJ]?.second ?: genExpr(vA.expr) }.joinToString(", ")
 	return "${funCName(vMangled)}($vArgsC)"
 	}
 
-/* Emit the deferred higher-order monomorphizations: re-emit each function with its closure parameter
-retyped to the functor struct, so `param(x)` in the body dispatches through _invoke. Iterate a snapshot,
-not the live list: emitting a body can itself queue new monomorphizations (chained higher-order calls)
-and the fixpoint loop in generate() flushes those — appending to the list mid-iteration would otherwise
-throw ConcurrentModificationException. */
+/* Emit the deferred higher-order monomorphizations: re-emit each function with its closure parameter(s)
+retyped to the functor struct(s), so `param(x)` in the body dispatches through _invoke. Iterate a
+snapshot, not the live list: emitting a body can itself queue new monomorphizations (chained higher-order
+calls) and the fixpoint loop in generate() flushes those — appending to the list mid-iteration would
+otherwise throw ConcurrentModificationException. */
 internal fun CCodeGen.emitPendingClosureFnInsts() {
 	val vBatch = pendingClosureFnInsts.toList()
 	pendingClosureFnInsts.clear()
 	for (vInst in vBatch) {
 		captureForDecl(vInst.srcKey) {
 			val vModParams = vInst.fn.params.mapIndexed { vJ, vP ->
-				if (vJ == vInst.paramIdx) vP.copy(type = TypeRef(vInst.structType)) else vP
+				vInst.retypes[vJ]?.let { vP.copy(type = TypeRef(it)) } ?: vP
 				}
 			emitFun(vInst.fn.copy(name = vInst.mangled, params = vModParams, isInline = false))
 			}

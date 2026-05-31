@@ -625,7 +625,12 @@ internal fun CCodeGen.methodName(f: FunDecl, siblings: List<FunDecl>): String {
 	val base      = f.name
 	val overloads = siblings.filter { it.name == base }
 	if (overloads.size <= 1) return base
-	val types = f.params.map { resolveTypeName(it.type).toInternalStr.removeSuffix("*") }
+	// Sanitize each param-type token into a C-identifier-safe form: function types carry `()`/`->` and
+	// generics carry `<>` in their internal string, which are illegal in a C symbol.
+	val types = f.params.map {
+		resolveTypeName(it.type).toInternalStr.removeSuffix("*")
+			.replace(Regex("[^A-Za-z0-9_]+"), "_").trim('_')
+		}
 	if (types.isEmpty()) return base   // no-arg keeps plain name
 	return "${base}With${types.joinToString("_")}"
 	}
