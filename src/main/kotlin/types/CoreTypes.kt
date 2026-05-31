@@ -150,6 +150,16 @@ internal sealed class KtcType {
         override fun toCType() = "void*"
     }
 
+    // ── Heap (boxed) closure ─────────────────────────────────────────
+    /* Closure<F> — a heap-allocated, type-erased closure of function type [sig]. One fixed C representation
+    (ktc_Closure: { void* env; invoke fn ptr }) holds any closure of that signature; the env is the
+    heap-allocated capture struct, freed explicitly. Nameable (return type / field / generic arg), unlike
+    the by-value frame-bound functor. Built by closure.copyWith(allocator); called by casting invoke to
+    sig's concrete C signature. */
+    data class Closure(val sig: Func) : KtcType() {
+        override fun toCType() = "ktc_Closure"
+    }
+
     // ── C interop external type ───────────────────────────────────────
     /* Opaque external C type referenced via 'c.TypeName' syntax.
     The cName is emitted verbatim as the C type (e.g. "SDL_Window", "SDL_FRect").
@@ -208,6 +218,7 @@ internal sealed class KtcType {
 
             is Nullable -> "${inner.toInternalStr}?"             // "Int?", "Vec2?", "Vec2*?"
             is COpaque  -> "c:$cName"                             // "c:SDL_Window", "c:SDL_FRect"
+            is Closure  -> "Closure<${sig.toInternalStr}>"        // "Closure<Fun(Int)->Int>"
         }
 
     val nullable: KtcType get() = Nullable(this)

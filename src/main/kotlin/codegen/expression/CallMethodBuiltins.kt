@@ -413,25 +413,27 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			}
 		return "${vT}_ptr"
 		}
-	// Closure functor: c.copyWith(alloc) heap-promotes the frame-bound closure → Ref<Closure_N> (a
-	// Closure_N*). The whole capture struct is copied to the heap, so it can outlive the defining frame;
-	// free it explicitly (freeMem). Refused for a closure that captured a stack local by reference.
+	// Closure functor: c.copyWith(alloc) heap-promotes the frame-bound closure → a Ref<Closure<F>> (a
+	// ktc_Closure*). One heap block holds the fat pointer header AND the capture struct inline (env points
+	// into its own tail), so freeMem(g) releases everything in a single call. The closure can outlive the
+	// defining frame and be returned/stored. Refused for a closure that captured a stack local by reference
+	// (its address would dangle).
 	if (vMethod == "copyWith" && inRecvType != null && inRecvType in closureStructTypes && inArgs.size == 1) {
 		if (inRecvType in closureStructEscapeUnsafe)
 			codegenError("Cannot heap-promote this closure with copyWith: it captured a local by reference " +
 				"(capture(x.asRef())), whose address would dangle once the closure outlives its frame. Capture by value instead.")
-		val vResult       = tmp()
+		val vBox          = tmp()
+		val vSize         = "sizeof(ktc_Closure) + sizeof($inRecvType)"
 		val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
 		if (vAllocObjName == "Heap") {
-			preStmts += "$inRecvType* $vResult = ($inRecvType*)${tMalloc("sizeof($inRecvType)")};"
-			preStmts += "if ($vResult) *$vResult = $inRecv;"
-			return vResult
+			preStmts += "ktc_Closure* $vBox = (ktc_Closure*)${tMalloc(vSize)};"
+			} else {
+			val vAllocExpr = genExpr(inArgs[0].expr)
+			val vIfExpr    = resolveAllocatorIface(inArgs[0].expr, vAllocExpr).ifaceExpr
+			preStmts += "ktc_Closure* $vBox = (ktc_Closure*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, $vSize, ${ktSrcStr()});"
 			}
-		val vAllocExpr = genExpr(inArgs[0].expr)
-		val vIfExpr    = resolveAllocatorIface(inArgs[0].expr, vAllocExpr).ifaceExpr
-		preStmts += "$inRecvType* $vResult = ($inRecvType*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($inRecvType), ${ktSrcStr()});"
-		preStmts += "if ($vResult) *$vResult = $inRecv;"
-		return vResult
+		preStmts += "if ($vBox) { $vBox->env = (char*)$vBox + sizeof(ktc_Closure); *($inRecvType*)$vBox->env = $inRecv; $vBox->invoke = (void(*)(void))${inRecvType}_invoke_erased; }"
+		return vBox
 		}
 	if (vMethod == "copyWith" && inRecvTypeKtc != null && inRecvTypeKtc.isArrayLike && inArgs.size == 1) {
 		val vElemC        = arrayElementCTypeKtc(inRecvTypeKtc)

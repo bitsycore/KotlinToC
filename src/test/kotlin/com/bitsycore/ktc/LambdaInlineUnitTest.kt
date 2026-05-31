@@ -164,19 +164,34 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun heapPromoteClosureViaCopyWith() {
-        // closure.copyWith(Heap) heap-promotes a frame-bound functor → Ref<Closure_N>, callable directly.
+        // closure.copyWith(Heap) heap-promotes a frame-bound functor → a Ref<Closure<F>> (a heap
+        // ktc_Closure*); callable via the cast-erased invoke and returnable/storable/nameable.
         val r = transpile("""
             package test.Main
-            fun main(args: Array<String>) {
-                val base = 10
+            fun makeAdder(base: Int): Ref<Closure<(Int) -> Int>> {
                 val c = { x: Int -> capture(base); x + base }
-                val g = c.copyWith(Heap)
+                return c.copyWith(Heap)
+            }
+            fun main(args: Array<String>) {
+                val g: Ref<Closure<(Int) -> Int>> = makeAdder(10)
                 val y = g(5)
                 Heap.freeMem(g)
             }
         """)
-        r.sourceContains("malloc(sizeof(")
-        r.sourceContains("_invoke(g, 5)")   // called through the pointer, no &
+        r.sourceContains("ktc_Closure* test_Main_makeAdder")   // returns a heap reference — the escape
+        r.sourceContains("_invoke_erased")            // erased trampoline stored in the fat pointer
+        r.sourceContains("g->invoke")                 // called through the heap fat pointer
+    }
+
+    @Test fun bareClosureReturnErrors() {
+        // Returning a bare Closure<F> (a frame-bound value) is refused — return Ref<Closure<F>>.
+        transpileExpectError("""
+            package test.Main
+            fun makeAdder(base: Int): Closure<(Int) -> Int> {
+                val c = { x: Int -> capture(base); x + base }
+                return c.copyWith(Heap)
+            }
+        """, "bare 'Closure")
     }
 
     @Test fun heapPromoteByRefCaptureErrors() {

@@ -283,6 +283,20 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         val vArgsC = vArgs.joinToString("") { ", ${genExpr(it.expr)}" }
         return "${vVarType.removeSuffix("*")}_invoke(${lookupCName(vName)}$vArgsC)"
     }
+    // Heap closure: cast its erased invoke to F's concrete signature and call it with the env. A
+    // Ref<Closure<F>> (the copyWith result) accesses through `->`; a bare Closure<F> value through `.`.
+    // g(x) → ((R(*)(void*,P…))g->invoke)(g->env, x).
+    val vVarKtc      = lookupVarKtc(vName)?.stripNullable
+    val vClosureSig  = (vVarKtc as? KtcType.Closure)?.sig
+        ?: ((vVarKtc as? KtcType.Ptr)?.inner as? KtcType.Closure)?.sig
+    if (vClosureSig != null) {
+        val vArrow   = if (vVarKtc is KtcType.Ptr) "->" else "."
+        val vG       = lookupCName(vName)
+        val vRetC    = cTypeStr(vClosureSig.ret)
+        val vSigPars = (listOf("void*") + vClosureSig.params.map { cTypeStr(it) }).joinToString(", ")
+        val vArgsC   = vArgs.joinToString("") { ", ${genExpr(it.expr)}" }
+        return "(($vRetC(*)($vSigPars))$vG$vArrow${"invoke"})($vG$vArrow${"env"}$vArgsC)"
+    }
     // ── Function pointer call ─────────────────────────────────────
     if (vVarType != null && isFuncType(vVarType)) {
         return "$vName(${vArgs.joinToString(", ") { genExpr(it.expr) }})"

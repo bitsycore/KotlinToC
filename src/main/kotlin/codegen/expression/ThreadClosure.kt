@@ -273,6 +273,10 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	val vFields = vCaptures.joinToString(" ") { "${cTypeStr(it.ktc)} ${it.name};" }
 	hdr.appendLine("typedef struct { $vFields } $vStruct;")
 	hdr.appendLine("${cTypeStr(vRetKtc)} $vInvoke($vStruct* self$vParamSig);")
+	// Erased trampoline (void* env) — lets a heap Closure<F> store this invoke behind ktc_Closure and
+	// call it back with the right signature. Forward-declared here, body emitted with the invoke body.
+	hdr.appendLine("${cTypeStr(vRetKtc)} ${vInvoke}_erased(void* \$env$vParamSig);")
+	closureFuncType[vStruct] = inFunc
 
 	closureStructTypes += vStruct
 	// A closure that captured a stack local by reference (capture(x.asRef())) must stay frame-bound — its
@@ -424,6 +428,11 @@ internal fun CCodeGen.emitPendingClosures() {
 				}
 			closeFunBody(vPrev)
 			inlineReturnVar = vSavedRetVar; inlineEndLabel = vSavedEndLabel; inlineLabelUsed = vSavedLabelUsed
+			// Erased trampoline: forwards a void* env to the typed invoke. Lets a heap Closure<F> (ktc_Closure)
+			// store and call this closure behind a uniform signature.
+			val vErasedArgs = vC.params.joinToString("") { ", ${it.name}" }
+			val vErasedRet  = if (vC.retKtc is KtcType.Void) "" else "return "
+			impl.appendLine("${vC.retCType} ${vC.invokeFn}_erased(void* \$env$vParamSig) { $vErasedRet${vC.invokeFn}((${vC.structType}*)\$env$vErasedArgs); }")
 			}
 		}
 	}

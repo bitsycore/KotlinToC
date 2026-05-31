@@ -266,12 +266,13 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   expansion: it becomes a frame-bound capture closure (functor built at the call site) the inlined body
   can call / move to a local / pass on, while the other params still inline in place. `f(x)` on a
   closure-typed local dispatches through its `_invoke` via the variable's C name (lookupCName).
-- **Heap promotion via `copyWith`** — `closure.copyWith(allocator)` copies the functor to the heap →
-  `Ref<Closure_N>`, callable directly (`g(x)` → `Closure_N_invoke(g, x)`, no `&`) and freed with `freeMem`;
-  refused for a stack-by-ref capture (`capture(x.asRef())`). This is the allocation primitive Phase 2 needs
-  — but does NOT yet enable escape (the anonymous `Closure_N` can't be named as a return type / field, and
-  doesn't flow through generic-arg or inline-`run` return-type inference). So a heap closure is usable as a
-  local (build / call / free), not yet returned or stored.
+- **Heap closures — `Ref<Closure<F>>`** — `closure.copyWith(allocator)` heap-promotes a frame-bound functor
+  to a `Ref<Closure<F>>`: a type-erased boxed closure (one heap block = the `ktc_Closure` fat pointer with
+  its captures folded in; `freeMem(g)` frees it whole). Nameable (`Closure<(Int)->Int>`) and **escapes** —
+  returnable / storable / collection element. `g(x)` casts the erased invoke (`Closure_N_invoke_erased`,
+  void* env) to F's signature. Refused for a stack-by-ref capture; a bare `Closure<F>` return is refused
+  (E023 → use `Ref<Closure<F>>`). `KtcType.Closure(sig)` carries F; `Closure<F>` → C type `ktc_Closure`.
+  Frame-bound functors are unchanged for non-escaping (inline/local/higher-order) use.
 - Deferred-emission flushes to a fixpoint and snapshots-and-clears each pending list (a body can queue more
   closures / chained higher-order calls — iterating the live list threw ConcurrentModificationException).
 - E023 already rejects returning a function type from a non-inline fn (the escape boundary for returns).
@@ -286,13 +287,10 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   a C-level type mismatch in the field case, undefined behaviour in the store-and-call case.)
 - Minor: dead-code emission of the original un-monomorphized function when only ever called with closures.
 
-**Phase 2 (L):** make heap closures actually escape. The `copyWith` allocation primitive exists; what's
-missing is a way to NAME / carry the anonymous `Closure_N` type across a boundary:
-- **Nameable / inferred closure type** so a function can return `Ref<Closure_N>` (fix inline-`run` and
-  generic-arg inference to bind a type param to a closure-struct type; relax E023 to a heap-promoting
-  return), and `obj.field(x)` can dispatch a closure-ref stored in a field.
-- **Or type erasure** for heterogeneous storage (`List<(Int)->Int>`, a reassignable field): a fat pointer
-  `{env, invoke}` or reuse the interface `{obj, vt}` vtable. Needed when one field/collection holds
-  different closures.
-Plus the remaining escape guards (W/E) for storing a *frame-bound* (non-promoted) closure in a heap field
-or passing it to a storing function.
+**Phase 2 — SHIPPED (heap closures escape via `Ref<Closure<F>>`, see above).** Remaining polish:
+- **Direct call on a stored closure** — `obj.field(x)` / `list[i](x)` where the member is a `Ref<Closure<F>>`
+  (today the call-dispatch closure path keys off a NameExpr var; a DotExpr/IndexExpr callee whose resolved
+  type is a closure isn't routed through the cast-invoke yet — pull it into a local and call that).
+- **Escape guards (W/E)** for storing a *frame-bound* (non-promoted) closure in a heap field / passing it to
+  a storing function (the promoted `Ref<Closure<F>>` is the safe path; flag the frame-bound one).
+- Tests: HeapClosureTest (promote, call, loop reuse, returned/escaped closure).

@@ -175,6 +175,11 @@ typedef struct ktc_core_AnyVt {
 /** Type-erased fat pointer for `Any` — identity checks + vtable dispatch. */
 typedef struct { ktc_UInt typeId; void* data; const ktc_core_AnyVt* vt; } ktc_Any;
 
+/** Heap (boxed) closure `Closure<F>` — type-erased: `env` is the heap-allocated capture struct, `invoke`
+    is the generated trampoline cast back to F's concrete signature at each call site. One representation
+    for any closure of a given function type. */
+typedef struct { void* env; void (*invoke)(void); } ktc_Closure;
+
 typedef enum { ktc_NONE = 0, ktc_SOME = 1 } ktc_OptionalTag;
 
 /* Backwards-compat: codegen still emits KTC_OPTIONAL_GENERIC until the $Opt rename step.

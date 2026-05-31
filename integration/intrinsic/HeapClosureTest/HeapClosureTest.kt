@@ -1,17 +1,24 @@
 package HeapClosureTest
 
-// Heap-promoted closures (Phase-2 groundwork): `closure.copyWith(allocator)` copies a frame-bound functor
-// to the heap and returns a Ref<Closure_N> — a real pointer the program owns and frees explicitly, like
-// any other allocator-backed value. The result is callable directly (g(x) → Closure_N_invoke(g, x), no &).
-// A closure that captured a stack local by reference (capture(x.asRef())) is refused — its address would
-// dangle once promoted. main returns non-zero on failure.
+// Heap closures. A frame-bound closure (val f = { … }) stays a by-value functor for inline/local use and
+// can't escape. To escape — return, store, name a closure — heap-promote it with closure.copyWith(alloc),
+// which yields a Ref<Closure<F>>: a single heap block (the type-erased fat pointer with its captures
+// folded in). It is callable like any function (g(x)), can be returned/stored, and is freed in one call
+// with freeMem(g). A closure that captured a stack local by reference (capture(x.asRef())) is refused —
+// its address would dangle once promoted. main returns non-zero on failure.
+
+// The escape the frame-bound functor can't do: return a closure that outlives the function.
+fun makeAdder(base: Int): Ref<Closure<(Int) -> Int>> {
+	val c = { x: Int -> capture(base); x + base }
+	return c.copyWith(Heap)
+}
 
 fun main(): Int {
 	val base = 10
 
-	// Promote to the heap, call through the pointer, free.
+	// Promote to the heap, call, free (inferred Ref<Closure<(Int)->Int>>).
 	val c = { x: Int -> capture(base); x + base }
-	val g = c.copyWith(Heap)                       // Ref<Closure_N>
+	val g = c.copyWith(Heap)
 	if (g(5) != 15) { println("FAIL g(5): ${g(5)}"); Heap.freeMem(g); return 1 }
 	Heap.freeMem(g)
 
@@ -24,13 +31,12 @@ fun main(): Int {
 	Heap.freeMem(h)
 	if (sum != 30) { println("FAIL sum: $sum"); return 2 }
 
-	// A non-capturing closure promotes too (empty capture struct).
-	val add1 = { n: Int -> n + 1 }
-	val a = add1.copyWith(Heap)
-	val r = a(a(7))                                // 9
-	Heap.freeMem(a)
-	if (r != 9) { println("FAIL add1: $r"); return 3 }
+	// Returned (escaped) closure — outlives makeAdder's frame.
+	val adder: Ref<Closure<(Int) -> Int>> = makeAdder(100)
+	val ar = adder(5)                              // 105
+	Heap.freeMem(adder)
+	if (ar != 105) { println("FAIL adder: $ar"); return 3 }
 
-	println("HeapClosureTest OK: g=15 sum=$sum add1=$r")
+	println("HeapClosureTest OK: g=15 sum=$sum adder=$ar")
 	return 0
 }
