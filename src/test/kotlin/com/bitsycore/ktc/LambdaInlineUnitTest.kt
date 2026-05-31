@@ -199,6 +199,19 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         r.sourceContains("->invoke")   // dispatched through the field's fat pointer
     }
 
+    @Test fun frameBoundClosureToHeapRefErrors() {
+        // Storing a frame-bound functor in a Ref<(Int)->Int> must heap-promote (.copyWith), not .asRef()
+        // (which would point at the dying stack functor). The fix-it names .copyWith(allocator).
+        transpileExpectError("""
+            package test.Main
+            fun main(args: Array<String>) {
+                val base = 10
+                val c = { x: Int -> capture(base); x + base }
+                val g: Ref<(Int) -> Int> = c
+            }
+        """, ".copyWith(allocator)")
+    }
+
     @Test fun bareFunctionTypeReturnErrors() {
         // Returning a bare (frame-bound) function type is refused — return Ref<(Int)->Int> (heap closure).
         transpileExpectError("""

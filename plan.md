@@ -294,9 +294,13 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   (genCall top). Covers a heap closure stored in a class field, called back with `h.f(x)`.
 - Tests: HeapClosureTest (promote, call, loop reuse, returned/escaped closure, field-stored closure call).
 
+Done in polish:
+- **Frame-bound→heap-ref guidance** — assigning a frame-bound functor to a `Ref<(P)->R>` (var/field/param)
+  is caught by the Ref↔value boundary (E070); the fix-it is now closure-aware (`.copyWith(allocator)`, not
+  the dangling `.asRef()`). (Frame-bound→Ref ctor/fn args that slip the boundary still hit a C type mismatch
+  — a clearer KTC pre-check there is the remaining nicety.)
+
 Remaining polish:
-- **Escape guards (W/E)** for storing a *frame-bound* (non-promoted) closure in a heap field / passing it to
-  a storing function. Mostly already enforced by the type system (E023 on bare-function returns; a frame-bound
-  functor `Closure_N` can't bind to a `Ref<(P)->R>` field/param — C type mismatch) — value would be a
-  clearer KTC error than the C-compiler mismatch.
 - Closures in collections (`List<Ref<(P)->R>>`) — depends on the collection factories accepting the type.
+- A KTC-level pre-check for a frame-bound functor passed to a `Ref<(P)->R>` ctor/function arg (today: a
+  C-compiler type mismatch rather than an E070-style message).

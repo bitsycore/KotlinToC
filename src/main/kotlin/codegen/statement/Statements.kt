@@ -43,6 +43,12 @@ internal fun CCodeGen.checkPtrValueBoundary(
 	if (vExprCore is KtcType.User && interfaces.containsKey(vExprCore.baseName)) return
 	val vDeclName = inDeclKtc.toInternalStr
 	val vExprName = inExprKtc.toInternalStr
+	// Heap-closure target (Ref<(P)->R>) from a frame-bound functor: .asRef() would point at the stack
+	// functor and dangle — the correct conversion is heap promotion via .copyWith(allocator).
+	if (vDeclIsPtr && (vDeclCore as? KtcType.Ptr)?.inner is KtcType.Closure)
+		codegenError("E070",
+			"Cannot store a frame-bound closure in $inWhere (declared '$vDeclName'): a bare closure is " +
+			"stack-bound and would dangle. Heap-promote it with '.copyWith(allocator)' (e.g. .copyWith(Heap)).")
 	val vFix = if (vDeclIsPtr) ".asRef()" else ".refValue"
 	codegenError("E070",
 		"Ref↔value boundary for $inWhere: declared '$vDeclName' but initializer is '$vExprName'. " +
