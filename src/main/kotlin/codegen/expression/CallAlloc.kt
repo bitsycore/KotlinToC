@@ -277,7 +277,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 				vArgKtc?.toInternalStr == vScParamKtc.toInternalStr
 				}
 			if (vSctor != null) {
-				val vTypes  = vSctor.params.map { resolveTypeName(it.type).toInternalStr.removeSuffix("*") }
+				val vTypes  = vSctor.params.map { mangleTypeToken(resolveTypeName(it.type).toInternalStr) }
 				val vSuffix = if (vTypes.isEmpty()) "emptyConstructor"
 					else "constructorWith${vTypes.joinToString("_")}"
 				val vFilledSctorArgs = fillDefaults(inArgs, vSctor.params, vSctor.params.associate { it.name to it.default }, vResolvedName, strict = true)

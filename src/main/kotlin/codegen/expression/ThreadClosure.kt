@@ -105,6 +105,10 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 			val vBaseKtc = lookupVarKtc(vName)
 				?: run { codegenError("capture: '$vName' is not a variable in scope"); return@run null }
 			if (vBaseKtc == null) continue
+			// `x.asRef()` on something that is already a reference would capture a pointer-to-pointer —
+			// almost always a mistake. Capture the existing reference directly instead.
+			if (vAsRefRecv != null && vBaseKtc is KtcType.Ptr)
+				codegenError("capture('$vName.asRef()'): '$vName' is already a reference (Ref<…>) — capture it directly with capture($vName).")
 			// `x` captures x as it is; `x.asRef()` captures &x as a Ref<T> (Ptr of the base type).
 			val vKtc = if (vAsRefRecv != null) KtcType.Ptr(vBaseKtc) else vBaseKtc
 			if (vOut.any { it.name == vName }) continue                       // ignore duplicate captures
@@ -246,6 +250,19 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	// `it` shorthand: a single-parameter lambda written with no parameter list (`{ it + 1 }`) names its
 	// one parameter `it` implicitly. Only when the expected type has exactly one parameter.
 	val vParamNames = if (inLambda.params.isEmpty() && inFunc.params.size == 1) listOf("it") else inLambda.params
+	// A capture can't share a name with a parameter — the parameter would shadow it, and both would emit a
+	// declaration into the invoke body (a duplicate-definition C error). Reject with a clear message.
+	vCaptures.firstOrNull { it.name in vParamNames }?.let {
+		codegenError("capture('${it.name}') collides with the closure parameter '${it.name}' — rename one; the parameter shadows the capture.")
+		}
+	// `it` referenced where it isn't the implicit parameter (the expected type has ≠ 1 parameter, or the
+	// parameter list was given explicitly) — would be an undefined name in the generated invoke.
+	if ("it" !in vParamNames && vCaptures.none { it.name == "it" } && lookupVarKtc("it") == null) {
+		val vRefs = linkedSetOf<String>()
+		for (vStmt in inLambda.body) if (!isCaptureCall(vStmt)) collectRefNames(vStmt, vRefs)
+		if ("it" in vRefs)
+			codegenError("'it' is the implicit parameter only when the closure has exactly one parameter and the parameter list is omitted; this closure expects ${inFunc.params.size} parameter(s) — name the parameter(s) explicitly.")
+		}
 	val vParams  = vParamNames.mapIndexed { vI, vP ->
 		val vPKtc = inFunc.params.getOrNull(vI) ?: KtcType.Void
 		ClosureParam(cTypeStr(vPKtc), vP, vPKtc)

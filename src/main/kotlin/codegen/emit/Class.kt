@@ -135,7 +135,7 @@ internal fun CCodeGen.emitClass(d: ClassDecl) {
 /** Generate a secondary constructor function name: ClassName_constructorWithType1_Type2 */
 internal fun CCodeGen.secondaryCtorName(inCClass: String, inParams: List<Param>): String {
 	if (inParams.isEmpty()) return "${inCClass}_emptyConstructor"
-	val vTypes = inParams.map { resolveTypeName(it.type).toInternalStr.removeSuffix("*") }
+	val vTypes = inParams.map { mangleTypeToken(resolveTypeName(it.type).toInternalStr) }
 	return "${inCClass}_constructorWith${vTypes.joinToString("_")}"
 	}
 

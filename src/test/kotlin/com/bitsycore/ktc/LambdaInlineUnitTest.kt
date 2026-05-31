@@ -115,6 +115,54 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         """, "Cannot infer the type of lambda")
     }
 
+    @Test fun safeDotRefValueWriteOnPrimitiveRef() {
+        // p?.refValue = x on a Ref<Int>? must write through (*p = x), not treat refValue as a field.
+        val r = transpile("""
+            package test.Main
+            fun main(args: Array<String>) {
+                var n = 5
+                val p: Ref<Int>? = n.asRef()
+                p?.refValue = 42
+            }
+        """)
+        r.sourceContains("*p = 42")
+        r.sourceNotContains("->refValue")
+    }
+
+    @Test fun captureAsRefOnAlreadyRefErrors() {
+        // capture(x.asRef()) where x is already a Ref<T> would capture a pointer-to-pointer — rejected.
+        transpileExpectError("""
+            package test.Main
+            fun main(args: Array<String>) {
+                var n = 5
+                val r: Ref<Int> = n.asRef()
+                val f: () -> Unit = { capture(r.asRef()); r.refValue = 1 }
+            }
+        """, "already a reference")
+    }
+
+    @Test fun captureNameCollidesWithParamErrors() {
+        // A capture sharing a name with a closure parameter would emit a duplicate C declaration.
+        transpileExpectError("""
+            package test.Main
+            fun main(args: Array<String>) {
+                val x = 10
+                val f: (Int) -> Int = { x -> capture(x); x + 1 }
+            }
+        """, "collides with the closure parameter")
+    }
+
+    @Test fun itImplicitParamWrongArityErrors() {
+        // `it` is only the implicit parameter when the expected type has exactly one parameter.
+        transpileExpectError("""
+            package test.Main
+            fun run0(f: () -> Int): Int = f()
+            fun main(args: Array<String>) {
+                val r = run0({ it + 1 })
+            }
+        """, "implicit parameter only when")
+    }
+
     @Test fun stdlibLetExpansion() {
         val r = transpileMainWithStdlib("""
             val r = "hello".let { it.length }

@@ -620,17 +620,18 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 		}
 	}
 
+/* Sanitize a resolved type's internal string into a C-identifier-safe overload-mangling token: drop a
+trailing pointer `*`, then collapse every run of non-identifier characters to `_` (function types carry
+`()`/`->`, generics carry `<>` — all illegal in a C symbol). Shared by method and constructor mangling. */
+internal fun mangleTypeToken(inTypeInternal: String): String =
+	inTypeInternal.removeSuffix("*").replace(Regex("[^A-Za-z0-9_]+"), "_").trim('_')
+
 /* Returns the method name with overload type suffixes when multiple methods share the same name. */
 internal fun CCodeGen.methodName(f: FunDecl, siblings: List<FunDecl>): String {
 	val base      = f.name
 	val overloads = siblings.filter { it.name == base }
 	if (overloads.size <= 1) return base
-	// Sanitize each param-type token into a C-identifier-safe form: function types carry `()`/`->` and
-	// generics carry `<>` in their internal string, which are illegal in a C symbol.
-	val types = f.params.map {
-		resolveTypeName(it.type).toInternalStr.removeSuffix("*")
-			.replace(Regex("[^A-Za-z0-9_]+"), "_").trim('_')
-		}
+	val types = f.params.map { mangleTypeToken(resolveTypeName(it.type).toInternalStr) }
 	if (types.isEmpty()) return base   // no-arg keeps plain name
 	return "${base}With${types.joinToString("_")}"
 	}

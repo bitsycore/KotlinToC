@@ -29,10 +29,16 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         val isValueNullRecv = recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
         val guard = if (recvTypeKtc != null) nullGuardExpr(recvTypeKtc, recv, recvName, isThis) else "${recv}\$has"
         val recvVal = if (isValueNullRecv) "KTC_UNWRAP($recv)" else recv
-        // p?.refValue = x on Ref<T?> → if (p) *p = x;
-        if (s.target.name == "refValue" && s.op == "=" && recvTypeCoreKtc is KtcType.Ptr) {
-            val baseClass = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
-            if (baseClass != null && classes[baseClass]?.properties?.any { it.name == "refValue" } != true) {
+        // p?.refValue = x on Ref<T> → if (p) *p = x;  Same generalization as the DotExpr path below:
+        // fires for any Ref<T> with a genuine pointer pointee (Ref<Int> as much as Ref<Vec2>), rejects an
+        // object pointee, steps aside for a user class with its own real 'refValue' property, and leaves
+        // array-like pointees (VarArr-value representation) to the general field path.
+        if (s.target.name == "refValue" && s.op == "=" && recvTypeCoreKtc is KtcType.Ptr && !recvTypeCoreKtc.inner.isArrayLike) {
+            val innerUser = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
+            if (innerUser != null && objects.containsKey(innerUser))
+                codegenError("Cannot assign .refValue on object '$innerUser' — objects are always Ref")
+            val userHasRefValueProp = innerUser != null && classes[innerUser]?.properties?.any { it.name == "refValue" } == true
+            if (!userHasRefValueProp) {
                 val value = genExpr(s.value)
                 flushPreStmts(ind)
                 impl.appendLine("${ind}if ($guard) { *$recvVal = $value; }")
