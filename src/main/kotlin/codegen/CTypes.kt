@@ -206,6 +206,14 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	if (t.name == "StringBuffer" && t.typeArgs.isEmpty()
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer"))
 		return "ktc_StrBuf"
+	// Ref<(P) -> R> — a heap closure. Resolve it here too (this inner resolver is what the Array branch
+	// below calls on its element, where Ref isn't pre-stripped): mirror resolveTypeNameStr so an element
+	// like Array<Ref<(Int)->Int>> keeps its closure type ("Closure<Fun(..)->R>*") instead of collapsing to
+	// "Ref" → "RefArray" (a bogus user element).
+	if (t.name == "Ref" && t.typeArgs.size == 1 && t.typeArgs[0].funcParams != null) {
+		val vSig = resolveTypeName(t.typeArgs[0])
+		if (vSig is KtcType.Func) return "Closure<${vSig.toInternalStr}>*"
+		}
 	if (t.name == "Array" && t.typeArgs.isNotEmpty()) {
 		val vElemRef      = t.typeArgs[0]
 		val vNullableElem = vElemRef.nullable
@@ -366,7 +374,10 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		val elem = when {
 			vPrim != null -> KtcType.Prim(vPrim)
 			elemName == "String" -> KtcType.Str
-			else -> userType(elemName)
+			// Recurse so a composite element (a Ref<…>* / Closure<…>* / nested array) parses to its real
+			// KtcType instead of being flattened to a bogus user-type name. Equivalent to userType() for a
+			// plain class name (parseResolvedTypeName falls through to userType there).
+			else -> parseResolvedTypeName(elemName)
 			}
 		val sized         = t?.getSizeAnnotation()
 		val isTypedArray  = vPrim != null || elemName == "String"

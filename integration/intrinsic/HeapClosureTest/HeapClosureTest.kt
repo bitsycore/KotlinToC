@@ -49,6 +49,15 @@ fun main(): Int {
 	Heap.freeMem(handler.f)
 	if (hr != 27) { println("FAIL handler: $hr"); return 4 }
 
-	println("HeapClosureTest OK: g=15 sum=$sum adder=$ar handler=$hr")
+	// An array of heap closures, called by index: arr[i](x).
+	val k = 1000
+	val c1 = { n: Int -> capture(base); n + base }
+	val c2 = { n: Int -> capture(k); n + k }
+	val arr: Array<Ref<(Int) -> Int>> = arrayOf(c1.copyWith(Heap), c2.copyWith(Heap))
+	val tabled = arr[0](5) + arr[1](5)             // (5+10) + (5+1000) = 1020
+	Heap.freeMem(arr[0]); Heap.freeMem(arr[1])
+	if (tabled != 1020) { println("FAIL tabled: $tabled"); return 5 }
+
+	println("HeapClosureTest OK: g=15 sum=$sum adder=$ar handler=$hr tabled=$tabled")
 	return 0
 }

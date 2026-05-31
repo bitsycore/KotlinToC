@@ -300,12 +300,16 @@ Done in polish:
   the dangling `.asRef()`). (Frame-bound→Ref ctor/fn args that slip the boundary still hit a C type mismatch
   — a clearer KTC pre-check there is the remaining nicety.)
 
+Done in polish:
+- **Array of heap closures** — `arr[i](x)` on `Array<Ref<(P)->R>>` dispatches. Root cause was the element
+  KtcType garbling: `resolveTypeNameInnerStr` (which the Array branch calls on its element) had no `Ref<func>`
+  case, so the element collapsed to `"Ref"`→`"RefArray"`→`Arr(User("Ref"))`; and `parseResolvedTypeName`'s
+  Array branch flattened a composite element via `userType(elemName)` instead of recursing. Both fixed
+  (KtcType-correct): the array element now resolves to `Ptr(Closure)`, so the genCall index-callee hook
+  fires. (`List<…>` would follow once the list factories carry the element type.)
+
 Remaining polish:
-- Closures in collections (`Array<Ref<(P)->R>>`, `List<…>`) — `arr[i](x)` doesn't dispatch because the
-  array variable's element type doesn't survive the string round-trip (the nested `Closure<Fun(..)->R>*`
-  internal form garbles, so `asArr.elem` isn't `Ptr(Closure)`). The emitted C is correct (`ktc_Closure**`),
-  only the index-call inference misses. Blocked on the A1 inference refactor (canonical KtcType, no string
-  round-trip) — the genCall closure-callee hook already handles a DotExpr field call, and would cover the
-  index call once the element type resolves cleanly.
 - A KTC-level pre-check for a frame-bound functor passed to a `Ref<(P)->R>` ctor/function arg (today: a
   C-compiler type mismatch rather than an E070-style message).
+- Broader: store vars' KtcType directly (`defineVarKtc`) instead of the string round-trip at definition —
+  part of the A1 inference refactor (canonical KtcType, no string round-trips).

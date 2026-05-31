@@ -19,7 +19,12 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // VARIABLE is handled later via lookupCName; this covers h.f(x), arr[i](x), etc.) Spill the callee
     // into a temp since it's read twice (->invoke and ->env).
     if (e.callee !is NameExpr) {
-        val vCalleeKtc = inferExprTypeKtc(e.callee)?.stripNullable
+        // Index callee (arr[i]): take the element type straight off the array's KtcType — robust against
+        // any residual string-inference loss on a composite element.
+        val vCalleeKtc = (if (e.callee is IndexExpr) {
+            val vArr = inferExprTypeKtc(e.callee.obj)?.stripNullable
+            vArr?.asArr?.elem ?: (vArr as? KtcType.Ptr)?.inner?.takeIf { it !is KtcType.Arr }
+        } else inferExprTypeKtc(e.callee))?.stripNullable
         val vSig = (vCalleeKtc as? KtcType.Closure)?.sig
             ?: ((vCalleeKtc as? KtcType.Ptr)?.inner as? KtcType.Closure)?.sig
         if (vSig != null && vCalleeKtc != null) {
