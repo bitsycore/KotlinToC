@@ -96,11 +96,12 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 		val vRet      = resolveTypeName(vSubstituted.funcReturn)               // return type
 		return KtcType.Func(vParams, vRet, receiver = vReceiver)
 		}
-	// Closure<F> — heap-erased closure of function type F → KtcType.Closure(sig).
-	if (vSubstituted.name == "Closure" && vSubstituted.typeArgs.size == 1) {
+	// Ref<(P) -> R> — a heap closure. The function type IS the closure type (as in Kotlin); Ref marks the
+	// heap form. Lowers to Ptr(Closure(sig)) → a type-erased fat pointer (ktc_Closure*), like Ref<Interface>
+	// → ktc_IfacePtr. A bare (P) -> R stays a frame-bound functor / function pointer.
+	if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.size == 1 && vSubstituted.typeArgs[0].funcParams != null) {
 		val vSig = resolveTypeName(vSubstituted.typeArgs[0])
-		if (vSig is KtcType.Func) return KtcType.Closure(vSig)
-		codegenError("Closure<F> requires a function-type argument, e.g. Closure<(Int) -> Int>")
+		if (vSig is KtcType.Func) return KtcType.Ptr(KtcType.Closure(vSig))
 		}
 	val vResolved = resolveTypeNameStr(inT)                      // string-based resolution (legacy bridge)
 	// For Ref<T>, pass the rewritten inner TypeRef so parseResolvedTypeName sees the real type name.
@@ -132,6 +133,11 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 	// an explicit error rather than stack-overflowing.
 	val vDealiased = expandTypeAlias(t) ?: return "Int"
 	val vSubstituted = substituteTypeParams(vDealiased)          // type-param-substituted copy
+	// Ref<(P) -> R> → heap closure: Ptr(Closure(sig)) internal string "Closure<Fun(..)->R>*".
+	if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.size == 1 && vSubstituted.typeArgs[0].funcParams != null) {
+		val vSig = resolveTypeName(vSubstituted.typeArgs[0])
+		if (vSig is KtcType.Func) return "Closure<${vSig.toInternalStr}>*"
+		}
 	// Ref<T> → rewrite to inner type with @Ptr annotation and re-resolve
 	if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.isNotEmpty()) {
 		val vInner = vSubstituted.typeArgs[0]
@@ -174,11 +180,6 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 		val vRet      = resolveTypeNameStr(t.funcReturn)
 		return "Fun($vReceiver$vParams)->$vRet"
 		}
-	// Closure<F> — heap-erased closure → internal string "Closure<Fun(...)->R>" (C type ktc_Closure).
-	if (t.name == "Closure" && t.typeArgs.size == 1) {
-		val vSig = resolveTypeName(t.typeArgs[0])
-		if (vSig is KtcType.Func) return "Closure<${vSig.toInternalStr}>"
-		}
 	// Nested class/object: Outer.Inner → Outer$Inner
 	if (t.name.contains('.') && !t.name.startsWith("ktc_")) {
 		val vFlatName = t.name.replace('.', '$')
@@ -216,7 +217,7 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	if (t.typeArgs.isNotEmpty()
 		&& !classes.containsKey(t.name) && !interfaces.containsKey(t.name)
 		&& !genericClassDecls.containsKey(t.name) && !genericIfaceDecls.containsKey(t.name)
-		&& t.name !in setOf("Array", "RawArray", "AnyPtr", "Ref", "Closure"))
+		&& t.name !in setOf("Array", "RawArray", "AnyPtr", "Ref"))
 		codegenError("Unknown type '${t.name}<...>'. Use Ref<T> for pointer types.")
 	// Resolve nested class within current object/class scope (e.g. Context → Sha256$Context)
 	if (!classes.containsKey(t.name) && !enums.containsKey(t.name)
@@ -274,7 +275,7 @@ private val kBuiltinTypeNames = setOf(
 	"Byte", "Short", "Int", "Long", "UByte", "UShort", "UInt", "ULong",
 	"Float", "Double", "Boolean", "Char", "Rune",
 	"String", "StringBuffer", "Any", "Unit", "Nothing", "void",
-	"Array", "RawArray", "AnyPtr", "Ref", "Closure",
+	"Array", "RawArray", "AnyPtr", "Ref",
 	"IntArray", "LongArray", "FloatArray", "DoubleArray",
 	"BooleanArray", "CharArray", "ByteArray", "ShortArray",
 	"UIntArray", "ULongArray", "UByteArray", "UShortArray",

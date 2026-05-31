@@ -540,15 +540,8 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// only see captured locals on the dead caller frame. Require
 			// inline so the function body is expanded into the caller.
 			if (d.returnType != null && d.returnType.funcParams != null && !d.isInline) {
-				codegenError("E023", "Function '${d.name}' returns a function type (lambda) — not supported outside inline functions. " +
-					"Mark '${d.name}' as `inline` so its body is expanded at the call site (KTC has no closure heap allocation).")
-			}
-			// A bare Closure<F> is a closure VALUE that may hold frame-bound state — returning it by value
-			// would dangle (same rationale as a bare String/Array return). A heap closure is a reference:
-			// return Ref<Closure<F>> (produced by closure.copyWith(allocator)).
-			if (d.returnType != null && d.returnType.name == "Closure" && !d.isInline) {
-				codegenError("E023", "Function '${d.name}' returns a bare 'Closure<…>' (a frame-bound closure value that would dangle). " +
-					"Return a heap closure instead: Ref<Closure<…>> from closure.copyWith(allocator).")
+				codegenError("E023", "Function '${d.name}' returns a bare function type (a frame-bound closure that would dangle). " +
+					"Return a heap closure — Ref<${typeRefToStr(d.returnType)}> from closure.copyWith(allocator) — or mark '${d.name}' `inline` so its body is expanded at the call site.")
 			}
 			// inline + vararg: inline expansion doesn't reify the vararg array on
 			// a frame the body can scan over — KTC's vararg lowering needs a real

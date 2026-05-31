@@ -266,13 +266,14 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   expansion: it becomes a frame-bound capture closure (functor built at the call site) the inlined body
   can call / move to a local / pass on, while the other params still inline in place. `f(x)` on a
   closure-typed local dispatches through its `_invoke` via the variable's C name (lookupCName).
-- **Heap closures — `Ref<Closure<F>>`** — `closure.copyWith(allocator)` heap-promotes a frame-bound functor
-  to a `Ref<Closure<F>>`: a type-erased boxed closure (one heap block = the `ktc_Closure` fat pointer with
-  its captures folded in; `freeMem(g)` frees it whole). Nameable (`Closure<(Int)->Int>`) and **escapes** —
-  returnable / storable / collection element. `g(x)` casts the erased invoke (`Closure_N_invoke_erased`,
-  void* env) to F's signature. Refused for a stack-by-ref capture; a bare `Closure<F>` return is refused
-  (E023 → use `Ref<Closure<F>>`). `KtcType.Closure(sig)` carries F; `Closure<F>` → C type `ktc_Closure`.
-  Frame-bound functors are unchanged for non-escaping (inline/local/higher-order) use.
+- **Heap closures — `Ref<(P) -> R>`** — `closure.copyWith(allocator)` heap-promotes a frame-bound functor
+  to a `Ref<(Int)->Int>`: the function type IS the closure type (as in Kotlin), `Ref<>` marks the heap form
+  (like `Ref<Interface>` → `ktc_IfacePtr`). One heap block = the `ktc_Closure` fat pointer with its captures
+  folded in; `freeMem(g)` frees it whole. Nameable and **escapes** — returnable / storable / collection
+  element. `g(x)` casts the erased invoke (`Closure_N_invoke_erased`, void* env) to the signature. Refused
+  for a stack-by-ref capture; a bare `(Int)->Int` return is refused (E023 → use `Ref<(Int)->Int>`).
+  Internally `Ref<(P)->R>` → `Ptr(Closure(sig))` (`KtcType.Closure(sig)` carries F) → C type `ktc_Closure*`;
+  no user-facing `Closure<>` type. Frame-bound functors unchanged for non-escaping use.
 - Deferred-emission flushes to a fixpoint and snapshots-and-clears each pending list (a body can queue more
   closures / chained higher-order calls — iterating the live list threw ConcurrentModificationException).
 - E023 already rejects returning a function type from a non-inline fn (the escape boundary for returns).
