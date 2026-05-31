@@ -7,6 +7,19 @@ package ClosureTest
 
 class Box(var n: Int)
 
+// Higher-order: a non-inline function taking a closure param. Each call site monomorphizes this per
+// the lambda's functor type; f(x) inside dispatches through the functor's invoke.
+fun applyTwice(f: (Int) -> Int, x: Int): Int = f(f(x))
+
+// Chained higher-order: outer's monomorphized body itself passes a (different) capturing lambda to
+// another higher-order function. Exercises the deferred-emission fixpoint — emitting outer's instance
+// queues inner's instance + a fresh closure while the pending lists are being flushed.
+fun inner(g: (Int) -> Int, y: Int): Int = g(y)
+fun outer(f: (Int) -> Int, x: Int): Int {
+	val bump = 100
+	return inner({ n -> capture(bump); n + bump }, f(x))
+}
+
 fun main(): Int {
 	// Value capture, value-returning closure.
 	val base = 10
@@ -26,6 +39,15 @@ fun main(): Int {
 	Heap.freeMem(box)
 	if (total != 3) { println("FAIL bump: $total"); return 4 }
 
-	println("ClosureTest OK: add(5)=${add(5)} scale(3)=${scale(3)} bump=$total")
+	// Higher-order: pass a capturing lambda to a non-inline function (monomorphized per closure type).
+	val hi = applyTwice({ n -> capture(base); n + base }, 5)   // (5+10)+10 = 25
+	if (hi != 25) { println("FAIL applyTwice: $hi"); return 5 }
+
+	// Chained higher-order: the lambda passed to outer captures base; outer's body passes a second
+	// (bump-capturing) lambda to inner. ((1 + base) + 100) = 111.
+	val chained = outer({ m -> capture(base); m + base }, 1)
+	if (chained != 111) { println("FAIL chained: $chained"); return 6 }
+
+	println("ClosureTest OK: add(5)=${add(5)} scale(3)=${scale(3)} bump=$total applyTwice=$hi chained=$chained")
 	return 0
 }

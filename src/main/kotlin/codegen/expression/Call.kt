@@ -325,6 +325,11 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         }
     }
 
+    // ── Higher-order call: F(lambda, …) where F has a function-typed param ────────
+    // Monomorphize F per the lambda's functor type. Handled here, before arg expansion, because a
+    // capturing lambda arg can't go through normal arg codegen (it's lowered to a closure value).
+    genHigherOrderClosureCallOrNull(vName, vArgs, e)?.let { return it }
+
     // ── Regular function call — fill defaults and dispatch ────────
     // Internal visibility check: top-level fun marked `internal` cannot be called
     // from a different package than the one it was declared in.

@@ -158,6 +158,9 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	// C.SDL_Window → "c:SDL_Window" (C interop external type passthrough).
 	// The "c:" prefix is purely an internal marker — the source spelling is `C.`.
 	if (t.name.startsWith("C.")) return "c:${t.name.removePrefix("C.")}"
+	// Generated per-lambda functor struct: the name is already a final C identifier — emit verbatim
+	// (don't re-apply the package prefix, which would produce P_P_Closure0).
+	if (t.name in closureStructTypes) return t.name
 	// Function type: (P1, P2) -> R → "Fun(P1,P2)->R"
 	if (t.funcParams != null) {
 		val vReceiver = t.funcReceiver?.let { resolveTypeNameStr(it) + "|" } ?: ""
@@ -237,6 +240,7 @@ private fun CCodeGen.isKnownTypeName(inName: String): Boolean {
 	// Already-resolved C forms: pointers (`Foo*`), nullables (`Foo?`), iface trampolines (`ktc_IfacePtr:T`)
 	if (inName.contains('*') || inName.contains('?') || inName.contains(':')) return true
 	if (inName in kBuiltinTypeNames) return true
+	if (inName in closureStructTypes) return true   // generated per-lambda functor structs
 	if (classes.containsKey(inName)) return true
 	if (objects.containsKey(inName)) return true
 	if (interfaces.containsKey(inName)) return true
@@ -274,6 +278,8 @@ internal fun CCodeGen.userType(inName: String, inKind: KtcType.UserKind = KtcTyp
 		objects.containsKey(inName)    -> objects[inName]!!
 		interfaces.containsKey(inName) -> interfaces[inName]!!
 		enums.containsKey(inName)      -> enums[inName]!!
+		// Generated functor struct: name is already a final C identifier — empty pkg so flatName == inName.
+		inName in closureStructTypes   -> BuiltinTypeDef(baseName = inName, pkg = "", kind = inKind)
 		else -> {
 			val vFullPfx = typeFlatName(inName)
 			val vPkg     = if (vFullPfx.endsWith(inName)) vFullPfx.removeSuffix(inName) else ""

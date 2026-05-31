@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen.expression
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.emit.emitFun
 import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.types.KtcType
 
@@ -247,9 +248,71 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	return vStruct to vCloVar
 	}
 
-/* Emit the deferred closure invoke-function definitions (after the main decl loop). */
+// ── Higher-order: a non-inline function called with a capturing lambda ───────────
+//
+// Each lambda is a distinct functor type, so a function that receives one is monomorphized per closure
+// type (KTC's existing per-type specialization, the C++-template model): the closure parameter is
+// retyped to the functor struct, and inside the body `param(x)` then dispatches through the struct's
+// _invoke (handled by genCall). The closure is passed by value (its captures copied into the callee).
+// Phase 1: frame-bound only — single closure param, non-generic, non-overloaded top-level function.
+
+internal data class PendingClosureFnInst(
+	val fn:         FunDecl,
+	val paramIdx:   Int,
+	val structType: String,
+	val mangled:    String,
+	val srcKey:     String
+	)
+
+/* Lower `F(lambda, …)` where F is a (non-inline) top-level function with a function-typed parameter:
+generate the lambda's functor, monomorphize F for that closure type, and call the instance. Returns the
+C call expression or null when this isn't that shape (so normal dispatch handles it). */
+internal fun CCodeGen.genHigherOrderClosureCallOrNull(inName: String, inArgs: List<Arg>, inCall: CallExpr): String? {
+	val vFuns = file.decls.filterIsInstance<FunDecl>().filter { it.name == inName }
+	if (vFuns.size != 1) return null                                         // skip overloaded (Phase 1)
+	val vFn = vFuns[0]
+	if (vFn.isInline || vFn.typeParams.isNotEmpty() || vFn.receiver != null) return null
+	val vIdx = vFn.params.indexOfFirst { resolveTypeName(it.type) is KtcType.Func }
+	if (vIdx < 0 || vIdx >= inArgs.size) return null
+	val vLambda = inArgs[vIdx].expr as? LambdaExpr ?: return null
+	// Only one closure param in Phase 1.
+	if (vFn.params.withIndex().count { (j, p) -> resolveTypeName(p.type) is KtcType.Func && inArgs.getOrNull(j)?.expr is LambdaExpr } != 1) return null
+
+	val vFuncType = resolveTypeName(vFn.params[vIdx].type) as KtcType.Func
+	val (vStruct, vInstance) = genClosureValue(vLambda, vFuncType)
+	val vMangled = "${inName}__$vStruct"
+	if (closureFnInstNames.add(vMangled))
+		pendingClosureFnInsts += PendingClosureFnInst(vFn, vIdx, vStruct, vMangled, "|$currentSourceFile")
+
+	val vArgsC = inArgs.mapIndexed { vJ, vA -> if (vJ == vIdx) vInstance else genExpr(vA.expr) }.joinToString(", ")
+	return "${funCName(vMangled)}($vArgsC)"
+	}
+
+/* Emit the deferred higher-order monomorphizations: re-emit each function with its closure parameter
+retyped to the functor struct, so `param(x)` in the body dispatches through _invoke. Iterate a snapshot,
+not the live list: emitting a body can itself queue new monomorphizations (chained higher-order calls)
+and the fixpoint loop in generate() flushes those — appending to the list mid-iteration would otherwise
+throw ConcurrentModificationException. */
+internal fun CCodeGen.emitPendingClosureFnInsts() {
+	val vBatch = pendingClosureFnInsts.toList()
+	pendingClosureFnInsts.clear()
+	for (vInst in vBatch) {
+		captureForDecl(vInst.srcKey) {
+			val vModParams = vInst.fn.params.mapIndexed { vJ, vP ->
+				if (vJ == vInst.paramIdx) vP.copy(type = TypeRef(vInst.structType)) else vP
+				}
+			emitFun(vInst.fn.copy(name = vInst.mangled, params = vModParams, isInline = false))
+			}
+		}
+	}
+
+/* Emit the deferred closure invoke-function definitions (after the main decl loop). Iterate a snapshot,
+not the live list: an invoke body may itself define a nested closure / higher-order call that queues
+more pending entries (flushed by the generate() fixpoint loop), so appending mid-iteration would throw. */
 internal fun CCodeGen.emitPendingClosures() {
-	for (vC in pendingClosures) {
+	val vBatch = pendingClosures.toList()
+	pendingClosures.clear()
+	for (vC in vBatch) {
 		captureForDecl(vC.srcKey) {
 			val vPrev          = saveFunState()
 			val vSavedRetVar   = inlineReturnVar
@@ -278,13 +341,16 @@ internal fun CCodeGen.emitPendingClosures() {
 			inlineReturnVar = vSavedRetVar; inlineEndLabel = vSavedEndLabel; inlineLabelUsed = vSavedLabelUsed
 			}
 		}
-	pendingClosures.clear()
 	}
 
-/* Emit the deferred thread entry-function definitions. Called once after the main declaration loop,
-when no other function is mid-emission (so each lands cleanly in its source file's buffer). */
+/* Emit the deferred thread entry-function definitions. Called after the main declaration loop, when no
+other function is mid-emission (so each lands cleanly in its source file's buffer). Iterate a snapshot,
+not the live list: a thread body may queue further closures/entries (flushed by the generate() fixpoint
+loop), so appending mid-iteration would throw ConcurrentModificationException. */
 internal fun CCodeGen.emitPendingThreadEntries() {
-	for (vPend in pendingThreadEntries) {
+	val vBatch = pendingThreadEntries.toList()
+	pendingThreadEntries.clear()
+	for (vPend in vBatch) {
 		captureForDecl(vPend.srcKey) {
 			val vPrev          = saveFunState()
 			val vSavedRetVar   = inlineReturnVar
@@ -307,5 +373,4 @@ internal fun CCodeGen.emitPendingThreadEntries() {
 			inlineReturnVar = vSavedRetVar; inlineEndLabel = vSavedEndLabel; inlineLabelUsed = vSavedLabelUsed
 			}
 		}
-	pendingThreadEntries.clear()
 	}

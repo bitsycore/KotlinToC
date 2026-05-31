@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.emit.*
 import com.bitsycore.ktc.codegen.expression.emitPendingThreadEntries
 import com.bitsycore.ktc.codegen.expression.emitPendingClosures
+import com.bitsycore.ktc.codegen.expression.emitPendingClosureFnInsts
 
 // The main code-generation pipeline: collectAndScan() + generate().
 // Class state and utilities live in CCodeGen.kt.
@@ -301,10 +302,15 @@ internal fun CCodeGen.generate(): COutput {
 		val vSrcKey = "|${declSourceFile[f.name] ?: sourceFileName}"
 		captureForDecl(vSrcKey) { emitStarExtFunInstantiations(f) }
 		}
-	// Generated `thread { }` entry functions + closure invoke functions — flushed here, after the decl
-	// loop, so they don't nest inside the buffer of the function that defined the lambda.
-	emitPendingThreadEntries()
-	emitPendingClosures()
+	// Generated `thread { }` entry functions, closure invoke functions, and higher-order
+	// monomorphizations — flushed here, after the decl loop, so they don't nest inside the buffer of
+	// the function that defined the lambda. Iterate to a fixpoint: a monomorphized body may itself
+	// introduce new closures / thread entries.
+	while (pendingThreadEntries.isNotEmpty() || pendingClosures.isNotEmpty() || pendingClosureFnInsts.isNotEmpty()) {
+		emitPendingThreadEntries()
+		emitPendingClosures()
+		emitPendingClosureFnInsts()
+	}
 	emitEnumValuesData()
 
 	// ── Assemble output ────────────────────────────────────────────────
