@@ -288,10 +288,15 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   a C-level type mismatch in the field case, undefined behaviour in the store-and-call case.)
 - Minor: dead-code emission of the original un-monomorphized function when only ever called with closures.
 
-**Phase 2 — SHIPPED (heap closures escape via `Ref<Closure<F>>`, see above).** Remaining polish:
-- **Direct call on a stored closure** — `obj.field(x)` / `list[i](x)` where the member is a `Ref<Closure<F>>`
-  (today the call-dispatch closure path keys off a NameExpr var; a DotExpr/IndexExpr callee whose resolved
-  type is a closure isn't routed through the cast-invoke yet — pull it into a local and call that).
+**Phase 2 — SHIPPED (heap closures escape via `Ref<(P)->R>`, see above).** Done in polish:
+- **Direct call on a stored closure** — `obj.field(x)` / `arr[i](x)`: a non-name callee whose resolved type
+  is a closure (`Ptr(Closure)`/`Closure`) is spilled to a temp and dispatched through the cast-invoke
+  (genCall top). Covers a heap closure stored in a class field, called back with `h.f(x)`.
+- Tests: HeapClosureTest (promote, call, loop reuse, returned/escaped closure, field-stored closure call).
+
+Remaining polish:
 - **Escape guards (W/E)** for storing a *frame-bound* (non-promoted) closure in a heap field / passing it to
-  a storing function (the promoted `Ref<Closure<F>>` is the safe path; flag the frame-bound one).
-- Tests: HeapClosureTest (promote, call, loop reuse, returned/escaped closure).
+  a storing function. Mostly already enforced by the type system (E023 on bare-function returns; a frame-bound
+  functor `Closure_N` can't bind to a `Ref<(P)->R>` field/param — C type mismatch) — value would be a
+  clearer KTC error than the C-compiler mismatch.
+- Closures in collections (`List<Ref<(P)->R>>`) — depends on the collection factories accepting the type.

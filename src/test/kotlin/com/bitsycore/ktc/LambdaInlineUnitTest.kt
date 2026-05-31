@@ -183,6 +183,22 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
         r.sourceContains("g->invoke")                 // called through the heap fat pointer
     }
 
+    @Test fun heapClosureStoredInFieldIsCallable() {
+        // A heap closure stored in a class field is callable through the field: obj.f(x).
+        val r = transpile("""
+            package test.Main
+            class Handler(val f: Ref<(Int) -> Int>)
+            fun main(args: Array<String>) {
+                val base = 10
+                val c = { x: Int -> capture(base); x + base }
+                val h = Handler(c.copyWith(Heap))
+                val y = h.f(5)
+                Heap.freeMem(h.f)
+            }
+        """)
+        r.sourceContains("->invoke")   // dispatched through the field's fat pointer
+    }
+
     @Test fun bareFunctionTypeReturnErrors() {
         // Returning a bare (frame-bound) function type is refused — return Ref<(Int)->Int> (heap closure).
         transpileExpectError("""

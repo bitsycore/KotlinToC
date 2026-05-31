@@ -14,6 +14,9 @@ fun makeAdder(base: Int): Ref<(Int) -> Int> {
 	return c.copyWith(Heap)
 }
 
+// A heap closure stored in a class field — called back through the field with obj.f(x).
+class Handler(val f: Ref<(Int) -> Int>)
+
 fun main(): Int {
 	val base = 10
 
@@ -38,6 +41,14 @@ fun main(): Int {
 	Heap.freeMem(adder)
 	if (ar != 105) { println("FAIL adder: $ar"); return 3 }
 
-	println("HeapClosureTest OK: g=15 sum=$sum adder=$ar")
+	// Heap closure stored in a class field, called back through the field.
+	val cap = 7
+	val cb = { n: Int -> capture(cap); n + cap }
+	val handler = Handler(cb.copyWith(Heap))
+	val hr = handler.f(20)                         // 27
+	Heap.freeMem(handler.f)
+	if (hr != 27) { println("FAIL handler: $hr"); return 4 }
+
+	println("HeapClosureTest OK: g=15 sum=$sum adder=$ar handler=$hr")
 	return 0
 }

@@ -14,6 +14,25 @@ import com.bitsycore.ktc.types.KtcType
 // allocWith/ctor dispatch to CallAlloc.kt.
 
 internal fun CCodeGen.genCall(e: CallExpr): String {
+    // ── Closure call through a non-name callee (a heap closure stored in a field / array element): when
+    // the callee expression itself has closure type, dispatch through its erased invoke. (A bare closure
+    // VARIABLE is handled later via lookupCName; this covers h.f(x), arr[i](x), etc.) Spill the callee
+    // into a temp since it's read twice (->invoke and ->env).
+    if (e.callee !is NameExpr) {
+        val vCalleeKtc = inferExprTypeKtc(e.callee)?.stripNullable
+        val vSig = (vCalleeKtc as? KtcType.Closure)?.sig
+            ?: ((vCalleeKtc as? KtcType.Ptr)?.inner as? KtcType.Closure)?.sig
+        if (vSig != null && vCalleeKtc != null) {
+            val vArrow   = if (vCalleeKtc is KtcType.Ptr) "->" else "."
+            val vGExpr   = genExpr(e.callee)
+            val vTmp     = tmp()
+            preStmts += "${cTypeStr(vCalleeKtc)} $vTmp = $vGExpr;"
+            val vRetC    = cTypeStr(vSig.ret)
+            val vSigPars = (listOf("void*") + vSig.params.map { cTypeStr(it) }).joinToString(", ")
+            val vArgsC   = e.args.joinToString("") { ", ${genExpr(it.expr)}" }
+            return "(($vRetC(*)($vSigPars))$vTmp$vArrow${"invoke"})($vTmp$vArrow${"env"}$vArgsC)"
+        }
+    }
     // ── Method call: DotExpr receiver ────────────────────────────
     if (e.callee is DotExpr) {
         // expr.cast<T>() — unchecked C-level reinterpret cast. Useful for the
