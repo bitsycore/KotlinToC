@@ -103,8 +103,9 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 /* E054: a non-inline (escaping) lambda body must capture every enclosing value it reads — capture is
 explicit in KTC. Conservative — only flags names that resolve to a spawning-scope variable and are
 neither captured nor declared inside the body (globals, functions, objects, members are never flagged). */
-private fun CCodeGen.checkUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured: Set<String>) {
+internal fun CCodeGen.checkUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured: Set<String>) {
 	val vDeclared = mutableSetOf("it")
+	vDeclared += inLambda.params                                             // the lambda's own params are locals
 	for (vStmt in inLambda.body) collectDeclaredNames(vStmt, vDeclared)
 	val vRefs = linkedSetOf<String>()
 	for (vStmt in inLambda.body) {
@@ -114,8 +115,8 @@ private fun CCodeGen.checkUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured:
 	for (vName in vRefs) {
 		if (vName in inCaptured || vName in vDeclared) continue
 		if (lookupVarKtc(vName) == null) continue                            // not a spawning-scope variable
-		codegenError("E054", "'$vName' is used in the thread body but not captured — add capture($vName). " +
-			"KTC closures capture explicitly (it would otherwise read uninitialized memory on the new thread).")
+		codegenError("E054", "'$vName' is used in the closure body but not captured — add capture($vName). " +
+			"KTC closures capture explicitly (it would otherwise read uninitialized / freed memory).")
 		}
 	}
 
@@ -190,6 +191,94 @@ private fun collectRefInExpr(inExpr: Expr, ioOut: MutableSet<String>) {
 		is LambdaExpr -> inExpr.body.forEach { collectRefNames(it, ioOut) }   // nested-lambda params handled via vDeclared
 		else          -> {}
 		}
+	}
+
+// ── General closures: a value-position lambda lowered to a functor ───────────────
+//
+// Each lambda becomes its OWN specialized struct (the capture fields) plus a generated
+// `R Closure_N_invoke(Closure_N* self, params…)`; the closure VALUE is that struct, passed as real
+// data. Calling `f(args)` lowers to `Closure_N_invoke(&f, args)`. Phase 1: frame-bound — the struct is
+// a plain local (stack), so the closure must not outlive its frame. Same capture marshalling as thread
+// (value copied, Ref<T> by pointer) and the same mandatory-capture rule (E054).
+
+// A lambda parameter of the generated invoke function.
+internal data class ClosureParam(val cType: String, val name: String, val ktc: KtcType)
+
+// A generated closure invoke function, emitted after the main decl loop (avoids nesting in the
+// defining function's buffer).
+internal data class PendingClosure(
+	val invokeFn:   String,
+	val structType: String,
+	val retCType:   String,
+	val retKtc:     KtcType,
+	val params:     List<ClosureParam>,
+	val captures:   List<ThreadCapture>,
+	val body:       List<Stmt>,
+	val srcKey:     String
+	)
+
+/* Lower a value-position lambda of function type [inFunc] to a functor. Emits the struct typedef + an
+invoke forward decl, defers the invoke body, fills a stack instance from the captures, and registers the
+struct so calls dispatch through _invoke. Returns (structTypeCName, instanceExprName). */
+internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func): Pair<String, String> {
+	val vCaptures = collectThreadCaptures(inLambda)
+	checkUncapturedThreadRefs(inLambda, vCaptures.map { it.name }.toSet())
+
+	val vId      = threadClosureCounter++
+	val vStruct  = funCName("Closure$vId")
+	val vInvoke  = "${vStruct}_invoke"
+	val vCloVar  = "\$clo$vId"
+	val vRetKtc  = inFunc.ret
+	val vParams  = inLambda.params.mapIndexed { vI, vP ->
+		val vPKtc = inFunc.params.getOrNull(vI) ?: KtcType.Void
+		ClosureParam(cTypeStr(vPKtc), vP, vPKtc)
+		}
+	val vParamSig = vParams.joinToString("") { ", ${it.cType} ${it.name}" }
+
+	val vFields = vCaptures.joinToString(" ") { "${cTypeStr(it.ktc)} ${it.name};" }
+	hdr.appendLine("typedef struct { $vFields } $vStruct;")
+	hdr.appendLine("${cTypeStr(vRetKtc)} $vInvoke($vStruct* self$vParamSig);")
+
+	closureStructTypes += vStruct
+	pendingClosures += PendingClosure(vInvoke, vStruct, cTypeStr(vRetKtc), vRetKtc, vParams, vCaptures, inLambda.body, "|$currentSourceFile")
+
+	preStmts += "$vStruct $vCloVar;"
+	for (vCap in vCaptures) preStmts += "$vCloVar.${vCap.name} = ${vCap.cExpr};"
+	return vStruct to vCloVar
+	}
+
+/* Emit the deferred closure invoke-function definitions (after the main decl loop). */
+internal fun CCodeGen.emitPendingClosures() {
+	for (vC in pendingClosures) {
+		captureForDecl(vC.srcKey) {
+			val vPrev          = saveFunState()
+			val vSavedRetVar   = inlineReturnVar
+			val vSavedEndLabel = inlineEndLabel
+			val vSavedLabelUsed = inlineLabelUsed
+			inlineReturnVar = null; inlineEndLabel = null; inlineLabelUsed = false
+			currentFnReturnType    = vC.retKtc.toInternalStr
+			currentFnReturnKtcType = vC.retKtc
+			val vParamSig = vC.params.joinToString("") { ", ${it.cType} ${it.name}" }
+			impl.appendLine("// ══ generated closure invoke ══")
+			impl.appendLine("${vC.retCType} ${vC.invokeFn}(${vC.structType}* self$vParamSig) {")
+			pushScope()
+			for (vCap in vC.captures) {
+				impl.appendLine("    ${cTypeStr(vCap.ktc)} ${vCap.name} = self->${vCap.name};")
+				defineVar(vCap.name, LocalVar(vCap.ktc))
+				}
+			for (vP in vC.params) defineVar(vP.name, LocalVar(vP.ktc))
+			val vIsVoid = vC.retKtc is KtcType.Void
+			val vBody   = vC.body.filter { !isCaptureCall(it) }
+			vBody.forEachIndexed { vI, vStmt ->
+				// the lambda's trailing expression is its result — turn it into a `return`.
+				if (!vIsVoid && vI == vBody.lastIndex && vStmt is ExprStmt) emitStmt(ReturnStmt(vStmt.expr), "    ")
+				else emitStmt(vStmt, "    ")
+				}
+			closeFunBody(vPrev)
+			inlineReturnVar = vSavedRetVar; inlineEndLabel = vSavedEndLabel; inlineLabelUsed = vSavedLabelUsed
+			}
+		}
+	pendingClosures.clear()
 	}
 
 /* Emit the deferred thread entry-function definitions. Called once after the main declaration loop,

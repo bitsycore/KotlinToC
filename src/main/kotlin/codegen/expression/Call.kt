@@ -269,8 +269,13 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // ── Built-in / intrinsic names ────────────────────────────────
     genBuiltinCallOrNull(vName, vArgs, e)?.let { return it }
 
-    // ── Function pointer call ─────────────────────────────────────
+    // ── Closure call: a var holding a functor struct dispatches through its _invoke ──
     val vVarType = lookupVar(vName)
+    if (vVarType != null && vVarType in closureStructTypes) {
+        val vArgsC = vArgs.joinToString("") { ", ${genExpr(it.expr)}" }
+        return "${vVarType}_invoke(&$vName$vArgsC)"
+    }
+    // ── Function pointer call ─────────────────────────────────────
     if (vVarType != null && isFuncType(vVarType)) {
         return "$vName(${vArgs.joinToString(", ") { genExpr(it.expr) }})"
     }

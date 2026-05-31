@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen.statement
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.expression.genClosureValue
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.isCPassthroughCall
 import com.bitsycore.ktc.types.KtcType
@@ -227,6 +228,15 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
 
     // ── Function pointer type: special declaration syntax ──
     if (vKtc is KtcType.Func) {
+        // A lambda assigned to a function-typed val becomes a closure (functor struct + invoke),
+        // not a bare function pointer — captured state lives in the struct (frame-bound / stack).
+        if (s.init is LambdaExpr) {
+            val (vStructType, vCloExpr) = genClosureValue(s.init, vKtc)
+            flushPreStmts(ind)
+            impl.appendLine("$ind$mutComment$vStructType ${s.name} = $vCloExpr;")
+            defineVar(s.name, vStructType)
+            return
+        }
         if (s.init != null) {
             val expr = genExpr(s.init)
             flushPreStmts(ind)
