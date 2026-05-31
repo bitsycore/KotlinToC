@@ -301,6 +301,11 @@ Done in polish:
   — a clearer KTC pre-check there is the remaining nicety.)
 
 Remaining polish:
-- Closures in collections (`List<Ref<(P)->R>>`) — depends on the collection factories accepting the type.
+- Closures in collections (`Array<Ref<(P)->R>>`, `List<…>`) — `arr[i](x)` doesn't dispatch because the
+  array variable's element type doesn't survive the string round-trip (the nested `Closure<Fun(..)->R>*`
+  internal form garbles, so `asArr.elem` isn't `Ptr(Closure)`). The emitted C is correct (`ktc_Closure**`),
+  only the index-call inference misses. Blocked on the A1 inference refactor (canonical KtcType, no string
+  round-trip) — the genCall closure-callee hook already handles a DotExpr field call, and would cover the
+  index call once the element type resolves cleanly.
 - A KTC-level pre-check for a frame-bound functor passed to a `Ref<(P)->R>` ctor/function arg (today: a
   C-compiler type mismatch rather than an E070-style message).
