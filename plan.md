@@ -261,16 +261,20 @@ function pointers stay separate (C interop / thread ABI). Shares the thread clos
   by reference (binds `x` as `Ref<T>`, via `.refValue`). (Also fixed `p.refValue = v` for `Ref<primitive>`.)
 - **Closure-type inference without annotation** — `val f = { x: Int -> … }` infers the functor from typed
   params + body result; parser now reads typed lambda params; `it` shorthand when the expected type is
-  1-param. `noinline` param keyword parses (`Param.noinline`) as groundwork.
+  1-param.
+- **`noinline` honored** — a `noinline` parameter of an `inline fun` opts that one lambda out of inline
+  expansion: it becomes a frame-bound capture closure (functor built at the call site) the inlined body
+  can call / move to a local / pass on, while the other params still inline in place. `f(x)` on a
+  closure-typed local dispatches through its `_invoke` via the variable's C name (lookupCName).
 - Deferred-emission flushes to a fixpoint and snapshots-and-clears each pending list (a body can queue more
   closures / chained higher-order calls — iterating the live list threw ConcurrentModificationException).
 - E023 already rejects returning a function type from a non-inline fn (the escape boundary for returns).
-- Tests: ClosureTest (+ chained), ClosureHigherOrderTest, CaptureRefTest, ClosureInferTest.
+- Tests: ClosureTest (+ chained), ClosureHigherOrderTest, CaptureRefTest, ClosureInferTest,
+  NoinlineClosureTest.
 
 **Phase 1 — still open (each falls through to normal dispatch / a clear error today):**
 - Higher-order: cross-**package** callees (same-package files are merged so they already work), receiver
   (extension/member) closure params, generic higher-order functions, closure passed by named/defaulted arg.
-- Honor `noinline` so a `noinline` param of an `inline fun` becomes a closure instead of being inlined.
 - Escape guards (W/E): storing a frame-bound closure in a heap field / ctor param, or passing it to a
   function that stores it. (Returns are already E023; the rest can produce a dangling capture — currently
   a C-level type mismatch in the field case, undefined behaviour in the store-and-call case.)

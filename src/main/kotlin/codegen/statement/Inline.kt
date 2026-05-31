@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.statement
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genExpr
+import com.bitsycore.ktc.codegen.expression.genClosureValue
 import com.bitsycore.ktc.types.KtcType
 
 // ── Inline and lambda call expansion ─────────────────────────────
@@ -111,7 +112,17 @@ internal fun CCodeGen.emitInlineCall(
 	callArgs.forEachIndexed { i, vArg ->
 		val vParam = decl.params.getOrNull(i) ?: return@forEachIndexed
 		val vExpr  = vArg.expr
-		if (vExpr is LambdaExpr) {
+		if (vExpr is LambdaExpr && vParam.noinline) {
+			// `noinline` param: the lambda is NOT inlined — it becomes a real (frame-bound) closure the
+			// body can move around, exactly like a non-inline function's closure param. Build the functor
+			// at the call site and bind the param to that local (so `param(x)` in the body dispatches
+			// through its _invoke). The closure instance name is unique, so it can't shadow anything.
+			val vFuncType = resolveTypeName(vParam.type) as? KtcType.Func
+				?: codegenError("noinline parameter '${vParam.name}' is not a function type")
+			val (vStruct, vCloInst) = genClosureValue(vExpr, vFuncType)
+			flushPreStmts(ind)
+			defineVar(vParam.name, LocalVar(parseResolvedTypeName(vStruct), cName = vCloInst))
+			} else if (vExpr is LambdaExpr) {
 			val vFuncParams = vParam.type.funcParams ?: emptyList()
 			val vParamTypes = vFuncParams.map { resolveTypeName(it) }
 			val vRetType    = vParam.type.funcReturn?.let { resolveTypeName(it) }

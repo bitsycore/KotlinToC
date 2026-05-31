@@ -270,10 +270,12 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     genBuiltinCallOrNull(vName, vArgs, e)?.let { return it }
 
     // ── Closure call: a var holding a functor struct dispatches through its _invoke ──
+    // Use the variable's C access name (lookupCName), not the source name: an inline-bound noinline
+    // closure param lives under a renamed C local ($il…), while a plain closure val keeps its own name.
     val vVarType = lookupVar(vName)
     if (vVarType != null && vVarType in closureStructTypes) {
         val vArgsC = vArgs.joinToString("") { ", ${genExpr(it.expr)}" }
-        return "${vVarType}_invoke(&$vName$vArgsC)"
+        return "${vVarType}_invoke(&${lookupCName(vName)}$vArgsC)"
     }
     // ── Function pointer call ─────────────────────────────────────
     if (vVarType != null && isFuncType(vVarType)) {
