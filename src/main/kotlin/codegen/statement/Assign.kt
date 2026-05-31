@@ -91,23 +91,27 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         }
     }
 
-    // p.refValue = x on Ref<T> → *p = x;  (only when the pointee class has no own
-    // 'refValue' property — user classes always win over the synthetic ref access).
+    // p.refValue = x on Ref<T> → *p = x;  Mirrors the read path (genDot): fires for any Ref<T> — a
+    // Ref<Int> as much as a Ref<Vec2> — rejecting only an object pointee, and stepping aside when the
+    // pointee is a user class with its own real 'refValue' property (that property wins over the
+    // synthetic ref access).
     if (s.target is DotExpr && s.target.name == "refValue" && s.op == "=") {
         val recvTypeKtc = inferExprTypeKtc(s.target.obj)
         val recvTypeCoreKtc = recvTypeKtc.stripNullable
-        val baseClass = (recvTypeCoreKtc as? KtcType.Ptr)?.inner?.let { it as? KtcType.User }?.baseName
-        if (baseClass != null
-            && classes[baseClass]?.properties?.any { it.name == "refValue" } != true
-            && objects.containsKey(baseClass).not()
-        ) {
-            val recv  = genExpr(s.target.obj)
-            val value = genExpr(s.value)
-            flushPreStmts(ind)
-            // Null-check the pointer (when --check-null on) before writing through it.
-            if (checkNull && !isProvablyNonNull(s.target.obj)) impl.appendLine("$ind${nullCheckStmt(recv)}")
-            impl.appendLine("$ind*$recv = $value;")
-            return
+        if (recvTypeCoreKtc is KtcType.Ptr) {
+            val innerUser = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
+            if (innerUser != null && objects.containsKey(innerUser))
+                codegenError("Cannot assign .refValue on object '$innerUser' — objects are always Ref")
+            val userHasRefValueProp = innerUser != null && classes[innerUser]?.properties?.any { it.name == "refValue" } == true
+            if (!userHasRefValueProp) {
+                val recv  = genExpr(s.target.obj)
+                val value = genExpr(s.value)
+                flushPreStmts(ind)
+                // Null-check the pointer (when --check-null on) before writing through it.
+                if (checkNull && !isProvablyNonNull(s.target.obj)) impl.appendLine("$ind${nullCheckStmt(recv)}")
+                impl.appendLine("$ind*$recv = $value;")
+                return
+            }
         }
     }
 

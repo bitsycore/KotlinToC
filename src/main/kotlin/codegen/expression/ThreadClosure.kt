@@ -81,21 +81,34 @@ internal fun CCodeGen.genThreadClosureOrNull(inCall: CallExpr): String? {
 	}
 
 /* Collect the captured variables from every capture(...) call in the lambda body, resolving each
-against the spawning scope (type + C access expression). */
+against the spawning scope (type + C access expression). Two forms:
+  capture(x)          — capture x by what it already is: a value type is copied (snapshot at capture
+                        time), an existing Ref<T> passes its pointer (the closure shares the pointee).
+  capture(x.asRef())  — capture &x as a Ref<T>. The in-closure binding `x` is then a Ref<T>, so reads and
+                        writes go through x.refValue and reach the original storage — explicit by-ref
+                        capture of a value local (frame-bound: the captured address must outlive nothing
+                        beyond the defining frame, same contract as every Phase-1 closure). */
 private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCapture> {
 	val vOut = mutableListOf<ThreadCapture>()
 	for (vStmt in inLambda.body) {
 		if (!isCaptureCall(vStmt)) continue
 		val vCall = (vStmt as ExprStmt).expr as CallExpr
 		for (vArg in vCall.args) {
-			val vName = (vArg.expr as? NameExpr)?.name
-				?: run { codegenError("capture(...) arguments must be simple variable names"); return@run "" }
-			if (vName.isEmpty()) continue
-			val vKtc = lookupVarKtc(vName)
+			val vExpr = vArg.expr
+			// `x.asRef()` — capture by reference. Bind under the receiver's name; type is Ref<T>.
+			val vAsRefRecv = (vExpr as? CallExpr)
+				?.takeIf { (it.callee as? DotExpr)?.name == "asRef" && it.args.isEmpty() }
+				?.let { (it.callee as DotExpr).obj as? NameExpr }?.name
+			val vName = (vExpr as? NameExpr)?.name ?: vAsRefRecv
+				?: run { codegenError("capture(...) arguments must be a variable name or name.asRef()"); return@run null }
+			if (vName == null || vName.isEmpty()) continue
+			val vBaseKtc = lookupVarKtc(vName)
 				?: run { codegenError("capture: '$vName' is not a variable in scope"); return@run null }
-			if (vKtc == null) continue
+			if (vBaseKtc == null) continue
+			// `x` captures x as it is; `x.asRef()` captures &x as a Ref<T> (Ptr of the base type).
+			val vKtc = if (vAsRefRecv != null) KtcType.Ptr(vBaseKtc) else vBaseKtc
 			if (vOut.any { it.name == vName }) continue                       // ignore duplicate captures
-			vOut += ThreadCapture(vName, vKtc, genExpr(vArg.expr))
+			vOut += ThreadCapture(vName, vKtc, genExpr(vExpr))
 			}
 		}
 	return vOut
