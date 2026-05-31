@@ -91,14 +91,15 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         }
     }
 
-    // p.refValue = x on Ref<T> → *p = x;  Mirrors the read path (genDot): fires for any Ref<T> — a
-    // Ref<Int> as much as a Ref<Vec2> — rejecting only an object pointee, and stepping aside when the
-    // pointee is a user class with its own real 'refValue' property (that property wins over the
-    // synthetic ref access).
+    // p.refValue = x on Ref<T> → *p = x;  Fires for any Ref<T> whose pointee is a genuine C pointer
+    // target — a Ref<Int> as much as a Ref<Vec2> — rejecting only an object pointee, and stepping aside
+    // when the pointee is a user class with its own real 'refValue' property (that property wins over the
+    // synthetic ref access). Array-like pointees (Ref<Array<T>> / Ref<IntArray>) carry a VarArr-value
+    // representation rather than a bare T*, so they keep the general assignment path below.
     if (s.target is DotExpr && s.target.name == "refValue" && s.op == "=") {
         val recvTypeKtc = inferExprTypeKtc(s.target.obj)
         val recvTypeCoreKtc = recvTypeKtc.stripNullable
-        if (recvTypeCoreKtc is KtcType.Ptr) {
+        if (recvTypeCoreKtc is KtcType.Ptr && !recvTypeCoreKtc.inner.isArrayLike) {
             val innerUser = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
             if (innerUser != null && objects.containsKey(innerUser))
                 codegenError("Cannot assign .refValue on object '$innerUser' — objects are always Ref")
