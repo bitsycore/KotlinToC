@@ -86,6 +86,22 @@ fun main(args: Array<String>) {
 	println(list.indexOf(50))
 	if (list.indexOf(50) != 3) error("FAIL indexOf 50")
 
+	// ── Custom deep clone: independent backing buffer (Ref<ArrayList<Int>>) ──
+	val orig = ArrayList<Int>(Heap, 4)
+	defer orig.dispose()
+	orig.add(1)
+	orig.add(2)
+	orig.add(3)
+	val dup = orig.clone()          // deep clone — heap Ref<ArrayList<Int>> with its OWN buffer
+	dup.set(0, 99)                  // mutate the clone only
+	println("deep clone: orig[0]=${orig.get(0)} dup[0]=${dup.get(0)}")
+	if (orig.get(0) != 1) error("FAIL clone not deep — orig[0] mutated to ${orig.get(0)}")
+	if (dup.get(0) != 99) error("FAIL clone — dup[0]=${dup.get(0)}")
+	if (dup.size != 3) error("FAIL clone size=${dup.size}")
+	dup.dispose()                   // free the clone's buffer, then the clone itself
+	Heap.freeMem(dup)
+	println("clone deep-copy OK")
+
 	list.clear()
 	println("size after clear:")
 	println(list.size)
