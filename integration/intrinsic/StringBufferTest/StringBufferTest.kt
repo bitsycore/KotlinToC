@@ -53,7 +53,7 @@ fun main() {
     // 6. Nested data class toString
     val start = Vec2(0f, 0f)
     val endV = Vec2(10f, 20f)
-    val line = Line(start, endV)
+    val line = Line(start.copy(), endV.copy())
     val buf6 = CharArray(512)
     var sb6 = StringBuffer(buf6.asRef(), 0)
     val s6 = line.toString(sb6)

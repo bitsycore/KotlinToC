@@ -38,7 +38,7 @@ fun testClassAlias() {
     val p: Point = Vec2(3.0f, 4.0f)
     if (p.x != 3.0f) error("FAIL Point.x")
     if (p.y != 4.0f) error("FAIL Point.y")
-    val zero = originOf(p)
+    val zero = originOf(p.copy())
     if (zero.x != 0.0f || zero.y != 0.0f) error("FAIL originOf")
     println("class alias ok")
 }

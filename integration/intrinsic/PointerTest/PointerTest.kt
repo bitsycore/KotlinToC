@@ -138,9 +138,9 @@ fun main() {
 
     // VEC VALUE
 
-    passVecValue(vec)
+    passVecValue(vec.copy())
 
-    passVecValueNullable(vec)
+    passVecValueNullable(vec.copy())
     passVecValueNullable(null)
     passVecValueNullable()
 }

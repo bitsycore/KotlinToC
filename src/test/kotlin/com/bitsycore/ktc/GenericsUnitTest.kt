@@ -275,7 +275,7 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
             fun main(args: Array<String>) {
                 val b = Box<Int>(42)
-                val v = unbox(b)
+                val v = unbox(b.copy())
             }
         """)
         // Type arg inferred from Box<Int> argument
@@ -323,7 +323,7 @@ class GenericsUnitTest : TranspilerTestBase() {
             }
             fun main(args: Array<String>) {
                 val b = Box<Int>(42)
-                val v = getItem(b)
+                val v = getItem(b.copy())
             }
         """)
         // Function should reference the mangled class type

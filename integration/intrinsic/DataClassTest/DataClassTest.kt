@@ -346,11 +346,11 @@ fun main() {
     // 8. passMutablePoint - verify that passing a mutable data class to a function allows mutation of the original object
     // =================================
     val pointShouldNotMutate = MutablePoint(10, 20)
-    passMutablePoint(pointShouldNotMutate)
+    passMutablePoint(pointShouldNotMutate.copy())
     if (pointShouldNotMutate.x != 10 || pointShouldNotMutate.y != 20) error("FAIL passMutablePoint should not mutate original")
 
     val pointShouldNotMutate2 = MutablePoint(10, 20)
-    passMutablePointNullable(pointShouldNotMutate2)
+    passMutablePointNullable(pointShouldNotMutate2.copy())
     passMutablePointNullable(null)
     if (pointShouldNotMutate2.x != 10 || pointShouldNotMutate2.y != 20) error("FAIL passMutablePoint should not mutate original")
 
@@ -399,8 +399,8 @@ fun main() {
     passNullableVecPtr(null)
 
     // Ref value type pass
-    passVecValue(vec)
-    passNullableVecValue(vec)
+    passVecValue(vec.copy())
+    passNullableVecValue(vec.copy())
     passNullableVecValue()
     passNullableVecValue(null)
 

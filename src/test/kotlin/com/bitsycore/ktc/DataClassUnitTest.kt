@@ -96,7 +96,7 @@ class DataClassUnitTest : TranspilerTestBase() {
         val r = transpileMain("""
             val origin = Vec2(0.0f, 0.0f)
             val size = Vec2(10.0f, 5.0f)
-            val rect = Rect(origin, size)
+            val rect = Rect(origin.copy(), size.copy())
         """, decls = """
             data class Vec2(val x: Float, val y: Float)
             data class Rect(val origin: Vec2, val size: Vec2)

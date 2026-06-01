@@ -18,11 +18,11 @@ fun main(): Int {
 	val b = Vec(3, 4)
 
 	// Infix method returning the class.
-	val c = a combine b
+	val c = a combine b.copy()
 	vOk = vOk && c.x == 4 && c.y == 6
 
 	// Infix method returning a primitive.
-	val d = a dot b
+	val d = a dot b.copy()
 	vOk = vOk && d == 11            // 1*3 + 2*4
 
 	// Member `and` wins over the built-in bitwise infix for a user receiver.

@@ -16,7 +16,7 @@ fun main() {
 
     val b = Vec3(4.0f, 5.0f, 6.0f)
     println(b)
-    val dotResult = dot(b, b)
+    val dotResult = dot(b.copy(), b.copy())
     println(dotResult)
     if (dotResult != 77.0f) error("FAIL dot product: $dotResult")
 

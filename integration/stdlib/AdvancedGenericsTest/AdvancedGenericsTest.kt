@@ -103,8 +103,8 @@ fun arrayListAllocTest() {
 
     // CONCRETE
 
-    testValue(stack1)
-    testValue(stack2)
+    testValue(stack1.copy())
+    testValue(stack2.copy())
     testValue(heap1.refValue)
     testValue(heap2.refValue)
 
@@ -127,8 +127,8 @@ fun arrayListAllocTest() {
 
     // INTERFACE
 
-    testListValue(stack1)
-    testListValue(stack2)
+    testListValue(stack1.copy())
+    testListValue(stack2.copy())
     testListValue(heap1.refValue)
     testListValue(heap2.refValue)
 
@@ -160,8 +160,8 @@ fun arrayListAllocTest() {
 
     // CONCRETE NULLABLE
 
-    testValueNullable(stack1)
-    testValueNullable(stack2)
+    testValueNullable(stack1.copy())
+    testValueNullable(stack2.copy())
     testValueNullable(heap1.refValue)
     testValueNullable(heap2.refValue)
 
@@ -204,8 +204,8 @@ fun arrayListAllocTest() {
     stack1Null2.asRef().testPtrExtNullable()
 
     // INTERFACE NULLABLE — interface unions need Optional + for-loop support
-    testListValueNullable(stack1)
-    testListValueNullable(stack2)
+    testListValueNullable(stack1.copy())
+    testListValueNullable(stack2.copy())
     testListValueNullable(heap1.refValue)
     testListValueNullable(heap2.refValue)
 
@@ -444,8 +444,8 @@ fun arrayListDataClassAllocTest() {
 
     // CONCRETE
 
-    testValue(stack1)
-    testValue(stack2)
+    testValue(stack1.copy())
+    testValue(stack2.copy())
     testValue(heap1.refValue)
     testValue(heap2.refValue)
 
@@ -468,8 +468,8 @@ fun arrayListDataClassAllocTest() {
 
     // INTERFACE
 
-    testListValue(stack1)
-    testListValue(stack2)
+    testListValue(stack1.copy())
+    testListValue(stack2.copy())
     testListValue(heap1.refValue)
     testListValue(heap2.refValue)
 
@@ -501,8 +501,8 @@ fun arrayListDataClassAllocTest() {
 
     // CONCRETE NULLABLE
 
-    testValueNullable(stack1)
-    testValueNullable(stack2)
+    testValueNullable(stack1.copy())
+    testValueNullable(stack2.copy())
     testValueNullable(heap1.refValue)
     testValueNullable(heap2.refValue)
 
@@ -545,8 +545,8 @@ fun arrayListDataClassAllocTest() {
     stack1Null2.asRef().testPtrExtNullable()
 
     // INTERFACE NULLABLE — interface unions need Optional + for-loop support
-    testListValueNullable(stack1)
-    testListValueNullable(stack2)
+    testListValueNullable(stack1.copy())
+    testListValueNullable(stack2.copy())
     testListValueNullable(heap1.refValue)
     testListValueNullable(heap2.refValue)
 
