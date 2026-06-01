@@ -115,6 +115,6 @@ class SpriteState(
 	/** Draw the sprite rotated at the current angle, centred on (posX, posY). */
 	fun render(renderer: SDL3.Renderer, texture: SDL3.Texture) {
 		val dst = SDL3.FRect(posX - 32.0f, posY - 32.0f, 64.0f, 64.0f)
-		renderer.renderTextureRotated(texture, dst, angle, SDL3.Flip.None)
+		renderer.renderTextureRotated(texture.copy(), dst.copy(), angle, SDL3.Flip.None)
 	}
 }

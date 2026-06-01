@@ -16,9 +16,9 @@ fun SDL3.Renderer.renderBox(
 	outlineColor: SDL3.Color
 ) {
 	this.setDrawColor(if (hovering) hoverColor else boxColor)
-	this.fillRoundedRect(box, 12.0f)
-	this.setDrawColor(outlineColor)
-	this.drawRoundedRect(box, 12.0f)
+	this.fillRoundedRect(box.copy(), 12.0f)
+	this.setDrawColor(outlineColor.copy())
+	this.drawRoundedRect(box.copy(), 12.0f)
 
 	if (hovering && hoverPulse > 0.0f) {
 		val pulseGrow = hoverPulse * 20.0f
@@ -125,9 +125,9 @@ fun SDL3.Renderer.renderCrosshair(mouseX: Float, mouseY: Float, color: SDL3.Colo
 fun SDL3.Renderer.renderAtlasHud(atlas: SDL3.Texture, tileIdx: Int, ws: SDL3.FPoint) {
 	val src = SDL3.FRect(tileIdx.toFloat() * 32.0f, 0.0f, 32.0f, 32.0f)
 	val dst = SDL3.FRect(10.0f, ws.y - 58.0f, 48.0f, 48.0f)
-	this.renderTexture(atlas, src, dst)
+	this.renderTexture(atlas.copy(), src.copy(), dst.copy())
 	this.setDrawColor(SDL3.Color(255, 255, 255, 80))
-	this.drawRect(dst)
+	this.drawRect(dst.copy())
 }
 
 // ══════════════════════════════════════════════════════════════

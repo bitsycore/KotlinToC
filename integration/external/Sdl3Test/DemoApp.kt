@@ -303,34 +303,34 @@ class DemoApp(
 		val renderScale = if (isKeyDown(SDL3.Scancode.Z)) 2.0f else 1.0f
 
 		renderer.setScale(renderScale, renderScale)
-		renderer.setDrawColor(background)
+		renderer.setDrawColor(background.copy())
 		renderer.clear()
 
-		pulse.render(renderer)
-		renderer.renderBox(box, hovering, hoverPulse, boxColor, hoverColor, outlineColor)
-		renderer.renderLeash(box, mouseX, mouseY, movState, leashColor)
-		renderer.renderDirectionArrow(box, mouseX, mouseY)
-		renderer.renderCrosshair(mouseX, mouseY, crosshairCol)
+		pulse.render(renderer.copy())
+		renderer.renderBox(box.copy(), hovering, hoverPulse, boxColor.copy(), hoverColor.copy(), outlineColor.copy())
+		renderer.renderLeash(box.copy(), mouseX, mouseY, movState.copy(), leashColor.copy())
+		renderer.renderDirectionArrow(box.copy(), mouseX, mouseY)
+		renderer.renderCrosshair(mouseX, mouseY, crosshairCol.copy())
 
 		renderer.setDrawColor(SDL3.Color(255, 255, 255, 60))
 		renderer.drawLine(spriteState.posX, spriteState.posY, mouseX, mouseY)
 
 		renderTrail(trailPoints, trailAngle, trailHead)
-		spriteState.applyMods(sprite)
-		spriteState.render(renderer, sprite)
+		spriteState.applyMods(sprite.copy())
+		spriteState.render(renderer.copy(), sprite.copy())
 
 		// HUD is always 1:1 (no zoom)
 		renderer.setScale(1.0f, 1.0f)
-		renderer.renderAtlasHud(atlas, atlasTileIdx, ws)
-		renderer.renderMinimap(ws, box, spriteState.posX, spriteState.posY, mouseX, mouseY, hovering, boxColor, hoverColor)
+		renderer.renderAtlasHud(atlas.copy(), atlasTileIdx, ws.copy())
+		renderer.renderMinimap(ws.copy(), box.copy(), spriteState.posX, spriteState.posY, mouseX, mouseY, hovering, boxColor.copy(), hoverColor.copy())
 
-		if (showHud) renderHud(ws)
-		if (showLog) renderEventLog(ws)
-		renderTooltipForKind(ws)
-		if (showHelp) renderer.renderHelpOverlay(ws)
+		if (showHud) renderHud(ws.copy())
+		if (showLog) renderEventLog(ws.copy())
+		renderTooltipForKind(ws.copy())
+		if (showHelp) renderer.renderHelpOverlay(ws.copy())
 		if (clipboardTimer > 0.0f) {
 			val msg = "Copied: sprite($clipboardSprX, $clipboardSprY) box($clipboardBoxX, $clipboardBoxY)"
-			renderer.renderClipboardToast(msg, ws)
+			renderer.renderClipboardToast(msg, ws.copy())
 		}
 
 		renderer.present()
@@ -376,15 +376,15 @@ class DemoApp(
 	private fun renderTooltipForKind(ws: SDL3.FPoint) {
 		when (tooltipKind) {
 			1 -> renderer.renderTooltip(mouseX, mouseY,
-				"Box ${box.w.toInt()}x${box.h.toInt()}", "LClick=drag  Scroll=resize", ws)
+				"Box ${box.w.toInt()}x${box.h.toInt()}", "LClick=drag  Scroll=resize", ws.copy())
 			2 -> renderer.renderTooltip(mouseX, mouseY,
-				"Sprite a=${spriteState.angle.toInt()}", "Space=fast spin", ws)
+				"Sprite a=${spriteState.angle.toInt()}", "Space=fast spin", ws.copy())
 			3 -> renderer.renderTooltip(mouseX, mouseY,
-				"Atlas tile ${atlasTileIdx + 1}/4", "Animated at 0.5s/frame", ws)
+				"Atlas tile ${atlasTileIdx + 1}/4", "Animated at 0.5s/frame", ws.copy())
 			4 -> renderer.renderTooltip(mouseX, mouseY,
-				"Minimap", "Shows box, cursor, sprite", ws)
+				"Minimap", "Shows box, cursor, sprite", ws.copy())
 			5 -> renderer.renderTooltip(mouseX, mouseY,
-				"Pulse r=${pulse.radius.toInt()}", "RClick to spawn", ws)
+				"Pulse r=${pulse.radius.toInt()}", "RClick to spawn", ws.copy())
 		}
 	}
 
@@ -420,7 +420,7 @@ class DemoApp(
 			val tidx   = (trailHead + i) % trailPoints.size
 			sprite.setAlphaMod((i + 1) * 10)
 			val ghostDst = SDL3.FRect(trailPoints[tidx].x - 16.0f, trailPoints[tidx].y - 16.0f, 32.0f, 32.0f)
-			renderer.renderTextureRotated(sprite, ghostDst, trailAngle[tidx], SDL3.Flip.None)
+			renderer.renderTextureRotated(sprite.copy(), ghostDst.copy(), trailAngle[tidx], SDL3.Flip.None)
 		}
 	}
 }

@@ -17,7 +17,7 @@ fun main(args: Array<String>) {
 	window.centerOnScreen()
 	window.setMaximumSize(1600, 1200)
 
-	val renderer = SDL3.Renderer(window)
+	val renderer = SDL3.Renderer(window.copy())
 	defer { renderer.destroy() }
 
 	val cursorDefault = SDL3.createSystemCursor(SDL3.SystemCursor.Default)
@@ -25,9 +25,9 @@ fun main(args: Array<String>) {
 	val cursorPointer = SDL3.createSystemCursor(SDL3.SystemCursor.Pointer)
 	defer { cursorPointer.destroy() }
 
-	val sprite = createSpriteTexture(renderer)
+	val sprite = createSpriteTexture(renderer.copy())
 	defer { sprite.destroy() }
-	val atlas = createAtlasTexture(renderer)
+	val atlas = createAtlasTexture(renderer.copy())
 	defer { atlas.destroy() }
 
 	val logBuf1 = Array<Byte>(2048).allocWith(Heap)
@@ -41,12 +41,12 @@ fun main(args: Array<String>) {
 	var frameArena = Arena(frameBuf.asRef(), frameBuf.size)
 
 	val app = DemoApp(
-		window        = window,
-		renderer      = renderer,
-		cursorDefault = cursorDefault,
-		cursorPointer = cursorPointer,
-		sprite        = sprite,
-		atlas         = atlas,
+		window        = window.copy(),
+		renderer      = renderer.copy(),
+		cursorDefault = cursorDefault.copy(),
+		cursorPointer = cursorPointer.copy(),
+		sprite        = sprite.copy(),
+		atlas         = atlas.copy(),
 		background    = SDL3.Color(30, 30, 30, 255),
 		boxColor      = SDL3.Color(0, 128, 255, 255),
 		hoverColor    = SDL3.Color(255, 200, 0, 255),
@@ -103,7 +103,7 @@ fun createSpriteTexture(renderer: SDL3.Renderer): SDL3.Texture {
 	renderer.setDrawColor(255, 220, 0, 255)
 	renderer.fillRect(SDL3.FRect(8.0f, 8.0f, 48.0f, 48.0f))
 	renderer.clearTarget()
-	return tex
+	return tex.copy()
 }
 
 /** 4 × 32×32 px colour tiles laid out on a 128×32 atlas texture. */
@@ -115,5 +115,5 @@ fun createAtlasTexture(renderer: SDL3.Renderer): SDL3.Texture {
 	renderer.setDrawColor(60,  100, 220, 255); renderer.fillRect(SDL3.FRect(64.0f, 0.0f, 32.0f, 32.0f))
 	renderer.setDrawColor(220, 190, 0,   255); renderer.fillRect(SDL3.FRect(96.0f, 0.0f, 32.0f, 32.0f))
 	renderer.clearTarget()
-	return tex
+	return tex.copy()
 }
