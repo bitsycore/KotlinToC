@@ -413,16 +413,27 @@ a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method rec
 - **P3 (S) ✅ SHIPPED** — `.copy()` generalised: data classes synthesize early (incl. `copy(field=…)`),
   plain classes get a no-arg value copy as a post-resolution **fallback** so a user-defined `copy(...)`
   always wins (the early-interception version regressed SDL3 `FRect` — fixed).
-- **P2 (M) — NEXT, the breaking step** — extend the check to call args (incl. ctor/field storage),
-  reassignment, and return. Pair with migration (P6).
+- **P2 (M) ✅ SHIPPED (hard error)** — E071 now also fires on by-value call args (incl. ctor/field
+  storage), reassignment, and returns (returns use `inAllowAlias=false`: a returned `&local` would
+  dangle, E120). **Generic copy-transparency:** a value whose type is a current type-parameter
+  substitution target (T→Vec2) is exempt — a generic author can't `.copy()` a maybe-primitive T
+  (C++-template semantics). Measured break: **20 of 74** integration tests (not ~82%; KTC already
+  favours Ref/allocator idioms), now migrated.
 - **P4 (M)** — `@Size(N)` arrays under the rule (`.copyOf(N)`/`.copy()`).
 - **P5 (L)** — full enums → singleton-backed `Ref<Enum>`; `@SimpleEnum` stays int. *Confirm scope first.*
-- **P6 (L)** — lockstep migration of std-lib + all integration tests to green (driven mostly by P2).
-
-**Measured (P0+P1+P3):** the var-decl phases broke only **2 of 74** integration tests
-(AdvancedGenericsTest: 2 explicit `val x: ArrayList<T>? = stack` copies → `.copy()`; SDL3: the P3
-regression, fixed) — *not* the ~82% the blast scan projected. That projection is almost entirely the
-**P2 by-value-parameter gate**; the var-decl phases barely touch existing code. Suite green at HEAD.
+- **P6 (L) — IN PROGRESS: 73/74 integration + full unit green.** Migration decisions taken:
+  - **Read-only class params → `Ref<T>`** (caller `.asRef()`): std-lib `FileSystem` (9 methods → `Ref<Path>`).
+  - **Deliberate value-passing / field-storage / retaining → `.copy()`** at the call site: the intrinsic
+    fixtures (DataClass, Pointer, MemberInfix, MultiFile, TypeAlias, StringBuffer), AdvancedGenerics
+    value calls, and the affected unit snippets. `.copy()` on a class lowers to the same C (struct
+    pass-by-value), so it never changes behaviour or output assertions.
+  - **Single-field wrappers can't be value classes** (E031: value classes forbid body properties), so
+    `Path` and the SDL3 handle types stay regular classes and migrate via `Ref<T>` / `.copy()` rather
+    than the zero-overhead value-class exemption.
+  - **Remaining: `external/Sdl3Test`** — the published SDL3 module + demo pass many small value structs
+    (Renderer/Texture/FRect/FPoint/Color, all single-field-with-body wrappers) by value to draw calls.
+    Migrating means either `Ref<T>`-ifying much of the SDL3 public API or `.copy()` at dozens of sites —
+    a large, API-shaping chunk on an external module; left for a dedicated pass.
 
 ### Open implementation details / risks
 - **Nullable managed values** (`Some?`) interact with the Optional-struct lowering — start conservative:
