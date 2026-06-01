@@ -6,14 +6,20 @@ package ThreadTest
 // The captured context lives on main's stack, so we join() before main returns (C-style). main returns
 // a non-zero exit code on failure.
 
-class Ctx(var counter: Int, val lock: Mutex)
+class Ctx(var counter: Int, val lock: Mutex) {
+	override fun dispose() {
+		lock.destroy()
+	}
+}
 
 // 1000 increments under the lock. Inline, so it expands inside each generated thread entry.
-inline fun bump(ctx: Ref<Ctx>) {
+fun bump(ctx: Ref<Ctx>) {
 	var i = 0
 	while (i < 1000) {
-		ctx.refValue.lock.withLock { ctx.refValue.counter = ctx.refValue.counter + 1 }
-		i = i + 1
+		ctx.lock.withLock {
+			ctx.refValue.counter++
+		}
+		i++
 	}
 }
 
@@ -37,9 +43,9 @@ fun main(): Int {
 	t3.join()
 
 	// Value-returning withLock (R = Int): read the final counter under the lock.
-	val total = ctx.refValue.lock.withLock { ctx.refValue.counter }
+	val total = ctx.lock.withLock { ctx.counter }
 
-	ctx.refValue.lock.destroy()
+	ctx.dispose()
 	Heap.freeMem(ctx)
 
 	if (total != 4000) {
