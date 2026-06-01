@@ -101,9 +101,10 @@ fun main(args: Array<String>) {
 	dup.dispose()                   // free the clone's buffer, then the clone itself
 	Heap.freeMem(dup)
 	println("clone deep-copy OK")
-	// (List<T> : Cloneable<List<T>> — the contract is enforced by the std-lib; concrete .clone() above
-	//  returns Ref<ArrayList<Int>>. Cloning *through* the Cloneable<List<Int>> interface returns
-	//  Ref<List<Int>>, which can't be disposed — List has no dispose() — so prefer the concrete clone.)
+	// List<T> : Cloneable<List<T>> — the contract is enforced and concrete .clone() returns
+	// Ref<ArrayList<Int>> (used above). Cloning *through* the interface returns Ref<List<Int>>;
+	// dispose() is fine there (it's on Any), but member access on a Ref<interface> value is not yet
+	// lowered as a vtable call, so use the concrete type to consume the clone for now.
 
 	list.clear()
 	println("size after clear:")
