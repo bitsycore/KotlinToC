@@ -112,7 +112,7 @@ internal fun CCodeGen.genLValue(e: Expr): String {
 				val vRecvKtc     = inferExprTypeKtc(e.obj)
 				val vRecvKtcCore = vRecvKtc.stripNullable
 				val vOp          = if (vRecvKtcCore is KtcType.Ptr) "->" else "."
-				"${genExpr(e.obj)}$vOp${e.name}"
+				"${genExpr(e.obj)}$vOp${thisFieldName(e.name, e.obj)}"
 				}
 			}
 

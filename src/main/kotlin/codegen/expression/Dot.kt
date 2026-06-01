@@ -6,12 +6,19 @@ import com.bitsycore.ktc.codegen.emit.collectAllIfaceProperties
 import com.bitsycore.ktc.codegen.emit.registerClassFields
 import com.bitsycore.ktc.types.KtcType
 
-/* Returns the C field name for a dot access, prefixing private fields with PRIV_ when accessed via this. */
-private fun CCodeGen.thisFieldName(name: String, obj: Expr): String =
-	if (currentClass != null && obj is ThisExpr) {
-		val ci = classes[currentClass]!!
-		if (name in ci.privateProps) "PRIV_$name" else name
-		} else name
+/* Returns the C field name for a dot access, prefixing private stored fields with PRIV_. Private fields
+   are PRIV_-named in the struct regardless of access path, so this applies to `this.field` AND to a field
+   on another instance of the same class (cross-instance private access, e.g. a copy/clone method touching
+   another instance's privates — legal in Kotlin/Java/C++; cross-class access is rejected elsewhere). */
+internal fun CCodeGen.thisFieldName(name: String, obj: Expr): String {
+	val vCls = if (obj is ThisExpr) currentClass
+		else {
+			val vK = inferExprTypeKtc(obj).stripNullable
+			(vK as? KtcType.User)?.baseName ?: ((vK as? KtcType.Ptr)?.inner as? KtcType.User)?.baseName
+			}
+	val vCi = vCls?.let { classes[it] }
+	return if (vCi != null && name in vCi.privateProps) "PRIV_$name" else name
+	}
 
 internal fun CCodeGen.genDot(e: DotExpr): String {
     // C package passthrough: C.EXIT_SUCCESS → EXIT_SUCCESS, C.NULL → NULL.
