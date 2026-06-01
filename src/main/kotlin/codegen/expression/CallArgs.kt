@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen.expression
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.statement.checkImplicitCopy
 import com.bitsycore.ktc.types.KtcType
 
 /**
@@ -354,6 +355,10 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						}
 					}
 				} else {
+				// Plain by-value parameter. No implicit copy of a class lvalue (E071): a class /
+				// data-class value passed by value would silently struct-copy — force .copy() /
+				// .copyWith(), or pass a reference to a Ref<T> param. No-op for primitives / String.
+				checkImplicitCopy(paramTypeKtc, arg.expr, "parameter '${param.name}'")
 				// Auto-cast any pointer to AnyPtr / Byte* (for freeMem, reallocMem, etc.)
 				val argKtc     = inferExprTypeKtc(arg.expr)
 				val argKtcCore = argKtc.stripNullable

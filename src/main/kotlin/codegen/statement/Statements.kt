@@ -77,18 +77,25 @@ internal fun isLValueExpr(inExpr: Expr): Boolean =
 lvalue into a by-value target. The only sanctioned copies are explicit .copy() (value copy → T) or
 .copyWith(allocator) (heap copy → Ref<T>) — both CallExprs, so isLValueExpr lets them through. To
 alias without copying, drop the type annotation (val x = src) or take a reference (src.asRef()). */
-internal fun CCodeGen.checkImplicitCopy(inTargetKtc: KtcType?, inSrcExpr: Expr, inWhere: String) {
+internal fun CCodeGen.checkImplicitCopy(
+	inTargetKtc: KtcType?,
+	inSrcExpr: Expr,
+	inWhere: String,
+	inAllowAlias: Boolean = true,   // false at a return site, where aliasing (&local) would dangle (E120)
+	) {
 	val vTarget = inTargetKtc.stripNullable ?: return     // nothing to guard when target type is unknown
 	if (!vTarget.isUserValueType) return                  // target must be a by-value class / data-class
 	if (!isLValueExpr(inSrcExpr)) return                  // rvalue (ctor / fn result / .copy()) is fine
 	val vSrc = inferExprTypeKtc(inSrcExpr).stripNullable ?: return  // source KtcType (stripped of Nullable)
 	if (!vSrc.isUserValueType) return                     // source isn't a value-class lvalue
 	val vName = (inSrcExpr as? NameExpr)?.name ?: "value"          // best-effort name for the message
+	val vAlias = if (inAllowAlias)
+		" To alias without copying, bind with no type annotation (val x = $vName) or take a reference ($vName.asRef())."
+		else ""
 	codegenError("E071",
 		"Implicit copy of '$vName' into $inWhere (type '${vTarget.toInternalStr}'). A value copy " +
 		"must be explicit: use '$vName.copy()' (value copy) or '$vName.copyWith(allocator)' (heap, " +
-		"returns Ref<T>). To alias without copying, bind with no type annotation (val x = $vName) " +
-		"or take a reference ($vName.asRef()).")
+		"returns Ref<T>).$vAlias")
 	}
 
 /* Statement dispatcher, block emitter and expression-statement emitter.

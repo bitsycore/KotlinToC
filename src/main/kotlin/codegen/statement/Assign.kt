@@ -142,6 +142,8 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     if (s.target is NameExpr && varKtc != null && s.op == "=") {
         val vValKtc = inferExprTypeKtc(s.value)
         checkPtrValueBoundary(TypeRef(varType!!), varKtc, vValKtc, s.value, "assignment to '$varName'")
+        // No implicit copy of a value type (E071): reassigning a by-value class var from a class lvalue.
+        checkImplicitCopy(varKtc, s.value, "assignment to '$varName'")
     }
 
     // Val reassignment check
@@ -276,6 +278,9 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         }
         // E120: returning a Ref<T> that points into the current frame would dangle.
         if (s.value != null) checkReturnDoesNotEscapeFrameLocal(s.value)
+        // E071: returning a value-type lvalue is an implicit copy — require explicit .copy()/.copyWith().
+        // Aliasing (&local) is NOT offered as a fix here: a returned reference to a frame local dangles (E120).
+        if (s.value != null) checkImplicitCopy(currentFnReturnKtcType, s.value, "the function's return value", inAllowAlias = false)
     }
     if (endLabel != null) {
         // Inside an inline body expansion: assign result (if any), then jump to end label
