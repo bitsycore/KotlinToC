@@ -48,19 +48,19 @@ fun testPathBasics() {
 fun testWriteAndRead() {
 	val p = Path("fs_test_data.txt")
 	// Clean slate
-	if (FileSystem.exists(p)) FileSystem.delete(p)
-	if (FileSystem.exists(p)) error("FAIL: delete didn't remove")
+	if (FileSystem.exists(p.asRef())) FileSystem.delete(p.asRef())
+	if (FileSystem.exists(p.asRef())) error("FAIL: delete didn't remove")
 
-	if (!FileSystem.writeUtf8(p, "Hello, world!\nLine 2\n")) error("FAIL writeUtf8")
-	if (!FileSystem.exists(p)) error("FAIL exists after write")
+	if (!FileSystem.writeUtf8(p.asRef(), "Hello, world!\nLine 2\n")) error("FAIL writeUtf8")
+	if (!FileSystem.exists(p.asRef())) error("FAIL exists after write")
 
-	val meta = FileSystem.metadata(p)
+	val meta = FileSystem.metadata(p.asRef())
 	if (!meta.isRegularFile) error("FAIL meta isRegularFile")
 	if (meta.isDirectory)    error("FAIL meta isDirectory (should be false)")
 	if (meta.size != 21L) error("FAIL meta size: expected 21, got ${meta.size}")
 
 	// Read it back via a FileSource
-	val src = FileSystem.source(p)
+	val src = FileSystem.source(p.asRef())
 	if (!src.isOpen) error("FAIL source open")
 	val buf = ByteArray(64)
 	val n = src.read(buf.asRaw(), buf.size)
@@ -70,37 +70,37 @@ fun testWriteAndRead() {
 	if (buf[0] != 72.toByte()) error("FAIL read content: byte 0 = ${buf[0]}")
 
 	// Cleanup
-	if (!FileSystem.delete(p)) error("FAIL delete after read")
-	if (FileSystem.exists(p))  error("FAIL still exists after delete")
+	if (!FileSystem.delete(p.asRef())) error("FAIL delete after read")
+	if (FileSystem.exists(p.asRef()))  error("FAIL still exists after delete")
 }
 
 fun testRename() {
 	val a = Path("fs_test_rename_a.txt")
 	val b = Path("fs_test_rename_b.txt")
-	if (FileSystem.exists(a)) FileSystem.delete(a)
-	if (FileSystem.exists(b)) FileSystem.delete(b)
-	FileSystem.writeUtf8(a, "x")
-	if (!FileSystem.rename(a, b)) error("FAIL rename")
-	if (FileSystem.exists(a))    error("FAIL: source still exists after rename")
-	if (!FileSystem.exists(b))   error("FAIL: dest missing after rename")
-	FileSystem.delete(b)
+	if (FileSystem.exists(a.asRef())) FileSystem.delete(a.asRef())
+	if (FileSystem.exists(b.asRef())) FileSystem.delete(b.asRef())
+	FileSystem.writeUtf8(a.asRef(), "x")
+	if (!FileSystem.rename(a.asRef(), b.asRef())) error("FAIL rename")
+	if (FileSystem.exists(a.asRef()))    error("FAIL: source still exists after rename")
+	if (!FileSystem.exists(b.asRef()))   error("FAIL: dest missing after rename")
+	FileSystem.delete(b.asRef())
 }
 
 fun testDirectoryAndList() {
 	val dir = Path("fs_test_dir")
-	if (FileSystem.exists(dir)) {
+	if (FileSystem.exists(dir.asRef())) {
 		// best-effort cleanup of any leftover
-		listDir(dir) { name -> FileSystem.delete(dir.child(name)) }
-		FileSystem.delete(dir)
+		listDir(dir) { name -> FileSystem.delete(dir.child(name).asRef()) }
+		FileSystem.delete(dir.asRef())
 	}
-	if (!FileSystem.createDirectory(dir)) error("FAIL createDirectory")
-	val meta = FileSystem.metadata(dir)
+	if (!FileSystem.createDirectory(dir.asRef())) error("FAIL createDirectory")
+	val meta = FileSystem.metadata(dir.asRef())
 	if (!meta.isDirectory) error("FAIL dir.isDirectory")
 	if (meta.isRegularFile) error("FAIL dir.isRegularFile (should be false)")
 
-	FileSystem.writeUtf8(dir.child("a.txt"), "A")
-	FileSystem.writeUtf8(dir.child("b.txt"), "BB")
-	FileSystem.writeUtf8(dir.child("c.dat"), "CCC")
+	FileSystem.writeUtf8(dir.child("a.txt").asRef(), "A")
+	FileSystem.writeUtf8(dir.child("b.txt").asRef(), "BB")
+	FileSystem.writeUtf8(dir.child("c.dat").asRef(), "CCC")
 
 	var count = 0
 	var sawA = false
@@ -116,10 +116,10 @@ fun testDirectoryAndList() {
 	if (!sawA || !sawB || !sawC) error("FAIL list contents")
 
 	// Cleanup
-	FileSystem.delete(dir.child("a.txt"))
-	FileSystem.delete(dir.child("b.txt"))
-	FileSystem.delete(dir.child("c.dat"))
-	FileSystem.delete(dir)
+	FileSystem.delete(dir.child("a.txt").asRef())
+	FileSystem.delete(dir.child("b.txt").asRef())
+	FileSystem.delete(dir.child("c.dat").asRef())
+	FileSystem.delete(dir.asRef())
 }
 
 fun main(args: Array<String>) {

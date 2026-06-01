@@ -112,7 +112,7 @@ object FileSystem {
 	// ── Queries ────────────────────────────────────────────────
 
 	/** True if [path] exists (file OR directory). */
-	fun exists(path: Path): Boolean {
+	fun exists(path: Ref<Path>): Boolean {
 		return C.ktc_core_fs_exists(path.s.ptr, path.s.length) != 0
 		}
 
@@ -122,7 +122,7 @@ object FileSystem {
 	Check `.exists` (or `isRegularFile || isDirectory`) before trusting the
 	other fields.
 	 */
-	fun metadata(path: Path): FileMetadata {
+	fun metadata(path: Ref<Path>): FileMetadata {
 		var vMeta: C.ktc_core_fs_meta = C.zeroed()
 		if (C.ktc_core_fs_metadata(path.s.ptr, path.s.length, C.addr(vMeta)) == 0) {
 			return FileMetadata(false, false, -1L, 0L)
@@ -138,17 +138,17 @@ object FileSystem {
 	// ── Mutation ───────────────────────────────────────────────
 
 	/** Delete [path]. Returns true on success. Empty directories are accepted; non-empty are rejected. */
-	fun delete(path: Path): Boolean {
+	fun delete(path: Ref<Path>): Boolean {
 		return C.ktc_core_fs_delete(path.s.ptr, path.s.length) != 0
 		}
 
 	/** Rename or move [from] to [to]. Returns true on success. */
-	fun rename(from: Path, to: Path): Boolean {
+	fun rename(from: Ref<Path>, to: Ref<Path>): Boolean {
 		return C.ktc_core_fs_rename(from.s.ptr, from.s.length, to.s.ptr, to.s.length) != 0
 		}
 
 	/** Create a single directory at [path] (parent must exist). Returns true on success. */
-	fun createDirectory(path: Path): Boolean {
+	fun createDirectory(path: Ref<Path>): Boolean {
 		return C.ktc_core_fs_mkdir(path.s.ptr, path.s.length) != 0
 		}
 
@@ -159,7 +159,7 @@ object FileSystem {
 	struct; check `.isOpen` to know whether the underlying file was opened
 	successfully.
 	 */
-	fun source(path: Path): FileSource {
+	fun source(path: Ref<Path>): FileSource {
 		val vMode = "rb"
 		val vFp: AnyPtr = C.ktc_core_fs_fopen(path.s.ptr, path.s.length, vMode.ptr)
 		return FileSource(vFp)
@@ -170,7 +170,7 @@ object FileSystem {
 	The returned FileSink is always valid as a struct; check `.isOpen` to know
 	whether the file was opened successfully.
 	 */
-	fun sink(path: Path, append: Boolean = false): FileSink {
+	fun sink(path: Ref<Path>, append: Boolean = false): FileSink {
 		val vMode = if (append) "ab" else "wb"
 		val vFp: AnyPtr = C.ktc_core_fs_fopen(path.s.ptr, path.s.length, vMode.ptr)
 		return FileSink(vFp)
@@ -182,7 +182,7 @@ object FileSystem {
 	Write [byteCount] bytes from [buf] to [path], truncating any existing file.
 	Returns true if all bytes were written.
 	 */
-	fun writeBytes(path: Path, buf: AnyPtr, byteCount: Int): Boolean {
+	fun writeBytes(path: Ref<Path>, buf: AnyPtr, byteCount: Int): Boolean {
 		val vSink = sink(path)
 		if (!vSink.isOpen) return false
 		val vN = vSink.write(buf, byteCount)
@@ -191,7 +191,7 @@ object FileSystem {
 		}
 
 	/** Write the bytes of [content] (UTF-8 from the String view) to [path]. */
-	fun writeUtf8(path: Path, content: String): Boolean {
+	fun writeUtf8(path: Ref<Path>, content: String): Boolean {
 		val vSink = sink(path)
 		if (!vSink.isOpen) return false
 		val vN = vSink.write(content.ptr, content.length)
