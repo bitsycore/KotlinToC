@@ -280,7 +280,10 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         if (s.value != null) checkReturnDoesNotEscapeFrameLocal(s.value)
         // E071: returning a value-type lvalue is an implicit copy — require explicit .copy()/.copyWith().
         // Aliasing (&local) is NOT offered as a fix here: a returned reference to a frame local dangles (E120).
-        if (s.value != null) checkImplicitCopy(currentFnReturnKtcType, s.value, "the function's return value", inAllowAlias = false)
+        // @Size(N) array returns are exempt: returning a fixed-size array by value is the sanctioned safe
+        // array-return idiom (the cost is explicit in the @Size(N) signature, and the alternative — a bare
+        // Array<T> return — dangles), so it isn't the accidental copy the rule targets.
+        if (s.value != null && !currentFnReturnsSizedArray) checkImplicitCopy(currentFnReturnKtcType, s.value, "the function's return value", inAllowAlias = false)
     }
     if (endLabel != null) {
         // Inside an inline body expansion: assign result (if any), then jump to end label

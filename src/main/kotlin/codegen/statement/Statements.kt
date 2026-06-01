@@ -84,15 +84,29 @@ internal fun CCodeGen.checkImplicitCopy(
 	inAllowAlias: Boolean = true,   // false at a return site, where aliasing (&local) would dangle (E120)
 	) {
 	val vTarget = inTargetKtc.stripNullable ?: return     // nothing to guard when target type is unknown
-	if (!vTarget.isUserValueType) return                  // target must be a by-value class / data-class
+	val vTargetSize = vTarget.asArr?.sized                // N for a @Size(N) array target (Arr or Ptr(Arr)), else null (P4)
+	if (!vTarget.isUserValueType && vTargetSize == null) return   // guard only by-value class / data-class / @Size arrays
 	// Generic copy-transparency: inside a generic instantiation, a value whose type is a type-parameter
 	// substitution target (e.g. T → Vec2) is exempt — the generic author can't .copy() a T that may be a
 	// primitive. Generic code copies T by value like a C++ template; the rule targets concrete user code.
 	if (typeSubst.isNotEmpty() && typeSubst.values.any { it.removeSuffix("?") == vTarget.toInternalStr }) return
-	if (!isLValueExpr(inSrcExpr)) return                  // rvalue (ctor / fn result / .copy()) is fine
+	if (!isLValueExpr(inSrcExpr)) return                  // rvalue (ctor / fn result / .copy()/.copyOf()) is fine
 	val vSrc = inferExprTypeKtc(inSrcExpr).stripNullable ?: return  // source KtcType (stripped of Nullable)
-	if (!vSrc.isUserValueType) return                     // source isn't a value-class lvalue
+	// Source must be a value lvalue: a user value, or — for a @Size(N) target — an array-like lvalue
+	// (the @Size size is tracked side-band, not in the KtcType, so don't require vSrc to carry .sized).
+	if (!vSrc.isUserValueType && !(vTargetSize != null && vSrc.isArrayLike)) return
 	val vName = (inSrcExpr as? NameExpr)?.name ?: "value"          // best-effort name for the message
+	// @Size(N) array (P4): a fixed-size stack struct — copy explicitly via .copyOf(N) (or .copy()). Gate
+	// ONLY a genuine same-size @Size(N)→@Size(N) copy of a named lvalue. A different / unknown source size
+	// is a truncating CONVERSION the implicit-.copyOf truncate warning already handles — leave it alone.
+	if (vTargetSize != null) {
+		val vSrcSize = (inSrcExpr as? NameExpr)?.name?.let { lookupArraySize(it) }
+		if (vSrcSize != vTargetSize) return
+		codegenError("E071",
+			"Implicit copy of '$vName' into $inWhere (a @Size($vTargetSize) array — a fixed-size stack " +
+			"struct). A copy must be explicit: use '$vName.copyOf($vTargetSize)' (or '$vName.copy()'). " +
+			"To alias without copying, take a reference ($vName.asRef()).")
+		}
 	val vAlias = if (inAllowAlias)
 		" To alias without copying, bind with no type annotation (val x = $vName) or take a reference ($vName.asRef())."
 		else ""

@@ -107,4 +107,18 @@ class CopyValueUnitTest : TranspilerTestBase() {
 		""")
 		assertTrue(r.source.contains("ktc_Int b = a"), "expected plain int copy, got:\n${r.source}")
 	}
+
+	// ── P4: @Size(N) arrays are guarded at bindings/assignments ───────
+	// (Param/return sites are exempt — a @Size(N) signature makes the copy cost visible, unlike a
+	// plain class param; the rule targets the hidden copy behind `=`.)
+
+	@Test fun sizedArrayBindingFromLvalueErrors() {
+		transpileExpectError("""
+			package test.Main
+			fun main(args: Array<String>) {
+				val arr: @Size(3) IntArray = intArrayOf(1, 2, 3)
+				val dup: @Size(3) IntArray = arr
+			}
+		""", "Implicit copy")
+	}
 }
