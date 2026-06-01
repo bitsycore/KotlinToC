@@ -127,12 +127,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				}
 			"value" -> codegenError("Use '.refValue' instead of '.value()' to dereference a Ref<T>")
 			"set"  -> codegenError("Use 'p.refValue = x' to assign through a Ref (instead of p.set(x))")
-			"copy" -> if (classes[pointerBase] != null) {
-				// No-arg .copy() is a value copy for ANY class; copy(field = …) override stays data-class only.
-				if (args.isNotEmpty() && classes[pointerBase]?.isData != true)
-					codegenError("E050", "copy(field = …) with named arguments is only available on data classes ('$pointerBase' is a plain class) — use a no-arg .copy() for a value copy.")
-				return genDataClassCopy(recv, pointerBase, args, heap = true)
-				}
+			"copy" -> if (classes[pointerBase]?.isData == true) return genDataClassCopy(recv, pointerBase, args, heap = true)
 			"asRef" -> return recv
 			"ptr" -> codegenError("Use '.asRef()' instead of '.ptr()' to take a reference")
 			}
@@ -215,12 +210,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 
 	val vClassInfo = classInfoFor(recvTypeKtc)
 	if (vClassInfo != null) {
-		if (method == "copy") {
-			// No-arg .copy() is a value copy for ANY class; copy(field = …) override stays data-class only.
-			if (args.isNotEmpty() && !vClassInfo.isData)
-				codegenError("E050", "copy(field = …) with named arguments is only available on data classes ('${vClassInfo.baseName}' is a plain class) — use a no-arg .copy() for a value copy.")
-			return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
-			}
+		// Data class: synthesize the copy (incl. copy(field=…) override) early. A plain class's no-arg
+		// value copy is synthesized below only as a fallback, so a user-defined copy(...) still wins.
+		if (method == "copy" && vClassInfo.isData) return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
 		if (method == "asRef") {
 			val t = tmp()
 			preStmts += "${vClassInfo.flatName}* $t = ${addressOfRecv(recv, vClassInfo.flatName)};"
@@ -250,6 +242,9 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		if (effectiveDecl == null && !starExtFunDecls.any { it.name == method }
 			&& method !in kClassReceiverIntrinsics
 		) {
+			// Plain class with no member/extension copy → synthesize a no-arg value copy (the E071 escape
+			// hatch). A user-defined copy(...) resolves above and wins; copy(field=…) override is data-only.
+			if (method == "copy" && args.isEmpty()) return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
 			codegenError("E050", "Unknown method '$method' on receiver of type '${vClassInfo.baseName}' — no matching method, extension function, or operator.")
 		}
 		val isExtFun       = effectiveDecl?.receiver != null
