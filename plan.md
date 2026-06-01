@@ -315,8 +315,13 @@ Remaining polish:
   part of the A1 inference refactor (canonical KtcType, no string round-trips).
 
 ═══════════════════════════════════════════════════════════════════════
-## 8. No implicit copy of value types — `copy()`/`copyWith()`-gated (L)
+## 8. No implicit copy of value types — `copy()`/`copyWith()`-gated (L) ✅ SHIPPED
 ═══════════════════════════════════════════════════════════════════════
+
+**STATUS: complete & green — 74/74 integration + full unit suite.** P0–P4 + P6 shipped (E071 gate at
+var-decl / call-arg / reassign / return; `val b = a` → `Ref<T>` alias; `.copy()` on any class; generic
+copy-transparency; `@Size(N)` binding gate; std-lib + all tests migrated). Only P5 (optional enum-singleton
+representation, orthogonal — enums are already exempt) is deferred. Detail below.
 
 Make implicit copies of *managed value types* illegal, C++-"deleted copy-assignment" style. The only
 ways to materialise a copy are an **explicit** `.copy()` (value copy → `T`) or `.copyWith(allocator)`
@@ -424,9 +429,14 @@ a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method rec
   & returns (a `@Size(N)` signature makes the copy cost visible, unlike a plain class param; `@Size` return
   -by-value is the safe array-return idiom), and truncating conversions (different/unknown source size →
   the existing implicit-`.copyOf` truncate warning still applies).
-- **P5 (L) — NOT STARTED** — full enums → singleton-backed `Ref<Enum>`; `@SimpleEnum` stays int. A real
-  representation overhaul (emit/Enum.kt singletons, Dot access, `when`/switch, `.values()`/`.valueOf()`,
-  equality, per-entry vtables). Recommend a dedicated pass.
+- **P5 (L) — DEFERRED, optional & orthogonal** — full enums → singleton-backed `Ref<Enum>`. **Key finding:
+  enums are ALREADY exempt from E071** (`isUserValueType` = Class|DataClass only), so the no-copy rule is
+  already complete and correct for them — they copy a small struct cheaply, and `@SimpleEnum` is a plain
+  `int`. P5 is therefore *not required by the rule*; it's a separate representation overhaul to get Kotlin
+  `===` identity + zero enum-struct copies (`Color.RED` → `&singleton` — the `const` singletons already
+  exist at Enum.kt:90; re-type every enum value to `Color*`; touch `when`/switch, equality, `.values()`/
+  `.valueOf()`, params/returns/fields, per-entry vtables). High regression risk to a core feature for
+  marginal benefit — recommend a dedicated, separately-confirmed pass.
 - **P6 (L) — IN PROGRESS: 73/74 integration + full unit green.** Migration decisions taken:
   - **Read-only class params → `Ref<T>`** (caller `.asRef()`): std-lib `FileSystem` (9 methods → `Ref<Path>`).
   - **Deliberate value-passing / field-storage / retaining → `.copy()`** at the call site: the intrinsic
