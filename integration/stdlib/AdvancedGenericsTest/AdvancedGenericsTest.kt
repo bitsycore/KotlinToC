@@ -155,7 +155,7 @@ fun arrayListAllocTest() {
 
     val heap1Null1: Ref<ArrayList<Int>?> = heap1
     val heap1Null2: Ref<ArrayList<Int>?> = null
-    val stack1Null1: ArrayList<Int>? = stack1
+    val stack1Null1: ArrayList<Int>? = stack1.copy()
     val stack1Null2: ArrayList<Int>? = null
 
     // CONCRETE NULLABLE
@@ -496,7 +496,7 @@ fun arrayListDataClassAllocTest() {
 
     val heap1Null1: Ref<ArrayList<Vec3>?> = heap1
     val heap1Null2: Ref<ArrayList<Vec3>?> = null
-    val stack1Null1: ArrayList<Vec2>? = stack1
+    val stack1Null1: ArrayList<Vec2>? = stack1.copy()
     val stack1Null2: ArrayList<Vec2>? = null
 
     // CONCRETE NULLABLE
