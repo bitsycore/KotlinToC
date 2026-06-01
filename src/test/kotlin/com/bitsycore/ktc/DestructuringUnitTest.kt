@@ -111,12 +111,12 @@ class DestructuringUnitTest : TranspilerTestBase() {
             decls = "data class Vec2(val x: Float, val y: Float)"
         )
         r.sourceContains("\$ditem_x_y")
-        // x and y are extracted from the per-iteration element. The
-        // destructuring goes through a temporary tmp, so the chain is
-        //   $ditem_x_y → $dN = $ditem_x_y → x = $dN.x
-        // — match the field-access tail rather than the full chain.
-        r.sourceMatches(Regex("const ktc_Float x = \\\$\\w+\\.x"))
-        r.sourceMatches(Regex("const ktc_Float y = \\\$\\w+\\.y"))
+        // x and y are extracted from the per-iteration element. The destructuring tmp binds the
+        // element by reference (no-implicit-copy default: $dN = $ditem.asRef()), so field access
+        // auto-derefs through the pointer:
+        //   $ditem_x_y → $dN = &$ditem_x_y → x = $dN->x
+        r.sourceMatches(Regex("const ktc_Float x = \\\$\\w+->x"))
+        r.sourceMatches(Regex("const ktc_Float y = \\\$\\w+->y"))
     }
 
     @Test fun forDestructuringTriple() {

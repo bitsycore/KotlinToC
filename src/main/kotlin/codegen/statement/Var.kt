@@ -129,6 +129,18 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             return
         }
     }
+    // No-implicit-copy default (P1): an un-annotated `val/var b = a` where `a` is a user-value lvalue
+    // infers a reference (Ref<T>) and ALIASES — no struct copy. Desugar to `.asRef()` so the existing
+    // pointer path emits `T* b = &a;` and member access auto-derefs through it. A real (independent)
+    // copy must be explicit via `.copy()` / `.copyWith()`. CallExprs (ctor / .copy() / fn result) are
+    // rvalues (isLValueExpr == false) and keep their by-value inference, so this never re-triggers.
+    if (s.type == null && s.init != null && isLValueExpr(s.init)) {
+        val vInitKtc = inferExprTypeKtc(s.init)
+        if (vInitKtc != null && vInitKtc.isUserValueType) {
+            emitVarDecl(s.copy(init = CallExpr(DotExpr(s.init, "asRef"), emptyList())), ind)
+            return
+        }
+    }
     // KtcType for C-type emission. An un-annotated lambda val infers its functor type from the lambda's
     // own (typed) parameters + body result, so `val f = { x: Int -> … }` lowers to a closure with no
     // explicit `(Int) -> …` annotation (the closure path below keys off vKtc being a Func).

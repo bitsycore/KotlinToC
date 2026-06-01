@@ -73,4 +73,38 @@ class CopyValueUnitTest : TranspilerTestBase() {
 			val d: Int = a
 		""")
 	}
+
+	// ── P1: un-annotated `val b = a` aliases (Ref<T>), no copy ─────────
+
+	@Test fun unannotatedBindingAliasesAsRef() {
+		val r = transpileMain("""
+			val a = Box(3)
+			val b = a
+			println(b.x)
+		""", decls = "class Box(val x: Int)")
+		// b aliases a: address-of on the source, and member access auto-derefs (b->x).
+		assertTrue(r.source.contains("&a"), "expected address-of for the alias, got:\n${r.source}")
+		assertTrue(r.source.contains("->x"), "expected auto-deref member access, got:\n${r.source}")
+	}
+
+	@Test fun copyBindingStaysValue() {
+		val r = transpileMain("""
+			val a = Box(3)
+			val b = a.copy()
+		""", decls = "class Box(val x: Int)")
+		// .copy() is an rvalue → b is a value (struct copy), not a pointer alias.
+		assertTrue(
+			r.source.contains("Box b = ") && !r.source.contains("Box* b"),
+			"expected a value decl for b (not a pointer), got:\n${r.source}"
+		)
+	}
+
+	@Test fun primitiveBindingStaysValue() {
+		// `val b = a` for a primitive must NOT become a reference.
+		val r = transpileMain("""
+			val a = 7
+			val b = a
+		""")
+		assertTrue(r.source.contains("ktc_Int b = a"), "expected plain int copy, got:\n${r.source}")
+	}
 }
