@@ -419,8 +419,14 @@ a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method rec
   substitution target (T→Vec2) is exempt — a generic author can't `.copy()` a maybe-primitive T
   (C++-template semantics). Measured break: **20 of 74** integration tests (not ~82%; KTC already
   favours Ref/allocator idioms), now migrated.
-- **P4 (M)** — `@Size(N)` arrays under the rule (`.copyOf(N)`/`.copy()`).
-- **P5 (L)** — full enums → singleton-backed `Ref<Enum>`; `@SimpleEnum` stays int. *Confirm scope first.*
+- **P4 (S) ✅ SHIPPED** — `@Size(N)` arrays gated at **bindings/assignments** (same-size `@Size(N)`→`@Size(N)`
+  named-lvalue copy; source size via `lookupArraySize`); fix-it `.copyOf(N)`/`.copy()`. **Exempt:** params
+  & returns (a `@Size(N)` signature makes the copy cost visible, unlike a plain class param; `@Size` return
+  -by-value is the safe array-return idiom), and truncating conversions (different/unknown source size →
+  the existing implicit-`.copyOf` truncate warning still applies).
+- **P5 (L) — NOT STARTED** — full enums → singleton-backed `Ref<Enum>`; `@SimpleEnum` stays int. A real
+  representation overhaul (emit/Enum.kt singletons, Dot access, `when`/switch, `.values()`/`.valueOf()`,
+  equality, per-entry vtables). Recommend a dedicated pass.
 - **P6 (L) — IN PROGRESS: 73/74 integration + full unit green.** Migration decisions taken:
   - **Read-only class params → `Ref<T>`** (caller `.asRef()`): std-lib `FileSystem` (9 methods → `Ref<Path>`).
   - **Deliberate value-passing / field-storage / retaining → `.copy()`** at the call site: the intrinsic
@@ -430,10 +436,14 @@ a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method rec
   - **Single-field wrappers can't be value classes** (E031: value classes forbid body properties), so
     `Path` and the SDL3 handle types stay regular classes and migrate via `Ref<T>` / `.copy()` rather
     than the zero-overhead value-class exemption.
-  - **Remaining: `external/Sdl3Test`** — the published SDL3 module + demo pass many small value structs
-    (Renderer/Texture/FRect/FPoint/Color, all single-field-with-body wrappers) by value to draw calls.
-    Migrating means either `Ref<T>`-ifying much of the SDL3 public API or `.copy()` at dozens of sites —
-    a large, API-shaping chunk on an external module; left for a dedicated pass.
+  - **Remaining: `external/Sdl3Test`** (decided: `Ref<T>` the SDL3 demo API). The SDL3 *module* funcs are
+    all `inline` → never trip E071 (inline args bypass `expandCallArgs`); only the demo's **non-inline**
+    render functions take value structs by value. **Validated:** converting a value-struct param to
+    `Ref<T>` works — incl. `Ref<Renderer>` used as a *receiver* for the value-receiver SDL3 extension
+    calls (auto-deref handles it). But it's a **large mechanical refactor**: the demo threads
+    `FRect`/`Color`/`FPoint`/`Texture` values through its whole render pipeline (renderBox/renderLeash/
+    renderCrosshair/renderAtlasHud/render/applyMods/…), ~dozens of params + `.asRef()` call sites. Left as
+    a dedicated mechanical pass; suite is **73/74 + full unit green** without it.
 
 ### Open implementation details / risks
 - **Nullable managed values** (`Some?`) interact with the Optional-struct lowering — start conservative:
