@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.FunDecl
 import com.bitsycore.ktc.ast.PropDecl
 import com.bitsycore.ktc.ast.TypeRef
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.types.KtcType
 
 // ── Vtable struct + cast function emission ────────────────────────
 
@@ -64,6 +65,33 @@ internal fun CCodeGen.emitVtable(
 			}
 		}
 
+	// Covariant interface return: a method whose iface slot returns a ktc_IfacePtr (Ref<I'>) but whose
+	// concrete impl returns Ref<concrete-class> (e.g. Cloneable<List>.clone(): Ref<List> implemented by
+	// ArrayList returning Ref<ArrayList>). The vtable slot can't just cast the concrete fn — the C return
+	// representations differ (class* vs ktc_IfacePtr). Emit a trampoline that calls the concrete method
+	// and wraps its result into the I' fat pointer. Returns the interface to wrap as, or null if no wrap.
+	fun covariantRetIface(m: FunDecl): String? {
+		if (isObject) return null
+		val vIfaceRet  = m.returnType?.let { resolveTypeName(it).stripNullable } ?: return null
+		val vRetIfaceI = (vIfaceRet as? KtcType.Ptr)?.inner?.let { ifaceInfoFor(it) } ?: return null
+		val vConcRet   = classes[className]?.methods?.find { it.name == m.name }?.returnType
+			?.let { resolveTypeName(it).stripNullable }
+		if (vConcRet != null && isRefToIface(vConcRet)) return null   // concrete already returns an iface ptr — no wrap
+		return vRetIfaceI.name
+		}
+	if (!isObject) for (m in methods) {
+		val vRetIface = covariantRetIface(m) ?: continue
+		val cRet      = vtableMethodCRet(m)
+		val castExtra = vtableMethodParamCast(m, withNames = true)
+		val argFwd    = m.params.joinToString("") { ", ${it.name}" }
+		val vtName    = "${cClass}_${ifaceName}_${m.name}_vt"
+		val call      = "${cClass}_${m.name}(($cClass*)\$self$argFwd)"
+		impl.appendLine("static $cRet $vtName(void* \$self$castExtra) {")
+		impl.appendLine("    return (ktc_IfacePtr)${ifacePtrLiteral(getTypeId(className), cClass, vRetIface, "(void*)$call")};")
+		impl.appendLine("}")
+		impl.appendLine()
+		}
+
 	impl.appendLine("const ${cIface}_vt ${cClass}_${ifaceName}_vt = {")
 	for (p in props) {
 		val ct = if (p.type != null) cType(p.type) else "ktc_Int"
@@ -74,6 +102,7 @@ internal fun CCodeGen.emitVtable(
 		val extraCast = vtableMethodParamCast(m, withNames = false)
 		val fn = if (isObject) "${cClass}_${ifaceName}_${m.name}_vt"
 			else if (m.name == "dispose" && !hasDisposeOverride(className)) "ktc_core_noop_dispose"
+			else if (covariantRetIface(m) != null) "${cClass}_${ifaceName}_${m.name}_vt"   // covariant-return trampoline
 			else "${cClass}_${m.name}"
 		impl.appendLine("    ($cRet (*)(void*$extraCast)) $fn,")
 		}

@@ -151,18 +151,23 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         return wrapNullCheck(recv, "(*$recv)", e.obj)
     }
 
-    // p->field (auto-deref through pointer)
-    if (recvTypeCoreKtc is KtcType.Ptr) {
-        return "$recv->${thisFieldName(e.name, e.obj)}"
-    }
-
-    // Interface property access via vtable: list.size → list.vt->size(data_ptr)
-    val vIfaceDotInfo = ifaceInfoFor(recvTypeCoreKtc)                                 // non-null if receiver is a known interface
+    // Interface property access via vtable — handle BOTH a bare interface value AND a Ref<interface>
+    // (Ptr(User=iface), itself a ktc_IfacePtr) BEFORE the raw -> path below: a Ref<interface> is a fat
+    // pointer, not a struct pointer, so `recv->field` would be invalid C.
+    val vIfaceDotInfo = ifaceInfoFor(recvTypeCoreKtc)                                 // non-null if receiver is a known interface (unwraps Ref<iface>)
     if (vIfaceDotInfo != null) {
         val allProps = collectAllIfaceProperties(vIfaceDotInfo)
         if (allProps.any { it.name == e.name }) {
-            return "$recv.vt->${e.name}(${ifaceVtableSelf(vIfaceDotInfo.name, recv)})"
+            val vIsIfacePtr = recvTypeCoreKtc is KtcType.Ptr                          // Ref<interface> vs bare interface value
+            val vVtAccess   = if (vIsIfacePtr) "((${typeFlatName(vIfaceDotInfo.name)}_vt*)$recv.vt)" else "$recv.vt"
+            val vSelfArg    = if (vIsIfacePtr) "$recv.obj" else ifaceVtableSelf(vIfaceDotInfo.name, recv)
+            return "$vVtAccess->${e.name}($vSelfArg)"
         }
+    }
+
+    // p->field (auto-deref through a class pointer; Ref<interface> is handled by the iface path above)
+    if (recvTypeCoreKtc is KtcType.Ptr) {
+        return "$recv->${thisFieldName(e.name, e.obj)}"
     }
 
     // StringBuffer field access: sb.buffer → sb.ptr (the raw char pointer)

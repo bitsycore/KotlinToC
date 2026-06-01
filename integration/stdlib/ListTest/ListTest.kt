@@ -101,10 +101,16 @@ fun main(args: Array<String>) {
 	dup.dispose()                   // free the clone's buffer, then the clone itself
 	Heap.freeMem(dup)
 	println("clone deep-copy OK")
-	// List<T> : Cloneable<List<T>> — the contract is enforced and concrete .clone() returns
-	// Ref<ArrayList<Int>> (used above). Cloning *through* the interface returns Ref<List<Int>>;
-	// dispose() is fine there (it's on Any), but member access on a Ref<interface> value is not yet
-	// lowered as a vtable call, so use the concrete type to consume the clone for now.
+
+	// Clone THROUGH the Cloneable<List<Int>> interface (polymorphic dispatch). The vtable covariant-return
+	// trampoline wraps the concrete clone into a List<Int> fat pointer, so dup2 is a real Ref<interface>:
+	// .size dispatches via the vtable, dispose() (on Any) works, and freeMem frees the heap object.
+	val cloneable: Cloneable<List<Int>> = orig
+	val dup2 = cloneable.clone()
+	if (dup2.size != orig.size) error("FAIL interface clone size=${dup2.size}")
+	dup2.dispose()
+	Heap.freeMem(dup2)
+	println("Cloneable<List> interface clone OK")
 
 	list.clear()
 	println("size after clear:")

@@ -399,6 +399,13 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun enumInfoFor(inType: KtcType?): EnumInfo? =      // EnumInfo if type is an enum class
         (inType as? KtcType.User)?.decl as? EnumInfo
 
+    /* True when [inType] is Ref<Interface> — a Ptr wrapping an interface User. Such a value is a
+       ktc_IfacePtr at the C level (vt is const void*, object ptr in .obj), NOT a per-iface struct and
+       NOT a class*. Member access / method calls / freeMem on it must use the ktc_IfacePtr layout.
+       Uses ifaceInfoFor so monomorphized generic interfaces (List_Int, …) are detected too. */
+    internal fun isRefToIface(inType: KtcType?): Boolean =
+        inType is KtcType.Ptr && inType.inner is KtcType.User && ifaceInfoFor(inType.inner) != null
+
     // True when an interface has implementors from a different package than the interface itself
     internal fun ifaceHasCrossPkgImpls(ifaceName: String): Boolean {
         val impls = interfaceImplementors[ifaceName] ?: return false

@@ -235,6 +235,8 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val vVoidArgCore = vVoidArgKtc.stripNullable
 						if (vVoidArgCore?.isArrayLike == true && vVoidArgCore.asArr?.sized == null) {
 							parts += "(void*)($expr).ptr"
+							} else if (isRefToIface(vVoidArgCore)) {
+							parts += "($expr).obj"   // Ref<iface> ktc_IfacePtr → its heap object ptr (freeMem etc.)
 							} else {
 							parts += expr
 							}
@@ -244,6 +246,8 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val vRawArgCore = vRawArgKtc.stripNullable
 						if (vRawArgCore?.isArrayLike == true && vRawArgCore.asArr?.sized == null) {
 							parts += "($expr).ptr"
+							} else if (isRefToIface(vRawArgCore)) {
+							parts += "($expr).obj"   // Ref<iface> ktc_IfacePtr → its heap object ptr (freeMem etc.)
 							} else {
 							parts += expr
 							}
