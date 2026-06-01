@@ -165,6 +165,10 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     // Pointer↔value boundary: require explicit .ptr()/.value() when crossing.
     if (s.type != null && s.init != null) checkPtrValueBoundary(s.type, vKtc, vKtcKtc, s.init, "variable '${s.name}'")
 
+    // No implicit copy of a value type (E071): an explicit by-value annotation initialized from a
+    // class lvalue (val d: Some = a) would silently struct-copy. Force .copy()/.copyWith() or an alias.
+    if (s.type != null && s.init != null) checkImplicitCopy(vKtc, s.init, "variable '${s.name}'")
+
     // Size compatibility check for @Size(N) array assignments.
     if (s.type != null && s.init != null && s.type.isSizedArray()) {
         val vTargetSize = s.type.getSizeAnnotation()

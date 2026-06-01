@@ -178,6 +178,12 @@ internal sealed class KtcType {
     This replaces the string-based `isArrayType()` check. */
     val isArrayLike: Boolean get() = this is Arr || (this is Ptr && inner is Arr)
 
+    /* True for a user class / data class VALUE — the types guarded by the no-implicit-copy rule
+    (E071). Excludes ValueClass / Object / Interface / Enum and every non-User type: primitives,
+    String, arrays, Ref<T>, closures stay copy-by-value (cheap views / scalars / references). */
+    val isUserValueType: Boolean
+        get() = this is User && (kind == UserKind.Class || kind == UserKind.DataClass)
+
     /* Extract the Arr node from Arr or Ptr(Arr), null otherwise. */
     val asArr: Arr?
         get() = when (this) {

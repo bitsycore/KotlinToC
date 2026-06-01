@@ -227,6 +227,25 @@ object ErrorCatalog {
 			  .asRef()     takes a reference:  T → Ref<T>
 			  .refValue    dereferences:       Ref<T> → T
 			""".trimIndent()),
+		Entry("E071", "Implicit copy of a value type",
+			"""
+			Binding or passing a class / data-class lvalue into a by-value target would
+			silently struct-copy it:
+			  val a = Some()
+			  val d: Some = a      // error — implicit copy of 'a'
+			  someFun(a)           // error — implicit copy into a by-value parameter
+
+			A value copy must be explicit. Choose one:
+			  a.copy()                value copy (→ Some)
+			  a.copyWith(allocator)   heap copy  (→ Ref<Some>)
+			Or alias it without copying — drop the type annotation so it infers a
+			reference, or take one explicitly:
+			  val b = a            // alias (Ref<Some>), no copy
+			  a.asRef()            // Ref<Some>
+
+			Primitives, String, arrays, Ref<T>, and enums stay copy-by-value and are
+			never flagged.
+			""".trimIndent()),
 
 		// ── Tailrec ──────────────────────────────────────────────
 		Entry("E080", "Tailrec without self-call",

@@ -56,6 +56,41 @@ internal fun CCodeGen.checkPtrValueBoundary(
 	)
 	}
 
+/* True when [inExpr] denotes an lvalue — an existing storage location — rather than a freshly
+produced rvalue. Binding or passing an lvalue of a user-value type is the implicit copy the
+no-implicit-copy rule (E071) forbids; a CallExpr (constructor, function return, and crucially
+.copy() / .copyWith()) is an rvalue and is always allowed through.
+
+P0 scope: only the unambiguous lvalues — a bare local/param name and `this`. Field access
+(DotExpr) and element access (IndexExpr) are deferred to a later phase: a DotExpr can be a
+computed property (a getter produces a fresh rvalue, not storage), and `.refValue` is an
+explicit Ref→value deref (the sanctioned boundary form, like .copy()) — both need to be
+distinguished before the gate can safely cover them. */
+internal fun isLValueExpr(inExpr: Expr): Boolean =
+	when (inExpr) {
+		is NameExpr -> true
+		is ThisExpr -> true
+		else        -> false  // CallExpr, DotExpr, IndexExpr, ObjectExpr, literals, … : deferred / rvalue
+		}
+
+/* E071 — reject an implicit copy of a value type: binding or passing a user class / data-class
+lvalue into a by-value target. The only sanctioned copies are explicit .copy() (value copy → T) or
+.copyWith(allocator) (heap copy → Ref<T>) — both CallExprs, so isLValueExpr lets them through. To
+alias without copying, drop the type annotation (val x = src) or take a reference (src.asRef()). */
+internal fun CCodeGen.checkImplicitCopy(inTargetKtc: KtcType?, inSrcExpr: Expr, inWhere: String) {
+	val vTarget = inTargetKtc.stripNullable ?: return     // nothing to guard when target type is unknown
+	if (!vTarget.isUserValueType) return                  // target must be a by-value class / data-class
+	if (!isLValueExpr(inSrcExpr)) return                  // rvalue (ctor / fn result / .copy()) is fine
+	val vSrc = inferExprTypeKtc(inSrcExpr).stripNullable ?: return  // source KtcType (stripped of Nullable)
+	if (!vSrc.isUserValueType) return                     // source isn't a value-class lvalue
+	val vName = (inSrcExpr as? NameExpr)?.name ?: "value"          // best-effort name for the message
+	codegenError("E071",
+		"Implicit copy of '$vName' into $inWhere (type '${vTarget.toInternalStr}'). A value copy " +
+		"must be explicit: use '$vName.copy()' (value copy) or '$vName.copyWith(allocator)' (heap, " +
+		"returns Ref<T>). To alias without copying, bind with no type annotation (val x = $vName) " +
+		"or take a reference ($vName.asRef()).")
+	}
+
 /* Statement dispatcher, block emitter and expression-statement emitter.
 Inline/lambda expansion lives in Inline.kt.
 Specialized handlers in other files:
