@@ -15,7 +15,7 @@ class ListIterator<T>(val buf: Ref<Array<T>>, val size: Int) : Iterator<T> {
 	}
 }
 
-interface List<T> {
+interface List<T> : Cloneable<List<T>> {
 	val size: Int
 	operator fun get(index: Int): T
 	operator fun contains(value: T): Boolean
@@ -39,7 +39,7 @@ interface Cloneable<T> {
 	fun cloneWith(inAllocator: Ref<Allocator>): Ref<T>
 }
 
-class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : MutableList<T>, Cloneable<ArrayList<T>> {
+class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : MutableList<T> {
 
 	private var buf: Ref<Array<T>> = Array<T>(if (capacity > 0) capacity else 4).allocWith(allocator)!!
 

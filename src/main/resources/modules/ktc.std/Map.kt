@@ -28,7 +28,7 @@ class MapIterator<K, V>(
 
 }
 
-interface Map<K, V> {
+interface Map<K, V> : Cloneable<Map<K, V>> {
 	val size: Int
 	operator fun get(key: K): V?
 	operator fun containsKey(key: K): Boolean
@@ -43,7 +43,7 @@ interface MutableMap<K, V> : Map<K, V> {
 	fun clear()
 }
 
-class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity: Int) : MutableMap<K, V>, Cloneable<HashMap<K, V>> {
+class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity: Int) : MutableMap<K, V> {
 
 	override var size: Int = 0
 		private set
