@@ -85,6 +85,10 @@ internal fun CCodeGen.checkImplicitCopy(
 	) {
 	val vTarget = inTargetKtc.stripNullable ?: return     // nothing to guard when target type is unknown
 	if (!vTarget.isUserValueType) return                  // target must be a by-value class / data-class
+	// Generic copy-transparency: inside a generic instantiation, a value whose type is a type-parameter
+	// substitution target (e.g. T → Vec2) is exempt — the generic author can't .copy() a T that may be a
+	// primitive. Generic code copies T by value like a C++ template; the rule targets concrete user code.
+	if (typeSubst.isNotEmpty() && typeSubst.values.any { it.removeSuffix("?") == vTarget.toInternalStr }) return
 	if (!isLValueExpr(inSrcExpr)) return                  // rvalue (ctor / fn result / .copy()) is fine
 	val vSrc = inferExprTypeKtc(inSrcExpr).stripNullable ?: return  // source KtcType (stripped of Nullable)
 	if (!vSrc.isUserValueType) return                     // source isn't a value-class lvalue
