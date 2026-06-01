@@ -43,7 +43,7 @@ interface MutableMap<K, V> : Map<K, V> {
 	fun clear()
 }
 
-class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity: Int) : MutableMap<K, V> {
+class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity: Int) : MutableMap<K, V>, Cloneable<HashMap<K, V>> {
 
 	override var size: Int = 0
 		private set
@@ -164,14 +164,14 @@ class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity:
 	}
 
 	/* Deep clone using this map's OWN allocator. See cloneWith. */
-	fun clone(): Ref<HashMap<K, V>> = cloneWith(allocator)
+	override fun clone(): Ref<HashMap<K, V>> = cloneWith(allocator)
 
 	/* Deep clone into [inAllocator] — a NEW heap-allocated map (Ref<HashMap<K,V>>) with its OWN keys/vals/occ
 	   buffers, holding the same entries. The synthesized struct .copy() would only copy the field handles and
 	   SHARE all three buffers. Built with the SAME capacity (carried via the ctor — so capacity, and the
 	   allocated buffer sizes, match), giving an identical slot layout: occupied slots copy across directly,
 	   no rehashing. Caller owns the result — freeMem(it) + it.dispose() when done. */
-	fun cloneWith(inAllocator: Ref<Allocator>): Ref<HashMap<K, V>> {
+	override fun cloneWith(inAllocator: Ref<Allocator>): Ref<HashMap<K, V>> {
 		val vResult = HashMap<K, V>(inAllocator, capacity).allocWith(inAllocator)!!
 		for (vI in 0 until capacity) {
 			if (occ[vI]) {

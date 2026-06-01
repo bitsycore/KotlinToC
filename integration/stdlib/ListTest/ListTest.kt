@@ -102,6 +102,14 @@ fun main(args: Array<String>) {
 	Heap.freeMem(dup)
 	println("clone deep-copy OK")
 
+	// Cloneable<T> contract — clone through the interface (polymorphic dispatch)
+	val cloneable: Cloneable<ArrayList<Int>> = orig
+	val dup2 = cloneable.clone()
+	if (dup2.size != orig.size) error("FAIL Cloneable.clone size=${dup2.size}")
+	dup2.dispose()
+	Heap.freeMem(dup2)
+	println("Cloneable interface OK")
+
 	list.clear()
 	println("size after clear:")
 	println(list.size)

@@ -30,7 +30,16 @@ interface MutableList<T> : List<T> {
 	fun clear()
 }
 
-class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : MutableList<T> {
+/* Deep-copy contract. F-bounded self-type: an implementer says `Cloneable<Self>`, so clone/cloneWith
+   return a Ref to its OWN concrete type (Ref<ArrayList<T>>, Ref<HashMap<K,V>>), not an erased interface
+   ref. These are the DEEP copy (independent backing storage), unlike the shallow synthesized .copy().
+   clone() reuses the implementer's own allocator; cloneWith(a) clones into a different one. */
+interface Cloneable<T> {
+	fun clone(): Ref<T>
+	fun cloneWith(inAllocator: Ref<Allocator>): Ref<T>
+}
+
+class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : MutableList<T>, Cloneable<ArrayList<T>> {
 
 	private var buf: Ref<Array<T>> = Array<T>(if (capacity > 0) capacity else 4).allocWith(allocator)!!
 
@@ -53,7 +62,7 @@ class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : Mutab
 	}
 
 	/* Deep clone using this list's OWN allocator. See cloneWith for the details / rationale. */
-	fun clone(): Ref<ArrayList<T>> = cloneWith(allocator)
+	override fun clone(): Ref<ArrayList<T>> = cloneWith(allocator)
 
 	/* Deep clone into [inAllocator] — a NEW heap-allocated list (Ref<ArrayList<T>>) with its OWN backing
 	   buffer in that allocator, holding the same elements. Distinct from the synthesized struct .copy(),
@@ -61,7 +70,7 @@ class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : Mutab
 	   backing array so the two lists are fully independent. Named clone/cloneWith (not copy): copy() is the
 	   shallow struct copy; clone is the deep one. clone() reuses this list's allocator, cloneWith(a) targets
 	   a different one (e.g. an Arena). Caller owns the result — freeMem(it) + it.dispose() when done. */
-	fun cloneWith(inAllocator: Ref<Allocator>): Ref<ArrayList<T>> {
+	override fun cloneWith(inAllocator: Ref<Allocator>): Ref<ArrayList<T>> {
 		val vResult = ArrayList<T>(inAllocator, if (size > 0) size else 1).allocWith(inAllocator)!!
 		vResult.dispose()                          // free the ctor's initial buffer (we replace it)
 		vResult.buf  = buf.copyWith(inAllocator)   // bulk memcpy of the backing array (O(n), no per-element add)
