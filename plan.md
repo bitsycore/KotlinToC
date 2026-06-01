@@ -404,16 +404,25 @@ a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method rec
    or convert intended aliases to `Ref<T>`/`.asRef()`.
 
 ### Phased plan (each step independently `run_tests.py`-gated)
-- **P0 (S)** — `isManagedValueLvalue` + `checkImplicitCopy` + `E071`, wired into the explicit-annotation
-  var-decl site only; one `TranspilerTestBase` snippet asserting the message + the `.copy()` fix.
-- **P1 (M)** — un-annotated `val/var b = lvalue` ⇒ `Ref<T>` inference + `&` emission (desugar to `.asRef()`);
-  tests for alias semantics + transparent `b.field` / `b.method()` auto-deref.
-- **P2 (M)** — extend the check to call args (incl. ctor/field storage), reassignment, and return.
-  *This is the breaking step* — pair it with the start of migration (P6).
-- **P3 (S)** — generalise `.copy()` to all classes; verify `.copyWith()` for all classes (incl. override).
+- **P0 (S) ✅ SHIPPED** — `isLValueExpr` + `checkImplicitCopy` + `E071` (CoreTypes.kt `isUserValueType`,
+  Statements.kt), wired into the explicit-annotation var-decl site. P0 scope narrowed to the unambiguous
+  lvalues (NameExpr/`this`); DotExpr/IndexExpr deferred (computed-getter + `.refValue` distinction needed).
+  CopyValueUnitTest added.
+- **P1 (M) ✅ SHIPPED** — un-annotated `val/var b = lvalue` desugars to `.asRef()` ⇒ `T* b = &a;` alias,
+  member access auto-derefs. Destructuring's internal tmp now aliases too. Unit + integration green.
+- **P3 (S) ✅ SHIPPED** — `.copy()` generalised: data classes synthesize early (incl. `copy(field=…)`),
+  plain classes get a no-arg value copy as a post-resolution **fallback** so a user-defined `copy(...)`
+  always wins (the early-interception version regressed SDL3 `FRect` — fixed).
+- **P2 (M) — NEXT, the breaking step** — extend the check to call args (incl. ctor/field storage),
+  reassignment, and return. Pair with migration (P6).
 - **P4 (M)** — `@Size(N)` arrays under the rule (`.copyOf(N)`/`.copy()`).
 - **P5 (L)** — full enums → singleton-backed `Ref<Enum>`; `@SimpleEnum` stays int. *Confirm scope first.*
-- **P6 (L)** — lockstep migration of std-lib + all integration tests to green.
+- **P6 (L)** — lockstep migration of std-lib + all integration tests to green (driven mostly by P2).
+
+**Measured (P0+P1+P3):** the var-decl phases broke only **2 of 74** integration tests
+(AdvancedGenericsTest: 2 explicit `val x: ArrayList<T>? = stack` copies → `.copy()`; SDL3: the P3
+regression, fixed) — *not* the ~82% the blast scan projected. That projection is almost entirely the
+**P2 by-value-parameter gate**; the var-decl phases barely touch existing code. Suite green at HEAD.
 
 ### Open implementation details / risks
 - **Nullable managed values** (`Some?`) interact with the Optional-struct lowering — start conservative:
