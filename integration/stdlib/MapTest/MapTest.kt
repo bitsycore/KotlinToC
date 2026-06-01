@@ -98,6 +98,18 @@ fun main() {
         println("  ${entry.first} -> ${entry.second}")
     }
 
+    // ── HashMap deep clone: independent buffers (Ref<HashMap<Int, String>>) ──
+    val mapSizeBefore = map.size
+    val mapClone = map.clone()
+    mapClone.put(99999, "CLONE")              // mutate the clone only
+    if (map.size != mapSizeBefore) error("FAIL clone not deep — original size changed to ${map.size}")
+    if (map.containsKey(99999)) error("FAIL clone not deep — original got the clone's key")
+    if (!mapClone.containsKey(99999)) error("FAIL clone missing its own key")
+    if (mapClone.size != mapSizeBefore + 1) error("FAIL clone size=${mapClone.size}")
+    mapClone.dispose()
+    Heap.freeMem(mapClone)
+    println("HashMap clone deep-copy OK")
+
     map.dispose()
     println("done")
 }

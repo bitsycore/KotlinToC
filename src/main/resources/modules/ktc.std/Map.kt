@@ -163,6 +163,27 @@ class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity:
 		return MapIterator<K, V>(keys, vals, occ, capacity)
 	}
 
+	/* Deep clone using this map's OWN allocator. See cloneWith. */
+	fun clone(): Ref<HashMap<K, V>> = cloneWith(allocator)
+
+	/* Deep clone into [inAllocator] — a NEW heap-allocated map (Ref<HashMap<K,V>>) with its OWN keys/vals/occ
+	   buffers, holding the same entries. The synthesized struct .copy() would only copy the field handles and
+	   SHARE all three buffers. Built with the SAME capacity (carried via the ctor — so capacity, and the
+	   allocated buffer sizes, match), giving an identical slot layout: occupied slots copy across directly,
+	   no rehashing. Caller owns the result — freeMem(it) + it.dispose() when done. */
+	fun cloneWith(inAllocator: Ref<Allocator>): Ref<HashMap<K, V>> {
+		val vResult = HashMap<K, V>(inAllocator, capacity).allocWith(inAllocator)!!
+		for (vI in 0 until capacity) {
+			if (occ[vI]) {
+				vResult.keys[vI] = keys[vI]
+				vResult.vals[vI] = vals[vI]
+				vResult.occ[vI]  = true
+			}
+		}
+		vResult.size = size
+		return vResult
+	}
+
 	override fun dispose() {
 		allocator.freeMem(keys)
 		allocator.freeMem(vals)
