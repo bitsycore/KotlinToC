@@ -313,3 +313,125 @@ Remaining polish:
   C-compiler type mismatch rather than an E070-style message).
 - Broader: store vars' KtcType directly (`defineVarKtc`) instead of the string round-trip at definition —
   part of the A1 inference refactor (canonical KtcType, no string round-trips).
+
+═══════════════════════════════════════════════════════════════════════
+## 8. No implicit copy of value types — `copy()`/`copyWith()`-gated (L)
+═══════════════════════════════════════════════════════════════════════
+
+Make implicit copies of *managed value types* illegal, C++-"deleted copy-assignment" style. The only
+ways to materialise a copy are an **explicit** `.copy()` (value copy → `T`) or `.copyWith(allocator)`
+(heap copy → `Ref<T>`). Both lower through existing machinery and **may be user-overridden** — the
+checker treats *any* `.copy()` / `.copyWith()` call as the explicit-copy marker regardless of body.
+Goal: kill accidental large struct copies; binding/passing defaults to a reference, copying is opt-in.
+
+This is the value-target counterpart of the existing Ref↔value boundary (`E070`,
+`checkPtrValueBoundary` @ statement/Statements.kt:18) and reuses the same auto-deref that already makes
+a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method receivers via `addressOfRecv`).
+
+### Decided semantics (locked with the user — 2026-06-01)
+- **`val b = a`** (un-annotated; `a` a managed-value lvalue) → infers **`Ref<T>`**, emits `T* b = &a;`
+  (an alias — NO copy). This auto-`&` is the *sole* implicit address-of, and fires ONLY for an
+  un-annotated binding. Implementation: desugar to `b = a.asRef()` and reuse the `.asRef()` path
+  (CallMethod.kt:214) + existing Ptr emission (Var.kt:190/:359).
+- **`val c = a.copy()`** → `c : T` (value), emits `T c = a;`. `.copy()`/`.copyWith()` are CallExprs →
+  rvalues → never themselves a copy-of-lvalue.
+- **By-value targets reject an lvalue source unless wrapped in `.copy()`/`.copyWith()`** — error (new
+  `E071`, see Diagnostics): explicit `val d: T = a`; reassignment `x = a` (x already `T`);
+  `return a` (return type by-value `T` — **returns are strict, by user's choice**); a by-value `T`
+  parameter `f(a)`; and **ctor/field-init args** `Foo(bar)` (a class field stores by value → `Foo(bar.copy())`).
+  Fix-it: "use `.copy()` (value) or `.copyWith(allocator)` (heap, returns `Ref<T>`)".
+- **Explicit `Ref<T>` targets stay strict** — still require `.asRef()` (E070 unchanged). `val e: Ref<T> = a`
+  and a `Ref<T>` param `g(a)` are errors → `a.asRef()`. (Asymmetry by design: no annotation ⇒ helpful
+  Ref default; explicit annotation ⇒ spell the conversion. The `var b = a` (Ref) reassignment `b = c`
+  rebinds the pointer and so also needs `c.asRef()`.)
+- **Scope of "managed value type":** user `class` / `data class` values; `@Size(N)` arrays
+  (`{ T arr[N]; }` — copies as costly as a class; fix-it `.copyOf(N)`/`.copy()`); ctor/field storage of
+  the above. **Exempt** (stay copy-by-value): primitives, `String`, `Array<T>`/`RawArray<T>`/typed arrays
+  (slice views), `Ref<T>`, closures, interfaces.
+- **Enums:** full (Kotlin-form) enums become **reference-to-singleton** — one `static const` instance per
+  entry; `Color.RED` → `&…RED`; the value type is `Ref<Enum>`, so `val y = x` aliases (no `?`, matches
+  Kotlin `===` identity). `@SimpleEnum` stays `ktc_Int` (cheap value, copy-by-value fine). Separable
+  workstream (P5) — touches emit/Enum.kt, the Dot.kt enum branches (:69/:125-133), `when`/switch,
+  `.values()`/`.valueOf()`, equality. Confirm before building.
+- **Rollout: hard switch.** No flag. Change the default and migrate the std-lib + every integration test
+  in lockstep, test-gated by `run_tests.py`.
+
+### Core mechanism — two predicates + one check (shared with E070)
+- `KtcType.isUserValueType()` (add to **types/CoreTypes.kt** near `KtcType.User` @:102-110; `kind` is
+  reachable as `decl.kind: UserKind`) = `this is User && kind in {Class, DataClass}`. Excludes
+  ValueClass/Object/Interface/Enum and all non-User types — the `@Size` Arr arm and the P5 singleton-enum
+  arm are handled separately, not by this predicate.
+- `isLValueExpr(expr)` + `checkImplicitCopy(targetKtc, srcExpr, where)` — add to **CCodeGen.kt** by the
+  predicate-helper home (`isValueNullableKtc` @:654-660). `isLValueExpr` = true for `NameExpr` /
+  field `DotExpr` / element `IndexExpr` / `ThisExpr`; **false for any `CallExpr`** — crucially a
+  `CallExpr` whose callee is `DotExpr(name = "copy" | "copyWith")` is an rvalue (already explicit), as are
+  ctors / fn returns / `ObjectExpr` / literals / `BinExpr` / lambdas. `checkImplicitCopy`: if target is a
+  by-value managed type AND source `isLValueExpr` of a managed type → `E071`.
+
+### Change-map (anchors verified against the source by the map workflow)
+1. **types/CoreTypes.kt:102-110** + **CCodeGen.kt:654-660** — the predicates above (foundation; do first).
+2. **statement/Var.kt** — (a) `vKtc = when{…}` @:135-141 (`else` arm @:140): un-annotated user-value-lvalue
+   init ⇒ wrap inferred `vKtc` in `KtcType.Ptr(...)`, desugaring init to `.asRef()`; **guard against
+   double-wrap** when the init is already `Ptr` (`val b = a` where `a : Ref<Some>`). Existing `isPointer`
+   (:190) + non-nullable emit (~:426) then produce `T* b = &a;` — but inject `&` at the value-emission
+   site since `genExpr` yields the bare name. (b) extend the boundary call @:166 with `checkImplicitCopy`
+   for the explicit by-value annotation (`val d: Some = a` — E070 stays silent here since both sides are
+   non-`Ptr`, Statements.kt:38). (c) `@Size(N)` truncate logic @:169 gains the gate.
+   (d) **destructuring** (@:32-61) routes through synthetic `VarDeclStmt`s → inherits (a) for free;
+   **`emitLazyLocalDecl`** (~:467) infers separately → replicate the (a) wrap if its body tail is an lvalue.
+3. **statement/Assign.kt** — `emitAssign` @:133-145 (after the `varKtc` lookup @:135-136): run
+   `checkImplicitCopy` for reassignment `x = a`. `emitReturn` (non-nullable path ~:373-465): gate against
+   `currentFnReturnKtcType` (**CCodeGen.kt:761-765**) — `return a` is **strict (E071)** per the locked
+   decision; today it emits a silent struct copy with zero validation. (Note E120 already covers
+   `return x.asRef()` dangling-Ref; E071 is the value-copy counterpart.)
+4. **expression/CallArgs.kt:356-364** — insert a branch *before* the `else { parts += expr }` (@:363):
+   by-value user-value param + lvalue arg → `E071`. Ctor calls route through `expandCallArgs`, so this is
+   also the **field-storage** gate (`Foo(bar)` → `Foo(bar.copy())`). **Do NOT auto-`&` for `Ref<T>`
+   params** — the scan recommends it (its "D2"), but the locked decision keeps explicit `Ref<T>` targets
+   strict: a class lvalue passed to a `Ref<T>` param stays an E070 fix → `.asRef()`.
+5. **expression/CallMethod.kt** — generalise `.copy()` beyond `isData` (@:213 / Ref form @:130): a no-arg
+   `.copy()` on ANY class ⇒ `genDataClassCopy` already returns `src` (@:458) so C's struct `=` does the
+   copy; drop the `isData` guard for the no-arg form (keep `copy(field=…)` override only where ctor props
+   exist). `.copy()`/`.copyWith()` are **user-overridable** — the checker keys on the call, not the body.
+   Confirm `.copyWith(allocator)` heap-promotes any class → `Ref<T>`. **Receivers unchanged**: method
+   receivers already pass by address via `addressOfRecv` (@:274) — reference-semantic, not a copy site;
+   do not apply the gate to them (prevents a false positive on every `a.method()`).
+6. **codegen/ErrorCatalog.kt** — new **E071** (free; deliberately adjacent to E070, the Ref↔value boundary,
+   rather than the strictly-next E102) + `--explain` text; hard error, house-style fix-it pointing at
+   `.copy()` / `.copyWith(allocator)`.
+7. **emit/Enum.kt** + Dot.kt enum branches (:69/:125-133) — P5 singleton-ref enums (see above).
+8. **Migration** — resources/ktc/**, resources/modules/**, integration/**: insert `.copy()`/`.copyWith()`
+   or convert intended aliases to `Ref<T>`/`.asRef()`.
+
+### Phased plan (each step independently `run_tests.py`-gated)
+- **P0 (S)** — `isManagedValueLvalue` + `checkImplicitCopy` + `E071`, wired into the explicit-annotation
+  var-decl site only; one `TranspilerTestBase` snippet asserting the message + the `.copy()` fix.
+- **P1 (M)** — un-annotated `val/var b = lvalue` ⇒ `Ref<T>` inference + `&` emission (desugar to `.asRef()`);
+  tests for alias semantics + transparent `b.field` / `b.method()` auto-deref.
+- **P2 (M)** — extend the check to call args (incl. ctor/field storage), reassignment, and return.
+  *This is the breaking step* — pair it with the start of migration (P6).
+- **P3 (S)** — generalise `.copy()` to all classes; verify `.copyWith()` for all classes (incl. override).
+- **P4 (M)** — `@Size(N)` arrays under the rule (`.copyOf(N)`/`.copy()`).
+- **P5 (L)** — full enums → singleton-backed `Ref<Enum>`; `@SimpleEnum` stays int. *Confirm scope first.*
+- **P6 (L)** — lockstep migration of std-lib + all integration tests to green.
+
+### Open implementation details / risks
+- **Nullable managed values** (`Some?`) interact with the Optional-struct lowering — start conservative:
+  auto-Ref only for non-nullable lvalues; nullable ⇒ require explicit `.asRef()`/`.copy()`.
+- **Generics/monomorphization** — apply the rule on the *substituted* type (a type param bound to a class).
+- **Aliasing hazard** — `val b = a` then mutating `a` is visible through `b` (documented semantic; the
+  whole point is "want independence ⇒ `.copy()`").
+- **Interaction with E070** — both checks coexist on the shared helper; E070 = value→Ref/Ref→value
+  mismatch at an explicit annotation, E071 = lvalue→by-value implicit copy.
+
+### Blast radius (measured by the scan) + rollout tension
+- **Std-lib:** ~100+ function signatures across `ktc` / `ktc.std` / `ktc.sdl3` take class-typed params by
+  value — each needs a manual `Ref<T>`-vs-`.copy()` decision.
+- **Integration:** **70+ of 85 test files (~82%)** would fail to transpile under the hard error.
+- **Honest tension with the locked "hard switch, no flag" choice:** a P2 that lands E071 as a *hard error*
+  turns `run_tests.py` red until *all* ~85 tests are migrated — which breaks the "each phase independently
+  test-gated" invariant. Pragmatic reconciliation that still reaches the no-flag end state: land the gate
+  first as a **transition warning `W0xx`** (green tests, migrate file-by-file), then **flip warning→error
+  E071 in the final commit**. That is migration scaffolding, not a permanent flag. (Both blast agents
+  independently recommended a flag/staged rollout; flagging here for visibility, but honoring the decision.)
+- Sequence the work so **P2 and P6 run as one tight loop** (the call-arg gate is what breaks everything).
