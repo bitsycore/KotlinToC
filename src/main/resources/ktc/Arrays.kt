@@ -42,6 +42,11 @@ fun <T> Array<T>.asRef(): Ref<Array<T>>
 /** Heap-copies this array's data via [allocator], returning an owning `Ref<Array<T>>`. */
 fun <T> Array<T>.copyWith(allocator: Allocator): Ref<Array<T>>
 
+/** Copies elements `[startIndex, endIndex)` of this array into [destination] starting at
+    [destinationOffset] — a `memcpy` into existing storage, NO allocation. Returns [destination].
+    The destination must already have room for the copied range. */
+fun <T> Array<T>.copyInto(destination: Array<T>, destinationOffset: Int = 0, startIndex: Int = 0, endIndex: Int = size): Array<T>
+
 /** Reallocates this array to [newSize] elements via [allocator]; contents up to min(old, new) are preserved. */
 fun <T> Array<T>.resizeWith(allocator: Allocator, newSize: Int): Ref<Array<T>>
 
@@ -113,3 +118,8 @@ class RawArray<T>
 fun <T> RawArray<T>.fill(size: Int, value: T, fromIndex: Int = 0, toIndex: Int = size): Unit
 fun <T> RawArray<T>.asArray(count: Int): Ref<Array<T>>
 fun <T> RawArray<T>.resizeWith(allocator: Allocator, newCount: Int): RawArray<T>
+
+/** Copies elements `[startIndex, endIndex)` of this raw array into [destination] starting at
+    [destinationOffset] — a `memcpy`, no allocation. Returns [destination]. RawArray has no length,
+    so [endIndex] is REQUIRED (unlike `Array<T>.copyInto`, where it defaults to `size`). */
+fun <T> RawArray<T>.copyInto(destination: RawArray<T>, destinationOffset: Int = 0, startIndex: Int = 0, endIndex: Int): RawArray<T>

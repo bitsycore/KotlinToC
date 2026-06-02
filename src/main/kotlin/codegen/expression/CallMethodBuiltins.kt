@@ -462,6 +462,43 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		preStmts += "$vVarArrType $vResult = {${vT}_ptr, $vSrcLen};"
 		return vResult
 		}
+	// copyInto: memcpy elements [startIndex, endIndex) of the receiver into destination at destinationOffset.
+	// No allocation. Works for Array<T> (VarArr) and RawArray<T> (bare ptr), for both receiver and dest.
+	// Args (positional): destination, destinationOffset = 0, startIndex = 0, endIndex (= size for Array;
+	// REQUIRED for RawArray, which has no length).
+	if (vMethod == "copyInto" && inRecvTypeKtc != null && inArgs.isNotEmpty()) {
+		val vSrcCore = inRecvTypeKtc.stripNullable
+		val vSrcRaw  = (vSrcCore as? KtcType.Ptr)?.takeIf { it.inner !is KtcType.Arr }   // RawArray<T> receiver
+		if (vSrcCore.isArrayLike || vSrcRaw != null) {
+			val vElemC  = if (vSrcRaw != null) vSrcRaw.inner.toCType() else arrayElementCTypeKtc(vSrcCore)
+			val vSrcPtr = when {
+				inDot.obj is NameExpr && inDot.obj.name in trampolinedParams -> "local\$${inDot.obj.name}"
+				vSrcRaw != null                                              -> inRecv          // RawArray: bare ptr
+				else                                                         -> "$inRecv.ptr"   // Array: VarArr.ptr
+				}
+			val vDestExpr = genExpr(inArgs[0].expr)
+			val vDestCore = inferExprTypeKtc(inArgs[0].expr).stripNullable
+			val vDestRaw  = (vDestCore as? KtcType.Ptr)?.inner?.let { it !is KtcType.Arr } == true
+			val vDestOff  = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else "0"
+			val vStart    = if (inArgs.size >= 3) genExpr(inArgs[2].expr) else "0"
+			val vEnd      = when {
+				inArgs.size >= 4 -> genExpr(inArgs[3].expr)
+				vSrcRaw != null  -> codegenError("RawArray.copyInto requires an explicit endIndex — RawArray has no length to default to.")
+				else             -> "$inRecv.len"
+				}
+			val vDest = tmp()
+			val vDestPtr: String
+			if (vDestRaw) {
+				preStmts += "$vElemC* $vDest = $vDestExpr;"
+				vDestPtr = vDest
+				} else {
+				preStmts += "${varArrTypeName(vElemC)} $vDest = $vDestExpr;"
+				vDestPtr = "$vDest.ptr"
+				}
+			preStmts += "memcpy($vDestPtr + ($vDestOff), $vSrcPtr + ($vStart), (size_t)(($vEnd) - ($vStart)) * sizeof($vElemC));"
+			return vDest
+			}
+		}
 	if (vMethod == "fill" && inRecvTypeKtc != null) {
 		val vCore = inRecvTypeKtc.stripNullable
 		// Array<T>.fill(element, fromIndex = 0, toIndex = size) — length known from VarArr / @Size / trampoline.

@@ -30,10 +30,6 @@ interface MutableList<T> : List<T> {
 	fun clear()
 }
 
-/* Deep-copy contract. F-bounded self-type: an implementer says `Cloneable<Self>`, so clone/cloneWith
-   return a Ref to its OWN concrete type (Ref<ArrayList<T>>, Ref<HashMap<K,V>>), not an erased interface
-   ref. These are the DEEP copy (independent backing storage), unlike the shallow synthesized .copy().
-   clone() reuses the implementer's own allocator; cloneWith(a) clones into a different one. */
 interface Cloneable<T> {
 	fun clone(): Ref<T>
 	fun cloneWith(inAllocator: Ref<Allocator>): Ref<T>
@@ -72,8 +68,7 @@ class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : Mutab
 	   a different one (e.g. an Arena). Caller owns the result — freeMem(it) + it.dispose() when done. */
 	override fun cloneWith(inAllocator: Ref<Allocator>): Ref<ArrayList<T>> {
 		val vResult = ArrayList<T>(inAllocator, if (size > 0) size else 1).allocWith(inAllocator)!!
-		vResult.dispose()                          // free the ctor's initial buffer (we replace it)
-		vResult.buf  = buf.copyWith(inAllocator)   // bulk memcpy of the backing array (O(n), no per-element add)
+		buf.copyInto(vResult.buf, 0, 0, size)   // memcpy our elements INTO the ctor's buffer — one alloc, no free
 		vResult.size = size
 		return vResult
 	}
