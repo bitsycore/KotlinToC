@@ -23,6 +23,8 @@ internal fun CCodeGen.inferGenericCtorTypeArgs(inName: String, inArgs: List<Arg>
    Used by inferMethodReturnType to short-circuit before reaching class/iface lookup. */
 private val kBuiltinMethodReturns: Map<String, String> = mapOf(
 	"toString"   to "String",
+	"toStringMaxLen"     to "Int",
+	"toStringComputeLen" to "Int",
 	"trimIndent" to "String",
 	"trimMargin" to "String",
 	"runeAt"     to "Rune",

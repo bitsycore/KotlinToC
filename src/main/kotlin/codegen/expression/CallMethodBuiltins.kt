@@ -134,6 +134,24 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return genToString(inRecv, inRecvType ?: "Int")
 			}
 
+		// toStringMaxLen() — static upper bound on this value's toString() length, as a compile-time
+		// constant. Refused when the type isn't statically bounded (use toStringComputeLen() instead).
+		"toStringMaxLen" -> {
+			val vMax = toStringMaxLen(inRecvType ?: "Int")
+				?: codegenError("toStringMaxLen() is unavailable for '${inRecvType ?: "?"}' — its toString() length is not statically bounded. Use toStringComputeLen() (computed at runtime).")
+			return "$vMax"
+			}
+
+		// toStringComputeLen() — the runtime toString() length via a counting-only StrBuf pass (no allocation:
+		// ptr=NULL accumulates len). For a String it is simply its byte length.
+		"toStringComputeLen" -> {
+			if (inRecvTypeKtc is KtcType.Str) return "$inRecv.len"
+			val vSb = tmp()
+			preStmts += "ktc_StrBuf $vSb = {NULL, 0, 0};"
+			genToStringInto(inRecv, inRecvType ?: "Int", vSb)   // emits the counting-mode appends as preStmts
+			return "$vSb.len"
+			}
+
 		"toInt"    -> { if (inRecvTypeKtc is KtcType.Str) return "ktc_core_str_toInt($inRecv)";  return "((ktc_Int)($inRecv))" }
 		"toLong"   -> { if (inRecvTypeKtc is KtcType.Str) return "ktc_core_str_toLong($inRecv)"; return "((ktc_Long)($inRecv))" }
 		"toFloat"  -> { if (inRecvTypeKtc is KtcType.Str) return "((ktc_Float)ktc_core_str_toDouble($inRecv))"; return "((ktc_Float)($inRecv))" }

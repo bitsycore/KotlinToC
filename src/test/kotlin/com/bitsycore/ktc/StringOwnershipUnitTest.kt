@@ -113,4 +113,25 @@ class StringOwnershipUnitTest : TranspilerTestBase() {
         )
         r.headerContains("static const ktc_Char ktc_str_")
     }
+
+    // S4: toStringMaxLen() is a compile-time constant; toStringComputeLen() counts via a NULL StrBuf (no alloc).
+    @Test fun toStringLenIntrinsics() {
+        val r = transpileMain(
+            $$"""
+            val n = 42
+            val mx = n.toStringMaxLen()
+            val cl = n.toStringComputeLen()
+            println(mx)
+            println(cl)
+            """
+        )
+        r.sourceMatches(Regex("ktc_Int mx = [0-9]+"))   // maxLen: compile-time constant
+        r.sourceContains("ktc_StrBuf")                  // computeLen: counting buffer
+        r.sourceContains("ktc_core_sb_append_int")
+    }
+
+    // toStringMaxLen() is refused when the toString() length isn't statically bounded (e.g. String).
+    @Test fun toStringMaxLenRefusedForUnbounded() {
+        transpileMainExpectError("val s = \"x\"\nval m = s.toStringMaxLen()", "toStringMaxLen")
+    }
 }
