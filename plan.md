@@ -506,12 +506,14 @@ extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (th
 - **S1d (S) ✅ DONE** — fully remove `.ptr` as a KTC accessor (no array/String/address-of meaning left in
   TypeInferDot / CallSafe / Call routing). `.cPtr` is the only raw-pointer member; a bare `.ptr` falls through to
   plain field resolution so a genuine C-struct `ptr` field still works. (`copy()` doc reframed as explicit pass-by-value.)
-- **S2 (M) — substring copies + NUL (defining change):** new C helper `ktc_core_string_substring_copy(buf,bufsz,s,from,to)`;
-  substring case allocas `recv.len+1` and copies+NUL → owned String. Flips the inline view family to copy via
-  composition. Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.
-- **S3 (M) — literal interning pool:** replace post-hoc regex dedup (CCodeGenGenerate.kt:451-484) with a collected
-  static pool `static const ktc_Char ktc_str_<hash>[] = "…";` referenced via `ktc_core_string_wrap`. Guarantees
-  `.rodata`+NUL. Behavior-preserving; broad. Update `genExpr(StrLit)` (Expression.kt:71).
+- **S3 (M) ✅ DONE — literal interning pool:** the per-file dedup pass now emits a named, read-only static array
+  `static const ktc_Char ktc_str_<pfx>_<n>[] = "…";` + a `#define` referencing it (instead of inlining
+  `ktc_core_str(...)`), making the `.rodata` + NUL guarantee explicit. 75/75 green.
+- **S2 (M) — substring copies + NUL — DEFERRED TO LAST (user-requested, the most disruptive step):** new C helper
+  `ktc_core_string_substring_copy(buf,s,from,to)`; substring allocas `recv.len+1` and copies+NUL → owned String.
+  Flips the inline view family (take/drop/trim/removePrefix…) to copy via composition; non-inline functions
+  returning a substring/view now dangle (E020) — `Path.pathParent` etc. must become `inline` or heap-backed.
+  Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.
 - **S4 (S) — sizing intrinsics:** expose `value.toStringMaxLen()` (transpile error if unbounded), `value.toStringComputeLen()`
   (count pass). Reuse internal `toStringMaxLen`/count machinery. Wire into `CallMethodBuiltins.kt`.
 - **S5 (L) — `Template` type:** `templateOf("$a")` → `Ref<Template>`, transpiler-only, frame-bound (never escapes,

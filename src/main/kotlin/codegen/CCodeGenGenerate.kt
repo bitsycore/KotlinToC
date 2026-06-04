@@ -466,8 +466,13 @@ internal fun CCodeGen.generate(): COutput {
 		val vReplacements = mutableMapOf<String, String>()
 		val vPrefix = if (prefix.isNotEmpty()) prefix.trimEnd('_') else "global"
 		for (vValue in vGlobalDups.sorted()) {
-			val vName = "\$${vPrefix}_s${vIdx++}"
-			vStrLitSb.appendLine("#define $vName ktc_core_str(\"$vValue\")")
+			val vArr  = "ktc_str_${vPrefix}_$vIdx"
+			val vName = "\$${vPrefix}_s$vIdx"
+			vIdx++
+			// Intern into a named, read-only static array — guarantees .rodata placement + NUL
+			// termination explicitly (a C string literal already is both) and dedups the value.
+			vStrLitSb.appendLine("static const ktc_Char $vArr[] = \"$vValue\";")
+			vStrLitSb.appendLine("#define $vName ((ktc_String){$vArr, (ktc_Int)(sizeof($vArr) - 1)})")
 			vReplacements["ktc_core_str(\"$vValue\")"] = vName
 		}
 		vStrLitSb.appendLine()

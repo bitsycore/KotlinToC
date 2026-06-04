@@ -100,4 +100,17 @@ class StringOwnershipUnitTest : TranspilerTestBase() {
     @Test fun ptrOnArrayRefused() {
         transpileMainExpectError("val a = arrayOf(1, 2)\nval p = a.ptr", "E055")
     }
+
+    // S3: a string literal used 2+ times is interned into a named, read-only static .rodata array.
+    @Test fun repeatedLiteralInternedToStaticPool() {
+        val r = transpileMain(
+            $$"""
+            val a = "shared pool text"
+            val b = "shared pool text"
+            println(a)
+            println(b)
+            """
+        )
+        r.headerContains("static const ktc_Char ktc_str_")
+    }
 }
