@@ -251,8 +251,16 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                 tryGenInlineExpr(vInlineDecl, e.args)
                     ?: run {
                         val vResultName = "\$ir${inlineCounter++}"
-                        impl.appendLine("$currentInd${cType(vRetType)} $vResultName;")
-                        emitInlineCall(vInlineDecl, e.args, currentInd, false, resultVar = vResultName)
+                        // A nullable value-type return needs the Optional result var + wrapping (mirrors the
+                        // inline-extension path above) — otherwise `return null` assigns void* to a bare struct.
+                        val vIsRetNullable = vRetType.nullable && !vRetType.isRefType()
+                        val vCRetType = if (vIsRetNullable) {
+                            val vInnerKtc = resolveTypeName(vRetType.copy(nullable = false))
+                            optCTypeName(vInnerKtc.toInternalStr)
+                        } else cType(vRetType)
+                        impl.appendLine("$currentInd$vCRetType $vResultName;")
+                        emitInlineCall(vInlineDecl, e.args, currentInd, false,
+                            resultVar = vResultName, resultOptCType = if (vIsRetNullable) vCRetType else null)
                         vResultName
                     }
             }

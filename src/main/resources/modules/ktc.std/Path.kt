@@ -27,8 +27,9 @@ class Path(val s: String) {
 	/** File extension (no leading dot), or `""` if none. Leading-dot hidden files have no extension. */
 	inline val extension: String get() = nameExt(name)
 
-	/** Parent path, or `null` if this is the root or a single segment with no slash. */
-	val parent: Path? get() = pathParent(s)
+	/** Parent path, or `null` if this is the root or a single segment with no slash.
+	 *  Inline: substring now copies, so the parent's backing must land in the caller's frame. */
+	inline val parent: Path? get() = pathParent(s)
 
 	override fun toString(): String = s
 	}
@@ -65,7 +66,9 @@ inline fun nameExt(inName: String): String {
 	return if (vI <= 0) "" else inName.substring(vI + 1)
 	}
 
-fun pathParent(inS: String): Path? {
+// Inline: substring now copies into the caller's frame, so the returned Path's backing buffer must
+// live there too (a non-inline return would dangle).
+inline fun pathParent(inS: String): Path? {
 	val vI = inS.lastIndexOf('/')
 	if (vI < 0) return null                                                                            // bare name with no separators
 	if (vI == 0) return Path("/")                                                                      // direct child of POSIX root

@@ -209,10 +209,15 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		"toDoubleOrNull" -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Double", "toDoubleOrNull")
 		"toFloatOrNull"  -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Float",  "toDoubleOrNull", inIntCType = "ktc_Double", inCast = "(ktc_Float)")
 
+		// substring COPIES into a fresh caller-frame buffer (NUL-terminated) → an owned String, no longer a
+		// view. The inline ext funcs (take/drop/trim/removePrefix/substringBefore…) compose this, so they
+		// copy too; returning one from a non-inline function now dangles (E020) — use inline or Ref<String>.
 		"substring" -> if (inRecvTypeKtc is KtcType.Str) {
 			val vFrom = genExpr(inArgs[0].expr)
 			val vTo   = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else "$inRecv.len"
-			return "ktc_core_string_substring($inRecv, $vFrom, $vTo)"
+			val vBuf  = tmp()
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca($inRecv.len + 1);"
+			return "ktc_core_string_substring_copy($vBuf, $inRecv, $vFrom, $vTo)"
 			}
 
 		"startsWith" -> if (inRecvTypeKtc is KtcType.Str) {

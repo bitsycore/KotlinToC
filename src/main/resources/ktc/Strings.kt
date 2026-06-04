@@ -6,16 +6,14 @@ package ktc
  * ═══════════════════════════════════════════════════════════════════
  *
  * Memory model recap (see CLAUDE.md "String and Array return safety"):
- *  - `String` is a value struct { const Char* ptr; Int len; } — passed by
- *    value as a 16-byte struct copy, underlying bytes shared. Behaves like
- *    a C++ string_view / Rust &str.
- *  - Operations split into two categories:
- *      VIEW    — substring slices, trim, take/drop. No allocation; the
- *                returned String aliases the receiver's backing buffer.
- *      MUTATE  — lowercase/uppercase/reversed/repeat/replace/padStart/
- *                padEnd. Need a fresh buffer. KTC alloca's it in the
- *                caller's frame via codegen intrinsic (see
- *                CallMethodBuiltins.kt).
+ *  - `String` is an OWNED, NUL-terminated value struct { const Char* ptr; Int len; }. Passing one
+ *    copies the 16-byte struct (ptr+len, backing shared) — like an Array; use `.copy()` for an
+ *    independent duplicate, `.asRef()` / `.copyWith(alloc)` for the Ref<String> form.
+ *  - String-producing ops all COPY into a fresh buffer (alloca'd in the caller's frame via a codegen
+ *    intrinsic, see CallMethodBuiltins.kt): substring + the slice/trim/prefix extensions
+ *    (take/drop/trim/removePrefix/substringBefore…), and lowercase/uppercase/reversed/repeat/replace/
+ *    padStart/padEnd. The extensions are `inline` so the copy lands in the caller; returning one from a
+ *    non-inline function dangles (E020) — return `Ref<String>` or mark the function `inline`.
  *
  * The `class String` block below is `@DocumentationOnly` — it provides
  * IDE / doc-generator visibility into the intrinsic surface, but emits
@@ -87,10 +85,10 @@ class String {
 	/** Move-to-heap alias of [copyWith] for an existing String value. */
 	fun allocWith(allocator: Allocator): Ref<String> = error("Transpiler intrinsic")
 
-	// ── Slicing (view) ────────────────────────────────────────
+	// ── Slicing (copies) ──────────────────────────────────────
 
 	/** Returns the substring from [startIndex] (inclusive) to [endIndex] (exclusive).
-	 *  View-only: no allocation, returned String aliases this. */
+	 *  COPIES into a fresh NUL-terminated buffer in the caller's frame (an owned String). */
 	fun substring(startIndex: Int, endIndex: Int = length): String = error("Transpiler intrinsic")
 
 	// ── Search ────────────────────────────────────────────────
@@ -164,9 +162,8 @@ class String {
 // MARK: String — Kotlin-pure extensions (compose intrinsics)
 // ══════════════════════════════════════════════════════════════════
 //
-// These never allocate — every returned String is a substring view of the
-// receiver. Safe to return from non-inline functions because the lifetime
-// is the receiver's.
+// Every returned String is an owned, NUL-terminated COPY (substring copies now). These are `inline`,
+// so the copy lands in the caller's frame; returning one from a non-inline function dangles (E020).
 
 // ── Indexed access ────────────────────────────────────────
 
@@ -184,7 +181,7 @@ type a result variable as a `ktc_Char$Opt` (Optional<Char>). */
 inline fun String.getOrElse(index: Int, defaultValue: (Int) -> Char): Char =
 	if (index < 0 || index >= this.length) defaultValue(index) else this[index]
 
-// ── Slicing (substring view, no copy) ─────────────────────
+// ── Slicing (substring copy) ──────────────────────────────
 
 /** First [n] characters (clamped to this.length). */
 inline fun String.take(n: Int): String =
@@ -207,9 +204,9 @@ inline fun String.dropLast(n: Int): String {
 	return this.substring(0, this.length - if (n < 0) 0 else n)
 }
 
-// ── Trim (substring view, no copy) ────────────────────────
+// ── Trim (substring copy) ─────────────────────────────────
 
-/** Removes leading and trailing ASCII whitespace. Returns a view of this. */
+/** Removes leading and trailing ASCII whitespace. Returns an owned copy. */
 inline fun String.trim(): String {
 	var vStart = 0
 	while (vStart < this.length) {
@@ -265,9 +262,10 @@ inline fun String.isBlank(): Boolean {
 inline fun String.isNotBlank(): Boolean = !this.isBlank()
 
 // ==================
-// MARK: Prefix / suffix / delimiter views
+// MARK: Prefix / suffix / delimiter (copies)
 // ==================
-// All return a substring VIEW into the receiver's backing buffer (no allocation). Single-overload
+// All COPY a substring into the caller's frame (substring copies now; inline so the copy lands in
+// the caller). Single-overload
 // signatures only: findInlineExtFun disambiguates extension overloads by receiver + arg count, not
 // arg type, so Char-vs-String variants of the same arity would be ambiguous (see plan.md).
 

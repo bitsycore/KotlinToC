@@ -259,7 +259,8 @@ class StringUnitTest : TranspilerTestBase() {
             val s = "hello world"
             val sub = s.substring(0, 5)
         """)
-        r.sourceContains("ktc_core_string_substring(s, 0, 5)")
+        r.sourceContains("ktc_core_string_substring_copy(")   // substring now COPIES (owned, NUL-terminated)
+        r.sourceContains(", s, 0, 5)")
     }
 
     @Test fun substringOneArg() {
@@ -267,7 +268,8 @@ class StringUnitTest : TranspilerTestBase() {
             val s = "hello"
             val tail = s.substring(2)
         """)
-        r.sourceContains("ktc_core_string_substring(s, 2, s.len)")
+        r.sourceContains("ktc_core_string_substring_copy(")
+        r.sourceContains(", s, 2, s.len)")
     }
 
     // ── String.startsWith / endsWith ─────────────────────────────────
@@ -431,7 +433,7 @@ class StringUnitTest : TranspilerTestBase() {
             val s = "hello"
             val t = s.take(3)
         """)
-        r.sourceContains("ktc_core_string_substring(")
+        r.sourceContains("ktc_core_string_substring_copy(")
     }
 
     @Test fun stringTrim() {
@@ -439,7 +441,7 @@ class StringUnitTest : TranspilerTestBase() {
             val s = "  hello  "
             val t = s.trim()
         """)
-        r.sourceContains("ktc_core_string_substring(")
+        r.sourceContains("ktc_core_string_substring_copy(")
     }
 
     @Test fun stringIsBlank() {

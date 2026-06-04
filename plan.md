@@ -509,13 +509,14 @@ extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (th
 - **S3 (M) ✅ DONE — literal interning pool:** the per-file dedup pass now emits a named, read-only static array
   `static const ktc_Char ktc_str_<pfx>_<n>[] = "…";` + a `#define` referencing it (instead of inlining
   `ktc_core_str(...)`), making the `.rodata` + NUL guarantee explicit. 75/75 green.
-- **S2 (M) — substring copies + NUL — DEFERRED TO LAST (user-requested, the most disruptive step):** new C helper
-  `ktc_core_string_substring_copy(buf,s,from,to)`; substring allocas `recv.len+1` and copies+NUL → owned String.
-  Flips the inline view family (take/drop/trim/removePrefix…) to copy via composition; non-inline functions
-  returning a substring/view now dangle (E020) — `Path.pathParent` etc. must become `inline` or heap-backed.
-  Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.
-- **S4 (S) — sizing intrinsics:** expose `value.toStringMaxLen()` (transpile error if unbounded), `value.toStringComputeLen()`
-  (count pass). Reuse internal `toStringMaxLen`/count machinery. Wire into `CallMethodBuiltins.kt`.
+- **S2 (M) ✅ DONE — substring copies + NUL (was deferred to last as the most disruptive):** `ktc_core_string_substring_copy(buf,s,from,to)`;
+  substring allocas `recv.len+1` and copies+NUL → an owned String. Flips the inline view family
+  (take/drop/trim/removePrefix/substringBefore…) to copy via composition; `Path.parent`/`pathParent` made `inline` so the
+  parent's backing lands in the caller. **Also fixed a latent bug it exposed:** top-level `inline fun`s returning a
+  nullable value-type now declare an `$Opt` result var (Call.kt), mirroring the inline-extension path — `pathParent(): Path?`
+  needed it. Doc comments + StringUnit/View substring assertions updated. 75/75 green.
+- **S4 (S) ✅ DONE — sizing intrinsics:** `value.toStringMaxLen()` (compile-time constant, refused if unbounded) and
+  `value.toStringComputeLen()` (counting StrBuf pass) — both Int.
 - **S5 (L) ✅ DONE — `Template` type:** `templateOf("$a")` binds a frame-local, compile-time-only handle (stored on
   `LocalVar.template`, sentinel C type `COpaque("__template")`, no C value emitted → cannot escape). Operations expand
   the stored template at the call site: `.maxLen` → static constant (refused if unbounded), `.computeLen()` → counting

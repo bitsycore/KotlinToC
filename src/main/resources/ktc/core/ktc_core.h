@@ -295,6 +295,18 @@ static inline ktc_String ktc_core_string_copy(ktc_Char* buf, ktc_String s) {
     return (ktc_String){buf, s.len};
 }
 
+/** Substring COPY into a caller-provided buffer (>= s.len + 1), NUL-terminated → an owned String.
+    Clamps from/to into [0, s.len]; an empty range yields "". */
+static inline ktc_String ktc_core_string_substring_copy(ktc_Char* buf, ktc_String s, ktc_Int from, ktc_Int to) {
+    if (from < 0) from = 0;
+    if (to > s.len) to = s.len;
+    if (from >= to) { buf[0] = '\0'; return (ktc_String){buf, 0}; }
+    ktc_Int n = to - from;
+    memcpy(buf, s.ptr + from, (size_t)n);
+    buf[n] = '\0';
+    return (ktc_String){buf, n};
+}
+
 /** Concatenate into caller-provided buffer. Clamps each half independently. */
 ktc_String ktc_core_string_cat(ktc_Char* buf, ktc_Int bufsz, ktc_String a, ktc_String b);
 
