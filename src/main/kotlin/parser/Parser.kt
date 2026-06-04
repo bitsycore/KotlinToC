@@ -869,10 +869,19 @@ class Parser(private val tokens: List<Token>) {
             e = when {
                 at(TokenType.DOT) -> {
                     advance(); skipNL()
-                    val dotExpr = DotExpr(e, expectIdent())
-                    // Allow no-paren trailing lambda: expr.method { lambda }
-                    if (at(TokenType.LBRACE)) CallExpr(dotExpr, listOf(Arg(null, parseLambdaExpr())))
-                    else dotExpr
+                    // sb."text $x" — render the template into the StringBuffer receiver, return the String.
+                    // Lowered to a synthetic recv.__sbtmpl(<template>) call (`.` followed by a string is
+                    // otherwise invalid syntax, so this is purely additive).
+                    when {
+                        at(TokenType.STRING_LIT)     -> CallExpr(DotExpr(e, "__sbtmpl"), listOf(Arg(null, StrLit(advance().value))))
+                        at(TokenType.STR_TMPL_START) -> CallExpr(DotExpr(e, "__sbtmpl"), listOf(Arg(null, parseStringTemplate())))
+                        else -> {
+                            val dotExpr = DotExpr(e, expectIdent())
+                            // Allow no-paren trailing lambda: expr.method { lambda }
+                            if (at(TokenType.LBRACE)) CallExpr(dotExpr, listOf(Arg(null, parseLambdaExpr())))
+                            else dotExpr
+                        }
+                    }
                 }
                 at(TokenType.QUESTION_DOT) -> {
                     advance(); skipNL()

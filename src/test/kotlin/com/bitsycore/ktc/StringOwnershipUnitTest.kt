@@ -165,4 +165,19 @@ class StringOwnershipUnitTest : TranspilerTestBase() {
             "not statically bounded"
         )
     }
+
+    // S6: sb."text $x" renders the template into the StringBuffer receiver and returns the rendered String.
+    @Test fun sbReceiverTemplate() {
+        val r = transpileMain(
+            $$"""
+            val name = "World"
+            val buf = CharArray(64)
+            val sb = StringBuffer(buf.asRef(), 0)
+            val s = sb."hi $name"
+            println(s)
+            """
+        )
+        r.sourceContains("ktc_core_sb_append_str")   // renders into the StringBuffer
+        r.sourceContains("ktc_core_sb_to_string")     // returns the rendered String
+    }
 }

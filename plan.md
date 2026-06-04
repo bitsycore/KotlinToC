@@ -521,7 +521,9 @@ extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (th
   the stored template at the call site: `.maxLen` → static constant (refused if unbounded), `.computeLen()` → counting
   StrBuf pass, `.toString()` → owned String, `.toString(sb)` → renders into the caller's StringBuffer (returns an
   sb-backed bare String — the `Ref<String>` form has the same value-vs-pointer wrinkle as sb-render). 75/75 green.
-- **S6 (M) — `sb."$a"` syntax:** receiver-prefixed template literal → render into sb, return `Ref<String>`.
+- **S6 (M) ✅ DONE — `sb."$a"` syntax:** parser lowers `.`-followed-by-a-string to a synthetic
+  `recv.__sbtmpl(<template>)` call (additive — `.`+string was previously invalid); `CallMethodBuiltins` renders it
+  into the StringBuffer receiver via `genStrTemplateToSb` and returns the rendered (sb-backed) String. 75/75 green.
 - **S7 (S) — docs + memory:** CLAUDE.md String sections; project memory note.
 
 ### Open consequence (flagged)

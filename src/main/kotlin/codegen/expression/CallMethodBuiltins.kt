@@ -92,6 +92,20 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			}
 		}
 
+	// sb."text $x" sugar: the parser lowers it to recv.__sbtmpl(<template>). Render into the StringBuffer
+	// receiver and return the rendered String (sb-backed, like toString(sb)).
+	if (vMethod == "__sbtmpl") {
+		if (inRecvType != "ktc_StrBuf" && inRecvType != "StringBuffer")
+			codegenError("The receiver of `sb.\"...\"` must be a StringBuffer (got '${inRecvType ?: "?"}').")
+		val vSbRef = "&($inRecv)"
+		when (val vArg = inArgs[0].expr) {
+			is StrTemplateExpr -> genStrTemplateToSb(vArg, vSbRef)
+			is StrLit          -> preStmts += "ktc_core_sb_append_str($vSbRef, ${genExpr(vArg)});"
+			else               -> codegenError("`sb.\"...\"` expects a string template literal.")
+			}
+		return "ktc_core_sb_to_string($vSbRef)"
+		}
+
 	// ── StringBuffer method intrinsics ───────────────────────────────
 	if (inRecvType == "ktc_StrBuf" || inRecvType == "StringBuffer") {
 		val vSbRef = "&($inRecv)"

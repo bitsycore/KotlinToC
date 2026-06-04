@@ -25,6 +25,8 @@ private val kBuiltinMethodReturns: Map<String, String> = mapOf(
 	"toString"   to "String",
 	"toStringMaxLen"     to "Int",
 	"toStringComputeLen" to "Int",
+	"__sbtmpl"           to "String",   // sb."…" sugar → the rendered String
+
 	"trimIndent" to "String",
 	"trimMargin" to "String",
 	"runeAt"     to "Rune",
