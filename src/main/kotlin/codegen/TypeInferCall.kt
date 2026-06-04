@@ -48,6 +48,9 @@ private val kStringBuiltinReturns: Map<String, String> = mapOf(
 	"toBooleanStrictOrNull" to "Boolean?",
 	"firstOrNull" to "Char?", "lastOrNull" to "Char?", "getOrNull" to "Char?",
 	"indexOf" to "Int", "lastIndexOf" to "Int", "compareTo" to "Int",
+	// Ownership API — String is a read-only Array: asRef/copyWith/allocWith yield Ref<String>
+	// (internal form "String*" = Ptr(Str), a value-struct ref like Ref<Array<T>>).
+	"asRef" to "String*", "copyWith" to "String*", "allocWith" to "String*",
 	)
 
 /* Builder-fn and ctor-fn names that produce a primitive typed array. Looking up

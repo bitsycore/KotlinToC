@@ -65,11 +65,24 @@ class String {
 	operator fun plus(other: String): String = error("Transpiler intrinsic")
 
 	// ── Ownership (String is a read-only Array) ───────────────
-	// Mirrors the Array<T> ownership ops: copy duplicates into the caller's
-	// frame; asRef / copyWith / allocWith come with the Ref<String> form.
+	// copy() duplicates into the caller's frame; asRef() / copyWith() / allocWith()
+	// give the Ref<String> form. Ref<String> is a ktc_String* (pointer to a heap block
+	// holding the header + bytes), released in one freeMem(ref). It is a real pointer
+	// rather than a value struct because RawArray<String> and Ref<String> share the
+	// Ptr(String) type, so the value form would collide with RawArray<String>.
 
 	/** A fresh owned, NUL-terminated copy in the caller's frame (no alias). Mirrors Array.copyOf. */
 	fun copy(): String = error("Transpiler intrinsic")
+
+	/** A Ref<String> (&this) aliasing this string. Frame-bound — must not outlive the receiver. */
+	fun asRef(): Ref<String> = error("Transpiler intrinsic")
+
+	/** Heap-copies the bytes (+ NUL) via [allocator] into one block → a Ref<String> that
+	 *  escapes the frame. Release with allocator.freeMem(ref). */
+	fun copyWith(allocator: Allocator): Ref<String> = error("Transpiler intrinsic")
+
+	/** Move-to-heap alias of [copyWith] for an existing String value. */
+	fun allocWith(allocator: Allocator): Ref<String> = error("Transpiler intrinsic")
 
 	// ── Slicing (view) ────────────────────────────────────────
 

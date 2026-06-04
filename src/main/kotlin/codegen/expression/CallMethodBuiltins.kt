@@ -275,6 +275,30 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return "ktc_core_string_copy($vBuf, $inRecv)"
 			}
 
+		// String.asRef() — &s, a Ref<String> (ktc_String*) aliasing this frame String. Frame-bound:
+		// returning `s.asRef()` dangles (E120 refuses it). Heap escape is .copyWith / .allocWith.
+		// (Ref<String> is a real pointer, NOT a value struct like Ref<Array<T>>: RawArray<String> and
+		// Ref<String> are both Ptr(Str), so the value form would collide with RawArray<String>.)
+		"asRef" -> if (inRecvTypeKtc is KtcType.Str) return "&($inRecv)"
+
+		// String.copyWith(alloc) / allocWith(alloc) — one heap block holding the ktc_String header AND its
+		// NUL-terminated bytes inline; returns a Ref<String> (ktc_String*) that escapes the defining frame.
+		// freeMem(r) releases the whole block. allocWith is the move-to-heap alias for an existing String.
+		"copyWith", "allocWith" -> if (inRecvTypeKtc is KtcType.Str && inArgs.size == 1) {
+			val vResult       = tmp()
+			val vSize         = "sizeof(ktc_String) + (size_t)($inRecv.len) + 1"
+			val vAllocObjName = (inArgs[0].expr as? NameExpr)?.name
+			if (vAllocObjName == "Heap") {
+				preStmts += "ktc_String* $vResult = (ktc_String*)${tMalloc(vSize)};"
+				} else {
+				val vAllocExpr = genExpr(inArgs[0].expr)
+				val vIfExpr    = resolveAllocatorIface(inArgs[0].expr, vAllocExpr).ifaceExpr
+				preStmts += "ktc_String* $vResult = (ktc_String*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, $vSize, ${ktSrcStr()});"
+				}
+			preStmts += "if ($vResult) { ktc_Char* ${vResult}_b = (ktc_Char*)($vResult + 1); if ($inRecv.len > 0) memcpy(${vResult}_b, $inRecv.ptr, (size_t)$inRecv.len); ${vResult}_b[$inRecv.len] = '\\0'; $vResult->ptr = ${vResult}_b; $vResult->len = $inRecv.len; }"
+			return vResult
+			}
+
 		"toBooleanStrictOrNull" -> if (inRecvTypeKtc is KtcType.Str)
 			return tmpStrToNumOptional(inRecv, "ktc_Bool", "toBooleanStrictOrNull")
 
