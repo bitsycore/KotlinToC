@@ -134,4 +134,35 @@ class StringOwnershipUnitTest : TranspilerTestBase() {
     @Test fun toStringMaxLenRefusedForUnbounded() {
         transpileMainExpectError("val s = \"x\"\nval m = s.toStringMaxLen()", "toStringMaxLen")
     }
+
+    // S5: templateOf("…") — a frame-local Template handle (compile-time only). maxLen (static const),
+    // computeLen (counting StrBuf), toString (build). The handle emits no C value of its own.
+    @Test fun templateOfOperations() {
+        val r = transpileMain(
+            $$"""
+            val n = 7
+            val name = "World"
+            val tb = templateOf("n=$n")
+            val mx = tb.maxLen
+            val tu = templateOf("hi $name")
+            val cl = tu.computeLen()
+            val s = tu.toString()
+            println(s)
+            println(mx)
+            println(cl)
+            """
+        )
+        r.sourceMatches(Regex("ktc_Int mx = [0-9]+"))     // maxLen: compile-time constant
+        r.sourceContains("{NULL, 0, 0}")                  // computeLen: counting StrBuf
+        r.sourceContains("ktc_core_sb_to_string")         // toString: build
+        r.sourceNotContains("__template")                 // the handle's sentinel never reaches emitted C
+    }
+
+    // template.maxLen is refused when the template's length isn't statically bounded (a String interpolation).
+    @Test fun templateMaxLenRefusedForUnbounded() {
+        transpileMainExpectError(
+            "val name = \"x\"\nval t = templateOf(\"hi \$name\")\nval m = t.maxLen",
+            "not statically bounded"
+        )
+    }
 }

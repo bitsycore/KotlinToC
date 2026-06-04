@@ -129,6 +129,20 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             return
         }
     }
+    // templateOf("…") — a frame-local Template handle (compile-time only, no C value). Its operations
+    // (.maxLen / .computeLen() / .toString()) expand the stored template at the call site; with no value
+    // to copy, the handle cannot escape its scope (a use as a value finds no C symbol).
+    val vTmplInit = s.init
+    if (vTmplInit is CallExpr && vTmplInit.callee is NameExpr && vTmplInit.callee.name == "templateOf" && vTmplInit.args.size == 1) {
+        val vTmplArg = vTmplInit.args[0].expr
+        val vTmpl = when (vTmplArg) {
+            is StrTemplateExpr -> vTmplArg
+            is StrLit          -> StrTemplateExpr(listOf(LitPart(vTmplArg.value)))
+            else               -> codegenError("templateOf(...) takes a string template literal, e.g. templateOf(\"x = \$x\").")
+        }
+        defineVar(s.name, LocalVar(ktc = KtcType.COpaque("__template"), template = vTmpl))
+        return
+    }
     // No-implicit-copy default (P1): an un-annotated `val/var b = a` where `a` is a user-value lvalue
     // infers a reference (Ref<T>) and ALIASES — no struct copy. Desugar to `.asRef()` so the existing
     // pointer path emits `T* b = &a;` and member access auto-derefs through it. A real (independent)

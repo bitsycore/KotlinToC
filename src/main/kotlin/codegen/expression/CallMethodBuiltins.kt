@@ -69,6 +69,29 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 ): String? {
 	val vMethod = inDot.name  // method name
 
+	// ── Template handle intrinsics (templateOf) ──────────────────────
+	// A frame-local Template handle expands its stored template here. computeLen() counts via a NULL
+	// StrBuf; toString() builds an owned String; toString(sb) renders into the caller's StringBuffer.
+	val vTmplRecv = (inDot.obj as? NameExpr)?.let { lookupLocalVar(it.name)?.template }
+	if (vTmplRecv != null) {
+		when (vMethod) {
+			"computeLen" -> {
+				val vSb = tmp()
+				preStmts += "ktc_StrBuf $vSb = {NULL, 0, 0};"
+				genStrTemplateToSb(vTmplRecv, "&$vSb")
+				return "$vSb.len"
+				}
+			"toString" -> {
+				if (inArgs.size == 1) {
+					val vSbExpr = genExpr(inArgs[0].expr)
+					genStrTemplateToSb(vTmplRecv, "&($vSbExpr)")
+					return "ktc_core_sb_to_string(&($vSbExpr))"
+					}
+				return genStrTemplate(vTmplRecv)
+				}
+			}
+		}
+
 	// ── StringBuffer method intrinsics ───────────────────────────────
 	if (inRecvType == "ktc_StrBuf" || inRecvType == "StringBuffer") {
 		val vSbRef = "&($inRecv)"

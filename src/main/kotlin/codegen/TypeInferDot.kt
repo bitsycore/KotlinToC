@@ -33,6 +33,9 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	val recvType        = inferExprType(e.obj) ?: return null
 	val recvTypeKtc     = inferExprTypeKtc(e.obj)
 	val recvTypeCoreKtc = recvTypeKtc.stripNullable
+	// Template handle (templateOf): .maxLen → Int. Must precede the COpaque-Float default below, since
+	// the template handle's sentinel type is COpaque("__template").
+	if (e.name == "maxLen" && (e.obj as? NameExpr)?.let { lookupLocalVar(it.name)?.template } != null) return KtcType.Prim(KtcType.PrimKind.Int)
 	// COpaque field access: we don't know the struct layout, default to Float
 	// (fields like x/y/w/h on SDL_FRect). C code emits correct member access.
 	if (recvTypeCoreKtc is KtcType.COpaque) return KtcType.Prim(KtcType.PrimKind.Float)

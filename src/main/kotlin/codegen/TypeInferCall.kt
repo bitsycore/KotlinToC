@@ -307,6 +307,8 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
     val recvKtcPtr = inferExprTypeKtc(dot.obj)
     val recvKtcCorePtr = recvKtcPtr.stripNullable
     val method = dot.name
+    // Template handle (templateOf): computeLen() → Int. (toString()/toString(sb) resolve via the builtin map → String.)
+    if (method == "computeLen" && (dot.obj as? NameExpr)?.let { lookupLocalVar(it.name)?.template } != null) return "Int"
     kBuiltinMethodReturns[method]?.let { return it }
     if (method == "inv") return recvType
     // Closure functor struct: copyWith heap-promotes it to a Ref<Closure<F>> (a heap ktc_Closure*);

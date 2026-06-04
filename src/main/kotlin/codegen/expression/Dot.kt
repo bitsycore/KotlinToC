@@ -121,6 +121,10 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
         val fieldName = if (objInfo != null && objInfo.privateProps.contains(e.name)) "PRIV_${e.name}" else e.name
         return "${vDotObjCName}.${fieldName}"
     }
+    // Template handle (templateOf): .maxLen is a compile-time constant (refused when not statically bounded).
+    val vTmplDot = (e.obj as? NameExpr)?.let { lookupLocalVar(it.name)?.template }
+    if (vTmplDot != null && e.name == "maxLen")
+        return "${templateMaxLen(vTmplDot) ?: codegenError("template.maxLen is unavailable — this template's length is not statically bounded. Use .computeLen() (computed at runtime).")}"
     // Array .size → sized-struct param uses local$name$len; trampoline uses .size field; others use $len
     if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return arrayParamSizeExpr(e.obj.name)
     if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}.len"

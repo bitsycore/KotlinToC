@@ -516,9 +516,11 @@ extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (th
   Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.
 - **S4 (S) — sizing intrinsics:** expose `value.toStringMaxLen()` (transpile error if unbounded), `value.toStringComputeLen()`
   (count pass). Reuse internal `toStringMaxLen`/count machinery. Wire into `CallMethodBuiltins.kt`.
-- **S5 (L) — `Template` type:** `templateOf("$a")` → `Ref<Template>`, transpiler-only, frame-bound (never escapes,
-  new escape rule). Members `.maxLen` / `.computeLen()` / `.toString()` (owned String) / `.toString(sb)` (→`Ref<String>`).
-  Captures parts + spilled interpolated values. Parser + type-infer + codegen.
+- **S5 (L) ✅ DONE — `Template` type:** `templateOf("$a")` binds a frame-local, compile-time-only handle (stored on
+  `LocalVar.template`, sentinel C type `COpaque("__template")`, no C value emitted → cannot escape). Operations expand
+  the stored template at the call site: `.maxLen` → static constant (refused if unbounded), `.computeLen()` → counting
+  StrBuf pass, `.toString()` → owned String, `.toString(sb)` → renders into the caller's StringBuffer (returns an
+  sb-backed bare String — the `Ref<String>` form has the same value-vs-pointer wrinkle as sb-render). 75/75 green.
 - **S6 (M) — `sb."$a"` syntax:** receiver-prefixed template literal → render into sb, return `Ref<String>`.
 - **S7 (S) — docs + memory:** CLAUDE.md String sections; project memory note.
 
