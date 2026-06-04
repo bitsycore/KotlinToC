@@ -42,7 +42,7 @@ private val kBuiltinMethodReturns: Map<String, String> = mapOf(
 private val kStringBuiltinReturns: Map<String, String> = mapOf(
 	"substring" to "String", "reversed" to "String", "lowercase" to "String",
 	"uppercase" to "String", "repeat" to "String", "replace" to "String",
-	"padStart" to "String", "padEnd" to "String",
+	"padStart" to "String", "padEnd" to "String", "copy" to "String",
 	"startsWith" to "Boolean", "endsWith" to "Boolean", "contains" to "Boolean",
 	"isEmpty" to "Boolean", "isNotEmpty" to "Boolean", "toBooleanStrict" to "Boolean",
 	"toBooleanStrictOrNull" to "Boolean?",

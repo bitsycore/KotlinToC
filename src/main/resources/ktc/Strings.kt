@@ -64,6 +64,13 @@ class String {
 	 *  in the caller's frame via alloca — see CLAUDE.md for lifetime rules. */
 	operator fun plus(other: String): String = error("Transpiler intrinsic")
 
+	// ── Ownership (String is a read-only Array) ───────────────
+	// Mirrors the Array<T> ownership ops: copy duplicates into the caller's
+	// frame; asRef / copyWith / allocWith come with the Ref<String> form.
+
+	/** A fresh owned, NUL-terminated copy in the caller's frame (no alias). Mirrors Array.copyOf. */
+	fun copy(): String = error("Transpiler intrinsic")
+
 	// ── Slicing (view) ────────────────────────────────────────
 
 	/** Returns the substring from [startIndex] (inclusive) to [endIndex] (exclusive).

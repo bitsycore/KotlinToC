@@ -267,6 +267,14 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return "ktc_core_string_padEnd($vBuf, ${vBuf}_sz, $inRecv, $vTarget, $vPadCh)"
 			}
 
+		// String.copy() — a fresh owned, NUL-terminated buffer in the caller's frame (no alias).
+		// String is a read-only Array: copy mirrors Array.copyOf; asRef/copyWith mirror the array ops.
+		"copy" -> if (inRecvTypeKtc is KtcType.Str) {
+			val vBuf = tmp()
+			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca($inRecv.len + 1);"
+			return "ktc_core_string_copy($vBuf, $inRecv)"
+			}
+
 		"toBooleanStrictOrNull" -> if (inRecvTypeKtc is KtcType.Str)
 			return tmpStrToNumOptional(inRecv, "ktc_Bool", "toBooleanStrictOrNull")
 

@@ -475,3 +475,43 @@ a `Ref<T>` ergonomic (`recv.field` → `recv->field`, Dot.kt:147-150; method rec
   E071 in the final commit**. That is migration scaffolding, not a permanent flag. (Both blast agents
   independently recommended a flag/staged rollout; flagging here for visibility, but honoring the decision.)
 - Sequence the work so **P2 and P6 run as one tight loop** (the call-arg gate is what breaks everything).
+
+═══════════════════════════════════════════════════════════════════════
+## 9. String rework — stack-owned, NUL-terminated, Array-like ownership (L) — IN PROGRESS
+═══════════════════════════════════════════════════════════════════════
+
+Design agreed with the user (2026-06-04). `String` behaves like `Array<T>`: a stack-owned, **NUL-terminated**
+value; copying is explicit; escape is via `Ref<String>`.
+
+**Key realization (from the map workflow):** most of the "owned" model is ALREADY how KTC works — templates /
+concat / `toString()` already `alloca` into the caller frame and NUL-terminate (`ktc_core_sb_to_string`,
+ktc_core.h:342); E020/E022/E120 already enforce frame-bound lifetimes; literals via `ktc_core_str` already point
+at NUL-terminated `.rodata`. `Ref<Array<T>>` is the bare `ktc_VarArr` struct (ptr+len), heap-backed —
+**`Ref<String>` mirrors this: C type stays `ktc_String`, ptr→heap, `Ref<>` marks heap-owned/escapable;
+`freeMem(ref)` frees `ref.ptr`.** The genuinely-new work is narrow.
+
+**Relationship to U5:** the rework SUPERSEDES U5's "pure-view" claim — substring copies, so the inline view
+extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (they compose substring).
+
+### Steps (each: `./gradlew test` + `python run_tests.py` green → commit, no AI attribution)
+- **S1 (S) — String value API:** `s.copy()` (alloca len+1 + memcpy + NUL → owned), `s.asRef()` → `Ref<String>`
+  (identity, frame-bound; `return s.asRef()` stays E120-refused), `s.copyWith(alloc)` / `s.allocWith(alloc)` →
+  `Ref<String>` (allocMem(len+1)+memcpy+NUL, heap, escapable). Mirror Array dispatch in `CallMethodBuiltins.kt`.
+  Add to `Strings.kt` doc surface. New `StringOwnershipUnitTest` + integration test returning `Ref<String>`. Additive, low risk.
+- **S2 (M) — substring copies + NUL (defining change):** new C helper `ktc_core_string_substring_copy(buf,bufsz,s,from,to)`;
+  substring case allocas `recv.len+1` and copies+NUL → owned String. Flips the inline view family to copy via
+  composition. Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.
+- **S3 (M) — literal interning pool:** replace post-hoc regex dedup (CCodeGenGenerate.kt:451-484) with a collected
+  static pool `static const ktc_Char ktc_str_<hash>[] = "…";` referenced via `ktc_core_string_wrap`. Guarantees
+  `.rodata`+NUL. Behavior-preserving; broad. Update `genExpr(StrLit)` (Expression.kt:71).
+- **S4 (S) — sizing intrinsics:** expose `value.toStringMaxLen()` (transpile error if unbounded), `value.toStringComputeLen()`
+  (count pass). Reuse internal `toStringMaxLen`/count machinery. Wire into `CallMethodBuiltins.kt`.
+- **S5 (L) — `Template` type:** `templateOf("$a")` → `Ref<Template>`, transpiler-only, frame-bound (never escapes,
+  new escape rule). Members `.maxLen` / `.computeLen()` / `.toString()` (owned String) / `.toString(sb)` (→`Ref<String>`).
+  Captures parts + spilled interpolated values. Parser + type-infer + codegen.
+- **S6 (M) — `sb."$a"` syntax:** receiver-prefixed template literal → render into sb, return `Ref<String>`.
+- **S7 (S) — docs + memory:** CLAUDE.md String sections; project memory note.
+
+### Open consequence (flagged)
+S2 flips ALL inline view-extensions to copy+NUL (they compose substring) — rewrites `StringViewTest` view→copy and
+adds a per-call alloca. Direct result of the agreed "everything copies, no zero-copy view type" decision.

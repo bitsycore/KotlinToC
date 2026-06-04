@@ -288,6 +288,13 @@ static inline ktc_String ktc_core_string_substring(ktc_String s, ktc_Int from, k
     return (ktc_String){s.ptr + from, to - from};
 }
 
+/** Copy s into a caller-provided buffer (>= s.len + 1) and NUL-terminate. Returns an owned view of buf. */
+static inline ktc_String ktc_core_string_copy(ktc_Char* buf, ktc_String s) {
+    if (s.len > 0) memcpy(buf, s.ptr, (size_t)s.len);
+    buf[s.len] = '\0';
+    return (ktc_String){buf, s.len};
+}
+
 /** Concatenate into caller-provided buffer. Clamps each half independently. */
 ktc_String ktc_core_string_cat(ktc_Char* buf, ktc_Int bufsz, ktc_String a, ktc_String b);
 
