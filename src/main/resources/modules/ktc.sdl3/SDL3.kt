@@ -13,7 +13,7 @@ object SDL3 {
     }
 
     private inline fun createWindow(title: String, width: Int, height: Int, flags: Int = 0): Ref<C.SDL_Window> {
-        val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.ptr, width, height, flags)
+        val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.cPtr, width, height, flags)
         if (!vHandle) error("SDL_CreateWindow failed: ${C.SDL_GetError()}")
         return vHandle
     }
@@ -253,7 +253,7 @@ object SDL3 {
 
     /** Show a simple modal message box. */
     fun showMessageBox(flags: Int, title: String, message: String, window: Window) {
-        C.SDL_ShowSimpleMessageBox(flags, title.ptr, message.ptr, window.handle)
+        C.SDL_ShowSimpleMessageBox(flags, title.cPtr, message.cPtr, window.handle)
     }
 
     @Namespace object Event

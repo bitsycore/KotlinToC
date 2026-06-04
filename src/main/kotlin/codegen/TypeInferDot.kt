@@ -44,6 +44,11 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 			}
 		}
 	if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return KtcType.Prim(KtcType.PrimKind.Int)
+	// .cPtr → raw C pointer: T* for Array, const ktc_Char* (Ref<Char>) for String. (.ptr is disallowed — E055.)
+	if (e.name == "cPtr") {
+		if (recvTypeCoreKtc?.isArrayLike == true) { val arr = recvTypeCoreKtc.asArr; if (arr != null) return KtcType.Ptr(arr.elem) }
+		if (recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
+		}
 	if (e.name == "ptr") {
 		if (recvTypeCoreKtc?.isArrayLike == true) {
 			val arr = recvTypeCoreKtc.asArr

@@ -203,6 +203,16 @@ object ErrorCatalog {
 			pointer. (Globals, top-level functions, and members are not captures.)
 			""".trimIndent()),
 
+		Entry("E055", "'.ptr' not available on String/Array",
+			"""
+			'.ptr' is no longer available on String or Array. The raw C data pointer — a
+			const ktc_Char* for String, a T* for Array — is exposed as '.cPtr', so the
+			C-interop accessor stays explicit:
+			  someString.cPtr      // OK — const char* into the bytes
+			  someArray.cPtr       // OK — T* into the elements
+			  someString.ptr       // error
+			""".trimIndent()),
+
 		// ── Nullable safety ──────────────────────────────────────
 		Entry("E060", "Safe access required on nullable receiver",
 			"""

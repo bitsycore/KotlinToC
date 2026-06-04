@@ -94,7 +94,7 @@ fun SDL3.Renderer.createTexture(width: Int, height: Int, format: Int, access: In
 
 /** Load a BMP file and upload it as a static texture. */
 fun SDL3.Renderer.loadTextureBmp(path: String): SDL3.Texture {
-    val vSurface: Ref<C.SDL_Surface> = C.SDL_LoadBMP(path.ptr)
+    val vSurface: Ref<C.SDL_Surface> = C.SDL_LoadBMP(path.cPtr)
     if (!vSurface) error("SDL_LoadBMP failed: ${C.SDL_GetError()}")
     val vHandle: Ref<C.SDL_Texture> = C.SDL_CreateTextureFromSurface(this.handle, vSurface)
     C.SDL_DestroySurface(vSurface)

@@ -4,7 +4,7 @@ package ktc.sdl3
 
 /** Draw a debug text string at (x, y) using the current draw color. 8x8 monospace font. */
 inline fun SDL3.Renderer.drawDebugText(x: Float, y: Float, text: String) {
-	C.SDL_RenderDebugText(this.handle, x, y, text.ptr)
+	C.SDL_RenderDebugText(this.handle, x, y, text.cPtr)
 }
 
 /** Character size in pixels for debug text (8x8 monospace). */

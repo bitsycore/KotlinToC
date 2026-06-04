@@ -91,6 +91,6 @@ inline fun <T> checkNotNull(value: T?, lazyMessage: () -> String): T {
  * Exit program with failure and write stacktrace before with the given [message].
  */
 fun error(message: String, file: String = Macro.FILE, line: Int = Macro.LINE): Nothing {
-    C.ktc_core_stacktrace_print(message.ptr, message.len, file.ptr, file.len, line)
+    C.ktc_core_stacktrace_print(message.cPtr, message.len, file.cPtr, file.len, line)
     C.exit(C.EXIT_FAILURE);
 }

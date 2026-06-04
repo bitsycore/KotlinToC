@@ -124,8 +124,14 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Array .size → sized-struct param uses local$name$len; trampoline uses .size field; others use $len
     if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return arrayParamSizeExpr(e.obj.name)
     if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}.len"
-    if (e.name == "ptr" && recvTypeCoreKtc is KtcType.Str) return "$recv.ptr"
-    if (e.name == "ptr" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "$recv.ptr"
+    // .cPtr → the raw C data pointer = the underlying struct's .ptr field (const ktc_Char* for String,
+    // T* for Array). Unconditional so it lowers even where the receiver's array type isn't re-inferred
+    // (e.g. an inlined COpaque-element array); .cPtr is only ever written on String/Array.
+    if (e.name == "cPtr") return "$recv.ptr"
+    // `.ptr` is no longer allowed on String/Array (E055) — use .cPtr. Gated on the inferred type so a
+    // genuine C-struct field named `ptr` still resolves via the default path.
+    if (e.name == "ptr" && (recvTypeCoreKtc is KtcType.Str || recvTypeCoreKtc?.isArrayLike == true))
+        codegenError("E055", "'.ptr' is not available on String/Array — use '.cPtr' to get the raw C pointer (const ktc_Char* / T*).")
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"
     if (e.name == "runeLen" && recvTypeKtc is KtcType.Str) return "ktc_core_str_runeLen($recv)"
     // Enum .ordinal — simple enum: the int value itself; full enum: .ordinal field on the struct
@@ -308,7 +314,9 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
         e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr -> "(*$recvVal)"
         recvTypeCoreKtc is KtcType.Ptr -> "$recvVal->${e.name}"
         e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.len"
-        e.name == "ptr" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.ptr"
+        e.name == "cPtr" -> "${recvVal}.ptr"
+        e.name == "ptr" && (recvTypeCoreKtc is KtcType.Str || recvTypeCoreKtc?.isArrayLike == true) ->
+            codegenError("E055", "'.ptr' is not available on String/Array — use '.cPtr'.")
         e.name == "length" && recvTypeCoreKtc is KtcType.Str -> "$recvVal.len"
         else -> "$recvVal.${e.name}"
     }

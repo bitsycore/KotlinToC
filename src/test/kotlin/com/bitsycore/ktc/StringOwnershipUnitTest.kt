@@ -78,4 +78,26 @@ class StringOwnershipUnitTest : TranspilerTestBase() {
             "E120"
         )
     }
+
+    // .cPtr is the raw C pointer accessor (RawArray<Char> / T*); it lowers to the struct's .ptr field.
+    @Test fun cPtrLowersToRawPointer() {
+        val r = transpileMain(
+            $$"""
+            val s = "hi"
+            val p = s.cPtr
+            println(s)
+            """
+        )
+        r.sourceContains("ktc_Char* p")
+    }
+
+    // .ptr is no longer allowed on String — must use .cPtr (E055).
+    @Test fun ptrOnStringRefused() {
+        transpileMainExpectError("val s = \"hi\"\nval p = s.cPtr\nval q = s.ptr", "E055")
+    }
+
+    // .ptr is no longer allowed on Array either — must use .cPtr (E055).
+    @Test fun ptrOnArrayRefused() {
+        transpileMainExpectError("val a = arrayOf(1, 2)\nval p = a.ptr", "E055")
+    }
 }

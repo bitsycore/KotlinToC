@@ -12,9 +12,9 @@ import com.bitsycore.ktc.types.KtcType
 private fun CCodeGen.strBufCapExpr(inPtrArg: Expr, inRawPtr: String): String =
 	when (inPtrArg) {
 		is NullLit -> "0"
-		is DotExpr if inPtrArg.name == "ptr" ->
+		is DotExpr if inPtrArg.name == "cPtr" ->
 			"${genExpr(inPtrArg.obj)}.len"
-		is CallExpr if inPtrArg.callee is DotExpr && inPtrArg.callee.name == "ptr" ->
+		is CallExpr if inPtrArg.callee is DotExpr && inPtrArg.callee.name == "cPtr" ->
 			"${genExpr(inPtrArg.callee.obj)}.len"
 		else -> {
 			val ktc = inferExprTypeKtc(inPtrArg)

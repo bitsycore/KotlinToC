@@ -494,10 +494,15 @@ at NUL-terminated `.rodata`. `Ref<Array<T>>` is the bare `ktc_VarArr` struct (pt
 extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (they compose substring).
 
 ### Steps (each: `./gradlew test` + `python run_tests.py` green → commit, no AI attribution)
-- **S1 (S) — String value API:** `s.copy()` (alloca len+1 + memcpy + NUL → owned), `s.asRef()` → `Ref<String>`
-  (identity, frame-bound; `return s.asRef()` stays E120-refused), `s.copyWith(alloc)` / `s.allocWith(alloc)` →
-  `Ref<String>` (allocMem(len+1)+memcpy+NUL, heap, escapable). Mirror Array dispatch in `CallMethodBuiltins.kt`.
-  Add to `Strings.kt` doc surface. New `StringOwnershipUnitTest` + integration test returning `Ref<String>`. Additive, low risk.
+- **S1a (S) ✅ DONE** — `s.copy()` (alloca len+1 + memcpy + NUL → owned String via `ktc_core_string_copy`).
+- **S1b (S) ✅ DONE** — `s.asRef()` → `&s` (frame-bound; `return s.asRef()` E120-refused); `s.copyWith(alloc)` /
+  `s.allocWith(alloc)` → one heap block (ktc_String header + NUL bytes inline) → `Ref<String>`; freeMem frees the block.
+  **Representation note:** `Ref<String>` = `ktc_String*` (a real pointer), NOT a value struct like `Ref<Array<T>>` —
+  because `RawArray<String>` and `Ref<String>` are both `Ptr(Str)`; the value form collided with `RawArray<String>`
+  storage in HashMap/MapIterator. `refValue` → `*ref` (natural deref). 75/75 green.
+- **S1c (S) ✅ DONE** — deprecate `.ptr` on String AND Array (hard error **E055**), add `.cPtr` (raw C pointer:
+  `RawArray<Char>` for String, `T*` for Array — same `.ptr` field emission). Migrated stdlib (FileSystem, Allocator,
+  Error, CInterop) + the `ktc.sdl3` module. `cPtr`/`.ptr`-refused unit tests. (User-requested mid-rework.)
 - **S2 (M) — substring copies + NUL (defining change):** new C helper `ktc_core_string_substring_copy(buf,bufsz,s,from,to)`;
   substring case allocas `recv.len+1` and copies+NUL → owned String. Flips the inline view family to copy via
   composition. Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.

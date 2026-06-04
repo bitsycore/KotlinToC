@@ -51,7 +51,7 @@ C calls
 Call any C function via `C.functionName(args)`:
 
     C.SDL_Init(C.SDL_INIT_VIDEO)
-    val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.ptr, w, h, flags)
+    val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.cPtr, w, h, flags)
 
 Struct types are accessed as `C.SDL_FRect`, `C.SDL_Color`, etc.
 Struct instances: `C.SDL_FRect(x, y, w, h)` — a compound literal.
@@ -89,10 +89,10 @@ Examples:
 Strings
 ==========
 
-`String.ptr` converts a KTC string to `const char*` (a raw C string pointer).
+`String.cPtr` converts a KTC string to `const char*` (a raw C string pointer).
 Use when passing Kotlin strings to C functions expecting `const char*`.
 
-    C.SDL_SetWindowTitle(window.handle, title.ptr)
+    C.SDL_SetWindowTitle(window.handle, title.cPtr)
 
 ==========
 File-level annotations

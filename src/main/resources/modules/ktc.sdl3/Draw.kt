@@ -98,7 +98,7 @@ inline fun SDL3.Renderer.fillTriangle(
     v2.position.x = x2; v2.position.y = y2
     v2.color.r = r2; v2.color.g = g2; v2.color.b = b2; v2.color.a = a2
     val verts = arrayOf(v0, v1, v2)
-    C.SDL_RenderGeometry(this.handle, C.NULL, verts.ptr, 3, C.NULL, 0)
+    C.SDL_RenderGeometry(this.handle, C.NULL, verts.cPtr, 3, C.NULL, 0)
 }
 
 /** Fill a uniformly colored triangle (convenience overload). */

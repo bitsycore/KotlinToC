@@ -9,7 +9,7 @@ interface Allocator {
 @RequireFree
 object Heap : Allocator {
     override fun allocMem(size: Int, file: String, line: Int): AnyPtr {
-        return C.ktc_core_malloc(size, file.ptr, line)
+        return C.ktc_core_malloc(size, file.cPtr, line)
     }
 
     override fun freeMem(ptr: AnyPtr) {
@@ -17,6 +17,6 @@ object Heap : Allocator {
     }
 
     override fun reallocMem(ptr: AnyPtr, newSize: Int, file: String, line: Int): AnyPtr {
-        return C.ktc_core_realloc(ptr, newSize, file.ptr, line)
+        return C.ktc_core_realloc(ptr, newSize, file.cPtr, line)
     }
 }

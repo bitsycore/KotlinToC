@@ -70,7 +70,7 @@ class FileSink(private var fp: AnyPtr) {
 	Write [byteCount] bytes from [buf] starting at offset 0.
 	Returns the number of bytes actually written (short writes are possible
 	on disk-full conditions).
-	[buf] is any pointer to readable bytes (RawArray<Byte>, String.ptr, etc).
+	[buf] is any pointer to readable bytes (RawArray<Byte>, String.cPtr, etc).
 	 */
 	fun write(buf: AnyPtr, byteCount: Int): Int {
 		if (fp == C.NULL) return 0
@@ -113,7 +113,7 @@ object FileSystem {
 
 	/** True if [path] exists (file OR directory). */
 	fun exists(path: Ref<Path>): Boolean {
-		return C.ktc_core_fs_exists(path.s.ptr, path.s.length) != 0
+		return C.ktc_core_fs_exists(path.s.cPtr, path.s.length) != 0
 		}
 
 	/**
@@ -124,7 +124,7 @@ object FileSystem {
 	 */
 	fun metadata(path: Ref<Path>): FileMetadata {
 		var vMeta: C.ktc_core_fs_meta = C.zeroed()
-		if (C.ktc_core_fs_metadata(path.s.ptr, path.s.length, C.addr(vMeta)) == 0) {
+		if (C.ktc_core_fs_metadata(path.s.cPtr, path.s.length, C.addr(vMeta)) == 0) {
 			return FileMetadata(false, false, -1L, 0L)
 			}
 		return FileMetadata(
@@ -139,17 +139,17 @@ object FileSystem {
 
 	/** Delete [path]. Returns true on success. Empty directories are accepted; non-empty are rejected. */
 	fun delete(path: Ref<Path>): Boolean {
-		return C.ktc_core_fs_delete(path.s.ptr, path.s.length) != 0
+		return C.ktc_core_fs_delete(path.s.cPtr, path.s.length) != 0
 		}
 
 	/** Rename or move [from] to [to]. Returns true on success. */
 	fun rename(from: Ref<Path>, to: Ref<Path>): Boolean {
-		return C.ktc_core_fs_rename(from.s.ptr, from.s.length, to.s.ptr, to.s.length) != 0
+		return C.ktc_core_fs_rename(from.s.cPtr, from.s.length, to.s.cPtr, to.s.length) != 0
 		}
 
 	/** Create a single directory at [path] (parent must exist). Returns true on success. */
 	fun createDirectory(path: Ref<Path>): Boolean {
-		return C.ktc_core_fs_mkdir(path.s.ptr, path.s.length) != 0
+		return C.ktc_core_fs_mkdir(path.s.cPtr, path.s.length) != 0
 		}
 
 	// ── Open ───────────────────────────────────────────────────
@@ -161,7 +161,7 @@ object FileSystem {
 	 */
 	fun source(path: Ref<Path>): FileSource {
 		val vMode = "rb"
-		val vFp: AnyPtr = C.ktc_core_fs_fopen(path.s.ptr, path.s.length, vMode.ptr)
+		val vFp: AnyPtr = C.ktc_core_fs_fopen(path.s.cPtr, path.s.length, vMode.cPtr)
 		return FileSource(vFp)
 		}
 
@@ -172,7 +172,7 @@ object FileSystem {
 	 */
 	fun sink(path: Ref<Path>, append: Boolean = false): FileSink {
 		val vMode = if (append) "ab" else "wb"
-		val vFp: AnyPtr = C.ktc_core_fs_fopen(path.s.ptr, path.s.length, vMode.ptr)
+		val vFp: AnyPtr = C.ktc_core_fs_fopen(path.s.cPtr, path.s.length, vMode.cPtr)
 		return FileSink(vFp)
 		}
 
@@ -194,7 +194,7 @@ object FileSystem {
 	fun writeUtf8(path: Ref<Path>, content: String): Boolean {
 		val vSink = sink(path)
 		if (!vSink.isOpen) return false
-		val vN = vSink.write(content.ptr, content.length)
+		val vN = vSink.write(content.cPtr, content.length)
 		vSink.close()
 		return vN == content.length
 		}
@@ -215,7 +215,7 @@ Member-of-Namespace-object inline doesn't expand cleanly, so this lives at
 top-level under the `ktc.std` package.
 */
 inline fun listDir(inPath: Path, inBlock: (String) -> Unit): Boolean {
-	val vHandle: AnyPtr = C.ktc_core_fs_listdir_open(inPath.s.ptr, inPath.s.length)
+	val vHandle: AnyPtr = C.ktc_core_fs_listdir_open(inPath.s.cPtr, inPath.s.length)
 	if (vHandle == C.NULL) return false
 	val vBuf = CharArray(1024)
 	while (true) {

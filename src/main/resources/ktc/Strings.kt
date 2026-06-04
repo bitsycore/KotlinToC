@@ -44,8 +44,9 @@ class String {
 	/** The index of the last character: `length - 1` (-1 for empty strings). */
 	val lastIndex: Int get() = error("Transpiler intrinsic")
 
-	/** Raw `const char*` pointer to the underlying null-terminated UTF-8 data. */
-	val ptr: Ref<Char> get() = error("Transpiler intrinsic")
+	/** Raw `const char*` pointer to the underlying NUL-terminated UTF-8 data, for C interop —
+	 *  a bare, length-less `RawArray<Char>`. (Replaces the old `.ptr`, no longer allowed — see E055.) */
+	val cPtr: RawArray<Char> get() = error("Transpiler intrinsic")
 
 	/** Number of Unicode code points (runes) — distinct from byte `length`. */
 	val runeLen: Int get() = error("Transpiler intrinsic")
@@ -71,7 +72,9 @@ class String {
 	// rather than a value struct because RawArray<String> and Ref<String> share the
 	// Ptr(String) type, so the value form would collide with RawArray<String>.
 
-	/** A fresh owned, NUL-terminated copy in the caller's frame (no alias). Mirrors Array.copyOf. */
+	/** Explicit pass-by-value: a fresh, independent, NUL-terminated copy owned in the caller's frame
+	 *  (no shared backing with the source). A plain String pass shares the backing bytes — cheap, and
+	 *  fine for an immutable view; use copy() when you need an independent owned value. Mirrors Array.copyOf. */
 	fun copy(): String = error("Transpiler intrinsic")
 
 	/** A Ref<String> (&this) aliasing this string. Frame-bound — must not outlive the receiver. */

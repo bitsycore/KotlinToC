@@ -4,7 +4,7 @@ package ktc.sdl3
 
 inline fun SDL3.Window.destroy() { C.SDL_DestroyWindow(this.handle) }
 
-inline fun SDL3.Window.setTitle(title: String) { C.SDL_SetWindowTitle(this.handle, title.ptr) }
+inline fun SDL3.Window.setTitle(title: String) { C.SDL_SetWindowTitle(this.handle, title.cPtr) }
 
 inline fun SDL3.Window.setFullscreen(fullscreen: Boolean) {
     C.SDL_SetWindowFullscreen(this.handle, fullscreen)
