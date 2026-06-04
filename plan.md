@@ -525,7 +525,11 @@ extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (th
 - **S6 (M) ✅ DONE — `sb."$a"` syntax:** parser lowers `.`-followed-by-a-string to a synthetic
   `recv.__sbtmpl(<template>)` call (additive — `.`+string was previously invalid); `CallMethodBuiltins` renders it
   into the StringBuffer receiver via `genStrTemplateToSb` and returns the rendered (sb-backed) String. 75/75 green.
-- **S7 (S) — docs + memory:** CLAUDE.md String sections; project memory note.
+- **S7 (S) ✅ DONE — docs:** CLAUDE.md "String and Array return safety" + "Strings" sections rewritten for the owned
+  model (copy/asRef/copyWith/allocWith, `Ref<String>`=`ktc_String*`, `.cPtr` not `.ptr`, substring copies,
+  toStringMaxLen/computeLen, templateOf, `sb."…"`). (No memory note — the facts now live in CLAUDE.md/plan.md.)
+
+**STATUS: §9 String rework COMPLETE — S1a/b/c/d, S2, S3, S4, S5, S6, S7 all shipped; 75/75 green at every step.**
 
 ### Open consequence (flagged)
 S2 flips ALL inline view-extensions to copy+NUL (they compose substring) — rewrites `StringViewTest` view→copy and

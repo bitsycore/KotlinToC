@@ -41,20 +41,22 @@ Targets embedded/game/systems code.
 - Crossing the `Ref<T>` ↔ `T` boundary at var-decl/assignment requires explicit `.asRef()` or `.refValue`. Implicit conversions are rejected with a fix-it pointing at the right form. Null literals, interface receivers (already wrapped in `ktc_IfacePtr`), and array-element pointers are exempt.
 
 ## String and Array return safety
-`String` is `{ const ktc_Char* ptr; ktc_Int len; }`; `Array<T>` is `{ T* ptr; ktc_Int len; }`. **Both are passed by value as a struct copy — the struct (ptr+len) is duplicated, the underlying bytes are shared**. Behaves like C++'s `string_view` / Rust's `&str`: ~16-byte copy, no allocation, callee sees the same backing buffer.
+`String` is `{ const ktc_Char* ptr; ktc_Int len; }` (**OWNED + NUL-terminated**; `len` excludes the `\0`); `Array<T>` is `{ T* ptr; ktc_Int len; }` (a slice-view). **Both pass by value as a struct copy — ptr+len duplicated, backing shared** (~16-byte copy, no allocation). For an independent copy use `.copy()` (String / `@Size` / class) or `.copyOf(n)` (Array).
 
-Because the backing buffer is shared, **returning a freshly-built one from a non-inline function would dangle**. Same rule for both:
-- **`String`**: bare returns are refused unless the function is `inline`, named `toString`, or its body returns only `StrLit`s (those point at `.rodata`). Otherwise use `Ref<String>` or `@Size(N) String`. `String?` returns are allowed.
-- **`Array<T>` / `IntArray` / etc.**: bare returns are refused unless the function is `inline` (the inline body's stack array lands in the caller's frame, same logic as inline String concat). Otherwise use `Ref<Array<T>>` or `@Size(N) Array<T>`.
+Because the backing lives in the producing frame, **returning a freshly-built one from a non-inline function dangles**:
+- **`String`**: bare returns refused unless the function is `inline`, named `toString`, or its body returns only `StrLit`s. Otherwise return `Ref<String>` (the heap form from `.copyWith(alloc)` / `.allocWith(alloc)` — a `ktc_String*` to one block holding header+bytes, released whole by `freeMem`) or `@Size(N) String`. `String?` returns allowed.
+- **`Array<T>` / `IntArray` / etc.**: bare returns refused unless `inline`. Otherwise `Ref<Array<T>>` or `@Size(N) Array<T>`.
 
-Conceptually: both types are slice-views. Passing them is cheap, but the callee never owns the data.
+`.asRef()` yields a `Ref<>` aliasing the value (frame-bound — returning it is E120-refused; use `.copyWith`/`.allocWith` to escape). Note: `Ref<String>` is a real `ktc_String*` (header+bytes block), unlike `Ref<Array<T>>` which is the bare VarArr value — because `RawArray<String>` and `Ref<String>` would otherwise collide on `Ptr(String)`.
 
 ## Strings
-- `String` is a value struct `{ const ktc_Char* ptr; ktc_Int len; }` — immutable view, no NUL-termination assumed. Literals point at `.rodata`.
-- `s.length`, `s[i]`, `s.substring(a, b)`, `s.startsWith(...)`, `s.contains(...)`, `s == t` are supported and lower to `memcmp` / `ktc_core_string_*`. `==` uses `ktc_core_string_eq`, not byte-equality of the struct.
-- `s + t` concatenation allocates a buffer via `alloca` (function-scoped) — safe for inline functions and immediate use, dangerous to return. See "String return safety" above.
+- `String` is an OWNED, NUL-terminated value struct `{ const ktc_Char* ptr; ktc_Int len; }` (`len` excludes the `\0`). Literals are interned into a named `.rodata` pool. It behaves like a **read-only `Array<T>`**: `.copy()` duplicates (explicit pass-by-value), `.asRef()` → `Ref<String>`, `.copyWith(alloc)` / `.allocWith(alloc)` → heap `Ref<String>` (freed with `freeMem`).
+- `s.length`, `s[i]`, `s.startsWith/endsWith/contains`, `s == t` lower to `memcmp` / `ktc_core_string_*` (`==` uses `ktc_core_string_eq`). **`s.cPtr`** is the raw `const char*` for C interop (`RawArray<Char>`); **`.ptr` is no longer available on String/Array — use `.cPtr` (E055)**.
+- `s.substring(a, b)` now **COPIES** (NUL-terminated owned String), as do the inline slice/trim/prefix extensions (`take`/`drop`/`trim`/`removePrefix`/`substringBefore`…) — frame-bound, so returning one needs `inline` or `Ref<String>`. `s + t` concat ≡ the template `"$s$t"` (alloca, frame-scoped).
+- `value.toStringMaxLen()` → static upper bound on its `toString()` length (compile-time constant; refused when not statically bounded); `value.toStringComputeLen()` → the runtime length via a counting-only StrBuf pass.
+- `templateOf("…")` → a frame-local, compile-time-only Template handle: `.maxLen` / `.computeLen()` / `.toString()` / `.toString(sb)` size or build it without repeating the template text. `sb."…"` renders a template into a StringBuffer and returns the String.
 - `s.toInt()` / `toLong()` / `toFloat()` / `toDouble()` parse on demand; `*OrNull()` variants return `Int?` etc.
-- `StringBuffer` (mutable: `{ ktc_Char* ptr; ktc_Int len; ktc_Int cap; }`) requires a caller-provided backing buffer: `StringBuffer(charArray.ptr(), 0)`. With `ptr=NULL` it runs in counting-only mode (no writes, just `len` accumulates) so you can size a real buffer in a second pass.
+- `StringBuffer` (mutable: `{ ktc_Char* ptr; ktc_Int len; ktc_Int cap; }`) requires a caller-provided backing buffer: `StringBuffer(charArray.cPtr, 0)`. With `ptr=NULL` it runs in counting-only mode (no writes, just `len` accumulates) so you can size a real buffer in a second pass.
 
 ## Arrays
 - `Array<T>` is a `VarArr` struct `{ T* ptr; ktc_Int len; }` — variable-length, header carries the count. `arr.size` reads `.len`, `arr[i]` reads `.ptr[i]`.
