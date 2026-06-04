@@ -49,16 +49,9 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 		if (recvTypeCoreKtc?.isArrayLike == true) { val arr = recvTypeCoreKtc.asArr; if (arr != null) return KtcType.Ptr(arr.elem) }
 		if (recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
 		}
-	if (e.name == "ptr") {
-		if (recvTypeCoreKtc?.isArrayLike == true) {
-			val arr = recvTypeCoreKtc.asArr
-			if (arr != null) return KtcType.Ptr(arr.elem)
-			}
-		if (recvTypeCoreKtc is KtcType.Ptr && recvTypeCoreKtc.inner is KtcType.Arr) return parseResolvedTypeName(recvType)
-		return if (recvTypeCoreKtc is KtcType.Ptr) parseResolvedTypeName(recvType) else parseResolvedTypeName("${recvType}*")
-		}
+	// `.ptr` is not a KTC accessor — `.cPtr` (above) is the only raw-pointer member. A bare `.ptr`
+	// falls through to plain field resolution so a genuine C-struct `ptr` field still resolves.
 	if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) return recvTypeCoreKtc.inner
-	if (e.name == "ptr"    && recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
 	if (e.name == "length" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
 	if (e.name == "runeLen" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
 	if (e.name == "name"    && recvTypeCoreKtc is KtcType.User && recvTypeCoreKtc.kind == KtcType.UserKind.Enum) return KtcType.Str

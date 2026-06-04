@@ -129,7 +129,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			"set"  -> codegenError("Use 'p.refValue = x' to assign through a Ref (instead of p.set(x))")
 			"copy" -> if (classes[pointerBase]?.isData == true) return genDataClassCopy(recv, pointerBase, args, heap = true)
 			"asRef" -> return recv
-			"ptr" -> codegenError("Use '.asRef()' instead of '.ptr()' to take a reference")
+			"ptr" -> codegenError("'.ptr' is not available — use '.asRef()' to take a reference, or '.cPtr' for the raw C pointer of a String/Array.")
 			}
 		// Check generic extension functions and interfaces for Ref receiver
 		val genExt = genericFunDecls.find {

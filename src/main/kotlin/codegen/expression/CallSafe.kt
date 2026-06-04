@@ -46,27 +46,6 @@ internal fun CCodeGen.genSafeMethodCall(dot: SafeDotExpr, args: List<Arg>): Stri
 
 	val dotExpr = DotExpr(dot.obj, dot.name)
 
-	// Handle .ptr() safe-call: guard first, then take address
-	if (dot.name == "ptr" && isValueNullRecv) {
-		val baseClass = recvType!!.removeSuffix("?")
-		val cName     = typeFlatName(baseClass)
-		val t         = tmp()
-		preStmts += "$cName* $t = ($recvName.tag == ktc_SOME ? &${recvName}.value : NULL);"
-		defineVar(t, "${baseClass}*?")
-		return t
-		}
-	if (dot.name == "ptr" && recvType != null) {
-		val cleanType = recvType.removeSuffix("?")
-		if (recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) {
-			// Array?.ptr → return .ptr field directly; NULL when array is null (ptr == NULL)
-			val t        = tmp()
-			val arrCType = cTypeStr(cleanType)
-			preStmts += "$arrCType $t = $recvName.ptr;"
-			defineVar(t, "${cleanType}*?")
-			return t
-			}
-		}
-
 	val call    = genMethodCall(dotExpr, args)
 	// Determine the null guard expression
 	val guard   = if (recvTypeKtc != null) nullGuardExpr(recvTypeKtc, recvName, recvName, isThis = false) else "${recvName}\$has"

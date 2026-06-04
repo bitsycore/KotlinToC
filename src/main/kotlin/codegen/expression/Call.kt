@@ -190,7 +190,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     e.callee.name
                 ) && !vIsIndirectArray && vInnerKtc !is KtcType.Arr
             ) {
-                if (e.callee.name == "ptr" || e.callee.name == "asRef") return genMethodCall(e.callee, e.args)
+                if (e.callee.name == "asRef") return genMethodCall(e.callee, e.args)
                 val vRecvSrc = (e.callee.obj as? NameExpr)?.name ?: e.callee.obj.toString()
                 val vRecvType = vRecvKtc.toInternalStr
                 codegenError("Only safe (?.) calls are allowed on a nullable receiver of type '$vRecvType': $vRecvSrc.${e.callee.name}()")

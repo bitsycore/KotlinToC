@@ -503,6 +503,9 @@ extensions (take/drop/trim/removePrefix/substringBefore…) inherit copy+NUL (th
 - **S1c (S) ✅ DONE** — deprecate `.ptr` on String AND Array (hard error **E055**), add `.cPtr` (raw C pointer:
   `RawArray<Char>` for String, `T*` for Array — same `.ptr` field emission). Migrated stdlib (FileSystem, Allocator,
   Error, CInterop) + the `ktc.sdl3` module. `cPtr`/`.ptr`-refused unit tests. (User-requested mid-rework.)
+- **S1d (S) ✅ DONE** — fully remove `.ptr` as a KTC accessor (no array/String/address-of meaning left in
+  TypeInferDot / CallSafe / Call routing). `.cPtr` is the only raw-pointer member; a bare `.ptr` falls through to
+  plain field resolution so a genuine C-struct `ptr` field still works. (`copy()` doc reframed as explicit pass-by-value.)
 - **S2 (M) — substring copies + NUL (defining change):** new C helper `ktc_core_string_substring_copy(buf,bufsz,s,from,to)`;
   substring case allocas `recv.len+1` and copies+NUL → owned String. Flips the inline view family to copy via
   composition. Update `Strings.kt` doc comments (no longer "view"), `StringViewTest`, `StringUnitTest`, `StringOpsTest`.
