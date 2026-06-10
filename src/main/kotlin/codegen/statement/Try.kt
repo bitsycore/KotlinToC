@@ -54,7 +54,6 @@ internal fun CCodeGen.emitTryReturnCleanup(ind: String, insideMethod: Boolean = 
 	if (tryContexts.size <= inDownToMark) return
 	val vCtxs = tryContexts.drop(inDownToMark).reversed()  // innermost-first snapshot
 	for (vCtx in vCtxs) {
-		impl.appendLine("$ind/* return crosses 'try' — pop its frame, run its finally */")
 		impl.appendLine("${ind}KTC_TRY_LEAVE(${vCtx.frameVar});")
 		if (vCtx.finallyBlock != null) {
 			vCtx.emittingFinally = true
@@ -179,7 +178,7 @@ private fun CCodeGen.emitCatchBinding(inClause: CatchClause, ind: String) {
 	val vMsgBuf = tmp()
 	if (classes.containsKey(vTypeName)) {
 		val vCType = typeFlatName(vTypeName)
-		impl.appendLine("$vInd$vCType $vName; /* taken off the exception arena (message alloca'd) */")
+		impl.appendLine("$vInd$vCType $vName;")
 		impl.appendLine("$vInd{")
 		impl.appendLine("$vInd    ktc_Char* $vMsgBuf = (ktc_Char*)ktc_core_alloca((size_t)(KTC_EXC_MSG_LEN() + 1));")
 		impl.appendLine("$vInd    ktc_core_exc_take(&$vName, $vMsgBuf);")
@@ -192,7 +191,7 @@ private fun CCodeGen.emitCatchBinding(inClause: CatchClause, ind: String) {
 		val vVtSel  = vImpls.joinToString(" :\n$vInd        ") {
 			"KTC_EXC_TYPE_ID() == ${typeFlatName(it)}_TYPE_ID ? &${typeFlatName(it)}_${vTypeName}_vt"
 		} + " : NULL"
-		impl.appendLine("$vInd$vCIface $vName; /* taken off the exception arena (message alloca'd) */")
+		impl.appendLine("$vInd$vCIface $vName;")
 		impl.appendLine("$vInd{")
 		impl.appendLine("$vInd    $vName.__typeId = (ktc_UInt)KTC_EXC_TYPE_ID();")
 		impl.appendLine("$vInd    ktc_Char* $vMsgBuf = (ktc_Char*)ktc_core_alloca((size_t)(KTC_EXC_MSG_LEN() + 1));")
@@ -240,7 +239,7 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 		flushPreStmts(ind)
 		val vT = if (s.value is NameExpr && lookupLocalVar((s.value as NameExpr).name) != null) vExpr
 			else tmp().also { impl.appendLine("$ind${typeFlatName(vTypeName)} $it = $vExpr;") }
-		impl.appendLine("$ind/* ${kotlinEcho("throw " + dumpExpr(s.value))} — interface value: dispatch on the concrete typeId */")
+		impl.appendLine("$ind/* ${kotlinEcho("throw " + dumpExpr(s.value))} */")
 		impl.appendLine("${ind}switch (KTC_GET_TYPEID($vT.__typeId)) {")
 		for (vImpl in vImpls) {
 			val vC = typeFlatName(vImpl)
@@ -249,7 +248,7 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 				"(($vC*)&$vT.data)->message.ptr, (($vC*)&$vT.data)->message.len, " +
 				"\"$vImpl\", \"$currentSourceFile\", $currentStmtLine);")
 		}
-		impl.appendLine("$ind    default: break; /* unreachable — typeId always set by throw/catch */")
+		impl.appendLine("$ind    default: break;")
 		impl.appendLine("$ind}")
 		return
 	}
