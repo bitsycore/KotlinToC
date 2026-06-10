@@ -472,3 +472,8 @@ ktc_Bool ktc_core_str_toDoubleOrNull(ktc_String s, ktc_Double* out);
 // re-included here so every translation unit that pulls in ktc_core.h
 // also sees ktc.std.FileSystem prototypes.
 #include "ktc_core_fs.h"
+
+// Exception support (setjmp/longjmp try/catch + TLS exception arena) —
+// same re-include pattern so generated code sees the KTC_TRY/KTC_CATCH
+// macros and ktc_core_exc_* prototypes everywhere.
+#include "ktc_core_exception.h"

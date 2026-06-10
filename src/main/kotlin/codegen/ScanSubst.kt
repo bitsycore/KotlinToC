@@ -42,6 +42,16 @@ internal fun CCodeGen.scanStmtWithSubst(s: Stmt, subst: Map<String, String>): Bo
 			}
 		is ReturnStmt -> scanExprWithSubst(s.value, subst)
 		is DeferStmt -> scanBodyWithSubst(s.body, subst)
+		is ThrowStmt -> scanExprWithSubst(s.value, subst)
+		is TryStmt -> {
+			var f = scanBodyWithSubst(s.body, subst)
+			for (c in s.catches) {
+				if (scanTypeRefWithSubst(c.type, subst)) f = true
+				if (scanBodyWithSubst(c.body, subst)) f = true
+				}
+			if (scanBodyWithSubst(s.finallyBlock, subst)) f = true
+			f
+			}
 		else -> false
 		}
 	}

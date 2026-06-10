@@ -114,6 +114,12 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 				is DoWhileStmt -> { scanBlock(s.body); scanExpr(s.cond) }
 				is ReturnStmt -> scanExpr(s.value)
 				is DeferStmt -> scanBlock(s.body)
+				is ThrowStmt -> scanExpr(s.value)
+				is TryStmt -> {
+					scanBlock(s.body)
+					for (c in s.catches) scanBlock(c.body)
+					scanBlock(s.finallyBlock)
+					}
 				else -> {}
 				}
 			}

@@ -5,6 +5,7 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.toStringMaxLen
 import com.bitsycore.ktc.codegen.statement.emitStmt
 import com.bitsycore.ktc.codegen.statement.inferInitType
+import com.bitsycore.ktc.codegen.statement.tryFnAttr
 import com.bitsycore.ktc.types.KtcType
 
 // ──────────────────────────────────────────────────────────
@@ -97,7 +98,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
             hdr.appendLine("$cRet ${cName}_$fnName($paramsOrVoid);")
             val vRetSuffix = if (m.returnType != null) ": ${typeRefToStr(m.returnType)}" else ""
             impl.appendLine("// ══ fun ${m.name}()$vRetSuffix ══")
-            impl.appendLine("$cRet ${cName}_$fnName($paramsOrVoid) {")
+            impl.appendLine("${tryFnAttr(m.body)}$cRet ${cName}_$fnName($paramsOrVoid) {")
             pushScope()
             registerParams(m.params)
             emitArrayParamCopies(m.params, "    ")
@@ -256,7 +257,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
         }
         val vRetSuffix = if (m.returnType != null) ": ${typeRefToStr(m.returnType)}" else ""
         impl.appendLine("// ══ fun ${m.name}()$vRetSuffix ══")
-        impl.appendLine("$cRet ${cName}_$fnName($params) {")
+        impl.appendLine("${tryFnAttr(m.body)}$cRet ${cName}_$fnName($params) {")
         if (vHasInit) impl.appendLine("    ${cName}_\$ensure_init();")
         pushScope()
         for (p in props) {

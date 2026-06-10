@@ -264,6 +264,10 @@ private fun CCodeGen.emitDeferredReturn(ind: String, varType: String, initExpr: 
 }
 
 internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
+    // E133 — a return from inside a finally would need to suppress an in-flight
+    // exception mid-propagation; refused (Kotlin discourages it for the same reason).
+    if (tryContexts.any { it.emittingFinally })
+        codegenError("E133", "'return' inside a 'finally' block is not supported — move the return after the try.")
     val endLabel = inlineEndLabel
     if (endLabel == null) {
         // Check: return with a value from a Unit (void) function
@@ -318,12 +322,17 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         } else if (retVar.isNotEmpty() && retOpt != null) {
             impl.appendLine("$ind$retVar = ${optNone(retOpt)};")
         }
+        // A return inside an inline expansion only leaves the tries opened INSIDE
+        // the expansion (the goto target sits within any enclosing try construct).
+        emitTryReturnCleanup(ind, inDownToMark = inlineTryMark)
         impl.appendLine("${ind}goto $endLabel;")
         inlineLabelUsed = true
         return
     }
-    // Tailrec trampoline: return selfCall(args) → reassign params + goto
-    if (tailrecFnName != null && s.value != null) {
+    // Tailrec trampoline: return selfCall(args) → reassign params + goto.
+    // Inside a try the trampoline goto would loop back without popping the
+    // exception frame — fall through to a genuine recursive call instead.
+    if (tailrecFnName != null && s.value != null && tryContexts.isEmpty()) {
         val selfCall = asTailrecSelfCall(s.value)
         if (selfCall != null) {
             emitTailrecTrampoline(selfCall, ind)
@@ -358,7 +367,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             val alreadyOpt = srcKtc is KtcType.Nullable && isValueNullableKtc(srcKtc)
             val expr = genExpr(s.value)
             flushPreStmts(ind)
-            if (deferStack.isNotEmpty()) {
+            if (hasReturnCleanup) {
                 val t = tmp()
                 if (alreadyOpt) {
                     impl.appendLine("$ind$optType $t = $expr;")
@@ -386,7 +395,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 val vStructType = sizedArrayCTypeName(vElemCStr, currentFnSizedArraySize)
                 if (expr in arrayOfSizedStructVars) {
                     // Optimization: genArrayOfExpr already emitted a ktc_Array_T_N struct — return it directly.
-                    if (deferStack.isNotEmpty()) {
+                    if (hasReturnCleanup) {
                         emitDeferredReturn(ind, vStructType, expr)
                     } else {
                         impl.appendLine("${ind}return $expr;")
@@ -397,7 +406,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     // Trampolined @Size params: local$name is already a raw T* pointer — skip .ptr extraction
                     val vPtrSrc = if (s.value is NameExpr && s.value.name in trampolinedParams) expr
                         else arrayDataPtr(expr, vSrcKtc)
-                    if (deferStack.isNotEmpty()) {
+                    if (hasReturnCleanup) {
                         val vT = tmp()
                         impl.appendLine("${ind}$vStructType $vT;")
                         impl.appendLine("${ind}memcpy($vT.arr, $vPtrSrc, $currentFnSizedArraySize * sizeof($vElemCStr));")
@@ -410,7 +419,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
             } else if (currentFnReturnsSizedString) {
                 // Direct struct return: copy ktc_String into ktc_String_N and return by value
                 val vStructType = sizedStringCTypeName(currentFnSizedStringSize)
-                if (deferStack.isNotEmpty()) {
+                if (hasReturnCleanup) {
                     val vT = tmp()
                     impl.appendLine("${ind}$vStructType $vT;")
                     impl.appendLine("${ind}memcpy($vT.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); $vT.len = ($expr).len;")
@@ -421,7 +430,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 }
             } else if (currentFnReturnsArray) {
                 // Array return: return ktc_VarArr_T directly
-                if (deferStack.isNotEmpty()) {
+                if (hasReturnCleanup) {
                     val vArrKtc  = currentFnReturnKtcType
                     val vArrElem = vArrKtc?.asArr?.elem ?: ((vArrKtc as? KtcType.Ptr)?.inner as? KtcType.Arr)?.elem
                     val vRetType = if (vArrElem != null) varArrTypeName(cTypeStr(vArrElem)) else cTypeStr(currentFnReturnType)
@@ -429,12 +438,10 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 } else {
                     impl.appendLine("${ind}return $expr;")
                 }
-            } else if (deferStack.isNotEmpty()) {
-                // Evaluate return value into temp, run defers, then return
-                val retType = currentFnReturnType.ifEmpty { inferExprType(s.value) ?: "Int" }
-                emitDeferredReturn(ind, cTypeStr(retType), expr)
             } else {
-                // Auto-wrap class → interface if return type is an interface
+                // Auto-wrap class → interface if return type is an interface.
+                // Checked BEFORE the cleanup path: the wrap temp must have the
+                // interface C type, not the concrete expression type.
                 val exprType = inferExprType(s.value)
                 val retIface = currentFnReturnType
                 if (retIface.isNotEmpty() && interfaces.containsKey(retIface)
@@ -456,7 +463,12 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     }
                     if (retIface !in simpleUnionInterfaces)
                         impl.appendLine("$ind$t.vt = &${cExprType}_${retIface}_vt;")
+                    if (hasReturnCleanup) emitDeferredBlocks(ind)
                     impl.appendLine("${ind}return $t;")
+                } else if (hasReturnCleanup && currentFnReturnKtcType !is KtcType.Any) {
+                    // Evaluate return value into temp, run try/defer cleanup, then return
+                    val retType = currentFnReturnType.ifEmpty { inferExprType(s.value) ?: "Int" }
+                    emitDeferredReturn(ind, cTypeStr(retType), expr)
                 } else {
                     // Auto-wrap Any return → ktc_Any trampoline
                     if (currentFnReturnKtcType is KtcType.Any) {
@@ -465,6 +477,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                         val ct = cTypeStr(srcTy)
                         val tVal = tmp()
                         impl.appendLine("$ind$ct $tVal = $expr;")
+                        if (hasReturnCleanup) emitDeferredBlocks(ind)
                         impl.appendLine("${ind}return (ktc_Any){{$typeId}, (void*)&$tVal};")
                     } else {
                         impl.appendLine("${ind}return $expr;")

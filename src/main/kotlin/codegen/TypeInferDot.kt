@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
+import com.bitsycore.ktc.codegen.emit.collectAllIfaceProperties
 import com.bitsycore.ktc.types.KtcType
 
 // Type inference for dot-access (field/property) and index expressions.
@@ -74,6 +75,16 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 	if (indirectBase != null) {
 		val ci = classes[indirectBase] ?: return null
 		return resolvePropTypeKtc(ci.props, e.name)
+		}
+	// Interface property access (e.g. Throwable.message on a caught binding) —
+	// resolve through the interface's own + inherited property declarations.
+	val vIface = interfaces[recvType.removeSuffix("?")]
+	if (vIface != null) {
+		val vProp = collectAllIfaceProperties(vIface).find { it.name == e.name }
+		if (vProp?.type != null) {
+			val vKtc = resolveTypeName(vProp.type)
+			return if (vProp.type.nullable) KtcType.Nullable(vKtc) else vKtc
+			}
 		}
 	// Strip a trailing `?` so `Path?.s` resolves to Path's `s` property.
 	// `?.` codegen passes us the DotExpr wrapper of a nullable receiver and

@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.statement.emitStmt
+import com.bitsycore.ktc.codegen.statement.emitTryReturnCleanup
 import com.bitsycore.ktc.types.KtcType
 import com.bitsycore.ktc.utils.wrapBold
 import com.bitsycore.ktc.utils.wrapGray
@@ -128,6 +129,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var inlineReturnUnionType: String? = null // when non-null, inline return type is a @SimpleUnion sealed interface → wrap subclass with _as_
     internal var inlineEndLabel: String? = null   // goto label after the inline block to handle early return
     internal var inlineLabelUsed: Boolean = false // true if at least one goto to inlineEndLabel was emitted
+    internal var inlineTryMark: Int = 0           // tryContexts.size at inline-expansion entry — a `return` (goto endLabel) only unwinds tries opened inside the expansion
     internal var currentInd: String = "    "  // current emit indentation, kept in sync by emitStmt
     internal var inlineCounter: Int = 0  // counter for unique inline temp variable names and end labels
     internal var threadClosureCounter: Int = 0  // counter for unique `thread { }` / closure structs + entry/invoke fns
@@ -909,8 +911,20 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val deferStack: MutableList<Block>
         get() = fnCtx.deferStack
 
-    /** Emit all deferred blocks in LIFO order (does NOT clear the stack). */
+    // ── Enclosing try blocks (see statement/Try.kt) ──────────────────
+    internal val tryContexts: MutableList<com.bitsycore.ktc.codegen.statement.TryContext>
+        get() = fnCtx.tryContexts
+
+    /** True when a return must route through the temp+cleanup path: pending
+       defers, or enclosing try frames to pop (with finallys to re-run). */
+    internal val hasReturnCleanup: Boolean
+        get() = deferStack.isNotEmpty() || tryContexts.isNotEmpty()
+
+    /** Emit all deferred blocks in LIFO order (does NOT clear the stack).
+       Inner try finallys run first (innermost out), then the defers — defers
+       are function-scoped cleanup, conceptually outside every try. */
     internal fun emitDeferredBlocks(ind: String, insideMethod: Boolean = false) {
+        emitTryReturnCleanup(ind, insideMethod)
         for (i in deferStack.indices.reversed()) {
             for (s in deferStack[i].stmts) emitStmt(s, ind, insideMethod)
         }

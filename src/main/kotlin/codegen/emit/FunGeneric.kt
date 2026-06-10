@@ -2,6 +2,7 @@ package com.bitsycore.ktc.codegen.emit
 
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
+import com.bitsycore.ktc.codegen.statement.tryFnAttr
 import com.bitsycore.ktc.types.KtcType
 
 // Generic function monomorphization and star-projection extension function emission.
@@ -51,7 +52,7 @@ internal fun CCodeGen.emitGenericFunInstantiations(f: FunDecl) {
 
 			maybeEmitFunBanner(f.name)
 			hdr.appendLine("$cRet $cName($params);")
-			impl.appendLine("$cRet $cName($params) {")
+			impl.appendLine("${tryFnAttr(f.body)}$cRet $cName($params) {")
 
 			pushScope()
 			if (hasReceiver) {
@@ -120,7 +121,7 @@ internal fun CCodeGen.emitStarExtFunInstantiations(f: FunDecl) {
 			val cFnName       = "${typeFlatName(mangledRecvName)}_${f.name}"
 
 			hdr.appendLine("$cRet $cFnName($allParams);")
-			impl.appendLine("$cRet $cFnName($allParams) {")
+			impl.appendLine("${tryFnAttr(f.body)}$cRet $cFnName($allParams) {")
 
 			currentExtRecvType = if (recvIsNullable) "$mangledRecvName?" else mangledRecvName
 			if (isClassType) { currentClass = mangledRecvName; selfIsPointer = true }
@@ -165,7 +166,7 @@ internal fun CCodeGen.emitStarExtFunForGenericInterface(f: FunDecl, ifaceBaseNam
 		val cFnName     = "${cRecvType}_${f.name}"
 
 		hdr.appendLine("$cRet $cFnName($allParams);")
-		impl.appendLine("$cRet $cFnName($allParams) {")
+		impl.appendLine("${tryFnAttr(f.body)}$cRet $cFnName($allParams) {")
 
 		currentExtRecvType = className
 		currentClass       = className

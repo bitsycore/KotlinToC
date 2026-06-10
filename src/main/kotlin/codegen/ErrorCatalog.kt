@@ -335,6 +335,54 @@ object ErrorCatalog {
 			  - Return the value itself (T) rather than Ref<T>.
 			""".trimIndent()),
 
+		// ── Exceptions (try/catch/throw) ─────────────────────────
+		Entry("E130", "Invalid throw",
+			"""
+			'throw' only accepts a value of a class implementing ktc.Throwable,
+			with 'message' stored as a constructor property:
+
+			  class ParseError(override val message: String, val pos: Int) : Exception
+			  ...
+			  throw ParseError("unexpected token", 12)
+
+			The thrown object (plus its message bytes) is deep-copied into a
+			per-thread arena so it survives the longjmp to the catching frame —
+			which is why 'message' must be a stored field (a computed getter has
+			no storage to relocate) and why other String/Array/Ref fields should
+			be avoided (they are NOT deep-copied and may dangle).
+			""".trimIndent()),
+		Entry("E131", "Invalid catch type",
+			"""
+			A 'catch' clause names a type outside the Throwable hierarchy. Catch
+			a concrete exception class, or an interface of the hierarchy:
+
+			  try { ... }
+			  catch (e: ParseError) { ... }    // concrete class
+			  catch (e: Exception) { ... }     // any Exception implementor
+			  catch (e: Throwable) { ... }     // anything thrown
+			""".trimIndent()),
+		Entry("E132", "break/continue across a try boundary",
+			"""
+			A 'break' or 'continue' inside a try/catch/finally targets a loop
+			OUTSIDE the try construct. The jump would leave the setjmp machinery
+			without popping the exception frame, corrupting the frame stack:
+
+			  while (cond) {
+			      try {
+			          if (x) break      // E132 — jumps out of the try
+			      } catch (e: Exception) { }
+			  }
+
+			Set a flag inside the try and break after it, or move the loop
+			inside the try block.
+			""".trimIndent()),
+		Entry("E133", "return inside finally",
+			"""
+			A 'return' inside a 'finally' block would need to swallow an
+			exception that is mid-propagation; KTC refuses it (Kotlin discourages
+			the same pattern). Move the return after the try construct.
+			""".trimIndent()),
+
 		// ── Interface / override ─────────────────────────────────
 		Entry("E100", "Missing interface implementation",
 			"""

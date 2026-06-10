@@ -6,6 +6,7 @@ import com.bitsycore.ktc.ast.isRefType
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.inferBlockType
+import com.bitsycore.ktc.codegen.statement.tryFnAttr
 
 // Enum emission — two paths:
 //   simple path: C `enum { TAG, ... }` of integer tags + names[]/values[]/valueOf() helpers
@@ -191,7 +192,7 @@ private fun CCodeGen.emitEnumEntryOverride(inEnumName: String, inEntryName: Stri
 	val prevState = saveFunState()
 	val cRet      = computeReturnInfo(inF, inF.body?.let { inferBlockType(it) })
 	implFwd.appendLine("$cRet $vFullName($allParams);")
-	impl.appendLine("$cRet $vFullName($allParams) {")
+	impl.appendLine("${tryFnAttr(inF.body)}$cRet $vFullName($allParams) {")
 
 	pushScope()
 	registerParams(inF.params)
@@ -226,7 +227,7 @@ private fun CCodeGen.emitEnumMethod(enumName: String, f: FunDecl) {
 	val vHdrSig   = "KTC_METHOD($cRet, $methodName)(${allParams.replace(cName, "KTC_TYPE_NAME")});"
 	if (f.isPrivate) implFwd.appendLine("$cRet ${cName}_${methodName}($allParams);")
 	else             hdr.appendLine(vHdrSig)
-	impl.appendLine("$cRet ${cName}_${methodName}($allParams) {")
+	impl.appendLine("${tryFnAttr(f.body)}$cRet ${cName}_${methodName}($allParams) {")
 
 	pushScope()
 	registerParams(f.params)

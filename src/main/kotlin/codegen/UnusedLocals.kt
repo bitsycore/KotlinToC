@@ -111,6 +111,12 @@ private fun scanStmt(inS: Stmt, inUsages: Map<String, LocalUsage>) {
 		is WhileStmt       -> { scanExpr(inS.cond, inUsages); scanUsageInBlock(inS.body, inUsages) }
 		is DoWhileStmt     -> { scanUsageInBlock(inS.body, inUsages); scanExpr(inS.cond, inUsages) }
 		is DestructuringDeclStmt -> scanExpr(inS.init, inUsages)
+		is ThrowStmt       -> scanExpr(inS.value, inUsages)
+		is TryStmt         -> {
+			scanUsageInBlock(inS.body, inUsages)
+			for (vC in inS.catches) scanUsageInBlock(vC.body, inUsages)
+			inS.finallyBlock?.let { scanUsageInBlock(it, inUsages) }
+			}
 		else               -> {}
 		}
 	}

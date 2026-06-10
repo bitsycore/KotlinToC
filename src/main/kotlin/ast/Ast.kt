@@ -206,6 +206,27 @@ class ContinueStmt : Stmt()
 data class DeferStmt(val body: Block) : Stmt()
 data class CommentStmt(val text: String) : Stmt()
 
+/* One `catch (name: Type) { body }` clause. Clauses are matched top to bottom;
+Type must be a class or interface of the Throwable hierarchy. */
+data class CatchClause(
+    val name: String,      // caught binding ("_" or unused → no copy emitted)
+    val type: TypeRef,     // caught class or interface
+    val body: Block
+)
+
+/* try/catch/finally — lowered to setjmp/longjmp via the KTC_TRY macro family
+(ktc_core_exception.h). At least one catch or a finally is required. */
+data class TryStmt(
+    val body: Block,
+    val catches: List<CatchClause>,
+    val finallyBlock: Block? = null
+) : Stmt()
+
+/* `throw expr` — expr must be a value of a class implementing Throwable (or a
+caught interface binding). Statement form only; `try`/`throw` as expressions
+are not supported. */
+data class ThrowStmt(val value: Expr) : Stmt()
+
 // ═══════════════════════════ Expressions ═══════════════════════════
 
 sealed class Expr

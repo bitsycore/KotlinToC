@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.emitFun
 import com.bitsycore.ktc.codegen.statement.emitStmt
+import com.bitsycore.ktc.codegen.statement.tryFnAttr
 import com.bitsycore.ktc.types.KtcType
 
 // ── thread { capture(...); body } closure lowering ───────────────
@@ -152,6 +153,12 @@ private fun collectDeclaredNames(inStmt: Stmt, ioOut: MutableSet<String>) {
 		is ExprStmt             -> collectDeclaredInExpr(inStmt.expr, ioOut)
 		is ReturnStmt           -> inStmt.value?.let { collectDeclaredInExpr(it, ioOut) }
 		is AssignStmt           -> { collectDeclaredInExpr(inStmt.value, ioOut) }
+		is ThrowStmt            -> collectDeclaredInExpr(inStmt.value, ioOut)
+		is TryStmt              -> {
+			inStmt.body.stmts.forEach { collectDeclaredNames(it, ioOut) }
+			for (vC in inStmt.catches) { ioOut += vC.name; vC.body.stmts.forEach { collectDeclaredNames(it, ioOut) } }
+			inStmt.finallyBlock?.stmts?.forEach { collectDeclaredNames(it, ioOut) }
+			}
 		else                    -> {}
 		}
 	}
@@ -186,6 +193,12 @@ private fun collectRefNames(inStmt: Stmt, ioOut: MutableSet<String>) {
 		is WhileStmt  -> { collectRefInExpr(inStmt.cond, ioOut); inStmt.body.stmts.forEach { collectRefNames(it, ioOut) } }
 		is DoWhileStmt -> { collectRefInExpr(inStmt.cond, ioOut); inStmt.body.stmts.forEach { collectRefNames(it, ioOut) } }
 		is DeferStmt  -> inStmt.body.stmts.forEach { collectRefNames(it, ioOut) }
+		is ThrowStmt  -> collectRefInExpr(inStmt.value, ioOut)
+		is TryStmt    -> {
+			inStmt.body.stmts.forEach { collectRefNames(it, ioOut) }
+			for (vC in inStmt.catches) vC.body.stmts.forEach { collectRefNames(it, ioOut) }
+			inStmt.finallyBlock?.stmts?.forEach { collectRefNames(it, ioOut) }
+			}
 		else          -> {}
 		}
 	}
@@ -412,7 +425,7 @@ internal fun CCodeGen.emitPendingClosures() {
 			currentFnReturnKtcType = vC.retKtc
 			val vParamSig = vC.params.joinToString("") { ", ${it.cType} ${it.name}" }
 			impl.appendLine("// ══ generated closure invoke ══")
-			impl.appendLine("${vC.retCType} ${vC.invokeFn}(${vC.structType}* self$vParamSig) {")
+			impl.appendLine("${tryFnAttr(vC.body)}${vC.retCType} ${vC.invokeFn}(${vC.structType}* self$vParamSig) {")
 			pushScope()
 			for (vCap in vC.captures) {
 				impl.appendLine("    ${cTypeStr(vCap.ktc)} ${vCap.name} = self->${vCap.name};")
@@ -452,7 +465,7 @@ internal fun CCodeGen.emitPendingThreadEntries() {
 			val vSavedLabelUsed = inlineLabelUsed
 			inlineReturnVar = null; inlineEndLabel = null; inlineLabelUsed = false
 			impl.appendLine("// ══ generated thread entry ══")
-			impl.appendLine("void ${vPend.entryCName}(void* arg) {")
+			impl.appendLine("${tryFnAttr(vPend.body)}void ${vPend.entryCName}(void* arg) {")
 			pushScope()
 			impl.appendLine("    ${vPend.ctxType}* \$c = (${vPend.ctxType}*)arg;")
 			for (vCap in vPend.captures) {

@@ -74,6 +74,18 @@ Two safety nets default-ON, each with an opt-out flag. They emit calls to `ktc_c
 
 Both flags are accepted as `--check-bounds` / `--check-null` too (no-op since default is already ON) for explicit-intent clarity.
 
+## Exceptions (try/catch/finally/throw)
+Lightweight setjmp/longjmp exceptions — no unwinder, no heap per throw. Runtime in `ktc/core/ktc_core_exception.{h,c}` (KTC_TRY macro family); codegen in `codegen/statement/Try.kt`; stdlib hierarchy in `resources/ktc/Throwable.kt`.
+
+- **Hierarchy is interface-based** (KTC has no class inheritance): `interface Throwable { val message: String }`, `interface Exception : Throwable`, concrete stdlib classes (`RuntimeException`, `IllegalStateException`, `IllegalArgumentException`, `IndexOutOfBoundsException`, `NoSuchElementException`, `UnsupportedOperationException`). User exceptions implement the interface: `class ParseError(override val message: String, val pos: Int) : Exception`. **`message` must be a stored ctor property** (E130 if computed) — the runtime patches it by `offsetof` when relocating.
+- **Mechanics:** each `try` pushes a stack `ktc_ExcFrame` (jmp_buf) onto a TLS frame stack. `throw` deep-copies the exception object + its message bytes into a **growable TLS arena** (one realloc'd block per thread, reused per throw, freed at thread exit), then longjmps to the innermost frame. A **used** catch binding is copied back off the arena onto the catching frame (object as a local, message alloca'd) so the catch body can rethrow / throw a new exception immediately; unused bindings skip the copy.
+- **Matching is whole-program static:** `catch (e: Class)` compares the TLS typeId against that class; `catch (e: Iface)` ORs over every known implementor (transitive). Clauses match top-to-bottom; fully-shadowed clauses warn.
+- **`throw e` rethrow** works on concrete and interface-typed bindings (interface throws switch on the concrete typeId for sizeof/offsetof). Throw from a catch propagates outward after the finally runs; throw from a finally replaces the in-flight exception and propagates immediately.
+- **Uncaught** → Kotlin-style stack trace (`Uncaught exception <Type>: <message>` + throw-site file:line) and `exit(1)`.
+- **Control-flow rules:** `return` inside try/catch pops the frame(s) and re-emits the finally bodies before returning (finallys innermost-out, then defers). `break`/`continue` crossing a try boundary → E132; `return` inside a finally → E133; `throw` of a non-Throwable → E130; invalid catch type → E131. Tailrec self-calls inside a try fall back to genuine recursion.
+- **setjmp caveat handled:** functions lexically containing a `try` (including via inlined `inline fun` bodies) are emitted with `KTC_TRY_FN` (`optnone` / `optimize("-O0")`) so locals modified in the try and read in a catch aren't register-rolled-back by longjmp at -O2. MSVC has no per-function equivalent (documented in the header).
+- **Limitations:** statement form only (no `try`/`throw` as expressions, no `?: throw`); exception fields other than `message` are NOT deep-copied — keep them value types (an extra String/Array/Ref field may dangle after the longjmp); `defer`s in frames unwound by a longjmp do not run; bounds/null-check violations remain hard exits (not catchable).
+
 ## Operator overloading
 - `operator fun` arities are enforced at transpile time: `plus`/`minus`/`times`/`div`/`rem` take 1 arg, unaries (`unaryPlus`/`unaryMinus`/`not`/`inc`/`dec`) take 0, `compareTo`/`contains`/`rangeTo` take 1, iterator protocol (`iterator`/`hasNext`/`next`) takes 0, `equals` takes 1.
 - `get`/`set`/`invoke` have free arity (Kotlin allows multi-index access like `m[i, j]`).

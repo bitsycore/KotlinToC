@@ -4,6 +4,7 @@ import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.inferBlockType
 import com.bitsycore.ktc.codegen.statement.emitStmt
+import com.bitsycore.ktc.codegen.statement.tryFnAttr
 import com.bitsycore.ktc.types.KtcType
 
 
@@ -81,7 +82,7 @@ internal fun CCodeGen.emitMethod(
 		} else {
 		hdr.appendLine(vHdrSig)
 		}
-	impl.appendLine("$cRet ${cClass}_${methodName}($allParams) {")
+	impl.appendLine("${tryFnAttr(f.body)}$cRet ${cClass}_${methodName}($allParams) {")
 	val vTrackDispose = disposedMode != "NO" || doubleDisposeMode != "NO"
 	if (vTrackDispose && f.name == "dispose") impl.appendLine("    KTC_MARK_DISPOSED(\$self);")
 	else if (disposedMode != "NO") impl.appendLine("    KTC_ASSERT_NOT_DISPOSED(\$self);")

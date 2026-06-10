@@ -878,7 +878,7 @@ fun main(args: Array<String>) {
 
     // ── Copy intrinsic files to ktc/core/ ───────────────────────
     for (vName in listOf("ktc_macro.h", "ktc_thread.h", "ktc_thread.c", "ktc_core.h", "ktc_core.c",
-                         "ktc_core_fs.h", "ktc_core_fs.c")) {
+                         "ktc_core_fs.h", "ktc_core_fs.c", "ktc_core_exception.h", "ktc_core_exception.c")) {
         val vDst = File(ktcCoreDir, vName)
         val vSrc = aClass.getResourceAsStream("/ktc/core/$vName")
         if (vSrc != null) {
@@ -891,7 +891,8 @@ fun main(args: Array<String>) {
     // Build full source lists (paths relative to outDir) for compile hints and CMake.
     // ktcOutputNames are paths relative to ktc/ (e.g. "std/Heap").
     // userOutputNames are paths relative to outDir (e.g. "com/example/Point").
-    val vCoreFullSrcs = listOf("ktc/core/ktc_core.c", "ktc/core/ktc_thread.c", "ktc/core/ktc_core_fs.c")
+    val vCoreFullSrcs = listOf("ktc/core/ktc_core.c", "ktc/core/ktc_thread.c", "ktc/core/ktc_core_fs.c",
+                               "ktc/core/ktc_core_exception.c")
     val vKtcFullSrcs  = ktcOutputNames.sorted().map { "ktc/$it.c" }
     val vUserFullSrcs = userOutputNames.sorted().map { "$it.c" }
     fun shellQuote(path: String) = if ('$' in path || ' ' in path) "'" + path + "'" else path

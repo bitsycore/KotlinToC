@@ -164,13 +164,23 @@ internal fun CCodeGen.emitStmt(s: Stmt, ind: String, insideMethod: Boolean = fal
 
         is BreakStmt -> {
             if (loopDepth == 0) codegenError("E090", "'break' outside of a loop")
+            // A break whose target loop encloses the innermost try would jump out of the
+            // KTC_TRY for/do-while machinery without popping the exception frame.
+            if (tryContexts.any { it.loopDepthAtEntry == loopDepth })
+                codegenError("E132", "'break' would cross a 'try' boundary — the exception frame " +
+                    "would stay armed. Restructure with a flag, or move the loop inside the try.")
             impl.appendLine("${ind}break;")
         }
         is ContinueStmt -> {
             if (loopDepth == 0) codegenError("E091", "'continue' outside of a loop")
+            if (tryContexts.any { it.loopDepthAtEntry == loopDepth })
+                codegenError("E132", "'continue' would cross a 'try' boundary — the exception frame " +
+                    "would stay armed. Restructure with a flag, or move the loop inside the try.")
             impl.appendLine("${ind}continue;")
         }
         is DeferStmt -> deferStack.add(s.body)
+        is TryStmt -> emitTry(s, ind, insideMethod)
+        is ThrowStmt -> emitThrow(s, ind)
         is CommentStmt -> {
             impl.appendLine("$ind${s.text}")
         }
@@ -190,7 +200,7 @@ internal fun CCodeGen.applyGuardSmartCast(s: Stmt) {
     val ifExpr = s.expr as? IfExpr ?: return
     if (ifExpr.els != null) return  // must have no else branch
     val lastStmt = ifExpr.then.stmts.lastOrNull() ?: return
-    val vHardExit = lastStmt is ReturnStmt || lastStmt is BreakStmt || lastStmt is ContinueStmt
+    val vHardExit = lastStmt is ReturnStmt || lastStmt is BreakStmt || lastStmt is ContinueStmt || lastStmt is ThrowStmt
     val vNeverCall = lastStmt is ExprStmt && isNeverReturningCall(lastStmt.expr)
     if (!vHardExit && !vNeverCall) return
 
@@ -252,11 +262,11 @@ internal fun CCodeGen.emitBlock(b: Block, ind: String, insideMethod: Boolean = f
         // W024: unreachable code after unconditional exit. Warning, not error —
         // an early `return` is a useful debugging tool ("bisect this function by
         // returning at line N") and breaking the build there is too aggressive.
-        if (s is ReturnStmt || s is BreakStmt || s is ContinueStmt) {
+        if (s is ReturnStmt || s is BreakStmt || s is ContinueStmt || s is ThrowStmt) {
             val vRemaining = b.stmts.drop(idx + 1).filter { it !is CommentStmt }
             if (vRemaining.isNotEmpty()) {
                 if (s.line > 0) { currentStmtLine = s.line; currentStmtCol = s.col }
-                val vKw = when (s) { is ReturnStmt -> "return"; is BreakStmt -> "break"; else -> "continue" }
+                val vKw = when (s) { is ReturnStmt -> "return"; is BreakStmt -> "break"; is ThrowStmt -> "throw"; else -> "continue" }
                 codegenWarning("unreachable", "Unreachable code after '$vKw'.")
             }
         }

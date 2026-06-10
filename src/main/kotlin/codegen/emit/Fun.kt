@@ -5,6 +5,7 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.inferBlockType
 import com.bitsycore.ktc.codegen.statement.emitStmt
+import com.bitsycore.ktc.codegen.statement.tryFnAttr
 
 
 // Free function, extension function, and top-level property emission.
@@ -47,7 +48,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	else             { currentClass = null;         selfIsPointer = false }
 
 	hdr.appendLine("$cRet $cFnName($allParams);")
-	impl.appendLine("$cRet $cFnName($allParams) {")
+	impl.appendLine("${tryFnAttr(f.body)}$cRet $cFnName($allParams) {")
 
 	pushScope()
 	if (recvIsNullable) {
@@ -83,7 +84,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 	currentFnIsMain = false
 
 	hdr.appendLine("$cRet $cName($params);")
-	impl.appendLine("$cRet $cName($params) {")
+	impl.appendLine("${tryFnAttr(f.body)}$cRet $cName($params) {")
 
 	pushScope()
 	registerParams(f.params)

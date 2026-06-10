@@ -81,11 +81,13 @@ internal fun CCodeGen.emitInlineCall(
 	val vSavedRetUnion  = inlineReturnUnionType
 	val vSavedEndLabel  = inlineEndLabel
 	val vSavedLabelUsed = inlineLabelUsed
+	val vSavedTryMark   = inlineTryMark
 	inlineReturnVar      = resultVar ?: ""
 	inlineReturnOptCType = resultOptCType
 	inlineReturnUnionType = resultUnionType
 	inlineEndLabel   = vLabelName
 	inlineLabelUsed  = false
+	inlineTryMark    = tryContexts.size   // a return in this body only unwinds tries opened inside it
 
 	// Set up `this` substitution for extension function receivers
 	val vSavedThis     = lambdaParamSubst["\$this"]
@@ -158,6 +160,7 @@ internal fun CCodeGen.emitInlineCall(
 	inlineReturnUnionType = vSavedRetUnion
 	inlineEndLabel       = vSavedEndLabel
 	inlineLabelUsed      = vSavedLabelUsed
+	inlineTryMark        = vSavedTryMark
 	if (receiverExpr != null) {
 		if (vSavedThis != null) lambdaParamSubst["\$this"] = vSavedThis else lambdaParamSubst.remove("\$this")
 		}

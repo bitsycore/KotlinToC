@@ -45,6 +45,12 @@ internal fun CCodeGen.scanForClassArrayTypes() {
 			is DoWhileStmt -> s.body.stmts.forEach(::scanStmt)
 			is ReturnStmt -> scanExpr(s.value)
 			is DeferStmt -> s.body.stmts.forEach(::scanStmt)
+			is ThrowStmt -> scanExpr(s.value)
+			is TryStmt -> {
+				s.body.stmts.forEach(::scanStmt)
+				for (c in s.catches) { checkType(c.type); c.body.stmts.forEach(::scanStmt) }
+				s.finallyBlock?.stmts?.forEach(::scanStmt)
+				}
 			else -> {}
 			}
 		}

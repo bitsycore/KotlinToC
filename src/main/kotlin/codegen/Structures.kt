@@ -271,12 +271,14 @@ internal data class FunctionContext(
 	var tailrecParams: List<Param>                    = emptyList(),     // params to reassign on tail call
 	var tailrecHasReceiver: Boolean                   = false,           // true when function has a $self to reassign
 	var tailrecSelfCType: String?                     = null,            // C type of $self for temp declarations
+	var tryContexts: MutableList<com.bitsycore.ktc.codegen.statement.TryContext> = mutableListOf(),  // enclosing `try`s during body emission (innermost last)
 	) {
 	    /** Deep-copies mutable collections so save/restore is isolated. */
 	    fun deepCopy(): FunctionContext = copy(
 	        trampolinedParams           = trampolinedParams.toMutableSet(),
 	        sizedArrayTrampolinedParams = sizedArrayTrampolinedParams.toMutableSet(),
 	        deferStack                  = deferStack.toMutableList(),
+	        tryContexts                 = tryContexts.toMutableList(),
 	    )
 	}
 

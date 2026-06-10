@@ -2,6 +2,10 @@
 #include "ktc_thread.h"
 #include <stdlib.h>
 
+/* From ktc_core_exception.h — declared here to avoid pulling all of
+   ktc_core.h into this TU (ktc_core.h includes ktc_thread.h mid-file). */
+void ktc_core_exc_thread_cleanup(void);
+
 #ifdef _WIN32
     #include <process.h>   /* _beginthreadex */
 #else
@@ -47,6 +51,7 @@ static unsigned __stdcall ktc_thread_trampoline(void *param)
 {
     ktc_thread_block_t *block = (ktc_thread_block_t *)param;
     block->fn(block->arg);
+    ktc_core_exc_thread_cleanup();   /* free this thread's exception arena */
     return 0;
 }
 
@@ -98,6 +103,7 @@ static void *ktc_thread_trampoline(void *param)
 {
     ktc_thread_block_t *block = (ktc_thread_block_t *)param;
     block->fn(block->arg);
+    ktc_core_exc_thread_cleanup();   /* free this thread's exception arena */
     return NULL;
 }
 

@@ -284,6 +284,9 @@ class Parser(private val tokens: List<Token>) {
             val annotations = parseAnnotations()
             val isPriv = at(TokenType.PRIVATE)
             if (isPriv) advance()
+            // `override val x` — implements an interface property (e.g. Throwable.message);
+            // consumed here, no isOverride tracking needed on CtorParam (props aren't validated).
+            if (at(TokenType.OVERRIDE)) advance()
             var isVal = false; var isVar = false
             if (at(TokenType.VAL)) { isVal = true; advance() }
             else if (at(TokenType.VAR)) { isVar = true; advance() }
@@ -674,6 +677,8 @@ class Parser(private val tokens: List<Token>) {
             at(TokenType.BREAK)  -> { advance(); BreakStmt() }
             at(TokenType.CONTINUE) -> { advance(); ContinueStmt() }
             at(TokenType.DEFER)  -> parseDeferStmt()
+            at(TokenType.TRY)    -> parseTryStmt()
+            at(TokenType.THROW)  -> { advance(); skipNL(); ThrowStmt(parseExpr()) }
             else -> parseExprOrAssignStmt()
         }
         stmt.line = stmtLine
@@ -710,6 +715,38 @@ class Parser(private val tokens: List<Token>) {
         }
         val init = if (at(TokenType.EQ)) { advance(); skipNL(); parseExpr() } else null
         return VarDeclStmt(name, type, init, mutable)
+    }
+
+    // ── try / catch / finally ─────────────────────────────────────────
+
+    /* `try { } catch (e: Type) { } ... finally { }` — statement form only.
+    Requires at least one catch clause or a finally block. */
+    private fun parseTryStmt(): Stmt {
+        advance()   // skip 'try'
+        skipNL()
+        val body = parseBlock()
+        skipNL()
+        val catches = mutableListOf<CatchClause>()
+        while (at(TokenType.CATCH)) {
+            advance(); skipNL()
+            expect(TokenType.LPAREN); nesting++
+            val name = expectIdent()
+            expect(TokenType.COLON); skipNL()
+            val type = parseTypeRef()
+            expect(TokenType.RPAREN); nesting--
+            skipNL()
+            catches += CatchClause(name, type, parseBlock())
+            skipNL()
+        }
+        var finallyBlock: Block? = null
+        if (at(TokenType.FINALLY)) {
+            advance(); skipNL()
+            finallyBlock = parseBlock()
+        }
+        if (catches.isEmpty() && finallyBlock == null)
+            error("'try' must have at least one 'catch' clause or a 'finally' block")
+        skipTerminator()
+        return TryStmt(body, catches, finallyBlock)
     }
 
     private fun parseExprOrAssignStmt(): Stmt {
@@ -1067,6 +1104,7 @@ class Parser(private val tokens: List<Token>) {
             at(TokenType.RETURN)   -> { advance(); val v = if (atExprStart()) parseExpr() else null; ReturnStmt(v) }
             at(TokenType.BREAK)    -> { advance(); BreakStmt() }
             at(TokenType.CONTINUE) -> { advance(); ContinueStmt() }
+            at(TokenType.THROW)    -> { advance(); skipNL(); ThrowStmt(parseExpr()) }
             else -> {
                 val expr = parseExpr()
                 if (at(TokenType.EQ) || at(TokenType.PLUS_EQ) || at(TokenType.MINUS_EQ) ||

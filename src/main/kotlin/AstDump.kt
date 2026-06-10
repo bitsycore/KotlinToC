@@ -142,6 +142,19 @@ internal fun dumpStmt(s: Stmt, depth: Int): String {
 			vSb.appendLine("${vId}defer")
 			vSb.append(dumpBlock(s.body, depth))
 			}
+		is ThrowStmt    -> vSb.appendLine("${vId}throw ${dumpExpr(s.value)}")
+		is TryStmt      -> {
+			vSb.appendLine("${vId}try")
+			vSb.append(dumpBlock(s.body, depth))
+			for (c in s.catches) {
+				vSb.appendLine("${vId}catch (${c.name}: ${dumpTypeRef(c.type)})")
+				vSb.append(dumpBlock(c.body, depth))
+				}
+			if (s.finallyBlock != null) {
+				vSb.appendLine("${vId}finally")
+				vSb.append(dumpBlock(s.finallyBlock, depth))
+				}
+			}
 		is CommentStmt  -> vSb.appendLine("${vId}comment ${s.text}")
 		}
 	return vSb.toString()
