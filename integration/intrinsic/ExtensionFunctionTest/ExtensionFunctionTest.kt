@@ -22,71 +22,71 @@ fun main() {
 	// Box extensions (read-only, since extensions get a copy of the receiver)
 	val b = Box(21)
 	val d = b.double()
-	if (d != 42) error("FAIL double: $d")
+	if (d != 42) fatalError("FAIL double: $d")
 	println("Box double: $d")
 
 	val t = b.tripled()
-	if (t != 63) error("FAIL tripled: $t")
+	if (t != 63) fatalError("FAIL tripled: $t")
 	println("Box tripled: $t")
 
-	if (!b.isPositive()) error("FAIL isPositive")
+	if (!b.isPositive()) fatalError("FAIL isPositive")
 	val bz = Box(0)
-	if (bz.isPositive()) error("FAIL isPositive zero")
+	if (bz.isPositive()) fatalError("FAIL isPositive zero")
 	val bn = Box(-5)
-	if (bn.isPositive()) error("FAIL isPositive neg")
+	if (bn.isPositive()) fatalError("FAIL isPositive neg")
 	println("isPositive: ok")
 
 	// Primitive extensions
 	val neg = (-5).clampPositive()
-	if (neg != 0) error("FAIL clampPositive neg: $neg")
+	if (neg != 0) fatalError("FAIL clampPositive neg: $neg")
 	val pos = 7.clampPositive()
-	if (pos != 7) error("FAIL clampPositive pos: $pos")
+	if (pos != 7) fatalError("FAIL clampPositive pos: $pos")
 	val zero = 0.clampPositive()
-	if (zero != 0) error("FAIL clampPositive zero: $zero")
+	if (zero != 0) fatalError("FAIL clampPositive zero: $zero")
 	println("clampPositive: $neg, $pos, $zero")
 
 	val sq = 6.squared()
-	if (sq != 36) error("FAIL squared: $sq")
+	if (sq != 36) fatalError("FAIL squared: $sq")
 	val sq0 = 0.squared()
-	if (sq0 != 0) error("FAIL squared 0: $sq0")
+	if (sq0 != 0) fatalError("FAIL squared 0: $sq0")
 	println("squared: $sq, $sq0")
 
 	val eq = 3.14f.approxEquals(3.14f)
-	if (!eq) error("FAIL approxEquals")
+	if (!eq) fatalError("FAIL approxEquals")
 	val neq = 3.14f.approxEquals(3.2f)
-	if (neq) error("FAIL approxEquals should differ")
+	if (neq) fatalError("FAIL approxEquals should differ")
 	println("approxEquals: $eq, $neq")
 
 	// Data class extensions
 	val v1 = Vec2(3.0f, 4.0f)
 	val len = v1.lengthSq()
-	if (len != 25.0f) error("FAIL lengthSq: $len")
+	if (len != 25.0f) fatalError("FAIL lengthSq: $len")
 	println("lengthSq: $len")
 
 	val v2 = v1.scale(2.0f)
-	if (v2.x != 6.0f || v2.y != 8.0f) error("FAIL scale: $v2")
+	if (v2.x != 6.0f || v2.y != 8.0f) fatalError("FAIL scale: $v2")
 	println("scale: $v2")
 
 	val v3 = v1.add(Vec2(1.0f, 1.0f))
-	if (v3.x != 4.0f || v3.y != 5.0f) error("FAIL add: $v3")
+	if (v3.x != 4.0f || v3.y != 5.0f) fatalError("FAIL add: $v3")
 	println("add: $v3")
 
 	val dp = v1.dot(Vec2(1.0f, 0.0f))
-	if (dp != 3.0f) error("FAIL dot: $dp")
+	if (dp != 3.0f) fatalError("FAIL dot: $dp")
 	println("dot: $dp")
 
 	val v4 = v1.negate()
-	if (v4.x != -3.0f || v4.y != -4.0f) error("FAIL negate: $v4")
+	if (v4.x != -3.0f || v4.y != -4.0f) fatalError("FAIL negate: $v4")
 	println("negate: $v4")
 
 	// Chained extensions
 	val v5 = Vec2(1.0f, 0.0f).scale(5.0f).add(Vec2(0.0f, 3.0f))
-	if (v5.x != 5.0f || v5.y != 3.0f) error("FAIL chained: $v5")
+	if (v5.x != 5.0f || v5.y != 3.0f) fatalError("FAIL chained: $v5")
 	println("chained: $v5")
 
 	// Extension on zero vec
 	val vz = Vec2(0.0f, 0.0f)
-	if (vz.lengthSq() != 0.0f) error("FAIL zero lengthSq")
+	if (vz.lengthSq() != 0.0f) fatalError("FAIL zero lengthSq")
 	println("zero lengthSq: ${vz.lengthSq()}")
 
 	println("ALL OK")

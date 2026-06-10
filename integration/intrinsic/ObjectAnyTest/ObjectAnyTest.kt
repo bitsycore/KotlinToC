@@ -42,9 +42,9 @@ fun main() {
     // the `toString()` value may be garbled when printed but structural
     // delegation (toString_any → toString) is verified by unit tests.
     val c1 = Counter.next()
-    if (c1 != 1) error("next expected 1, got $c1")
+    if (c1 != 1) fatalError("next expected 1, got $c1")
     val c2 = Counter.next()
-    if (c2 != 2) error("next expected 2, got $c2")
+    if (c2 != 2) fatalError("next expected 2, got $c2")
     println("Counter after 2 next: $c2")
 
     // ── toString after update ──────────────────────────────────────
@@ -53,14 +53,14 @@ fun main() {
     println("Counter.toString() after value=5: $ts2")
 
     // ── dispose override ───────────────────────────────────────────
-    if (Logger.disposed) error("Logger should not be disposed yet")
+    if (Logger.disposed) fatalError("Logger should not be disposed yet")
     Logger.dispose()
-    if (!Logger.disposed) error("Logger.dispose should set disposed=true")
+    if (!Logger.disposed) fatalError("Logger.dispose should set disposed=true")
     println("dispose override: ok")
 
     // ── Default object toString ────────────────────────────────────
     val defTs = DefaultObj.toString()
-    if (!defTs.startsWith("DefaultObj@")) error("default toString: expected 'DefaultObj@...', got '$defTs'")
+    if (!defTs.startsWith("DefaultObj@")) fatalError("default toString: expected 'DefaultObj@...', got '$defTs'")
     println("default toString: $defTs")
 
     // ── Default object dispose ─────────────────────────────────────
@@ -69,11 +69,11 @@ fun main() {
 
     // ── Interface implementation ────────────────────────────────────
     val desc = Described.describe()
-    if (desc != "Described object") error("describe expected 'Described object', got '$desc'")
+    if (desc != "Described object") fatalError("describe expected 'Described object', got '$desc'")
     println("interface describe: $desc")
 
     val descTs = Described.toString()
-    if (descTs != "Described") error("toString expected 'Described', got '$descTs'")
+    if (descTs != "Described") fatalError("toString expected 'Described', got '$descTs'")
     println("interface object toString: $descTs")
 
     // ── TODO: known issues ─────────────────────────────────────────

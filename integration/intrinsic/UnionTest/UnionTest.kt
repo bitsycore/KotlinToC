@@ -36,19 +36,19 @@ fun main() {
 	if (c is Shape.Circle) {
 		println("circle: ${c.radius}")
 	} else {
-		error("FAIL: c should be Circle")
+		fatalError("FAIL: c should be Circle")
 	}
 	if (r is Shape.Rect) {
 		println("rect: ${r.w} ${r.h}")
 	} else {
-		error("FAIL: r should be Rect")
+		fatalError("FAIL: r should be Rect")
 	}
 
 	// !is check
 	if (c !is Shape.Rect) {
 		println("negated ok")
 	} else {
-		error("FAIL: c should not be Rect")
+		fatalError("FAIL: c should not be Rect")
 	}
 
 	// when + is smart cast
@@ -67,22 +67,22 @@ fun main() {
 	if (t is Shape.Triangle) {
 		println("triple: ${t.a}")
 	} else {
-		error("FAIL: t should be Triangle")
+		fatalError("FAIL: t should be Triangle")
 	}
 
 	// Result-like pattern: divide with sealed interface
 	val d1 = divide(10, 2)
 	val d2 = divide(10, 0)
 	if (d1 is Result.Ok) {
-		if (d1.value != 5) error("FAIL: divide 10/2 should be 5")
+		if (d1.value != 5) fatalError("FAIL: divide 10/2 should be 5")
 		println("divide ok: ${d1.value}")
 	} else {
-		error("FAIL: divide 10/2 should succeed")
+		fatalError("FAIL: divide 10/2 should succeed")
 	}
 	if (d2 is Result.Err) {
 		println("divide err: ${d2.message}")
 	} else {
-		error("FAIL: divide 10/0 should fail")
+		fatalError("FAIL: divide 10/0 should fail")
 	}
 
 	// Result-like pattern: safeSqrt
@@ -91,12 +91,12 @@ fun main() {
 	if (s1 is Result.Ok) {
 		println("sqrt ok: ${s1.value}")
 	} else {
-		error("FAIL: safeSqrt(4) should succeed")
+		fatalError("FAIL: safeSqrt(4) should succeed")
 	}
 	if (s2 is Result.Err) {
 		println("sqrt err: ${s2.message}")
 	} else {
-		error("FAIL: safeSqrt(-1) should fail")
+		fatalError("FAIL: safeSqrt(-1) should fail")
 	}
 
 	// When-style dispatch on result

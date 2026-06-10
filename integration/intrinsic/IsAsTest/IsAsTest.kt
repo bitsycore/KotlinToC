@@ -169,21 +169,21 @@ fun main() {
         println("null !is String ok")
     }
 
-    // ── error() exit on wrong branch ──────────────────────────────────
+    // ── fatalError() exit on wrong branch ──────────────────────────────────
     if (vSC !is Circle) {
-        error("expected Circle")
+        fatalError("expected Circle")
     }
     if (vSR !is Rectangle) {
-        error("expected Rectangle")
+        fatalError("expected Rectangle")
     }
     if (vST !is Triangle) {
-        error("expected Triangle")
+        fatalError("expected Triangle")
     }
 
-    // ── error() exit on failed as? cast ───────────────────────────────
+    // ── fatalError() exit on failed as? cast ───────────────────────────────
     val vBadCast = (vSC as? Rectangle)
     if (vBadCast != null) {
-        error("expected null from bad as?")
+        fatalError("expected null from bad as?")
     }
 
     println("done")

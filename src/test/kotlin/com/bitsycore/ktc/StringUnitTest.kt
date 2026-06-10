@@ -96,21 +96,25 @@ class StringUnitTest : TranspilerTestBase() {
     // ── String toInt ─────────────────────────────────────────────────
 
     @Test fun stringToInt() {
-        val r = transpileMain("""
+        // toInt() is now a throwing stdlib extension: parses via the toIntOrNull
+        // intrinsic and throws NumberFormatException on bad input.
+        val r = transpileMainWithStdlib("""
             val s = "42"
             val n = s.toInt()
         """)
-        r.sourceContains("ktc_core_str_toInt(s)")
+        r.sourceContains("ktc_core_str_toIntOrNull")
+        r.sourceContains("ktc_NumberFormatException")
     }
 
     // ── String toDouble ──────────────────────────────────────────────
 
     @Test fun stringToDouble() {
-        val r = transpileMain("""
+        val r = transpileMainWithStdlib("""
             val s = "3.14"
             val d = s.toDouble()
         """)
-        r.sourceContains("ktc_core_str_toDouble(s)")
+        r.sourceContains("ktc_core_str_toDoubleOrNull")
+        r.sourceContains("ktc_NumberFormatException")
     }
 
     // ── String comparison ────────────────────────────────────────────

@@ -32,36 +32,36 @@ fun main() {
     // checkNotNull
     val a: Int? = 99
     val aa: Int = checkNotNull(a)
-    if (aa != 99) error("checkNotNull should return 99")
+    if (aa != 99) fatalError("checkNotNull should return 99")
     println("checkNotNull(a): $aa")
 
     // checkNotNull with smart cast
     val b: Int? = 77
     val bb: Int = checkNotNull(b) { "b is null" }
-    if (bb != 77) error("checkNotNull with lazyMsg")
+    if (bb != 77) fatalError("checkNotNull with lazyMsg")
     val b2: Int = b
-    if (b2 != 77) error("smart cast failed for b, got $b2")
+    if (b2 != 77) fatalError("smart cast failed for b, got $b2")
     println("checkNotNull smart cast: $b2")
 
     // requireNotNull
     val c: Float? = 3.14f
     val cc: Float = requireNotNull(c)
-    if (cc != 3.14f) error("requireNotNull should return 3.14")
+    if (cc != 3.14f) fatalError("requireNotNull should return 3.14")
     val c2: Float = c
-    if (c2 != 3.14f) error("smart cast failed for c")
+    if (c2 != 3.14f) fatalError("smart cast failed for c")
     println("requireNotNull(c): $cc")
 
     // checkNotNull with String
     val s: String? = "hello"
     val t: String = checkNotNull(s) { "missing string" }
-    if (t != "hello") error("checkNotNull string failed")
+    if (t != "hello") fatalError("checkNotNull string failed")
     val t2: String = s
-    if (t2 != "hello") error("smart cast string failed")
+    if (t2 != "hello") fatalError("smart cast string failed")
     println("checkNotNull string: $t2")
 
     // requirePositive helper
     val pos = requirePositive(42)
-    if (pos != 42) error("FAIL requirePositive: $pos")
+    if (pos != 42) fatalError("FAIL requirePositive: $pos")
     println("requirePositive(42): $pos")
 
     // checkRange helper
@@ -81,8 +81,8 @@ fun main() {
     // requireNotNull on data class
     val vc: Config? = Config("prod", 200)
     val vcc: Config = requireNotNull(vc) { "config missing" }
-    if (vcc.name != "prod") error("FAIL config name: ${vcc.name}")
-    if (vcc.value != 200) error("FAIL config value: ${vcc.value}")
+    if (vcc.name != "prod") fatalError("FAIL config name: ${vcc.name}")
+    if (vcc.value != 200) fatalError("FAIL config value: ${vcc.value}")
     println("requireNotNull config: ${vcc.name}=${vcc.value}")
 
     // Boolean checks

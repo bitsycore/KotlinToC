@@ -214,6 +214,69 @@ fun catchSubInterface(x: Int): Int {
     return 0
 }
 
+// ==================
+// MARK: Stdlib throwing functions
+// ==================
+
+// error() throws a catchable IllegalStateException.
+fun stdlibError(): Int {
+    try {
+        error("from error()")
+    } catch (e: IllegalStateException) {
+        if (e.message == "from error()") return 1
+    }
+    return 0
+}
+
+// require() throws IllegalArgumentException, check() throws IllegalStateException.
+fun stdlibRequireCheck(): Int {
+    var t = 0
+    try {
+        require(false) { "req failed" }
+    } catch (e: IllegalArgumentException) {
+        if (e.message == "req failed") t += 1
+    }
+    try {
+        check(false)
+    } catch (e: IllegalStateException) {
+        if (e.message == "Check failed.") t += 10
+    }
+    return t   // 11
+}
+
+// TODO() throws NotImplementedError — a Throwable but NOT an Exception
+// (mirrors Kotlin, where NotImplementedError is an Error).
+fun stdlibTodo(): Int {
+    try {
+        try {
+            TODO("later")
+        } catch (e: Exception) {
+            return -1   // must NOT be caught here
+        }
+    } catch (e: Throwable) {
+        if (e.message == "An operation is not implemented: later") return 1
+    }
+    return 0
+}
+
+// String.toInt() parses, or throws NumberFormatException on bad input.
+fun stdlibParse(): Int {
+    var t = 0
+    try {
+        val v = "123".toInt()
+        if (v == 123) t += 1
+    } catch (e: NumberFormatException) {
+        return -1
+    }
+    try {
+        val v = "abc".toInt()
+        t += 1000 + v   // not reached
+    } catch (e: NumberFormatException) {
+        t += 10
+    }
+    return t   // 11
+}
+
 // Custom payload fields survive the arena round-trip alongside the message.
 fun payloadIntact(): Int {
     try {
@@ -229,42 +292,48 @@ fun payloadIntact(): Int {
 // ==================
 
 fun main() {
-    if (catchCode(0) != 0)     error("FAIL catchCode(0)=${catchCode(0)}")
-    if (catchCode(5) != 50)    error("FAIL catchCode(5)=${catchCode(5)}")
-    if (catchCode(1) != 1011)  error("FAIL catchCode(1)=${catchCode(1)}")
-    if (catchCode(2) != 2042)  error("FAIL catchCode(2)=${catchCode(2)}")
-    if (catchCode(3) != 3000)  error("FAIL catchCode(3)=${catchCode(3)}")
+    if (catchCode(0) != 0)     fatalError("FAIL catchCode(0)=${catchCode(0)}")
+    if (catchCode(5) != 50)    fatalError("FAIL catchCode(5)=${catchCode(5)}")
+    if (catchCode(1) != 1011)  fatalError("FAIL catchCode(1)=${catchCode(1)}")
+    if (catchCode(2) != 2042)  fatalError("FAIL catchCode(2)=${catchCode(2)}")
+    if (catchCode(3) != 3000)  fatalError("FAIL catchCode(3)=${catchCode(3)}")
     println("multi-catch: OK")
 
-    if (depth1(1) != -11)      error("FAIL depth1(1)=${depth1(1)}")
-    if (depth1(4) != 40)       error("FAIL depth1(4)=${depth1(4)}")
+    if (depth1(1) != -11)      fatalError("FAIL depth1(1)=${depth1(1)}")
+    if (depth1(4) != 40)       fatalError("FAIL depth1(4)=${depth1(4)}")
     println("deep propagation: OK")
 
-    if (finallyOrder(0) != 124) error("FAIL finallyOrder(0)=${finallyOrder(0)}")
-    if (finallyOrder(1) != 134) error("FAIL finallyOrder(1)=${finallyOrder(1)}")
+    if (finallyOrder(0) != 124) fatalError("FAIL finallyOrder(0)=${finallyOrder(0)}")
+    if (finallyOrder(1) != 134) fatalError("FAIL finallyOrder(1)=${finallyOrder(1)}")
     println("finally ordering: OK")
 
-    if (nestedRethrowNew() != 111) error("FAIL nestedRethrowNew=${nestedRethrowNew()}")
-    if (rethrowCaught() != 3)      error("FAIL rethrowCaught=${rethrowCaught()}")
-    if (propagateThroughFinally() != 11) error("FAIL propagateThroughFinally=${propagateThroughFinally()}")
+    if (nestedRethrowNew() != 111) fatalError("FAIL nestedRethrowNew=${nestedRethrowNew()}")
+    if (rethrowCaught() != 3)      fatalError("FAIL rethrowCaught=${rethrowCaught()}")
+    if (propagateThroughFinally() != 11) fatalError("FAIL propagateThroughFinally=${propagateThroughFinally()}")
     println("nested/rethrow: OK")
 
-    if (catchAsThrowable() != 1)  error("FAIL catchAsThrowable=${catchAsThrowable()}")
-    if (whenOnCaught() != 9)      error("FAIL whenOnCaught=${whenOnCaught()}")
+    if (catchAsThrowable() != 1)  fatalError("FAIL catchAsThrowable=${catchAsThrowable()}")
+    if (whenOnCaught() != 9)      fatalError("FAIL whenOnCaught=${whenOnCaught()}")
     println("interface catch: OK")
 
-    if (catchJustException(0) != 0) error("FAIL catchJustException(0)=${catchJustException(0)}")
-    if (catchJustException(1) != 1) error("FAIL catchJustException(1)=${catchJustException(1)}")
-    if (catchJustException(2) != 2) error("FAIL catchJustException(2)=${catchJustException(2)}")
-    if (catchJustException(3) != 3) error("FAIL catchJustException(3)=${catchJustException(3)}")
-    if (catchSubInterface(1) != 10) error("FAIL catchSubInterface(1)=${catchSubInterface(1)}")
-    if (catchSubInterface(2) != 20) error("FAIL catchSubInterface(2)=${catchSubInterface(2)}")
+    if (catchJustException(0) != 0) fatalError("FAIL catchJustException(0)=${catchJustException(0)}")
+    if (catchJustException(1) != 1) fatalError("FAIL catchJustException(1)=${catchJustException(1)}")
+    if (catchJustException(2) != 2) fatalError("FAIL catchJustException(2)=${catchJustException(2)}")
+    if (catchJustException(3) != 3) fatalError("FAIL catchJustException(3)=${catchJustException(3)}")
+    if (catchSubInterface(1) != 10) fatalError("FAIL catchSubInterface(1)=${catchSubInterface(1)}")
+    if (catchSubInterface(2) != 20) fatalError("FAIL catchSubInterface(2)=${catchSubInterface(2)}")
     println("catch-all Exception: OK")
 
-    if (loopThrows() != 302)      error("FAIL loopThrows=${loopThrows()}")
-    if (bigMessage() != 800)      error("FAIL bigMessage=${bigMessage()}")
-    if (unusedBinding() != 7)     error("FAIL unusedBinding=${unusedBinding()}")
-    if (payloadIntact() != 1)     error("FAIL payloadIntact=${payloadIntact()}")
+    if (stdlibError() != 1)         fatalError("FAIL stdlibError=${stdlibError()}")
+    if (stdlibRequireCheck() != 11) fatalError("FAIL stdlibRequireCheck=${stdlibRequireCheck()}")
+    if (stdlibTodo() != 1)          fatalError("FAIL stdlibTodo=${stdlibTodo()}")
+    if (stdlibParse() != 11)        fatalError("FAIL stdlibParse=${stdlibParse()}")
+    println("stdlib exceptions: OK")
+
+    if (loopThrows() != 302)      fatalError("FAIL loopThrows=${loopThrows()}")
+    if (bigMessage() != 800)      fatalError("FAIL bigMessage=${bigMessage()}")
+    if (unusedBinding() != 7)     fatalError("FAIL unusedBinding=${unusedBinding()}")
+    if (payloadIntact() != 1)     fatalError("FAIL payloadIntact=${payloadIntact()}")
     println("loops/arena/payload: OK")
 
     println("ALL OK")

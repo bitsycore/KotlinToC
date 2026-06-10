@@ -5,14 +5,14 @@ data class Vec2(val x: Float, val y: Float)
 fun assertEq(inA: Int, inB: Int) {
     if (inA != inB) {
         println("FAIL: expected $inB got $inA")
-        error("assertion failed")
+        fatalError("assertion failed")
     }
 }
 
 fun assertEqF(inA: Float, inB: Float) {
     if (inA != inB) {
         println("FAIL: expected $inB got $inA")
-        error("assertion failed")
+        fatalError("assertion failed")
     }
 }
 
@@ -32,8 +32,8 @@ fun testStackArena() {
     assertEqF(pVec.y, 4.0f)
 
     val vUsed = vArena.used()
-    if (vUsed <= 0) error("used should be > 0 after allocWith")
-    if (vArena.remaining() != 512 - vUsed) error("remaining mismatch")
+    if (vUsed <= 0) fatalError("used should be > 0 after allocWith")
+    if (vArena.remaining() != 512 - vUsed) fatalError("remaining mismatch")
 
     vArena.reset()
     assertEq(vArena.used(), 0)
@@ -55,7 +55,7 @@ fun testHeapArena() {
     assertEqF(pVec.x, 7.0f)
     assertEqF(pVec.y, 8.0f)
 
-    if (vArena.used() <= 0) error("used should be > 0")
+    if (vArena.used() <= 0) fatalError("used should be > 0")
     println("OK")
 }
 
@@ -88,14 +88,14 @@ fun testArenaStringBuffer() {
     val vArena = Arena(vBuf.asRef(), vBuf.size)
 
     val vSb = vArena.stringBuffer(128)
-    if (vArena.used() <= 0) error("stringBuffer should consume arena space")
+    if (vArena.used() <= 0) fatalError("stringBuffer should consume arena space")
 
     // Use the arena-backed StringBuffer for a data class toString
     val vVec = Vec2(1.5f, 2.5f)
     val vStr = vVec.toString(vSb)
     if (vStr != "Vec2(x=1.5, y=2.5)") {
         println("FAIL: got '$vStr'")
-        error("string content wrong")
+        fatalError("string content wrong")
     }
 
     println("OK")
@@ -143,15 +143,15 @@ fun testCapacityInvariants() {
         Vec2(i.toFloat(), (i * 2).toFloat()).allocWith(vArena)
         val u = vArena.used()
         val r = vArena.remaining()
-        if (u + r != total) error("invariant broken at $i: used=$u remaining=$r")
-        if (u <= prevUsed) error("used didn't grow at $i: prev=$prevUsed now=$u")
+        if (u + r != total) fatalError("invariant broken at $i: used=$u remaining=$r")
+        if (u <= prevUsed) fatalError("used didn't grow at $i: prev=$prevUsed now=$u")
         prevUsed = u
     }
 
     // After reset(): used == 0, remaining == cap.
     vArena.reset()
-    if (vArena.used() != 0) error("after reset used=${vArena.used()}")
-    if (vArena.remaining() != total) error("after reset remaining=${vArena.remaining()}")
+    if (vArena.used() != 0) fatalError("after reset used=${vArena.used()}")
+    if (vArena.remaining() != total) fatalError("after reset remaining=${vArena.remaining()}")
     println("OK")
 }
 

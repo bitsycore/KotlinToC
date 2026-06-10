@@ -7,7 +7,7 @@ fun testRangeInclusive() {
         println(i)
         count++
     }
-    if (count != 6) error("FAIL 0..5 count=$count")
+    if (count != 6) fatalError("FAIL 0..5 count=$count")
 }
 
 fun testRangeUntil() {
@@ -17,7 +17,7 @@ fun testRangeUntil() {
         println(i)
         count++
     }
-    if (count != 5) error("FAIL 0 until 5 count=$count")
+    if (count != 5) fatalError("FAIL 0 until 5 count=$count")
 }
 
 fun testDownTo() {
@@ -27,7 +27,7 @@ fun testDownTo() {
         println(i)
         count++
     }
-    if (count != 6) error("FAIL 5 downTo 0 count=$count")
+    if (count != 6) fatalError("FAIL 5 downTo 0 count=$count")
 }
 
 fun testStep() {
@@ -37,14 +37,14 @@ fun testStep() {
         println(i)
         count1++
     }
-    if (count1 != 6) error("FAIL 0..10 step 2 count=$count1")
+    if (count1 != 6) fatalError("FAIL 0..10 step 2 count=$count1")
     println("--- 10 downTo 0 step 3 ---")
     var count2 = 0
     for (i in 10 downTo 0 step 3) {
         println(i)
         count2++
     }
-    if (count2 != 4) error("FAIL 10 downTo 0 step 3 count=$count2")
+    if (count2 != 4) fatalError("FAIL 10 downTo 0 step 3 count=$count2")
 }
 
 fun testForInArray() {
@@ -54,7 +54,7 @@ fun testForInArray() {
         println(x)
         sum += x
     }
-    if (sum != 600) error("FAIL array sum=$sum")
+    if (sum != 600) fatalError("FAIL array sum=$sum")
 }
 
 // ── Char and Long ranges ─────────────────────────────────────────
@@ -66,7 +66,7 @@ fun testRangeChar() {
         println(c)
         n++
     }
-    if (n != 3) error("FAIL char range count=$n")
+    if (n != 3) fatalError("FAIL char range count=$n")
 }
 
 fun testRangeLong() {
@@ -75,7 +75,7 @@ fun testRangeLong() {
     for (i in 0L..2L) {
         sum += i
     }
-    if (sum != 3L) error("FAIL long range sum=$sum")
+    if (sum != 3L) fatalError("FAIL long range sum=$sum")
 }
 
 fun testRangeCharDownTo() {
@@ -85,7 +85,7 @@ fun testRangeCharDownTo() {
         println(c)
         n++
     }
-    if (n != 3) error("FAIL char downTo count=$n")
+    if (n != 3) fatalError("FAIL char downTo count=$n")
 }
 
 // ── For-loop destructuring ───────────────────────────────────────
@@ -101,8 +101,8 @@ fun testForDestructuringDataClass() {
         fSum += a
         sSum += b
     }
-    if (fSum != 9)  error("FAIL destructuring first sum=$fSum")
-    if (sSum != 12) error("FAIL destructuring second sum=$sSum")
+    if (fSum != 9)  fatalError("FAIL destructuring first sum=$fSum")
+    if (sSum != 12) fatalError("FAIL destructuring second sum=$sSum")
 }
 
 fun testForDestructuringWithDiscard() {
@@ -112,7 +112,7 @@ fun testForDestructuringWithDiscard() {
     for ((a, _) in arr) {
         sum += a
     }
-    if (sum != 40) error("FAIL destructuring discard sum=$sum")
+    if (sum != 40) fatalError("FAIL destructuring discard sum=$sum")
 }
 
 fun main() {

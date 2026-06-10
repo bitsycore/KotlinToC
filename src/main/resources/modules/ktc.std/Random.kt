@@ -30,7 +30,7 @@ object Random {
 	Matches Kotlin's Random.nextInt(from: Int, until: Int).
 	*/
 	fun nextInt(from: Int, until: Int): Int {
-		if (until <= from) error("Random.nextInt: empty range")
+		if (until <= from) throw IllegalArgumentException("Random.nextInt: empty range")
 		return from + C.ktc_core_rand_range(state.asRef(), inc.asRef(), until - from)
 	}
 

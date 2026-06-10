@@ -5,7 +5,7 @@ fun testBreakFor() {
     for (i in 0..9) {
         if (i == 5) { found = i; break }
     }
-    if (found != 5) error("FAIL breakFor: $found")
+    if (found != 5) fatalError("FAIL breakFor: $found")
     println("breakFor ok: $found")
 }
 
@@ -15,7 +15,7 @@ fun testContinueFor() {
         if (i % 2 == 0) continue
         sum += i  // 1+3+5+7+9 = 25
     }
-    if (sum != 25) error("FAIL continueFor: $sum")
+    if (sum != 25) fatalError("FAIL continueFor: $sum")
     println("continueFor ok: $sum")
 }
 
@@ -27,7 +27,7 @@ fun testBreakWhile() {
         steps++
         i++
     }
-    if (steps != 7) error("FAIL breakWhile: $steps")
+    if (steps != 7) fatalError("FAIL breakWhile: $steps")
     println("breakWhile ok: $steps")
 }
 
@@ -39,7 +39,7 @@ fun testContinueWhile() {
         if (i % 2 != 0) continue
         evens++  // 2,4,6,8,10 → 5
     }
-    if (evens != 5) error("FAIL continueWhile: $evens")
+    if (evens != 5) fatalError("FAIL continueWhile: $evens")
     println("continueWhile ok: $evens")
 }
 
@@ -52,7 +52,7 @@ fun testNestedBreakOnly() {
             count++  // 3 per outer → 12
         }
     }
-    if (count != 12) error("FAIL nestedBreak: $count")
+    if (count != 12) fatalError("FAIL nestedBreak: $count")
     println("nestedBreak ok: $count")
 }
 
@@ -64,7 +64,7 @@ fun testBreakDoWhile() {
         steps++
         n++
     } while (n < 100)
-    if (steps != 4) error("FAIL breakDoWhile: $steps")
+    if (steps != 4) fatalError("FAIL breakDoWhile: $steps")
     println("breakDoWhile ok: $steps")
 }
 
@@ -76,7 +76,7 @@ fun testContinueDoWhile() {
         if (i % 2 == 0) continue
         odds++
     } while (i < 10)
-    if (odds != 5) error("FAIL continueDoWhile: $odds")
+    if (odds != 5) fatalError("FAIL continueDoWhile: $odds")
     println("continueDoWhile ok: $odds")
 }
 

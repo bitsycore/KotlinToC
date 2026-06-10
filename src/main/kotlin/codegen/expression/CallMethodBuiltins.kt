@@ -189,10 +189,12 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return "$vSb.len"
 			}
 
-		"toInt"    -> { if (inRecvTypeKtc is KtcType.Str) return "ktc_core_str_toInt($inRecv)";  return "((ktc_Int)($inRecv))" }
-		"toLong"   -> { if (inRecvTypeKtc is KtcType.Str) return "ktc_core_str_toLong($inRecv)"; return "((ktc_Long)($inRecv))" }
-		"toFloat"  -> { if (inRecvTypeKtc is KtcType.Str) return "((ktc_Float)ktc_core_str_toDouble($inRecv))"; return "((ktc_Float)($inRecv))" }
-		"toDouble" -> { if (inRecvTypeKtc is KtcType.Str) return "ktc_core_str_toDouble($inRecv)"; return "((ktc_Double)($inRecv))" }
+		// String receivers fall through to the inline stdlib extensions (Strings.kt),
+		// which parse via *OrNull and throw NumberFormatException on bad input.
+		"toInt"    -> { if (inRecvTypeKtc !is KtcType.Str) return "((ktc_Int)($inRecv))" }
+		"toLong"   -> { if (inRecvTypeKtc !is KtcType.Str) return "((ktc_Long)($inRecv))" }
+		"toFloat"  -> { if (inRecvTypeKtc !is KtcType.Str) return "((ktc_Float)($inRecv))" }
+		"toDouble" -> { if (inRecvTypeKtc !is KtcType.Str) return "((ktc_Double)($inRecv))" }
 
 		"toByte"   -> return "((ktc_Byte)($inRecv))"
 		"toShort"  -> return "((ktc_Short)($inRecv))"

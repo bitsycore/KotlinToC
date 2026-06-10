@@ -1033,7 +1033,13 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
                         genericIfaceDecls.containsKey(vRecvFlat) && vFlat.startsWith("${vRecvFlat}_") ||
                         vRecv.name in decl.typeParams))
             }
-        } else vCandidates
+        } else vCandidates.filter { decl ->
+            // Unknown receiver type: don't bind a String parse extension — these
+            // names also exist as numeric-cast intrinsics (e.g. `cIntExpr.toInt()`
+            // where C-interop inference fails), and the intrinsic is the safe
+            // fallback. A statically-known String receiver matches above as usual.
+            !(decl.receiver?.name == "String" && name in kStrParseExtNames)
+        }
         if (vPool.isEmpty()) return null
         if (argCount >= 0) {
             val vExact = vPool.find { it.params.size == argCount }
@@ -1041,6 +1047,9 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         }
         return vPool.firstOrNull()
         }
+
+    /** Parse-extension names that double as numeric-cast intrinsics (see findInlineExtFun). */
+    private val kStrParseExtNames = setOf("toInt", "toLong", "toFloat", "toDouble")
 
     // ═══════════════════════════ Public entry ═════════════════════════
     // collectAndScan() and generate() are extension functions in CCodeGenGenerate.kt.

@@ -102,10 +102,10 @@ fun main() {
 
     println("${c.name()}: ${c.area()}")
     println("${s.name()}: ${s.area()}")
-    if (c.name() != "Circle") error("FAIL Circle name")
-    if (c.area() < 12.56f || c.area() > 12.57f) error("FAIL Circle area: ${c.area()}")
-    if (s.name() != "Square") error("FAIL Square name")
-    if (s.area() != 9.0f) error("FAIL Square area: ${s.area()}")
+    if (c.name() != "Circle") fatalError("FAIL Circle name")
+    if (c.area() < 12.56f || c.area() > 12.57f) fatalError("FAIL Circle area: ${c.area()}")
+    if (s.name() != "Square") fatalError("FAIL Square name")
+    if (s.area() != 9.0f) fatalError("FAIL Square area: ${s.area()}")
 
     val shape1 = shapeReturnerById(0)
     val shape2 = shapeReturnerById(1)
@@ -113,53 +113,53 @@ fun main() {
     shape2.dispose() // Should no op dispose
     println("${shape1.name()}: ${shape1.area()}")
     println("${shape2.name()}: ${shape2.area()}")
-    if (shape1.name() != "Circle") error("FAIL shape1 should be Circle")
-    if (shape2.name() != "Square") error("FAIL shape2 should be Square")
+    if (shape1.name() != "Circle") fatalError("FAIL shape1 should be Circle")
+    if (shape2.name() != "Square") fatalError("FAIL shape2 should be Square")
 
     // Test if-expression in block body with return
     val shape3 = shapeReturnerById2(0)
     val shape4 = shapeReturnerById2(1)
     println("if-return: ${shape3.name()}: ${shape3.area()}")
     println("if-return: ${shape4.name()}: ${shape4.area()}")
-    if (shape3.name() != "Circle") error("FAIL shape3 should be Circle")
-    if (shape4.name() != "Square") error("FAIL shape4 should be Square")
+    if (shape3.name() != "Circle") fatalError("FAIL shape3 should be Circle")
+    if (shape4.name() != "Square") fatalError("FAIL shape4 should be Square")
 
     // Test if-expression as expression body
     val shape5 = shapeReturnerById3(0)
     val shape6 = shapeReturnerById3(1)
     println("if-expr: ${shape5.name()}: ${shape5.area()}")
     println("if-expr: ${shape6.name()}: ${shape6.area()}")
-    if (shape5.name() != "Circle") error("FAIL shape5 should be Circle")
-    if (shape6.name() != "Square") error("FAIL shape6 should be Square")
+    if (shape5.name() != "Circle") fatalError("FAIL shape5 should be Circle")
+    if (shape6.name() != "Square") fatalError("FAIL shape6 should be Square")
 
     // Test when-expression as expression body
     val shape7 = shapeReturnerById4(0)
     val shape8 = shapeReturnerById4(1)
     println("when-expr: ${shape7.name()}: ${shape7.area()}")
     println("when-expr: ${shape8.name()}: ${shape8.area()}")
-    if (shape7.name() != "Circle") error("FAIL shape7 should be Circle")
-    if (shape8.name() != "Square") error("FAIL shape8 should be Square")
+    if (shape7.name() != "Circle") fatalError("FAIL shape7 should be Circle")
+    if (shape8.name() != "Square") fatalError("FAIL shape8 should be Square")
 
     // Test inferred return type — if-expression
     val shape9 = shapeReturnerById3Infer(0)
     val shape10 = shapeReturnerById3Infer(1)
     println("if-infer: ${shape9.name()}: ${shape9.area()}")
     println("if-infer: ${shape10.name()}: ${shape10.area()}")
-    if (shape9.name() != "Circle") error("FAIL shape9 should be Circle")
-    if (shape10.name() != "Square") error("FAIL shape10 should be Square")
+    if (shape9.name() != "Circle") fatalError("FAIL shape9 should be Circle")
+    if (shape10.name() != "Square") fatalError("FAIL shape10 should be Square")
 
     // Test inferred return type — when-expression
     val shape11 = shapeReturnerById4Infer(0)
     val shape12 = shapeReturnerById4Infer(1)
     println("when-infer: ${shape11.name()}: ${shape11.area()}")
     println("when-infer: ${shape12.name()}: ${shape12.area()}")
-    if (shape11.name() != "Circle") error("FAIL shape11 should be Circle")
-    if (shape12.name() != "Square") error("FAIL shape12 should be Square")
+    if (shape11.name() != "Circle") fatalError("FAIL shape11 should be Circle")
+    if (shape12.name() != "Square") fatalError("FAIL shape12 should be Square")
 
     // Interface as parameter (direct, not nullable)
     val shape: Shape = c
     println("shape area: ${shape.area()}")
-    if (shape.area() < 12.56f || shape.area() > 12.57f) error("FAIL shape area via interface: ${shape.area()}")
+    if (shape.area() < 12.56f || shape.area() > 12.57f) fatalError("FAIL shape area via interface: ${shape.area()}")
 
     // Disposable-like interface
     val f = File("data.txt")

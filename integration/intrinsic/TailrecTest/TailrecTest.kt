@@ -46,47 +46,47 @@ tailrec fun countDown(n: Int): Int {
 // ── Tests ──
 
 fun testFactorial() {
-	if (factorial(0) != 1)       error("FAIL factorial(0)")
-	if (factorial(1) != 1)       error("FAIL factorial(1)")
-	if (factorial(5) != 120)     error("FAIL factorial(5)")
-	if (factorial(10) != 3628800) error("FAIL factorial(10)")
+	if (factorial(0) != 1)       fatalError("FAIL factorial(0)")
+	if (factorial(1) != 1)       fatalError("FAIL factorial(1)")
+	if (factorial(5) != 120)     fatalError("FAIL factorial(5)")
+	if (factorial(10) != 3628800) fatalError("FAIL factorial(10)")
 	println("  factorial: OK")
 }
 
 fun testGcd() {
-	if (gcd(12, 8) != 4)   error("FAIL gcd(12,8)")
-	if (gcd(100, 75) != 25) error("FAIL gcd(100,75)")
-	if (gcd(7, 13) != 1)   error("FAIL gcd(7,13)")
-	if (gcd(0, 5) != 5)    error("FAIL gcd(0,5)")
-	if (gcd(17, 17) != 17) error("FAIL gcd(17,17)")
+	if (gcd(12, 8) != 4)   fatalError("FAIL gcd(12,8)")
+	if (gcd(100, 75) != 25) fatalError("FAIL gcd(100,75)")
+	if (gcd(7, 13) != 1)   fatalError("FAIL gcd(7,13)")
+	if (gcd(0, 5) != 5)    fatalError("FAIL gcd(0,5)")
+	if (gcd(17, 17) != 17) fatalError("FAIL gcd(17,17)")
 	println("  gcd: OK")
 }
 
 fun testCollatz() {
-	if (collatz(1) != 0)   error("FAIL collatz(1)")
-	if (collatz(2) != 1)   error("FAIL collatz(2)")
-	if (collatz(6) != 8)   error("FAIL collatz(6)")
-	if (collatz(27) != 111) error("FAIL collatz(27)")
+	if (collatz(1) != 0)   fatalError("FAIL collatz(1)")
+	if (collatz(2) != 1)   fatalError("FAIL collatz(2)")
+	if (collatz(6) != 8)   fatalError("FAIL collatz(6)")
+	if (collatz(27) != 111) fatalError("FAIL collatz(27)")
 	println("  collatz: OK")
 }
 
 fun testExtensionTailrec() {
-	if (0.sumDownTo() != 0)  error("FAIL 0.sumDownTo()")
-	if (1.sumDownTo() != 1)  error("FAIL 1.sumDownTo()")
-	if (5.sumDownTo() != 15) error("FAIL 5.sumDownTo()")
-	if (10.sumDownTo() != 55) error("FAIL 10.sumDownTo()")
+	if (0.sumDownTo() != 0)  fatalError("FAIL 0.sumDownTo()")
+	if (1.sumDownTo() != 1)  fatalError("FAIL 1.sumDownTo()")
+	if (5.sumDownTo() != 15) fatalError("FAIL 5.sumDownTo()")
+	if (10.sumDownTo() != 55) fatalError("FAIL 10.sumDownTo()")
 	println("  extensionTailrec: OK")
 }
 
 fun testNamedArgs() {
-	if (power(2, 0) != 1)    error("FAIL power(2,0)")
-	if (power(2, 10) != 1024) error("FAIL power(2,10)")
-	if (power(3, 5) != 243)  error("FAIL power(3,5)")
+	if (power(2, 0) != 1)    fatalError("FAIL power(2,0)")
+	if (power(2, 10) != 1024) fatalError("FAIL power(2,10)")
+	if (power(3, 5) != 243)  fatalError("FAIL power(3,5)")
 	println("  namedArgs: OK")
 }
 
 fun testDeepRecursion() {
-	if (countDown(100000) != 0) error("FAIL countDown(100000)")
+	if (countDown(100000) != 0) fatalError("FAIL countDown(100000)")
 	println("  deepRecursion (100k): OK")
 }
 

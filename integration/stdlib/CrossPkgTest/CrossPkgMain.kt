@@ -8,13 +8,13 @@ import effects.*
 fun checkDrawable(d: Drawable, expectedId: Int, expectedName: String) {
 	val id = d.draw()
 	val n = d.name()
-	if (id != expectedId) error("FAIL draw: expected $expectedId got $id for $expectedName")
-	if (n != expectedName) error("FAIL name: expected $expectedName got $n")
+	if (id != expectedId) fatalError("FAIL draw: expected $expectedId got $id for $expectedName")
+	if (n != expectedName) fatalError("FAIL name: expected $expectedName got $n")
 }
 
 fun checkTickable(t: Tickable, dt: Float, expected: Float) {
 	val result = t.tick(dt)
-	if (result != expected) error("FAIL tick: expected $expected got $result")
+	if (result != expected) fatalError("FAIL tick: expected $expected got $result")
 }
 
 fun sumDrawIds(a: Drawable, b: Drawable, c: Drawable): Int = a.draw() + b.draw() + c.draw()
@@ -50,20 +50,20 @@ fun main() {
 
 	// Test passing interface values across function calls
 	val sum = sumDrawIds(sprite, circle, enemy)
-	if (sum != 250) error("FAIL sumDrawIds: expected 250 got $sum")
+	if (sum != 250) fatalError("FAIL sumDrawIds: expected 250 got $sum")
 
 	val tSum = tickAll(rect, player, 1.0f)
-	if (tSum != 30.0f) error("FAIL tickAll: expected 30.0 got $tSum")
+	if (tSum != 30.0f) fatalError("FAIL tickAll: expected 30.0 got $tSum")
 	println("Interface function args OK")
 
 	// Test allocWith across packages (Allocator in ktc, Heap in ktc)
 	val pCircle: Ref<Circle> = Circle(5.0f, 1.0f, 2.0f).allocWith(Heap)
 	defer Heap.freeMem(pCircle)
-	if (pCircle.radius != 5.0f) error("FAIL pCircle.radius")
+	if (pCircle.radius != 5.0f) fatalError("FAIL pCircle.radius")
 
 	val pPlayer: Ref<Player> = Player(100, "Alloc", 20.0f).allocWith(Heap)
 	defer Heap.freeMem(pPlayer)
-	if (pPlayer.hp != 100) error("FAIL pPlayer.hp")
+	if (pPlayer.hp != 100) fatalError("FAIL pPlayer.hp")
 	println("AllocWith cross-pkg OK")
 
 	// Test Arena allocator (cross-package: Arena in ktc.std, Allocator in ktc)
@@ -71,11 +71,11 @@ fun main() {
 	defer Heap.freeMem(arenaBuf)
 	val arena = Arena(arenaBuf, 512)
 	val pEnemy: Ref<Enemy> = Enemy(99, 1.5f).allocWith(arena)
-	if (pEnemy.kind != 99) error("FAIL pEnemy.kind")
-	if (pEnemy.dmg != 1.5f) error("FAIL pEnemy.dmg")
+	if (pEnemy.kind != 99) fatalError("FAIL pEnemy.kind")
+	if (pEnemy.dmg != 1.5f) fatalError("FAIL pEnemy.dmg")
 
 	val pFlash: Ref<Flash> = Flash(0.5, 10.toByte(), 20.toByte(), 30.toByte()).allocWith(arena)
-	if (pFlash.r != 10.toByte()) error("FAIL pFlash.r")
+	if (pFlash.r != 10.toByte()) fatalError("FAIL pFlash.r")
 	arena.dispose()
 	println("Arena cross-pkg alloc OK")
 

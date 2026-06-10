@@ -249,11 +249,11 @@ private fun CCodeGen.forEachNullableNarrowing(inCond: Expr, inBlock: (name: Stri
     }
 }
 
-/** True if [inExpr] is a call to a function known to never return (`error`, `TODO`). */
+/** True if [inExpr] is a call to a function known to never return (`error`, `fatalError`, `TODO`). */
 private fun isNeverReturningCall(inExpr: Expr): Boolean {
     if (inExpr !is CallExpr) return false
     val vCallee = inExpr.callee as? NameExpr ?: return false
-    return vCallee.name == "error" || vCallee.name == "TODO"
+    return vCallee.name == "error" || vCallee.name == "fatalError" || vCallee.name == "TODO"
 }
 
 internal fun CCodeGen.emitBlock(b: Block, ind: String, insideMethod: Boolean = false) {

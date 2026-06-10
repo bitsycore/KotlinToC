@@ -30,7 +30,7 @@ fun testEmpty() {
     printHash(hash)
     if (!checkHex(hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")) {
         println("FAIL")
-        error("Hash failed")
+        fatalError("Hash failed")
     }
     println("OK")
 }
@@ -44,7 +44,7 @@ fun testAbc() {
     printHash(hash)
     if (!checkHex(hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")) {
         println("FAIL")
-        error("Hash failed")
+        fatalError("Hash failed")
     }
     println("OK")
 }
@@ -62,7 +62,7 @@ fun testHelloWorld() {
     printHash(hash)
     if (!checkHex(hash, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")) {
         println("FAIL")
-        error("Hash failed")
+        fatalError("Hash failed")
     }
     println("OK")
 }
@@ -79,7 +79,7 @@ fun testLongMessage() {
     printHash(hash)
     if (!checkHex(hash, "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb")) {
         println("FAIL")
-        error("Hash failed")
+        fatalError("Hash failed")
     }
     println("OK")
 }
@@ -91,7 +91,7 @@ fun testLongMessage2() {
     printHash(hash)
     if (!checkHex(hash, "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb")) {
         println("FAIL")
-        error("Hash failed")
+        fatalError("Hash failed")
     }
     println("OK")
 }
@@ -107,7 +107,7 @@ fun testPartialUpdates() {
     printHash(hash)
     if (!checkHex(hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")) {
         println("FAIL")
-        error("Hash failed")
+        fatalError("Hash failed")
     }
     println("OK")
 }

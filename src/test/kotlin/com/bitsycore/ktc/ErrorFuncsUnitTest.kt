@@ -48,8 +48,10 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
     }
 
     @Test fun checkFalseWithStdlib() {
+        // check() now throws IllegalStateException through the exception system.
         val r = transpileMainWithStdlib("check(false)")
-        r.sourceContains("ktc_error")
+        r.sourceContains("ktc_core_exc_throw")
+        r.sourceContains("ktc_IllegalStateException")
     }
 
     @Test fun checkWithLazyMessageWithStdlib() {
@@ -64,8 +66,10 @@ class ErrorFuncsUnitTest : TranspilerTestBase() {
     }
 
     @Test fun requireFalseWithStdlib() {
+        // require() now throws IllegalArgumentException through the exception system.
         val r = transpileMainWithStdlib("""require(1 > 999) { "custom" }""")
-        r.sourceContains("ktc_error")
+        r.sourceContains("ktc_core_exc_throw")
+        r.sourceContains("ktc_IllegalArgumentException")
     }
 
     // ── checkNotNull / requireNotNull (generic inline) with stdlib ───

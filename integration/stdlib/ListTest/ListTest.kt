@@ -20,11 +20,11 @@ fun main(args: Array<String>) {
 	defer Heap.freeMem(array3)
 
 	println("Sizeof array: ${array.size}")
-	if (array.size != 5) error("FAIL array.size=${array.size}")
+	if (array.size != 5) fatalError("FAIL array.size=${array.size}")
 	println("Sizeof array2: ${array2.size}")
-	if (array2.size != 100) error("FAIL array2.size=${array2.size}")
+	if (array2.size != 100) fatalError("FAIL array2.size=${array2.size}")
 	println("Sizeof array3: ${array3.size}")
-	if (array3.size != 180) error("FAIL array3.size=${array3.size}")
+	if (array3.size != 180) fatalError("FAIL array3.size=${array3.size}")
 
 	val listVec = ArrayList<Vec2>(Heap, 8).allocWith(Heap)
 	defer Heap.freeMem(listVec)
@@ -44,7 +44,7 @@ fun main(args: Array<String>) {
 	for(i in 0..<listVec.size) {
 		println("v2.get($i) = ${listVec[i]}")
 	}
-	if (listVec.size != 10) error("FAIL v2.size=${listVec.size}")
+	if (listVec.size != 10) fatalError("FAIL v2.size=${listVec.size}")
 
 	val list = ArrayList<Int>(Heap, 8).allocWith(Heap)
 
@@ -56,7 +56,7 @@ fun main(args: Array<String>) {
 
 	println("size:")
 	println(list.size)
-	if (list.size != 5) error("FAIL list.size=${list.size}")
+	if (list.size != 5) fatalError("FAIL list.size=${list.size}")
 
 	println("get(0), get(2):")
 	println(list.get(0))
@@ -65,26 +65,26 @@ fun main(args: Array<String>) {
 	list.set(1, 99)
 	println("after set(1, 99), get(1):")
 	println(list.get(1))
-	if (list.get(1) != 99) error("FAIL get(1) after set")
+	if (list.get(1) != 99) fatalError("FAIL get(1) after set")
 
 	val removed = list.removeAt(0)
 	println("removed:")
 	println(removed)
-	if (removed != 10) error("FAIL removed=$removed")
+	if (removed != 10) fatalError("FAIL removed=$removed")
 	println("size after remove:")
 	println(list.size)
-	if (list.size != 4) error("FAIL size after remove=${list.size}")
+	if (list.size != 4) fatalError("FAIL size after remove=${list.size}")
 
 	println("contains 99:")
 	println(list.contains(99))
-	if (list.contains(99) == false) error("FAIL should contain 99")
+	if (list.contains(99) == false) fatalError("FAIL should contain 99")
 	println("contains 777:")
 	println(list.contains(777))
-	if (list.contains(777)) error("FAIL should not contain 777")
+	if (list.contains(777)) fatalError("FAIL should not contain 777")
 
 	println("indexOf 50:")
 	println(list.indexOf(50))
-	if (list.indexOf(50) != 3) error("FAIL indexOf 50")
+	if (list.indexOf(50) != 3) fatalError("FAIL indexOf 50")
 
 	// ── Custom deep clone: independent backing buffer (Ref<ArrayList<Int>>) ──
 	val orig = ArrayList<Int>(Heap, 4)
@@ -95,9 +95,9 @@ fun main(args: Array<String>) {
 	val dup = orig.clone()          // deep clone — heap Ref<ArrayList<Int>> with its OWN buffer
 	dup.set(0, 99)                  // mutate the clone only
 	println("deep clone: orig[0]=${orig.get(0)} dup[0]=${dup.get(0)}")
-	if (orig.get(0) != 1) error("FAIL clone not deep — orig[0] mutated to ${orig.get(0)}")
-	if (dup.get(0) != 99) error("FAIL clone — dup[0]=${dup.get(0)}")
-	if (dup.size != 3) error("FAIL clone size=${dup.size}")
+	if (orig.get(0) != 1) fatalError("FAIL clone not deep — orig[0] mutated to ${orig.get(0)}")
+	if (dup.get(0) != 99) fatalError("FAIL clone — dup[0]=${dup.get(0)}")
+	if (dup.size != 3) fatalError("FAIL clone size=${dup.size}")
 	dup.dispose()                   // free the clone's buffer, then the clone itself
 	Heap.freeMem(dup)
 	println("clone deep-copy OK")
@@ -107,7 +107,7 @@ fun main(args: Array<String>) {
 	// .size dispatches via the vtable, dispose() (on Any) works, and freeMem frees the heap object.
 	val cloneable: Cloneable<List<Int>> = orig
 	val dup2 = cloneable.clone()
-	if (dup2.size != orig.size) error("FAIL interface clone size=${dup2.size}")
+	if (dup2.size != orig.size) fatalError("FAIL interface clone size=${dup2.size}")
 	dup2.dispose()
 	Heap.freeMem(dup2)
 	println("Cloneable<List> interface clone OK")
@@ -115,7 +115,7 @@ fun main(args: Array<String>) {
 	list.clear()
 	println("size after clear:")
 	println(list.size)
-	if (list.size != 0) error("FAIL size after clear=${list.size}")
+	if (list.size != 0) fatalError("FAIL size after clear=${list.size}")
 
 	list.dispose()
 	Heap.freeMem(list)

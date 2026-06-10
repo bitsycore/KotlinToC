@@ -41,7 +41,7 @@ fun main() {
     val pv: Ref<Vec2> = Vec2(10.0f, 20.0f).allocWith(Heap)
     defer Heap.freeMem(pv)
     println("allocWith Vec2 x=" + pv.x.toString() + " y=" + pv.y.toString())
-    if (pv.x != 10.0f || pv.y != 20.0f) error("FAIL allocWith values")
+    if (pv.x != 10.0f || pv.y != 20.0f) fatalError("FAIL allocWith values")
     println("allocWith Vec2: ok")
 
     println()

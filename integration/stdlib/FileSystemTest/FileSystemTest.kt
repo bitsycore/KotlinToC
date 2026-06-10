@@ -5,73 +5,73 @@ package FileSystemTest
 
 fun testPathBasics() {
 	val p = Path("foo/bar/baz.kt")
-	if (p.s != "foo/bar/baz.kt") error("FAIL Path.s: ${p.s}")
-	if (p.name != "baz.kt")        error("FAIL Path.name")
-	if (p.nameWithoutExtension != "baz") error("FAIL Path.nameWithoutExtension")
-	if (p.extension != "kt")       error("FAIL Path.extension")
+	if (p.s != "foo/bar/baz.kt") fatalError("FAIL Path.s: ${p.s}")
+	if (p.name != "baz.kt")        fatalError("FAIL Path.name")
+	if (p.nameWithoutExtension != "baz") fatalError("FAIL Path.nameWithoutExtension")
+	if (p.extension != "kt")       fatalError("FAIL Path.extension")
 	// `!!` on a function/property result that's nullable — exercises the
 	// unwrap path for value-type Optional returns.
 	val pParent = p.parent!!
-	if (pParent.s != "foo/bar") error("FAIL Path.parent: ${pParent.s}")
+	if (pParent.s != "foo/bar") fatalError("FAIL Path.parent: ${pParent.s}")
 
 	// `?.` on a function-result nullable — exercises the spill-to-temp path so
 	// the LHS isn't evaluated twice. `Path("x").parent` returns null (no slash).
 	val noParent = Path("x").parent?.s
-	if (noParent != null) error("FAIL: expected null parent.s, got $noParent")
+	if (noParent != null) fatalError("FAIL: expected null parent.s, got $noParent")
 
 	// `.cast<T>()` — unchecked reinterpret. Round-trips a Long through Int and
 	// back to confirm the emission produces a usable C cast expression.
 	val raw: Long = 42L
 	val asInt: Int = raw.cast<Long, Int>()
-	if (asInt != 42) error("FAIL Long.cast<Int>: $asInt")
-	if (p.isAbsolute)              error("FAIL Path.isAbsolute (relative)")
+	if (asInt != 42) fatalError("FAIL Long.cast<Int>: $asInt")
+	if (p.isAbsolute)              fatalError("FAIL Path.isAbsolute (relative)")
 
 	val a = Path("/tmp/x")
-	if (!a.isAbsolute) error("FAIL Path.isAbsolute (POSIX abs)")
+	if (!a.isAbsolute) fatalError("FAIL Path.isAbsolute (POSIX abs)")
 
 	// Drive-letter absolute paths (Windows style — use forward slashes)
 	val w = Path("C:/Users/me/file.txt")
-	if (!w.isAbsolute) error("FAIL Path.isAbsolute (drive)")
-	if (w.extension != "txt") error("FAIL Path drive ext")
+	if (!w.isAbsolute) fatalError("FAIL Path.isAbsolute (drive)")
+	if (w.extension != "txt") fatalError("FAIL Path drive ext")
 
 	// Chained method calls AND operator overload — `path / "sub"` dispatches
 	// to Path.div, then chains again. Exercises both the &-of-rvalue spill
 	// and the new operator-overload dispatch in genBin.
 	val j = Path("a") / "b" / "c.dat"
-	if (j.s != "a/b/c.dat") error("FAIL Path join: ${j.s}")
+	if (j.s != "a/b/c.dat") fatalError("FAIL Path join: ${j.s}")
 
 	// Joining an absolute child replaces the receiver (Okio semantics)
 	val r = Path("a/b") / "/etc/passwd"
-	if (r.s != "/etc/passwd") error("FAIL Path abs-child replace: ${r.s}")
+	if (r.s != "/etc/passwd") fatalError("FAIL Path abs-child replace: ${r.s}")
 }
 
 fun testWriteAndRead() {
 	val p = Path("fs_test_data.txt")
 	// Clean slate
 	if (FileSystem.exists(p.asRef())) FileSystem.delete(p.asRef())
-	if (FileSystem.exists(p.asRef())) error("FAIL: delete didn't remove")
+	if (FileSystem.exists(p.asRef())) fatalError("FAIL: delete didn't remove")
 
-	if (!FileSystem.writeUtf8(p.asRef(), "Hello, world!\nLine 2\n")) error("FAIL writeUtf8")
-	if (!FileSystem.exists(p.asRef())) error("FAIL exists after write")
+	if (!FileSystem.writeUtf8(p.asRef(), "Hello, world!\nLine 2\n")) fatalError("FAIL writeUtf8")
+	if (!FileSystem.exists(p.asRef())) fatalError("FAIL exists after write")
 
 	val meta = FileSystem.metadata(p.asRef())
-	if (!meta.isRegularFile) error("FAIL meta isRegularFile")
-	if (meta.isDirectory)    error("FAIL meta isDirectory (should be false)")
-	if (meta.size != 21L) error("FAIL meta size: expected 21, got ${meta.size}")
+	if (!meta.isRegularFile) fatalError("FAIL meta isRegularFile")
+	if (meta.isDirectory)    fatalError("FAIL meta isDirectory (should be false)")
+	if (meta.size != 21L) fatalError("FAIL meta size: expected 21, got ${meta.size}")
 
 	// Read it back via a FileSource
 	val src = FileSystem.source(p.asRef())
-	if (!src.isOpen) error("FAIL source open")
+	if (!src.isOpen) fatalError("FAIL source open")
 	val buf = ByteArray(64)
 	val n = src.read(buf.asRaw(), buf.size)
 	src.close()
-	if (n != 21) error("FAIL read count: got $n")
+	if (n != 21) fatalError("FAIL read count: got $n")
 	// Spot-check first byte
-	if (buf[0] != 72.toByte()) error("FAIL read content: byte 0 = ${buf[0]}")
+	if (buf[0] != 72.toByte()) fatalError("FAIL read content: byte 0 = ${buf[0]}")
 
 	// Cleanup
-	if (!FileSystem.delete(p.asRef())) error("FAIL delete after read")
-	if (FileSystem.exists(p.asRef()))  error("FAIL still exists after delete")
+	if (!FileSystem.delete(p.asRef())) fatalError("FAIL delete after read")
+	if (FileSystem.exists(p.asRef()))  fatalError("FAIL still exists after delete")
 }
 
 fun testRename() {
@@ -80,9 +80,9 @@ fun testRename() {
 	if (FileSystem.exists(a.asRef())) FileSystem.delete(a.asRef())
 	if (FileSystem.exists(b.asRef())) FileSystem.delete(b.asRef())
 	FileSystem.writeUtf8(a.asRef(), "x")
-	if (!FileSystem.rename(a.asRef(), b.asRef())) error("FAIL rename")
-	if (FileSystem.exists(a.asRef()))    error("FAIL: source still exists after rename")
-	if (!FileSystem.exists(b.asRef()))   error("FAIL: dest missing after rename")
+	if (!FileSystem.rename(a.asRef(), b.asRef())) fatalError("FAIL rename")
+	if (FileSystem.exists(a.asRef()))    fatalError("FAIL: source still exists after rename")
+	if (!FileSystem.exists(b.asRef()))   fatalError("FAIL: dest missing after rename")
 	FileSystem.delete(b.asRef())
 }
 
@@ -93,10 +93,10 @@ fun testDirectoryAndList() {
 		listDir(dir) { name -> FileSystem.delete(dir.child(name).asRef()) }
 		FileSystem.delete(dir.asRef())
 	}
-	if (!FileSystem.createDirectory(dir.asRef())) error("FAIL createDirectory")
+	if (!FileSystem.createDirectory(dir.asRef())) fatalError("FAIL createDirectory")
 	val meta = FileSystem.metadata(dir.asRef())
-	if (!meta.isDirectory) error("FAIL dir.isDirectory")
-	if (meta.isRegularFile) error("FAIL dir.isRegularFile (should be false)")
+	if (!meta.isDirectory) fatalError("FAIL dir.isDirectory")
+	if (meta.isRegularFile) fatalError("FAIL dir.isRegularFile (should be false)")
 
 	FileSystem.writeUtf8(dir.child("a.txt").asRef(), "A")
 	FileSystem.writeUtf8(dir.child("b.txt").asRef(), "BB")
@@ -112,8 +112,8 @@ fun testDirectoryAndList() {
 		if (name == "b.txt") sawB = true
 		if (name == "c.dat") sawC = true
 	}
-	if (count != 3) error("FAIL list count: $count")
-	if (!sawA || !sawB || !sawC) error("FAIL list contents")
+	if (count != 3) fatalError("FAIL list count: $count")
+	if (!sawA || !sawB || !sawC) fatalError("FAIL list contents")
 
 	// Cleanup
 	FileSystem.delete(dir.child("a.txt").asRef())

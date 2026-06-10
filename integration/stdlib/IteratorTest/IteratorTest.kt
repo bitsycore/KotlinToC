@@ -11,7 +11,7 @@ fun main() {
         println(item)
         listSum += item
     }
-    if (listSum != 15) error("FAIL list sum=$listSum")  // 1+2+3+4+5
+    if (listSum != 15) fatalError("FAIL list sum=$listSum")  // 1+2+3+4+5
 
     // Test ListIterator via listOf
     val fixedList = listOf(Heap, 10, 20, 30)
@@ -23,7 +23,7 @@ fun main() {
         println(item)
         fixedSum += item
     }
-    if (fixedSum != 60) error("FAIL fixedList sum=$fixedSum")  // 10+20+30
+    if (fixedSum != 60) fatalError("FAIL fixedList sum=$fixedSum")  // 10+20+30
 
     // Test MapIterator via HashMap
     val map = HashMap<String, Int>(Heap, 8)
@@ -37,7 +37,7 @@ fun main() {
         println("${entry.first} = ${entry.second}")
         mapCount++
     }
-    if (mapCount != 3) error("FAIL map count=$mapCount")
+    if (mapCount != 3) fatalError("FAIL map count=$mapCount")
     map.dispose()
 
     // Test MapIterator via mutableMapOf

@@ -11,7 +11,7 @@ fun testWhenExpr() {
         else -> "many"
     }
     println(desc)
-    if (desc != "three") error("FAIL when expr")
+    if (desc != "three") fatalError("FAIL when expr")
 }
 
 fun testWhenStatement() {
@@ -22,7 +22,7 @@ fun testWhenStatement() {
         2 -> { println("is two"); hit = true }
         else -> println("is other")
     }
-    if (!hit) error("FAIL when statement")
+    if (!hit) fatalError("FAIL when statement")
 }
 
 fun testWhenCondition() {
@@ -34,7 +34,7 @@ fun testWhenCondition() {
         x < 10 -> println("small")
         else -> { println("large"); hit = true }
     }
-    if (!hit) error("FAIL when condition")
+    if (!hit) fatalError("FAIL when condition")
 }
 
 fun testWhenEnum() {
@@ -45,7 +45,7 @@ fun testWhenEnum() {
         Color.GREEN -> { println("Green!"); hit = true }
         Color.BLUE -> println("Blue!")
     }
-    if (!hit) error("FAIL when enum")
+    if (!hit) fatalError("FAIL when enum")
 }
 
 fun main() {

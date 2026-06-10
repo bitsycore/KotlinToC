@@ -82,17 +82,17 @@ fun main() {
     println("Config2 buffer2 size: " + Config2.buffer2.size.toString())
     println("Config2 buffer3 size: " + Config2.buffer3.size.toString())
     val first = Config.next()
-    if (first != 1) error("FAIL Config.next first=$first")
+    if (first != 1) fatalError("FAIL Config.next first=$first")
     println("first: $first")
     val second = Config.next()
-    if (second != 2) error("FAIL Config.next second=$second")
+    if (second != 2) fatalError("FAIL Config.next second=$second")
     println("second: $second")
 
     Greeter.greeterEnabled = false
     Greeter.greet("World")
     Greeter.greeterEnabled = true
     Greeter.greet("Kotlin")
-    if (Greeter.greeterEnabled == false) error("FAIL Greeter.greeterEnabled should be true")
+    if (Greeter.greeterEnabled == false) fatalError("FAIL Greeter.greeterEnabled should be true")
 
     val test = TestCompanion()
     TestCompanion.testMe()

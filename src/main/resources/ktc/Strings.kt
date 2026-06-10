@@ -300,3 +300,37 @@ inline fun String.substringBeforeLast(delimiter: Char): String {
 	val i = this.lastIndexOf(delimiter)
 	return if (i < 0) this else this.substring(0, i)
 }
+
+// ==================
+// MARK: Number parsing (throwing — Kotlin semantics)
+// ==================
+// The *OrNull variants are intrinsics (ktc_core_str_*). These throwing forms
+// compose them, so `"x".toInt()` throws NumberFormatException like Kotlin.
+
+/** Parses as an Int, or throws [NumberFormatException]. Prefer [toIntOrNull] to branch instead. */
+inline fun String.toInt(): Int {
+	val v = this.toIntOrNull()
+	if (v == null) throw NumberFormatException("For input string: '${this}'")
+	return v
+}
+
+/** Parses as a Long, or throws [NumberFormatException]. Prefer [toLongOrNull] to branch instead. */
+inline fun String.toLong(): Long {
+	val v = this.toLongOrNull()
+	if (v == null) throw NumberFormatException("For input string: '${this}'")
+	return v
+}
+
+/** Parses as a Float, or throws [NumberFormatException]. Prefer [toFloatOrNull] to branch instead. */
+inline fun String.toFloat(): Float {
+	val v = this.toFloatOrNull()
+	if (v == null) throw NumberFormatException("For input string: '${this}'")
+	return v
+}
+
+/** Parses as a Double, or throws [NumberFormatException]. Prefer [toDoubleOrNull] to branch instead. */
+inline fun String.toDouble(): Double {
+	val v = this.toDoubleOrNull()
+	if (v == null) throw NumberFormatException("For input string: '${this}'")
+	return v
+}

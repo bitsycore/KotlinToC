@@ -5,7 +5,7 @@ enum class Color { RED, GREEN, BLUE }
 fun testEnumValues() {
     val values = enumValues<Color>()
     println(values.size)
-    if (values.size != 3) error("FAIL enumValues size")
+    if (values.size != 3) fatalError("FAIL enumValues size")
     for (i in 0 until values.size) {
         println(values[i])
     }
@@ -14,13 +14,13 @@ fun testEnumValues() {
 fun testEnumValueOf() {
     val c = enumValueOf<Color>("GREEN")
     println(c)
-    if (c != Color.GREEN) error("FAIL enumValueOf")
+    if (c != Color.GREEN) fatalError("FAIL enumValueOf")
 }
 
 fun testColorDotValues() {
     val values = Color.values()
     println(values.size)
-    if (values.size != 3) error("FAIL Color.values")
+    if (values.size != 3) fatalError("FAIL Color.values")
     for (i in 0 until values.size) {
         println(values[i])
     }
@@ -29,14 +29,14 @@ fun testColorDotValues() {
 fun testColorDotValueOf() {
     val c = Color.valueOf("BLUE")
     println(c)
-    if (c != Color.BLUE) error("FAIL Color.valueOf")
+    if (c != Color.BLUE) fatalError("FAIL Color.valueOf")
 }
 
 fun testEnumName() {
     val c = Color.RED
     println(c.name)
     println(c.ordinal)
-    if (c.ordinal != 0) error("FAIL ordinal")
+    if (c.ordinal != 0) fatalError("FAIL ordinal")
 }
 
 fun testEnumWhen() {
@@ -51,7 +51,7 @@ fun testEnumWhen() {
         }
         value++
     }
-    if (!redSeen || !greenSeen || !blueSeen) error("FAIL testEnumWhen: not all colors seen")
+    if (!redSeen || !greenSeen || !blueSeen) fatalError("FAIL testEnumWhen: not all colors seen")
 }
 
 fun main(args: Array<String>) {

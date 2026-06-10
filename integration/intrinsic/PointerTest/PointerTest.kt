@@ -88,8 +88,8 @@ fun main() {
     // ARRAY
 
     val array = arrayOf(1, 2, 3)
-    if (array[0] != 1 || array[1] != 2 || array[2] != 3) error("FAIL array values")
-    if (array.size != 3) error("FAIL array size=${array.size}")
+    if (array[0] != 1 || array[1] != 2 || array[2] != 3) fatalError("FAIL array values")
+    if (array.size != 3) fatalError("FAIL array size=${array.size}")
     val arrayNullable: Array<Int>? = arrayOf(1, 2, 3)
 
     if (array is Array<Int>) {
@@ -124,7 +124,7 @@ fun main() {
     // VEC
 
     val vec = Vec2(10,20)
-    if (vec.x != 10 || vec.y != 20) error("FAIL vec values")
+    if (vec.x != 10 || vec.y != 20) fatalError("FAIL vec values")
     val vecNullable: Vec2? = Vec2(10,20)
 
     // VEC PTR

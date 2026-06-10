@@ -18,7 +18,7 @@ fun main() {
     println(b)
     val dotResult = dot(b.copy(), b.copy())
     println(dotResult)
-    if (dotResult != 77.0f) error("FAIL dot product: $dotResult")
+    if (dotResult != 77.0f) fatalError("FAIL dot product: $dotResult")
 
     println("done")
 }

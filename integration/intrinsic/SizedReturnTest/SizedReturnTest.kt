@@ -5,14 +5,14 @@ package SizedReturnTest
 fun assertEq(a: Int, b: Int) {
     if (a != b) {
         println("FAIL: expected $b got $a")
-        error("assertion failed")
+        fatalError("assertion failed")
     }
 }
 
 fun assertTrue(cond: Boolean, msg: String) {
     if (!cond) {
         println("FAIL: $msg")
-        error("assertion failed")
+        fatalError("assertion failed")
     }
 }
 
@@ -270,9 +270,9 @@ fun testReturnDataClass() {
     val arr2 = returnVec3()
     val arr3 = returnVec3()
 
-    if (arr1.size != 4) error("arr1 size not 4")
-    if (arr2.size != 4) error("arr2 size not 4")
-    if (arr3.size != 4) error("arr3 size not 4")
+    if (arr1.size != 4) fatalError("arr1 size not 4")
+    if (arr2.size != 4) fatalError("arr2 size not 4")
+    if (arr3.size != 4) fatalError("arr3 size not 4")
     println("OK")
 }
 

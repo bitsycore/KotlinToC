@@ -33,19 +33,19 @@ fun main() {
 	if (c is Shape.Circle) {
 		println("circle: ${c.radius}")
 	} else {
-		error("FAIL: c should be Circle")
+		fatalError("FAIL: c should be Circle")
 	}
 	if (r is Shape.Rect) {
 		println("rect: ${r.w} ${r.h}")
 	} else {
-		error("FAIL: r should be Rect")
+		fatalError("FAIL: r should be Rect")
 	}
 
 	// ── Negated is-check ──
 	if (c !is Shape.Rect) {
 		println("negated ok")
 	} else {
-		error("FAIL: c should not be Rect")
+		fatalError("FAIL: c should not be Rect")
 	}
 
 	// ── when + smart-cast ──
@@ -64,7 +64,7 @@ fun main() {
 	if (h1 != h2) {
 		println("hashCodes differ: ok")
 	} else {
-		error("FAIL: different shapes should have different hashCodes")
+		fatalError("FAIL: different shapes should have different hashCodes")
 	}
 
 	// ── equals dispatch ──
@@ -72,12 +72,12 @@ fun main() {
 	if (c == c2) {
 		println("equals same: ok")
 	} else {
-		error("FAIL: identical circles should be equal")
+		fatalError("FAIL: identical circles should be equal")
 	}
 	if (c != r) {
 		println("equals diff: ok")
 	} else {
-		error("FAIL: circle != rect")
+		fatalError("FAIL: circle != rect")
 	}
 
 	// ── toString dispatch ──
@@ -88,7 +88,7 @@ fun main() {
 	if (radius > 3.0f) {
 		println("if-expr cast: $radius")
 	} else {
-		error("FAIL: if-expr smart-cast")
+		fatalError("FAIL: if-expr smart-cast")
 	}
 
 	// ── Generic @SimpleUnion ──
@@ -97,12 +97,12 @@ fun main() {
 	if (s1 is Option.Some) {
 		println("divide ok: ${s1.value}")
 	} else {
-		error("FAIL: 10/2 should succeed")
+		fatalError("FAIL: 10/2 should succeed")
 	}
 	if (s2 is Option.None) {
 		println("divide none: ok")
 	} else {
-		error("FAIL: 10/0 should be None")
+		fatalError("FAIL: 10/0 should be None")
 	}
 
 	// ── Generic when ──
@@ -117,7 +117,7 @@ fun main() {
 	if (oi is Option.Some && of is Option.Some) {
 		println("multi: ${oi.value} ${of.value}")
 	} else {
-		error("FAIL: multi instantiation")
+		fatalError("FAIL: multi instantiation")
 	}
 
 	println("done")

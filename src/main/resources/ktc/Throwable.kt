@@ -57,3 +57,13 @@ class NoSuchElementException(override val message: String = "") : Exception
 
 /** Thrown when an operation is not supported by the receiver. */
 class UnsupportedOperationException(override val message: String = "") : Exception
+
+/** Thrown by [String.toInt] / [String.toLong] / ... when the text is not a valid number. */
+class NumberFormatException(override val message: String = "") : Exception
+
+/**
+ * Thrown by [TODO]. Implements Throwable directly (not Exception), mirroring
+ * Kotlin where NotImplementedError is an Error: `catch (e: Exception)` does
+ * not swallow it, only `catch (e: Throwable)` does.
+ */
+class NotImplementedError(override val message: String = "An operation is not implemented.") : Throwable

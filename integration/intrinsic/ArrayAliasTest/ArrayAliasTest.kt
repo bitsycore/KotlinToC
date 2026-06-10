@@ -3,73 +3,73 @@ package ArrayAliasTest
 fun testByteArray() {
     val lit = byteArrayOf(10, 20, 30)
     println("byteArrayOf: ${lit[1]}")
-    if (lit[1] != 20.toByte()) error("Error")
+    if (lit[1] != 20.toByte()) fatalError("Error")
 }
 
 fun testShortArray() {
     val lit = shortArrayOf(10, 20, 30)
     println("shortArrayOf: ${lit[1]}")
-    if (lit[1] != 20.toShort()) error("Error")
+    if (lit[1] != 20.toShort()) fatalError("Error")
 }
 
 fun testIntArray() {
     val lit = intArrayOf(10, 20, 30)
     println("intArrayOf: ${lit[1]}")
-    if (lit[1] != 20) error("Error")
+    if (lit[1] != 20) fatalError("Error")
 }
 
 fun testLongArray() {
     val lit = longArrayOf(10L, 20L, 30L)
     println("longArrayOf: ${lit[1]}")
-    if (lit[1] != 20L) error("Error")
+    if (lit[1] != 20L) fatalError("Error")
 }
 
 fun testFloatArray() {
     val lit = floatArrayOf(1.5f, 2.5f, 3.5f)
     println("floatArrayOf: ${lit[1]}")
-    if (lit[1] != 2.5f) error("Error")
+    if (lit[1] != 2.5f) fatalError("Error")
 }
 
 fun testDoubleArray() {
     val lit = doubleArrayOf(1.1, 2.2, 3.3)
     println("doubleArrayOf: ${lit[1]}")
-    if (lit[1] != 2.2) error("Error")
+    if (lit[1] != 2.2) fatalError("Error")
 }
 
 fun testBooleanArray() {
     val lit = booleanArrayOf(true, false, true)
     println("booleanArrayOf: ${lit[1]}")
-    if (lit[1]) error("Error")
+    if (lit[1]) fatalError("Error")
 }
 
 fun testCharArray() {
     val lit = charArrayOf('a', 'b', 'c')
     println("charArrayOf: ${lit[1]}")
-    if (lit[1] != 'b') error("Error")
+    if (lit[1] != 'b') fatalError("Error")
 }
 
 fun testUByteArray() {
     val lit = ubyteArrayOf(10u, 20u, 30u)
     println("ubyteArrayOf: ${lit[1]}")
-    if (lit[1] != 20.toUByte()) error("Error")
+    if (lit[1] != 20.toUByte()) fatalError("Error")
 }
 
 fun testUShortArray() {
     val lit = ushortArrayOf(10u, 20u, 30u)
     println("ushortArrayOf: ${lit[1]}")
-    if (lit[1] != 20.toUShort()) error("Error")
+    if (lit[1] != 20.toUShort()) fatalError("Error")
 }
 
 fun testUIntArray() {
     val lit = uintArrayOf(10u, 20u, 30u)
     println("uintArrayOf: ${lit[1]}")
-    if (lit[1] != 20u) error("Error")
+    if (lit[1] != 20u) fatalError("Error")
 }
 
 fun testULongArray() {
     val lit = ulongArrayOf(10UL, 20UL, 30UL)
     println("ulongArrayOf: ${lit[1]}")
-    if (lit[1] != 20UL) error("Error")
+    if (lit[1] != 20UL) fatalError("Error")
 }
 
 fun testStringArray() {

@@ -16,9 +16,9 @@ class Player(val name: String) {
 fun testSingleInit() {
     println("--- testSingleInit ---")
     val p = Player("Alice")
-    if (p.name != "Alice") error("name=${p.name}")
-    if (p.health != 100)   error("health=${p.health}")
-    if (!p.ready)          error("ready false")
+    if (p.name != "Alice") fatalError("name=${p.name}")
+    if (p.health != 100)   fatalError("health=${p.health}")
+    if (!p.ready)          fatalError("ready false")
     println("OK")
 }
 
@@ -36,8 +36,8 @@ class Counters(val start: Int) {
 fun testMultipleInits() {
     println("--- testMultipleInits ---")
     val c = Counters(10)
-    if (c.a != 10) error("a=${c.a}")
-    if (c.b != 11) error("b=${c.b}")
+    if (c.a != 10) fatalError("a=${c.a}")
+    if (c.b != 11) fatalError("b=${c.b}")
     println("OK")
 }
 
@@ -57,7 +57,7 @@ fun testInitFillsAllocatedBuffer() {
     println("--- testInitFillsAllocatedBuffer ---")
     val f = FilledBuf(8)
     for (i in 0 until 8) {
-        if (f.buf[i] != 42) error("buf[$i] = ${f.buf[i]}, expected 42")
+        if (f.buf[i] != 42) fatalError("buf[$i] = ${f.buf[i]}, expected 42")
     }
     Heap.freeMem(f.buf)
     println("OK")
@@ -81,7 +81,7 @@ fun testInitCallsMethod() {
     println("--- testInitCallsMethod ---")
     val a = Accum(5)
     // 5 + 10 + 15 = 30
-    if (a.sum != 30) error("sum=${a.sum}")
+    if (a.sum != 30) fatalError("sum=${a.sum}")
     println("OK")
 }
 
@@ -107,9 +107,9 @@ fun testInitWithControlFlow() {
     val low  = Clamped(-5)
     val mid  = Clamped(42)
     val high = Clamped(200)
-    if (low.clipped  != 0)   error("low=${low.clipped}")
-    if (mid.clipped  != 42)  error("mid=${mid.clipped}")
-    if (high.clipped != 100) error("high=${high.clipped}")
+    if (low.clipped  != 0)   fatalError("low=${low.clipped}")
+    if (mid.clipped  != 42)  fatalError("mid=${mid.clipped}")
+    if (high.clipped != 100) fatalError("high=${high.clipped}")
     println("OK")
 }
 

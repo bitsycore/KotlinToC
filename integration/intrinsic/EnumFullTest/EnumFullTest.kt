@@ -16,23 +16,23 @@ fun testEntryFields() {
 	println(p.sym)
 	println(p.name)
 	println(p.ordinal)
-	if (p.sym     != "+")    error("FAIL Op.PLUS.sym")
-	if (p.name    != "PLUS") error("FAIL Op.PLUS.name")
-	if (p.ordinal != 0)      error("FAIL Op.PLUS.ordinal")
+	if (p.sym     != "+")    fatalError("FAIL Op.PLUS.sym")
+	if (p.name    != "PLUS") fatalError("FAIL Op.PLUS.name")
+	if (p.ordinal != 0)      fatalError("FAIL Op.PLUS.ordinal")
 
 	val t = Op.TIMES
-	if (t.sym     != "*")     error("FAIL Op.TIMES.sym")
-	if (t.name    != "TIMES") error("FAIL Op.TIMES.name")
-	if (t.ordinal != 2)       error("FAIL Op.TIMES.ordinal")
+	if (t.sym     != "*")     fatalError("FAIL Op.TIMES.sym")
+	if (t.name    != "TIMES") fatalError("FAIL Op.TIMES.name")
+	if (t.ordinal != 2)       fatalError("FAIL Op.TIMES.ordinal")
 }
 
 fun testEquality() {
 	val a = Op.PLUS
 	val b = Op.PLUS
 	val c = Op.MINUS
-	if (!(a == b)) error("FAIL: Op.PLUS == Op.PLUS")
-	if ( (a == c)) error("FAIL: Op.PLUS != Op.MINUS")
-	if (!(a != c)) error("FAIL: Op.PLUS != Op.MINUS (op !=)")
+	if (!(a == b)) fatalError("FAIL: Op.PLUS == Op.PLUS")
+	if ( (a == c)) fatalError("FAIL: Op.PLUS != Op.MINUS")
+	if (!(a != c)) fatalError("FAIL: Op.PLUS != Op.MINUS (op !=)")
 }
 
 fun testWhen() {
@@ -48,25 +48,25 @@ fun testWhen() {
 		}
 		sum += tag
 	}
-	if (sum != 15) error("FAIL testWhen sum=$sum")
+	if (sum != 15) fatalError("FAIL testWhen sum=$sum")
 }
 
 fun testMethod() {
-	if (Op.PLUS.eval(2, 3)  != 5)  error("FAIL Op.PLUS.eval")
-	if (Op.MINUS.eval(7, 4) != 3)  error("FAIL Op.MINUS.eval")
-	if (Op.TIMES.eval(6, 7) != 42) error("FAIL Op.TIMES.eval")
-	if (Op.DIV.eval(20, 4)  != 5)  error("FAIL Op.DIV.eval")
+	if (Op.PLUS.eval(2, 3)  != 5)  fatalError("FAIL Op.PLUS.eval")
+	if (Op.MINUS.eval(7, 4) != 3)  fatalError("FAIL Op.MINUS.eval")
+	if (Op.TIMES.eval(6, 7) != 42) fatalError("FAIL Op.TIMES.eval")
+	if (Op.DIV.eval(20, 4)  != 5)  fatalError("FAIL Op.DIV.eval")
 }
 
 fun testValuesAndValueOf() {
 	val all = Op.values()
-	if (all.size != 4) error("FAIL values size")
-	if (all[0].name != "PLUS")  error("FAIL values[0]")
-	if (all[3].name != "DIV")   error("FAIL values[3]")
+	if (all.size != 4) fatalError("FAIL values size")
+	if (all[0].name != "PLUS")  fatalError("FAIL values[0]")
+	if (all[3].name != "DIV")   fatalError("FAIL values[3]")
 	val pl = Op.valueOf("PLUS")
-	if (pl != Op.PLUS) error("FAIL valueOf PLUS")
+	if (pl != Op.PLUS) fatalError("FAIL valueOf PLUS")
 	val tm = Op.valueOf("TIMES")
-	if (tm.ordinal != 2) error("FAIL valueOf TIMES ordinal")
+	if (tm.ordinal != 2) fatalError("FAIL valueOf TIMES ordinal")
 }
 
 fun testPrintAndTemplate() {
@@ -75,7 +75,7 @@ fun testPrintAndTemplate() {
 	println(op)
 	// Inside a template: "$op" should also produce the entry name.
 	val s = "op=$op"
-	if (s != "op=MINUS") error("FAIL template, got $s")
+	if (s != "op=MINUS") fatalError("FAIL template, got $s")
 }
 
 fun main(args: Array<String>) {

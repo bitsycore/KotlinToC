@@ -11,7 +11,7 @@ fun testNextIntBetween() {
     for (i in 0 until 5) {
         val v = Random.nextInt(10, 20)
         println("nextIntBetween(10, 20) = $v")
-        if (v < 10 || v >= 20) error("FAIL nextInt(10,20) out of range: $v")
+        if (v < 10 || v >= 20) fatalError("FAIL nextInt(10,20) out of range: $v")
     }
 }
 
@@ -55,7 +55,7 @@ fun testNextBoolean() {
         if (Random.nextBoolean()) t++ else f++
     }
     println("true=$t false=$f")
-    if (t == 0 || f == 0) error("FAIL nextBoolean never produced both values t=$t f=$f")
+    if (t == 0 || f == 0) fatalError("FAIL nextBoolean never produced both values t=$t f=$f")
 }
 
 fun main() {

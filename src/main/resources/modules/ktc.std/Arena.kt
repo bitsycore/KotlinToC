@@ -37,7 +37,7 @@ class Arena(
 
     /**
     Bump-allocate size bytes, aligned to 8 bytes.
-    Panics on overflow — check remaining() first if the call site needs to be safe.
+    Throws IllegalStateException on overflow — check remaining() first if the call site needs to be safe.
      */
     override fun allocMem(size: Int, file: String, line: Int): AnyPtr {
         val aligned = (size + 7) / 8 * 8   // round up to 8-byte alignment
@@ -68,7 +68,7 @@ class Arena(
     /**
     Returns a StringBuffer backed by capacity bytes from this arena.
     Writes past capacity chars are silently dropped.
-    Panics on overflow — check remaining() first if needed.
+    Throws IllegalStateException on overflow — check remaining() first if needed.
      */
     fun stringBuffer(capacity: Int): StringBuffer {
         val aligned = (capacity + 7) / 8 * 8   // round up to 8-byte alignment

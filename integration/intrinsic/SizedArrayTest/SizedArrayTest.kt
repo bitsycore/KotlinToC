@@ -3,14 +3,14 @@ package SizedArrayTest
 fun assertEq(inA: Int, inB: Int) {
     if (inA != inB) {
         println("FAIL: expected $inB got $inA")
-        error("assertion failed")
+        fatalError("assertion failed")
     }
 }
 
 fun assertTrue(inCond: Boolean, inMsg: String) {
     if (!inCond) {
         println("FAIL: $inMsg")
-        error("assertion failed")
+        fatalError("assertion failed")
     }
 }
 

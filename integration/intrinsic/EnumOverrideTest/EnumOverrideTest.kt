@@ -17,17 +17,17 @@ enum class Op(val sym: String) {
 }
 
 fun testEntryFields() {
-	if (Op.PLUS.sym  != "+") error("FAIL Op.PLUS.sym")
-	if (Op.MINUS.sym != "-") error("FAIL Op.MINUS.sym")
-	if (Op.PLUS.ordinal != 0) error("FAIL Op.PLUS.ordinal")
-	if (Op.DIV.ordinal  != 3) error("FAIL Op.DIV.ordinal")
+	if (Op.PLUS.sym  != "+") fatalError("FAIL Op.PLUS.sym")
+	if (Op.MINUS.sym != "-") fatalError("FAIL Op.MINUS.sym")
+	if (Op.PLUS.ordinal != 0) fatalError("FAIL Op.PLUS.ordinal")
+	if (Op.DIV.ordinal  != 3) fatalError("FAIL Op.DIV.ordinal")
 }
 
 fun testOverrideDispatch() {
-	if (Op.PLUS.eval(2, 3)  != 5)  error("FAIL Op.PLUS.eval")
-	if (Op.MINUS.eval(7, 4) != 3)  error("FAIL Op.MINUS.eval")
-	if (Op.TIMES.eval(6, 7) != 42) error("FAIL Op.TIMES.eval")
-	if (Op.DIV.eval(20, 4)  != 5)  error("FAIL Op.DIV.eval")
+	if (Op.PLUS.eval(2, 3)  != 5)  fatalError("FAIL Op.PLUS.eval")
+	if (Op.MINUS.eval(7, 4) != 3)  fatalError("FAIL Op.MINUS.eval")
+	if (Op.TIMES.eval(6, 7) != 42) fatalError("FAIL Op.TIMES.eval")
+	if (Op.DIV.eval(20, 4)  != 5)  fatalError("FAIL Op.DIV.eval")
 }
 
 fun testDispatchAcrossValues() {
@@ -38,18 +38,18 @@ fun testDispatchAcrossValues() {
 		sum += all[i].eval(10, 2)
 	}
 	// 10+2 + 10-2 + 10*2 + 10/2 = 12 + 8 + 20 + 5 = 45
-	if (sum != 45) error("FAIL sum=$sum")
+	if (sum != 45) fatalError("FAIL sum=$sum")
 }
 
 fun testNonVirtualMethod() {
 	// describe() has no entry override → direct call, not through vtable.
-	if (Op.PLUS.describe()  != "+") error("FAIL describe PLUS")
-	if (Op.TIMES.describe() != "*") error("FAIL describe TIMES")
+	if (Op.PLUS.describe()  != "+") fatalError("FAIL describe PLUS")
+	if (Op.TIMES.describe() != "*") fatalError("FAIL describe TIMES")
 }
 
 fun testValueOfThenDispatch() {
 	val op = Op.valueOf("MINUS")
-	if (op.eval(9, 4) != 5) error("FAIL valueOf+eval")
+	if (op.eval(9, 4) != 5) fatalError("FAIL valueOf+eval")
 }
 
 fun main(args: Array<String>) {

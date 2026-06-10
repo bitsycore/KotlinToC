@@ -1,16 +1,15 @@
 package ktc
 
 /**
- * Always Exit with [NotImplementedError] stating that operation is not implemented.
+ * Always throws [NotImplementedError] stating that the operation is not implemented.
  *
  * @param reason a string explaining why the implementation is missing.
  */
-fun TODO(reason: String? = null) {
+fun TODO(reason: String? = null): Nothing {
     if (reason == null) {
-        error("(NotImplementedError) An operation is not implemented.")
-    } else {
-        error("(NotImplementedError) An operation is not implemented: $reason")
+        throw NotImplementedError("An operation is not implemented.")
     }
+    throw NotImplementedError("An operation is not implemented: $reason")
 }
 
 /**
