@@ -8,6 +8,10 @@ package test
 class ParseError(override val message: String, val pos: Int) : Exception
 class NetError(override val message: String, val code: Int) : Exception
 
+// Sub-interface chain: FileGone is an Exception only transitively (via IoError).
+interface IoError : Exception
+class FileGone(override val message: String) : IoError
+
 // ==================
 // MARK: Throw helpers
 // ==================
@@ -175,6 +179,41 @@ fun unusedBinding(): Int {
     return 0
 }
 
+// A single `catch (e: Exception)` must catch EVERY exception subtype: user
+// classes, stdlib classes, and classes implementing a sub-interface of
+// Exception (FileGone via IoError) — narrowed back with `is`.
+fun catchJustException(x: Int): Int {
+    try {
+        if (x == 1) throw ParseError("p", 1)
+        if (x == 2) throw RuntimeException("r")
+        if (x == 3) throw FileGone("f")
+        return 0
+    } catch (e: Exception) {
+        when (e) {
+            is ParseError       -> return 1
+            is RuntimeException -> return 2
+            is FileGone         -> return 3
+            else                -> return -1
+        }
+    }
+    return -2
+}
+
+// Catching the sub-interface itself only matches its own implementors.
+fun catchSubInterface(x: Int): Int {
+    try {
+        try {
+            if (x == 1) throw FileGone("f")
+            throw ParseError("p", 1)
+        } catch (e: IoError) {
+            return 10
+        }
+    } catch (e: Exception) {
+        return 20
+    }
+    return 0
+}
+
 // Custom payload fields survive the arena round-trip alongside the message.
 fun payloadIntact(): Int {
     try {
@@ -213,6 +252,14 @@ fun main() {
     if (catchAsThrowable() != 1)  error("FAIL catchAsThrowable=${catchAsThrowable()}")
     if (whenOnCaught() != 9)      error("FAIL whenOnCaught=${whenOnCaught()}")
     println("interface catch: OK")
+
+    if (catchJustException(0) != 0) error("FAIL catchJustException(0)=${catchJustException(0)}")
+    if (catchJustException(1) != 1) error("FAIL catchJustException(1)=${catchJustException(1)}")
+    if (catchJustException(2) != 2) error("FAIL catchJustException(2)=${catchJustException(2)}")
+    if (catchJustException(3) != 3) error("FAIL catchJustException(3)=${catchJustException(3)}")
+    if (catchSubInterface(1) != 10) error("FAIL catchSubInterface(1)=${catchSubInterface(1)}")
+    if (catchSubInterface(2) != 20) error("FAIL catchSubInterface(2)=${catchSubInterface(2)}")
+    println("catch-all Exception: OK")
 
     if (loopThrows() != 302)      error("FAIL loopThrows=${loopThrows()}")
     if (bigMessage() != 800)      error("FAIL bigMessage=${bigMessage()}")
