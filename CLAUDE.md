@@ -82,7 +82,7 @@ Class hierarchies compile down to the interface machinery via a whole-program AS
 - Method copying is monomorphization-style — virtual dispatch is correct even for parent bodies calling open methods (copied bodies resolve against the child). `override fun` is itself open for further overrides (Kotlin semantics); overriding a non-open method is refused.
 - `class C : P` (no parens) still means "implement the interface directly" — provide `override val` storage yourself. Both styles coexist.
 - Sealed classes get `when` exhaustiveness like sealed interfaces. `super.method()` calls lower to private level-qualified copies of the parent body (`work$super$Animal`) so multi-level chains stay correct; `super.prop` collapses to `this.prop`. Extending a final class, redeclaring an inherited stored prop, generic parents, and named super-args are refused with clear errors.
-- Through a parent-typed (fat) value, inherited `var` props are read-only (vtable getters only); write through the concrete type.
+- Inherited `var` props are writable through parent-typed (fat) values too — `var` props get vtable setter slots (`name_set`) alongside the getters (this also applies to `var` properties declared directly in interfaces). `val` props stay read-only through the parent type; compound assignment (`+=`) through the parent type needs the explicit `x.p = x.p + v` form. Remember fat values are COPIES — mutating one doesn't change the original it was built from.
 
 ## Exceptions (try/catch/finally/throw)
 Lightweight setjmp/longjmp exceptions — no unwinder, no heap per throw. Runtime in `ktc/core/ktc_core_exception.{h,c}` (KTC_TRY macro family); codegen in `codegen/statement/Try.kt`; stdlib hierarchy in `resources/ktc/Throwable.kt`.

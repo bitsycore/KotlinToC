@@ -96,6 +96,7 @@ internal fun CCodeGen.emitVtable(
 	for (p in props) {
 		val ct = if (p.type != null) cType(p.type) else "ktc_Int"
 		impl.appendLine("    ($ct (*)(void*)) ${cClass}_${p.name}_get,")
+		if (p.mutable) impl.appendLine("    (void (*)(void*, $ct)) ${cClass}_${p.name}_set,")
 		}
 	for (m in methods) {
 		val cRet      = vtableMethodCRet(m)
@@ -179,7 +180,7 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(
 			impl.appendLine()
 			}
 
-		// Emit property getter wrappers
+		// Emit property getter (and, for `var` props, setter) wrappers
 		for (vP in vAllProps) {
 			val vCt         = if (vP.type != null) cType(vP.type) else "ktc_Int"
 			val vGetterName = "${vCClass}_${vP.name}_get"
@@ -191,6 +192,18 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(
 					impl.appendLine("$vCt $vGetterName($vCSelfPtr \$self) { return \$self->${vP.name}; }")
 					}
 				impl.appendLine()
+				}
+			if (vP.mutable) {
+				val vSetterName = "${vCClass}_${vP.name}_set"
+				if (!implsOnly) hdr.appendLine("KTC_METHOD(void, ${vP.name}_set)($vCSelfPtr \$self, $vCt v);")
+				if (!declsOnly) {
+					if (vIsObject) {
+						impl.appendLine("void $vSetterName($vCSelfPtr \$self, $vCt v) { (void)\$self; ${vCClass}.${vP.name} = v; }")
+						} else {
+						impl.appendLine("void $vSetterName($vCSelfPtr \$self, $vCt v) { \$self->${vP.name} = v; }")
+						}
+					impl.appendLine()
+					}
 				}
 			}
 
@@ -297,6 +310,7 @@ internal fun CCodeGen.emitTransitiveIfaceHdrDecls(
 		for (vProp in vSuperIface.propDecls) {
 			val vCt = if (vProp.type != null) cType(vProp.type) else "ktc_Int"
 			hdr.appendLine("KTC_METHOD($vCt, ${vProp.name}_get)(KTC_TYPE_NAME* \$self);")
+			if (vProp.mutable) hdr.appendLine("KTC_METHOD(void, ${vProp.name}_set)(KTC_TYPE_NAME* \$self, $vCt v);")
 			}
 		if (vSuperName !in simpleUnionInterfaces)
 			hdr.appendLine("extern const ${vCSuperName}_vt KTC_RELATED(${vSuperName}_vt);")

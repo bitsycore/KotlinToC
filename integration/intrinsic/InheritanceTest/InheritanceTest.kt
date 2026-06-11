@@ -58,6 +58,18 @@ fun nodeWeight(n: Node): Int = when (n) {
 }
 
 // ==================
+// MARK: Inherited var props (writable through parent-typed values)
+// ==================
+
+open class Gauge(var level: Int, val max: Int = 100) {
+    open fun fill() { level = max }
+}
+
+class HalfGauge : Gauge(0) {
+    override fun fill() { level = max / 2 }
+}
+
+// ==================
 // MARK: super calls
 // ==================
 
@@ -137,6 +149,17 @@ fun main() {
     if (nodeWeight(Leaf(1, 7)) != 7) fatalError("FAIL leaf weight")
     if (nodeWeight(Branch(2, 3)) != 300) fatalError("FAIL branch weight")
     println("sealed when: OK")
+
+    // Inherited var props: write through concrete AND parent-typed values.
+    val hg = HalfGauge()
+    hg.level = 7
+    if (hg.level != 7) fatalError("FAIL concrete var write")
+    val g: Gauge = HalfGauge()
+    g.level = 33
+    if (g.level != 33) fatalError("FAIL var write via parent ${g.level}")
+    g.fill()
+    if (g.level != 50) fatalError("FAIL fill via parent ${g.level}")
+    println("var props: OK")
 
     // super.method() through multi-level chains + super.prop.
     if (Doubling(3).next() != 8) fatalError("FAIL Doubling.next")

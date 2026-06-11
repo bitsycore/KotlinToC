@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.statement
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
+import com.bitsycore.ktc.codegen.emit.collectAllIfaceProperties
 import com.bitsycore.ktc.codegen.emit.ifaceDataName
 import com.bitsycore.ktc.codegen.emit.registerClassFields
 import com.bitsycore.ktc.codegen.expression.genExpr
@@ -117,6 +118,31 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
                 // Null-check the pointer (when --check-null on) before writing through it.
                 if (checkNull && !isProvablyNonNull(s.target.obj)) impl.appendLine("$ind${nullCheckStmt(recv)}")
                 impl.appendLine("$ind*$recv = $value;")
+                return
+            }
+        }
+    }
+
+    // Interface property write through a fat value → vtable setter
+    // (e.g. `a.count = 5` where a: Animal and count is an inherited `var`).
+    if (s.target is DotExpr) {
+        val vRecvCore = inferExprTypeKtc(s.target.obj).stripNullable
+        val vIfaceInfo = ifaceInfoFor(vRecvCore)
+        if (vIfaceInfo != null) {
+            val vProp = collectAllIfaceProperties(vIfaceInfo).find { it.name == s.target.name }
+            if (vProp != null) {
+                if (!vProp.mutable)
+                    codegenError("Property '${s.target.name}' is read-only (val) through '${vIfaceInfo.name}' — " +
+                        "write through the concrete type, or declare it 'var' in the parent")
+                if (vIfaceInfo.name in simpleUnionInterfaces)
+                    codegenError("Cannot write '${s.target.name}' through @SimpleUnion '${vIfaceInfo.name}' (no vtable) — write through the concrete type")
+                if (s.op != "=")
+                    codegenError("Compound assignment '${s.op}' is not supported on interface property '${s.target.name}' — " +
+                        "use the explicit form: x.${s.target.name} = x.${s.target.name} ${s.op.dropLast(1)} value")
+                val vRecv = genExpr(s.target.obj)
+                val vVal  = genExpr(s.value)
+                flushPreStmts(ind)
+                impl.appendLine("$ind$vRecv.vt->${s.target.name}_set(${ifaceVtableSelf(vIfaceInfo.name, vRecv)}, $vVal);")
                 return
             }
         }

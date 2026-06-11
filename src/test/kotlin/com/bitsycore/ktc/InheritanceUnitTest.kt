@@ -163,6 +163,31 @@ class InheritanceUnitTest : TranspilerTestBase() {
 		""", "no constructor parameter named")
 	}
 
+	@Test fun varPropWritableThroughParentType() {
+		val r = transpile("""
+			package test
+			open class Gauge(var level: Int)
+			class Big : Gauge(0)
+			fun main() {
+				val g: Gauge = Big()
+				g.level = 3
+				println(g.level)
+			}
+		""")
+		assertTrue(r.source.contains("level_set("), "write through parent type uses the vtable setter")
+		assertTrue(r.header.contains("(*level_set)("), "interface vtable carries a setter slot")
+		// val props stay read-only through the parent type.
+		transpileExpectError("""
+			package test
+			open class Gauge(val level: Int)
+			class Big : Gauge(0)
+			fun main() {
+				val g: Gauge = Big()
+				g.level = 3
+			}
+		""", "read-only")
+	}
+
 	@Test fun sealedClassWhenExhaustive() {
 		val r = transpile("""
 			package test

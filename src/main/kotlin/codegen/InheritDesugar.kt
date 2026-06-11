@@ -321,10 +321,10 @@ object InheritDesugar {
 			.filter { !it.isPrivate }
 			.map { it.copy(body = null, isOverride = false) }
 		val vProps = inDecl.ctorParams.filter { (it.isVal || it.isVar) && !it.isPrivate }
-			.map { PropDecl(it.name, it.type, init = null, mutable = false) } +
+			.map { PropDecl(it.name, it.type, init = null, mutable = it.isVar) } +
 			inDecl.members.filterIsInstance<PropDecl>()
 				.filter { !it.isPrivate && it.getter == null }
-				.map { PropDecl(it.name, it.type, init = null, mutable = false) }
+				.map { PropDecl(it.name, it.type, init = null, mutable = it.mutable) }
 		return InterfaceDecl(
 			name = inDecl.name,
 			methods = vMethods.distinctBy { it.name to it.params.size },

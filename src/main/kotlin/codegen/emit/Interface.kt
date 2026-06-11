@@ -128,6 +128,8 @@ private fun CCodeGen.emitIfaceVtableBody(
     for (vP in inProps) {
         val vCt = if (vP.type != null) cType(vP.type) else "ktc_Int"
         hdr.appendLine("    $vCt (*${vP.name})(void* \$self);")
+        // `var` props additionally get a setter slot so writes through the fat value work.
+        if (vP.mutable) hdr.appendLine("    void (*${vP.name}_set)(void* \$self, $vCt v);")
     }
     for (vM in inMethods) {
         val vReturnsNullable = vM.returnType != null && vM.returnType.nullable
