@@ -233,7 +233,8 @@ internal fun CCodeGen.materializeGenericInstantiations() {
 				}
 			val vAllNewProps = vNewCtorProps + vNewBodyProps // combined substituted props
 			val ci = ClassInfo(mangledName, templateCi.isData, vAllNewProps, vNewPlainParams,
-				initBlocks = templateCi.initBlocks, typeParams = templateCi.typeParams)
+				initBlocks = templateCi.initBlocks, typeParams = templateCi.typeParams,
+				ctorDeclNames = templateCi.ctorDeclNames)
 			for (m in templateCi.methods) ci.methods += m
 			classes[mangledName] = ci
 			getTypeId(mangledName)

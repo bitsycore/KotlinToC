@@ -232,7 +232,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 		val vMangled = mangledGenericName(vResolvedName, vResolvedTypeArgs)
 		val vCi      = classes[vMangled] ?: error("Generic class '$vMangled' not materialized (typeSubst=$typeSubst)")
 		val vTplDecl = genericClassDecls[vResolvedName]
-		val vAllParams    = vCi.ctorProps + vCi.ctorPlainParams
+		val vAllParams    = vCi.allCtorParams()
 		val vCtorParams   = vAllParams.map { Param(it.name, it.typeRef) }
 		val vFilledArgs   = fillDefaults(inArgs, vCtorParams, vAllParams.associate {
 			val vCp = vTplDecl?.ctorParams?.find { vP -> vP.name == it.name }
@@ -251,7 +251,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 			materializeGenericInstantiations()
 			val vCi = classes[vMangled]
 			if (vCi != null) {
-				val vAllParams2  = vCi.ctorProps + vCi.ctorPlainParams
+				val vAllParams2  = vCi.allCtorParams()
 				val vCtorParams2 = vAllParams2.map { Param(it.name, it.typeRef) }
 				val vFilledArgs2 = fillDefaults(inArgs, vCtorParams2, vAllParams2.associate { it.name to null }, vResolvedName, strict = true)
 				val vExpandedArgs2 = expandCallArgs(vFilledArgs2, vCtorParams2, isCtorCall = true)
@@ -284,7 +284,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 				val vArgStr = vFilledSctorArgs.joinToString(", ") { genExpr(it.expr) }
 				return "${vCi.flatName}_$vSuffix($vArgStr)"
 				}
-		val vAllParams3  = vCi.ctorProps + vCi.ctorPlainParams
+		val vAllParams3  = vCi.allCtorParams()
 		val vCtorParams3 = vAllParams3.map { Param(it.name, it.typeRef) }
 		val vFilledArgs3 = fillDefaults(inArgs, vCtorParams3, vAllParams3.associate {
 			val vCp = vDeclClass?.ctorParams?.find { p -> p.name == it.name }

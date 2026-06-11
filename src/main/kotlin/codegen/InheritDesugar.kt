@@ -126,10 +126,6 @@ object InheritDesugar {
 				error("Class '$vName' extends '$vParentName', which is final — mark it 'open', 'abstract' or 'sealed'")
 			if (vParent.typeParams.isNotEmpty())
 				error("Class '$vName': extending the generic class '$vParentName' is not supported yet")
-			vParent.ctorParams.firstOrNull { !it.isVal && !it.isVar }?.let {
-				error("Class '$vParentName': constructor parameter '${it.name}' must be 'val' or 'var' to be extendable " +
-					"(children inherit the stored fields)")
-			}
 			// Cycle guard: walk the parent chain.
 			var vCur: String? = vParentName
 			val vSeen = mutableSetOf(vName)
@@ -170,14 +166,26 @@ object InheritDesugar {
 				error("Class '$vChildName': property '${vP.name}' is already declared in '${inParent.name}'")
 		}
 
-		// Inherited ctor-prop fields: body props initialized from the super-call args
-		// (positionally), falling back to the parent's parameter defaults.
-		val vInjectedProps = inParent.ctorParams.mapIndexed { vI, vCp ->
-			val vInit = vArgs.getOrNull(vI)?.expr ?: vCp.default
-				?: error("Class '$vChildName': missing super-constructor argument for '${inParent.name}.${vCp.name}' (no default value)")
-			PropDecl(vCp.name, vCp.type, vInit, mutable = vCp.isVar, isPrivate = vCp.isPrivate)
+		// Each parent ctor param maps to the child's super-call argument (positionally),
+		// falling back to the parameter's default value.
+		val vParamValue = inParent.ctorParams.mapIndexed { vI, vCp ->
+			vCp.name to (vArgs.getOrNull(vI)?.expr ?: vCp.default
+				?: error("Class '$vChildName': missing super-constructor argument for '${inParent.name}.${vCp.name}' (no default value)"))
+		}.toMap()
+
+		// val/var ctor params become stored fields initialized from the super-args.
+		val vInjectedProps = inParent.ctorParams.filter { it.isVal || it.isVar }.map { vCp ->
+			PropDecl(vCp.name, vCp.type, vParamValue[vCp.name], mutable = vCp.isVar, isPrivate = vCp.isPrivate)
 		}
-		val vInjectedBodyProps = inParent.members.filterIsInstance<PropDecl>()
+		// Plain (forwarding) parent ctor params have no storage — references to them
+		// inside the parent's body-prop initializers and init blocks are substituted
+		// with the super-call argument expression. (An argument referenced more than
+		// once is evaluated once per reference — keep super-args simple.)
+		val vForwardSubst = inParent.ctorParams.filter { !it.isVal && !it.isVar }
+			.associate { it.name to vParamValue[it.name]!! }
+		val vInjectedBodyProps = inParent.members.filterIsInstance<PropDecl>().map { vP ->
+			vP.copy(init = vP.init?.let { substituteNames(it, vForwardSubst) })
+		}
 
 		// Parent concrete methods not overridden by the child, copied override-marked.
 		val vChildMethods = inChild.members.filterIsInstance<FunDecl>()
@@ -203,12 +211,29 @@ object InheritDesugar {
 				error("Class '$vChildName': method '${vM.name}' uses 'super.' — super calls are not supported yet")
 		}
 
+		val vParentInits = inParent.initBlocks.map { vB ->
+			Block(vB.stmts.map { substituteNamesInStmt(it, vForwardSubst) })
+		}
 		return inChild.copy(
 			members = vInjectedProps + vInjectedBodyProps + vInheritedMethods + inChild.members,
-			initBlocks = inParent.initBlocks + inChild.initBlocks
+			initBlocks = vParentInits + inChild.initBlocks
 			// superInterfaces unchanged: the parent NAME stays in the list and now
 			// resolves to the synthesized interface.
 		)
+	}
+
+	// ==================
+	// MARK: Name substitution (forwarding ctor params → super-arg expressions)
+	// ==================
+
+	private fun substituteNames(inE: Expr, inMap: Map<String, Expr>): Expr {
+		if (inMap.isEmpty()) return inE
+		return mapExpr(inE) { if (it is NameExpr && it.name in inMap) inMap[it.name]!! else it }
+	}
+
+	private fun substituteNamesInStmt(inS: Stmt, inMap: Map<String, Expr>): Stmt {
+		if (inMap.isEmpty()) return inS
+		return mapStmt(inS) { if (it is NameExpr && it.name in inMap) inMap[it.name]!! else it }
 	}
 
 	// ==================
@@ -348,6 +373,69 @@ object InheritDesugar {
 			})
 			else -> inE
 		}
+	}
+
+	// ==================
+	// MARK: Generic structural mappers
+	// ==================
+
+	/* Rebuild an expression bottom-up, applying [inF] to every (rebuilt) node. */
+	private fun mapExpr(inE: Expr, inF: (Expr) -> Expr): Expr {
+		fun m(e: Expr): Expr = mapExpr(e, inF)
+		fun mB(b: Block): Block = Block(b.stmts.map { mapStmt(it, inF) })
+		val vRebuilt: Expr = when (inE) {
+			is CallExpr    -> CallExpr(m(inE.callee), inE.args.map { it.copy(expr = m(it.expr)) }, inE.typeArgs)
+			is BinExpr     -> BinExpr(m(inE.left), inE.op, m(inE.right))
+			is PrefixExpr  -> PrefixExpr(inE.op, m(inE.expr))
+			is PostfixExpr -> PostfixExpr(m(inE.expr), inE.op)
+			is DotExpr     -> DotExpr(m(inE.obj), inE.name)
+			is SafeDotExpr -> SafeDotExpr(m(inE.obj), inE.name)
+			is IndexExpr   -> IndexExpr(m(inE.obj), m(inE.index))
+			is IfExpr      -> IfExpr(m(inE.cond), mB(inE.then), inE.els?.let { mB(it) })
+			is WhenExpr    -> WhenExpr(inE.subject?.let { m(it) }, inE.branches.map { vB ->
+				WhenBranch(vB.conds?.map { vC ->
+					when (vC) {
+						is ExprCond -> ExprCond(m(vC.expr))
+						is InCond   -> InCond(m(vC.expr), vC.negated)
+						else        -> vC
+					}
+				}, mB(vB.body))
+			})
+			is NotNullExpr -> NotNullExpr(m(inE.expr))
+			is ElvisExpr   -> ElvisExpr(m(inE.left), m(inE.right))
+			is IsCheckExpr -> IsCheckExpr(m(inE.expr), inE.type, inE.negated)
+			is CastExpr    -> CastExpr(m(inE.expr), inE.type, inE.safe)
+			is LambdaExpr  -> inE.copy(body = inE.body.map { mapStmt(it, inF) })
+			is StrTemplateExpr -> StrTemplateExpr(inE.parts.map { vP ->
+				if (vP is ExprPart) ExprPart(m(vP.expr)) else vP
+			})
+			else -> inE
+		}
+		return inF(vRebuilt)
+	}
+
+	/* Rebuild a statement bottom-up, applying [inF] to every expression node. */
+	private fun mapStmt(inS: Stmt, inF: (Expr) -> Expr): Stmt {
+		fun m(e: Expr): Expr = mapExpr(e, inF)
+		fun mB(b: Block): Block = Block(b.stmts.map { mapStmt(it, inF) })
+		val vNew: Stmt = when (inS) {
+			is ExprStmt    -> ExprStmt(m(inS.expr))
+			is VarDeclStmt -> inS.copy(init = inS.init?.let { m(it) }, lazyInit = inS.lazyInit?.let { mB(it) })
+			is DestructuringDeclStmt -> inS.copy(init = m(inS.init))
+			is AssignStmt  -> inS.copy(target = m(inS.target), value = m(inS.value))
+			is ReturnStmt  -> ReturnStmt(inS.value?.let { m(it) })
+			is ThrowStmt   -> ThrowStmt(m(inS.value))
+			is ForStmt     -> inS.copy(iter = m(inS.iter), body = mB(inS.body))
+			is WhileStmt   -> inS.copy(cond = m(inS.cond), body = mB(inS.body))
+			is DoWhileStmt -> inS.copy(body = mB(inS.body), cond = m(inS.cond))
+			is DeferStmt   -> inS.copy(body = mB(inS.body))
+			is TryStmt     -> inS.copy(body = mB(inS.body),
+				catches = inS.catches.map { it.copy(body = mB(it.body)) },
+				finallyBlock = inS.finallyBlock?.let { mB(it) })
+			else -> inS
+		}
+		vNew.line = inS.line; vNew.col = inS.col
+		return vNew
 	}
 
 	/* Minimal read-only expression walker used by bodyCallsSuper. */

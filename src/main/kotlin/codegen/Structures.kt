@@ -74,8 +74,18 @@ internal data class ClassInfo(
     override var pkg: String = "",                             // set during collectDecls; mutable for post-construction assignment
     val isValue: Boolean = false,                              // inline value class flag
     val isInternal: Boolean = false,                           // internal visibility (cross-package access blocked)
-    val isSealed: Boolean = false                              // sealed class — closed hierarchy, enables exhaustive `when`
+    val isSealed: Boolean = false,                             // sealed class — closed hierarchy, enables exhaustive `when`
+    val ctorDeclNames: List<String> = emptyList()              // ctor param names in DECLARATION order (val/var and plain interleaved)
 ) : TypeDef {
+
+    /** All ctor params (val/var props + plain) in source declaration order — the
+       canonical order for the C constructor signature AND its call sites.
+       Falls back to props-then-plains when declaration order wasn't recorded. */
+    fun allCtorParams(): List<PropertyDef> {
+        val vCombined = ctorProps + ctorPlainParams
+        if (ctorDeclNames.isEmpty()) return vCombined
+        return vCombined.sortedBy { vP -> ctorDeclNames.indexOf(vP.name).let { if (it < 0) Int.MAX_VALUE else it } }
+    }
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = when {
         isValue -> KtcType.UserKind.ValueClass

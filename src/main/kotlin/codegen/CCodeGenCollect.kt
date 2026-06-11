@@ -251,7 +251,8 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				if (vBodyProps.isNotEmpty())
 					codegenError("E031", "Value class '${d.name}' cannot have body properties")
 			}
-			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue, isInternal = d.isInternal, isSealed = d.isSealed)
+			val ci = ClassInfo(d.name, d.isData, vAllProps, vCtorPlainParams, initBlocks = d.initBlocks, typeParams = d.typeParams, isValue = d.isValue, isInternal = d.isInternal, isSealed = d.isSealed,
+				ctorDeclNames = d.ctorParams.map { it.name })
 			if (d.typeParams.isNotEmpty()) allGenericTypeParamNames += d.typeParams
 			for (m in d.members) if (m is FunDecl && m.receiver == null) {
 				// Mirror the function-level rule: inline methods may return bare
@@ -744,8 +745,10 @@ private fun <T> CCodeGen.rekeyDottedToDollar(inMap: MutableMap<String, MutableLi
 	}
 
 /* Resolve the package for a nested class/object name "Parent$Child" by looking
-   up the parent class or object. Falls back to the current-file prefix. */
+   up the parent class, object, or interface (the inheritance desugar's hidden
+   "P$Impl" classes sit beside their interface P). Falls back to the
+   current-file prefix. */
 private fun CCodeGen.nestedParentPkg(inName: String): String {
 	val vParent = inName.substringBefore('$')
-	return classes[vParent]?.pkg ?: objects[vParent]?.pkg ?: prefix
+	return classes[vParent]?.pkg ?: objects[vParent]?.pkg ?: interfaces[vParent]?.pkg ?: prefix
 	}

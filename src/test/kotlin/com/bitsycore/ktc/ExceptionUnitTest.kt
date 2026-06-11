@@ -29,8 +29,8 @@ class ExceptionUnitTest : TranspilerTestBase() {
 		""")
 		assertTrue(r.source.contains("KTC_TRY("), "try should open a KTC_TRY frame")
 		assertTrue(r.source.contains("KTC_CATCH("), "catch should emit KTC_CATCH")
-		assertTrue(r.source.contains("KTC_EXC_TYPE_ID() == ktc_RuntimeException_TYPE_ID"),
-			"catch condition should compare the in-flight TYPE_ID")
+		assertTrue(r.source.contains("KTC_EXC_TYPE_ID() == ktc_RuntimeException\$Impl_TYPE_ID"),
+			"catch condition should compare the in-flight TYPE_ID against the hierarchy's classes")
 		assertTrue(r.source.contains("KTC_END_TRY;"), "construct should close with KTC_END_TRY")
 		assertTrue(r.source.contains("ktc_core_exc_take("), "used binding should be taken off the arena")
 		assertTrue(r.source.contains("ktc_core_alloca"), "message bytes should be alloca'd onto the frame")
@@ -41,8 +41,8 @@ class ExceptionUnitTest : TranspilerTestBase() {
 			throw RuntimeException("boom")
 		""")
 		assertTrue(r.source.contains("ktc_core_exc_throw("), "throw should call the runtime throw")
-		assertTrue(r.source.contains("sizeof(ktc_RuntimeException)"), "throw passes the struct size")
-		assertTrue(r.source.contains("offsetof(ktc_RuntimeException, message)"),
+		assertTrue(r.source.contains("sizeof(ktc_RuntimeException\$Impl)"), "throw passes the concrete struct size")
+		assertTrue(r.source.contains("offsetof(ktc_RuntimeException\$Impl, message)"),
 			"throw passes the message field offset for relocation")
 	}
 
@@ -54,9 +54,9 @@ class ExceptionUnitTest : TranspilerTestBase() {
 				println(e.message)
 			}
 		""")
-		// The Exception interface catch must OR over multiple implementing classes.
-		assertTrue(r.source.contains("ktc_IllegalStateException_TYPE_ID"), "iface catch covers IllegalStateException")
-		assertTrue(r.source.contains("ktc_RuntimeException_TYPE_ID"), "iface catch covers RuntimeException")
+		// The Exception catch must OR over the classes of the whole hierarchy.
+		assertTrue(r.source.contains("ktc_IllegalStateException\$Impl_TYPE_ID"), "catch covers IllegalStateException")
+		assertTrue(r.source.contains("ktc_RuntimeException\$Impl_TYPE_ID"), "catch covers RuntimeException")
 		assertTrue(r.source.contains(".vt ="), "iface binding selects a vtable from the typeId")
 		assertTrue(r.source.contains("__typeId"), "iface binding fills the union typeId")
 	}
@@ -122,8 +122,11 @@ class ExceptionUnitTest : TranspilerTestBase() {
 				throw e
 			}
 		""")
-		// The rethrow reuses the local copy taken off the arena.
-		assertTrue(r.source.contains("ktc_core_exc_throw(&e,"),
+		// RuntimeException is a class-hierarchy type → the binding is a fat value;
+		// the rethrow dispatches on the concrete typeId for sizeof/offsetof.
+		assertTrue(r.source.contains("switch (KTC_GET_TYPEID(e.__typeId))"),
+			"interface-typed rethrow should switch on the concrete typeId")
+		assertTrue(r.source.contains("ktc_core_exc_throw((ktc_RuntimeException\$Impl*)&e.data"),
 			"rethrow should pass the catch-local copy back to the runtime throw")
 	}
 
