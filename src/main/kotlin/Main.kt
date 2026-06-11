@@ -566,6 +566,17 @@ fun main(args: Array<String>) {
         }
     }
 
+    // ── Class-inheritance desugaring (whole-program AST pass) ─────────
+    // open/abstract/sealed class hierarchies compile down to the interface
+    // machinery (see codegen/InheritDesugar.kt) before any codegen runs.
+    try {
+        val vDesugared = InheritDesugar.apply(parsedFiles.map { it.ast })
+        for (i in parsedFiles.indices) parsedFiles[i] = parsedFiles[i].copy(ast = vDesugared[i])
+    } catch (e: Exception) {
+        System.err.println("Error: ${e.message}")
+        exitProcess(1)
+    }
+
     // ── Dump AST if --ast flag is set ─────────────────────────────────
     if (dumpAst) {
         for (ps in parsedFiles) {

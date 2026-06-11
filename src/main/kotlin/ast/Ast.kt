@@ -48,7 +48,9 @@ data class FunDecl(
     val isOverride: Boolean = false,
     val isInfix: Boolean = false,
     val isTailrec: Boolean = false,
-    val annotations: List<Annotation> = emptyList()  // declaration-level annotations (e.g. @DocumentationOnly)
+    val annotations: List<Annotation> = emptyList(),  // declaration-level annotations (e.g. @DocumentationOnly)
+    val isOpen: Boolean = false,        // open fun — overridable by subclasses
+    val isAbstract: Boolean = false     // abstract fun — no body, subclasses must implement
 ) : Decl()
 
 data class ClassDecl(
@@ -63,7 +65,11 @@ data class ClassDecl(
     val annotations: List<Annotation> = emptyList(),
     val isValue: Boolean = false,
     val isSealed: Boolean = false,
-    val isInternal: Boolean = false
+    val isInternal: Boolean = false,
+    val isAbstract: Boolean = false,        // abstract class — extendable, not instantiable
+    val isOpen: Boolean = false,            // open class — extendable AND instantiable
+    val superClassName: String? = null,     // class supertype (the entry of superInterfaces written with parens)
+    val superClassArgs: List<Arg>? = null   // ctor args of `: Parent(args)` (empty list for `: Parent()`)
 ) : Decl()
 
 /* Per-entry data for an enum:

@@ -98,7 +98,7 @@ open class TranspilerTestBase {
         val source = src.trimIndent()
         prescanInfix(source) // register infix function names before parsing
         val tokens = Lexer(source).tokenize()
-        val ast = Parser(tokens).parseFile()
+        val ast = com.bitsycore.ktc.codegen.InheritDesugar.apply(listOf(Parser(tokens).parseFile())).single()
         val allAsts = listOf(ast)
         val gen = CCodeGen(ast, allAsts, source.lines())
         val output = gen.generate()
@@ -173,9 +173,10 @@ open class TranspilerTestBase {
         prescanInfix(vSource)                // also prescan user source for any user-defined infix
         val vTokens = Lexer(vSource).tokenize()
         // Inject "ktc.std.*" so the codegen emits the #include for the std package header.
-        val vAst = Parser(vTokens).parseFile()
+        val vParsed = Parser(vTokens).parseFile()
             .let { it.copy(imports = (it.imports + "ktc.std.*").distinct()) }
-        val vAllAsts = vStdlibAsts + vAst
+        val vAllAsts = com.bitsycore.ktc.codegen.InheritDesugar.apply(vStdlibAsts + vParsed)
+        val vAst = vAllAsts.last()
         val vGen = CCodeGen(vAst, vAllAsts, vSource.lines())
         val vOutput = vGen.generate()
         val result = TranspileResult(
@@ -199,8 +200,11 @@ open class TranspilerTestBase {
             ?: error("stdlib file not found: $vFileName")
         val vSource = vRes.bufferedReader().readText()
         val vTokens = Lexer(vSource).tokenize()
-        val vAst = Parser(vTokens).parseFile().copy(sourceFile = vFileName)
-        val vAllAsts = loadStdlibAsts()
+        val vParsed = Parser(vTokens).parseFile().copy(sourceFile = vFileName)
+        // Desugar with the full stdlib context so cross-file hierarchies resolve.
+        val vAllAsts = com.bitsycore.ktc.codegen.InheritDesugar.apply(
+            loadStdlibAsts().filter { it.sourceFile != vFileName } + vParsed)
+        val vAst = vAllAsts.last()
         val vOutput = CCodeGen(vAst, vAllAsts, vSource.lines()).generate()
         val result = TranspileResult(
             header = vOutput.header,

@@ -68,6 +68,7 @@ class Parser(private val tokens: List<Token>) {
         var isOverride = false; var isOperator = false; var isInfix = false
         var isPrivate = false; var isInternal = false; var isTailrec = false
         var isInlineExplicit = false; var isValue = false; var isSealed = false
+        var isAbstract = false; var isOpen = false
         loop@ while (true) {
             when {
                 at(TokenType.OVERRIDE) -> { isOverride = true; advance() }
@@ -84,15 +85,24 @@ class Parser(private val tokens: List<Token>) {
                 at(TokenType.IDENT) && cur().value == "value" && peek().type == TokenType.CLASS
                     -> { isValue = true; advance() }
                 at(TokenType.SEALED) -> { isSealed = true; advance() }
+                // `abstract` / `open` — contextual (soft) keywords, recognized only before
+                // a declaration keyword or further modifiers so identifiers stay usable.
+                at(TokenType.IDENT) && cur().value == "abstract" &&
+                    peek().type in setOf(TokenType.CLASS, TokenType.FUN, TokenType.VAL, TokenType.VAR, TokenType.SEALED)
+                    -> { isAbstract = true; advance() }
+                at(TokenType.IDENT) && cur().value == "open" &&
+                    peek().type in setOf(TokenType.CLASS, TokenType.FUN, TokenType.VAL, TokenType.VAR, TokenType.OVERRIDE)
+                    -> { isOpen = true; advance() }
                 else -> break@loop
             }
         }
         if (isPrivate && isInternal) error("'private' and 'internal' are mutually exclusive on the same declaration")
         val isInline = isInlineExplicit || isInfix
+        if (isAbstract && isOpen) error("'abstract' and 'open' are mutually exclusive ('abstract' already implies extendable)")
         return when {
-            at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInternal = isInternal, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec)
+            at(TokenType.FUN)    -> parseFunDecl(isOperator = isOperator, isPrivate = isPrivate, isInternal = isInternal, isInline = isInline, isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec, isOpen = isOpen, isAbstract = isAbstract)
             at(TokenType.DATA)   -> { if (isPrivate) error("private with data not supported"); advance(); expect(TokenType.CLASS); parseClassDecl(isData = true, isInternal = isInternal) }
-            at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false, isValue = isValue, isSealed = isSealed, isInternal = isInternal) }
+            at(TokenType.CLASS)  -> { advance(); parseClassDecl(isData = false, isValue = isValue, isSealed = isSealed, isInternal = isInternal, isAbstract = isAbstract, isOpen = isOpen) }
             at(TokenType.IDENT) && cur().value == "annotation" && peek().type == TokenType.CLASS -> {
                 advance(); advance(); parseClassDecl(isData = false)
             }
@@ -118,7 +128,8 @@ class Parser(private val tokens: List<Token>) {
                     }
                     at(TokenType.FUN) -> parseFunDecl(
                         isOperator = isOperator, isPrivate = isPrivate, isInternal = isInternal, isInline = isInline,
-                        isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec, annotations = anns
+                        isOverride = isOverride, isInfix = isInfix, isTailrec = isTailrec, annotations = anns,
+                        isOpen = isOpen, isAbstract = isAbstract
                     )
                     at(TokenType.DATA) -> {
                         advance(); expect(TokenType.CLASS)
@@ -159,7 +170,7 @@ class Parser(private val tokens: List<Token>) {
         return params
     }
 
-    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInternal: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList()): FunDecl {
+    private fun parseFunDecl(isOperator: Boolean = false, isPrivate: Boolean = false, isInternal: Boolean = false, isInline: Boolean = false, isOverride: Boolean = false, isInfix: Boolean = false, isTailrec: Boolean = false, annotations: List<Annotation> = emptyList(), isOpen: Boolean = false, isAbstract: Boolean = false): FunDecl {
         expect(TokenType.FUN)
         // Parse optional type parameters: fun <reified T, U> name(...)
         val typeParams = parseTypeParamList()
@@ -205,7 +216,7 @@ class Parser(private val tokens: List<Token>) {
             else -> null
         }
         skipTerminator()
-        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInternal, isInline, isOverride, isInfix, isTailrec, annotations)
+        return FunDecl(name, params, retType, body, receiver, typeParams, isOperator, isPrivate, isInternal, isInline, isOverride, isInfix, isTailrec, annotations, isOpen = isOpen, isAbstract = isAbstract)
     }
 
     private fun parseParamList(): List<Param> {
@@ -232,7 +243,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── class / data class ───────────────────────────────────────────
 
-    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false, isSealed: Boolean = false, isInternal: Boolean = false): ClassDecl {
+    private fun parseClassDecl(isData: Boolean, annotations: List<Annotation> = emptyList(), isValue: Boolean = false, isSealed: Boolean = false, isInternal: Boolean = false, isAbstract: Boolean = false, isOpen: Boolean = false): ClassDecl {
         val name = expectIdent()
         // Parse type parameters: class Foo<out T, in U>(...)
         val typeParams = parseTypeParamList()
@@ -242,14 +253,27 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RPAREN); nesting--
             p
         } else emptyList()
-        // Parse super interfaces/classes:  : Iface1<T>, Iface2, SealedParent()
+        // Parse super interfaces/classes:  : Iface1<T>, Iface2, ParentClass(args)
+        // A supertype written WITH parens is the class parent (its ctor call);
+        // ones without parens are interface implementations.
         val superInterfaces = mutableListOf<TypeRef>()
+        var superClassName: String? = null
+        var superClassArgs: List<Arg>? = null
+        fun parseSuperCallArgs() {
+            if (!at(TokenType.LPAREN)) return
+            advance(); nesting++
+            val vArgs = parseArgList()
+            expect(TokenType.RPAREN); nesting--
+            if (superClassName != null) error("Class '$name' has more than one class supertype — only one parent class is allowed")
+            superClassName = superInterfaces.last().name
+            superClassArgs = vArgs
+        }
         if (at(TokenType.COLON)) {
             advance(); skipNL()
             superInterfaces += parseTypeRef()
-            if (at(TokenType.LPAREN)) { advance(); expect(TokenType.RPAREN) }
+            parseSuperCallArgs()
             while (at(TokenType.COMMA)) { advance(); skipNL(); superInterfaces += parseTypeRef()
-                if (at(TokenType.LPAREN)) { advance(); expect(TokenType.RPAREN) }
+                parseSuperCallArgs()
             }
         }
         skipNL()
@@ -274,7 +298,8 @@ class Parser(private val tokens: List<Token>) {
             expect(TokenType.RBRACE); nesting--
         }
         skipTerminator()
-        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations, isValue, isSealed, isInternal)
+        return ClassDecl(name, isData, ctorParams, members, inits, superInterfaces, typeParams, secondaryCtors, annotations, isValue, isSealed, isInternal,
+            isAbstract = isAbstract, isOpen = isOpen, superClassName = superClassName, superClassArgs = superClassArgs)
     }
 
     private fun parseCtorParams(): List<CtorParam> {

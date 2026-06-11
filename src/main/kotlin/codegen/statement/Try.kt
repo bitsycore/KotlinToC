@@ -225,7 +225,7 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 		impl.appendLine("$ind/* ${kotlinEcho("throw " + dumpExpr(s.value))} */")
 		impl.appendLine("${ind}ktc_core_exc_throw(&$vT, (ktc_Int)sizeof($vCType), ${vCType}_TYPE_ID, " +
 			"(ktc_Int)offsetof($vCType, message), $vT.message.ptr, $vT.message.len, " +
-			"\"$vTypeName\", \"$currentSourceFile\", $currentStmtLine);")
+			"\"${vTypeName.removeSuffix("\$Impl")}\", \"$currentSourceFile\", $currentStmtLine);")
 		return
 	}
 
@@ -246,7 +246,7 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 			impl.appendLine("$ind    case ${vC}_TYPE_ID: ktc_core_exc_throw(($vC*)&$vT.data, " +
 				"(ktc_Int)sizeof($vC), ${vC}_TYPE_ID, (ktc_Int)offsetof($vC, message), " +
 				"(($vC*)&$vT.data)->message.ptr, (($vC*)&$vT.data)->message.len, " +
-				"\"$vImpl\", \"$currentSourceFile\", $currentStmtLine);")
+				"\"${vImpl.removeSuffix("\$Impl")}\", \"$currentSourceFile\", $currentStmtLine);")
 		}
 		impl.appendLine("$ind    default: break;")
 		impl.appendLine("$ind}")
