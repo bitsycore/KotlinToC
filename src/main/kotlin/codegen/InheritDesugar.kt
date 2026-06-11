@@ -98,8 +98,6 @@ object InheritDesugar {
 
 	private fun validate(inClasses: Map<String, ClassDecl>, inExtendable: Map<String, ClassDecl>) {
 		for ((vName, vDecl) in inExtendable) {
-			if (vDecl.typeParams.isNotEmpty())
-				error("Class '$vName': generic classes cannot be open/abstract/sealed yet — use a sealed/generic interface instead")
 			if (vDecl.isData)
 				error("Class '$vName': a data class cannot be open/abstract/sealed (Kotlin rule)")
 			if (vDecl.isValue)
@@ -129,8 +127,6 @@ object InheritDesugar {
 				?: continue  // parens on an interface/unknown name — left for codegen to diagnose
 			if (vParentName !in inExtendable)
 				error("Class '$vName' extends '$vParentName', which is final — mark it 'open', 'abstract' or 'sealed'")
-			if (vParent.typeParams.isNotEmpty())
-				error("Class '$vName': extending the generic class '$vParentName' is not supported yet")
 			// Cycle guard: walk the parent chain.
 			var vCur: String? = vParentName
 			val vSeen = mutableSetOf(vName)
@@ -152,6 +148,19 @@ object InheritDesugar {
 	private fun augmentChild(inChild: ClassDecl, inParent: ClassDecl): ClassDecl {
 		val vChildName = inChild.name
 		val vArgs = inChild.superClassArgs ?: emptyList()
+
+		// Generic parent: map its type params to the super-type's type arguments
+		// (`class IntBox : Box<Int>(5)` → T→Int; `class MyBox<T> : Box<T>(v)` keeps
+		// the child generic). The substitution is applied to every copied type.
+		val vTypeSubst: Map<String, TypeRef> = if (inParent.typeParams.isEmpty()) emptyMap() else {
+			val vSuperRef = inChild.superInterfaces.find { it.name == inChild.superClassName }
+			val vTArgs = vSuperRef?.typeArgs ?: emptyList()
+			if (vTArgs.size != inParent.typeParams.size)
+				error("Class '$vChildName': '${inParent.name}' expects ${inParent.typeParams.size} type argument(s) — " +
+					"write ': ${inParent.name}<${inParent.typeParams.joinToString(", ")}>(...)'")
+			inParent.typeParams.zip(vTArgs).toMap()
+		}
+		fun substT(inT: TypeRef): TypeRef = substTypeRef(inT, vTypeSubst)
 		if (vArgs.size > inParent.ctorParams.size)
 			error("Class '$vChildName': too many super-constructor arguments for '${inParent.name}' " +
 				"(${vArgs.size} given, ${inParent.ctorParams.size} expected)")
@@ -189,7 +198,7 @@ object InheritDesugar {
 
 		// val/var ctor params become stored fields initialized from the super-args.
 		val vInjectedProps = inParent.ctorParams.filter { it.isVal || it.isVar }.map { vCp ->
-			PropDecl(vCp.name, vCp.type, vParamValue[vCp.name], mutable = vCp.isVar, isPrivate = vCp.isPrivate)
+			PropDecl(vCp.name, substT(vCp.type), vParamValue[vCp.name], mutable = vCp.isVar, isPrivate = vCp.isPrivate)
 		}
 		// Plain (forwarding) parent ctor params have no storage — references to them
 		// inside the parent's body-prop initializers and init blocks are substituted
@@ -198,7 +207,8 @@ object InheritDesugar {
 		val vForwardSubst = inParent.ctorParams.filter { !it.isVal && !it.isVar }
 			.associate { it.name to vParamValue[it.name]!! }
 		val vInjectedBodyProps = inParent.members.filterIsInstance<PropDecl>().map { vP ->
-			vP.copy(init = vP.init?.let { substituteNames(it, vForwardSubst) })
+			vP.copy(type = vP.type?.let { substT(it) },
+				init = vP.init?.let { substTypesInExpr(substituteNames(it, vForwardSubst), vTypeSubst) })
 		}
 
 		// Parent concrete methods not overridden by the child, copied override-marked.
@@ -217,7 +227,7 @@ object InheritDesugar {
 				continue
 			}
 			if (vM.body == null) continue        // abstract — enforced via the interface (E100)
-			vInheritedMethods += vM.copy(isOverride = !vM.isPrivate, isOpen = vM.isOpen)
+			vInheritedMethods += substTypesInFun(vM.copy(isOverride = !vM.isPrivate, isOpen = vM.isOpen), vTypeSubst)
 		}
 
 		// super.method() / super.prop support: each super-called parent method gets a
@@ -236,7 +246,7 @@ object InheritDesugar {
 		val vSuperCopies = vSuperCalled.map { vN ->
 			val vPm = inParent.members.filterIsInstance<FunDecl>().find { it.name == vN && it.body != null }
 				?: error("Class '$vChildName': super.$vN — '${inParent.name}' has no concrete method '$vN'")
-			vPm.copy(name = "$vN\$super\$${inParent.name}", isPrivate = true, isOverride = false, isOpen = false)
+			substTypesInFun(vPm.copy(name = "$vN\$super\$${inParent.name}", isPrivate = true, isOverride = false, isOpen = false), vTypeSubst)
 		}
 		fun rewriteSuperInDecl(inD: Decl): Decl = when (inD) {
 			is FunDecl  -> inD.copy(body = inD.body?.let { rewriteSuperBlock(it, inParent.name) })
@@ -247,7 +257,7 @@ object InheritDesugar {
 		val vOwnInits   = inChild.initBlocks.map { rewriteSuperBlock(it, inParent.name) }
 
 		val vParentInits = inParent.initBlocks.map { vB ->
-			Block(vB.stmts.map { substituteNamesInStmt(it, vForwardSubst) })
+			Block(vB.stmts.map { substTypesInStmt(substituteNamesInStmt(it, vForwardSubst), vTypeSubst) })
 		}
 		return inChild.copy(
 			members = vInjectedProps + vInjectedBodyProps + vInheritedMethods + vSuperCopies + vOwnMembers,
@@ -296,6 +306,75 @@ object InheritDesugar {
 	}
 
 	// ==================
+	// MARK: Type substitution (generic parent type params → super-type arguments)
+	// ==================
+
+	private fun substTypeRef(inT: TypeRef, inMap: Map<String, TypeRef>): TypeRef {
+		if (inMap.isEmpty()) return inT
+		val vDirect = inMap[inT.name]
+		if (vDirect != null && inT.typeArgs.isEmpty() && inT.funcParams == null) {
+			// Keep use-site nullability / annotations (e.g. `T?` with T→Int → Int?).
+			return vDirect.copy(nullable = vDirect.nullable || inT.nullable,
+				annotations = vDirect.annotations + inT.annotations)
+		}
+		return inT.copy(
+			typeArgs = inT.typeArgs.map { substTypeRef(it, inMap) },
+			funcParams = inT.funcParams?.map { substTypeRef(it, inMap) },
+			funcReturn = inT.funcReturn?.let { substTypeRef(it, inMap) },
+			funcReceiver = inT.funcReceiver?.let { substTypeRef(it, inMap) })
+	}
+
+	/* Apply the type substitution to type refs embedded in expressions
+	(casts, is-checks, explicit call type args, lambda param annotations). */
+	private fun substTypesInExpr(inE: Expr, inMap: Map<String, TypeRef>): Expr {
+		if (inMap.isEmpty()) return inE
+		return mapExpr(inE) { vE ->
+			when (vE) {
+				is CastExpr    -> CastExpr(vE.expr, substTypeRef(vE.type, inMap), vE.safe)
+				is IsCheckExpr -> IsCheckExpr(vE.expr, substTypeRef(vE.type, inMap), vE.negated)
+				is CallExpr    -> if (vE.typeArgs.isEmpty()) vE
+					else CallExpr(vE.callee, vE.args, vE.typeArgs.map { substTypeRef(it, inMap) })
+				is LambdaExpr  -> if (vE.paramTypes.all { it == null }) vE
+					else vE.copy(paramTypes = vE.paramTypes.map { it?.let { vT -> substTypeRef(vT, inMap) } })
+				else -> vE
+			}
+		}
+	}
+
+	private fun substTypesInStmt(inS: Stmt, inMap: Map<String, TypeRef>): Stmt {
+		if (inMap.isEmpty()) return inS
+		val vMapped = mapStmt(inS) { vE ->
+			when (vE) {
+				is CastExpr    -> CastExpr(vE.expr, substTypeRef(vE.type, inMap), vE.safe)
+				is IsCheckExpr -> IsCheckExpr(vE.expr, substTypeRef(vE.type, inMap), vE.negated)
+				is CallExpr    -> if (vE.typeArgs.isEmpty()) vE
+					else CallExpr(vE.callee, vE.args, vE.typeArgs.map { substTypeRef(it, inMap) })
+				is LambdaExpr  -> if (vE.paramTypes.all { it == null }) vE
+					else vE.copy(paramTypes = vE.paramTypes.map { it?.let { vT -> substTypeRef(vT, inMap) } })
+				else -> vE
+			}
+		}
+		return when (vMapped) {
+			is VarDeclStmt -> vMapped.copy(type = vMapped.type?.let { substTypeRef(it, inMap) })
+			else -> vMapped
+		}
+	}
+
+	/* Apply the type substitution to a copied method: signature + body, skipping
+	the method's OWN type parameters (they shadow the parent's). */
+	private fun substTypesInFun(inF: FunDecl, inMap: Map<String, TypeRef>): FunDecl {
+		if (inMap.isEmpty()) return inF
+		val vEffective = inMap.filterKeys { it !in inF.typeParams }
+		if (vEffective.isEmpty()) return inF
+		return inF.copy(
+			params = inF.params.map { it.copy(type = substTypeRef(it.type, vEffective),
+				default = it.default?.let { vD -> substTypesInExpr(vD, vEffective) }) },
+			returnType = inF.returnType?.let { substTypeRef(it, vEffective) },
+			receiver = inF.receiver?.let { substTypeRef(it, vEffective) },
+			body = inF.body?.let { vB -> Block(vB.stmts.map { substTypesInStmt(it, vEffective) }) })
+	}
+
+	// ==================
 	// MARK: Name substitution (forwarding ctor params → super-arg expressions)
 	// ==================
 
@@ -329,6 +408,7 @@ object InheritDesugar {
 			name = inDecl.name,
 			methods = vMethods.distinctBy { it.name to it.params.size },
 			properties = vProps.distinctBy { it.name },
+			typeParams = inDecl.typeParams,
 			superInterfaces = inDecl.superInterfaces,
 			isSealed = inDecl.isSealed,
 			annotations = inDecl.annotations.filter { it.name != "RequireFree" }
@@ -346,7 +426,10 @@ object InheritDesugar {
 			ctorParams = inDecl.ctorParams,
 			members = vMembers,
 			initBlocks = inDecl.initBlocks,
-			superInterfaces = listOf(TypeRef(inDecl.name)),
+			// A generic open class keeps its type params: Box$Impl<T> : Box<T>.
+			superInterfaces = listOf(TypeRef(inDecl.name,
+				typeArgs = inDecl.typeParams.map { TypeRef(it) })),
+			typeParams = inDecl.typeParams,
 			secondaryCtors = inDecl.secondaryCtors,
 			annotations = inDecl.annotations,
 			isInternal = inDecl.isInternal

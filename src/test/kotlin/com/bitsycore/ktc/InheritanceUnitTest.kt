@@ -188,6 +188,34 @@ class InheritanceUnitTest : TranspilerTestBase() {
 		""", "read-only")
 	}
 
+	@Test fun genericParentClass() {
+		val r = transpile("""
+			package test
+			abstract class Box<T>(val value: T) {
+				abstract fun describe(): Int
+				fun unwrap(): T = value
+			}
+			class IntBox(v: Int) : Box<Int>(v) {
+				override fun describe(): Int = value * 2
+			}
+			fun main() {
+				val b: Box<Int> = IntBox(3)
+				println(b.describe())
+			}
+		""")
+		// The parent view monomorphizes; the child stores the substituted field type.
+		assertTrue(r.source.contains("test_IntBox_as_Box_Int") || r.header.contains("test_IntBox_as_Box_Int"),
+			"IntBox implements the monomorphized Box_Int view")
+		assertTrue(r.source.contains("test_IntBox_unwrap"), "generic method copied with T→Int")
+		// Wrong arity is refused.
+		transpileExpectError("""
+			package test
+			open class Box<T>(val value: T)
+			class Bad(v: Int) : Box(v)
+			fun main() {}
+		""", "type argument")
+	}
+
 	@Test fun sealedClassWhenExhaustive() {
 		val r = transpile("""
 			package test

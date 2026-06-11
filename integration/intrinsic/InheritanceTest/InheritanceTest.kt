@@ -87,6 +87,26 @@ class DoublingPlus(base: Int) : Doubling(base) {
 }
 
 // ==================
+// MARK: Generic parent classes
+// ==================
+
+abstract class Box<T>(val value: T) {
+    abstract fun describe(): Int
+    fun unwrap(): T = value                     // inherited generic method
+}
+
+class IntBox(v: Int) : Box<Int>(v) {
+    override fun describe(): Int = value * 2
+}
+
+class StrBox(v: String) : Box<String>(v) {
+    override fun describe(): Int = value.length
+}
+
+open class Pair2<T>(val first: T, var second: T)
+class IntPair(a: Int, b: Int) : Pair2<Int>(a, b)
+
+// ==================
 // MARK: Exceptions through class inheritance
 // ==================
 
@@ -169,6 +189,21 @@ fun main() {
     val viaParent: Counter = DoublingPlus(10)
     if (viaParent.next() != 27) fatalError("FAIL virtual super chain ${viaParent.next()}")
     println("super calls: OK")
+
+    // Generic parents: per-T monomorphized fields, inherited generic methods,
+    // polymorphic dispatch through Box<Int>, open generic direct + child.
+    val ib = IntBox(21)
+    if (ib.value != 21 || ib.describe() != 42 || ib.unwrap() != 21) fatalError("FAIL IntBox")
+    val sbx = StrBox("hello")
+    if (sbx.describe() != 5 || sbx.unwrap() != "hello") fatalError("FAIL StrBox")
+    val bx: Box<Int> = IntBox(3)
+    if (bx.describe() != 6 || bx.value != 3) fatalError("FAIL Box<Int> view")
+    val pr = Pair2<Int>(1, 2)
+    if (pr.first != 1 || pr.second != 2) fatalError("FAIL Pair2 direct")
+    val ip = IntPair(7, 8)
+    ip.second = 9
+    if (ip.first != 7 || ip.second != 9) fatalError("FAIL IntPair")
+    println("generic parents: OK")
 
     // Exceptions defined by extending Exception — caught at every level.
     var t = 0

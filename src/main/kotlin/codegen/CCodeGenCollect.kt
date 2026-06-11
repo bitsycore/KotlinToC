@@ -161,6 +161,26 @@ internal fun CCodeGen.collectDecls() {
 	// Sync pkg for nested classes/objects after the current-file pass
 	for ((name, ci) in classes) if ('$' in name) ci.pkg = nestedParentPkg(name)
 	for ((name, oi) in objects) if ('$' in name) oi.pkg = nestedParentPkg(name)
+	// NON-generic classes implementing a generic interface with concrete args
+	// (e.g. IntBox : Box<Int>): store the RESOLVED name so implementor unions /
+	// wrap checks see "Box_Int", not "Box". The monomorphized interface is only
+	// MATERIALIZED in the instances that emit something for it (the implementor's
+	// own file or the base interface's file) — materializing elsewhere would emit
+	// its typedef into a header where the implementor types aren't visible.
+	// Generic classes keep raw names — their refs carry the class's own type
+	// params and are resolved during monomorphization (ScanClasses).
+	for ((vCName, _) in classes) {
+		val vCDecl = allClassDecls[vCName] ?: continue
+		if (vCDecl.typeParams.isNotEmpty()) continue
+		if (vCDecl.superInterfaces.none { it.typeArgs.isNotEmpty() }) continue
+		val vOwnsHere = classes[vCName]?.pkg == prefix
+		classInterfaces[vCName] = vCDecl.superInterfaces.map { vRef ->
+			if (vRef.typeArgs.isNotEmpty() && interfaces[vRef.name]?.typeParams?.isNotEmpty() == true) {
+				if (vOwnsHere || interfaces[vRef.name]?.pkg == prefix) materializeGenericInterface(vRef)
+				resolveIfaceName(vRef)
+			} else vRef.name
+		}
+	}
 	// Index sealed subclasses for `when` exhaustiveness. For each class C, every
 	// supertype that is a sealed class or sealed interface gets C added to its
 	// known-subclass list. Names in superInterfaces may refer to either kind.
@@ -280,7 +300,9 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				val classMethodNames = ci.methods.associateBy { it.name }
 				for (ifaceRef in d.superInterfaces) {
 					val ifaceName = resolveIfaceName(ifaceRef)
-					val iface     = interfaces[ifaceName] ?: continue
+					// Generic ifaces: the monomorphized name may not be materialized at
+					// collect time — fall back to the generic base template (name-based checks).
+					val iface     = interfaces[ifaceName] ?: interfaces[ifaceRef.name] ?: continue
 					for (m in collectAllIfaceMethods(iface)) {
 						val impl = classMethodNames[m.name]
 						when {
@@ -299,7 +321,8 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				// equals/hashCode/toString come implicitly from Any; dispose is KTC-specific.
 				val allIfaceMethodNames = d.superInterfaces.flatMap { ifaceRef ->
 					val ifaceName = resolveIfaceName(ifaceRef)
-					interfaces[ifaceName]?.let { collectAllIfaceMethods(it).map { m -> m.name } } ?: emptyList()
+					(interfaces[ifaceName] ?: interfaces[ifaceRef.name])
+						?.let { collectAllIfaceMethods(it).map { m -> m.name } } ?: emptyList()
 					}.toSet() + setOf("dispose", "hashCode", "equals", "toString")
 				for (m in ci.methods) {
 					if (m.isOverride && m.name !in allIfaceMethodNames) {
