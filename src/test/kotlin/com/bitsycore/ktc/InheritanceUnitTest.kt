@@ -140,6 +140,29 @@ class InheritanceUnitTest : TranspilerTestBase() {
 		""", "missing super-constructor argument")
 	}
 
+	@Test fun namedSuperArgs() {
+		val r = transpile("""
+			package test
+			open class Base(val a: Int, val b: Int = 2, val c: Int = 3)
+			class Child : Base(c = 30, a = 10)
+			fun main() { println(Child().c) }
+		""")
+		// c initialized from the named arg, b from its default.
+		assertTrue(r.source.contains("30"), "named super-arg lands in the field init")
+		transpileExpectError("""
+			package test
+			open class Base(val a: Int, val b: Int)
+			class Child : Base(1, a = 2)
+			fun main() {}
+		""", "already given positionally")
+		transpileExpectError("""
+			package test
+			open class Base(val a: Int)
+			class Child : Base(nope = 2)
+			fun main() {}
+		""", "no constructor parameter named")
+	}
+
 	@Test fun sealedClassWhenExhaustive() {
 		val r = transpile("""
 			package test

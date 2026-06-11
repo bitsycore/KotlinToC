@@ -152,11 +152,20 @@ object InheritDesugar {
 	private fun augmentChild(inChild: ClassDecl, inParent: ClassDecl): ClassDecl {
 		val vChildName = inChild.name
 		val vArgs = inChild.superClassArgs ?: emptyList()
-		if (vArgs.any { it.name != null })
-			error("Class '$vChildName': named arguments in the super-constructor call are not supported yet — use positional arguments")
 		if (vArgs.size > inParent.ctorParams.size)
 			error("Class '$vChildName': too many super-constructor arguments for '${inParent.name}' " +
 				"(${vArgs.size} given, ${inParent.ctorParams.size} expected)")
+		// Kotlin rule: positional arguments first, then named ones.
+		val vFirstNamed = vArgs.indexOfFirst { it.name != null }
+		if (vFirstNamed >= 0 && vArgs.drop(vFirstNamed).any { it.name == null })
+			error("Class '$vChildName': positional super-constructor arguments must come before named ones")
+		val vPositional = vArgs.filter { it.name == null }
+		val vNamed      = vArgs.filter { it.name != null }.associate { it.name!! to it.expr }
+		for (vN in vNamed.keys) {
+			val vIdx = inParent.ctorParams.indexOfFirst { it.name == vN }
+			if (vIdx < 0) error("Class '$vChildName': '${inParent.name}' has no constructor parameter named '$vN'")
+			if (vIdx < vPositional.size) error("Class '$vChildName': super-constructor argument '$vN' is already given positionally")
+		}
 
 		// Collision checks: a child must not redeclare an inherited stored property.
 		val vParentStored = inParent.ctorParams.filter { it.isVal || it.isVar }.map { it.name } +
@@ -171,10 +180,10 @@ object InheritDesugar {
 				error("Class '$vChildName': property '${vP.name}' is already declared in '${inParent.name}'")
 		}
 
-		// Each parent ctor param maps to the child's super-call argument (positionally),
-		// falling back to the parameter's default value.
+		// Each parent ctor param maps to the child's super-call argument (positional
+		// first, then named), falling back to the parameter's default value.
 		val vParamValue = inParent.ctorParams.mapIndexed { vI, vCp ->
-			vCp.name to (vArgs.getOrNull(vI)?.expr ?: vCp.default
+			vCp.name to (vPositional.getOrNull(vI)?.expr ?: vNamed[vCp.name] ?: vCp.default
 				?: error("Class '$vChildName': missing super-constructor argument for '${inParent.name}.${vCp.name}' (no default value)"))
 		}.toMap()
 

@@ -22,6 +22,8 @@ class Puppy(name: String) : Dog(name, "unknown") {
 }
 
 class Bird(name: String) : Animal(name, 2)
+class Snake(name: String) : Animal(legs = 0, name = name)   // named super-args
+class Spider(name: String) : Animal(name, legs = 8)         // positional + named mix
 
 // ==================
 // MARK: Abstract class with abstract + concrete members
@@ -87,6 +89,10 @@ fun main() {
     if (d.breed != "lab") fatalError("FAIL dog.breed")
     val b = Bird("tweety")
     if (b.legs != 2) fatalError("FAIL bird.legs super-arg")
+    val sn = Snake("sss")
+    if (sn.legs != 0 || sn.name != "sss") fatalError("FAIL named super-args")
+    val sp = Spider("web")
+    if (sp.legs != 8 || sp.name != "web") fatalError("FAIL mixed super-args")
     println("data inheritance: OK")
 
     // Method inheritance + override, on concrete values.
