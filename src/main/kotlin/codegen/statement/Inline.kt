@@ -138,8 +138,18 @@ internal fun CCodeGen.emitInlineCall(
 				} else {
 				cTypeStr(vResolvedKtc) to vResolvedKtc
 				}
-			val vCVal = genExpr(vExpr)
+			var vCVal = genExpr(vExpr)
 			flushPreStmts(ind)
+			// Concrete class value bound to an interface-typed inline param → as_-wrap
+			// (e.g. Result.failure(exception: Throwable) called with RuntimeException(...)).
+			if (vResolvedKtc is KtcType.User && vResolvedKtc.kind == KtcType.UserKind.Interface) {
+				val vArgBase = (inferExprTypeKtc(vExpr).stripNullable as? KtcType.User)?.baseName
+				if (vArgBase != null && classes.containsKey(vArgBase) && classImplementsIface(vArgBase, vResolvedKtc.baseName)) {
+					val vT = tmp()
+					impl.appendLine("$ind    ${typeFlatName(vArgBase)} $vT = $vCVal;")
+					vCVal = "${typeFlatName(vArgBase)}_as_${vResolvedKtc.baseName}(&$vT)"
+				}
+			}
 			vBoundParams.add(BoundParam(vCTypeName, vParam.name, vCVal, vScopeKtc, vIsValueNullable))
 			}
 		}
@@ -234,8 +244,18 @@ internal fun CCodeGen.tryGenInlineExpr(
 		} else {
 			cTypeStr(resolvedKtc) to resolvedKtc
 		}
-		val cVal  = genExpr(arg.expr)
+		var cVal  = genExpr(arg.expr)
 		flushPreStmts(ind)
+		// Concrete class value bound to an interface-typed inline param → as_-wrap
+		// (e.g. Result.failure(exception: Throwable) called with RuntimeException(...)).
+		if (resolvedKtc is KtcType.User && resolvedKtc.kind == KtcType.UserKind.Interface) {
+			val vArgBase = (inferExprTypeKtc(arg.expr).stripNullable as? KtcType.User)?.baseName
+			if (vArgBase != null && classes.containsKey(vArgBase) && classImplementsIface(vArgBase, resolvedKtc.baseName)) {
+				val vT = tmp()
+				impl.appendLine("$ind${typeFlatName(vArgBase)} $vT = $cVal;")
+				cVal = "${typeFlatName(vArgBase)}_as_${resolvedKtc.baseName}(&$vT)"
+			}
+		}
 		val cName = "\$il${vInlineId}_${param.name}"
 		impl.appendLine("$ind$cTypeName $cName = $cVal;")
 		defineVar(param.name, LocalVar(scopeKtc, cName = cName))
@@ -251,7 +271,7 @@ internal fun CCodeGen.tryGenInlineExpr(
 		val retIfaceType = resolveTypeName(decl.returnType).toInternalStr
 		val exprType = inferExprType(retExpr)
 		if (exprType != null && exprType != retIfaceType && interfaces.containsKey(retIfaceType) &&
-			classes.containsKey(exprType) && classInterfaces[exprType]?.contains(retIfaceType) == true) {
+			classes.containsKey(exprType) && classImplementsIface(exprType, retIfaceType)) {
 			val backing = tmp()
 			impl.appendLine("$ind${typeFlatName(exprType)} $backing = $result;")
 			result = "${typeFlatName(exprType)}_as_$retIfaceType(&$backing)"

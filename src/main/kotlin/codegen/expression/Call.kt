@@ -258,9 +258,14 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                             val vInnerKtc = resolveTypeName(vRetType.copy(nullable = false))
                             optCTypeName(vInnerKtc.toInternalStr)
                         } else cType(vRetType)
+                        // Interface (incl. sealed/@SimpleUnion) return: returns of concrete subclasses
+                        // must as_-wrap into the union (e.g. runCatching's Result.Success<T>).
+                        val vRetIfaceType = resolveTypeName(vRetType).toInternalStr
+                        val vUnionType = if (!vIsRetNullable && interfaces.containsKey(vRetIfaceType)) vRetIfaceType else null
                         impl.appendLine("$currentInd$vCRetType $vResultName;")
                         emitInlineCall(vInlineDecl, e.args, currentInd, false,
-                            resultVar = vResultName, resultOptCType = if (vIsRetNullable) vCRetType else null)
+                            resultVar = vResultName, resultOptCType = if (vIsRetNullable) vCRetType else null,
+                            resultUnionType = vUnionType)
                         vResultName
                     }
             }

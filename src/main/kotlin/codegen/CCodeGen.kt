@@ -202,6 +202,20 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // type is an interface but the body returns a concrete class (enables stack return)
     internal val genericFunConcreteReturn = mutableMapOf<String, String>()
     /** Check if a method on baseType has a nullable receiver declaration. */
+    /** True when class/object [inName] implements interface [inIface] — directly
+       or transitively through interface extends-chains (which is also how class
+       inheritance reaches here after the InheritDesugar pass). */
+    internal fun classImplementsIface(inName: String, inIface: String): Boolean {
+        val vDirect = classInterfaces[inName] ?: return false
+        val vSeen = mutableSetOf<String>()
+        fun walk(inN: String): Boolean {
+            if (inN == inIface) return true
+            if (!vSeen.add(inN)) return false
+            return interfaces[inN]?.superInterfaces?.any { walk(it.name) } == true
+        }
+        return vDirect.any { walk(it) }
+    }
+
     internal fun hasNullableReceiverExt(baseType: String, method: String): Boolean {
         val bareType = baseType.removeSuffix("*")
         // Check non-generic extension functions

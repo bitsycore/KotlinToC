@@ -390,7 +390,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                 // Interface variable initialized from implementing class → auto-wrap
                 if (interfaces.containsKey(t)) {
                     val initType = inferExprType(s.init)
-                    if (initType != null && (classes.containsKey(initType) || objects.containsKey(initType)) && classInterfaces[initType]?.contains(t) == true) {
+                    if (initType != null && (classes.containsKey(initType) || objects.containsKey(initType)) && classImplementsIface(initType, t)) {
                         val isObj = objects.containsKey(initType)
                         val isAnonObj = isObj && initType.startsWith("\$anon_")
                         if (isObj && !isAnonObj && (s.type == null || !s.type.isRefType())) {

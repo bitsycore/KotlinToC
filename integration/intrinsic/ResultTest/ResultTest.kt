@@ -1,13 +1,19 @@
 package ResultTest
 
 fun divide(a: Int, b: Int): Result<Int> {
-	if (b == 0) return Result.Failure<Int>(1)
+	if (b == 0) return Result.Failure<Int>(IllegalArgumentException("division by zero"))
 	return Result.Success<Int>(a / b)
 }
 
 fun safeSqrt(x: Float): Result<Float> {
-	if (x < 0.0f) return Result.Failure<Float>(2)
+	if (x < 0.0f) return Result.Failure<Float>(IllegalArgumentException("negative"))
 	return Result.Success<Float>(x)
+}
+
+// Throwing helper for the runCatching/getOrThrow tests — keeps T = Int
+// (Result<Unit> is unsupported: KTC's Unit is C void, which can't be a field).
+fun failingInt(): Int {
+	error("captured")
 }
 
 fun main() {
@@ -20,13 +26,13 @@ fun main() {
 		println("ok: ${ok.value}")
 	}
 
-	// Basic failure
-	val err: Result<Int> = Result.Failure<Int>(1)
+	// Basic failure — carries the Throwable that produced it
+	val err: Result<Int> = Result.Failure<Int>(RuntimeException("boom"))
 	if (err is Result.Success) fatalError("FAIL: should not be success")
 	if (err !is Result.Failure) fatalError("FAIL: should be failure")
 	if (err is Result.Failure) {
-		if (err.errorCode != 1) fatalError("FAIL: errorCode should be 1")
-		println("err: ${err.errorCode}")
+		if (err.exception.message != "boom") fatalError("FAIL: exception message")
+		println("err: ${err.exception.message}")
 	}
 
 	// getOrDefault via smart-cast
@@ -44,7 +50,7 @@ fun main() {
 		println("divide: ${d1.value}")
 	}
 	if (d2 is Result.Failure) {
-		println("divide err: ${d2.errorCode}")
+		println("divide err: ${d2.exception.message}")
 	}
 
 	// Function returning Result<Float>
@@ -65,14 +71,14 @@ fun main() {
 
 	// Companion factory methods
 	val fc1 = Result.success<Int>(99)
-	val fc2 = Result.failure<Int>(7)
+	val fc2 = Result.failure<Int>(IllegalStateException("nope"))
 	if (fc1 is Result.Success) {
 		println("companion success: ${fc1.value}")
 	} else {
 		fatalError("FAIL: companion success")
 	}
 	if (fc2 is Result.Failure) {
-		println("companion failure: ${fc2.errorCode}")
+		println("companion failure: ${fc2.exception.message}")
 	} else {
 		fatalError("FAIL: companion failure")
 	}
@@ -84,18 +90,49 @@ fun main() {
 	if (!err.isFailure) fatalError("FAIL: err.isFailure")
 	println("isSuccess/isFailure: ok")
 
-	// getOrNull / errorCodeOrNull extension functions
+	// getOrNull / exceptionOrNull extension functions
 	val gn1 = ok.getOrNull()
 	val gn2 = err.getOrNull()
 	if (gn1 == null) fatalError("FAIL: ok.getOrNull should not be null")
 	if (gn2 != null) fatalError("FAIL: err.getOrNull should be null")
 	println("getOrNull: $gn1")
 
-	val ec1 = ok.errorCodeOrNull()
-	val ec2 = err.errorCodeOrNull()
-	if (ec1 != null) fatalError("FAIL: ok.errorCodeOrNull should be null")
-	if (ec2 == null) fatalError("FAIL: err.errorCodeOrNull should not be null")
-	println("errorCodeOrNull: $ec2")
+	val ex1 = ok.exceptionOrNull()
+	val ex2 = err.exceptionOrNull()
+	if (ex1 != null) fatalError("FAIL: ok.exceptionOrNull should be null")
+	if (ex2 == null) fatalError("FAIL: err.exceptionOrNull should not be null")
+	println("exceptionOrNull: ok")
+
+	// getOrDefault extension
+	if (ok.getOrDefault(-5) != 42) fatalError("FAIL: getOrDefault success")
+	if (err.getOrDefault(-5) != -5) fatalError("FAIL: getOrDefault failure")
+	println("getOrDefault ext: ok")
+
+	// runCatching — success path
+	val rc1 = runCatching { 6 * 7 }
+	if (rc1 !is Result.Success) fatalError("FAIL: runCatching success")
+	if (rc1.getOrDefault(0) != 42) fatalError("FAIL: runCatching value")
+	println("runCatching success: ok")
+
+	// runCatching — a thrown exception lands in Failure
+	val rc2 = runCatching { "not a number".toInt() }
+	if (rc2 !is Result.Failure) fatalError("FAIL: runCatching failure")
+	val rcEx = rc2.exceptionOrNull()
+	if (rcEx == null) fatalError("FAIL: runCatching exception missing")
+	println("runCatching failure: ${rcEx.message}")
+
+	// getOrThrow — rethrows the captured exception, catchable by its class
+	if (runCatching { 5 }.getOrThrow() != 5) fatalError("FAIL: getOrThrow success")
+	var caught = 0
+	try {
+		val unused = runCatching { failingInt() }.getOrThrow()
+		fatalError("FAIL: getOrThrow should have thrown $unused")
+	} catch (e: IllegalStateException) {
+		if (e.message != "captured") fatalError("FAIL: getOrThrow message")
+		caught = 1
+	}
+	if (caught != 1) fatalError("FAIL: getOrThrow not caught")
+	println("getOrThrow: ok")
 
 	println("done")
 }

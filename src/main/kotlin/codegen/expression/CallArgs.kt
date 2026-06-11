@@ -307,7 +307,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val ifaceName2 = paramType.removeSuffix("?")
 						val needsIfaceConv = interfaces.containsKey(ifaceName2)
 							&& classes.containsKey(argVarKtc.inner.toInternalStr)
-							&& classInterfaces[argVarKtc.inner.toInternalStr]?.contains(ifaceName2) == true
+							&& classImplementsIface(argVarKtc.inner.toInternalStr, ifaceName2)
 						nullableIfaceCast(expr, argVarKtc.inner.toInternalStr, if (needsIfaceConv) ifaceName2 else null)
 						} else {
 						// Check if needs as_Iface conversion for class→interface
@@ -317,7 +317,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						val baseArg    = (argKtcCore as? KtcType.User)?.baseName ?: argKtcCore?.toInternalStr
 						val isIfImpl   = baseArg != null && interfaces.containsKey(ifaceName)
 							&& (classes.containsKey(baseArg) || objects.containsKey(baseArg))
-							&& classInterfaces[baseArg]?.contains(ifaceName) == true
+							&& classImplementsIface(baseArg, ifaceName)
 						val valExpr = if (isIfImpl) {
 							if (argKtcCore is KtcType.Ptr || objects.containsKey(baseArg)) "${typeFlatName(baseArg)}_as_$ifaceName($expr)"
 							else "${typeFlatName(baseArg)}_as_$ifaceName(&$expr)"
@@ -332,10 +332,20 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 				val baseArgType = argKtcCore?.let {
 					if (it is KtcType.User) it.baseName else it.toInternalStr
 					}
-				val isClassImpl = baseArgType != null && classes.containsKey(baseArgType) && classInterfaces[baseArgType]?.contains(paramType) == true
-				val isObjImpl   = baseArgType != null && objects.containsKey(baseArgType) && classInterfaces[baseArgType]?.contains(paramType) == true
+				val isClassImpl = baseArgType != null && classes.containsKey(baseArgType) && classImplementsIface(baseArgType, paramType)
+				val isObjImpl   = baseArgType != null && objects.containsKey(baseArgType) && classImplementsIface(baseArgType, paramType)
 				parts += if (isClassImpl || isObjImpl) {
-					val vRef = if (argKtcCore is KtcType.Ptr) expr else "&$expr"
+					val vRef = when {
+						argKtcCore is KtcType.Ptr                    -> expr
+						isObjImpl                                    -> "&$expr"   // object singletons are global lvalues
+						arg.expr is NameExpr || arg.expr is ThisExpr -> "&$expr"
+						else -> {
+							// class rvalue (e.g. a ctor call) — hoist to a temp before taking its address
+							val vT = tmp()
+							preStmts += "${typeFlatName(baseArgType!!)} $vT = $expr;"
+							"&$vT"
+						}
+					}
 					"${typeFlatName(baseArgType)}_as_$paramType($vRef)"
 					} else {
 					expr

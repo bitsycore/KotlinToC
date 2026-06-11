@@ -61,7 +61,11 @@ internal fun CCodeGen.scanExprWithSubst(e: Expr?, subst: Map<String, String>): B
 	return when (e) {
 		is CallExpr -> {
 			var found = false
-			val name = (e.callee as? NameExpr)?.name
+			// Nested generic class ctor (Result.Failure<T>(...)) — resolve to "Outer$Inner".
+			val vNested = (e.callee as? DotExpr)?.let { vC ->
+				(vC.obj as? NameExpr)?.name?.let { vOuter -> "$vOuter\$${vC.name}" }
+			}?.takeIf { classes.containsKey(it) || genericClassDecls.containsKey(it) }
+			val name = (e.callee as? NameExpr)?.name ?: vNested
 			// Constructor call to generic class WITH explicit type args: ArrayList<T>(...) → ArrayList_Int
 			if (name != null && classes.containsKey(name) && classes[name]!!.isGeneric && e.typeArgs.isNotEmpty()) {
 				val resolvedArgs = e.typeArgs.map { subst[it.name] ?: it.name }

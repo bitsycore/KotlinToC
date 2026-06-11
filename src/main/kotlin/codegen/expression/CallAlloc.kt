@@ -230,7 +230,13 @@ internal fun CCodeGen.genCtorCallOrNull(
 			if (vSub.nullable) "${resolveTypeNameStr(vSub)}?" else resolveTypeNameStr(vSub)
 			}
 		val vMangled = mangledGenericName(vResolvedName, vResolvedTypeArgs)
-		val vCi      = classes[vMangled] ?: error("Generic class '$vMangled' not materialized (typeSubst=$typeSubst)")
+		// Materialize on demand — an instantiation first reached through an inline-body
+		// expansion (e.g. runCatching's Result.Failure<T>) may not have been pre-scanned.
+		val vCi = classes[vMangled] ?: run {
+			recordGenericInstantiation(vResolvedName, vResolvedTypeArgs)
+			materializeGenericInstantiations()
+			classes[vMangled] ?: error("Generic class '$vMangled' not materialized (typeSubst=$typeSubst)")
+		}
 		val vTplDecl = genericClassDecls[vResolvedName]
 		val vAllParams    = vCi.allCtorParams()
 		val vCtorParams   = vAllParams.map { Param(it.name, it.typeRef) }

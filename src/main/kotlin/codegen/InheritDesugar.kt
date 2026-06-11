@@ -195,7 +195,8 @@ object InheritDesugar {
 		for (vM in inParent.members.filterIsInstance<FunDecl>()) {
 			val vOverride = overriddenBy(vM)
 			if (vOverride != null) {
-				if (!vM.isOpen && !vM.isAbstract)
+				// An override is itself open for further overriding (Kotlin semantics).
+				if (!vM.isOpen && !vM.isAbstract && !vM.isOverride)
 					error("Class '$vChildName': '${vM.name}' in '${inParent.name}' is final — mark it 'open' (or 'abstract') to override it")
 				if (!vOverride.isOverride)
 					error("Class '$vChildName': '${vOverride.name}' overrides '${inParent.name}.${vM.name}' and must be marked 'override'")

@@ -305,7 +305,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                     else if (retUnion != null) {
                         val exprType = inferExprType(s.value)
                         if (exprType != null && exprType != retUnion && classes.containsKey(exprType) &&
-                            classInterfaces[exprType]?.contains(retUnion) == true) {
+                            classImplementsIface(exprType, retUnion)) {
                             val backing = tmp()
                             impl.appendLine("$ind${typeFlatName(exprType)} $backing = $expr;")
                             impl.appendLine("$ind$retVar = ${typeFlatName(exprType)}_as_$retUnion(&$backing);")
@@ -446,7 +446,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 val retIface = currentFnReturnType
                 if (retIface.isNotEmpty() && interfaces.containsKey(retIface)
                     && exprType != null && (classes.containsKey(exprType) || objects.containsKey(exprType))
-                    && classInterfaces[exprType]?.contains(retIface) == true
+                    && classImplementsIface(exprType, retIface)
                 ) {
                     val cExprType = typeFlatName(exprType)
                     val cIface = typeFlatName(retIface)

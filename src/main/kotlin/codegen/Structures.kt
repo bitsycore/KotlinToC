@@ -107,13 +107,14 @@ internal data class ClassInfo(
     val storedProps: List<Pair<String, TypeRef>> get() = properties.filter { it.getter == null }.map { it.name to it.typeRef }
 
     /* Stored props that participate in structural equals AND hashCode.
-       Interface-Ref fields are excluded: equals can't compare them by value and
-       hashing a ktc_IfacePtr struct as an integer is invalid C. Both Any-protocol
+       Interface-typed fields are excluded — both Ref<Iface> AND bare fat values
+       (e.g. Result.Failure's `exception: Throwable`): equals can't compare them
+       by value and hashing the struct as an integer is invalid C. Both Any-protocol
        emitters MUST iterate this same set, or equals/hashCode desync (broken contract). */
     fun hashEqProps(inInterfaceNames: Set<String>): List<Pair<String, TypeRef>> =
         storedProps.filter { (_, type) ->
             val innerName = if (type.name == "Ref" && type.typeArgs.isNotEmpty()) type.typeArgs[0].name else type.name
-            !(type.isRefType() && innerName in inInterfaceNames)
+            innerName !in inInterfaceNames
             }
 
     /** names of private properties */
