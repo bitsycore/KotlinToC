@@ -106,8 +106,8 @@ class InheritanceUnitTest : TranspilerTestBase() {
 		""", "already a stored property")
 	}
 
-	@Test fun superMethodCallRefused() {
-		transpileExpectError("""
+	@Test fun superMethodCallLowersToParentCopy() {
+		val r = transpile("""
 			package test
 			open class Base {
 				open fun work(): Int = 1
@@ -115,8 +115,20 @@ class InheritanceUnitTest : TranspilerTestBase() {
 			class Child : Base() {
 				override fun work(): Int = super.work() + 1
 			}
+			fun main() { println(Child().work()) }
+		""")
+		// super.work() rewrites to a private level-qualified copy of Base's body.
+		assertTrue(r.source.contains("work\$super\$Base"), "super call targets the parent's copied body")
+	}
+
+	@Test fun superWithoutParentRefused() {
+		transpileExpectError("""
+			package test
+			class Lonely {
+				fun work(): Int = super.work() + 1
+			}
 			fun main() {}
-		""", "super")
+		""", "no parent class")
 	}
 
 	@Test fun missingSuperArgWithoutDefaultRefused() {

@@ -81,7 +81,7 @@ Class hierarchies compile down to the interface machinery via a whole-program AS
 - `class C(x: Int) : P(args)` implements interface `P` and is **augmented**: P's stored ctor props become C fields initialized from the super-call args (or P's param defaults), P's body props + concrete method bodies (override-marked) + init blocks are copied in. Chains flatten transitively. Forwarding (non-val) parent ctor params are substituted by the child's super-arg expressions inside copied initializers/init blocks (an arg referenced N times evaluates N times — keep super-args simple).
 - Method copying is monomorphization-style — virtual dispatch is correct even for parent bodies calling open methods (copied bodies resolve against the child). `override fun` is itself open for further overrides (Kotlin semantics); overriding a non-open method is refused.
 - `class C : P` (no parens) still means "implement the interface directly" — provide `override val` storage yourself. Both styles coexist.
-- Sealed classes get `when` exhaustiveness like sealed interfaces. Extending a final class, redeclaring an inherited stored prop, generic parents, named super-args, and `super.method()` calls are refused with clear errors (v1).
+- Sealed classes get `when` exhaustiveness like sealed interfaces. `super.method()` calls lower to private level-qualified copies of the parent body (`work$super$Animal`) so multi-level chains stay correct; `super.prop` collapses to `this.prop`. Extending a final class, redeclaring an inherited stored prop, generic parents, and named super-args are refused with clear errors.
 - Through a parent-typed (fat) value, inherited `var` props are read-only (vtable getters only); write through the concrete type.
 
 ## Exceptions (try/catch/finally/throw)

@@ -50,11 +50,10 @@ object InheritDesugar {
 			for (vDecl in vFile.decls) if (vDecl is ClassDecl) vClasses[vDecl.name] = vDecl
 		}
 		val vExtendable = vClasses.filterValues { it.isOpen || it.isAbstract || it.isSealed }
-		// Nothing to do for programs without class hierarchies.
+		validate(vClasses, vExtendable)
+		// Nothing left to do for programs without class hierarchies.
 		val vHasChildren = vClasses.values.any { it.superClassName != null }
 		if (vExtendable.isEmpty() && !vHasChildren) return inFiles
-
-		validate(vClasses, vExtendable)
 
 		// 2. Augment classes parent-first (children copy from the augmented parent).
 		val vAugmented = mutableMapOf<String, ClassDecl>()
@@ -117,6 +116,12 @@ object InheritDesugar {
 			if (vName !in inExtendable) {
 				vDecl.members.filterIsInstance<FunDecl>().firstOrNull { it.isAbstract }?.let {
 					error("Class '$vName': abstract function '${it.name}' requires an abstract class")
+				}
+			}
+			// `super.` only makes sense with a class parent.
+			if (vDecl.superClassName == null || inClasses[vDecl.superClassName] == null) {
+				vDecl.members.filterIsInstance<FunDecl>().firstOrNull { bodyCallsSuper(it.body) }?.let {
+					error("Class '$vName': method '${it.name}' uses 'super.' but the class has no parent class")
 				}
 			}
 			val vParentName = vDecl.superClassName ?: continue
@@ -203,24 +208,82 @@ object InheritDesugar {
 				continue
 			}
 			if (vM.body == null) continue        // abstract — enforced via the interface (E100)
-			if (bodyCallsSuper(vM.body))
-				error("Class '${inParent.name}': method '${vM.name}' uses 'super.' — super calls are not supported yet")
 			vInheritedMethods += vM.copy(isOverride = !vM.isPrivate, isOpen = vM.isOpen)
 		}
-		for (vM in vChildMethods) {
-			if (vM.isOverride && bodyCallsSuper(vM.body))
-				error("Class '$vChildName': method '${vM.name}' uses 'super.' — super calls are not supported yet")
+
+		// super.method() / super.prop support: each super-called parent method gets a
+		// private, level-qualified copy (name$super$Parent — multi-level chains stay
+		// distinct), the call rewrites to it, and super.prop collapses to this.prop
+		// (fields are merged; shadowing is refused above).
+		val vSuperCalled = mutableSetOf<String>()
+		for (vM in vChildMethods) walkBlockOrNull(vM.body) { vE ->
+			if (vE is CallExpr && vE.callee is DotExpr && ((vE.callee as DotExpr).obj as? NameExpr)?.name == "super")
+				vSuperCalled += (vE.callee as DotExpr).name
 		}
+		for (vB in inChild.initBlocks) walkBlock(vB) { vE ->
+			if (vE is CallExpr && vE.callee is DotExpr && ((vE.callee as DotExpr).obj as? NameExpr)?.name == "super")
+				vSuperCalled += (vE.callee as DotExpr).name
+		}
+		val vSuperCopies = vSuperCalled.map { vN ->
+			val vPm = inParent.members.filterIsInstance<FunDecl>().find { it.name == vN && it.body != null }
+				?: error("Class '$vChildName': super.$vN — '${inParent.name}' has no concrete method '$vN'")
+			vPm.copy(name = "$vN\$super\$${inParent.name}", isPrivate = true, isOverride = false, isOpen = false)
+		}
+		fun rewriteSuperInDecl(inD: Decl): Decl = when (inD) {
+			is FunDecl  -> inD.copy(body = inD.body?.let { rewriteSuperBlock(it, inParent.name) })
+			is PropDecl -> inD.copy(init = inD.init?.let { rewriteSuperExpr(it, inParent.name) })
+			else        -> inD
+		}
+		val vOwnMembers = inChild.members.map { rewriteSuperInDecl(it) }
+		val vOwnInits   = inChild.initBlocks.map { rewriteSuperBlock(it, inParent.name) }
 
 		val vParentInits = inParent.initBlocks.map { vB ->
 			Block(vB.stmts.map { substituteNamesInStmt(it, vForwardSubst) })
 		}
 		return inChild.copy(
-			members = vInjectedProps + vInjectedBodyProps + vInheritedMethods + inChild.members,
-			initBlocks = vParentInits + inChild.initBlocks
+			members = vInjectedProps + vInjectedBodyProps + vInheritedMethods + vSuperCopies + vOwnMembers,
+			initBlocks = vParentInits + vOwnInits
 			// superInterfaces unchanged: the parent NAME stays in the list and now
 			// resolves to the synthesized interface.
 		)
+	}
+
+	/* Rewrite `super.m(args)` → `this.m$super$Parent(args)` and `super.x` → `this.x`.
+	Two bottom-up passes: the first marks super receivers and retargets calls (the
+	callee is rebuilt before its CallExpr, so a marker keeps the super-ness visible);
+	the second collapses remaining (non-call) super property accesses. */
+	private fun rewriteSuperExpr(inE: Expr, inParentName: String): Expr {
+		val vMarked = mapExpr(inE) { vE ->
+			when {
+				vE is DotExpr && (vE.obj as? NameExpr)?.name == "super" ->
+					DotExpr(NameExpr("\$superRecv"), vE.name)
+				vE is CallExpr && vE.callee is DotExpr && ((vE.callee as DotExpr).obj as? NameExpr)?.name == "\$superRecv" ->
+					CallExpr(DotExpr(ThisExpr, "${(vE.callee as DotExpr).name}\$super\$$inParentName"), vE.args, vE.typeArgs)
+				else -> vE
+			}
+		}
+		return mapExpr(vMarked) { vE ->
+			if (vE is DotExpr && (vE.obj as? NameExpr)?.name == "\$superRecv") DotExpr(ThisExpr, vE.name) else vE
+		}
+	}
+
+	private fun rewriteSuperBlock(inB: Block, inParentName: String): Block =
+		Block(inB.stmts.map { vS ->
+			mapStmt(mapStmt(vS) { vE ->
+				when {
+					vE is DotExpr && (vE.obj as? NameExpr)?.name == "super" ->
+						DotExpr(NameExpr("\$superRecv"), vE.name)
+					vE is CallExpr && vE.callee is DotExpr && ((vE.callee as DotExpr).obj as? NameExpr)?.name == "\$superRecv" ->
+						CallExpr(DotExpr(ThisExpr, "${(vE.callee as DotExpr).name}\$super\$$inParentName"), vE.args, vE.typeArgs)
+					else -> vE
+				}
+			}) { vE ->
+				if (vE is DotExpr && (vE.obj as? NameExpr)?.name == "\$superRecv") DotExpr(ThisExpr, vE.name) else vE
+			}
+		})
+
+	private fun walkBlockOrNull(inB: Block?, inVisit: (Expr) -> Unit) {
+		if (inB != null) walkBlock(inB, inVisit)
 	}
 
 	// ==================

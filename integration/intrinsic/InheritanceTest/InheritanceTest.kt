@@ -56,6 +56,23 @@ fun nodeWeight(n: Node): Int = when (n) {
 }
 
 // ==================
+// MARK: super calls
+// ==================
+
+open class Counter(val base: Int) {
+    open fun next(): Int = base + 1
+}
+
+open class Doubling(base: Int) : Counter(base) {
+    override fun next(): Int = super.next() * 2
+}
+
+class DoublingPlus(base: Int) : Doubling(base) {
+    override fun next(): Int = super.next() + 5      // chains: ((base+1)*2)+5
+    fun baseViaSuper(): Int = super.base             // super.prop → this.prop
+}
+
+// ==================
 // MARK: Exceptions through class inheritance
 // ==================
 
@@ -114,6 +131,15 @@ fun main() {
     if (nodeWeight(Leaf(1, 7)) != 7) fatalError("FAIL leaf weight")
     if (nodeWeight(Branch(2, 3)) != 300) fatalError("FAIL branch weight")
     println("sealed when: OK")
+
+    // super.method() through multi-level chains + super.prop.
+    if (Doubling(3).next() != 8) fatalError("FAIL Doubling.next")
+    val dp = DoublingPlus(3)
+    if (dp.next() != 13) fatalError("FAIL DoublingPlus.next ${dp.next()}")
+    if (dp.baseViaSuper() != 3) fatalError("FAIL super.prop")
+    val viaParent: Counter = DoublingPlus(10)
+    if (viaParent.next() != 27) fatalError("FAIL virtual super chain ${viaParent.next()}")
+    println("super calls: OK")
 
     // Exceptions defined by extending Exception — caught at every level.
     var t = 0
