@@ -557,6 +557,9 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // @RequireFree allocator objects/classes — W018 fires when an allocator call
     // through one of these is discarded as an expression statement (guaranteed leak).
     internal val requireFreeAllocators = mutableSetOf<String>()
+    internal val mustUseReturnTypes = mutableSetOf<String>()   // types annotated @MustUseReturnValue (W036 on discarded results)
+    internal val mustUseFuns        = mutableSetOf<String>()   // funs annotated @MustUseReturnValue
+    internal val ignorableFuns      = mutableSetOf<String>()   // funs annotated @IgnorableReturnValue (opt-out)
 
     // ── Trampolined array params (pass-by-value copy on stack) ────────
     // Names of array parameters whose data has been copied via alloca+memcpy.

@@ -412,6 +412,28 @@ internal fun CCodeGen.checkExprStmtForLeakOrNoEffect(inExpr: Expr) {
             "the allocation will leak. Bind it to a variable, return it, or free it explicitly.")
         return
     }
+    // W036 — @MustUseReturnValue: a call whose result must not be discarded
+    // (the function itself annotated, or it returns an annotated type like Result).
+    if (inExpr is CallExpr) {
+        val vCalleeName = when (val vC = inExpr.callee) {
+            is NameExpr    -> vC.name
+            is DotExpr     -> vC.name
+            is SafeDotExpr -> vC.name
+            else           -> null
+        }
+        if (vCalleeName != null && vCalleeName !in ignorableFuns) {
+            val vMustUse = vCalleeName in mustUseFuns || run {
+                val vRet = inferExprType(inExpr)?.removeSuffix("?")
+                vRet != null && mustUseReturnTypes.any { vRet == it || vRet.startsWith("${it}_") }
+            }
+            if (vMustUse) {
+                codegenWarning("unused-result",
+                    "Result of '$vCalleeName(...)' is never used (@MustUseReturnValue) — bind it, " +
+                    "return it, or mark the function @IgnorableReturnValue.")
+                return
+            }
+        }
+    }
     if (!hasObservableEffect(inExpr)) {
         codegenWarning("no-effect-expr",
             "Expression statement has no observable effect — the value is computed and discarded.")

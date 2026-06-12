@@ -398,6 +398,23 @@ object ErrorCatalog {
 			""".trimIndent()),
 
 		// ── Warnings ─────────────────────────────────────────────
+		Entry("W036", "Unused @MustUseReturnValue result",
+			"""
+			A call in statement position discards a result that was marked as
+			must-use — either the function itself, or its return TYPE, carries
+			@MustUseReturnValue (ktc.Result is marked, mirroring Kotlin's
+			unused-return-value checker):
+
+			  runCatching { save() }          // W036 — the Result is dropped
+			  reserve(10)                     // W036 if reserve is annotated
+
+			Bind it, return it, or opt the producing function out:
+
+			  val r = runCatching { save() }
+			  @IgnorableReturnValue fun logAndForget(): Result<Unit> = ...
+
+			Suppress with: -Wno-unused-result
+			""".trimIndent()),
 		Entry("W034", "Unit value binding",
 			"""
 			A val/var binds the result of a Unit-returning expression:

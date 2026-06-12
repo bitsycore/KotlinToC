@@ -75,3 +75,27 @@ Usage:
     object Heap : Allocator { ... }
 */
 annotation class RequireFree
+/**
+Mark a function — or a type, covering every function returning it — whose
+result must not be silently discarded. Calling it in statement position
+warns (W036, -Wno-unused-result). `Result` is marked, so a dropped
+`runCatching { ... }` warns like Kotlin's unused-return-value checker.
+
+Usage:
+    @MustUseReturnValue
+    fun reserve(n: Int): Boolean
+
+    @MustUseReturnValue
+    sealed interface Result<T> { ... }
+*/
+annotation class MustUseReturnValue
+
+/**
+Opt a single function out of a @MustUseReturnValue type's check — its result
+is genuinely ignorable.
+
+Usage:
+    @IgnorableReturnValue
+    fun logAndForget(): Result<Unit> = ...
+*/
+annotation class IgnorableReturnValue

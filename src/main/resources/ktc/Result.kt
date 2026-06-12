@@ -9,6 +9,7 @@ package ktc
  *     if (r.isSuccess) println(r.getOrNull())
  *     r.exceptionOrNull()?.let { println(it.message) }
  */
+@MustUseReturnValue
 @SimpleUnion
 sealed interface Result<T> {
 	data class Success<T>(val value: T) : Result<T>

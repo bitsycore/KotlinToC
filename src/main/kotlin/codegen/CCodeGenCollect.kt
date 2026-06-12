@@ -202,6 +202,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 		is ClassDecl -> {
 			if (d.annotations.any { it.name == "DocumentationOnly" }) return
 			if (d.annotations.any { it.name == "RequireFree" }) requireFreeAllocators.add(d.name)
+			if (d.annotations.any { it.name == "MustUseReturnValue" }) mustUseReturnTypes.add(d.name)
 			val vDupCtor = d.ctorParams.groupBy { it.name }.entries.firstOrNull { it.value.size > 1 }?.key
 			if (vDupCtor != null) codegenError("E014", "Duplicate constructor parameter '$vDupCtor' in class '${d.name}'")
 			for (vP in d.ctorParams) validateSizeAnnotation(vP.type)
@@ -414,6 +415,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 		is InterfaceDecl -> {
 			interfaces[d.name] = IfaceInfo(d.name, d.methods, d.properties, d.typeParams, d.superInterfaces, isSealed = d.isSealed)
 			getTypeId(d.name)
+			if (d.annotations.any { it.name == "MustUseReturnValue" }) mustUseReturnTypes.add(d.name)
 			if (d.annotations.any { it.name == "SimpleUnion" }) {
 				if (d.methods.isNotEmpty() || d.properties.isNotEmpty())
 					codegenError("@SimpleUnion interface '${d.name}' must have no methods or properties")
@@ -585,6 +587,8 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 						"valid arity for '${d.name}' is ${vExpected.joinToString(" or ")}.")
 				}
 			}
+			if (d.annotations.any { it.name == "MustUseReturnValue" }) mustUseFuns.add(d.name)
+			if (d.annotations.any { it.name == "IgnorableReturnValue" }) ignorableFuns.add(d.name)
 			val effectiveReturnType = d.returnType ?: d.body?.let { inferBlockType(it)?.let { name -> TypeRef(name) } }
 			when {
 				d.typeParams.isNotEmpty() -> {
