@@ -159,6 +159,7 @@ internal fun CCodeGen.scanExprWithSubst(e: Expr?, subst: Map<String, String>): B
 		is PrefixExpr -> scanExprWithSubst(e.expr, subst)
 		is PostfixExpr -> scanExprWithSubst(e.expr, subst)
 		is NotNullExpr -> scanExprWithSubst(e.expr, subst)
+		is ThrowExpr -> scanExprWithSubst(e.value, subst)
 		is ElvisExpr -> {
 			var f = scanExprWithSubst(e.left, subst)
 			if (scanExprWithSubst(e.right, subst)) f = true

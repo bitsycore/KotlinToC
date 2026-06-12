@@ -179,6 +179,7 @@ internal fun dumpExpr(e: Expr): String = when (e) {
 			}
 		}\""
 	is NullLit       -> "null"
+	is ThrowExpr     -> "throw ${dumpExpr(e.value)}"
 	is NameExpr      -> e.name
 	is ThisExpr      -> "this"
 	is BinExpr       -> "(${dumpExpr(e.left)} ${e.op} ${dumpExpr(e.right)})"

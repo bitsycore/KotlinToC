@@ -3,6 +3,7 @@ package com.bitsycore.ktc.codegen.expression
 import com.bitsycore.ktc.ast.*
 import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.emit.collectAllIfaceMethods
+import com.bitsycore.ktc.codegen.statement.genElvisThrow
 import com.bitsycore.ktc.types.KtcType
 
 /**
@@ -180,7 +181,10 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
     is IfExpr -> genIfExpr(e)
     is WhenExpr -> genWhenExpr(e)
     is NotNullExpr -> genNotNull(e)
+    is ThrowExpr -> codegenError("'throw' as an expression is only supported after '?:' " +
+        "(x ?: throw Exc(...)) — use a throw statement otherwise.")
     is ElvisExpr -> {
+        if (e.right is ThrowExpr) return genElvisThrow(e.left, e.right)
         val lt = inferExprType(e.left)
         val l = genExpr(e.left)
         val rt = inferExprType(e.right)

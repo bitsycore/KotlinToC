@@ -89,6 +89,7 @@ internal fun CCodeGen.inferExprType(e: Expr?): String? = when (e) {
 	is WhenExpr     -> inferWhenExprType(e)
 	is NotNullExpr  -> inferExprType(e.expr)?.removeSuffix("?")
 	is ElvisExpr    -> (inferExprType(e.left) ?: inferExprType(e.right))?.removeSuffix("?")
+	is ThrowExpr    -> "Nothing"
 	is IsCheckExpr  -> "Boolean"
 	is CastExpr     -> if (e.safe) KtcType.Nullable(resolveTypeName(e.type)).toInternalStr else resolveTypeRefStr(e.type)
 	is FunRefExpr -> {

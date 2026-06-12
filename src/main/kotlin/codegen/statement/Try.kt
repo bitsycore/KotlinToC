@@ -258,6 +258,47 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 }
 
 // ==================
+// MARK: throw in expression position (?: throw)
+// ==================
+
+/* Run [inBlock] with `impl` redirected to a buffer; returns the emitted lines.
+Lets statement-emitters (emitThrow) be reused inside expression lowering. */
+private fun CCodeGen.captureImplLines(inBlock: () -> Unit): List<String> {
+	val vBuf = StringBuilder()
+	val vSaved = impl
+	impl = vBuf
+	try { inBlock() } finally { impl = vSaved }
+	return vBuf.lines().filter { it.isNotBlank() }
+}
+
+/* Lower `left ?: throw X(...)` — evaluate left once into a temp, throw on
+null, yield the unwrapped value. The throw lowering lands in preStmts. */
+internal fun CCodeGen.genElvisThrow(inLeft: Expr, inThrow: ThrowExpr): String {
+	val vLKtc = inferExprTypeKtc(inLeft)
+	val vCore = vLKtc.stripNullable
+		?: codegenError("Cannot infer the type of the left operand of '?: throw'")
+	val vL = genExpr(inLeft)
+	val vT = tmp()
+	val vThrowStmt = ThrowStmt(inThrow.value).also { it.line = currentStmtLine }
+	val vThrowLines = captureImplLines { emitThrow(vThrowStmt, "    ") }
+	return if (vLKtc is KtcType.Nullable && isValueNullableKtc(vLKtc)) {
+		// Value-nullable left: Optional struct — unwrap after the null gate.
+		preStmts += "${optCTypeName(vCore.toInternalStr)} $vT = $vL;"
+		preStmts += "if (!KTC_IS_SOME($vT)) {"
+		preStmts += vThrowLines
+		preStmts += "}"
+		"KTC_UNWRAP($vT)"
+	} else {
+		// Pointer-nullable left (Ref<T?>, Ref<Iface>?): NULL gate on the pointer.
+		preStmts += "${cTypeStr(vCore)} $vT = $vL;"
+		preStmts += "if (!($vT)) {"
+		preStmts += vThrowLines
+		preStmts += "}"
+		vT
+	}
+}
+
+// ==================
 // MARK: AST queries
 // ==================
 
@@ -303,6 +344,7 @@ private fun exprReferencesName(e: Expr?, inName: String): Boolean = when (e) {
 	is PrefixExpr      -> exprReferencesName(e.expr, inName)
 	is PostfixExpr     -> exprReferencesName(e.expr, inName)
 	is NotNullExpr     -> exprReferencesName(e.expr, inName)
+	is ThrowExpr       -> exprReferencesName(e.value, inName)
 	is ElvisExpr       -> exprReferencesName(e.left, inName) || exprReferencesName(e.right, inName)
 	is CastExpr        -> exprReferencesName(e.expr, inName)
 	is IsCheckExpr     -> exprReferencesName(e.expr, inName)
@@ -348,6 +390,7 @@ internal fun CCodeGen.bodyContainsTry(inStmts: List<Stmt>, inVisited: MutableSet
 		is PrefixExpr      -> inExpr(e.expr)
 		is PostfixExpr     -> inExpr(e.expr)
 		is NotNullExpr     -> inExpr(e.expr)
+		is ThrowExpr       -> inExpr(e.value)
 		is ElvisExpr       -> inExpr(e.left) || inExpr(e.right)
 		is CastExpr        -> inExpr(e.expr)
 		is IfExpr          -> inExpr(e.cond) || bodyContainsTry(e.then.stmts, inVisited) ||

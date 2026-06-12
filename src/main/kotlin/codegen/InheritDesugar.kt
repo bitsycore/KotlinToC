@@ -520,6 +520,7 @@ object InheritDesugar {
 				}, rwB(vB.body))
 			})
 			is NotNullExpr -> NotNullExpr(rw(inE.expr))
+			is ThrowExpr   -> ThrowExpr(rw(inE.value))
 			is ElvisExpr   -> ElvisExpr(rw(inE.left), rw(inE.right))
 			is IsCheckExpr -> IsCheckExpr(rw(inE.expr), inE.type, inE.negated)
 			is CastExpr    -> CastExpr(rw(inE.expr), inE.type, inE.safe)

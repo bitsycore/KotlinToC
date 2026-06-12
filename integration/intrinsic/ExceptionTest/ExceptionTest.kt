@@ -310,6 +310,25 @@ fun runtimeChecksCatchable(): Int {
     return t   // 111
 }
 
+// `?: throw` — the Kotlin guard idiom; left side evaluated once, throws on null.
+fun findEven(k: Int): Int? {
+    if (k % 2 != 0) return null
+    return k * 10
+}
+fun elvisThrow(): Int {
+    var t = 0
+    val v = findEven(4) ?: throw ParseError("no even", 1)
+    if (v != 40) return -1
+    try {
+        val w = findEven(3) ?: throw ParseError("odd rejected", 3)
+        return -2 - w
+    } catch (e: ParseError) {
+        if (e.message != "odd rejected" || e.pos != 3) return -3
+        t = 1
+    }
+    return t
+}
+
 // Custom payload fields survive the arena round-trip alongside the message.
 fun payloadIntact(): Int {
     try {
@@ -365,6 +384,9 @@ fun main() {
 
     if (runtimeChecksCatchable() != 111) fatalError("FAIL runtimeChecks=${runtimeChecksCatchable()}")
     println("catchable runtime checks: OK")
+
+    if (elvisThrow() != 1) fatalError("FAIL elvisThrow=${elvisThrow()}")
+    println("elvis-throw: OK")
 
     if (loopThrows() != 302)      fatalError("FAIL loopThrows=${loopThrows()}")
     if (bigMessage() != 800)      fatalError("FAIL bigMessage=${bigMessage()}")

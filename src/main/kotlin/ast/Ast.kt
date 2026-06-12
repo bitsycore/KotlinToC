@@ -229,9 +229,13 @@ data class TryStmt(
 ) : Stmt()
 
 /* `throw expr` — expr must be a value of a class implementing Throwable (or a
-caught interface binding). Statement form only; `try`/`throw` as expressions
-are not supported. */
+caught interface binding). */
 data class ThrowStmt(val value: Expr) : Stmt()
+
+/* `throw` in EXPRESSION position — Nothing-typed, supported on the right of
+`?:` (`x ?: throw NotFound(k)`) where it lowers to an if-null-throw statement
+prefix. Other expression positions are refused with a fix-it. */
+data class ThrowExpr(val value: Expr) : Expr()
 
 // ═══════════════════════════ Expressions ═══════════════════════════
 

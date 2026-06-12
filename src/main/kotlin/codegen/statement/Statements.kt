@@ -441,6 +441,7 @@ private fun hasObservableEffect(inExpr: Expr): Boolean = when (inExpr) {
     is PrefixExpr      -> inExpr.op == "++" || inExpr.op == "--" || hasObservableEffect(inExpr.expr)
     is PostfixExpr     -> inExpr.op == "++" || inExpr.op == "--" || hasObservableEffect(inExpr.expr)
     is NotNullExpr     -> true   // !! may throw
+    is ThrowExpr       -> true   // throws
     is IndexExpr       -> hasObservableEffect(inExpr.obj) || hasObservableEffect(inExpr.index)
     is DotExpr         -> hasObservableEffect(inExpr.obj)
     is SafeDotExpr     -> hasObservableEffect(inExpr.obj)

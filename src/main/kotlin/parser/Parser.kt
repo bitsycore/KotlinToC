@@ -1035,6 +1035,8 @@ class Parser(private val tokens: List<Token>) {
     private fun parsePrimary(): Expr {
         skipNL()
         return when {
+            // `throw` in expression position (Nothing-typed) — `x ?: throw NotFound(k)`.
+            at(TokenType.THROW)      -> { advance(); skipNL(); ThrowExpr(parseExpr()) }
             at(TokenType.INT_LIT)    -> {
                 val raw = advance().value
                 val hex = raw.startsWith("0x") || raw.startsWith("0X")
