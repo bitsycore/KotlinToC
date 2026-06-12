@@ -111,5 +111,19 @@ fun main() {
     println("HashMap clone deep-copy OK")
 
     map.dispose()
+    // getValue: Kotlin's throwing accessor (get() stays nullable).
+    val gm = HashMap<Int, Int>(Heap, 8).allocWith(Heap)
+    defer Heap.freeMem(gm)
+    defer gm.dispose()
+    gm.put(1, 11)
+    if (gm.getValue(1) != 11) fatalError("FAIL getValue hit")
+    var gvThrown = 0
+    try {
+        val x = gm.getValue(99)
+        fatalError("FAIL getValue miss $x")
+    } catch (e: NoSuchElementException) { gvThrown = 1 }
+    if (gvThrown != 1) fatalError("FAIL getValue throw")
+    println("getValue OK")
+
     println("done")
 }

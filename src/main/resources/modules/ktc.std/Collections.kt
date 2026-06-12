@@ -9,6 +9,7 @@ class ListIterator<T>(val buf: Ref<Array<T>>, val size: Int) : Iterator<T> {
 	}
 
 	override operator fun next(): T {
+		if (idx >= size) throw NoSuchElementException("Iterator has no next element.")
 		val v = buf[idx]
 		idx = idx + 1
 		return v
@@ -18,6 +19,9 @@ class ListIterator<T>(val buf: Ref<Array<T>>, val size: Int) : Iterator<T> {
 interface List<T> : Cloneable<List<T>> {
 	val size: Int
 	operator fun get(index: Int): T
+	fun first(): T
+	fun last(): T
+	fun isEmpty(): Boolean
 	operator fun contains(value: T): Boolean
 	fun indexOf(value: T): Int
 	operator fun iterator(): ListIterator<T>
@@ -51,11 +55,27 @@ class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : Mutab
         size = size + 1
     }
 
-	override operator fun get(index: Int): T = buf[index]
+	override operator fun get(index: Int): T {
+		if (index < 0 || index >= size) throw IndexOutOfBoundsException("Index $index out of bounds for length $size")
+		return buf[index]
+	}
 
 	override operator fun set(index: Int, value: T) {
+		if (index < 0 || index >= size) throw IndexOutOfBoundsException("Index $index out of bounds for length $size")
 		buf[index] = value
 	}
+
+	override fun first(): T {
+		if (size == 0) throw NoSuchElementException("List is empty.")
+		return buf[0]
+	}
+
+	override fun last(): T {
+		if (size == 0) throw NoSuchElementException("List is empty.")
+		return buf[size - 1]
+	}
+
+	override fun isEmpty(): Boolean = size == 0
 
 	/* Deep clone using this list's OWN allocator. See cloneWith for the details / rationale. */
 	override fun clone(): Ref<ArrayList<T>> = cloneWith(allocator)
@@ -74,6 +94,7 @@ class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : Mutab
 	}
 
 	override fun removeAt(index: Int): T {
+		if (index < 0 || index >= size) throw IndexOutOfBoundsException("Index $index out of bounds for length $size")
 		val removed = buf[index]
 		for (i in index until size - 1) {
 			buf[i] = buf[i + 1]

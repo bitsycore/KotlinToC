@@ -31,6 +31,7 @@ class MapIterator<K, V>(
 interface Map<K, V> : Cloneable<Map<K, V>> {
 	val size: Int
 	operator fun get(key: K): V?
+	fun getValue(key: K): V
 	operator fun containsKey(key: K): Boolean
 	fun isEmpty(): Boolean
 	operator fun iterator(): MapIterator<K, V>
@@ -76,6 +77,14 @@ class HashMap<K, V>(private val allocator: Ref<Allocator>, private var capacity:
 			return null
 		}
 		return vals[idx]
+	}
+
+	/* Kotlin's getValue: the value for [key], or NoSuchElementException when absent
+	   (get() stays the nullable, non-throwing accessor). */
+	override fun getValue(key: K): V {
+		val v = get(key)
+		if (v == null) throw NoSuchElementException("Key is missing in the map.")
+		return v
 	}
 
 	override operator fun containsKey(key: K): Boolean {

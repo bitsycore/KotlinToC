@@ -117,6 +117,35 @@ fun main(args: Array<String>) {
 	println(list.size)
 	if (list.size != 0) fatalError("FAIL size after clear=${list.size}")
 
+	// Typed throws (Kotlin semantics): first/last on empty -> NoSuchElementException,
+	// size-based index guard -> IndexOutOfBoundsException, iterator past the end ->
+	// NoSuchElementException. All catchable.
+	var thrown = 0
+	if (!list.isEmpty()) fatalError("FAIL isEmpty after clear")
+	try {
+		val x = list.first()
+		fatalError("FAIL empty first $x")
+	} catch (e: NoSuchElementException) { thrown += 1 }
+	list.add(7)
+	list.add(8)
+	if (list.first() != 7 || list.last() != 8) fatalError("FAIL first/last")
+	try {
+		val x = list[5]
+		fatalError("FAIL size-guarded get $x")
+	} catch (e: IndexOutOfBoundsException) {
+		if (!e.message.contains("5")) fatalError("FAIL oob message ${e.message}")
+		thrown += 10
+	}
+	val tailIt = list.iterator()
+	tailIt.next()
+	tailIt.next()
+	try {
+		val x = tailIt.next()
+		fatalError("FAIL iterator past end $x")
+	} catch (e: NoSuchElementException) { thrown += 100 }
+	if (thrown != 111) fatalError("FAIL typed throws thrown=$thrown")
+	println("typed throws OK")
+
 	list.dispose()
 	Heap.freeMem(list)
 }
