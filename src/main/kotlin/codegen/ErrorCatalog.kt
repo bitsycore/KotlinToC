@@ -398,6 +398,19 @@ object ErrorCatalog {
 			""".trimIndent()),
 
 		// ── Warnings ─────────────────────────────────────────────
+		Entry("W034", "Unit value binding",
+			"""
+			A val/var binds the result of a Unit-returning expression:
+
+			  val u = save()        // W034 — save(): Unit, u has no useful value
+
+			Kotlin allows it, so KTC accepts it: the expression runs for its side
+			effects and the name becomes the canonical unit value (usable where a
+			Unit value is expected, e.g. a Result<Unit> slot). It is almost always
+			unintended — call the expression without the binding.
+
+			Suppress with: -Wno-unit-binding
+			""".trimIndent()),
 		Entry("W001", "Variable shadows class field",
 			"""
 			A local variable has the same name as a field in the enclosing class,

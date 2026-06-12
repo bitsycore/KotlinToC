@@ -167,15 +167,19 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     }
     val vKtcKtc = inferExprTypeKtc(s.init)
 
-    // Unit/void-valued initializer (e.g. `val r = block()` in an inline body whose lambda body
-    // returns Unit): the RHS lowers to side-effecting statements with no C value. Emit those side
-    // effects and bind the name as a value-less Unit local, so later reads (`return r` in statement
-    // position) resolve to an empty C expression instead of a dangling symbol or `void r = ;`.
-    if (s.init != null && s.type == null && vKtc is KtcType.Void) {
+    // Unit-valued initializer (`val u = doWork()` where doWork(): Unit — Kotlin allows
+    // binding Unit). The RHS is evaluated for its side effects, then the name becomes a
+    // real ktc_Unit local (usable wherever a Unit value is expected, e.g. a generic slot).
+    // Warned: there is no useful value, it's almost always unintended.
+    if (s.init != null && vKtc is KtcType.Void) {
+        codegenWarning("unit-binding",
+            "'${s.name}' binds a Unit result — it has no useful value. Call the expression " +
+            "without the val/var, or suppress with -Wno-unit-binding.")
         val vUnitExpr = genExpr(s.init)
         flushPreStmts(ind)
         if (vUnitExpr.isNotBlank()) impl.appendLine("$ind(void)($vUnitExpr);")
-        defineVar(s.name, LocalVar(ktc = KtcType.Void, cName = ""))
+        impl.appendLine("$ind${if (s.mutable) "" else "const "}ktc_Unit ${s.name} = KTC_UNIT;")
+        defineVar(s.name, LocalVar(ktc = KtcType.Void, mutable = s.mutable))
         return
     }
     val vKtcCore = vKtc.stripNullable

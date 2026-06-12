@@ -216,6 +216,20 @@ class InheritanceUnitTest : TranspilerTestBase() {
 		""", "type argument")
 	}
 
+	@Test fun unitBindingWorksWithWarning() {
+		val r = transpileMainWithStdlib(
+			body = """
+				val u = work()
+				val r2: Result<Unit> = Result.Success<Unit>(u)
+				println(r2 is Result.Success)
+			""",
+			decls = """
+				fun work(): Unit { println("worked") }
+			""")
+		assertTrue(r.source.contains("ktc_Unit u = KTC_UNIT"), "binds a real unit local")
+		assertTrue(r.warningCount > 0, "binding Unit warns (W034)")
+	}
+
 	@Test fun sealedClassWhenExhaustive() {
 		val r = transpile("""
 			package test
