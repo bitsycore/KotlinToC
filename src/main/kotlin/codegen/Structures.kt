@@ -114,7 +114,8 @@ internal data class ClassInfo(
     fun hashEqProps(inInterfaceNames: Set<String>): List<Pair<String, TypeRef>> =
         storedProps.filter { (_, type) ->
             val innerName = if (type.name == "Ref" && type.typeArgs.isNotEmpty()) type.typeArgs[0].name else type.name
-            innerName !in inInterfaceNames
+            // Unit fields contribute nothing — all unit values are equal (and C can't == them).
+            innerName !in inInterfaceNames && innerName != "Unit" && innerName != "Nothing"
             }
 
     /** names of private properties */

@@ -368,6 +368,11 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						parts += "(ktc_Any){$typeId, (void*)&$tVal}"
 						}
 					}
+				} else if (paramTypeKtc is KtcType.Void) {
+				// Unit-typed parameter (generic instantiated with Unit): evaluate the
+				// argument for its side effects, pass the canonical unit value.
+				if (expr.isNotBlank()) preStmts += "$expr;"
+				parts += "KTC_UNIT"
 				} else {
 				// Plain by-value parameter. No implicit copy of a class lvalue (E071): a class /
 				// data-class value passed by value would silently struct-copy — force .copy() /

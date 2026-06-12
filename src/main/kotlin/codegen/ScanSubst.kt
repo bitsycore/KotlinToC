@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.codegen.statement.bindLambdaReturnTypeParams
 
 // AST-walk helpers that apply a type-param substitution map while scanning for
 // generic instantiations. Also contains concrete-return inference and type-param matching.
@@ -111,6 +112,34 @@ internal fun CCodeGen.scanExprWithSubst(e: Expr?, subst: Map<String, String>): B
 						}
 					}
 				}
+			// Generic INLINE fun call: its body expands at the call site, so generic
+			// instantiations inside it (e.g. runCatching's Result.Success<T> with the
+			// inferred T) must be recorded with the call-site substitution NOW —
+			// emission-time materialization is too late for struct emission.
+			if (name != null && name !in inlineScanInProgress) {
+				val vInline = inlineFunDecls[name]?.firstOrNull { it.typeParams.isNotEmpty() && it.body != null }
+				if (vInline != null) {
+					val vSub = mutableMapOf<String, String>()
+					if (e.typeArgs.isNotEmpty() && e.typeArgs.size == vInline.typeParams.size) {
+						vInline.typeParams.zip(e.typeArgs).forEach { (vTp, vTa) -> vSub[vTp] = subst[vTa.name] ?: vTa.name }
+					} else {
+						for ((vI, vP) in vInline.params.withIndex()) {
+							if (vI >= e.args.size) break
+							val vArgT = inferExprType(e.args[vI].expr)?.removeSuffix("?") ?: continue
+							matchTypeParam(vP.type, subst[vArgT] ?: vArgT, vInline.typeParams.toSet(), vSub)
+						}
+						bindLambdaReturnTypeParams(vInline, e.args, null, vSub)
+					}
+					if (vSub.size == vInline.typeParams.size && vSub.values.none { it in allGenericTypeParamNames }) {
+						inlineScanInProgress += name
+						try {
+							if (scanBodyWithSubst(vInline.body, vSub)) found = true
+						} finally {
+							inlineScanInProgress -= name
+						}
+					}
+				}
+			}
 			for (a in e.args) if (scanExprWithSubst(a.expr, subst)) found = true
 			if (scanExprWithSubst(e.callee, subst)) found = true
 			found

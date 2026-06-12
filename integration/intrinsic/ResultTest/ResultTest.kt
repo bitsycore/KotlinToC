@@ -10,10 +10,16 @@ fun safeSqrt(x: Float): Result<Float> {
 	return Result.Success<Float>(x)
 }
 
-// Throwing helper for the runCatching/getOrThrow tests — keeps T = Int
-// (Result<Unit> is unsupported: KTC's Unit is C void, which can't be a field).
+// Throwing helper for the runCatching/getOrThrow tests.
 fun failingInt(): Int {
 	error("captured")
+}
+
+// Unit-returning helper — exercises Result<Unit> (Unit lowers to the ktc_Unit
+// value in value positions; plain Unit returns stay C void).
+var gSideEffects = 0
+fun unitWork(): Unit {
+	gSideEffects = gSideEffects + 1
 }
 
 fun main() {
@@ -133,6 +139,25 @@ fun main() {
 	}
 	if (caught != 1) fatalError("FAIL: getOrThrow not caught")
 	println("getOrThrow: ok")
+
+	// Result<Unit> — runCatching over Unit blocks
+	val rcu = runCatching { unitWork() }
+	if (rcu !is Result.Success) fatalError("FAIL Result<Unit> success")
+	if (gSideEffects != 1) fatalError("FAIL unit block ran $gSideEffects times")
+	val rfu = runCatching { error("unit boom") }
+	if (rfu !is Result.Failure) fatalError("FAIL Result<Unit> failure")
+	val rfEx = rfu.exceptionOrNull()
+	if (rfEx == null) fatalError("FAIL Result<Unit> exceptionOrNull")
+	if (rfEx.message != "unit boom") fatalError("FAIL Result<Unit> message")
+	var unitCaught = 0
+	try {
+		rfu.getOrThrow()
+		fatalError("FAIL Result<Unit> getOrThrow should throw")
+	} catch (e: IllegalStateException) {
+		unitCaught = 1
+	}
+	if (unitCaught != 1) fatalError("FAIL Result<Unit> getOrThrow")
+	println("Result<Unit>: ok")
 
 	println("done")
 }

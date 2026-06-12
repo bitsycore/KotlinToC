@@ -135,6 +135,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var threadClosureCounter: Int = 0  // counter for unique `thread { }` / closure structs + entry/invoke fns
     internal val pendingThreadEntries = mutableListOf<com.bitsycore.ktc.codegen.expression.PendingThreadEntry>()  // generated thread entries, emitted after the decl loop
     internal val pendingClosures = mutableListOf<com.bitsycore.ktc.codegen.expression.PendingClosure>()  // generated closure invoke fns, emitted after the decl loop
+    internal val inlineScanInProgress = mutableSetOf<String>()  // generic inline funs being body-scanned (recursion guard, see ScanSubst)
     internal val closureStructTypes = mutableSetOf<String>()  // C names of generated per-lambda functor structs (a var of this type calls via _invoke)
     internal val closureStructEscapeUnsafe = mutableSetOf<String>()  // functor structs that captured a stack local by ref — cannot be heap-promoted (copyWith)
     internal val closureFuncType = mutableMapOf<String, com.bitsycore.ktc.types.KtcType.Func>()  // functor struct C name → its function signature (for Closure<F> heap-promotion)

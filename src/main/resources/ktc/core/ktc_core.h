@@ -20,6 +20,13 @@
 // MARK: Types
 // ══════════════════════════════════════════════════════════════════
 
+/* Kotlin's Unit as a VALUE — used when Unit lands in a value position
+ * (a generic instantiated with Unit, e.g. Result<Unit>; a Unit field or
+ * parameter). Plain Unit-returning functions stay C `void`. One canonical
+ * value, KTC_UNIT — all Unit values are equal. */
+typedef struct { int8_t __unit; } ktc_Unit;
+#define KTC_UNIT ((ktc_Unit){0})
+
 typedef int8_t   ktc_Byte;
 typedef int16_t  ktc_Short;
 typedef int32_t  ktc_Int;

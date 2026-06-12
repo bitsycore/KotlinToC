@@ -1,6 +1,7 @@
 package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
+import com.bitsycore.ktc.codegen.statement.bindLambdaReturnTypeParams
 import com.bitsycore.ktc.types.KtcType
 
 // Pre-scan passes for generic function call-site discovery and body scanning.
@@ -52,6 +53,30 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 						val typeArgs = inferTypeArgs(f, e.args, e.typeArgs)
 						if (typeArgs != null) recordGenericFunInstantiation(name, typeArgs)
 						}
+					// Generic INLINE fun: its body expands at the call site — scan it with the
+					// inferred substitution so generic instantiations inside (e.g. runCatching's
+					// Result.Success<T>) are recorded before emission. ScanSubst has the
+					// subst-aware twin of this hook for nested generic contexts.
+					if (name != null && name !in inlineScanInProgress) {
+						val vInline = inlineFunDecls[name]?.firstOrNull { it.typeParams.isNotEmpty() && it.body != null }
+						if (vInline != null) {
+							val vSub = mutableMapOf<String, String>()
+							if (e.typeArgs.isNotEmpty() && e.typeArgs.size == vInline.typeParams.size) {
+								vInline.typeParams.zip(e.typeArgs).forEach { (vTp, vTa) -> vSub[vTp] = vTa.name }
+							} else {
+								for ((vI, vP) in vInline.params.withIndex()) {
+									if (vI >= e.args.size) break
+									val vArgT = inferExprType(e.args[vI].expr)?.removeSuffix("?") ?: continue
+									matchTypeParam(vP.type, vArgT, vInline.typeParams.toSet(), vSub)
+								}
+								bindLambdaReturnTypeParams(vInline, e.args, null, vSub)
+							}
+							if (vSub.size == vInline.typeParams.size && vSub.values.none { it in allGenericTypeParamNames }) {
+								inlineScanInProgress += name
+								try { scanBodyWithSubst(vInline.body, vSub) } finally { inlineScanInProgress -= name }
+							}
+						}
+					}
 					if (e.callee is DotExpr) {
 						val dotName = e.callee.name
 						if (genFunsByName.containsKey(dotName)) {

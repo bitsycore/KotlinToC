@@ -136,10 +136,16 @@ internal fun CCodeGen.emitInlineCall(
 				val vInnerKtc = resolveTypeName(vParam.type.copy(nullable = false))
 				optCTypeName(vInnerKtc.toInternalStr) to KtcType.Nullable(vInnerKtc)
 				} else {
-				cTypeStr(vResolvedKtc) to vResolvedKtc
+				cValueTypeStr(vResolvedKtc) to vResolvedKtc   // Unit param → ktc_Unit
 				}
 			var vCVal = genExpr(vExpr)
 			flushPreStmts(ind)
+			if (vResolvedKtc is KtcType.Void) {
+				// Unit-typed param: run the (void) argument for its side effects,
+				// bind the canonical unit value.
+				if (vCVal.isNotBlank()) impl.appendLine("$ind    $vCVal;")
+				vCVal = "KTC_UNIT"
+			}
 			// Concrete class value bound to an interface-typed inline param → as_-wrap
 			// (e.g. Result.failure(exception: Throwable) called with RuntimeException(...)).
 			if (vResolvedKtc is KtcType.User && vResolvedKtc.kind == KtcType.UserKind.Interface) {
@@ -242,10 +248,16 @@ internal fun CCodeGen.tryGenInlineExpr(
 			val innerKtc = resolveTypeName(param.type.copy(nullable = false))
 			optCTypeName(innerKtc.toInternalStr) to KtcType.Nullable(innerKtc)
 		} else {
-			cTypeStr(resolvedKtc) to resolvedKtc
+			cValueTypeStr(resolvedKtc) to resolvedKtc   // Unit param → ktc_Unit
 		}
 		var cVal  = genExpr(arg.expr)
 		flushPreStmts(ind)
+		if (resolvedKtc is KtcType.Void) {
+			// Unit-typed param: run the (void) argument for its side effects,
+			// bind the canonical unit value.
+			if (cVal.isNotBlank()) impl.appendLine("$ind$cVal;")
+			cVal = "KTC_UNIT"
+		}
 		// Concrete class value bound to an interface-typed inline param → as_-wrap
 		// (e.g. Result.failure(exception: Throwable) called with RuntimeException(...)).
 		if (resolvedKtc is KtcType.User && resolvedKtc.kind == KtcType.UserKind.Interface) {
@@ -336,7 +348,10 @@ internal fun CCodeGen.bindLambdaReturnTypeParams(
 		val vParamKtc      = (vParam.type.funcParams ?: emptyList()).map { resolveTypeName(it) }
 		val vRecvForLambda = if (vParam.type.funcReceiver != null) inReceiverType else null
 		val vInferred      = inferLambdaReturnType(vLambda, vParamKtc, vRecvForLambda) ?: return@forEachIndexed
-		ioSubst[vRet.name] = vInferred
+		// A Nothing-typed lambda (body ends in throw/error) binds T as Unit: Nothing is
+		// a subtype of everything, and both lower to the same ktc_Unit value slot —
+		// one instantiation (Result<Unit>) instead of a parallel Result<Nothing>.
+		ioSubst[vRet.name] = if (vInferred == "Nothing") "Unit" else vInferred
 		}
 	}
 

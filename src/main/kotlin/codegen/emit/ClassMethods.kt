@@ -138,7 +138,8 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
 			} else if (type.nullable) {
 			hdr.appendLine("    $vMutComment${optCTypeName(vKtcField.toInternalStr)} $vFieldName;")
 			} else {
-			hdr.appendLine("    $vMutComment${cTypeStr(vKtcField)} $vFieldName;${ptrNullComment(vKtcField)}")
+			// cValueTypeStr: a Unit-typed field (generic instantiated with Unit) is ktc_Unit
+			hdr.appendLine("    $vMutComment${cValueTypeStr(vKtcField)} $vFieldName;${ptrNullComment(vKtcField)}")
 			}
 		}
 	}

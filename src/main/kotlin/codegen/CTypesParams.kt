@@ -48,7 +48,7 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
             }
 
             vType.isEffectivelyNullable() -> vParts += "${optCTypeName(vKtc.toInternalStr)} $vName"
-            else -> vParts += "${cTypeStr(vKtc)} $vName"
+            else -> vParts += "${cValueTypeStr(vKtc)} $vName"   // Unit param → ktc_Unit
         }
     }
     return vParts.joinToString(", ")

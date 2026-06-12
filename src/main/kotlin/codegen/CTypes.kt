@@ -412,6 +412,11 @@ internal fun CCodeGen.cTypeStr(t: String): String {
 	return cTypeStr(parseResolvedTypeName(t))
 	}
 
+/* C type for a VALUE position (struct field, parameter, generic slot): Unit is
+   a real one-byte struct (ktc_Unit) there — only function returns stay `void`. */
+internal fun SymbolReader.cValueTypeStr(ktc: KtcType): String =
+	if (ktc is KtcType.Void) "ktc_Unit" else cTypeStr(ktc)
+
 /* C type string from KtcType, uses pfx for user types. */
 internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 	is KtcType.Prim -> ktc.toCType()
