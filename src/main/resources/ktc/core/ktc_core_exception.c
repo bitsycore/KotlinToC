@@ -158,6 +158,41 @@ void ktc_core_exc_end_try(ktc_ExcFrame *inFrame)
 }
 
 /* ==================
+ * MARK: Builtin exception types (runtime checks)
+ * ================== */
+
+ktc_ExcBuiltin ktc_core_exc_oob = {0};
+ktc_ExcBuiltin ktc_core_exc_npe = {0};
+
+void ktc_core_exc_register(ktc_ExcBuiltin *outSlot, ktc_UInt inTypeId,
+                           ktc_Int inSize, ktc_Int inMsgOffset, const char *inTypeName)
+{
+    outSlot->typeId    = inTypeId;
+    outSlot->size      = inSize;
+    outSlot->msgOffset = inMsgOffset;
+    outSlot->typeName  = inTypeName;
+}
+
+KTC_EXC_NORETURN void ktc_core_exc_throw_builtin(
+    const ktc_ExcBuiltin *inBuiltin,
+    const char *inMsg, ktc_Int inMsgLen,
+    const char *inFile, ktc_Int inLine)
+{
+    if (inBuiltin->size > 0) {
+        /* A zeroed instance is a valid exception object: every stdlib exception
+           stores only `message`, which the throw patches at msgOffset. */
+        void *vObj = ktc_core_alloca((size_t)inBuiltin->size);
+        memset(vObj, 0, (size_t)inBuiltin->size);
+        ktc_core_exc_throw(vObj, inBuiltin->size, inBuiltin->typeId, inBuiltin->msgOffset,
+                           inMsg, inMsgLen, inBuiltin->typeName, inFile, inLine);
+    }
+    /* Unregistered (no generated main ran): classic hard exit. */
+    ktc_core_stacktrace_print(inMsg, (int)inMsgLen,
+                              inFile, inFile ? (int)strlen(inFile) : 0, (int)inLine);
+    exit(EXIT_FAILURE);
+}
+
+/* ==================
  * MARK: Thread cleanup
  * ================== */
 

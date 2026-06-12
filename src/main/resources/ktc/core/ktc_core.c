@@ -1048,31 +1048,34 @@ void ktc_core_mem_report(void) {}
  * MARK: Bounds check (--check-bounds runtime helper)
  * ════════════════════════════════════════════════════════════════════
  * Inserted around each array/string subscript when --check-bounds is on.
- * On out-of-range access, prints a Kotlin-style stack trace then exits.
+ * On out-of-range access, throws IndexOutOfBoundsException (catchable) when
+ * the builtin exception types were registered by the generated main();
+ * otherwise prints a Kotlin-style stack trace and exits.
  * Returns the index unchanged on success so the surrounding C expression
  * `(arr).ptr[ktc_core_bounds_check(...)]` stays a clean rvalue. */
 ktc_Int ktc_core_bounds_check(const char* fileName, int fileNameLen, int line, ktc_Int idx, ktc_Int len)
 {
+    (void)fileNameLen;
     if (idx >= 0 && idx < len) return idx;
     char vMsg[128];
     int  vMsgLen = snprintf(vMsg, sizeof vMsg,
-        "ArrayIndexOutOfBoundsException: index %lld out of bounds for length %lld",
+        "Index %lld out of bounds for length %lld",
         (long long)idx, (long long)len);
     if (vMsgLen < 0) vMsgLen = 0;
     if (vMsgLen > (int)sizeof vMsg - 1) vMsgLen = (int)sizeof vMsg - 1;
-    ktc_core_stacktrace_print(vMsg, vMsgLen, fileName, fileNameLen, line);
-    exit(1);
+    ktc_core_exc_throw_builtin(&ktc_core_exc_oob, vMsg, vMsgLen, fileName, line);
 }
 
 /* Null-pointer guard called before every `p.refValue` / `p.refValue = x`
- * lowering when --check-null is on. Returns silently on a valid pointer,
- * prints a stack trace and exits on NULL. */
+ * lowering when --check-null is on. Returns silently on a valid pointer;
+ * on NULL throws NullPointerException (catchable) when registered, else
+ * prints a stack trace and exits. */
 void ktc_core_null_check(const void* p, const char* fileName, int fileNameLen, int line)
 {
+    (void)fileNameLen;
     if (p) return;
-    const char* vMsg = "NullPointerException: cannot dereference a null Ref<T?>";
-    ktc_core_stacktrace_print(vMsg, (int)strlen(vMsg), fileName, fileNameLen, line);
-    exit(1);
+    const char* vMsg = "Cannot dereference a null Ref<T?>";
+    ktc_core_exc_throw_builtin(&ktc_core_exc_npe, vMsg, (ktc_Int)strlen(vMsg), fileName, line);
 }
 
 // ══════════════════════════════════════════════════════════════════

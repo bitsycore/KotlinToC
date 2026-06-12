@@ -159,6 +159,38 @@ void ktc_core_exc_end_try(ktc_ExcFrame *inFrame);
 void ktc_core_exc_thread_cleanup(void);
 
 /* ==================
+ * MARK: Builtin exception types (runtime checks)
+ * ================== */
+
+/* The C runtime cannot name generated TYPE_IDs, so the generated main()
+ * registers the stdlib exception types the runtime checks throw
+ * (IndexOutOfBoundsException for bounds, NullPointerException for null-deref).
+ * Unregistered (library builds, unit-test transpiles without a main): the
+ * checks fall back to the classic print-stack-trace-and-exit behavior. */
+typedef struct ktc_ExcBuiltin
+{
+    ktc_UInt    typeId;     /* concrete class TYPE_ID (0 = unregistered)   */
+    ktc_Int     size;       /* sizeof(concrete struct)                     */
+    ktc_Int     msgOffset;  /* offsetof(struct, message)                   */
+    const char *typeName;   /* Kotlin class name literal                   */
+} ktc_ExcBuiltin;
+
+extern ktc_ExcBuiltin ktc_core_exc_oob;   /* IndexOutOfBoundsException */
+extern ktc_ExcBuiltin ktc_core_exc_npe;   /* NullPointerException      */
+
+/** Register one builtin exception type (called from the generated main()). */
+void ktc_core_exc_register(ktc_ExcBuiltin *outSlot, ktc_UInt inTypeId,
+                           ktc_Int inSize, ktc_Int inMsgOffset, const char *inTypeName);
+
+/** Throw the registered builtin exception (a zeroed instance with [inMsg]
+ * patched in) — or, when the type was never registered, print a Kotlin-style
+ * stack trace and exit. Either way this never returns. */
+KTC_EXC_NORETURN void ktc_core_exc_throw_builtin(
+    const ktc_ExcBuiltin *inBuiltin,
+    const char *inMsg, ktc_Int inMsgLen,
+    const char *inFile, ktc_Int inLine);
+
+/* ==================
  * MARK: Try / Catch / Finally macros
  * ================== */
 

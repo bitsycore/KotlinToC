@@ -66,7 +66,7 @@ Because the backing lives in the producing frame, **returning a freshly-built on
 - Functions can return `@Size(N) T` arrays by value (struct return), but cannot return bare `Array<T>` or `RawArray<T>` — the underlying buffer would dangle. Use `Ref<Array<T>>` (heap-backed) or `@Size(N)` (stack struct).
 
 ## Runtime safety checks
-Two safety nets default-ON, each with an opt-out flag. They emit calls to `ktc_core_*_check` helpers that print a Kotlin-style stack trace and exit on violation.
+Two safety nets default-ON, each with an opt-out flag. They emit calls to `ktc_core_*_check` helpers. On violation they **throw** — `IndexOutOfBoundsException` for bounds, `NullPointerException` for null-deref — so `try/catch` handles them like Kotlin (the generated `main()` registers the typeIds via `ktc_core_exc_register`; without a generated main, e.g. library builds, they fall back to printing a Kotlin-style stack trace and exiting).
 
 **Bounds check** — every `arr[i]` / `s[i]` for `Array<T>`, `String`, or `@Size(N)` routes through `ktc_core_bounds_check(file, line, idx, len)`. Static-warning sibling fires at transpile time when the index is a literal AND length is statically known (`@Size(N)`, string literals). Opt out with `--no-check-bounds`. `RawArray<T>` (bare `T*`) carries no length and is never bounds-checked.
 
@@ -96,7 +96,7 @@ Lightweight setjmp/longjmp exceptions — no unwinder, no heap per throw. Runtim
 - **Uncaught** → Kotlin-style stack trace (`Uncaught exception <Type>: <message>` + throw-site file:line) and `exit(1)`.
 - **Control-flow rules:** `return` inside try/catch pops the frame(s) and re-emits the finally bodies before returning (finallys innermost-out, then defers). `break`/`continue` crossing a try boundary → E132; `return` inside a finally → E133; `throw` of a non-Throwable → E130; invalid catch type → E131. Tailrec self-calls inside a try fall back to genuine recursion.
 - **setjmp caveat handled:** functions lexically containing a `try` (including via inlined `inline fun` bodies) are emitted with `KTC_TRY_FN` (`optnone` / `optimize("-O0")`) so locals modified in the try and read in a catch aren't register-rolled-back by longjmp at -O2. MSVC has no per-function equivalent (documented in the header).
-- **Limitations:** statement form only (no `try`/`throw` as expressions, no `?: throw`); exception fields other than `message` are NOT deep-copied — keep them value types (an extra String/Array/Ref field may dangle after the longjmp); `defer`s in frames unwound by a longjmp do not run; bounds/null-check violations remain hard exits (not catchable).
+- **Limitations:** statement form only (no `try`/`throw` as expressions, no `?: throw`); exception fields other than `message` are NOT deep-copied — keep them value types (an extra String/Array/Ref field may dangle after the longjmp); `defer`s in frames unwound by a longjmp do not run.
 
 ## Operator overloading
 - `operator fun` arities are enforced at transpile time: `plus`/`minus`/`times`/`div`/`rem` take 1 arg, unaries (`unaryPlus`/`unaryMinus`/`not`/`inc`/`dec`) take 0, `compareTo`/`contains`/`rangeTo` take 1, iterator protocol (`iterator`/`hasNext`/`next`) takes 0, `equals` takes 1.

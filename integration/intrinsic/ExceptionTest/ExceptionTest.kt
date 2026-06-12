@@ -277,6 +277,39 @@ fun stdlibParse(): Int {
     return t   // 11
 }
 
+// Runtime checks are catchable: bounds violations throw IndexOutOfBoundsException,
+// dynamic null derefs throw NullPointerException (registered by the generated main).
+fun readAt(arr: IntArray, i: Int): Int {
+    return arr[i]
+}
+fun deref(p: Ref<Int>): Int = p.refValue
+fun runtimeChecksCatchable(): Int {
+    val arr = intArrayOf(1, 2, 3)
+    var t = 0
+    try {
+        t = readAt(arr, 7)
+        return -1
+    } catch (e: IndexOutOfBoundsException) {
+        if (!e.message.contains("7")) return -2
+        t += 1
+    }
+    try {
+        t = readAt(arr, -1)
+        return -3
+    } catch (e: RuntimeException) {     // supertype catches it too
+        t += 10
+    }
+    val q: Ref<Int?> = null
+    try {
+        t = deref(q as Ref<Int>)
+        return -4
+    } catch (e: NullPointerException) {
+        t += 100
+    }
+    if (readAt(arr, 1) != 2) return -5  // happy path unaffected
+    return t   // 111
+}
+
 // Custom payload fields survive the arena round-trip alongside the message.
 fun payloadIntact(): Int {
     try {
@@ -329,6 +362,9 @@ fun main() {
     if (stdlibTodo() != 1)          fatalError("FAIL stdlibTodo=${stdlibTodo()}")
     if (stdlibParse() != 11)        fatalError("FAIL stdlibParse=${stdlibParse()}")
     println("stdlib exceptions: OK")
+
+    if (runtimeChecksCatchable() != 111) fatalError("FAIL runtimeChecks=${runtimeChecksCatchable()}")
+    println("catchable runtime checks: OK")
 
     if (loopThrows() != 302)      fatalError("FAIL loopThrows=${loopThrows()}")
     if (bigMessage() != 800)      fatalError("FAIL bigMessage=${bigMessage()}")

@@ -57,6 +57,9 @@ open class IllegalArgumentException(message: String = "") : RuntimeException(mes
 /** Thrown when an index is outside the bounds of a collection or array. */
 open class IndexOutOfBoundsException(message: String = "") : RuntimeException(message)
 
+/** Thrown by the runtime null-deref check (`p.refValue` on a NULL Ref). */
+open class NullPointerException(message: String = "") : RuntimeException(message)
+
 /** Thrown when a requested element does not exist in a collection. */
 open class NoSuchElementException(message: String = "") : RuntimeException(message)
 
