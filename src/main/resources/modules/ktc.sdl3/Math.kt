@@ -1,4 +1,5 @@
 @file:cInclude("SDL3/SDL.h")
+@file:cInclude("math.h")
 
 package ktc.sdl3
 
