@@ -2,17 +2,17 @@ package ktc.std
 
 /**
 Arena allocator: bump-allocates from a caller-provided backing buffer in O(1).
-All allocations are freed at once via reset() — individual slots cannot be
+All allocations are freed at once via reset() - individual slots cannot be
 released. freeMem() is a deliberate no-op.
 reallocMem() bump-allocates new space and copies; the old slot leaks within
 the arena until the next reset().
 
 The arena does NOT own its backing buffer. The caller is responsible for the
-buffer's lifetime — typically a stack array, or a heap allocation freed by
+buffer's lifetime - typically a stack array, or a heap allocation freed by
 the caller.
 
 Implements Allocator so the arena can be passed wherever an Allocator is
-expected — e.g. allocWith, resizeWith, or custom generic containers.
+expected - e.g. allocWith, resizeWith, or custom generic containers.
 
 Stack-backed (zero heap overhead):
 val vBuf = ByteArray(4096)
@@ -37,7 +37,7 @@ class Arena(
 
     /**
     Bump-allocate size bytes, aligned to 8 bytes.
-    Throws IllegalStateException on overflow — check remaining() first if the call site needs to be safe.
+    Throws IllegalStateException on overflow - check remaining() first if the call site needs to be safe.
      */
     override fun allocMem(size: Int, file: String, line: Int): AnyPtr {
         val aligned = (size + 7) / 8 * 8   // round up to 8-byte alignment
@@ -68,7 +68,7 @@ class Arena(
     /**
     Returns a StringBuffer backed by capacity bytes from this arena.
     Writes past capacity chars are silently dropped.
-    Throws IllegalStateException on overflow — check remaining() first if needed.
+    Throws IllegalStateException on overflow - check remaining() first if needed.
      */
     fun stringBuffer(capacity: Int): StringBuffer {
         val aligned = (capacity + 7) / 8 * 8   // round up to 8-byte alignment

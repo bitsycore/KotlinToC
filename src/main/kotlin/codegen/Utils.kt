@@ -10,7 +10,7 @@ No CCodeGen state is required unless noted.
 */
 
 /* True if [inName] is the C-interop namespace identifier (`C`, uppercase).
-   The lowercase `c` alias was dropped — it collides too easily with locals
+   The lowercase `c` alias was dropped - it collides too easily with locals
    named `c` (loop variable, char, generic param). */
 internal fun isCInteropName(inName: String): Boolean = inName == "C"
 
@@ -72,7 +72,7 @@ internal fun CCodeGen.genExprWithAllocTarget(expr: Expr, targetType: TypeRef?): 
     }
 
 internal fun CCodeGen.genExprFlushed(inExpr: Expr, inInd: String): String {
-    val vResult = genExpr(inExpr) // evaluate — may populate preStmts
+    val vResult = genExpr(inExpr) // evaluate - may populate preStmts
     flushPreStmts(inInd)          // emit any hoisted declarations before the keyword
     return vResult
 }

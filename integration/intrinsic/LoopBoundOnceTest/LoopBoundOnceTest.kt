@@ -5,7 +5,7 @@ package LoopBoundOnceTest
 // mutating it in the body changed the iteration count. main returns non-zero on any mismatch.
 
 fun main(): Int {
-	// `until` upper bound: mutate it in the body — must still run the original 3 times.
+	// `until` upper bound: mutate it in the body - must still run the original 3 times.
 	var n = 3
 	var c1 = 0
 	for (i in 0 until n) {
@@ -29,7 +29,7 @@ fun main(): Int {
 		return 1
 	}
 
-	// `downTo`: mutate the lower bound in the body — 5 downTo 1 → 5 iterations.
+	// `downTo`: mutate the lower bound in the body - 5 downTo 1 → 5 iterations.
 	var lo = 1
 	var c3 = 0
 	for (i in 5 downTo lo) {

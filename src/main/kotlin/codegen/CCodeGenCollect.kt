@@ -11,10 +11,10 @@ set of valid parameter counts (the receiver is implicit, so a binary infix
 operator like `plus` takes ONE explicit parameter). Operators not listed
 either have variable arity (get/set/invoke) or are accepted as-is. */
 private val kOperatorArity: Map<String, Set<Int>> = mapOf(
-	// Binary arithmetic — exactly one operand
+	// Binary arithmetic - exactly one operand
 	"plus" to setOf(1), "minus" to setOf(1), "times" to setOf(1),
 	"div"  to setOf(1), "rem"   to setOf(1), "mod"   to setOf(1),
-	// Unary — no operand
+	// Unary - no operand
 	"unaryPlus" to setOf(0), "unaryMinus" to setOf(0), "not" to setOf(0),
 	"inc"       to setOf(0), "dec"        to setOf(0),
 	// Range operators take exactly one operand
@@ -30,11 +30,11 @@ private val kOperatorArity: Map<String, Set<Int>> = mapOf(
 	"timesAssign" to setOf(1), "divAssign" to setOf(1), "remAssign" to setOf(1),
 	// `==` lowers to equals(other: Any?). One operand.
 	"equals" to setOf(1),
-	// `get`, `set`, and `invoke` accept multiple — checked elsewhere if at all.
+	// `get`, `set`, and `invoke` accept multiple - checked elsewhere if at all.
 )
 
 /* Returns true if every yielded String value in the body is a bare string
-literal. Such a function is safe to return value-type String — the literal's
+literal. Such a function is safe to return value-type String - the literal's
 bytes live in .rodata, not in the callee's frame. */
 private fun returnsOnlyStringLiterals(inBody: Block): Boolean {
 	// A "yield" is either a ReturnStmt value or the tail expression of an
@@ -165,9 +165,9 @@ internal fun CCodeGen.collectDecls() {
 	// (e.g. IntBox : Box<Int>): store the RESOLVED name so implementor unions /
 	// wrap checks see "Box_Int", not "Box". The monomorphized interface is only
 	// MATERIALIZED in the instances that emit something for it (the implementor's
-	// own file or the base interface's file) — materializing elsewhere would emit
+	// own file or the base interface's file) - materializing elsewhere would emit
 	// its typedef into a header where the implementor types aren't visible.
-	// Generic classes keep raw names — their refs carry the class's own type
+	// Generic classes keep raw names - their refs carry the class's own type
 	// params and are resolved during monomorphization (ScanClasses).
 	for ((vCName, _) in classes) {
 		val vCDecl = allClassDecls[vCName] ?: continue
@@ -261,7 +261,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				if (vProp.getter != null) continue
 				val vT = vProp.typeRef
 				if (vT.name == d.name && !vT.isRefType() && vT.name != "Array" && vT.name != "RawArray") {
-					codegenError("E010", "Class '${d.name}' has property '${vProp.name}' of its own type — infinite struct size. " +
+					codegenError("E010", "Class '${d.name}' has property '${vProp.name}' of its own type - infinite struct size. " +
 						"Use Ref<${d.name}> (pointer), Array<${d.name}>, or RawArray<${d.name}> to indirect.")
 				}
 			}
@@ -302,7 +302,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				for (ifaceRef in d.superInterfaces) {
 					val ifaceName = resolveIfaceName(ifaceRef)
 					// Generic ifaces: the monomorphized name may not be materialized at
-					// collect time — fall back to the generic base template (name-based checks).
+					// collect time - fall back to the generic base template (name-based checks).
 					val iface     = interfaces[ifaceName] ?: interfaces[ifaceRef.name] ?: continue
 					for (m in collectAllIfaceMethods(iface)) {
 						val impl = classMethodNames[m.name]
@@ -312,7 +312,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 							}
 						}
 					}
-				// dispose() and hashCode() are implicitly overrides — always require the keyword
+				// dispose() and hashCode() are implicitly overrides - always require the keyword
 				for (m in ci.methods) {
 					if ((m.name == "dispose" || m.name == "hashCode") && !m.isOverride) {
 						codegenError("E101", "Method '${m.name}' in class '${d.name}' must be marked 'override'")
@@ -393,7 +393,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			getTypeId(d.name)
 			// Per-entry overrides require a matching body method on the enum (the default impl).
 			if (vEntryOvr.isNotEmpty()) {
-				if (vIsSimple) codegenError("Enum '${d.name}' has per-entry overrides but is a @SimpleEnum — overrides require the full struct form")
+				if (vIsSimple) codegenError("Enum '${d.name}' has per-entry overrides but is a @SimpleEnum - overrides require the full struct form")
 				val vBodyMethodNames = vEi.enumMethods.map { it.name }.toSet()
 				for ((vEntryName, vOvrs) in vEntryOvr) for (vOvr in vOvrs) {
 					if (vOvr.name !in vBodyMethodNames) {
@@ -490,7 +490,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				}
 			objects[d.name] = oi
 			if (d.superInterfaces.isNotEmpty()) classInterfaces[d.name] = d.superInterfaces.map { it.name }
-			// dispose()/hashCode() are implicitly overrides — require the keyword (current file, non-stdlib)
+			// dispose()/hashCode() are implicitly overrides - require the keyword (current file, non-stdlib)
 			if (validate && file.pkg != "ktc.std") {
 				for (m in d.members) if (m is FunDecl && (m.name == "dispose" || m.name == "hashCode") && !m.isOverride) {
 					codegenError("E101", "Method '${m.name}' in object '${d.name}' must be marked 'override'")
@@ -535,7 +535,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 				collectDecl(d.copy(receiver = normRecv, params = normParams))
 				return
 			}
-			// Bare Array<T> returns dangle the same way bare String returns do —
+			// Bare Array<T> returns dangle the same way bare String returns do -
 			// the underlying buffer lives in the callee's frame and dies at exit.
 			// Inline functions are exempt (body is expanded into the caller's
 			// frame, so the array storage lives in scope long enough for the
@@ -567,14 +567,14 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			// inline so the function body is expanded into the caller.
 			if (d.returnType != null && d.returnType.funcParams != null && !d.isInline) {
 				codegenError("E023", "Function '${d.name}' returns a bare function type (a frame-bound closure that would dangle). " +
-					"Return a heap closure — Ref<${typeRefToStr(d.returnType)}> from closure.copyWith(allocator) — or mark '${d.name}' `inline` so its body is expanded at the call site.")
+					"Return a heap closure - Ref<${typeRefToStr(d.returnType)}> from closure.copyWith(allocator) - or mark '${d.name}' `inline` so its body is expanded at the call site.")
 			}
 			// inline + vararg: inline expansion doesn't reify the vararg array on
-			// a frame the body can scan over — KTC's vararg lowering needs a real
+			// a frame the body can scan over - KTC's vararg lowering needs a real
 			// stack-allocated slot per arg group. The combination silently
 			// produces incorrect C.
 			if (d.isInline && d.params.any { it.isVararg }) {
-				codegenError("Function '${d.name}' cannot be both 'inline' and have a vararg parameter — KTC's inline expansion has no stack frame to reify the vararg array.")
+				codegenError("Function '${d.name}' cannot be both 'inline' and have a vararg parameter - KTC's inline expansion has no stack frame to reify the vararg array.")
 			}
 			// Operator function arity: Kotlin pins operator-name arities, and a
 			// mismatched signature would produce a method that's never callable
@@ -592,7 +592,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 			val effectiveReturnType = d.returnType ?: d.body?.let { inferBlockType(it)?.let { name -> TypeRef(name) } }
 			when {
 				d.typeParams.isNotEmpty() -> {
-					// Generic function template — store for monomorphization
+					// Generic function template - store for monomorphization
 					if (genericFunDecls.none { it == d }) genericFunDecls += d
 					funSigs[d.name] = FunSig(d.params, effectiveReturnType)
 					allGenericTypeParamNames += d.typeParams
@@ -650,7 +650,7 @@ internal fun CCodeGen.collectDecl(d: Decl, validate: Boolean = false) {
 
 /* Sanitize a resolved type's internal string into a C-identifier-safe overload-mangling token: drop a
 trailing pointer `*`, then collapse every run of non-identifier characters to `_` (function types carry
-`()`/`->`, generics carry `<>` — all illegal in a C symbol). Shared by method and constructor mangling. */
+`()`/`->`, generics carry `<>` - all illegal in a C symbol). Shared by method and constructor mangling. */
 internal fun mangleTypeToken(inTypeInternal: String): String =
 	inTypeInternal.removeSuffix("*").replace(Regex("[^A-Za-z0-9_]+"), "_").trim('_')
 
@@ -739,7 +739,7 @@ internal fun nestedSuperIfacesWithParent(
 	}
 
 /* Validate @Size(N) annotations on the given TypeRef and its type args.
-   N must be a positive integer literal — @Size(0) yields an empty C array and
+   N must be a positive integer literal - @Size(0) yields an empty C array and
    negatives are nonsense. Reports E012 on the first violation. */
 internal fun CCodeGen.validateSizeAnnotation(inRef: TypeRef?) {
 	if (inRef == null) return

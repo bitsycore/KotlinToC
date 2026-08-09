@@ -56,7 +56,7 @@ fun SDL3.Renderer.renderLeash(
 	this.setDrawColor(SDL3.Color(255, 255, 255, 40))
 	this.drawCircle(center.x, center.y, indRadius)
 
-	// Leash line — colour reflects approach direction (dot product)
+	// Leash line - colour reflects approach direction (dot product)
 	val movX     = if (movState.right) 1.0f else if (movState.left) -1.0f else 0.0f
 	val movY     = if (movState.down)  1.0f else if (movState.up)   -1.0f else 0.0f
 	val movDir   = SDL3.FPoint(movX, movY).normalized()
@@ -121,7 +121,7 @@ fun SDL3.Renderer.renderCrosshair(mouseX: Float, mouseY: Float, color: SDL3.Colo
 // MARK: Atlas HUD
 // ══════════════════════════════════════════════════════════════
 
-/** Bottom-left tile strip — crops the current tile from the atlas and draws it. */
+/** Bottom-left tile strip - crops the current tile from the atlas and draws it. */
 fun SDL3.Renderer.renderAtlasHud(atlas: SDL3.Texture, tileIdx: Int, ws: SDL3.FPoint) {
 	val src = SDL3.FRect(tileIdx.toFloat() * 32.0f, 0.0f, 32.0f, 32.0f)
 	val dst = SDL3.FRect(10.0f, ws.y - 58.0f, 48.0f, 48.0f)

@@ -37,7 +37,7 @@ object ErrorCatalog {
 			struct size in C:
 			  class Node(val next: Node)  // error
 
-			Use an indirection — Ref<Node>, Array<Node>, or RawArray<Node>:
+			Use an indirection - Ref<Node>, Array<Node>, or RawArray<Node>:
 			  class Node(val next: Ref<Node?>)  // OK
 			""".trimIndent()),
 		Entry("E011", "Raw array on class property",
@@ -77,7 +77,7 @@ object ErrorCatalog {
 			""".trimIndent()),
 		Entry("E023", "Cannot return lambda from non-inline function",
 			"""
-			KTC lambdas are inline-only — there is no closure heap allocation. A
+			KTC lambdas are inline-only - there is no closure heap allocation. A
 			function that returns a function type must be marked 'inline' so the
 			body is expanded at the call site.
 			""".trimIndent()),
@@ -124,7 +124,7 @@ object ErrorCatalog {
 			""".trimIndent()),
 		Entry("E043", "Parameter reassignment",
 			"""
-			Function parameters are read-only in Kotlin — assignment to a parameter
+			Function parameters are read-only in Kotlin - assignment to a parameter
 			inside the function body is rejected. Introduce a local var if you need
 			a mutable copy:
 			  fun foo(x: Int) {
@@ -140,7 +140,7 @@ object ErrorCatalog {
 			  internal class Secret(val x: Int)
 
 			  package bar
-			  val s = Secret(1)    // error E044 — Secret is internal to 'foo'
+			  val s = Secret(1)    // error E044 - Secret is internal to 'foo'
 
 			If you intended the declaration to be accessible across packages,
 			remove the `internal` modifier (it becomes public). If you intended
@@ -155,7 +155,7 @@ object ErrorCatalog {
 			and the type argument could not be inferred from a constructor argument
 			(e.g. the argument is `null`, whose type is unknown):
 			  class Box<T>(val value: T)
-			  val b = Box(null)        // error E045 — T cannot be inferred from null
+			  val b = Box(null)        // error E045 - T cannot be inferred from null
 
 			Specify the type argument explicitly:
 			  val b = Box<Int?>(null)
@@ -192,7 +192,7 @@ object ErrorCatalog {
 			""".trimIndent()),
 		Entry("E054", "Uncaptured variable in closure",
 			"""
-			A non-inline (escaping) lambda — such as a thread { } body — used a variable
+			A non-inline (escaping) lambda - such as a thread { } body - used a variable
 			from the enclosing scope that was not captured. KTC has no implicit capture, so
 			every enclosing value the body reads must be listed explicitly with capture(...).
 
@@ -205,11 +205,11 @@ object ErrorCatalog {
 
 		Entry("E055", "'.ptr' not available on String/Array",
 			"""
-			'.ptr' is no longer available on String or Array. The raw C data pointer — a
-			const ktc_Char* for String, a T* for Array — is exposed as '.cPtr', so the
+			'.ptr' is no longer available on String or Array. The raw C data pointer - a
+			const ktc_Char* for String, a T* for Array - is exposed as '.cPtr', so the
 			C-interop accessor stays explicit:
-			  someString.cPtr      // OK — const char* into the bytes
-			  someArray.cPtr       // OK — T* into the elements
+			  someString.cPtr      // OK - const char* into the bytes
+			  someArray.cPtr       // OK - T* into the elements
 			  someString.ptr       // error
 			""".trimIndent()),
 
@@ -217,7 +217,7 @@ object ErrorCatalog {
 		Entry("E060", "Safe access required on nullable receiver",
 			"""
 			The receiver expression has a nullable type (T?). Direct member access
-			is not allowed — use the safe-call operator '?.' instead:
+			is not allowed - use the safe-call operator '?.' instead:
 			  p?.refValue     // OK
 			  p.refValue      // error
 
@@ -230,8 +230,8 @@ object ErrorCatalog {
 			"""
 			A variable or assignment crosses the Ref<T> ↔ T boundary without an
 			explicit conversion:
-			  var p: Ref<Int> = x      // error — need x.asRef()
-			  var v: Int = p           // error — need p.refValue
+			  var p: Ref<Int> = x      // error - need x.asRef()
+			  var v: Int = p           // error - need p.refValue
 
 			Conversions:
 			  .asRef()     takes a reference:  T → Ref<T>
@@ -242,13 +242,13 @@ object ErrorCatalog {
 			Binding or passing a class / data-class lvalue into a by-value target would
 			silently struct-copy it:
 			  val a = Some()
-			  val d: Some = a      // error — implicit copy of 'a'
-			  someFun(a)           // error — implicit copy into a by-value parameter
+			  val d: Some = a      // error - implicit copy of 'a'
+			  someFun(a)           // error - implicit copy into a by-value parameter
 
 			A value copy must be explicit. Choose one:
 			  a.copy()                value copy (→ Some)
 			  a.copyWith(allocator)   heap copy  (→ Ref<Some>)
-			Or alias it without copying — drop the type annotation so it infers a
+			Or alias it without copying - drop the type annotation so it infers a
 			reference, or take one explicitly:
 			  val b = a            // alias (Ref<Some>), no copy
 			  a.asRef()            // Ref<Some>
@@ -291,8 +291,8 @@ object ErrorCatalog {
 			because the C struct layout that backs @Size(N) needs a concrete
 			compile-time length:
 
-			  @Size(0)  fun f(): IntArray   // error — empty array is UB in C
-			  @Size(-3) fun g(): IntArray   // error — meaningless length
+			  @Size(0)  fun f(): IntArray   // error - empty array is UB in C
+			  @Size(-3) fun g(): IntArray   // error - meaningless length
 			""".trimIndent()),
 		Entry("E013", "Duplicate enum entry",
 			"""
@@ -316,16 +316,16 @@ object ErrorCatalog {
 		Entry("E120", "Returning a Ref to a frame-local",
 			"""
 			A 'return' expression yields a Ref<T> whose address points into the
-			current function's frame — a local var, a by-value parameter, or an
+			current function's frame - a local var, a by-value parameter, or an
 			element of a stack array. The pointer will dangle the moment the
 			function returns:
 
 			  fun f(): Ref<Int> {
 			      val x = 5
-			      return x.asRef()    // E120 — &x dies on return
+			      return x.asRef()    // E120 - &x dies on return
 			  }
 
-			  fun g(p: Foo): Ref<Foo> = p.asRef()   // E120 — p is a callee copy
+			  fun g(p: Foo): Ref<Foo> = p.asRef()   // E120 - p is a callee copy
 
 			Options:
 			  - Allocate on the heap and return that:
@@ -346,7 +346,7 @@ object ErrorCatalog {
 			  throw ParseError("unexpected token", 12)
 
 			The thrown object (plus its message bytes) is deep-copied into a
-			per-thread arena so it survives the longjmp to the catching frame —
+			per-thread arena so it survives the longjmp to the catching frame -
 			which is why 'message' must be a stored field (a computed getter has
 			no storage to relocate) and why other String/Array/Ref fields should
 			be avoided (they are NOT deep-copied and may dangle).
@@ -369,7 +369,7 @@ object ErrorCatalog {
 
 			  while (cond) {
 			      try {
-			          if (x) break      // E132 — jumps out of the try
+			          if (x) break      // E132 - jumps out of the try
 			      } catch (e: Exception) { }
 			  }
 
@@ -401,11 +401,11 @@ object ErrorCatalog {
 		Entry("W036", "Unused @MustUseReturnValue result",
 			"""
 			A call in statement position discards a result that was marked as
-			must-use — either the function itself, or its return TYPE, carries
+			must-use - either the function itself, or its return TYPE, carries
 			@MustUseReturnValue (ktc.Result is marked, mirroring Kotlin's
 			unused-return-value checker):
 
-			  runCatching { save() }          // W036 — the Result is dropped
+			  runCatching { save() }          // W036 - the Result is dropped
 			  reserve(10)                     // W036 if reserve is annotated
 
 			Bind it, return it, or opt the producing function out:
@@ -419,12 +419,12 @@ object ErrorCatalog {
 			"""
 			A val/var binds the result of a Unit-returning expression:
 
-			  val u = save()        // W034 — save(): Unit, u has no useful value
+			  val u = save()        // W034 - save(): Unit, u has no useful value
 
 			Kotlin allows it, so KTC accepts it: the expression runs for its side
 			effects and the name becomes the canonical unit value (usable where a
 			Unit value is expected, e.g. a Result<Unit> slot). It is almost always
-			unintended — call the expression without the binding.
+			unintended - call the expression without the binding.
 
 			Suppress with: -Wno-unit-binding
 			""".trimIndent()),
@@ -439,7 +439,7 @@ object ErrorCatalog {
 		Entry("W002", "Prefer Ref<T?> over Ref<T>?",
 			"""
 			Ref<T>? puts nullability on the outer wrapper. The idiomatic KTC form
-			is Ref<T?> — nullability on the inner type — because the pointer itself
+			is Ref<T?> - nullability on the inner type - because the pointer itself
 			is what can be NULL.
 
 			Suppress with: -Wno-nullable-ref
@@ -495,7 +495,7 @@ object ErrorCatalog {
 			An array or string index that is a literal integer falls outside the
 			statically known length:
 			  val s = "abc"
-			  val c = s[5]    // W009 — string length is 3
+			  val c = s[5]    // W009 - string length is 3
 
 			The runtime bounds check (default on) will catch the same access; this
 			warning surfaces it at transpile time so it can be fixed sooner.
@@ -520,17 +520,17 @@ object ErrorCatalog {
 			is dead, or the branch was added by mistake.
 
 			  if (cond) {
-			      // empty — does nothing
+			      // empty - does nothing
 			  }
 
 			Suppress with: -Wno-empty-body
 			""".trimIndent()),
 		Entry("W012", "!! on literal null",
 			"""
-			Applying '!!' to a literal null aborts unconditionally — the value is
+			Applying '!!' to a literal null aborts unconditionally - the value is
 			always null and the assertion always fires:
 
-			  val x = null!!    // W012 — always throws NullPointerException
+			  val x = null!!    // W012 - always throws NullPointerException
 
 			This is almost always a typo or stub left over from refactoring.
 			Replace with a real value or throw an explicit error.
@@ -541,8 +541,8 @@ object ErrorCatalog {
 			"""
 			A comparison operator is applied to the same variable on both sides:
 
-			  if (x == x) { ... }    // W014 — always true
-			  if (i != i) { ... }    // W014 — always false
+			  if (x == x) { ... }    // W014 - always true
+			  if (i != i) { ... }    // W014 - always false
 
 			Usually a typo or a leftover from a refactor. Float / Double are
 			excluded because NaN != NaN is intentional.
@@ -563,7 +563,7 @@ object ErrorCatalog {
 		Entry("W024", "Unreachable code",
 			"""
 			A statement follows an unconditional exit (`return`, `break`, or
-			`continue`) in the same block — the C compiler will never reach it:
+			`continue`) in the same block - the C compiler will never reach it:
 
 			  fun f() {
 			      return
@@ -579,11 +579,11 @@ object ErrorCatalog {
 		Entry("W018", "Discarded allocator result",
 			"""
 			An allocator call (allocWith / copyWith / resizeWith) appears as an
-			expression statement — its returned pointer is dropped immediately.
+			expression statement - its returned pointer is dropped immediately.
 			That's a guaranteed memory leak:
 
-			  Foo(...).allocWith(Heap)         // W018 — pointer dropped
-			  arr.copyWith(Heap)               // W018 — new buffer never used
+			  Foo(...).allocWith(Heap)         // W018 - pointer dropped
+			  arr.copyWith(Heap)               // W018 - new buffer never used
 
 			Bind the result to a variable, return it, or pass it along:
 
@@ -595,23 +595,23 @@ object ErrorCatalog {
 		Entry("W025", "Unused local variable",
 			"""
 			A 'val' or 'var' is declared in a function body but is never read.
-			Assignment-only counts as unused — the value is computed, stored,
+			Assignment-only counts as unused - the value is computed, stored,
 			then never observed:
 
-			  val x = compute()    // W025 — x never used
+			  val x = compute()    // W025 - x never used
 
 			Either delete the declaration, use the value, or rename to '_' to
 			signal an intentionally ignored binding.
 
 			Suppress with: -Wno-unused-local
 			""".trimIndent()),
-		Entry("W028", "var never reassigned — could be val",
+		Entry("W028", "var never reassigned - could be val",
 			"""
 			A local 'var' is initialized but never reassigned. Prefer 'val' for
 			immutable locals; the compiler can reason more aggressively about
 			values that can't change:
 
-			  var x = 5            // W028 — never reassigned
+			  var x = 5            // W028 - never reassigned
 			  println(x)
 
 			Suppress with: -Wno-could-be-val
@@ -619,11 +619,11 @@ object ErrorCatalog {
 		Entry("W033", "Side-effect-free expression statement",
 			"""
 			An expression statement evaluates an expression and discards the
-			result, but the expression has no side effects — no call, no
+			result, but the expression has no side effects - no call, no
 			assignment. The whole statement is dead code, usually a typo:
 
-			  a + b;          // W033 — result discarded, no effect
-			  x == 5;         // W033 — comparison result thrown away
+			  a + b;          // W033 - result discarded, no effect
+			  x == 5;         // W033 - comparison result thrown away
 
 			Suppress with: -Wno-no-effect-expr
 			""".trimIndent()),
@@ -632,7 +632,7 @@ object ErrorCatalog {
 			An assignment statement reads and writes the same simple variable
 			or property without using it on the right-hand side:
 
-			  x = x          // W013 — no effect
+			  x = x          // W013 - no effect
 
 			This usually indicates a typo (the intended source name differs from
 			the target) or stale code left over from a refactor.

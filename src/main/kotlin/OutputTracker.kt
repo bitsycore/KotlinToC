@@ -53,7 +53,7 @@ internal class OutputTracker(
 			vF.delete()
 			}
 		// Prune empty dirs (bottom-up so children are gone first). Skip the
-		// root and _cmake/ — _cmake is the build cache, not ours to clean.
+		// root and _cmake/ - _cmake is the build cache, not ours to clean.
 		fRootDir.walkBottomUp().forEach { vD ->
 			if (!vD.isDirectory)                                          return@forEach
 			if (vD.canonicalPath == fRootDir.canonicalPath)               return@forEach
@@ -69,7 +69,7 @@ internal class OutputTracker(
 		{
 		val vName = inFile.name
 		val vPath = inFile.path
-		// _cmake/ is the cmake build cache — never ours.
+		// _cmake/ is the cmake build cache - never ours.
 		if (vPath.contains("${File.separator}_cmake${File.separator}")) return false
 		// User-supplied cmake override and any binary artifacts: leave alone.
 		if (vName == "ktc_user.cmake")                                   return false

@@ -464,12 +464,12 @@ class GenericsUnitTest : TranspilerTestBase() {
         val vFirstImpl = vBlock.indexOf("// ════ implements", vCtorLine + 1)
         val vCtorBlock = vBlock.substring(0, vFirstImpl)
 
-        // add(), set(), removeAt(), clear() are MutableList-only — must NOT be in ctor block
+        // add(), set(), removeAt(), clear() are MutableList-only - must NOT be in ctor block
         assertTrue(!vCtorBlock.contains("KTC_METHOD(void, add)"),
             "add() should be under implements, not constructors; block:\n$vBlock")
         assertTrue(!vCtorBlock.contains("KTC_METHOD(void, clear)"),
             "clear() should be under implements, not constructors; block:\n$vBlock")
-        // get() is List-only — must NOT be in ctor block
+        // get() is List-only - must NOT be in ctor block
         assertTrue(!vCtorBlock.contains("KTC_METHOD(ktc_Int, get)"),
             "get() should be under implements, not constructors; block:\n$vBlock")
 

@@ -32,7 +32,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 s.show()
             }
         """)
-        // After guard, s is smart-cast to String — KTC_UNWRAP(s) unwraps Optional
+        // After guard, s is smart-cast to String - KTC_UNWRAP(s) unwraps Optional
         r.sourceContains("test_Main_String_show(KTC_UNWRAP(s))")
     }
 
@@ -48,7 +48,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        // After guard with break, x should be smart-cast — printed via KTC_UNWRAP
+        // After guard with break, x should be smart-cast - printed via KTC_UNWRAP
         r.sourceContains("KTC_UNWRAP(x)")
     }
 
@@ -99,7 +99,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 }
             }
         """)
-        // In else branch, x is smart-cast — should print KTC_UNWRAP(x)
+        // In else branch, x is smart-cast - should print KTC_UNWRAP(x)
         r.sourceContains("KTC_UNWRAP(x)")
     }
 
@@ -163,7 +163,7 @@ class SmartCastUnitTest : TranspilerTestBase() {
                 s.safe()
             }
         """)
-        // Inside the if, this should be smart-cast to String — $self is unwrapped via KTC_UNWRAP
+        // Inside the if, this should be smart-cast to String - $self is unwrapped via KTC_UNWRAP
         r.sourceContains("KTC_UNWRAP(\$self)")
         r.sourceContains(".len")
         r.sourceContains(".ptr")

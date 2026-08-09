@@ -1,7 +1,7 @@
 @file:cInclude("SDL3/SDL.h")
 package ktc.sdl3
 
-// All inline — zero-overhead integer constants at use site.
+// All inline - zero-overhead integer constants at use site.
 
 // ==================
 // Navigation & editing

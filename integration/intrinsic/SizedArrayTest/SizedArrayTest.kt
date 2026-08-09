@@ -103,7 +103,7 @@ fun testSizedParam() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 6. Exact-size literal assigned to @Size(N) — inferred match, no warning
+ * 6. Exact-size literal assigned to @Size(N) - inferred match, no warning
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun testExactSizeLiteral() {
@@ -135,7 +135,7 @@ fun testExactSizeLiteral() {
  *    The warning only fires when the element count is unknown at transpile
  *    time (e.g. comes from a parameter). Literal sizes like IntArray(5) are
  *    inferred, so assigning them to a smaller @Size(N) is a transpiler ERROR
- *    — use .copyOf(N) explicitly.
+ *    - use .copyOf(N) explicitly.
  *
  * [TRANSPILER ERROR] Literal-sized source larger than @Size(N) target.
  *    Uncomment to verify the diagnostic:

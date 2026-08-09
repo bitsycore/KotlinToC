@@ -146,7 +146,7 @@ internal fun CCodeGen.emitStructFields(ci: ClassInfo) {
 
 /* Emit primary constructor header declaration + impl body. */
 internal fun CCodeGen.emitConstructorBody(cName: String, ci: ClassInfo) {
-	val vAllCtorParams = ci.allCtorParams()   // declaration order — must match the call sites
+	val vAllCtorParams = ci.allCtorParams()   // declaration order - must match the call sites
 	val vParamStr      = expandCtorParams(vAllCtorParams)
 	val vParamDecl     = vParamStr.ifEmpty { "void" }
 	hdr.appendLine("KTC_METHOD(KTC_TYPE_NAME, primaryConstructor)($vParamDecl);")

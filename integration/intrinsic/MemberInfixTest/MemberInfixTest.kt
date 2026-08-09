@@ -7,7 +7,7 @@ package MemberInfixTest
 class Vec(val x: Int, val y: Int) {
 	infix fun combine(o: Vec): Vec = Vec(x + o.x, y + o.y)
 	infix fun dot(o: Vec): Int = x * o.x + y * o.y
-	// A member infix named like the built-in bitwise `and` — the member must win for Vec receivers,
+	// A member infix named like the built-in bitwise `and` - the member must win for Vec receivers,
 	// while `x and o.x` below stays the integer bitwise op (Int is not a user class).
 	infix fun and(o: Vec): Vec = Vec(x and o.x, y and o.y)
 }

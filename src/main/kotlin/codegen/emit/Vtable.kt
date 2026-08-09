@@ -67,7 +67,7 @@ internal fun CCodeGen.emitVtable(
 
 	// Covariant interface return: a method whose iface slot returns a ktc_IfacePtr (Ref<I'>) but whose
 	// concrete impl returns Ref<concrete-class> (e.g. Cloneable<List>.clone(): Ref<List> implemented by
-	// ArrayList returning Ref<ArrayList>). The vtable slot can't just cast the concrete fn — the C return
+	// ArrayList returning Ref<ArrayList>). The vtable slot can't just cast the concrete fn - the C return
 	// representations differ (class* vs ktc_IfacePtr). Emit a trampoline that calls the concrete method
 	// and wraps its result into the I' fat pointer. Returns the interface to wrap as, or null if no wrap.
 	fun covariantRetIface(m: FunDecl): String? {
@@ -76,7 +76,7 @@ internal fun CCodeGen.emitVtable(
 		val vRetIfaceI = (vIfaceRet as? KtcType.Ptr)?.inner?.let { ifaceInfoFor(it) } ?: return null
 		val vConcRet   = classes[className]?.methods?.find { it.name == m.name }?.returnType
 			?.let { resolveTypeName(it).stripNullable }
-		if (vConcRet != null && isRefToIface(vConcRet)) return null   // concrete already returns an iface ptr — no wrap
+		if (vConcRet != null && isRefToIface(vConcRet)) return null   // concrete already returns an iface ptr - no wrap
 		return vRetIfaceI.name
 		}
 	if (!isObject) for (m in methods) {
@@ -207,7 +207,7 @@ internal fun CCodeGen.emitInterfaceVtablesForClass(
 				}
 			}
 
-		// static vtable instance (skip for @SimpleUnion — no vtable)
+		// static vtable instance (skip for @SimpleUnion - no vtable)
 		val vIsSimpleUnion = vIfaceName in simpleUnionInterfaces
 		if (!vIsSimpleUnion) {
 			if (!implsOnly) hdr.appendLine("extern const ${vCIface}_vt KTC_RELATED(${vIfaceName}_vt);")

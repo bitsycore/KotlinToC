@@ -102,8 +102,8 @@ fun main() {
     val mapSizeBefore = map.size
     val mapClone = map.clone()
     mapClone.put(99999, "CLONE")              // mutate the clone only
-    if (map.size != mapSizeBefore) fatalError("FAIL clone not deep — original size changed to ${map.size}")
-    if (map.containsKey(99999)) fatalError("FAIL clone not deep — original got the clone's key")
+    if (map.size != mapSizeBefore) fatalError("FAIL clone not deep - original size changed to ${map.size}")
+    if (map.containsKey(99999)) fatalError("FAIL clone not deep - original got the clone's key")
     if (!mapClone.containsKey(99999)) fatalError("FAIL clone missing its own key")
     if (mapClone.size != mapSizeBefore + 1) fatalError("FAIL clone size=${mapClone.size}")
     mapClone.dispose()

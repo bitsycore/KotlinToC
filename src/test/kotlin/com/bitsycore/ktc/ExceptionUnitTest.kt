@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * Tests for try/catch/finally/throw — the setjmp/longjmp lowering (KTC_TRY
+ * Tests for try/catch/finally/throw - the setjmp/longjmp lowering (KTC_TRY
  * macro family), catch type matching via TYPE_IDs, arena take, return/break
  * interplay, and the E130-E133 diagnostics.
  */
@@ -150,7 +150,7 @@ class ExceptionUnitTest : TranspilerTestBase() {
 			""")
 		assertTrue(r.source.contains("KTC_TRY_LEAVE("),
 			"return inside try must pop the exception frame")
-		// The finally body (a printf — literals are interned, so match the call shape)
+		// The finally body (a printf - literals are interned, so match the call shape)
 		// must be re-emitted between the frame pop and the return.
 		val vLeave   = r.source.indexOf("KTC_TRY_LEAVE(")
 		val vReturn  = r.source.indexOf("return", vLeave)
@@ -246,7 +246,7 @@ class ExceptionUnitTest : TranspilerTestBase() {
 	}
 
 	@Test fun localThrowableHierarchyWorksWithoutStdlib() {
-		// The hierarchy is matched by name — a package-local Throwable works too.
+		// The hierarchy is matched by name - a package-local Throwable works too.
 		val r = transpileMain(
 			decls = kLocalThrowable,
 			body = """
@@ -273,7 +273,7 @@ class ExceptionUnitTest : TranspilerTestBase() {
 	}
 
 	@Test fun unreachableCodeAfterThrowWarns() {
-		// Inside a nested block — the W024 check covers block bodies (top-level
+		// Inside a nested block - the W024 check covers block bodies (top-level
 		// function statements are exempt, same as for `return`).
 		val r = transpileMainWithStdlib("""
 			try {

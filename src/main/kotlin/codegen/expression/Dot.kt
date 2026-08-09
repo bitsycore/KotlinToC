@@ -9,7 +9,7 @@ import com.bitsycore.ktc.types.KtcType
 /* Returns the C field name for a dot access, prefixing private stored fields with PRIV_. Private fields
    are PRIV_-named in the struct regardless of access path, so this applies to `this.field` AND to a field
    on another instance of the same class (cross-instance private access, e.g. a copy/clone method touching
-   another instance's privates — legal in Kotlin/Java/C++; cross-class access is rejected elsewhere). */
+   another instance's privates - legal in Kotlin/Java/C++; cross-class access is rejected elsewhere). */
 internal fun CCodeGen.thisFieldName(name: String, obj: Expr): String {
 	val vCls = if (obj is ThisExpr) currentClass
 		else {
@@ -23,7 +23,7 @@ internal fun CCodeGen.thisFieldName(name: String, obj: Expr): String {
 internal fun CCodeGen.genDot(e: DotExpr): String {
     // C package passthrough: C.EXIT_SUCCESS → EXIT_SUCCESS, C.NULL → NULL.
     // The interop namespace is `C` (uppercase); lowercase `c` is accepted for
-    // backward compatibility — both resolve identically.
+    // backward compatibility - both resolve identically.
     if (e.obj is NameExpr && isCInteropName(e.obj.name) && lookupVar(e.obj.name) == null) {
         return e.name
     }
@@ -124,7 +124,7 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // Template handle (templateOf): .maxLen is a compile-time constant (refused when not statically bounded).
     val vTmplDot = (e.obj as? NameExpr)?.let { lookupLocalVar(it.name)?.template }
     if (vTmplDot != null && e.name == "maxLen")
-        return "${templateMaxLen(vTmplDot) ?: codegenError("template.maxLen is unavailable — this template's length is not statically bounded. Use .computeLen() (computed at runtime).")}"
+        return "${templateMaxLen(vTmplDot) ?: codegenError("template.maxLen is unavailable - this template's length is not statically bounded. Use .computeLen() (computed at runtime).")}"
     // Array .size → sized-struct param uses local$name$len; trampoline uses .size field; others use $len
     if (e.name == "size" && e.obj is NameExpr && e.obj.name in trampolinedParams) return arrayParamSizeExpr(e.obj.name)
     if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return "${recv}.len"
@@ -132,17 +132,17 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     // T* for Array). Unconditional so it lowers even where the receiver's array type isn't re-inferred
     // (e.g. an inlined COpaque-element array); .cPtr is only ever written on String/Array.
     if (e.name == "cPtr") return "$recv.ptr"
-    // `.ptr` is no longer allowed on String/Array (E055) — use .cPtr. Gated on the inferred type so a
+    // `.ptr` is no longer allowed on String/Array (E055) - use .cPtr. Gated on the inferred type so a
     // genuine C-struct field named `ptr` still resolves via the default path.
     if (e.name == "ptr" && (recvTypeCoreKtc is KtcType.Str || recvTypeCoreKtc?.isArrayLike == true))
-        codegenError("E055", "'.ptr' is not available on String/Array — use '.cPtr' to get the raw C pointer (const ktc_Char* / T*).")
+        codegenError("E055", "'.ptr' is not available on String/Array - use '.cPtr' to get the raw C pointer (const ktc_Char* / T*).")
     if (e.name == "length" && recvTypeKtc is KtcType.Str) return "$recv.len"
     if (e.name == "runeLen" && recvTypeKtc is KtcType.Str) return "ktc_core_str_runeLen($recv)"
-    // Enum .ordinal — simple enum: the int value itself; full enum: .ordinal field on the struct
+    // Enum .ordinal - simple enum: the int value itself; full enum: .ordinal field on the struct
     val vOrdinalEnumInfo = enumInfoFor(recvTypeCoreKtc)                               // non-null if receiver is an enum (for ordinal/name)
     if (e.name == "ordinal" && vOrdinalEnumInfo != null)
         return if (vOrdinalEnumInfo.isSimple) recv else "$recv.ordinal"
-    // Enum .name — simple enum: names[ordinal]; full enum: .name field on the struct
+    // Enum .name - simple enum: names[ordinal]; full enum: .name field on the struct
     if (e.name == "name" && vOrdinalEnumInfo != null)
         return if (vOrdinalEnumInfo.isSimple) "${vOrdinalEnumInfo.flatName}_names[($recv)]" else "$recv.name"
     // Full enum: ctor-param or body property field access (e.g. Op.PLUS.sym → ...PLUS.sym)
@@ -157,11 +157,11 @@ internal fun CCodeGen.genDot(e: DotExpr): String {
     if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) {
         val inner = recvTypeCoreKtc.inner
         if (inner is KtcType.User && objects.containsKey(inner.baseName))
-            codegenError("Cannot access .refValue on object '${inner.baseName}' — objects are always Ref")
+            codegenError("Cannot access .refValue on object '${inner.baseName}' - objects are always Ref")
         return wrapNullCheck(recv, "(*$recv)", e.obj)
     }
 
-    // Interface property access via vtable — handle BOTH a bare interface value AND a Ref<interface>
+    // Interface property access via vtable - handle BOTH a bare interface value AND a Ref<interface>
     // (Ptr(User=iface), itself a ktc_IfacePtr) BEFORE the raw -> path below: a Ref<interface> is a fat
     // pointer, not a struct pointer, so `recv->field` would be invalid C.
     val vIfaceDotInfo = ifaceInfoFor(recvTypeCoreKtc)                                 // non-null if receiver is a known interface (unwraps Ref<iface>)
@@ -287,7 +287,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
     val isThis = e.obj is ThisExpr
     val isValueNullRecv = recvTypeKtc is KtcType.Nullable && isValueNullableKtc(recvTypeKtc)
 
-    // If the receiver isn't a bare name/this, materialize it into a temp first —
+    // If the receiver isn't a bare name/this, materialize it into a temp first -
     // otherwise the null guard and the field access would each re-evaluate the
     // receiver expression (calling functions twice, etc.) and produce broken C.
     val recv: String
@@ -320,7 +320,7 @@ internal fun CCodeGen.genSafeDot(e: SafeDotExpr): String {
         e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike -> "${recvVal}.len"
         e.name == "cPtr" -> "${recvVal}.ptr"
         e.name == "ptr" && (recvTypeCoreKtc is KtcType.Str || recvTypeCoreKtc?.isArrayLike == true) ->
-            codegenError("E055", "'.ptr' is not available on String/Array — use '.cPtr'.")
+            codegenError("E055", "'.ptr' is not available on String/Array - use '.cPtr'.")
         e.name == "length" && recvTypeCoreKtc is KtcType.Str -> "$recvVal.len"
         else -> "$recvVal.${e.name}"
     }
@@ -383,7 +383,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
             return t
             }
         val ct = cTypeStr(baseType.ifEmpty { "void*" })
-        // Simple name — no temp needed
+        // Simple name - no temp needed
         if (e.expr is NameExpr) {
             preStmts += npeGuard("!$inner", loc)
             return inner
@@ -405,7 +405,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
     // Value-nullable arbitrary expression (e.g. `metadata(p)!!`): spill to a temp,
     // check its Optional tag, then return the inner `.value`. Without this fall-through,
     // a chained `!!` on a function-result of `T?` ends up assigned to a `T` lvalue
-    // without unwrapping — the C compiler then complains about struct/value mismatch.
+    // without unwrapping - the C compiler then complains about struct/value mismatch.
     if (innerKtc is KtcType.Nullable && isValueNullableKtc(innerKtc)) {
         val t = tmp()
         val vOptCType = optCTypeName(innerKtc.inner.toInternalStr)
@@ -414,7 +414,7 @@ internal fun CCodeGen.genNotNull(e: NotNullExpr): String {
         return "$t.value"
     }
 
-    // Check: !! on a type that inference knows is non-nullable — always a bug
+    // Check: !! on a type that inference knows is non-nullable - always a bug
     // Exclude smart-cast variables: they are stored as Optional but narrowed in scope (isOptional guard).
     val isSmartCastNarrowed = e.expr is NameExpr && isOptional(e.expr.name)
     if (innerKtc != null && innerKtc !is KtcType.Nullable && !isSmartCastNarrowed) {

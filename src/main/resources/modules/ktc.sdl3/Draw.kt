@@ -59,7 +59,7 @@ inline fun SDL3.Renderer.fillRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val rightRect = SDL3.FRect(rect.x + rect.w - r, rect.y + r, r, rect.h - r * 2.0f)
 	C.SDL_RenderFillRect(this.handle, C.addr(leftRect.sdl))
 	C.SDL_RenderFillRect(this.handle, C.addr(rightRect.sdl))
-	// Corner arcs — scanline per row, all 4 corners in one loop
+	// Corner arcs - scanline per row, all 4 corners in one loop
 	var qy = 0.0f
 	while (qy <= r) {
 		val hw: Float = C.sqrtf(r * r - qy * qy)
@@ -81,7 +81,7 @@ inline fun SDL3.Renderer.fillRoundedRect(rect: SDL3.FRect, radius: Float) {
 
 /**
  * Fill a triangle with per-vertex RGBA float colors [0..1].
- * Uses SDL_RenderGeometry — blending must be set before calling if transparency is needed.
+ * Uses SDL_RenderGeometry - blending must be set before calling if transparency is needed.
  */
 inline fun SDL3.Renderer.fillTriangle(
     x0: Float, y0: Float, r0: Float, g0: Float, b0: Float, a0: Float,
@@ -132,7 +132,7 @@ inline fun SDL3.Renderer.fillTriangle(
  */
 inline fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val r = if (radius > rect.w / 2.0f) rect.w / 2.0f else if (radius > rect.h / 2.0f) rect.h / 2.0f else radius
-	// Straight edges as point loops — same rasterizer as the corner arcs below.
+	// Straight edges as point loops - same rasterizer as the corner arcs below.
 	val topY    = rect.y
 	val bottomY = rect.y + rect.h
 	val xStart  = rect.x + r
@@ -158,7 +158,7 @@ inline fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val trx = rect.x + rect.w - r;   val try_ = rect.y + r
 	val blx = rect.x + r;            val bly = rect.y + rect.h - r
 	val brx = rect.x + rect.w - r;   val bry = rect.y + rect.h - r
-	// Midpoint circle — all 4 corners per step
+	// Midpoint circle - all 4 corners per step
 	var px = 0.0f
 	var py = r
 	var d = 1.25f - r

@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * Tests for class inheritance (open/abstract/sealed) — the InheritDesugar pass:
+ * Tests for class inheritance (open/abstract/sealed) - the InheritDesugar pass:
  * interface + $Impl synthesis, child augmentation, ctor-call rewriting, and
  * the v1 diagnostics.
  */
@@ -242,7 +242,7 @@ class InheritanceUnitTest : TranspilerTestBase() {
 			}
 			fun main() { println(weight(Leaf(1, 2))) }
 		""")
-		// No exhaustiveness warning expected — both subclasses covered.
+		// No exhaustiveness warning expected - both subclasses covered.
 		assertTrue(r.source.contains("test_Leaf_TYPE_ID"), "when dispatches on subclass typeIds")
 	}
 }

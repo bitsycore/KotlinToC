@@ -1,8 +1,8 @@
-/* ktc_thread.c — ktc thread utility definitions */
+/* ktc_thread.c - ktc thread utility definitions */
 #include "ktc_thread.h"
 #include <stdlib.h>
 
-/* From ktc_core_exception.h — declared here to avoid pulling all of
+/* From ktc_core_exception.h - declared here to avoid pulling all of
    ktc_core.h into this TU (ktc_core.h includes ktc_thread.h mid-file). */
 void ktc_core_exc_thread_cleanup(void);
 

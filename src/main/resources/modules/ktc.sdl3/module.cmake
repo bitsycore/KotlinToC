@@ -1,4 +1,4 @@
-# SDL3 KotlinToC module — cmake injected automatically when SDL3 module is active.
+# SDL3 KotlinToC module - cmake injected automatically when SDL3 module is active.
 # ─────────────────────────────────────────────────────────────────────────────
 # Tries find_package first (uses a locally installed SDL3 if available),
 # then falls back to FetchContent so no manual installation is needed.
@@ -13,7 +13,7 @@ set(SDL3_GIT_REPO "https://github.com/libsdl-org/SDL.git" CACHE STRING "SDL3 git
 find_package(SDL3 QUIET CONFIG)
 
 if(NOT SDL3_FOUND)
-    message(STATUS "SDL3 not found locally — fetching ${SDL3_GIT_TAG} from ${SDL3_GIT_REPO}")
+    message(STATUS "SDL3 not found locally - fetching ${SDL3_GIT_TAG} from ${SDL3_GIT_REPO}")
     include(FetchContent)
     FetchContent_Declare(
         SDL3

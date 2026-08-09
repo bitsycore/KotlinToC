@@ -1,4 +1,4 @@
-//ktc_core.h — KotlinToC compiler intrinsics
+//ktc_core.h - KotlinToC compiler intrinsics
 #pragma once
 
 #include "ktc_macro.h"
@@ -21,10 +21,10 @@
 // MARK: Types
 // ══════════════════════════════════════════════════════════════════
 
-/* Kotlin's Unit as a VALUE — used when Unit lands in a value position
+/* Kotlin's Unit as a VALUE - used when Unit lands in a value position
  * (a generic instantiated with Unit, e.g. Result<Unit>; a Unit field or
  * parameter). Plain Unit-returning functions stay C `void`. One canonical
- * value, KTC_UNIT — all Unit values are equal. */
+ * value, KTC_UNIT - all Unit values are equal. */
 typedef struct { int8_t __unit; } ktc_Unit;
 #define KTC_UNIT ((ktc_Unit){0})
 
@@ -165,12 +165,12 @@ typedef struct { ktc_UInt flags; } ktc_core_ObjFlags;
 #define KTC_EMPTY_OBJ_INIT
 #endif
 
-/** Ref<Interface> trampoline — fat pointer for interface references.
+/** Ref<Interface> trampoline - fat pointer for interface references.
  *  typeId holds the concrete type ID for is-checks; vt for dispatch; obj for data.
  *  One unified struct for all Ref<InterfaceType> regardless of which interface. */
 typedef struct { ktc_UInt typeId; const void* vt; void* obj; } ktc_IfacePtr;
 
-/** Vtable for Any methods — one static instance per class.
+/** Vtable for Any methods - one static instance per class.
  *  All methods take void* for type-erased dispatch. */
 typedef struct ktc_core_AnyVt {
     void      (*toString)(void* $self, void* sb);
@@ -180,10 +180,10 @@ typedef struct ktc_core_AnyVt {
     void*     (*copyWith)(void* $self, void* alloc);  // allocate + copy via Allocator
 } ktc_core_AnyVt;
 
-/** Type-erased fat pointer for `Any` — identity checks + vtable dispatch. */
+/** Type-erased fat pointer for `Any` - identity checks + vtable dispatch. */
 typedef struct { ktc_UInt typeId; void* data; const ktc_core_AnyVt* vt; } ktc_Any;
 
-/** Heap (boxed) closure `Closure<F>` — type-erased: `env` is the heap-allocated capture struct, `invoke`
+/** Heap (boxed) closure `Closure<F>` - type-erased: `env` is the heap-allocated capture struct, `invoke`
     is the generated trampoline cast back to F's concrete signature at each call site. One representation
     for any closure of a given function type. */
 typedef struct { void* env; void (*invoke)(void); } ktc_Closure;
@@ -270,17 +270,17 @@ typedef struct {
 } ktc_String;
 KTC_DEFINE_OPT(ktc_String);
 
-/** String from a string literal — zero-cost, points into static storage. */
+/** String from a string literal - zero-cost, points into static storage. */
 #define ktc_core_str(s) ((ktc_String){(s), (ktc_Int)(sizeof(s) - 1)})
 
-/** String from pointer + length — no copy. */
+/** String from pointer + length - no copy. */
 #define ktc_core_string_wrap(p, n) ((ktc_String){(p), (ktc_Int)(n)})
 
 static inline ktc_Bool ktc_core_string_eq(ktc_String a, ktc_String b) {
     return a.len == b.len && memcmp(a.ptr, b.ptr, (size_t)a.len) == 0;
 }
 
-/** Lexicographic comparison — returns <0, 0, or >0. */
+/** Lexicographic comparison - returns <0, 0, or >0. */
 static inline ktc_Int ktc_core_string_cmp(ktc_String a, ktc_String b) {
     ktc_Int minlen = a.len < b.len ? a.len : b.len;
     ktc_Int r = memcmp(a.ptr, b.ptr, (size_t)minlen);
@@ -288,7 +288,7 @@ static inline ktc_Int ktc_core_string_cmp(ktc_String a, ktc_String b) {
     return (a.len > b.len) - (a.len < b.len);
 }
 
-/** Substring as a view — no copy. Clamps out-of-range indices. */
+/** Substring as a view - no copy. Clamps out-of-range indices. */
 static inline ktc_String ktc_core_string_substring(ktc_String s, ktc_Int from, ktc_Int to) {
     if (from < 0) from = 0;
     if (to > s.len) to = s.len;
@@ -362,10 +362,10 @@ typedef struct {
 
 /*
  * Stack-backed: ktc_Char buf[256]; ktc_StrBuf sb = {buf, 0, 256};
- * Counting mode: {NULL, 0, 0} — counts required length without writing.
+ * Counting mode: {NULL, 0, 0} - counts required length without writing.
  */
 
-/** View of current buffer contents — null-terminates, no copy. */
+/** View of current buffer contents - null-terminates, no copy. */
 #define ktc_core_sb_to_string(sb) ((sb)->ptr ? ((sb)->ptr[(sb)->len] = '\0') : (void)0, (ktc_String){(sb)->ptr, (sb)->len})
 
 static inline void ktc_core_sb_append_char(ktc_StrBuf* sb, ktc_Char c) {
@@ -401,7 +401,7 @@ ktc_Rune ktc_core_utf8_decode(const ktc_Char* p, ktc_Int* byteLen);
 /** Encode a code point into out[4]. Returns byte count (1-4). */
 ktc_Int ktc_core_utf8_encode(ktc_Rune r, ktc_Char* out);
 
-/** Count Unicode code points — O(n) scan. */
+/** Count Unicode code points - O(n) scan. */
 ktc_Int ktc_core_str_runeLen(ktc_String s);
 
 /** Decode the code point at byte offset pos. Returns U+FFFD if out of range. */
@@ -476,12 +476,12 @@ ktc_Bool ktc_core_str_toLongOrNull(ktc_String s, ktc_Long* out);
 ktc_Bool ktc_core_str_toDoubleOrNull(ktc_String s, ktc_Double* out);
 
 
-// Filesystem helpers — declared in ktc_core_fs.h for organization,
+// Filesystem helpers - declared in ktc_core_fs.h for organization,
 // re-included here so every translation unit that pulls in ktc_core.h
 // also sees ktc.std.FileSystem prototypes.
 #include "ktc_core_fs.h"
 
-// Exception support (setjmp/longjmp try/catch + TLS exception arena) —
+// Exception support (setjmp/longjmp try/catch + TLS exception arena) -
 // same re-include pattern so generated code sees the KTC_TRY/KTC_CATCH
 // macros and ktc_core_exc_* prototypes everywhere.
 #include "ktc_core_exception.h"

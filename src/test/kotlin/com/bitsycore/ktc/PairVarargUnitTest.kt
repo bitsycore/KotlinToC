@@ -4,7 +4,7 @@ import kotlin.test.Test
 
 /*
 Tests for stdlib Pair<A,B> type (via ktc.std), vararg parameters, and spread operator.
-Pair and Triple are now fully defined in stdlib — no intrinsic codegen fallback exists.
+Pair and Triple are now fully defined in stdlib - no intrinsic codegen fallback exists.
 */
 class PairVarargUnitTest : TranspilerTestBase() {
 

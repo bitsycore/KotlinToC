@@ -203,7 +203,7 @@ fun arrayListAllocTest() {
     stack1Null1.asRef().testPtrExtNullable()
     stack1Null2.asRef().testPtrExtNullable()
 
-    // INTERFACE NULLABLE — interface unions need Optional + for-loop support
+    // INTERFACE NULLABLE - interface unions need Optional + for-loop support
     testListValueNullable(stack1.copy())
     testListValueNullable(stack2.copy())
     testListValueNullable(heap1.refValue)
@@ -222,7 +222,7 @@ fun arrayListAllocTest() {
     testListPtrNullable(heap1Null1)
     testListPtrNullable(heap1Null2)
 
-    // INTERFACE EXTENSION NULLABLE — need interface ext fun nullable support
+    // INTERFACE EXTENSION NULLABLE - need interface ext fun nullable support
     stack1.testListValueExtNullable()
     stack2.testListValueExtNullable()
     heap1.refValue.testListValueExtNullable()
@@ -544,7 +544,7 @@ fun arrayListDataClassAllocTest() {
     stack1Null1.asRef().testPtrExtNullable()
     stack1Null2.asRef().testPtrExtNullable()
 
-    // INTERFACE NULLABLE — interface unions need Optional + for-loop support
+    // INTERFACE NULLABLE - interface unions need Optional + for-loop support
     testListValueNullable(stack1.copy())
     testListValueNullable(stack2.copy())
     testListValueNullable(heap1.refValue)
@@ -563,7 +563,7 @@ fun arrayListDataClassAllocTest() {
     testListPtrNullable(heap1Null1)
     testListPtrNullable(heap1Null2)
 
-    // INTERFACE EXTENSION NULLABLE — need interface ext fun nullable support
+    // INTERFACE EXTENSION NULLABLE - need interface ext fun nullable support
     stack1.testListValueExtNullable()
     stack2.testListValueExtNullable()
     heap1.refValue.testListValueExtNullable()

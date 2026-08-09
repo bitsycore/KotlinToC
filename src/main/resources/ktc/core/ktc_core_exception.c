@@ -1,4 +1,4 @@
-/* ktc_core_exception.c — TLS arena + throw/take/end-try for KTC exceptions */
+/* ktc_core_exception.c - TLS arena + throw/take/end-try for KTC exceptions */
 #include "ktc_core.h"
 
 #include <stdio.h>
@@ -6,7 +6,7 @@
 #include <string.h>
 
 /* The arena is an intentional per-thread cache (freed by the thread
-   trampoline, reclaimed by the OS for the main thread) — keep it out of the
+   trampoline, reclaimed by the OS for the main thread) - keep it out of the
    KTC_MEM_TRACK leak report. */
 #ifdef KTC_MEM_TRACK
     #undef realloc
@@ -44,7 +44,7 @@ static KTC_EXC_NORETURN void ktc_exc_uncaught(void)
 }
 
 /* Ensure the arena holds at least inNeeded bytes. The arena is one block per
-   thread, grown with realloc (old contents are dead at this point — a new
+   thread, grown with realloc (old contents are dead at this point - a new
    throw fully overwrites it) and reused for every subsequent throw. */
 static void ktc_exc_arena_reserve(ktc_Int inNeeded)
 {
@@ -107,7 +107,7 @@ KTC_EXC_NORETURN void ktc_core_exc_throw(
 
     if (vFrame != NULL && vFrame->inFinally) {
         /* Throw from a finally block: this frame is done (re-entering it would
-           re-run the finally forever) — pop it and propagate outward. The new
+           re-run the finally forever) - pop it and propagate outward. The new
            exception replaces the in-flight one, matching Kotlin semantics. */
         ktc_core_exc.stack = vFrame->prev;
         vFrame = vFrame->prev;

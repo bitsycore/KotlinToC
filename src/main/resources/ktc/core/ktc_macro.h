@@ -95,7 +95,7 @@
 
 /*
  * Paste helper: expands T fully (since it arrives without ##) then appends _vt.
- * Needed because ## suppresses pre-expansion of its operands — without this
+ * Needed because ## suppresses pre-expansion of its operands - without this
  * indirection, KTC_TYPE_NAME_##_vt would paste the literal token "KTC_TYPE_NAME"
  * instead of the expanded type name like "ktc_std_Allocator".
  */
@@ -127,7 +127,7 @@
 
 /*
  * KTC_SIMPLE_UNION(CONCRETE_TYPES): defines a tagged union with no vtable.
- * Used for @SimpleUnion sealed interfaces — zero overhead vs hand-written C union.
+ * Used for @SimpleUnion sealed interfaces - zero overhead vs hand-written C union.
  * Layout: { ktc_UInt __typeId; union { variants... } data; }
  */
 #define __KTC_SIMPLE_UNION_IMPL(CLS_, CLS_OPT_, CONCRETE_TYPES) \
@@ -146,7 +146,7 @@
 
 /**
  * Optional type definition <br>
- * T? — requires ktc_OptionalTag to be declared (from ktc_core.h)
+ * T? - requires ktc_OptionalTag to be declared (from ktc_core.h)
  */
 #define KTC_DEFINE_OPT(T)                 \
 	typedef struct KTC_OPT_TYPE(T) {  \
@@ -165,7 +165,7 @@
 
 /**
  * Optional fixed array definition <br>
- * @Size(N) Array<T>? — KTC_DEFINE_ARRAY(T, N) must come first
+ * @Size(N) Array<T>? - KTC_DEFINE_ARRAY(T, N) must come first
  */
 #define KTC_DEFINE_OPT_ARRAY(T, N)                 \
 	typedef struct KTC_OPT_ARRAY_TYPE(T, N) {   \
@@ -254,10 +254,10 @@
  * ktc_UInt (uint32_t); all valid IDs fit in bits 0-30.
  * Bit 31 is reserved for the dispose flag in ktc_core_ObjFlags.
  *
- * KTC_UNDEFINED_TYPE_ID — sentinel for uninitialized instances.
+ * KTC_UNDEFINED_TYPE_ID - sentinel for uninitialized instances.
  *   Value 0xFFFFFFFE (UINT32_MAX-1) is outside the valid ID range.
  *
- * KTC_GET_TYPEID — strips bit 31 before comparisons (safe even if
+ * KTC_GET_TYPEID - strips bit 31 before comparisons (safe even if
  *   the value happens to carry the disposed flag in old code).
  * ========================================================= */
 #define KTC_UNDEFINED_TYPE_ID ((ktc_UInt)0xFFFFFFFEU)
@@ -270,12 +270,12 @@
  * activate runtime dispose tracking.  The MSB of __base.flags (bit 31)
  * is the disposed flag; ktc_core_ObjFlags is compiled in only when needed.
  *
- * Use-after-dispose — controls KTC_ASSERT_NOT_DISPOSED:
+ * Use-after-dispose - controls KTC_ASSERT_NOT_DISPOSED:
  *   KTC_DISPOSED_ASSERT  abort with stacktrace (ASSERT mode)
  *   KTC_DISPOSED_LOG     print stacktrace and continue (LOG mode)
  *   (neither)            silent no-op (NO / default)
  *
- * Double-dispose — controls the guard inside KTC_MARK_DISPOSED:
+ * Double-dispose - controls the guard inside KTC_MARK_DISPOSED:
  *   KTC_DOUBLE_DISPOSE_ASSERT  abort with stacktrace
  *   KTC_DOUBLE_DISPOSE_LOG     print stacktrace and continue
  *   (neither)                  silent no-op (NO / default)
@@ -288,7 +288,7 @@
 
 #define KTC_DISPOSED_FLAG ((ktc_UInt)0x80000000)
 
-/* KTC_ASSERT_NOT_DISPOSED — inserted at the top of every non-dispose method */
+/* KTC_ASSERT_NOT_DISPOSED - inserted at the top of every non-dispose method */
 #if defined(KTC_DISPOSED_ASSERT)
 #define KTC_ASSERT_NOT_DISPOSED(self) \
     do { \
@@ -310,7 +310,7 @@
 #define KTC_ASSERT_NOT_DISPOSED(self) ((void)(self))
 #endif
 
-/* _KTC_DOUBLE_DISPOSE_HANDLE — inline action on double-dispose */
+/* _KTC_DOUBLE_DISPOSE_HANDLE - inline action on double-dispose */
 #if defined(KTC_DOUBLE_DISPOSE_ASSERT)
 #define _KTC_DOUBLE_DISPOSE_HANDLE \
     do { \
@@ -328,7 +328,7 @@
 #define _KTC_DOUBLE_DISPOSE_HANDLE do { (void)0; } while (0)
 #endif
 
-/* KTC_MARK_DISPOSED — inserted at the top of dispose(); sets bit 31 of flags */
+/* KTC_MARK_DISPOSED - inserted at the top of dispose(); sets bit 31 of flags */
 #define KTC_MARK_DISPOSED(self) \
     do { \
         if ((self)->__base.flags & KTC_DISPOSED_FLAG) { \

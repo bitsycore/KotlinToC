@@ -5,7 +5,7 @@ data class Vec2(val x: Float, val y: Float)
 data class Person(val name: String, val age: Int)
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: Ref<Any> — pointer receiver, all primitive + class types
+// MARK: Ref<Any> - pointer receiver, all primitive + class types
 // ══════════════════════════════════════════════════════════════════
 
 fun checkAnyPtr(item: Ref<Any>) {
@@ -42,7 +42,7 @@ fun checkAnyPtr(item: Ref<Any>) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: Ref<Any>? — nullable pointer to Any
+// MARK: Ref<Any>? - nullable pointer to Any
 // ══════════════════════════════════════════════════════════════════
 
 fun checkAnyPtrNull(item: Ref<Any>?) {
@@ -67,7 +67,7 @@ fun checkAnyPtrNull(item: Ref<Any>?) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: Any by value — copy semantics
+// MARK: Any by value - copy semantics
 // ══════════════════════════════════════════════════════════════════
 
 fun checkAnyByValue(item: Any) {
@@ -104,7 +104,7 @@ fun checkAnyByValue(item: Any) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: Any? — nullable by value
+// MARK: Any? - nullable by value
 // ══════════════════════════════════════════════════════════════════
 
 fun checkAnyNullable(item: Any?) {
@@ -324,7 +324,7 @@ fun main() {
     val nn2Fixed: Any = nn2!!
     // Workaround: is-check still works, just verify non-null succeeded
     if (nn2Fixed is Int) { println("!! on non-null: ok") }
-    else { println("!! TODO: is Int fails after !! — known issue") }
+    else { println("!! TODO: is Int fails after !! - known issue") }
 
     // ── toString on smart-cast Any ────────────────────────────────
     println()

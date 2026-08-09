@@ -35,7 +35,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 			}
 		}
 	val vCallee = (init.callee as? NameExpr)?.name ?: return null
-	// arrayOfNulls<T>(size) — stack-allocate array of Optionals, all set to ktc_NONE
+	// arrayOfNulls<T>(size) - stack-allocate array of Optionals, all set to ktc_NONE
 	if (vCallee == "arrayOfNulls") {
 		val vTypeArg  = init.typeArgs.getOrNull(0)
 		val vElemName = typeSubst[vTypeArg?.name ?: "Int"] ?: (vTypeArg?.name ?: "Int")
@@ -47,7 +47,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 			"${ind}memset($vDataName, 0, sizeof($vOptCType) * (size_t)($vSize));\n" +
 			"${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vSize};"
 		}
-	// Array<T>(size), IntArray(size) etc. — fresh stack allocation
+	// Array<T>(size), IntArray(size) etc. - fresh stack allocation
 	if (vCallee in setOf(
 			"IntArray", "LongArray", "FloatArray", "DoubleArray",
 			"BooleanArray", "CharArray", "ByteArray", "ShortArray",
@@ -67,7 +67,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 			}
 		val vSizeArg = init.args[0]
 		val vSize    = genExpr(vSizeArg.expr)
-		// Array<T>(size) { lambda } — inline init loop
+		// Array<T>(size) { lambda } - inline init loop
 		if (init.args.size >= 2 && init.args[1].expr is LambdaExpr) {
 			val vLambda = init.args[1].expr as LambdaExpr
 			val vItName = vLambda.params.firstOrNull() ?: "it"
@@ -80,7 +80,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 			pushScope()
 			defineVar(vItName, "Int")
 			// Drain preStmts added by [genExpr] into vSb before the line that uses
-			// the returned expression — otherwise spill temps (e.g. from method-call
+			// the returned expression - otherwise spill temps (e.g. from method-call
 			// receivers) would be declared after their use site.
 			fun drainPreStmtsTo(inSb: StringBuilder) {
 				if (preStmts.isEmpty()) return
@@ -180,7 +180,7 @@ internal fun CCodeGen.tryArrayOfInit(varName: String, init: Expr, inKtc: KtcType
 	val vDataName   = "${varName}_data"
 	val vVarArrType = varArrTypeName(vElemType)
 	// Any preStmts queued by genExpr above (e.g. spill temps for chained struct
-	// method calls used as args) must land BEFORE the array initializer line —
+	// method calls used as args) must land BEFORE the array initializer line -
 	// otherwise the initializer would reference temps that don't yet exist.
 	val vPre = if (preStmts.isNotEmpty()) preStmts.joinToString("\n") { "$ind$it" }.also { preStmts.clear() } + "\n" else ""
 	return "$vPre${ind}$vElemType ${vDataName}[] = {$vArgs};\n${ind}${vMutComment}$vVarArrType $varName = {$vDataName, $vN};"

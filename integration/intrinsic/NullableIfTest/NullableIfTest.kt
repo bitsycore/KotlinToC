@@ -2,7 +2,7 @@ package NullableIfTest
 
 // Regression test for D2: a value-typed `if`-expression with a `null` branch must lower each
 // branch into the Optional (value -> KTC_SOME, null -> KTC_NONE). Before the fix the whole ternary
-// was wrapped once, so the else-null branch produced SOME(0) instead of NONE — `x ?: d` returned 0
+// was wrapped once, so the else-null branch produced SOME(0) instead of NONE - `x ?: d` returned 0
 // instead of the default. The inline-extension form did not even compile.
 // main returns a non-zero exit code if any check fails.
 
@@ -22,7 +22,7 @@ fun doubledDigitOrNull(c: Char): Int? =
 		v * 2
 	} else null
 
-// Inline extension on a primitive receiver — the original D2 case.
+// Inline extension on a primitive receiver - the original D2 case.
 inline fun Char.toDigitOrNull(): Int? = if (this >= '0' && this <= '9') this.toInt() - '0'.toInt() else null
 
 // when-expression, value-nullable via a `null` else (nested-ternary form). (D4)

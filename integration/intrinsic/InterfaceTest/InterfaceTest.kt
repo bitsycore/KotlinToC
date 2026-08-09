@@ -140,7 +140,7 @@ fun main() {
     if (shape7.name() != "Circle") fatalError("FAIL shape7 should be Circle")
     if (shape8.name() != "Square") fatalError("FAIL shape8 should be Square")
 
-    // Test inferred return type — if-expression
+    // Test inferred return type - if-expression
     val shape9 = shapeReturnerById3Infer(0)
     val shape10 = shapeReturnerById3Infer(1)
     println("if-infer: ${shape9.name()}: ${shape9.area()}")
@@ -148,7 +148,7 @@ fun main() {
     if (shape9.name() != "Circle") fatalError("FAIL shape9 should be Circle")
     if (shape10.name() != "Square") fatalError("FAIL shape10 should be Square")
 
-    // Test inferred return type — when-expression
+    // Test inferred return type - when-expression
     val shape11 = shapeReturnerById4Infer(0)
     val shape12 = shapeReturnerById4Infer(1)
     println("when-infer: ${shape11.name()}: ${shape11.area()}")

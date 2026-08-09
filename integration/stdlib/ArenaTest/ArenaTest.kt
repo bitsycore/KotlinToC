@@ -17,7 +17,7 @@ fun assertEqF(inA: Float, inB: Float) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 1. Stack-backed arena — bump allocation and reset
+ * 1. Stack-backed arena - bump allocation and reset
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun testStackArena() {
@@ -42,7 +42,7 @@ fun testStackArena() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 2. Heap-backed arena — caller owns the backing buffer
+ * 2. Heap-backed arena - caller owns the backing buffer
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun testHeapArena() {
@@ -60,7 +60,7 @@ fun testHeapArena() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 3. Interface dispatch — Arena passed as Allocator
+ * 3. Interface dispatch - Arena passed as Allocator
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun allocVec(inAlloc: Allocator, inX: Float, inY: Float): Ref<Vec2> {
@@ -102,7 +102,7 @@ fun testArenaStringBuffer() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * 5. Multiple allocations — verify bump pointer advances correctly
+ * 5. Multiple allocations - verify bump pointer advances correctly
  * ══════════════════════════════════════════════════════════════════════════ */
 
 fun testMultipleAllocs() {
@@ -118,7 +118,7 @@ fun testMultipleAllocs() {
     assertEqF(pB.x, 3.0f); assertEqF(pB.y, 4.0f)
     assertEqF(pC.x, 5.0f); assertEqF(pC.y, 6.0f)
 
-    // Reset and reuse — previous pointers become invalid but arena is clean
+    // Reset and reuse - previous pointers become invalid but arena is clean
     vArena.reset()
     assertEq(vArena.used(), 0)
 

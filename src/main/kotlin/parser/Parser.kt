@@ -16,9 +16,9 @@ class Parser(private val tokens: List<Token>) {
         skipNL()
         /* Consume recognized @file: annotations at the top of the file.
         Supported:
-          @file:DocumentationOnly          — no C output, decls still visible to other files
-          @file:cInclude("path")           — emits #include <path> in every generated .c
-          @file:cIncludeRelative("path")   — emits #include "path" in every generated .c
+          @file:DocumentationOnly          - no C output, decls still visible to other files
+          @file:cInclude("path")           - emits #include <path> in every generated .c
+          @file:cIncludeRelative("path")   - emits #include "path" in every generated .c
         Unknown @file: names stop the loop and are left for normal declaration parsing. */
         val vCIncludes = mutableListOf<CInclude>()
         while (pos + 3 < tokens.size
@@ -62,7 +62,7 @@ class Parser(private val tokens: List<Token>) {
             break
         }
         // track 'override', 'operator', 'infix', 'inline', 'private', 'internal' modifiers
-        // Modifiers can appear in any order — Kotlin doesn't impose a canonical order
+        // Modifiers can appear in any order - Kotlin doesn't impose a canonical order
         // and users naturally write `inline operator fun` (matching the JetBrains
         // docs) as often as `operator inline fun`. Loop until we stop seeing one.
         var isOverride = false; var isOperator = false; var isInfix = false
@@ -85,7 +85,7 @@ class Parser(private val tokens: List<Token>) {
                 at(TokenType.IDENT) && cur().value == "value" && peek().type == TokenType.CLASS
                     -> { isValue = true; advance() }
                 at(TokenType.SEALED) -> { isSealed = true; advance() }
-                // `abstract` / `open` — contextual (soft) keywords, recognized only before
+                // `abstract` / `open` - contextual (soft) keywords, recognized only before
                 // a declaration keyword or further modifiers so identifiers stay usable.
                 at(TokenType.IDENT) && cur().value == "abstract" &&
                     peek().type in setOf(TokenType.CLASS, TokenType.FUN, TokenType.VAL, TokenType.VAR, TokenType.SEALED)
@@ -264,7 +264,7 @@ class Parser(private val tokens: List<Token>) {
             advance(); nesting++
             val vArgs = parseArgList()
             expect(TokenType.RPAREN); nesting--
-            if (superClassName != null) error("Class '$name' has more than one class supertype — only one parent class is allowed")
+            if (superClassName != null) error("Class '$name' has more than one class supertype - only one parent class is allowed")
             superClassName = superInterfaces.last().name
             superClassArgs = vArgs
         }
@@ -309,7 +309,7 @@ class Parser(private val tokens: List<Token>) {
             val annotations = parseAnnotations()
             val isPriv = at(TokenType.PRIVATE)
             if (isPriv) advance()
-            // `override val x` — implements an interface property (e.g. Throwable.message);
+            // `override val x` - implements an interface property (e.g. Throwable.message);
             // consumed here, no isOverride tracking needed on CtorParam (props aren't validated).
             if (at(TokenType.OVERRIDE)) advance()
             var isVal = false; var isVar = false
@@ -401,7 +401,7 @@ class Parser(private val tokens: List<Token>) {
         if (at(TokenType.SEMICOLON)) {
             advance()
             while (at(TokenType.NEWLINE) || at(TokenType.SEMICOLON)) advance()
-            // Body methods/properties — same parse rules as class members.
+            // Body methods/properties - same parse rules as class members.
             while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
                 if (at(TokenType.COMMENT)) { advance(); skipTerminator() }
                 else members += parseDecl()
@@ -427,7 +427,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── typealias ────────────────────────────────────────────────────
 
-    /* `typealias Name = TargetType` — resolved by substitution during
+    /* `typealias Name = TargetType` - resolved by substitution during
      * type-name resolution. Generic alias parameters (`typealias Foo<T> = ...`)
      * are not supported (use the underlying type directly). */
     private fun parseTypeAliasDecl(): TypeAliasDecl {
@@ -744,7 +744,7 @@ class Parser(private val tokens: List<Token>) {
 
     // ── try / catch / finally ─────────────────────────────────────────
 
-    /* `try { } catch (e: Type) { } ... finally { }` — statement form only.
+    /* `try { } catch (e: Type) { } ... finally { }` - statement form only.
     Requires at least one catch clause or a finally block. */
     private fun parseTryStmt(): Stmt {
         advance()   // skip 'try'
@@ -791,7 +791,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parseForStmt(): ForStmt {
         expect(TokenType.FOR)
         expect(TokenType.LPAREN); nesting++; skipNL()
-        // Optional destructuring: `for ((a, b) in pairs)` — collect names,
+        // Optional destructuring: `for ((a, b) in pairs)` - collect names,
         // generate a synthetic temp name for the iterator element binding.
         val vDestructure = mutableListOf<String>()
         val varName: String
@@ -863,7 +863,7 @@ class Parser(private val tokens: List<Token>) {
                     left = IsCheckExpr(left, parseTypeRef(), negated = false)
                 }
                 TokenType.EXCL -> {
-                    // !in  or  !is  — peek ahead
+                    // !in  or  !is  - peek ahead
                     if (peek().type == TokenType.IS) {
                         advance(); advance(); skipNL()
                         left = IsCheckExpr(left, parseTypeRef(), negated = true)
@@ -908,7 +908,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parsePrefixExpr(): Expr {
         return when {
             at(TokenType.MINUS) || at(TokenType.EXCL) || at(TokenType.PLUS_PLUS) || at(TokenType.MINUS_MINUS) -> {
-                // guard: EXCL followed by IN/IS is NOT a prefix — fall through
+                // guard: EXCL followed by IN/IS is NOT a prefix - fall through
                 if (at(TokenType.EXCL) && (peek().type == TokenType.IN || peek().type == TokenType.IS)) {
                     parsePrimary()
                 } else {
@@ -931,7 +931,7 @@ class Parser(private val tokens: List<Token>) {
             e = when {
                 at(TokenType.DOT) -> {
                     advance(); skipNL()
-                    // sb."text $x" — render the template into the StringBuffer receiver, return the String.
+                    // sb."text $x" - render the template into the StringBuffer receiver, return the String.
                     // Lowered to a synthetic recv.__sbtmpl(<template>) call (`.` followed by a string is
                     // otherwise invalid syntax, so this is purely additive).
                     when {
@@ -1035,7 +1035,7 @@ class Parser(private val tokens: List<Token>) {
     private fun parsePrimary(): Expr {
         skipNL()
         return when {
-            // `throw` in expression position (Nothing-typed) — `x ?: throw NotFound(k)`.
+            // `throw` in expression position (Nothing-typed) - `x ?: throw NotFound(k)`.
             at(TokenType.THROW)      -> { advance(); skipNL(); ThrowExpr(parseExpr()) }
             at(TokenType.INT_LIT)    -> {
                 val raw = advance().value
@@ -1257,7 +1257,7 @@ class Parser(private val tokens: List<Token>) {
         val annotations = parseAnnotations()
         // Receiver function type: T.(params) -> R or T.() -> R
         if (at(TokenType.IDENT) && peek().type == TokenType.DOT) {
-            val savedForReceiver = pos  // save before consuming — qualified names like c.SDL_Window must not be eaten here
+            val savedForReceiver = pos  // save before consuming - qualified names like c.SDL_Window must not be eaten here
             val recvName = expectIdent()
             expect(TokenType.DOT)
             if (at(TokenType.LPAREN)) {
@@ -1279,9 +1279,9 @@ class Parser(private val tokens: List<Token>) {
                     }
                 } catch (_: Exception) { }
                 pos = saved
-                nesting = savedNesting   // restore nesting on backtrack — the body above already adjusted it on success
+                nesting = savedNesting   // restore nesting on backtrack - the body above already adjusted it on success
             } else {
-                pos = savedForReceiver  // not a receiver function type — let parseQualifiedName handle it
+                pos = savedForReceiver  // not a receiver function type - let parseQualifiedName handle it
             }
         }
         // Function type: (T, T, ...) -> R
@@ -1303,7 +1303,7 @@ class Parser(private val tokens: List<Token>) {
                     return TypeRef("Function", nullable, emptyList(), paramTypes, retType)
                 }
             } catch (_: Exception) { }
-            // Not a function type — rollback (shouldn't normally happen in type position)
+            // Not a function type - rollback (shouldn't normally happen in type position)
             pos = saved
             nesting = savedNesting
         }
@@ -1350,7 +1350,7 @@ class Parser(private val tokens: List<Token>) {
 
     companion object {
         var INFIX_IDS: MutableSet<String> = mutableSetOf("until", "downTo", "step", "to", "and", "or", "xor", "shl", "shr", "ushr")
-        // Levels — higher binds tighter
+        // Levels - higher binds tighter
         const val PREC_DISJUNCTION  = 1   // ||
         const val PREC_CONJUNCTION  = 2   // &&
         const val PREC_EQUALITY     = 3   // == !=
@@ -1411,7 +1411,7 @@ class Parser(private val tokens: List<Token>) {
         return sb.toString()
     }
 
-    /** Skip newlines (and semicolons) — significant only when nesting==0, but we
+    /** Skip newlines (and semicolons) - significant only when nesting==0, but we
      *  always allow skipping them explicitly.  */
     private fun skipNL() {
         while (at(TokenType.NEWLINE) || at(TokenType.SEMICOLON)) advance()

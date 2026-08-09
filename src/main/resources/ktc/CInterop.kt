@@ -5,7 +5,7 @@ package ktc
 C interop for KotlinToC.
 
 All C declarations are accessed through the synthetic `C` object (uppercase, to
-avoid collisions with locals commonly named `c` — loop variables, chars, generic
+avoid collisions with locals commonly named `c` - loop variables, chars, generic
 type parameters, etc.). No import is needed.
 Use `@file:cInclude("header.h")` to add an `#include <header.h>` to every generated file
 in the same package.
@@ -54,7 +54,7 @@ Call any C function via `C.functionName(args)`:
     val vHandle: Ref<C.SDL_Window> = C.SDL_CreateWindow(title.cPtr, w, h, flags)
 
 Struct types are accessed as `C.SDL_FRect`, `C.SDL_Color`, etc.
-Struct instances: `C.SDL_FRect(x, y, w, h)` — a compound literal.
+Struct instances: `C.SDL_FRect(x, y, w, h)` - a compound literal.
 Field access on a C struct value: `.field`.
 Pass a struct by pointer: `C.addr(myRect)`.
 
@@ -71,7 +71,7 @@ These forms control how variables and struct values are initialized:
     C.SDL_FRect(x, y, w, h)  (SDL_FRect){x, y, w, h}  works everywhere
     C.init(x, y, w, h)       {x, y, w, h}           var decl only (type inferred from LHS)
 
-`C.zeroed()` zero-initializes using the LHS type — equivalent to `= {0}` in C.
+`C.zeroed()` zero-initializes using the LHS type - equivalent to `= {0}` in C.
 `C.init()` emits a bare declaration with NO initializer (uninitialized memory).
 `C.init(x, y, z)` emits a brace-initializer list `{x, y, z}` using the LHS type.
 `C.SDL_FRect(args)` is a typed compound literal and works in any expression context.
@@ -110,7 +110,7 @@ inline fun <T> C.addr(value: T): Ref<T>
 /**
 Unchecked C-level reinterpret cast. Emits `((T)(expr))` in the generated C
 with no runtime check. Use this for C-interop edges where the type system
-can't express the conversion — `const T*` ↔ `T*`, `FILE*` ↔ `void*`,
+can't express the conversion - `const T*` ↔ `T*`, `FILE*` ↔ `void*`,
 `Ref<T>` ↔ `Ref<U>`, primitive-to-primitive bit reinterpretation, etc.
 
 Misuse will produce undefined behavior; the cast is exactly as safe (and

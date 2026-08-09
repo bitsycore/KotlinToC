@@ -100,10 +100,10 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 		val v = e.cond.value
 		codegenWarning("const-condition", "Condition is always ${if (v) "true" else "false"}")
 		}
-	if (isEmptyBlock(e.then)) codegenWarning("empty-body", "Empty 'if' body — has no effect.")
-	if (e.els != null && isEmptyBlock(e.els)) codegenWarning("empty-body", "Empty 'else' body — has no effect.")
+	if (isEmptyBlock(e.then)) codegenWarning("empty-body", "Empty 'if' body - has no effect.")
+	if (e.els != null && isEmptyBlock(e.els)) codegenWarning("empty-body", "Empty 'else' body - has no effect.")
 	if (e.els != null && !isEmptyBlock(e.then) && blocksMatch(e.then, e.els))
-		codegenWarning("identical-branches", "Both 'if' and 'else' branches are identical — the condition has no effect.")
+		codegenWarning("identical-branches", "Both 'if' and 'else' branches are identical - the condition has no effect.")
 	impl.appendLine("${ind}if (${genExprFlushed(e.cond, ind)}) {")
 	val thenCasts = extractSmartCasts(e.cond)
 	pushSmartCasts(thenCasts, ind)
@@ -128,7 +128,7 @@ internal fun CCodeGen.emitIfStmt(e: IfExpr, ind: String, method: Boolean) {
 	impl.appendLine("$ind}")
 	}
 
-/* True if a block has no statements (or only comments — those don't run). */
+/* True if a block has no statements (or only comments - those don't run). */
 internal fun isEmptyBlock(inBlock: Block): Boolean =
 	inBlock.stmts.none { it !is CommentStmt }
 
@@ -149,13 +149,13 @@ internal fun CCodeGen.emitWhenStmt(e: WhenExpr, ind: String, method: Boolean) {
 		is ThisExpr -> "\$self"
 		else        -> null
 		}
-	// Branches after the first 'else' are unreachable — the dispatch lowers to if/else if/else.
+	// Branches after the first 'else' are unreachable - the dispatch lowers to if/else if/else.
 	val vElseIdx = e.branches.indexOfFirst { it.conds == null }
 	if (vElseIdx in 0 until e.branches.size - 1)
 		codegenError("Unreachable 'when' branch after 'else'")
 	for ((bi, br) in e.branches.withIndex()) {
 		if (isEmptyBlock(br.body))
-			codegenWarning("empty-body", "Empty 'when' branch body — has no effect.")
+			codegenWarning("empty-body", "Empty 'when' branch body - has no effect.")
 		if (br.conds == null) {
 			impl.appendLine("${ind}else {")
 			} else {
@@ -202,7 +202,7 @@ internal fun CCodeGen.checkWhenExhaustiveness(e: WhenExpr) {
 			if (vMissing.isNotEmpty()) {
 				val kind = if (classes[vSubjName]?.isSealed == true) "sealed class" else "sealed interface"
 				codegenWarning("exhaustive-when",
-					"'when' on $kind $vSubjName is not exhaustive; missing: ${vMissing.joinToString(", ")} — add an 'else' branch or handle all subclasses")
+					"'when' on $kind $vSubjName is not exhaustive; missing: ${vMissing.joinToString(", ")} - add an 'else' branch or handle all subclasses")
 			}
 		}
 		return
@@ -224,7 +224,7 @@ internal fun CCodeGen.checkWhenExhaustiveness(e: WhenExpr) {
 	val missing = enumInfo.entries.filter { it !in covered }
 	if (missing.isNotEmpty()) {
 		val names = missing.joinToString(", ")
-		codegenWarning("exhaustive-when", "'when' on enum ${enumInfo.name} is not exhaustive; missing: $names — add an 'else' branch or handle all entries")
+		codegenWarning("exhaustive-when", "'when' on enum ${enumInfo.name} is not exhaustive; missing: $names - add an 'else' branch or handle all entries")
 	}
 }
 

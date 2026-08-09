@@ -118,7 +118,7 @@ internal fun CCodeGen.genAllocWithCallOrNull(inCall: CallExpr): String? {
 		val vIfExpr   = resolveAllocatorIface(inCall.args[0].expr, vAllocExpr).ifaceExpr
 		val vT = tmp()
 		preStmts += "$vElemC* ${vT}_ptr = ($vElemC*)((ktc_Allocator_vt*)$vIfExpr.vt)->allocMem($vIfExpr.obj, sizeof($vElemC) * (size_t)($vSizeExpr), ${ktSrcStr()});"
-		// Array<T>(size) { init } — run the init lambda over the freshly allocated slots.
+		// Array<T>(size) { init } - run the init lambda over the freshly allocated slots.
 		// (RawArray has no lambda-init form.)
 		if (vClassName == "Array" && vCtorArgs.size >= 2 && vCtorArgs[1].expr is LambdaExpr) {
 			emitArrayInitLambda("${vT}_ptr", vSizeExpr, vCtorArgs[1].expr as LambdaExpr)
@@ -230,7 +230,7 @@ internal fun CCodeGen.genCtorCallOrNull(
 			if (vSub.nullable) "${resolveTypeNameStr(vSub)}?" else resolveTypeNameStr(vSub)
 			}
 		val vMangled = mangledGenericName(vResolvedName, vResolvedTypeArgs)
-		// Materialize on demand — an instantiation first reached through an inline-body
+		// Materialize on demand - an instantiation first reached through an inline-body
 		// expansion (e.g. runCatching's Result.Failure<T>) may not have been pre-scanned.
 		val vCi = classes[vMangled] ?: run {
 			recordGenericInstantiation(vResolvedName, vResolvedTypeArgs)

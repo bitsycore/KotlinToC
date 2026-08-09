@@ -5,7 +5,7 @@ package ktc
 StringBuilder (maps to ktc_StrBuf in C): a mutable character buffer for
 building strings without intermediate allocations.
 
-The backing storage is NOT owned by the StringBuilder — it must be
+The backing storage is NOT owned by the StringBuilder - it must be
 provided by the caller (stack array, arena.stringBuffer(), etc.).
 
 C representation:

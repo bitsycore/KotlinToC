@@ -15,22 +15,22 @@ import com.bitsycore.ktc.types.KtcType
  *
  * ## Main entry points:
  *
- *   [genExpr]         — central expression dispatcher (see below for full list)
- *   [genName]         — resolve variable/field/this names with smart-cast unwrap
- *   [genBin]           — binary ops with special handling for String, Pair, null, in/!in
- *   [genCall]          — function/constructor call, built-ins (allocWith, arrayOf...)
- *   [com.bitsycore.ktc.codegen.expression.genMethodCall]    — method dispatch: built-in, class method, interface vtable, extension
- *   [genDot]           — field access, enum values, object properties, pointer deref
- *   [genSafeDot]       — nullable-safe field access (?.)
- *   [genNotNull]       — not-null assertion (!!)
- *   [genIfExpr]        — if-expression → C ternary or pre-stmt temp
- *   [genWhenExpr]      — when-expression → nested ternary or pre-stmt temp
- *   [genStrTemplate]   — string template → StrBuf-based concatenation
- *   [com.bitsycore.ktc.codegen.expression.genToString]      — toString() dispatch (primitive, data class, default hash)
- *   [com.bitsycore.ktc.codegen.expression.genSbAppend]      — StrBuf append for all types
- *   [com.bitsycore.ktc.codegen.expression.genArrayOfExpr]   — array literal (arrayOf/byteArrayOf/etc.)
- *   [com.bitsycore.ktc.codegen.expression.genNewArray]      — Array<T>(size) constructor → alloca
- *   [com.bitsycore.ktc.codegen.expression.genLValue]         — l-value for assignment target
+ *   [genExpr]         - central expression dispatcher (see below for full list)
+ *   [genName]         - resolve variable/field/this names with smart-cast unwrap
+ *   [genBin]           - binary ops with special handling for String, Pair, null, in/!in
+ *   [genCall]          - function/constructor call, built-ins (allocWith, arrayOf...)
+ *   [com.bitsycore.ktc.codegen.expression.genMethodCall]    - method dispatch: built-in, class method, interface vtable, extension
+ *   [genDot]           - field access, enum values, object properties, pointer deref
+ *   [genSafeDot]       - nullable-safe field access (?.)
+ *   [genNotNull]       - not-null assertion (!!)
+ *   [genIfExpr]        - if-expression → C ternary or pre-stmt temp
+ *   [genWhenExpr]      - when-expression → nested ternary or pre-stmt temp
+ *   [genStrTemplate]   - string template → StrBuf-based concatenation
+ *   [com.bitsycore.ktc.codegen.expression.genToString]      - toString() dispatch (primitive, data class, default hash)
+ *   [com.bitsycore.ktc.codegen.expression.genSbAppend]      - StrBuf append for all types
+ *   [com.bitsycore.ktc.codegen.expression.genArrayOfExpr]   - array literal (arrayOf/byteArrayOf/etc.)
+ *   [com.bitsycore.ktc.codegen.expression.genNewArray]      - Array<T>(size) constructor → alloca
+ *   [com.bitsycore.ktc.codegen.expression.genLValue]         - l-value for assignment target
  *
  * ## genExpr dispatch table:
  *   IntLit, LongLit, DoubleLit, FloatLit, BoolLit, CharLit, StrLit, NullLit,
@@ -131,7 +131,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                     "${typeFlatName(baseName)}_get($recv, $idx)"
                 }
             } else {
-                // Bare T* pointer indexing — no .len carried; bounds-check is impossible.
+                // Bare T* pointer indexing - no .len carried; bounds-check is impossible.
                 // User opted into raw pointer arithmetic; warn statically only.
                 "${genExpr(e.obj)}[${genExpr(e.index)}]"
             }
@@ -161,7 +161,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                 // Length resolution priority:
                 //   1. Trampolined sized param → local$name$len constant (the unpacked size).
                 //   2. Type carries @Size(N) → use the literal N.
-                //   3. Fallback to sizeof — only safe for true stack arrays (not pointers).
+                //   3. Fallback to sizeof - only safe for true stack arrays (not pointers).
                 val vLen = when {
                     vIsTrampolined                     -> arrayParamSizeExpr(vObjName)
                     vSizedN != null                    -> vSizedN.toString()
@@ -182,7 +182,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
     is WhenExpr -> genWhenExpr(e)
     is NotNullExpr -> genNotNull(e)
     is ThrowExpr -> codegenError("'throw' as an expression is only supported after '?:' " +
-        "(x ?: throw Exc(...)) — use a throw statement otherwise.")
+        "(x ?: throw Exc(...)) - use a throw statement otherwise.")
     is ElvisExpr -> {
         if (e.right is ThrowExpr) return genElvisThrow(e.left, e.right)
         val lt = inferExprType(e.left)
@@ -294,7 +294,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
                 val addrExpr2 = if ('(' in inner) { val vT = tmp(); preStmts += "${cTypeStr(srcType ?: "")} $vT = ($inner);"; "&$vT" } else "&($inner)"
                 "${srcFlatName2}_as_${vCastIfaceInfo.baseName}($addrExpr2)"
             } else if (srcType != null && interfaces.containsKey(srcType) && classes.containsKey(target)) {
-                // Source is an interface, target is a concrete class — extract from tagged union
+                // Source is an interface, target is a concrete class - extract from tagged union
                 ifaceUnionAccess(srcType, target, inner)
             } else if (srcKtc is KtcType.Any || (srcKtcCore is KtcType.Ptr && srcKtcCore.inner is KtcType.Any)) {
                 "(*(${cTypeStr(target)}*)(${inner}${memOp}data))"
@@ -310,7 +310,7 @@ internal fun CCodeGen.genExpr(e: Expr): String = when (e) {
             } else "&($inner)"
             "${srcFlatName}_as_${vCastIfaceInfo.baseName}($addrExpr)"
         } else if (srcType != null && interfaces.containsKey(srcType) && classes.containsKey(target)) {
-            // Source is an interface, target is a concrete class — extract from tagged union
+            // Source is an interface, target is a concrete class - extract from tagged union
             ifaceUnionAccess(srcType, target, inner)
         } else if (srcKtc is KtcType.Any || (srcKtcCore is KtcType.Ptr && srcKtcCore.inner is KtcType.Any)) {
             val memOp = if (isPtr) "->" else "."
@@ -376,7 +376,7 @@ out-of-range access and returns the index unchanged otherwise. inLen is a C
 expression yielding the array's length (e.g. "arr.len" or a literal "8").
 When the flag is off, returns the raw index unchanged for a zero-cost
 release build.
-inIdxAst/inObjAst: optional AST nodes — when both are present and the index
+inIdxAst/inObjAst: optional AST nodes - when both are present and the index
 is a non-negative literal within the statically known array size, the
 runtime check is elided (the access is provably safe). */
 internal fun CCodeGen.wrapBoundsIdx(inIdxExpr: String, inLen: String, inIdxAst: Expr? = null, inObjAst: Expr? = null): String {
@@ -406,10 +406,10 @@ private fun CCodeGen.isStaticallySafe(inIdxAst: Expr, inObjAst: Expr): Boolean {
 // ══════════════════════════════════════════════════════════════════
 
 /* Read-side wrapper: emits the null check as a preStmt so the returned
-expression stays a plain lvalue (`*p`) — important when the caller writes
+expression stays a plain lvalue (`*p`) - important when the caller writes
 patterns like `&p.refValue` which need an lvalue operand. Returns the raw
 deref expression unchanged on --no-check-null.
-inRecvAst: optional AST node for the pointer expression — when present,
+inRecvAst: optional AST node for the pointer expression - when present,
 the check is elided for provably non-null origins (e.g. .asRef() of a local). */
 internal fun CCodeGen.wrapNullCheck(inPtrExpr: String, inDerefExpr: String, inRecvAst: Expr? = null): String {
 	if (!checkNull) return inDerefExpr
@@ -422,7 +422,7 @@ internal fun CCodeGen.isProvablyNonNull(inExpr: Expr): Boolean {
 	if (inExpr is CallExpr && inExpr.callee is DotExpr && inExpr.callee.name == "asRef")
 		return true
 	// After smart-cast in `if (p != null)`, Nullable(Ptr(T)) narrows to Ptr(T).
-	// Only elide when an outer scope had a nullable variant — not for all Ptr params.
+	// Only elide when an outer scope had a nullable variant - not for all Ptr params.
 	if (inExpr is NameExpr) {
 		val ktc = lookupVarKtc(inExpr.name)
 		if (ktc is KtcType.Ptr) {
@@ -450,7 +450,7 @@ internal fun CCodeGen.nullCheckStmt(inPtrExpr: String): String {
 /* Compile-time bounds check: if inIdx is a literal IntLit AND the array's
 length is statically known (sized arrays, string literals), validates the
 range and emits a warning (negative or >= length). Stays silent otherwise.
-Doesn't block compilation — runtime check will fire for the same access
+Doesn't block compilation - runtime check will fire for the same access
 when checkBounds is on. */
 internal fun CCodeGen.staticBoundsCheck(inObj: Expr, inIdx: Expr, inObjTypeCore: KtcType?) {
 	val vIdxVal = when (inIdx) {
@@ -463,13 +463,13 @@ internal fun CCodeGen.staticBoundsCheck(inObj: Expr, inIdx: Expr, inObjTypeCore:
 		inObjTypeCore is KtcType.Arr && inObjTypeCore.sized != null -> inObjTypeCore.sized.toLong()
 		inObj is StrLit -> inObj.value.length.toLong()
 		// Note: inferring length from a NameExpr would need flow analysis
-		// against the declared `IntArray(N)` initializer — left for the
+		// against the declared `IntArray(N)` initializer - left for the
 		// runtime check to catch on default-on bounds checking.
 		else -> null
 	}
 	if (vKnownLen == null) return
 	if (vIdxVal < 0) {
-		codegenWarning("bounds", "array index $vIdxVal is negative — always out of bounds.")
+		codegenWarning("bounds", "array index $vIdxVal is negative - always out of bounds.")
 	} else if (vIdxVal >= vKnownLen) {
 		codegenWarning("bounds", "array index $vIdxVal is out of bounds for length $vKnownLen.")
 	}

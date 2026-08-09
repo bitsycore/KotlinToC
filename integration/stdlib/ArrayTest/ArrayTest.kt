@@ -201,7 +201,7 @@ fun testRawResize() {
     for (i in 0 until 4) {
         if (raw[i] != (i + 1) * 10) fatalError("raw grow lost data at $i: got ${raw[i]}")
     }
-    // The tail past old size is uninitialized — just write through it to prove it's addressable.
+    // The tail past old size is uninitialized - just write through it to prove it's addressable.
     for (i in 4 until 8) {
         raw[i] = i * 100
     }
@@ -218,14 +218,14 @@ fun testRawResize() {
 }
 
 fun testHeapArrayInitLambda() {
-    // Array<T>(n) { init }.allocWith(allocator) — lambda must run over the freshly allocated slots.
+    // Array<T>(n) { init }.allocWith(allocator) - lambda must run over the freshly allocated slots.
     val squares: Ref<Array<Int>> = Array<Int>(8) { it -> it * it }.allocWith(Heap)
     defer Heap.freeMem(squares)
     for (i in 0 until 8) {
         if (squares[i] != i * i) fatalError("heap init lambda failed at $i: expected ${i * i}, got ${squares[i]}")
     }
 
-    // Zero-init form (no lambda) — slots are uninitialized memory, but the size is correct.
+    // Zero-init form (no lambda) - slots are uninitialized memory, but the size is correct.
     val raw: Ref<Array<Int>> = Array<Int>(4).allocWith(Heap)
     defer Heap.freeMem(raw)
     if (raw.size != 4) fatalError("alloc size wrong: ${raw.size}")
@@ -264,7 +264,7 @@ fun testArrayResize() {
 }
 
 fun testArrayCopyWith() {
-    // copyWith allocates a new buffer with the same data — modifying the copy must not touch the original.
+    // copyWith allocates a new buffer with the same data - modifying the copy must not touch the original.
     val src: Ref<Array<Int>> = Array<Int>(4) { it -> it * 10 }.allocWith(Heap)
     defer Heap.freeMem(src)
     val dst: Ref<Array<Int>> = src.copyWith(Heap)
@@ -282,7 +282,7 @@ fun testArrayCopyWith() {
 }
 
 fun testPairTripleToList() {
-    // Pair<T,T>.toList(allocator) — generic extension forwarding to listOf.
+    // Pair<T,T>.toList(allocator) - generic extension forwarding to listOf.
     val pair  = 10 to 20
     val list2 = pair.toList(Heap)
     defer list2.dispose()

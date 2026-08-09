@@ -5,7 +5,7 @@ package ktc.sdl3
 // ==================
 // Event polling
 
-/** Drain SDL's event queue, calling block for each event. Inline — block expands at call site. */
+/** Drain SDL's event queue, calling block for each event. Inline - block expands at call site. */
 inline fun pollEvents(block: (Ref<C.SDL_Event>) -> Unit) {
     var event: C.SDL_Event = C.init()
     while (C.SDL_PollEvent(C.addr(event))) {

@@ -80,7 +80,7 @@ class InterfaceUnitTest : TranspilerTestBase() {
                 printShape(c)
             }
         """)
-        // Virtual dispatch: s.vt->area((void*)&s.data) — multi-impl interface uses union .data
+        // Virtual dispatch: s.vt->area((void*)&s.data) - multi-impl interface uses union .data
         r.sourceContains("s.vt->area((void*)&s.data)")
     }
 

@@ -7,7 +7,7 @@ package ClosureHigherOrderTest
 //  - the same callee monomorphized for two different closure types from two call sites
 // All closures capture explicitly with capture(...) and are frame-bound. main returns non-zero on failure.
 
-// Single closure param — used both with a literal lambda and with a closure-typed var.
+// Single closure param - used both with a literal lambda and with a closure-typed var.
 fun applyTwice(f: (Int) -> Int, x: Int): Int = f(f(x))
 
 // Two distinct function-typed params: each is retyped to its own functor struct.

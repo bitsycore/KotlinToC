@@ -8,7 +8,7 @@ import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.expression.inferBlockType
 import com.bitsycore.ktc.codegen.statement.tryFnAttr
 
-// Enum emission — two paths:
+// Enum emission - two paths:
 //   simple path: C `enum { TAG, ... }` of integer tags + names[]/values[]/valueOf() helpers
 //   full path:   struct with ctor-param fields + ordinal + name, plus extern const per entry
 
@@ -147,7 +147,7 @@ private fun CCodeGen.emitFullEnum(d: EnumDecl, ei: EnumInfo) {
 		}
 	impl.appendLine()
 
-	// names[] array — also used by .name and toString of unknown values.
+	// names[] array - also used by .name and toString of unknown values.
 	val vNameInits = d.entries.joinToString(", ") { "ktc_core_str(\"${it.name}\")" }
 	impl.appendLine(boxSection("names"))
 	impl.appendLine()

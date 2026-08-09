@@ -19,7 +19,7 @@ data class Pair<A, B>(
 )
 
 /* Creates a Pair from this and [that] using the infix `to` operator.
-Resolves through the normal inline-extension dispatch path — there's
+Resolves through the normal inline-extension dispatch path - there's
 no special-cased BinExpr handler. */
 infix fun <A, B> A.to(that: B): Pair<A, B> = Pair(this, that)
 

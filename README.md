@@ -68,7 +68,7 @@ int main(void) {
 ## Features
 
 **Types and memory**
-- All types are **by value** on the stack by default — no hidden allocations
+- All types are **by value** on the stack by default - no hidden allocations
 - `Ref<T>` for reference/pointer semantics; `Ref<T?>` for nullable references (NULL)
 - `T?` value-nullable via `ktc_T$Optional { tag, value }` struct
 - Heap allocation via `T(args).allocWith(Heap)` (explicit, allocator-based, no GC)
@@ -76,22 +76,22 @@ int main(void) {
 **Classes and interfaces**
 - `class`, `data class`, `object`, `companion object`, `enum class`
 - Interfaces with vtable dispatch (fat pointer: `{ void* obj, const vtable* vt }`)
-- Generics via **monomorphization** — each `Box<Int>` / `Box<String>` is a distinct C type
+- Generics via **monomorphization** - each `Box<Int>` / `Box<String>` is a distinct C type
 - `private` fields get `PRIV_` prefix enforced by the C compiler
 
 **Functions**
 - Extension functions, operator overloading, `vararg`
 - Default parameter values (filled at call site)
-- `inline fun` with lambda arguments — expanded at call site, zero overhead
+- `inline fun` with lambda arguments - expanded at call site, zero overhead
 - Function references `::fun` → raw C function pointer
 
 **Control flow**
 - `if`/`else`, `when`, `for`/`while`/`do-while`, `break`/`continue`
-- `defer { }` — RAII-style LIFO cleanup blocks
+- `defer { }` - RAII-style LIFO cleanup blocks
 - Smart casts on `val` after null check or `is` check
 
 **Arrays**
-- `IntArray`, `Array<T>`, `@Size(N) Array<T>`, `Ref<Array<T>>` — see [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md)
+- `IntArray`, `Array<T>`, `@Size(N) Array<T>`, `Ref<Array<T>>` - see [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md)
 - `Pair<A,B>`, `Triple<A,B,C>` as intrinsic stack structs
 
 **Stdlib** (`package ktc.std`)
@@ -99,7 +99,7 @@ int main(void) {
 - `Sha256`, `Random`, `error()`, `TODO()`
 
 **C interop**
-- `c.printf(...)`, `c.memcpy(...)`, `c.malloc(...)` — direct C function calls
+- `c.printf(...)`, `c.memcpy(...)`, `c.malloc(...)` - direct C function calls
 - String literals passed as raw C strings in interop calls
 
 ---

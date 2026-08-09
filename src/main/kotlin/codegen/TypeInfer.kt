@@ -6,7 +6,7 @@ import com.bitsycore.ktc.codegen.expression.inferInlineFunSubst
 import com.bitsycore.ktc.codegen.expression.inferWhenExprType
 import com.bitsycore.ktc.types.KtcType
 
-// Expression type inference — main dispatcher and KtcType entry point.
+// Expression type inference - main dispatcher and KtcType entry point.
 // Call/method return types are in TypeInferCall.kt.
 // Dot/index field types are in TypeInferDot.kt.
 
@@ -127,7 +127,7 @@ internal fun CCodeGen.inferExprTypeKtc(inExpr: Expr?): KtcType? {
 	if (inExpr is NameExpr) {
 		val vKtc = lookupVarKtc(inExpr.name)
 		if (vKtc != null) return vKtc
-		/* Outer object props are not registered in local scope — look them up directly
+		/* Outer object props are not registered in local scope - look them up directly
 		to avoid the string round-trip that would lose @Size annotations. */
 		val vParentObj = currentClass?.substringBefore('$')
 		if (vParentObj != null && currentObject == null) {

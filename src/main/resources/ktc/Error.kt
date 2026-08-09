@@ -97,7 +97,7 @@ fun error(message: String): Nothing {
 
 /**
  * Unconditional hard failure OUTSIDE the exception system: prints a stack
- * trace with the caller's file:line and exits — not catchable. Use for
+ * trace with the caller's file:line and exits - not catchable. Use for
  * assert-style checks (tests, invariants) where unwinding is undesirable.
  */
 fun fatalError(message: String, file: String = Macro.FILE, line: Int = Macro.LINE): Nothing {

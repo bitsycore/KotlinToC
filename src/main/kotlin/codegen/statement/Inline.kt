@@ -115,7 +115,7 @@ internal fun CCodeGen.emitInlineCall(
 		val vParam = decl.params.getOrNull(i) ?: return@forEachIndexed
 		val vExpr  = vArg.expr
 		if (vExpr is LambdaExpr && vParam.noinline) {
-			// `noinline` param: the lambda is NOT inlined — it becomes a real (frame-bound) closure the
+			// `noinline` param: the lambda is NOT inlined - it becomes a real (frame-bound) closure the
 			// body can move around, exactly like a non-inline function's closure param. Build the functor
 			// at the call site and bind the param to that local (so `param(x)` in the body dispatches
 			// through its _invoke). The closure instance name is unique, so it can't shadow anything.
@@ -207,7 +207,7 @@ internal fun CCodeGen.emitInlineCall(
 	}
 
 /* Try to collapse a trivial inline function (single return expression, no lambda
-args) into a direct expression evaluation — avoids the $ir temp var, { } block,
+args) into a direct expression evaluation - avoids the $ir temp var, { } block,
 and goto label, producing cleaner emitted C. Returns the C expression string, or
 null if the body isn't trivially collapsible. */
 internal fun CCodeGen.tryGenInlineExpr(
@@ -236,7 +236,7 @@ internal fun CCodeGen.tryGenInlineExpr(
 	pushScope()
 	// Shadow any outer `$this` binding from an enclosing inline call so this inline's
 	// receiver type wins for `this.x` lookups (otherwise nested inline-expansions resolve
-	// `this` to the wrong type — e.g. drawRoundedRect.this leaks into the arg-eval scope
+	// `this` to the wrong type - e.g. drawRoundedRect.this leaks into the arg-eval scope
 	// where box.grow() is being inlined, and `this.x` would resolve via the outer receiver).
 	if (receiverType != null) defineVar("\$this", receiverType)
 
@@ -304,11 +304,11 @@ internal fun CCodeGen.tryGenInlineExpr(
 	return result
 }
 
-/* Infer the type a lambda body evaluates to — the type of its last expression, or "Unit" when the
+/* Infer the type a lambda body evaluates to - the type of its last expression, or "Unit" when the
 body ends in a statement (assignment, loop, bare `return`) or is empty. Returns null only when the
 body ends in an expression whose type can't be inferred (so the caller leaves the type param unbound
 rather than guessing). Used to bind an inline function's type parameter that appears only in a lambda
-parameter's return position (`block: () -> R`) — the value-type-only call-site inference can't see it,
+parameter's return position (`block: () -> R`) - the value-type-only call-site inference can't see it,
 since a lambda argument itself infers to null. */
 internal fun CCodeGen.inferLambdaReturnType(
 	inLambda:       LambdaExpr,
@@ -349,7 +349,7 @@ internal fun CCodeGen.bindLambdaReturnTypeParams(
 		val vRecvForLambda = if (vParam.type.funcReceiver != null) inReceiverType else null
 		val vInferred      = inferLambdaReturnType(vLambda, vParamKtc, vRecvForLambda) ?: return@forEachIndexed
 		// A Nothing-typed lambda (body ends in throw/error) binds T as Unit: Nothing is
-		// a subtype of everything, and both lower to the same ktc_Unit value slot —
+		// a subtype of everything, and both lower to the same ktc_Unit value slot -
 		// one instantiation (Result<Unit>) instead of a parallel Result<Nothing>.
 		ioSubst[vRet.name] = if (vInferred == "Nothing") "Unit" else vInferred
 		}

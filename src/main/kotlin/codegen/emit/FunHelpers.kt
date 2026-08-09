@@ -7,7 +7,7 @@ import com.bitsycore.ktc.codegen.expression.genStrTemplateToSb
 import com.bitsycore.ktc.codegen.expression.toStringMaxLen
 import com.bitsycore.ktc.types.KtcType
 
-// Shared helpers for function/method emit — return-type analysis, scope registration,
+// Shared helpers for function/method emit - return-type analysis, scope registration,
 // and class method section grouping.
 
 /* Method names inherited from Any. Each can be explicitly overridden by a class
@@ -80,14 +80,14 @@ internal fun CCodeGen.registerParams(params: List<Param>) {
 
 /**
  * Registers all class fields from [ci] in the current scope as [LocalVar] descriptors.
- * Computed (getter-only) properties have no backing field, so they are skipped here —
+ * Computed (getter-only) properties have no backing field, so they are skipped here -
  * registering them with a phony `$self->name` cName would both produce spurious shadow
  * warnings on params of the same name and bypass getter inlining at access sites.
- * [selfPrefix] is the C access prefix — use `"\$self->"` for pointer self, `"\$self."` for value self.
+ * [selfPrefix] is the C access prefix - use `"\$self->"` for pointer self, `"\$self."` for value self.
  */
 internal fun CCodeGen.registerClassFields(ci: ClassInfo, selfPrefix: String) {
 	for (prop in ci.properties) {
-		if (prop.getter != null) continue                            // computed property — no backing field
+		if (prop.getter != null) continue                            // computed property - no backing field
 		val name = prop.name
 		val type = prop.typeRef
 		val ktc        = resolveTypeName(type)

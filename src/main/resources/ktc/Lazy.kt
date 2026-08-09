@@ -2,7 +2,7 @@
 package ktc
 
 /** Lazy property wrapper. Defers evaluation until first read; caches the result.
-KTC lowers `by lazy { ... }` at compile time — no runtime Lazy object is allocated. */
+KTC lowers `by lazy { ... }` at compile time - no runtime Lazy object is allocated. */
 interface Lazy<T> {
 	val value: T
 	fun isInitialized(): Boolean

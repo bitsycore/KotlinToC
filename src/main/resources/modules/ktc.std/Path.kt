@@ -1,7 +1,7 @@
 package ktc.std
 
 /**
-Immutable filesystem path — a thin wrapper over a String, with the Okio-style
+Immutable filesystem path - a thin wrapper over a String, with the Okio-style
 helpers users expect: parent, name, extension, isAbsolute, and `/` for joining.
 
 Conventions:
@@ -18,7 +18,7 @@ class Path(val s: String) {
 	/** True if absolute (POSIX: starts with `/`; Windows: drive-letter form `X:/...`). */
 	val isAbsolute: Boolean get() = s.startsWith("/") || (s.length >= 2 && s[1] == ':')
 
-	/** The last path segment — file or directory name. */
+	/** The last path segment - file or directory name. */
 	inline val name: String get() = nameOf(s)
 
 	/** Name minus the trailing dot-extension. Leading dot (hidden files) is preserved. */
@@ -37,18 +37,18 @@ class Path(val s: String) {
 /**
 Append a relative segment. If [inChild] is absolute, it REPLACES the base
 (Okio semantics). Inline so the joined String lives in alloca-backed storage
-in the caller's frame — escaping the Path beyond the caller would dangle.
+in the caller's frame - escaping the Path beyond the caller would dangle.
 Top-level extension because member `inline fun` on a class isn't expanded
 at the call site by the current codegen.
  */
 inline fun Path.child(inChild: String): Path = joinPath(this, inChild)
 
 /** Okio-style join: `path / "sub"` ≡ `path.child("sub")`. Inline for the same
-   reason `child` is — the joined String's alloca buffer must live in the
+   reason `child` is - the joined String's alloca buffer must live in the
    caller's frame. */
 inline operator fun Path.div(inChild: String): Path = joinPath(this, inChild)
 
-/** Sugar — construct a Path from a string. */
+/** Sugar - construct a Path from a string. */
 inline fun pathOf(inS: String): Path = Path(inS)
 
 // ── internal helpers (top-level so they can be inlined cleanly) ────────
@@ -76,7 +76,7 @@ inline fun pathParent(inS: String): Path? {
 	return Path(inS.substring(0, vI))
 	}
 
-// Inline so the concatenation's alloca buffer lives in the CALLER's frame —
+// Inline so the concatenation's alloca buffer lives in the CALLER's frame -
 // otherwise the resulting Path.s field would point at a dead buffer.
 inline fun joinPath(inBase: Path, inChild: String): Path {
 	if (inChild.isEmpty()) return inBase

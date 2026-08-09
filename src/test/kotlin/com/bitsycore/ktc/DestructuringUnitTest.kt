@@ -67,7 +67,7 @@ class DestructuringUnitTest : TranspilerTestBase() {
         r.sourceNotContains("ktc_Float _ =")
     }
 
-    // Synthetic componentN() functions on data classes are not yet implemented —
+    // Synthetic componentN() functions on data classes are not yet implemented -
     // KTC destructures by direct ctor-param field access, not via component1()/component2().
     @Test fun componentFunctionOnDataClassNotYetImpl() {
         notYetImpl("synthetic componentN() methods on data classes are not implemented; KTC uses positional field access for destructuring instead")

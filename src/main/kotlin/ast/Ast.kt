@@ -49,8 +49,8 @@ data class FunDecl(
     val isInfix: Boolean = false,
     val isTailrec: Boolean = false,
     val annotations: List<Annotation> = emptyList(),  // declaration-level annotations (e.g. @DocumentationOnly)
-    val isOpen: Boolean = false,        // open fun — overridable by subclasses
-    val isAbstract: Boolean = false     // abstract fun — no body, subclasses must implement
+    val isOpen: Boolean = false,        // open fun - overridable by subclasses
+    val isAbstract: Boolean = false     // abstract fun - no body, subclasses must implement
 ) : Decl()
 
 data class ClassDecl(
@@ -66,17 +66,17 @@ data class ClassDecl(
     val isValue: Boolean = false,
     val isSealed: Boolean = false,
     val isInternal: Boolean = false,
-    val isAbstract: Boolean = false,        // abstract class — extendable, not instantiable
-    val isOpen: Boolean = false,            // open class — extendable AND instantiable
+    val isAbstract: Boolean = false,        // abstract class - extendable, not instantiable
+    val isOpen: Boolean = false,            // open class - extendable AND instantiable
     val superClassName: String? = null,     // class supertype (the entry of superInterfaces written with parens)
     val superClassArgs: List<Arg>? = null   // ctor args of `: Parent(args)` (empty list for `: Parent()`)
 ) : Decl()
 
 /* Per-entry data for an enum:
-   name      — entry identifier (e.g. PLUS)
-   args      — arguments passed to the enum's primary constructor for this entry
+   name      - entry identifier (e.g. PLUS)
+   args      - arguments passed to the enum's primary constructor for this entry
                (empty for simple enums)
-   overrides — body-block per-entry method overrides (Phase 3):
+   overrides - body-block per-entry method overrides (Phase 3):
                `PLUS { override fun apply(a, b) = a + b }` */
 data class EnumEntry(
     val name: String,
@@ -112,7 +112,7 @@ data class ObjectDecl(
 ) : Decl()
 
 /* `typealias Name = Target`. Resolved by substitution during type resolution
-— no codegen emission. */
+- no codegen emission. */
 data class TypeAliasDecl(
     val name:   String,
     val target: TypeRef
@@ -201,7 +201,7 @@ data class ReturnStmt(val value: Expr?) : Stmt()
 /* For-loop with optional destructuring of each element. When destructureNames
 is empty, varName binds the element directly (idiomatic for-each).
 When destructureNames is non-empty, the iterator element is decomposed into
-those names via componentN() / ctor-param field access — varName is then
+those names via componentN() / ctor-param field access - varName is then
 the implementation-detail temp holding the element. Both forms can carry
 the same body. */
 data class ForStmt(val varName: String, val iter: Expr, val body: Block, val destructureNames: List<String> = emptyList()) : Stmt()
@@ -220,7 +220,7 @@ data class CatchClause(
     val body: Block
 )
 
-/* try/catch/finally — lowered to setjmp/longjmp via the KTC_TRY macro family
+/* try/catch/finally - lowered to setjmp/longjmp via the KTC_TRY macro family
 (ktc_core_exception.h). At least one catch or a finally is required. */
 data class TryStmt(
     val body: Block,
@@ -228,11 +228,11 @@ data class TryStmt(
     val finallyBlock: Block? = null
 ) : Stmt()
 
-/* `throw expr` — expr must be a value of a class implementing Throwable (or a
+/* `throw expr` - expr must be a value of a class implementing Throwable (or a
 caught interface binding). */
 data class ThrowStmt(val value: Expr) : Stmt()
 
-/* `throw` in EXPRESSION position — Nothing-typed, supported on the right of
+/* `throw` in EXPRESSION position - Nothing-typed, supported on the right of
 `?:` (`x ?: throw NotFound(k)`) where it lowers to an if-null-throw statement
 prefix. Other expression positions are refused with a fix-it. */
 data class ThrowExpr(val value: Expr) : Expr()
@@ -318,10 +318,10 @@ fun TypeRef.getSizeAnnotation(): Int? {
     }
 }
 
-/* True when this TypeRef is a @Size(N)-annotated String — a fixed-capacity string buffer. */
+/* True when this TypeRef is a @Size(N)-annotated String - a fixed-capacity string buffer. */
 fun TypeRef.isSizedString(): Boolean = hasSizeAnnotation() && name == "String"
 
-/* True when this TypeRef is a reference/pointer type — either Ref<T> syntax or internal @Ptr annotation. */
+/* True when this TypeRef is a reference/pointer type - either Ref<T> syntax or internal @Ptr annotation. */
 fun TypeRef.isRefType(): Boolean = name == "Ref" || annotations.any { it.name == "Ptr" }
 
 /* Nullable accounting for Ref<T?> where nullability sits on the inner type arg, not the outer TypeRef. */

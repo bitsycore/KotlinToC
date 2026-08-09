@@ -294,7 +294,7 @@ internal fun CCodeGen.genToStringInto(recv: String, type: String, sb: String): S
 // Spill a non-trivial interpolated value into a temp (declared via preStmts) so it is evaluated
 // exactly once: the two-pass count/fill template lowering emits each append twice, and the nullable
 // append embeds the value twice (tag check + value), so `${f()}` would otherwise run f() 2–4×. (B8)
-// Returns the expression to use downstream — the temp name, or the original when it is a simple
+// Returns the expression to use downstream - the temp name, or the original when it is a simple
 // expression or a form that must stay a bare name (the generic-optional `name$has` dual variable).
 internal fun CCodeGen.spillTemplatePart(inExpr: String, inType: KtcType): String {
 	val vCanSpill = when {

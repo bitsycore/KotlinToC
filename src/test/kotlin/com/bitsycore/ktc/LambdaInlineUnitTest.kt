@@ -130,7 +130,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun captureAsRefOnAlreadyRefErrors() {
-        // capture(x.asRef()) where x is already a Ref<T> would capture a pointer-to-pointer — rejected.
+        // capture(x.asRef()) where x is already a Ref<T> would capture a pointer-to-pointer - rejected.
         transpileExpectError("""
             package test.Main
             fun main(args: Array<String>) {
@@ -178,7 +178,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
                 Heap.freeMem(g)
             }
         """)
-        r.sourceContains("ktc_Closure* test_Main_makeAdder")   // returns a heap reference — the escape
+        r.sourceContains("ktc_Closure* test_Main_makeAdder")   // returns a heap reference - the escape
         r.sourceContains("_invoke_erased")            // erased trampoline stored in the fat pointer
         r.sourceContains("g->invoke")                 // called through the heap fat pointer
     }
@@ -213,7 +213,7 @@ class LambdaInlineUnitTest : TranspilerTestBase() {
     }
 
     @Test fun bareFunctionTypeReturnErrors() {
-        // Returning a bare (frame-bound) function type is refused — return Ref<(Int)->Int> (heap closure).
+        // Returning a bare (frame-bound) function type is refused - return Ref<(Int)->Int> (heap closure).
         transpileExpectError("""
             package test.Main
             fun makeAdder(base: Int): (Int) -> Int {

@@ -122,14 +122,14 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			}
 		when (method) {
 			"refValue" -> {
-				if (objects.containsKey(pointerBase)) codegenError("Cannot call .refValue on object '${pointerBase}' — objects are always Ref")
+				if (objects.containsKey(pointerBase)) codegenError("Cannot call .refValue on object '${pointerBase}' - objects are always Ref")
 				return "(*$recv)"
 				}
 			"value" -> codegenError("Use '.refValue' instead of '.value()' to dereference a Ref<T>")
 			"set"  -> codegenError("Use 'p.refValue = x' to assign through a Ref (instead of p.set(x))")
 			"copy" -> if (classes[pointerBase]?.isData == true) return genDataClassCopy(recv, pointerBase, args, heap = true)
 			"asRef" -> return recv
-			"ptr" -> codegenError("'.ptr' is not available — use '.asRef()' to take a reference, or '.cPtr' for the raw C pointer of a String/Array.")
+			"ptr" -> codegenError("'.ptr' is not available - use '.asRef()' to take a reference, or '.cPtr' for the raw C pointer of a String/Array.")
 			}
 		// Check generic extension functions and interfaces for Ref receiver
 		val genExt = genericFunDecls.find {
@@ -179,7 +179,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			val allArgs = if (argStr.isEmpty()) recv else "$recv, $argStr"
 			return "${vIfaceInfo.flatName}_$method($allArgs)"
 			}
-		// @SimpleUnion: no vtable — inline dispatch through type ID
+		// @SimpleUnion: no vtable - inline dispatch through type ID
 		if (vIfaceInfo.name in simpleUnionInterfaces) {
 			return genSimpleUnionDispatch(vIfaceInfo.name, recv, method, argStr)
 			}
@@ -236,7 +236,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 				?: extensionFuns[vClassInfo.flatName]?.find { it.name == method }
 			else null
 		val effectiveDecl  = methodDecl ?: genericExtDecl ?: regularExtDecl
-		// No matching declaration anywhere — refuse before emitting a call to a C
+		// No matching declaration anywhere - refuse before emitting a call to a C
 		// symbol that won't exist. Star-extension methods (resolved later via the
 		// `starExtFunDecls` fallback) and built-in `copy`/`ptr` are handled above.
 		if (effectiveDecl == null && !starExtFunDecls.any { it.name == method }
@@ -245,7 +245,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			// Plain class with no member/extension copy → synthesize a no-arg value copy (the E071 escape
 			// hatch). A user-defined copy(...) resolves above and wins; copy(field=…) override is data-only.
 			if (method == "copy" && args.isEmpty()) return genDataClassCopy(recv, vClassInfo.baseName, args, heap = false)
-			codegenError("E050", "Unknown method '$method' on receiver of type '${vClassInfo.baseName}' — no matching method, extension function, or operator.")
+			codegenError("E050", "Unknown method '$method' on receiver of type '${vClassInfo.baseName}' - no matching method, extension function, or operator.")
 		}
 		val isExtFun       = effectiveDecl?.receiver != null
 		val isPtrRecv      = effectiveDecl?.receiver?.isRefType() == true
@@ -321,7 +321,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 		val vObjArgs = when {
 			vObjMethod != null -> prepareArgs(args, vObjMethod, vDotObjInfo.name)
 			else               -> {
-				/* Method not found in object — try extension functions for proper arg expansion. */
+				/* Method not found in object - try extension functions for proper arg expansion. */
 				val vExtForObj = extensionFuns[vDotObjInfo.name]?.find { it.name == method }
 				if (vExtForObj != null) prepareArgs(args, vExtForObj, vDotObjInfo.name) else argStr
 				}
@@ -362,7 +362,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 					return "${vEnumInfo.flatName}_$vFnName($vAllArgs)"
 					}
 				// No values/valueOf/instance-method match: fall through to the extension-function
-				// resolution path and, failing that, the E050 catch-all below — instead of emitting
+				// resolution path and, failing that, the E050 catch-all below - instead of emitting
 				// a bare "Enum_method" identifier that only fails at the C compiler.
 				}
 			}
@@ -413,7 +413,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 			}
 		}
 
-	// .asRef() for value types (primitives, enums, etc.) — take address
+	// .asRef() for value types (primitives, enums, etc.) - take address
 	if (method == "asRef" && recvType != null) {
 		val cType = cTypeStr(recvType)
 		val t     = tmp()
@@ -424,7 +424,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	// Fallback: refuse method calls on receivers whose type is a known declared
 	// type (class/interface/enum/object) but which lack any matching method,
 	// extension function, or operator. C-interop receivers and unknown/typeless
-	// receivers fall through unchanged — there are too many implicit-conversion
+	// receivers fall through unchanged - there are too many implicit-conversion
 	// and intrinsic cases to validate them precisely here.
 	val vRecvCore = recvTypeKtc?.stripNullable
 	val vRecvName = when (vRecvCore) {
@@ -435,7 +435,7 @@ internal fun CCodeGen.genMethodCall(dot: DotExpr, args: List<Arg>): String {
 	if (vRecvName != null && (classes.containsKey(vRecvName) || interfaces.containsKey(vRecvName)
 			|| objects.containsKey(vRecvName) || enums.containsKey(vRecvName))
 	) {
-		codegenError("E050", "Unknown method '$method' on receiver of type '${recvType ?: vRecvName}' — no matching method, extension function, operator, or intrinsic.")
+		codegenError("E050", "Unknown method '$method' on receiver of type '${recvType ?: vRecvName}' - no matching method, extension function, operator, or intrinsic.")
 	}
 	return "$recv.$method($argStr)"   // fallback
 	}
@@ -462,7 +462,7 @@ internal fun CCodeGen.genDataClassCopy(
 	val src   = if (heap) "(*$recv)" else recv
 	if (args.isEmpty()) return src   // simple struct value copy
 
-	// copy(field = val, ...) — hoist to temp, override named fields
+	// copy(field = val, ...) - hoist to temp, override named fields
 	val t     = tmp()
 	preStmts += "$cName $t = $src;"
 	val ci    = classes[className]
@@ -540,7 +540,7 @@ internal fun CCodeGen.genSimpleUnionDispatch(ifaceName: String, recv: String, me
 // take `&` of, or an rvalue expression that needs spilling.
 // Matches simple identifiers (`x`, `\$5`), dotted member paths (`obj.field`),
 // pointer-arrow paths (`ptr->field`), and parenthesized pointer-deref forms
-// (`(*\$self)`). All are lvalues in C — `&` is legal on them.
+// (`(*\$self)`). All are lvalues in C - `&` is legal on them.
 // Anything containing function calls, brackets, operators, or whitespace falls
 // back to the spill path.
 private val kIdentTail = "(?:[\\w\$.]|->)*"

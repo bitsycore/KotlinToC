@@ -5,7 +5,7 @@ import com.bitsycore.ktc.codegen.*
 import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.codegen.statement.emitStmt
 
-// class / data class — primary class emit, secondary constructors
+// class / data class - primary class emit, secondary constructors
 
 /**
  * Topologically sort concrete (non-generic) ClassDecls within a declaration list so that
@@ -60,7 +60,7 @@ internal fun topoSortClassDecls(decls: List<Decl>): List<Decl> {
 			}
 		}
 
-	// Append any remaining classes (cyclic deps — preserve original order as fallback)
+	// Append any remaining classes (cyclic deps - preserve original order as fallback)
 	val emitted = order.toSet()
 	classDecls.filter { it.name !in emitted }.forEach { order += it.name }
 

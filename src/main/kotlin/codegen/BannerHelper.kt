@@ -49,12 +49,12 @@ internal fun CCodeGen.funBlockHeader(inPkg: String, inFile: String): String =
 
 /*
 Build the preamble block comment for a per-declaration .c source file.
-inKind      — "class", "data class", "object", "companion object", "enum", "top-level"
-inKtName    — Kotlin display name including generic args (e.g. "MapIterator<String, String>")
-inPkg       — Kotlin package string (e.g. "com.example"); empty for no-package
-inCName     — C mangled identifier (e.g. "com_example_Foo")
-inSrcFile   — original Kotlin source filename (template source for generic instantiations)
-inInstFrom  — source file that triggered the instantiation; empty for non-generic declarations
+inKind      - "class", "data class", "object", "companion object", "enum", "top-level"
+inKtName    - Kotlin display name including generic args (e.g. "MapIterator<String, String>")
+inPkg       - Kotlin package string (e.g. "com.example"); empty for no-package
+inCName     - C mangled identifier (e.g. "com_example_Foo")
+inSrcFile   - original Kotlin source filename (template source for generic instantiations)
+inInstFrom  - source file that triggered the instantiation; empty for non-generic declarations
 */
 internal fun CCodeGen.cSourceFileHeader(
     inKind: String,

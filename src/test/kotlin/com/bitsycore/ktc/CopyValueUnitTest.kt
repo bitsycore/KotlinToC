@@ -37,7 +37,7 @@ class CopyValueUnitTest : TranspilerTestBase() {
 	// ── Explicit .copy() / fresh ctor are NOT implicit copies ─────────
 
 	@Test fun copyMakesItExplicit() {
-		// val d: Box = a.copy() — a.copy() is an rvalue (CallExpr), so no E071.
+		// val d: Box = a.copy() - a.copy() is an rvalue (CallExpr), so no E071.
 		transpileMain("""
 			val a = Box(1)
 			val d: Box = a.copy()
@@ -45,7 +45,7 @@ class CopyValueUnitTest : TranspilerTestBase() {
 	}
 
 	@Test fun freshCtorIsNotACopy() {
-		// val d: Box = Box(2) — rvalue ctor, never a copy.
+		// val d: Box = Box(2) - rvalue ctor, never a copy.
 		transpileMain("""
 			val d: Box = Box(2)
 		""", decls = "class Box(val x: Int)")
@@ -109,7 +109,7 @@ class CopyValueUnitTest : TranspilerTestBase() {
 	}
 
 	// ── P4: @Size(N) arrays are guarded at bindings/assignments ───────
-	// (Param/return sites are exempt — a @Size(N) signature makes the copy cost visible, unlike a
+	// (Param/return sites are exempt - a @Size(N) signature makes the copy cost visible, unlike a
 	// plain class param; the rule targets the hidden copy behind `=`.)
 
 	@Test fun sizedArrayBindingFromLvalueErrors() {

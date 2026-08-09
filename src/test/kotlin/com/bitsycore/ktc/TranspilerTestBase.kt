@@ -426,7 +426,7 @@ open class TranspilerTestBase {
     }
 
     /**
-     * Mark a test as "not yet implemented" — skipped via JUnit5 assumption
+     * Mark a test as "not yet implemented" - skipped via JUnit5 assumption
      * instead of failing. Use for valid Kotlin syntax that the transpiler
      * doesn't support yet.
      */

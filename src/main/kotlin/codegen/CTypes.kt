@@ -96,7 +96,7 @@ internal fun CCodeGen.resolveTypeName(inT: TypeRef?): KtcType {
 		val vRet      = resolveTypeName(vSubstituted.funcReturn)               // return type
 		return KtcType.Func(vParams, vRet, receiver = vReceiver)
 		}
-	// Ref<(P) -> R> — a heap closure. The function type IS the closure type (as in Kotlin); Ref marks the
+	// Ref<(P) -> R> - a heap closure. The function type IS the closure type (as in Kotlin); Ref marks the
 	// heap form. Lowers to Ptr(Closure(sig)) → a type-erased fat pointer (ktc_Closure*), like Ref<Interface>
 	// → ktc_IfacePtr. A bare (P) -> R stays a frame-bound functor / function pointer.
 	if (vSubstituted.name == "Ref" && vSubstituted.typeArgs.size == 1 && vSubstituted.typeArgs[0].funcParams != null) {
@@ -168,9 +168,9 @@ internal fun CCodeGen.resolveTypeNameStr(t: TypeRef?): String {
 /* Internal string-based type resolution after Ref / @Ptr stripping (legacy bridge). */
 internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	// C.SDL_Window → "c:SDL_Window" (C interop external type passthrough).
-	// The "c:" prefix is purely an internal marker — the source spelling is `C.`.
+	// The "c:" prefix is purely an internal marker - the source spelling is `C.`.
 	if (t.name.startsWith("C.")) return "c:${t.name.removePrefix("C.")}"
-	// Generated per-lambda functor struct: the name is already a final C identifier — emit verbatim
+	// Generated per-lambda functor struct: the name is already a final C identifier - emit verbatim
 	// (don't re-apply the package prefix, which would produce P_P_Closure0).
 	if (t.name in closureStructTypes) return t.name
 	// Function type: (P1, P2) -> R → "Fun(P1,P2)->R"
@@ -206,7 +206,7 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	if (t.name == "StringBuffer" && t.typeArgs.isEmpty()
 		&& !classes.containsKey("StringBuffer") && !genericClassDecls.containsKey("StringBuffer"))
 		return "ktc_StrBuf"
-	// Ref<(P) -> R> — a heap closure. Resolve it here too (this inner resolver is what the Array branch
+	// Ref<(P) -> R> - a heap closure. Resolve it here too (this inner resolver is what the Array branch
 	// below calls on its element, where Ref isn't pre-stripped): mirror resolveTypeNameStr so an element
 	// like Array<Ref<(Int)->Int>> keeps its closure type ("Closure<Fun(..)->R>*") instead of collapsing to
 	// "Ref" → "RefArray" (a bogus user element).
@@ -245,13 +245,13 @@ internal fun CCodeGen.resolveTypeNameInnerStr(t: TypeRef): String {
 	// Unknown type: at this point everything resolvable has been handled (primitives,
 	// String/Char/Any/Unit/Nothing/Bool/Float/Double, Array/RawArray/AnyPtr/StringBuffer,
 	// classes/enums/interfaces/objects, generic params, nested classes). Anything else
-	// is a typo or a missing declaration — refuse rather than pass it through to C.
+	// is a typo or a missing declaration - refuse rather than pass it through to C.
 	if (!isKnownTypeName(t.name))
-		codegenError("E001", "Unknown type '${t.name}'. Not a class, interface, enum, object, primitive, or generic type parameter — did you forget to import it or mistype the name?")
+		codegenError("E001", "Unknown type '${t.name}'. Not a class, interface, enum, object, primitive, or generic type parameter - did you forget to import it or mistype the name?")
 	return t.name
 	}
 
-/* Returns true when inName is a recognized type identifier — primitive, built-in
+/* Returns true when inName is a recognized type identifier - primitive, built-in
 alias, declared class/interface/enum/object, generic type parameter, or
 C-interop passthrough. Used to gate the "unknown type" refusal. */
 private fun CCodeGen.isKnownTypeName(inName: String): Boolean {
@@ -298,7 +298,7 @@ internal fun CCodeGen.userType(inName: String, inKind: KtcType.UserKind = KtcTyp
 		objects.containsKey(inName)    -> objects[inName]!!
 		interfaces.containsKey(inName) -> interfaces[inName]!!
 		enums.containsKey(inName)      -> enums[inName]!!
-		// Generated functor struct: name is already a final C identifier — empty pkg so flatName == inName.
+		// Generated functor struct: name is already a final C identifier - empty pkg so flatName == inName.
 		inName in closureStructTypes   -> BuiltinTypeDef(baseName = inName, pkg = "", kind = inKind)
 		else -> {
 			val vFullPfx = typeFlatName(inName)
@@ -332,7 +332,7 @@ internal fun CCodeGen.parseResolvedTypeName(resolved: String, t: TypeRef? = null
 		return KtcType.Ptr(parseResolvedTypeName(base, t))
 		}
 	if (resolved.endsWith("?")) return KtcType.Nullable(parseResolvedTypeName(resolved.dropLast(1)))
-	// "Closure<Fun(...)->R>" → KtcType.Closure(sig) — round-trips the heap-closure type.
+	// "Closure<Fun(...)->R>" → KtcType.Closure(sig) - round-trips the heap-closure type.
 	if (resolved.startsWith("Closure<") && resolved.endsWith(">")) {
 		val vSig = parseResolvedTypeName(resolved.removePrefix("Closure<").removeSuffix(">"))
 		if (vSig is KtcType.Func) return KtcType.Closure(vSig)
@@ -413,7 +413,7 @@ internal fun CCodeGen.cTypeStr(t: String): String {
 	}
 
 /* C type for a VALUE position (struct field, parameter, generic slot): Unit is
-   a real one-byte struct (ktc_Unit) there — only function returns stay `void`. */
+   a real one-byte struct (ktc_Unit) there - only function returns stay `void`. */
 internal fun SymbolReader.cValueTypeStr(ktc: KtcType): String =
 	if (ktc is KtcType.Void) "ktc_Unit" else cTypeStr(ktc)
 
@@ -455,7 +455,7 @@ internal fun SymbolReader.cTypeStr(ktc: KtcType): String = when (ktc) {
 	is KtcType.COpaque -> ktc.cName
 	}
 
-/* C type string for an array element — handles nullable elements as Optional types. */
+/* C type string for an array element - handles nullable elements as Optional types. */
 internal fun SymbolReader.elemCTypeStr(elemKtc: KtcType): String =
 	if (elemKtc is KtcType.Nullable) optCTypeName(elemKtc.inner.toInternalStr) else cTypeStr(elemKtc)
 

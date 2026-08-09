@@ -21,7 +21,7 @@ internal fun CCodeGen.tmpOptional(ktcType: String, initExpr: String): String {
 
 /**
  * Fill argument defaults for [decl] then expand to a C argument string.
- * [owner] is the declaring class/object name — used for interface-inherited defaults via [effectiveDefaults].
+ * [owner] is the declaring class/object name - used for interface-inherited defaults via [effectiveDefaults].
  * Pass an empty owner for top-level or generic functions where params carry their own defaults.
  */
 internal fun CCodeGen.prepareArgs(args: List<Arg>, decl: FunDecl, owner: String = ""): String {
@@ -114,12 +114,12 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 		val paramType    = resolveTypeName(param.type).toInternalStr   // string type (for structural checks: endsWith, isArray, etc.)
 		val paramTypeKtc = resolveTypeName(param.type)                 // KtcType (for C type emission)
 		if (param.isVararg) {
-			// Consume remaining args for vararg — packed into a single ktc_VarArr_T
+			// Consume remaining args for vararg - packed into a single ktc_VarArr_T
 			val remaining   = args.subList(argIdx, args.size)
 			val elemCType   = cTypeStr(paramTypeKtc)                    // element C type
 			val vVarArrType = varArrTypeName(elemCType)
 			if (remaining.size == 1 && remaining[0].isSpread) {
-				// Spread arg: already a ktc_VarArr_T — pass directly
+				// Spread arg: already a ktc_VarArr_T - pass directly
 				parts += genExpr(remaining[0].expr)
 				} else if (remaining.isEmpty()) {
 				parts += "($vVarArrType){NULL, 0}"
@@ -137,7 +137,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 			// User-class pointer (e.g. Ref<Vec2> → Vec2*), NOT a typed array pointer (IntArray → Ptr<Arr<Int>>)
 			val isPtrOrArrayPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner !is KtcType.Arr
 			if (hasAtPtr || isPtrOrArrayPtr) {
-				// Ref<T> type — pass raw pointer (NULL for null)
+				// Ref<T> type - pass raw pointer (NULL for null)
 				if (arg.expr is NullLit) {
 					val vNullIsVarArr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null
 					if (vNullIsVarArr) {
@@ -224,7 +224,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					} else {
 					val vIsArrPtr = paramTypeKtc is KtcType.Ptr && paramTypeKtc.inner is KtcType.Arr && paramTypeKtc.inner.sized == null
 					if (vIsArrPtr) {
-						// Ref<Array<T>>: now ktc_VarArr_T — pass struct with .ptr cast if needed
+						// Ref<Array<T>>: now ktc_VarArr_T - pass struct with .ptr cast if needed
 						val vInnerArr  = paramTypeKtc.inner
 						val vElemCType = elemCTypeStr(vInnerArr.elem)
 						val vVarArrTp  = varArrTypeName(vElemCType)
@@ -256,16 +256,16 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						}
 					}
 				} else if (param.type.isSizedString()) {
-				// @Size(N) String param — wrap ktc_String into ktc_String_N value struct
+				// @Size(N) String param - wrap ktc_String into ktc_String_N value struct
 				val vSize       = param.type.getSizeAnnotation()!!
 				val vStructType = sizedStringCTypeRef(vSize)
 				val vWrap       = tmp()
 				preStmts += "$vStructType $vWrap;"
 				preStmts += "memcpy($vWrap.buf, ($expr).ptr, ($expr).len * sizeof(ktc_Char)); $vWrap.len = ($expr).len;"
 				parts += vWrap
-				} else if (paramTypeKtc.asArr != null) {  // Arr or Ptr(Arr) — structural, not endsWith("Array")
+				} else if (paramTypeKtc.asArr != null) {  // Arr or Ptr(Arr) - structural, not endsWith("Array")
 				if (param.type.hasSizeAnnotation()) {
-					// @Size(N) array param — wrap pointer into ktc_Array_T_N value struct
+					// @Size(N) array param - wrap pointer into ktc_Array_T_N value struct
 					val vElemKtc    = paramTypeKtc.asArr!!.elem  // element KtcType
 					val vElemCType  = cTypeStr(vElemKtc)         // element C type
 					val vSize       = param.type.getSizeAnnotation()!!
@@ -303,7 +303,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 					val wrapped = if (argVarKtc is KtcType.Nullable && isValueNullableKtc(argVarKtc)
 						&& (argVarName != null && isOptional(argVarName))
 						) {
-						// Already an Optional var — check if needs interface conversion
+						// Already an Optional var - check if needs interface conversion
 						val ifaceName2 = paramType.removeSuffix("?")
 						val needsIfaceConv = interfaces.containsKey(ifaceName2)
 							&& classes.containsKey(argVarKtc.inner.toInternalStr)
@@ -340,7 +340,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 						isObjImpl                                    -> "&$expr"   // object singletons are global lvalues
 						arg.expr is NameExpr || arg.expr is ThisExpr -> "&$expr"
 						else -> {
-							// class rvalue (e.g. a ctor call) — hoist to a temp before taking its address
+							// class rvalue (e.g. a ctor call) - hoist to a temp before taking its address
 							val vT = tmp()
 							preStmts += "${typeFlatName(baseArgType!!)} $vT = $expr;"
 							"&$vT"
@@ -375,7 +375,7 @@ internal fun CCodeGen.expandCallArgs(args: List<Arg>, params: List<Param>?, isCt
 				parts += "KTC_UNIT"
 				} else {
 				// Plain by-value parameter. No implicit copy of a class lvalue (E071): a class /
-				// data-class value passed by value would silently struct-copy — force .copy() /
+				// data-class value passed by value would silently struct-copy - force .copy() /
 				// .copyWith(), or pass a reference to a Ref<T> param. No-op for primitives / String.
 				checkImplicitCopy(paramTypeKtc, arg.expr, "parameter '${param.name}'")
 				// Auto-cast any pointer to AnyPtr / Byte* (for freeMem, reallocMem, etc.)

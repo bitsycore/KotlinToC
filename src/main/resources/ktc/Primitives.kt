@@ -3,7 +3,7 @@ package ktc
 // Each primitive below is an intrinsic the transpiler knows natively, so the class blocks are
 // per-declaration @DocumentationOnly: parsed for IDE/doc visibility, never collected or emitted.
 // Marking per-class (not @file:DocumentationOnly) lets REAL inline extensions live in this file
-// alongside the stubs — see the Char predicates below, and plan.md D1.
+// alongside the stubs - see the Char predicates below, and plan.md D1.
 
 // ==================
 // MARK: Boolean
@@ -73,7 +73,7 @@ class Char {
 // ==================
 // Zero-overhead inline extensions with an ASCII fast-path (matching the ASCII-only policy used by
 // the String case helpers in Strings.kt). Every tokenizer/parser needs these. These are REAL,
-// collected declarations living right next to the @DocumentationOnly Char stub above — see plan.md D1.
+// collected declarations living right next to the @DocumentationOnly Char stub above - see plan.md D1.
 
 /** True if this char is an ASCII decimal digit '0'..'9'. */
 inline fun Char.isDigit(): Boolean = this >= '0' && this <= '9'

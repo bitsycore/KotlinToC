@@ -53,7 +53,7 @@ internal fun CCodeGen.scanForGenericFunCalls() {
 						val typeArgs = inferTypeArgs(f, e.args, e.typeArgs)
 						if (typeArgs != null) recordGenericFunInstantiation(name, typeArgs)
 						}
-					// Generic INLINE fun: its body expands at the call site — scan it with the
+					// Generic INLINE fun: its body expands at the call site - scan it with the
 					// inferred substitution so generic instantiations inside (e.g. runCatching's
 					// Result.Success<T>) are recorded before emission. ScanSubst has the
 					// subst-aware twin of this hook for nested generic contexts.

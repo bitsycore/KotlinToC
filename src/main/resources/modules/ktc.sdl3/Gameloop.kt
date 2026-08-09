@@ -5,7 +5,7 @@ package ktc.sdl3
 /**
  * Run a delta-timed game loop capped at targetFps.
  * The block receives dt (seconds since last frame) and returns true to keep running.
- * Inline — the block lambda expands at the call site with no extra call overhead.
+ * Inline - the block lambda expands at the call site with no extra call overhead.
  */
 inline fun gameLoop(targetFps: Int = 60, block: (Float) -> Boolean) {
     val frameMs = 1000L / targetFps.toLong()

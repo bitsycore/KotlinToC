@@ -63,7 +63,7 @@ class DemoApp(
 	var spriteState:   SpriteState   = SpriteState()
 ) {
 	// ══════════════════════════════════════════════════════════
-	// MARK: Event handlers (primitive args — SDL_Event is C-only)
+	// MARK: Event handlers (primitive args - SDL_Event is C-only)
 	// ══════════════════════════════════════════════════════════
 
 	fun onQuit() { quit = true }

@@ -19,7 +19,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // VARIABLE is handled later via lookupCName; this covers h.f(x), arr[i](x), etc.) Spill the callee
     // into a temp since it's read twice (->invoke and ->env).
     if (e.callee !is NameExpr) {
-        // Index callee (arr[i]): take the element type straight off the array's KtcType — robust against
+        // Index callee (arr[i]): take the element type straight off the array's KtcType - robust against
         // any residual string-inference loss on a composite element.
         val vCalleeKtc = (if (e.callee is IndexExpr) {
             val vArr = inferExprTypeKtc(e.callee.obj)?.stripNullable
@@ -40,7 +40,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     }
     // ── Method call: DotExpr receiver ────────────────────────────
     if (e.callee is DotExpr) {
-        // expr.cast<T>() — unchecked C-level reinterpret cast. Useful for the
+        // expr.cast<T>() - unchecked C-level reinterpret cast. Useful for the
         // C-interop edges where the type system can't express `const T*` ↔ `T*`,
         // `FILE*` ↔ `void*`, etc. Emits `((T)(expr))` directly; no runtime check.
         // The last type argument is taken as the target type so `cast<X>()` (one
@@ -118,7 +118,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
             }
         }
 
-        // Class(args).allocWith(allocator) — allocator-based heap construction.
+        // Class(args).allocWith(allocator) - allocator-based heap construction.
         // The receiver is a constructor call; the transpiler allocates and constructs in place.
         if (e.callee.name == "allocWith" && e.callee.obj is CallExpr && e.args.isNotEmpty()) {
             val vResult = genAllocWithCallOrNull(e)
@@ -205,7 +205,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
         ?: return "${genExpr(e.callee)}(${e.args.joinToString(", ") { genExpr(it.expr) }})"
     val vArgs = e.args
 
-    // thread { capture(...); body } — lower the lambda to a generated entry fn + stack context.
+    // thread { capture(...); body } - lower the lambda to a generated entry fn + stack context.
     genThreadClosureOrNull(e)?.let { return it }
 
     // ── Inline function call in value position ────────────────────
@@ -252,7 +252,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
                     ?: run {
                         val vResultName = "\$ir${inlineCounter++}"
                         // A nullable value-type return needs the Optional result var + wrapping (mirrors the
-                        // inline-extension path above) — otherwise `return null` assigns void* to a bare struct.
+                        // inline-extension path above) - otherwise `return null` assigns void* to a bare struct.
                         val vIsRetNullable = vRetType.nullable && !vRetType.isRefType()
                         val vCRetType = if (vIsRetNullable) {
                             val vInnerKtc = resolveTypeName(vRetType.copy(nullable = false))
@@ -389,7 +389,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // capturing lambda arg can't go through normal arg codegen (it's lowered to a closure value).
     genHigherOrderClosureCallOrNull(vName, vArgs, e)?.let { return it }
 
-    // ── Regular function call — fill defaults and dispatch ────────
+    // ── Regular function call - fill defaults and dispatch ────────
     // Internal visibility check: top-level fun marked `internal` cannot be called
     // from a different package than the one it was declared in.
     val vInternalFunPkg = internalFunPkgs[vName]
@@ -476,7 +476,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
     // before emitting a call that would only fail at the C compiler with a confusing
     // "implicit declaration" error.
     if (!isKnownCallName(vName)) {
-        codegenError("E051", "Unresolved function call '$vName(...)' — no top-level function, method, extension, constructor, generic, or imported symbol with that name.")
+        codegenError("E051", "Unresolved function call '$vName(...)' - no top-level function, method, extension, constructor, generic, or imported symbol with that name.")
     }
 
     return "${funCName(vName)}($vExpandedArgs)"
@@ -485,7 +485,7 @@ internal fun CCodeGen.genCall(e: CallExpr): String {
 /* Returns true when vName might legitimately resolve to a callable: a top-level
 function, an inline function, a generic function, an extension function, a
 constructor, a known class/object/enum (for ctor-style calls), a lambda param
-in scope, or a C-interop name. The check is conservative — false negatives
+in scope, or a C-interop name. The check is conservative - false negatives
 (unknown names) are fine because the codegenError above is the safety net. */
 internal fun CCodeGen.isKnownCallName(vName: String): Boolean {
     if (vName in funSigs) return true
@@ -502,10 +502,10 @@ internal fun CCodeGen.isKnownCallName(vName: String): Boolean {
     if (lookupVar(vName) != null) return true       // local function variable
     if (vName in lambdaParamSubst.keys) return true // active lambda parameter
     if (vName in activeLambdas.keys) return true    // inline-bound lambda
-    // Built-ins handled by genBuiltinCallOrNull — listed here so the late guard
+    // Built-ins handled by genBuiltinCallOrNull - listed here so the late guard
     // doesn't fire when they reach this branch via overload-resolution paths.
     if (vName in kBuiltinCallNames) return true
-    // Allow names with a package prefix (foo.bar.baz) — they're resolved by
+    // Allow names with a package prefix (foo.bar.baz) - they're resolved by
     // findCrossPackageFun or by emitter-side passthrough.
     if ('.' in vName || '_' in vName) return true
     return false

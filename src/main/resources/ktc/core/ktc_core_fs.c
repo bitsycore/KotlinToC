@@ -1,4 +1,4 @@
-// ktc_core_fs.c — POSIX / Win32 split for ktc.std.FileSystem.
+// ktc_core_fs.c - POSIX / Win32 split for ktc.std.FileSystem.
 //
 // Strategy: every path arrives as (bytes, len), gets NUL-terminated into a
 // stack scratch buffer (KTC_FS_PATH_MAX), then handed to libc/Win32. This keeps
@@ -135,7 +135,7 @@ typedef struct {
 void* ktc_core_fs_listdir_open(const char* path_bytes, int path_len) {
     char buf[KTC_FS_PATH_MAX];
     if (!ktc_fs_to_cstr(path_bytes, path_len, buf, sizeof(buf))) return NULL;
-    // FindFirstFile needs a glob — append \* (or /*) to the directory.
+    // FindFirstFile needs a glob - append \* (or /*) to the directory.
     char pattern[KTC_FS_PATH_MAX + 4];
     snprintf(pattern, sizeof(pattern), "%s\\*", buf);
     ktc_dirhandle* dh = (ktc_dirhandle*)malloc(sizeof(*dh));

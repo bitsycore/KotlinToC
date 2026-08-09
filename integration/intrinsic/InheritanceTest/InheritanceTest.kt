@@ -10,7 +10,7 @@ package test
 
 open class Animal(val name: String, val legs: Int = 4) {
     open fun sound(): Int = 0
-    fun describe(): Int = name.length * 10 + legs   // final — inherited as-is
+    fun describe(): Int = name.length * 10 + legs   // final - inherited as-is
 }
 
 open class Dog(name: String, val breed: String) : Animal(name) {
@@ -205,7 +205,7 @@ fun main() {
     if (ip.first != 7 || ip.second != 9) fatalError("FAIL IntPair")
     println("generic parents: OK")
 
-    // Exceptions defined by extending Exception — caught at every level.
+    // Exceptions defined by extending Exception - caught at every level.
     var t = 0
     try {
         throw ConfigError("bad config")

@@ -7,7 +7,7 @@ internal fun CCodeGen.genArrayOfExpr(
     name: String,
     args: List<Arg>,
     inTypeArg: TypeRef? = null
-): String { // inTypeArg — explicit type argument from the call site, e.g. arrayOf<Int?>(...)
+): String { // inTypeArg - explicit type argument from the call site, e.g. arrayOf<Int?>(...)
     // arrayOf<T?>(v1, null, v2) → nullable element array; each element wrapped in Optional struct
     if (name == "arrayOf" && inTypeArg?.nullable == true) {
         val vElemName   = typeSubst[inTypeArg.name] ?: inTypeArg.name
@@ -43,7 +43,7 @@ internal fun CCodeGen.genArrayOfExpr(
     val n = args.size
     val t = tmp()
     /* Optimization: when this call is the direct return value of a @Size(N) function whose element
-    type and count match, emit the ktc_Array_T_N struct inline — no raw array + memcpy needed. */
+    type and count match, emit the ktc_Array_T_N struct inline - no raw array + memcpy needed. */
     if (currentFnReturnsSizedArray && n == currentFnSizedArraySize && elemType == currentFnSizedArrayElemType?.let { cTypeStr(it) }) {
         val vStructType = sizedArrayCTypeName(elemType, n)
         preStmts += "$vStructType $t = {{$vals}};"  // struct has only arr[N], no len field
@@ -72,7 +72,7 @@ internal fun CCodeGen.genNewArray(elemCType: String, args: List<Arg>): String {
     return t
 }
 
-/** Array<T>(size) { init } — stack-allocated with inline lambda init loop. */
+/** Array<T>(size) { init } - stack-allocated with inline lambda init loop. */
 internal fun CCodeGen.genNewArrayWithLambda(elemCType: String, args: List<Arg>): String {
     val size = genExpr(args[0].expr)
     val lambda = args[1].expr as LambdaExpr

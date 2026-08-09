@@ -147,7 +147,7 @@ internal fun CCodeGen.emitPrintStmtInner(args: List<Arg>, ind: String, newline: 
         return
     }
 
-    // String: printf(".*s") needs .len + .ptr — materialize if complex
+    // String: printf(".*s") needs .len + .ptr - materialize if complex
     if (tKtcCore is KtcType.Str) {
         val safeExpr = if (!isSimpleCExpr(expr)) { val vTmp = tmp(); impl.appendLine("${ind}ktc_String $vTmp = ($expr);"); vTmp } else expr
         impl.appendLine("${ind}printf(\"%.*s$nl\", (ktc_Int)($safeExpr).len, ($safeExpr).ptr);")

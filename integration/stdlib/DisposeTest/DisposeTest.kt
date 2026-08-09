@@ -1,6 +1,6 @@
 package DisposeTest
 
-// Class without explicit dispose — gets implicit no-op
+// Class without explicit dispose - gets implicit no-op
 class SimpleData(val x: Int, val y: Int)
 
 // Class with explicit dispose override

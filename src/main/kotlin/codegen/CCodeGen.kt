@@ -129,7 +129,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal var inlineReturnUnionType: String? = null // when non-null, inline return type is a @SimpleUnion sealed interface → wrap subclass with _as_
     internal var inlineEndLabel: String? = null   // goto label after the inline block to handle early return
     internal var inlineLabelUsed: Boolean = false // true if at least one goto to inlineEndLabel was emitted
-    internal var inlineTryMark: Int = 0           // tryContexts.size at inline-expansion entry — a `return` (goto endLabel) only unwinds tries opened inside the expansion
+    internal var inlineTryMark: Int = 0           // tryContexts.size at inline-expansion entry - a `return` (goto endLabel) only unwinds tries opened inside the expansion
     internal var currentInd: String = "    "  // current emit indentation, kept in sync by emitStmt
     internal var inlineCounter: Int = 0  // counter for unique inline temp variable names and end labels
     internal var threadClosureCounter: Int = 0  // counter for unique `thread { }` / closure structs + entry/invoke fns
@@ -137,7 +137,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal val pendingClosures = mutableListOf<com.bitsycore.ktc.codegen.expression.PendingClosure>()  // generated closure invoke fns, emitted after the decl loop
     internal val inlineScanInProgress = mutableSetOf<String>()  // generic inline funs being body-scanned (recursion guard, see ScanSubst)
     internal val closureStructTypes = mutableSetOf<String>()  // C names of generated per-lambda functor structs (a var of this type calls via _invoke)
-    internal val closureStructEscapeUnsafe = mutableSetOf<String>()  // functor structs that captured a stack local by ref — cannot be heap-promoted (copyWith)
+    internal val closureStructEscapeUnsafe = mutableSetOf<String>()  // functor structs that captured a stack local by ref - cannot be heap-promoted (copyWith)
     internal val closureFuncType = mutableMapOf<String, com.bitsycore.ktc.types.KtcType.Func>()  // functor struct C name → its function signature (for Closure<F> heap-promotion)
     internal val pendingClosureFnInsts = mutableListOf<com.bitsycore.ktc.codegen.expression.PendingClosureFnInst>()  // higher-order fns monomorphized per closure type
     internal val closureFnInstNames = mutableSetOf<String>()  // mangled names already queued, for dedup
@@ -171,27 +171,27 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun getTypeId(name: String): Int = typeIds.getOrPut(name) { nextTypeId++ }
 
     /* Build a ktc_IfacePtr struct-literal body `{typeId, &Concrete_Iface_vt, obj}`. [inObj] is emitted
-       verbatim — the caller includes any `(void*)` cast / address-of. For the nullable spelling, wrap
+       verbatim - the caller includes any `(void*)` cast / address-of. For the nullable spelling, wrap
        the result at the call site as `(guard) ? ((ktc_IfacePtr)<body>) : ((ktc_IfacePtr){0})`. (R2) */
     internal fun ifacePtrLiteral(inTypeId: Int, inConcrete: String, inIface: String, inObj: String): String =
         "{$inTypeId, (const void*)&${inConcrete}_${inIface}_vt, $inObj}"
 
     /** Returns the C expression for reading the runtime typeId from [inner] given its KtcType.
-     *  Returns null when the type is statically known (concrete class) — caller emits true/false. */
+     *  Returns null when the type is statically known (concrete class) - caller emits true/false. */
     internal fun typeIdExpr(exprKtcCore: KtcType?, inner: String, memOp: String): String? = when {
         exprKtcCore is KtcType.Any -> "${inner}.typeId"
         exprKtcCore is KtcType.User && exprKtcCore.kind == KtcType.UserKind.Interface -> "${inner}.__typeId"
         exprKtcCore is KtcType.Ptr && (exprKtcCore.inner as? KtcType.User)?.kind == KtcType.UserKind.Interface -> "${inner}.typeId"
         exprKtcCore is KtcType.Ptr && exprKtcCore.inner is KtcType.Any -> "${inner}${memOp}typeId"
-        else -> null  // concrete class or unknown — type is statically known
+        else -> null  // concrete class or unknown - type is statically known
     }
 
     // Maps class name → synthetic companion object name (e.g. "Foo" → "Foo$Companion")
     internal val classCompanions = mutableMapOf<String, String>()
 
-    // Generic functions: fun <T> name(...) — stored as templates
+    // Generic functions: fun <T> name(...) - stored as templates
     internal val genericFunDecls = mutableListOf<FunDecl>()
-    // Star-projection extension functions: fun Foo<*>.name() — stored for expansion
+    // Star-projection extension functions: fun Foo<*>.name() - stored for expansion
     internal val starExtFunDecls = mutableListOf<FunDecl>()
     // Concrete instantiations of generic functions: mangledName → (FunDecl, typeSubst)
     internal val genericFunInstantiations = mutableMapOf<String, MutableSet<List<String>>>()
@@ -203,7 +203,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // type is an interface but the body returns a concrete class (enables stack return)
     internal val genericFunConcreteReturn = mutableMapOf<String, String>()
     /** Check if a method on baseType has a nullable receiver declaration. */
-    /** True when class/object [inName] implements interface [inIface] — directly
+    /** True when class/object [inName] implements interface [inIface] - directly
        or transitively through interface extends-chains (which is also how class
        inheritance reaches here after the InheritDesugar pass). */
     internal fun classImplementsIface(inName: String, inIface: String): Boolean {
@@ -256,11 +256,11 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // Track class/enum types used in Array<T> so we emit KT_ARRAY_DEF for them
     override val classArrayTypes = mutableSetOf<String>()
 
-    /* Pair/Triple types are now handled entirely by stdlib — no intrinsic maps needed. */
+    /* Pair/Triple types are now handled entirely by stdlib - no intrinsic maps needed. */
 
 
     // ── Generics (monomorphization) ──────────────────────────────────
-    // Store original ClassDecl for every class (generic and concrete) — used for secondary ctor lookup across files.
+    // Store original ClassDecl for every class (generic and concrete) - used for secondary ctor lookup across files.
     internal val allClassDecls = mutableMapOf<String, ClassDecl>()
     // Store original ClassDecl for generic classes so we can re-emit per instantiation
     override val genericClassDecls = mutableMapOf<String, ClassDecl>()
@@ -389,7 +389,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         vScope[inName]?.let { vScope[inName] = it.copy(arraySize = inSize) }
         }
 
-    /* Look up the compile-time size — searches all scopes, innermost first, skipping null. */
+    /* Look up the compile-time size - searches all scopes, innermost first, skipping null. */
     internal fun lookupArraySize(inName: String): Int? {
         for (i in scopes.indices.reversed()) { scopes[i][inName]?.arraySize?.let { return it } }
         return null
@@ -416,7 +416,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     internal fun enumInfoFor(inType: KtcType?): EnumInfo? =      // EnumInfo if type is an enum class
         (inType as? KtcType.User)?.decl as? EnumInfo
 
-    /* True when [inType] is Ref<Interface> — a Ptr wrapping an interface User. Such a value is a
+    /* True when [inType] is Ref<Interface> - a Ptr wrapping an interface User. Such a value is a
        ktc_IfacePtr at the C level (vt is const void*, object ptr in .obj), NOT a per-iface struct and
        NOT a class*. Member access / method calls / freeMem on it must use the ktc_IfacePtr layout.
        Uses ifaceInfoFor so monomorphized generic interfaces (List_Int, …) are detected too. */
@@ -500,7 +500,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
             val vParent = resolveDotObjCName(dot.obj) ?: return null
             val vNestedName = "${vParent.replace('.', '$')}\$${dot.name}"
             if (objects.containsKey(vNestedName)) return objects[vNestedName]!!.flatName
-            // Not a nested object — let genDot handle it as a regular property access
+            // Not a nested object - let genDot handle it as a regular property access
             return null
             }
         return null
@@ -517,7 +517,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         else -> "${recvExpr}\$has"
     }
 
-    // mutable / optional flags live inside LocalVar — see markMutable / markOptional below.
+    // mutable / optional flags live inside LocalVar - see markMutable / markOptional below.
 
     /* Mark a variable as mutable (var). Updates LocalVar in the innermost scope that defines it. */
     internal fun markMutable(name: String) {
@@ -525,7 +525,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         vScope[name]?.let { vScope[name] = it.copy(mutable = true) }
         }
 
-    /* True if any scope has the variable marked mutable — smart-cast inner scopes don't reset it. */
+    /* True if any scope has the variable marked mutable - smart-cast inner scopes don't reset it. */
     internal fun isMutable(name: String): Boolean = scopes.any { it[name]?.mutable == true }
 
     /* Mark a variable as stored in an Optional struct (value-nullable). */
@@ -534,7 +534,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         vScope[name]?.let { vScope[name] = it.copy(optional = true) }
         }
 
-    /* True if any scope has the variable marked optional — smart-cast inner scopes don't reset it. */
+    /* True if any scope has the variable marked optional - smart-cast inner scopes don't reset it. */
     internal fun isOptional(name: String): Boolean = scopes.any { it[name]?.optional == true }
 
     // ── Current class context (when generating methods) ──────────────
@@ -548,13 +548,13 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // `name` without falling back to a literal `\$self.name` that the user's frame
     // has no binding for). Stacked so nested getter inlinings nest correctly.
     internal val getterReceiverStack = ArrayDeque<String>()
-    // Objects with dispose methods — called on main() exit
+    // Objects with dispose methods - called on main() exit
     internal val objectsWithDispose = mutableListOf<String>()  // cName of objects with dispose
     // @Tls-annotated objects and top-level properties → emit ktc_core_tls specifier
     internal val tlsObjects       = mutableSetOf<String>()  // object names
     internal val namespaceObjects = mutableSetOf<String>()  // @Namespace object names
     internal val tlsProps = mutableSetOf<String>()    // top-level property names
-    // @RequireFree allocator objects/classes — W018 fires when an allocator call
+    // @RequireFree allocator objects/classes - W018 fires when an allocator call
     // through one of these is discarded as an expression statement (guaranteed leak).
     internal val requireFreeAllocators = mutableSetOf<String>()
     internal val mustUseReturnTypes = mutableSetOf<String>()   // types annotated @MustUseReturnValue (W036 on discarded results)
@@ -939,7 +939,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
         get() = deferStack.isNotEmpty() || tryContexts.isNotEmpty()
 
     /** Emit all deferred blocks in LIFO order (does NOT clear the stack).
-       Inner try finallys run first (innermost out), then the defers — defers
+       Inner try finallys run first (innermost out), then the defers - defers
        are function-scoped cleanup, conceptually outside every try. */
     internal fun emitDeferredBlocks(ind: String, insideMethod: Boolean = false) {
         emitTryReturnCleanup(ind, insideMethod)
@@ -972,7 +972,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     // ── Output sections (backed by CodeBuilder) ─────────────────────
     internal val cb = CodeBuilder()                                      // all output buffer state
 
-    // Delegate properties — keep all call sites in emit/expr files unchanged.
+    // Delegate properties - keep all call sites in emit/expr files unchanged.
     // Per-declaration impl accumulators: keyed by declaration simple name (e.g. "Foo");
     // inner classes and companions share the parent's buffers via rootDeclKey().
     internal val hdr     get() = cb.hdr                                  // .h forward decls & typedefs
@@ -997,7 +997,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
     */
     internal fun rootDeclKey(inName: String): String {
         val vDollar = inName.indexOf('$')
-        if (vDollar < 0) return inName                      // no '$' — top-level name
+        if (vDollar < 0) return inName                      // no '$' - top-level name
         val vParent = inName.substring(0, vDollar)
         return if (classes.containsKey(vParent) || objects.containsKey(vParent))
             vParent     // confirmed inner class / companion → share parent file
@@ -1052,7 +1052,7 @@ internal class CCodeGen(val file: KtFile, val allFiles: List<KtFile> = listOf(),
                         vRecv.name in decl.typeParams))
             }
         } else vCandidates.filter { decl ->
-            // Unknown receiver type: don't bind a String parse extension — these
+            // Unknown receiver type: don't bind a String parse extension - these
             // names also exist as numeric-cast intrinsics (e.g. `cIntExpr.toInt()`
             // where C-interop inference fails), and the intrinsic is the safe
             // fallback. A statically-known String receiver matches above as usual.

@@ -2,27 +2,27 @@ package ktc
 
 /*
  * ═══════════════════════════════════════════════════════════════════
- *  Strings — KTC `String` interface and pure-Kotlin extension API.
+ *  Strings - KTC `String` interface and pure-Kotlin extension API.
  * ═══════════════════════════════════════════════════════════════════
  *
  * Memory model recap (see CLAUDE.md "String and Array return safety"):
  *  - `String` is an OWNED, NUL-terminated value struct { const Char* ptr; Int len; }. Passing one
- *    copies the 16-byte struct (ptr+len, backing shared) — like an Array; use `.copy()` for an
+ *    copies the 16-byte struct (ptr+len, backing shared) - like an Array; use `.copy()` for an
  *    independent duplicate, `.asRef()` / `.copyWith(alloc)` for the Ref<String> form.
  *  - String-producing ops all COPY into a fresh buffer (alloca'd in the caller's frame via a codegen
  *    intrinsic, see CallMethodBuiltins.kt): substring + the slice/trim/prefix extensions
  *    (take/drop/trim/removePrefix/substringBefore…), and lowercase/uppercase/reversed/repeat/replace/
  *    padStart/padEnd. The extensions are `inline` so the copy lands in the caller; returning one from a
- *    non-inline function dangles (E020) — return `Ref<String>` or mark the function `inline`.
+ *    non-inline function dangles (E020) - return `Ref<String>` or mark the function `inline`.
  *
- * The `class String` block below is `@DocumentationOnly` — it provides
+ * The `class String` block below is `@DocumentationOnly` - it provides
  * IDE / doc-generator visibility into the intrinsic surface, but emits
  * no C code. The extension functions further down ARE compiled and
  * inlined at call sites.
  */
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: String — intrinsic surface (documentation only)
+// MARK: String - intrinsic surface (documentation only)
 // ══════════════════════════════════════════════════════════════════
 
 /*
@@ -42,11 +42,11 @@ class String {
 	/** The index of the last character: `length - 1` (-1 for empty strings). */
 	val lastIndex: Int get() = error("Transpiler intrinsic")
 
-	/** Raw `const char*` pointer to the underlying NUL-terminated UTF-8 data, for C interop —
-	 *  a bare, length-less `RawArray<Char>`. (Replaces the old `.ptr`, no longer allowed — see E055.) */
+	/** Raw `const char*` pointer to the underlying NUL-terminated UTF-8 data, for C interop -
+	 *  a bare, length-less `RawArray<Char>`. (Replaces the old `.ptr`, no longer allowed - see E055.) */
 	val cPtr: RawArray<Char> get() = error("Transpiler intrinsic")
 
-	/** Number of Unicode code points (runes) — distinct from byte `length`. */
+	/** Number of Unicode code points (runes) - distinct from byte `length`. */
 	val runeLen: Int get() = error("Transpiler intrinsic")
 
 	// ── Indexing & equality ───────────────────────────────────
@@ -60,7 +60,7 @@ class String {
 	// ── Concatenation ─────────────────────────────────────────
 
 	/** Concatenates this string with [other]. Returns a fresh buffer allocated
-	 *  in the caller's frame via alloca — see CLAUDE.md for lifetime rules. */
+	 *  in the caller's frame via alloca - see CLAUDE.md for lifetime rules. */
 	operator fun plus(other: String): String = error("Transpiler intrinsic")
 
 	// ── Ownership (String is a read-only Array) ───────────────
@@ -71,11 +71,11 @@ class String {
 	// Ptr(String) type, so the value form would collide with RawArray<String>.
 
 	/** Explicit pass-by-value: a fresh, independent, NUL-terminated copy owned in the caller's frame
-	 *  (no shared backing with the source). A plain String pass shares the backing bytes — cheap, and
+	 *  (no shared backing with the source). A plain String pass shares the backing bytes - cheap, and
 	 *  fine for an immutable view; use copy() when you need an independent owned value. Mirrors Array.copyOf. */
 	fun copy(): String = error("Transpiler intrinsic")
 
-	/** A Ref<String> (&this) aliasing this string. Frame-bound — must not outlive the receiver. */
+	/** A Ref<String> (&this) aliasing this string. Frame-bound - must not outlive the receiver. */
 	fun asRef(): Ref<String> = error("Transpiler intrinsic")
 
 	/** Heap-copies the bytes (+ NUL) via [allocator] into one block → a Ref<String> that
@@ -159,7 +159,7 @@ class String {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// MARK: String — Kotlin-pure extensions (compose intrinsics)
+// MARK: String - Kotlin-pure extensions (compose intrinsics)
 // ══════════════════════════════════════════════════════════════════
 //
 // Every returned String is an owned, NUL-terminated COPY (substring copies now). These are `inline`,
@@ -302,7 +302,7 @@ inline fun String.substringBeforeLast(delimiter: Char): String {
 }
 
 // ==================
-// MARK: Number parsing (throwing — Kotlin semantics)
+// MARK: Number parsing (throwing - Kotlin semantics)
 // ==================
 // The *OrNull variants are intrinsics (ktc_core_str_*). These throwing forms
 // compose them, so `"x".toInt()` throws NumberFormatException like Kotlin.

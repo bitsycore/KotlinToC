@@ -5,7 +5,7 @@ import com.bitsycore.ktc.ast.PropDecl
 import com.bitsycore.ktc.codegen.*
 
 // ──────────────────────────────────────────────────────────
-// interface — vtable struct, fat-pointer, implementor casts
+// interface - vtable struct, fat-pointer, implementor casts
 // ──────────────────────────────────────────────────────────
 
 // ── interface ────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ internal fun CCodeGen.emitInterfaceBlock(info: IfaceInfo) {
         emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
         hdr.appendLine("}, CLS_TYPES);")
     } else {
-        // No implementors at all — emit minimal struct with just vtable pointer
+        // No implementors at all - emit minimal struct with just vtable pointer
         hdr.appendLine("typedef struct ${cName}_vt {")
         emitIfaceVtableBody(allProps, allMethods, vtableHasDispose)
         hdr.appendLine("} ${cName}_vt;")

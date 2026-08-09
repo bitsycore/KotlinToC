@@ -89,7 +89,7 @@ private fun CCodeGen.registerStarExtParams(params: List<Param>) {
 	}
 
 /*
-Emit star-projection extension functions — one per known generic instantiation.
+Emit star-projection extension functions - one per known generic instantiation.
 For `fun MutableList<*>.sizeOf()`, if MutableList<Int> is known, emits
 `MutableList_Int_sizeOf(MutableList_Int* $self)`.
 */

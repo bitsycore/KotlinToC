@@ -80,15 +80,15 @@ class ArrayList<T>(private val allocator: Ref<Allocator>, capacity: Int) : Mutab
 	/* Deep clone using this list's OWN allocator. See cloneWith for the details / rationale. */
 	override fun clone(): Ref<ArrayList<T>> = cloneWith(allocator)
 
-	/* Deep clone into [inAllocator] — a NEW heap-allocated list (Ref<ArrayList<T>>) with its OWN backing
+	/* Deep clone into [inAllocator] - a NEW heap-allocated list (Ref<ArrayList<T>>) with its OWN backing
 	   buffer in that allocator, holding the same elements. Distinct from the synthesized struct .copy(),
 	   which copies only {allocator, buf, size} and SHARES this list's buffer; cloneWith bulk-copies the
 	   backing array so the two lists are fully independent. Named clone/cloneWith (not copy): copy() is the
 	   shallow struct copy; clone is the deep one. clone() reuses this list's allocator, cloneWith(a) targets
-	   a different one (e.g. an Arena). Caller owns the result — freeMem(it) + it.dispose() when done. */
+	   a different one (e.g. an Arena). Caller owns the result - freeMem(it) + it.dispose() when done. */
 	override fun cloneWith(inAllocator: Ref<Allocator>): Ref<ArrayList<T>> {
 		val vResult = ArrayList<T>(inAllocator, if (size > 0) size else 1).allocWith(inAllocator)!!
-		buf.copyInto(vResult.buf, 0, 0, size)   // memcpy our elements INTO the ctor's buffer — one alloc, no free
+		buf.copyInto(vResult.buf, 0, 0, size)   // memcpy our elements INTO the ctor's buffer - one alloc, no free
 		vResult.size = size
 		return vResult
 	}

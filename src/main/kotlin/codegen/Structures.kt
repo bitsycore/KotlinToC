@@ -12,15 +12,15 @@ import com.bitsycore.ktc.types.TypeDef
  * com.bitsycore package.
  *
  * Types:
- * PropertyDef   — a unified property descriptor (ctor prop, body prop, or iface prop)
- * ClassInfo     — aggregated class metadata (props, methods, type params)
- * EnumInfo      — enum name + entry list
- * ObjInfo       — object properties + methods
- * FunSig        — function parameter types + return type
- * IfaceInfo     — interface methods + properties + super-interfaces
- * ActiveLambda  — lambda expression being expanded inside an inline call
- * IteratorInfo  — result of findOperatorIterator() lookup
- * COutput       — result of code generation (.h + per-declaration .c files)
+ * PropertyDef   - a unified property descriptor (ctor prop, body prop, or iface prop)
+ * ClassInfo     - aggregated class metadata (props, methods, type params)
+ * EnumInfo      - enum name + entry list
+ * ObjInfo       - object properties + methods
+ * FunSig        - function parameter types + return type
+ * IfaceInfo     - interface methods + properties + super-interfaces
+ * ActiveLambda  - lambda expression being expanded inside an inline call
+ * IteratorInfo  - result of findOperatorIterator() lookup
+ * COutput       - result of code generation (.h + per-declaration .c files)
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -74,11 +74,11 @@ internal data class ClassInfo(
     override var pkg: String = "",                             // set during collectDecls; mutable for post-construction assignment
     val isValue: Boolean = false,                              // inline value class flag
     val isInternal: Boolean = false,                           // internal visibility (cross-package access blocked)
-    val isSealed: Boolean = false,                             // sealed class — closed hierarchy, enables exhaustive `when`
+    val isSealed: Boolean = false,                             // sealed class - closed hierarchy, enables exhaustive `when`
     val ctorDeclNames: List<String> = emptyList()              // ctor param names in DECLARATION order (val/var and plain interleaved)
 ) : TypeDef {
 
-    /** All ctor params (val/var props + plain) in source declaration order — the
+    /** All ctor params (val/var props + plain) in source declaration order - the
        canonical order for the C constructor signature AND its call sites.
        Falls back to props-then-plains when declaration order wasn't recorded. */
     fun allCtorParams(): List<PropertyDef> {
@@ -107,14 +107,14 @@ internal data class ClassInfo(
     val storedProps: List<Pair<String, TypeRef>> get() = properties.filter { it.getter == null }.map { it.name to it.typeRef }
 
     /* Stored props that participate in structural equals AND hashCode.
-       Interface-typed fields are excluded — both Ref<Iface> AND bare fat values
+       Interface-typed fields are excluded - both Ref<Iface> AND bare fat values
        (e.g. Result.Failure's `exception: Throwable`): equals can't compare them
        by value and hashing the struct as an integer is invalid C. Both Any-protocol
        emitters MUST iterate this same set, or equals/hashCode desync (broken contract). */
     fun hashEqProps(inInterfaceNames: Set<String>): List<Pair<String, TypeRef>> =
         storedProps.filter { (_, type) ->
             val innerName = if (type.name == "Ref" && type.typeArgs.isNotEmpty()) type.typeArgs[0].name else type.name
-            // Unit fields contribute nothing — all unit values are equal (and C can't == them).
+            // Unit fields contribute nothing - all unit values are equal (and C can't == them).
             innerName !in inInterfaceNames && innerName != "Unit" && innerName != "Nothing"
             }
 
@@ -145,7 +145,7 @@ internal data class EnumInfo(
     val entryOverrides: Map<String, List<FunDecl>> = emptyMap(),   // per-entry method overrides (Phase 3)
     val isSimple: Boolean = true                                   // true → C-int representation; false → struct representation
 ) : TypeDef {
-    /** Names of body methods that have at least one per-entry override — these dispatch through the entry vtable. */
+    /** Names of body methods that have at least one per-entry override - these dispatch through the entry vtable. */
     val virtualMethodNames: Set<String> get() = entryOverrides.values.flatten().map { it.name }.toSet()
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = KtcType.UserKind.Enum
@@ -182,7 +182,7 @@ internal data class IfaceInfo(
     override val typeParams: List<String> = emptyList(),          // generic type parameters
     val superInterfaces: List<TypeRef> = emptyList(),             // super interface refs
     override var pkg: String = "",                                // set during collectDecls
-    val isSealed: Boolean = false                                 // sealed interface — closed hierarchy, enables exhaustive `when`
+    val isSealed: Boolean = false                                 // sealed interface - closed hierarchy, enables exhaustive `when`
 ) : TypeDef {
     override val baseName: String get() = name
     override val kind: KtcType.UserKind get() = KtcType.UserKind.Interface
@@ -201,14 +201,14 @@ A single generated .c file: its text content and the routing package that
 determines which output subdirectory it goes into.
 routingPkg is the original dot-separated Kotlin package (e.g. "ktc.std", "com.example").
 It may differ from the current package when a generic class is instantiated by another
-package — the instantiation is routed to the template's package directory.
+package - the instantiation is routed to the template's package directory.
 */
 data class SourceFile(val content: String, val routingPkg: String)
 
 /*
 Output of code generation.
-header  — the single package .h file content (structs, typedefs, prototypes).
-sources — map of filename → SourceFile for each generated .c file.
+header  - the single package .h file content (structs, typedefs, prototypes).
+sources - map of filename → SourceFile for each generated .c file.
           Key is the simple filename (e.g. "Point.c", "ktc_std.c").
           One entry per class/object/enum; top-level functions in "$pkgName.c".
           routingPkg inside each SourceFile determines the target subdirectory.

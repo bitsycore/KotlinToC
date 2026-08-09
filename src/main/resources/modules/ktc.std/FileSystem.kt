@@ -26,11 +26,11 @@ data class FileMetadata(
 
 /**
 Byte-source backed by a libc FILE*. Read N bytes at a time via `read()`,
-close with `close()`. Mirrors Okio's Source — minimal surface, no buffer.
+close with `close()`. Mirrors Okio's Source - minimal surface, no buffer.
 A returned count of `0` means EOF; `-1` signals a read error.
 
 Always close via `close()` (or use within a `try { } finally`). Re-reading
-after close is undefined behavior — the handle is freed.
+after close is undefined behavior - the handle is freed.
  */
 class FileSource(private var fp: AnyPtr) {
 
@@ -77,7 +77,7 @@ class FileSink(private var fp: AnyPtr) {
 		return C.ktc_core_fs_fwrite(fp, buf, byteCount)
 		}
 
-	/** Flushes the libc stream — durability still depends on the OS page cache. */
+	/** Flushes the libc stream - durability still depends on the OS page cache. */
 	fun flush() {
 		if (fp != C.NULL) C.ktc_core_fs_fflush(fp)
 		}
@@ -100,7 +100,7 @@ class FileSink(private var fp: AnyPtr) {
 /**
 Cross-platform filesystem operations modeled after Okio's `FileSystem.SYSTEM`.
 Backed directly by libc (stat/remove/rename/mkdir, dirent on POSIX,
-FindFirstFile on Windows). No background threads, no async — every call is
+FindFirstFile on Windows). No background threads, no async - every call is
 synchronous and blocks the caller.
 
 Path separators are normalized to `/` inside `Path`; the OS layer accepts
@@ -210,7 +210,7 @@ for each filename. Iterator-style: streams entries without materializing an
 array, so it's safe on huge directories.
 Returns true if the directory was opened successfully.
 
-Inline at the call site — the lambda is expanded directly into the caller.
+Inline at the call site - the lambda is expanded directly into the caller.
 Member-of-Namespace-object inline doesn't expand cleanly, so this lives at
 top-level under the `ktc.std` package.
 */

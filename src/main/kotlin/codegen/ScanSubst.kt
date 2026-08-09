@@ -62,7 +62,7 @@ internal fun CCodeGen.scanExprWithSubst(e: Expr?, subst: Map<String, String>): B
 	return when (e) {
 		is CallExpr -> {
 			var found = false
-			// Nested generic class ctor (Result.Failure<T>(...)) — resolve to "Outer$Inner".
+			// Nested generic class ctor (Result.Failure<T>(...)) - resolve to "Outer$Inner".
 			val vNested = (e.callee as? DotExpr)?.let { vC ->
 				(vC.obj as? NameExpr)?.name?.let { vOuter -> "$vOuter\$${vC.name}" }
 			}?.takeIf { classes.containsKey(it) || genericClassDecls.containsKey(it) }
@@ -114,7 +114,7 @@ internal fun CCodeGen.scanExprWithSubst(e: Expr?, subst: Map<String, String>): B
 				}
 			// Generic INLINE fun call: its body expands at the call site, so generic
 			// instantiations inside it (e.g. runCatching's Result.Success<T> with the
-			// inferred T) must be recorded with the call-site substitution NOW —
+			// inferred T) must be recorded with the call-site substitution NOW -
 			// emission-time materialization is too late for struct emission.
 			if (name != null && name !in inlineScanInProgress) {
 				val vInline = inlineFunDecls[name]?.firstOrNull { it.typeParams.isNotEmpty() && it.body != null }
@@ -228,7 +228,7 @@ internal fun CCodeGen.computeGenericFunConcreteReturns() {
 				if (genericFunConcreteReturn.containsKey(mangledName)) continue
 				val subst = funDecl.typeParams.zip(typeArgs).toMap()
 				val resolvedReturn = withTypeSubst(subst) { resolveTypeName(funDecl.returnType).toInternalStr }
-				// Check both the monomorphized form (e.g. "List_Int" — set once List<Int> has
+				// Check both the monomorphized form (e.g. "List_Int" - set once List<Int> has
 				// been materialized) AND the base name from the unsubstituted declaration
 				// (always known once the interface is loaded).
 				val isIfaceReturn = interfaces.containsKey(resolvedReturn) || interfaces.containsKey(funDecl.returnType.name)
@@ -278,8 +278,8 @@ internal fun CCodeGen.inferConcreteReturnClass(body: Block?, subst: Map<String, 
 		}
 	// Body forms we recognise:
 	//   1. val x = SomeClass(...) ; return x
-	//   2. return SomeClass(...) — single-expression body parses as a ReturnStmt
-	//   3. ExprStmt(SomeClass(...)) — single-expression body parses with implicit return
+	//   2. return SomeClass(...) - single-expression body parses as a ReturnStmt
+	//   3. ExprStmt(SomeClass(...)) - single-expression body parses with implicit return
 	for (s in body.stmts) {
 		val expr: Expr? = when {
 			s is ReturnStmt && s.value is NameExpr   -> varInits[s.value.name]
@@ -310,7 +310,7 @@ private fun CCodeGen.inferForwardedSubst(forwardedDecl: FunDecl, call: CallExpr,
 		if (argIdx >= callArgs.size) continue
 		val paramTypeName = p.type.name
 		if (paramTypeName !in forwardedDecl.typeParams) continue
-		// The corresponding argument's type — look up via outerSubst if it's a type-param in the outer fn.
+		// The corresponding argument's type - look up via outerSubst if it's a type-param in the outer fn.
 		val argExpr = callArgs[argIdx].expr
 		val argTypeName = (argExpr as? NameExpr)?.let { outerSubst[it.name] } ?: continue
 		result[paramTypeName] = argTypeName

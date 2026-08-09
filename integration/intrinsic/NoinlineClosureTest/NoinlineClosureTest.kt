@@ -1,7 +1,7 @@
 package NoinlineClosureTest
 
 // `noinline` on an inline function's lambda parameter opts that parameter OUT of inline expansion: it
-// becomes a real (frame-bound) capture closure — a functor the body can call, store, and pass around —
+// becomes a real (frame-bound) capture closure - a functor the body can call, store, and pass around -
 // exactly like a non-inline function's closure parameter. Because it isn't inlined, the lambda must
 // capture its enclosing values explicitly with capture(...). main returns non-zero on failure.
 

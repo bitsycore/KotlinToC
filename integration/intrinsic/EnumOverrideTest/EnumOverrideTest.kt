@@ -2,7 +2,7 @@ package EnumOverrideTest
 
 // Phase 3: per-entry method overrides on a full Kotlin-style enum.
 // Each entry supplies its own `eval` body; the call site dispatches through
-// a per-entry vtable. The `describe` method has no overrides — calls go
+// a per-entry vtable. The `describe` method has no overrides - calls go
 // straight to the default impl, no vtable indirection.
 enum class Op(val sym: String) {
 	PLUS("+")  { override fun eval(a: Int, b: Int): Int = a + b },
@@ -10,9 +10,9 @@ enum class Op(val sym: String) {
 	TIMES("*") { override fun eval(a: Int, b: Int): Int = a * b },
 	DIV("/")   { override fun eval(a: Int, b: Int): Int = a / b };
 
-	// Default impl — replaced by the per-entry overrides above.
+	// Default impl - replaced by the per-entry overrides above.
 	fun eval(a: Int, b: Int): Int = 0
-	// Non-virtual method — every entry uses this directly.
+	// Non-virtual method - every entry uses this directly.
 	fun describe(): String = sym
 }
 
@@ -31,7 +31,7 @@ fun testOverrideDispatch() {
 }
 
 fun testDispatchAcrossValues() {
-	// Iterate through .values() — virtual dispatch must pick the per-entry impl.
+	// Iterate through .values() - virtual dispatch must pick the per-entry impl.
 	val all = Op.values()
 	var sum = 0
 	for (i in 0 until all.size) {

@@ -13,7 +13,7 @@ data class MovementState(
 // MARK: PulseState
 // ══════════════════════════════════════════════════════════════
 
-/** Right-click glow pulse — expands and fades with additive blending. */
+/** Right-click glow pulse - expands and fades with additive blending. */
 class PulseState(
 	var active:     Boolean = false,
 	var x:          Float   = 0.0f,

@@ -169,7 +169,7 @@ static const char* ktc_st_basename(const char* inPath)
 /* Format addr2line location "full/path/file.c:42" → "file.c:42". */
 static void ktc_st_format_loc(const char* inRaw, char* outBuf, int inBufSize)
 {
-    /* Find the last colon that precedes digits — the line-number separator. */
+    /* Find the last colon that precedes digits - the line-number separator. */
     const char* vColon = NULL;
     for (const char* p = inRaw; *p; p++) {
         if (*p == ':' && *(p + 1) >= '0' && *(p + 1) <= '9')
@@ -239,7 +239,7 @@ void ktc_core_stacktrace_print(const char* message, int messageLen, const char* 
     ULONGLONG staticBase  = ktc_st_disk_image_base(vExe);
     if (staticBase == 0) staticBase = runtimeBase; /* fallback: no correction */
 
-    /* imageSize from the in-memory header — still valid for range check. */
+    /* imageSize from the in-memory header - still valid for range check. */
     IMAGE_DOS_HEADER* dos  = (IMAGE_DOS_HEADER*)GetModuleHandleA(NULL);
     IMAGE_NT_HEADERS* nt   = (IMAGE_NT_HEADERS*)((BYTE*)dos + dos->e_lfanew);
     ULONGLONG imageSize    = (ULONGLONG)nt->OptionalHeader.SizeOfImage;
@@ -277,7 +277,7 @@ void ktc_core_stacktrace_print(const char* message, int messageLen, const char* 
         vFunc[strcspn(vFunc, "\r\n")]         = '\0';
         vFileLine[strcspn(vFileLine, "\r\n")] = '\0';
 
-        /* Skip frames with no symbol info — they are CRT/startup internals. */
+        /* Skip frames with no symbol info - they are CRT/startup internals. */
         if (vFunc[0] == '?' && vFunc[1] == '?') continue;
 
         if (vFileLine[0] == '?' && vFileLine[1] == '?')
@@ -293,7 +293,7 @@ void ktc_core_stacktrace_print(const char* message, int messageLen, const char* 
 #else
 /*
  * MSVC: DbgHelp reads PDB symbols. Load dynamically so no .lib is needed
- * at link time — dbghelp.dll is always present on Windows.
+ * at link time - dbghelp.dll is always present on Windows.
  */
 typedef BOOL (WINAPI *PFN_SymInitialize)(HANDLE, PCSTR, BOOL);
 typedef BOOL (WINAPI *PFN_SymFromAddr)(HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO);
@@ -718,7 +718,7 @@ ktc_String ktc_core_long_to_string(ktc_Char* buf, ktc_Int bufsz, ktc_Long v) {
     return (ktc_String){buf, vLen};
 }
 
-/* Kotlin-like float formatting — same rules as double but uses float precision
+/* Kotlin-like float formatting - same rules as double but uses float precision
  * (up to 9 significant digits) and strtof for round-trip checking. */
 static ktc_Int ktc_core_f2s(ktc_Float v, ktc_Char* buf, ktc_Int bufsz) {
     if (isnan(v))   return snprintf(buf, (size_t)bufsz, "NaN");
@@ -822,7 +822,7 @@ static ktc_Int ktc_core_d2s(ktc_Double v, ktc_Char* buf, ktc_Int bufsz) {
         while (vEnd > vDot + 1 && *vEnd == '0') vEnd--;
         *(vEnd + 1) = '\0';
     } else {
-        // No decimal point in mantissa — append .0
+        // No decimal point in mantissa - append .0
         size_t vTl = strlen(vTmp);
         vTmp[vTl] = '.'; vTmp[vTl + 1] = '0'; vTmp[vTl + 2] = '\0';
     }
@@ -833,7 +833,7 @@ static ktc_Int ktc_core_d2s(ktc_Double v, ktc_Char* buf, ktc_Int bufsz) {
         return vN < bufsz ? vN : bufsz - 1;
     }
 
-    // Fixed notation — re-format with %f using just enough decimal places
+    // Fixed notation - re-format with %f using just enough decimal places
     ktc_Int vDec = vPrec - (vExp + 1);
     if (vDec < 1) vDec = 1;
     snprintf(vTmp, sizeof(vTmp), "%.*f", (int)vDec, v);

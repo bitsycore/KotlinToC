@@ -89,7 +89,7 @@ internal fun CCodeGen.emitImplicitHashCode(
 	hdr.appendLine("KTC_METHOD(ktc_Int, hashCode)(KTC_TYPE_NAME* \$self);")
 	impl.appendLine("// ══ fun hashCode(): Int ══")
 	impl.appendLine("ktc_Int ${cName}_hashCode($cName* \$self) {")
-	val vHashProps = ci.hashEqProps(interfaces.keys)  // same field set as equals — must stay in sync
+	val vHashProps = ci.hashEqProps(interfaces.keys)  // same field set as equals - must stay in sync
 	if (isData && vHashProps.isNotEmpty()) {
 		impl.appendLine("    ktc_Int h = 0;")
 		for ((name, type) in vHashProps) {
@@ -188,7 +188,7 @@ internal fun CCodeGen.emitAnyVtable(
 	val vTracksDispose     = disposedMode != "NO" || doubleDisposeMode != "NO"
 	// When there's no dispose override AND no dispose-tracking, the per-class dispose trampoline
 	// would be a pure no-op identical to the shared ktc_core_noop_dispose (already used by iface
-	// vtables) — point the Any-vtable slot straight at it instead of emitting a redundant function.
+	// vtables) - point the Any-vtable slot straight at it instead of emitting a redundant function.
 	val vUseSharedNoopDispose = vNoDisposeOverride && !vTracksDispose
 	if (!vUseSharedNoopDispose) {
 		impl.appendLine("static void ${cName}_dispose_any(void* \$self) {")

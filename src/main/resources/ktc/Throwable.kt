@@ -1,7 +1,7 @@
 package ktc
 
 /**
- * Root of the KTC exception hierarchy — a real class hierarchy, mirroring Kotlin:
+ * Root of the KTC exception hierarchy - a real class hierarchy, mirroring Kotlin:
  *
  *     Throwable
  *     ├── Exception
@@ -19,7 +19,7 @@ package ktc
  *     ...
  *     throw ParseError("unexpected token", 12)
  *
- * Catching follows Kotlin semantics, matched top to bottom — a catch on a
+ * Catching follows Kotlin semantics, matched top to bottom - a catch on a
  * supertype catches every subtype (`catch (e: Exception)` catches ParseError;
  * it does NOT catch Error/NotImplementedError, only `catch (e: Throwable)` does):
  *
@@ -42,10 +42,10 @@ package ktc
  */
 open class Throwable(val message: String = "")
 
-/** Base class for catchable exceptions — extend this (or a subclass) for user errors. */
+/** Base class for catchable exceptions - extend this (or a subclass) for user errors. */
 open class Exception(message: String = "") : Throwable(message)
 
-/** General-purpose runtime exception — the go-to base for ad-hoc throws. */
+/** General-purpose runtime exception - the go-to base for ad-hoc throws. */
 open class RuntimeException(message: String = "") : Exception(message)
 
 /** Thrown when a function is called while the object is in an illegal state ([error], [check]). */
@@ -70,7 +70,7 @@ open class UnsupportedOperationException(message: String = "") : RuntimeExceptio
 class NumberFormatException(message: String = "") : IllegalArgumentException(message)
 
 /**
- * Base class for serious problems an application should usually NOT catch —
+ * Base class for serious problems an application should usually NOT catch -
  * `catch (e: Exception)` does not match Error subtypes, `catch (e: Throwable)` does.
  */
 open class Error(message: String = "") : Throwable(message)

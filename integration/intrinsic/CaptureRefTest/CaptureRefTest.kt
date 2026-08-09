@@ -3,7 +3,7 @@ package CaptureRefTest
 // Capture modes for general closures (explicit capture(...)):
 //  - capture(x)          captures x by what it already is: a value type is COPIED (snapshot at the point
 //                        the closure value is built); an existing Ref<T> passes its pointer.
-//  - capture(x.asRef())  captures &x as a Ref<T> — explicit by-reference capture of a value local. Inside
+//  - capture(x.asRef())  captures &x as a Ref<T> - explicit by-reference capture of a value local. Inside
 //                        the closure x is a Ref<T>, so reads/writes go through x.refValue and reach the
 //                        original storage. Frame-bound: the address must not outlive the defining frame.
 // main returns non-zero on failure.

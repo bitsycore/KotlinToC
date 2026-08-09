@@ -2,7 +2,7 @@ package com.bitsycore.ktc
 
 import com.bitsycore.ktc.ast.*
 
-// ── AST debug dump — used by --ast and --dump-semantics flags ─────
+// ── AST debug dump - used by --ast and --dump-semantics flags ─────
 
 internal fun dumpAst(file: KtFile): String {
 	val vSb = StringBuilder()

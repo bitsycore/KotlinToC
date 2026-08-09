@@ -52,7 +52,7 @@ private val kStringBuiltinReturns: Map<String, String> = mapOf(
 	"toBooleanStrictOrNull" to "Boolean?",
 	"firstOrNull" to "Char?", "lastOrNull" to "Char?", "getOrNull" to "Char?",
 	"indexOf" to "Int", "lastIndexOf" to "Int", "compareTo" to "Int",
-	// Ownership API — String is a read-only Array: asRef/copyWith/allocWith yield Ref<String>
+	// Ownership API - String is a read-only Array: asRef/copyWith/allocWith yield Ref<String>
 	// (internal form "String*" = Ptr(Str), a value-struct ref like Ref<Array<T>>).
 	"asRef" to "String*", "copyWith" to "String*", "allocWith" to "String*",
 	)
@@ -76,7 +76,7 @@ private val kPrimitiveArrayCtorTypes: Map<String, String> = mapOf(
 
 internal fun CCodeGen.inferCallType(e: CallExpr): String? {
     if (e.callee is DotExpr) {
-        // expr.cast<T>() reinterprets to the (last) type argument — mirror the codegen in Call.kt so
+        // expr.cast<T>() reinterprets to the (last) type argument - mirror the codegen in Call.kt so
         // `val x = e.cast<T>()` infers x as T instead of falling back to Int. (D6)
         if (e.callee.name == "cast" && e.typeArgs.isNotEmpty() && e.args.isEmpty())
             return resolveTypeName(e.typeArgs.last()).toInternalStr
@@ -128,7 +128,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
     }
     val name = (e.callee as? NameExpr)?.name
     if (name != null) {
-        // thread { } closure form (trailing block) — same return type as the thread() declaration (a Thread).
+        // thread { } closure form (trailing block) - same return type as the thread() declaration (a Thread).
         if (name == "thread" && e.args.lastOrNull()?.expr is LambdaExpr) {
             funSigs["thread"]?.returnType?.let { return resolveTypeRefStr(it) }
             return "Thread"
@@ -219,7 +219,7 @@ internal fun CCodeGen.inferCallType(e: CallExpr): String? {
             val vMatch = vInlineCandidates.find { decl ->
                 decl.returnType != null && decl.receiver == null &&
                 decl.params.size == vArgTypes.size &&
-                // Compare against the RESOLVED param type ("Foo*"/"IntArray"/...) — the raw TypeRef.name
+                // Compare against the RESOLVED param type ("Foo*"/"IntArray"/...) - the raw TypeRef.name
                 // ("Foo"/"Array"/"T") never matches a resolved arg type. A null (un-inferable) arg is a wildcard.
                 decl.params.indices.all { i -> vArgTypes[i]?.let { it == resolveTypeRefStr(decl.params[i].type) } ?: true }
             } ?: vInlineCandidates.firstOrNull { it.returnType != null && it.receiver == null }
@@ -289,7 +289,7 @@ internal fun CCodeGen.resolveMethodReturnType(className: String, returnType: Typ
     return withTypeSubst(genericTypeBindings[className]) { resolveTypeRefStr(returnType) }
 }
 
-/* KtcType variant — avoids the toInternalStr round-trip at call sites that already want KtcType. */
+/* KtcType variant - avoids the toInternalStr round-trip at call sites that already want KtcType. */
 internal fun CCodeGen.resolveMethodReturnTypeKtc(inClassName: String, inReturnType: TypeRef?): KtcType {
     if (inReturnType == null) return KtcType.Void
     val vKtc = withTypeSubst(genericTypeBindings[inClassName]) { resolveTypeName(inReturnType) }
@@ -391,7 +391,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
                 matchTypeParam(p.type, argType, typeParamSet, subst)
             }
             // A type param appearing only in a lambda param's return position (`block: () -> R`)
-            // isn't reachable from the value-type matching above — infer it from the lambda body.
+            // isn't reachable from the value-type matching above - infer it from the lambda body.
             bindLambdaReturnTypeParams(extFun, args, recvType.removeSuffix("?"), subst)
             // Prefer the concrete-return inference (e.g. ArrayList_Int) over the raw template return.
             val typeArgNames = extFun.typeParams.map { subst[it] ?: it }
@@ -406,7 +406,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
         }
         return "Unit"
     }
-    // Generic extension on a generic class — e.g. `fun <T> Pair<T,T>.toList(...)` applied to
+    // Generic extension on a generic class - e.g. `fun <T> Pair<T,T>.toList(...)` applied to
     // Pair_Int_Int. The flat receiver type (Pair_Int_Int) is in `classes` (monomorphized) but
     // the extension lives in `genericFunDecls` keyed by the template name (Pair). Mirror the
     // lookup done in CallMethod.kt's dispatch, and consult genericFunConcreteReturn so the
@@ -444,7 +444,7 @@ internal fun CCodeGen.inferMethodReturnType(dot: DotExpr, args: List<Arg>): Stri
             "values" -> return "${recvType}Array"
             "valueOf" -> return recvType
         }
-        // Instance method on a full enum — look up the declared return type.
+        // Instance method on a full enum - look up the declared return type.
         val vEnumMethod = ei.enumMethods.find { it.name == method }
         if (vEnumMethod != null) return resolveMethodReturnType(recvType, vEnumMethod.returnType)
     }

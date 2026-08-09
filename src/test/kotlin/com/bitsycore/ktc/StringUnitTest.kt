@@ -21,8 +21,8 @@ class StringUnitTest : TranspilerTestBase() {
     }
 
     @Test fun rawStringNoEscapeProcessing() {
-        // Backslashes inside a raw string are literal — no `\n` interpretation.
-        // KTC source: `val s = """a\nb"""` — the \n is two characters here.
+        // Backslashes inside a raw string are literal - no `\n` interpretation.
+        // KTC source: `val s = """a\nb"""` - the \n is two characters here.
         val r = transpileMain("val s = \"\"\"a\\nb\"\"\"")
         // In the emitted C the backslash itself is escaped as \\ for the C literal.
         r.sourceContains("a\\\\nb")
@@ -146,7 +146,7 @@ class StringUnitTest : TranspilerTestBase() {
             val c = a + b
         """)
         r.sourceContains("ktc_core_string_cat")
-        // Buffer is alloca'd so it survives any enclosing inline `{ }` block — see
+        // Buffer is alloca'd so it survives any enclosing inline `{ }` block - see
         // genStringConcat for why a stack array won't do. It is sized exactly to the
         // operands' runtime lengths (+1 NUL), not a fixed 512 cap (no truncation, no waste).
         r.sourceMatches(Regex("""ktc_Char\* \$\w+ = \(ktc_Char\*\)ktc_core_alloca\(\$\w+\.len \+ \$\w+\.len \+ 1\);"""))

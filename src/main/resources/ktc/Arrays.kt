@@ -10,7 +10,7 @@ A length-tracked array of T elements. In C this is a VarArr struct `{ T* ptr; kt
 passed by value. Stack-allocated by default (the factory functions below); heap-allocate via
 `Array<T>(n).allocWith(allocator)`.
 
-A bare `Array<T>` field cannot be stored in a class/object — use `@Size(N) Array<T>` (fixed,
+A bare `Array<T>` field cannot be stored in a class/object - use `@Size(N) Array<T>` (fixed,
 becomes `T[N]`) or `Ref<Array<T>>` (the same VarArr, but safe to pass and return).
 
 Element access uses `arr[i]`; `size` returns the element count. Related views:
@@ -36,14 +36,14 @@ fun <T> Array<T>.copyOf(newSize: Int): Array<T>
 /** Fills [fromIndex, toIndex) with [value] (whole array by default). memset when byte-sized / zero, else loop. */
 fun <T> Array<T>.fill(value: T, fromIndex: Int = 0, toIndex: Int = size): Unit
 
-/** Identity view of this array as `Ref<Array<T>>` — same VarArr, but safe to pass and return. */
+/** Identity view of this array as `Ref<Array<T>>` - same VarArr, but safe to pass and return. */
 fun <T> Array<T>.asRef(): Ref<Array<T>>
 
 /** Heap-copies this array's data via [allocator], returning an owning `Ref<Array<T>>`. */
 fun <T> Array<T>.copyWith(allocator: Allocator): Ref<Array<T>>
 
 /** Copies elements `[startIndex, endIndex)` of this array into [destination] starting at
-    [destinationOffset] — a `memcpy` into existing storage, NO allocation. Returns [destination].
+    [destinationOffset] - a `memcpy` into existing storage, NO allocation. Returns [destination].
     The destination must already have room for the copied range. */
 fun <T> Array<T>.copyInto(destination: Array<T>, destinationOffset: Int = 0, startIndex: Int = 0, endIndex: Int = size): Array<T>
 
@@ -120,6 +120,6 @@ fun <T> RawArray<T>.asArray(count: Int): Ref<Array<T>>
 fun <T> RawArray<T>.resizeWith(allocator: Allocator, newCount: Int): RawArray<T>
 
 /** Copies elements `[startIndex, endIndex)` of this raw array into [destination] starting at
-    [destinationOffset] — a `memcpy`, no allocation. Returns [destination]. RawArray has no length,
+    [destinationOffset] - a `memcpy`, no allocation. Returns [destination]. RawArray has no length,
     so [endIndex] is REQUIRED (unlike `Array<T>.copyInto`, where it defaults to `size`). */
 fun <T> RawArray<T>.copyInto(destination: RawArray<T>, destinationOffset: Int = 0, startIndex: Int = 0, endIndex: Int): RawArray<T>

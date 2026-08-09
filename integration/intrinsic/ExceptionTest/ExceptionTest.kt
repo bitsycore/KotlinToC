@@ -102,7 +102,7 @@ fun rethrowCaught(): Int {
     return -2
 }
 
-// An unhandled exception propagates THROUGH a try/finally (no catch) — the
+// An unhandled exception propagates THROUGH a try/finally (no catch) - the
 // finally must run on the way out.
 fun propagateThroughFinally(): Int {
     var t = 0
@@ -157,7 +157,7 @@ fun loopThrows(): Int {
     return count   // 3 caught + 2 normal = 302
 }
 
-// A message far larger than the initial arena (256 bytes) — growth + integrity.
+// A message far larger than the initial arena (256 bytes) - growth + integrity.
 fun bigMessage(): Int {
     val a = "0123456789012345678901234567890123456789"   // 40 chars
     val msg = "$a$a$a$a$a$a$a$a$a$a"                     // 400 chars
@@ -169,7 +169,7 @@ fun bigMessage(): Int {
     return -1
 }
 
-// Unused catch binding — no arena copy is emitted, matching must still work.
+// Unused catch binding - no arena copy is emitted, matching must still work.
 fun unusedBinding(): Int {
     try {
         throw RuntimeException("x")
@@ -181,7 +181,7 @@ fun unusedBinding(): Int {
 
 // A single `catch (e: Exception)` must catch EVERY exception subtype: user
 // classes, stdlib classes, and classes implementing a sub-interface of
-// Exception (FileGone via IoError) — narrowed back with `is`.
+// Exception (FileGone via IoError) - narrowed back with `is`.
 fun catchJustException(x: Int): Int {
     try {
         if (x == 1) throw ParseError("p", 1)
@@ -244,7 +244,7 @@ fun stdlibRequireCheck(): Int {
     return t   // 11
 }
 
-// TODO() throws NotImplementedError — a Throwable but NOT an Exception
+// TODO() throws NotImplementedError - a Throwable but NOT an Exception
 // (mirrors Kotlin, where NotImplementedError is an Error).
 fun stdlibTodo(): Int {
     try {
@@ -310,7 +310,7 @@ fun runtimeChecksCatchable(): Int {
     return t   // 111
 }
 
-// `?: throw` — the Kotlin guard idiom; left side evaluated once, throws on null.
+// `?: throw` - the Kotlin guard idiom; left side evaluated once, throws on null.
 fun findEven(k: Int): Int? {
     if (k % 2 != 0) return null
     return k * 10

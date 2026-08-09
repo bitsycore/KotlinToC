@@ -12,17 +12,17 @@ import com.bitsycore.ktc.types.KtcType
 // KTC has no closures, so an OS-thread body normally has to be a top-level function reference plus an
 // opaque `arg`. `thread { capture(a, b); body }` lets you write it as a lambda: the captured values
 // are marshalled exactly like KTC function arguments (a value type is copied, a Ref<T> passes just the
-// pointer — C struct-copy semantics give both for free), the body becomes a generated top-level entry
+// pointer - C struct-copy semantics give both for free), the body becomes a generated top-level entry
 // function that unpacks them, and the context is a plain local struct in the SPAWNING frame (stack /
-// alloca — no heap, no free). You must join() before that frame returns, C-style. Using an enclosing
+// alloca - no heap, no free). You must join() before that frame returns, C-style. Using an enclosing
 // local that wasn't capture()d is a lint warning ("uncaptured").
 
 // A captured variable: its name, resolved type, and the C access expression in the spawning scope.
 internal data class ThreadCapture(
 	val name:       String,        // variable name (also the context-struct field name)
-	val ktc:        KtcType,       // resolved type — drives the C field/local type
+	val ktc:        KtcType,       // resolved type - drives the C field/local type
 	val cExpr:      String,        // C expression reading it in the spawning frame
-	val byRefLocal: Boolean = false // captured via x.asRef() — &<stack local>; can't be heap-promoted (would dangle)
+	val byRefLocal: Boolean = false // captured via x.asRef() - &<stack local>; can't be heap-promoted (would dangle)
 	)
 
 // A generated thread entry function, emitted after the main decl loop to avoid nesting inside the
@@ -71,7 +71,7 @@ internal fun CCodeGen.genThreadClosureOrNull(inCall: CallExpr): String? {
 	pendingThreadEntries += PendingThreadEntry(vEntry, vCtxType, vCaptures, vLambda.body, "|$currentSourceFile")
 
 	// Call site: a local context struct on the spawning frame (stack), filled with the captures, then
-	// construct a Thread over the generated entry and (by default) start it. No heap, no free — the
+	// construct a Thread over the generated entry and (by default) start it. No heap, no free - the
 	// caller must join() before this frame returns. Lowers to the same Thread ctor + start() the
 	// explicit `Thread(::fn, arg).start()` form uses.
 	preStmts += "$vCtxType $vCtxVar;"
@@ -84,10 +84,10 @@ internal fun CCodeGen.genThreadClosureOrNull(inCall: CallExpr): String? {
 
 /* Collect the captured variables from every capture(...) call in the lambda body, resolving each
 against the spawning scope (type + C access expression). Two forms:
-  capture(x)          — capture x by what it already is: a value type is copied (snapshot at capture
+  capture(x)          - capture x by what it already is: a value type is copied (snapshot at capture
                         time), an existing Ref<T> passes its pointer (the closure shares the pointee).
-  capture(x.asRef())  — capture &x as a Ref<T>. The in-closure binding `x` is then a Ref<T>, so reads and
-                        writes go through x.refValue and reach the original storage — explicit by-ref
+  capture(x.asRef())  - capture &x as a Ref<T>. The in-closure binding `x` is then a Ref<T>, so reads and
+                        writes go through x.refValue and reach the original storage - explicit by-ref
                         capture of a value local (frame-bound: the captured address must outlive nothing
                         beyond the defining frame, same contract as every Phase-1 closure). */
 private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCapture> {
@@ -97,7 +97,7 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 		val vCall = (vStmt as ExprStmt).expr as CallExpr
 		for (vArg in vCall.args) {
 			val vExpr = vArg.expr
-			// `x.asRef()` — capture by reference. Bind under the receiver's name; type is Ref<T>.
+			// `x.asRef()` - capture by reference. Bind under the receiver's name; type is Ref<T>.
 			val vAsRefRecv = (vExpr as? CallExpr)
 				?.takeIf { (it.callee as? DotExpr)?.name == "asRef" && it.args.isEmpty() }
 				?.let { (it.callee as DotExpr).obj as? NameExpr }?.name
@@ -107,10 +107,10 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 			val vBaseKtc = lookupVarKtc(vName)
 				?: run { codegenError("capture: '$vName' is not a variable in scope"); return@run null }
 			if (vBaseKtc == null) continue
-			// `x.asRef()` on something that is already a reference would capture a pointer-to-pointer —
+			// `x.asRef()` on something that is already a reference would capture a pointer-to-pointer -
 			// almost always a mistake. Capture the existing reference directly instead.
 			if (vAsRefRecv != null && vBaseKtc is KtcType.Ptr)
-				codegenError("capture('$vName.asRef()'): '$vName' is already a reference (Ref<…>) — capture it directly with capture($vName).")
+				codegenError("capture('$vName.asRef()'): '$vName' is already a reference (Ref<…>) - capture it directly with capture($vName).")
 			// `x` captures x as it is; `x.asRef()` captures &x as a Ref<T> (Ptr of the base type).
 			val vKtc = if (vAsRefRecv != null) KtcType.Ptr(vBaseKtc) else vBaseKtc
 			if (vOut.any { it.name == vName }) continue                       // ignore duplicate captures
@@ -120,8 +120,8 @@ private fun CCodeGen.collectThreadCaptures(inLambda: LambdaExpr): List<ThreadCap
 	return vOut
 	}
 
-/* E054: a non-inline (escaping) lambda body must capture every enclosing value it reads — capture is
-explicit in KTC. Conservative — only flags names that resolve to a spawning-scope variable and are
+/* E054: a non-inline (escaping) lambda body must capture every enclosing value it reads - capture is
+explicit in KTC. Conservative - only flags names that resolve to a spawning-scope variable and are
 neither captured nor declared inside the body (globals, functions, objects, members are never flagged). */
 internal fun CCodeGen.checkUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured: Set<String>) {
 	val vDeclared = mutableSetOf("it")
@@ -135,7 +135,7 @@ internal fun CCodeGen.checkUncapturedThreadRefs(inLambda: LambdaExpr, inCaptured
 	for (vName in vRefs) {
 		if (vName in inCaptured || vName in vDeclared) continue
 		if (lookupVarKtc(vName) == null) continue                            // not a spawning-scope variable
-		codegenError("E054", "'$vName' is used in the closure body but not captured — add capture($vName). " +
+		codegenError("E054", "'$vName' is used in the closure body but not captured - add capture($vName). " +
 			"KTC closures capture explicitly (it would otherwise read uninitialized / freed memory).")
 		}
 	}
@@ -229,7 +229,7 @@ private fun collectRefInExpr(inExpr: Expr, ioOut: MutableSet<String>) {
 //
 // Each lambda becomes its OWN specialized struct (the capture fields) plus a generated
 // `R Closure_N_invoke(Closure_N* self, params…)`; the closure VALUE is that struct, passed as real
-// data. Calling `f(args)` lowers to `Closure_N_invoke(&f, args)`. Phase 1: frame-bound — the struct is
+// data. Calling `f(args)` lowers to `Closure_N_invoke(&f, args)`. Phase 1: frame-bound - the struct is
 // a plain local (stack), so the closure must not outlive its frame. Same capture marshalling as thread
 // (value copied, Ref<T> by pointer) and the same mandatory-capture rule (E054).
 
@@ -264,18 +264,18 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	// `it` shorthand: a single-parameter lambda written with no parameter list (`{ it + 1 }`) names its
 	// one parameter `it` implicitly. Only when the expected type has exactly one parameter.
 	val vParamNames = if (inLambda.params.isEmpty() && inFunc.params.size == 1) listOf("it") else inLambda.params
-	// A capture can't share a name with a parameter — the parameter would shadow it, and both would emit a
+	// A capture can't share a name with a parameter - the parameter would shadow it, and both would emit a
 	// declaration into the invoke body (a duplicate-definition C error). Reject with a clear message.
 	vCaptures.firstOrNull { it.name in vParamNames }?.let {
-		codegenError("capture('${it.name}') collides with the closure parameter '${it.name}' — rename one; the parameter shadows the capture.")
+		codegenError("capture('${it.name}') collides with the closure parameter '${it.name}' - rename one; the parameter shadows the capture.")
 		}
 	// `it` referenced where it isn't the implicit parameter (the expected type has ≠ 1 parameter, or the
-	// parameter list was given explicitly) — would be an undefined name in the generated invoke.
+	// parameter list was given explicitly) - would be an undefined name in the generated invoke.
 	if ("it" !in vParamNames && vCaptures.none { it.name == "it" } && lookupVarKtc("it") == null) {
 		val vRefs = linkedSetOf<String>()
 		for (vStmt in inLambda.body) if (!isCaptureCall(vStmt)) collectRefNames(vStmt, vRefs)
 		if ("it" in vRefs)
-			codegenError("'it' is the implicit parameter only when the closure has exactly one parameter and the parameter list is omitted; this closure expects ${inFunc.params.size} parameter(s) — name the parameter(s) explicitly.")
+			codegenError("'it' is the implicit parameter only when the closure has exactly one parameter and the parameter list is omitted; this closure expects ${inFunc.params.size} parameter(s) - name the parameter(s) explicitly.")
 		}
 	val vParams  = vParamNames.mapIndexed { vI, vP ->
 		val vPKtc = inFunc.params.getOrNull(vI) ?: KtcType.Void
@@ -286,13 +286,13 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 	val vFields = vCaptures.joinToString(" ") { "${cTypeStr(it.ktc)} ${it.name};" }
 	hdr.appendLine("typedef struct { $vFields } $vStruct;")
 	hdr.appendLine("${cTypeStr(vRetKtc)} $vInvoke($vStruct* self$vParamSig);")
-	// Erased trampoline (void* env) — lets a heap Closure<F> store this invoke behind ktc_Closure and
+	// Erased trampoline (void* env) - lets a heap Closure<F> store this invoke behind ktc_Closure and
 	// call it back with the right signature. Forward-declared here, body emitted with the invoke body.
 	hdr.appendLine("${cTypeStr(vRetKtc)} ${vInvoke}_erased(void* \$env$vParamSig);")
 	closureFuncType[vStruct] = inFunc
 
 	closureStructTypes += vStruct
-	// A closure that captured a stack local by reference (capture(x.asRef())) must stay frame-bound — its
+	// A closure that captured a stack local by reference (capture(x.asRef())) must stay frame-bound - its
 	// captured address would dangle once heap-promoted. Mark it so copyWith refuses to promote it.
 	if (vCaptures.any { it.byRefLocal }) closureStructEscapeUnsafe += vStruct
 	pendingClosures += PendingClosure(vInvoke, vStruct, cTypeStr(vRetKtc), vRetKtc, vParams, vCaptures, inLambda.body, "|$currentSourceFile")
@@ -305,7 +305,7 @@ internal fun CCodeGen.genClosureValue(inLambda: LambdaExpr, inFunc: KtcType.Func
 /* Infer a lambda's function type from its OWN annotations, with no expected type to lean on (an
 un-annotated `val f = { x: Int -> … }`): every parameter must carry an explicit type, and the result type
 is inferred from the body's trailing expression (Unit when the body ends in a statement). Returns null
-when a parameter is untyped — pure inference can't recover a parameter type without an expected type
+when a parameter is untyped - pure inference can't recover a parameter type without an expected type
 (use an explicit `(…) -> …` annotation on the variable, or a typed lambda parameter). */
 internal fun CCodeGen.inferLambdaFuncType(inLambda: LambdaExpr): KtcType.Func? {
 	val vParamKtcs: List<KtcType> = if (inLambda.params.isEmpty()) emptyList()
@@ -337,7 +337,7 @@ internal fun CCodeGen.inferLambdaFuncType(inLambda: LambdaExpr): KtcType.Func? {
 // Handled: any number of function-typed params, each receiving a literal lambda OR a closure-typed local
 // (a `val g = { … }`); overloaded callees (resolved by the call's arg shape). Phase 1: frame-bound only;
 // the callee must be a non-generic, non-extension top-level function in this package. A function-typed
-// param fed a bare function reference (::fn) — not a closure — leaves the call to normal fn-pointer
+// param fed a bare function reference (::fn) - not a closure - leaves the call to normal fn-pointer
 // dispatch. Not yet handled (fall through to regular dispatch): cross-package callees, receiver methods,
 // generic higher-order functions, and a closure passed by named/defaulted argument.
 
@@ -393,7 +393,7 @@ internal fun CCodeGen.genHigherOrderClosureCallOrNull(inName: String, inArgs: Li
 /* Emit the deferred higher-order monomorphizations: re-emit each function with its closure parameter(s)
 retyped to the functor struct(s), so `param(x)` in the body dispatches through _invoke. Iterate a
 snapshot, not the live list: emitting a body can itself queue new monomorphizations (chained higher-order
-calls) and the fixpoint loop in generate() flushes those — appending to the list mid-iteration would
+calls) and the fixpoint loop in generate() flushes those - appending to the list mid-iteration would
 otherwise throw ConcurrentModificationException. */
 internal fun CCodeGen.emitPendingClosureFnInsts() {
 	val vBatch = pendingClosureFnInsts.toList()
@@ -435,7 +435,7 @@ internal fun CCodeGen.emitPendingClosures() {
 			val vIsVoid = vC.retKtc is KtcType.Void
 			val vBody   = vC.body.filter { !isCaptureCall(it) }
 			vBody.forEachIndexed { vI, vStmt ->
-				// the lambda's trailing expression is its result — turn it into a `return`.
+				// the lambda's trailing expression is its result - turn it into a `return`.
 				if (!vIsVoid && vI == vBody.lastIndex && vStmt is ExprStmt) emitStmt(ReturnStmt(vStmt.expr), "    ")
 				else emitStmt(vStmt, "    ")
 				}

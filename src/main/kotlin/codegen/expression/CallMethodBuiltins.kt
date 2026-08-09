@@ -10,7 +10,7 @@ import com.bitsycore.ktc.types.KtcType
 /* Emit a ktc_core_str_xOrNull → Optional conversion.
 inOptCType: C type for the Optional struct (e.g. "ktc_Int").
 inFuncName: the ktc_core_str_* function suffix (e.g. "toIntOrNull").
-inIntCType: intermediate parse-target type — defaults to inOptCType, differs only for Float (uses Double).
+inIntCType: intermediate parse-target type - defaults to inOptCType, differs only for Float (uses Double).
 inCast:     optional cast expression prepended to the value assignment (e.g. "(ktc_Float)"). */
 private fun CCodeGen.tmpStrToNumOptional(
 	inRecv:     String,
@@ -171,15 +171,15 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return genToString(inRecv, inRecvType ?: "Int")
 			}
 
-		// toStringMaxLen() — static upper bound on this value's toString() length, as a compile-time
+		// toStringMaxLen() - static upper bound on this value's toString() length, as a compile-time
 		// constant. Refused when the type isn't statically bounded (use toStringComputeLen() instead).
 		"toStringMaxLen" -> {
 			val vMax = toStringMaxLen(inRecvType ?: "Int")
-				?: codegenError("toStringMaxLen() is unavailable for '${inRecvType ?: "?"}' — its toString() length is not statically bounded. Use toStringComputeLen() (computed at runtime).")
+				?: codegenError("toStringMaxLen() is unavailable for '${inRecvType ?: "?"}' - its toString() length is not statically bounded. Use toStringComputeLen() (computed at runtime).")
 			return "$vMax"
 			}
 
-		// toStringComputeLen() — the runtime toString() length via a counting-only StrBuf pass (no allocation:
+		// toStringComputeLen() - the runtime toString() length via a counting-only StrBuf pass (no allocation:
 		// ptr=NULL accumulates len). For a String it is simply its byte length.
 		"toStringComputeLen" -> {
 			if (inRecvTypeKtc is KtcType.Str) return "$inRecv.len"
@@ -205,7 +205,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		"toChar"   -> return "((ktc_Char)($inRecv))"
 		"inv"      -> return "(~($inRecv))"
 
-		// Nullable string-to-number conversions — result is an Optional struct in vT
+		// Nullable string-to-number conversions - result is an Optional struct in vT
 		"toIntOrNull"    -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Int",    "toIntOrNull")
 		"toLongOrNull"   -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Long",   "toLongOrNull")
 		"toDoubleOrNull" -> if (inRecvTypeKtc is KtcType.Str) return tmpStrToNumOptional(inRecv, "ktc_Double", "toDoubleOrNull")
@@ -213,7 +213,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 
 		// substring COPIES into a fresh caller-frame buffer (NUL-terminated) → an owned String, no longer a
 		// view. The inline ext funcs (take/drop/trim/removePrefix/substringBefore…) compose this, so they
-		// copy too; returning one from a non-inline function now dangles (E020) — use inline or Ref<String>.
+		// copy too; returning one from a non-inline function now dangles (E020) - use inline or Ref<String>.
 		"substring" -> if (inRecvTypeKtc is KtcType.Str) {
 			val vFrom = genExpr(inArgs[0].expr)
 			val vTo   = if (inArgs.size >= 2) genExpr(inArgs[1].expr) else "$inRecv.len"
@@ -269,7 +269,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 
 		// Buffer-producing String intrinsics. Each allocates a stack buffer via
 		// alloca sized to (input.len + slack) for the worst case, then the core
-		// helper writes into it. Output is a ktc_String view of that buffer —
+		// helper writes into it. Output is a ktc_String view of that buffer -
 		// safe within the surrounding function frame (same lifetime model as
 		// the `+` concat helper).
 		"reversed" -> if (inRecvTypeKtc is KtcType.Str) {
@@ -293,7 +293,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		"repeat" -> if (inRecvTypeKtc is KtcType.Str && inArgs.isNotEmpty()) {
 			val vN = genExpr(inArgs[0].expr)
 			val vBuf = tmp()
-			// Cap the alloca request to keep `n * len` from blowing the stack —
+			// Cap the alloca request to keep `n * len` from blowing the stack -
 			// 64KB ceiling is a sane default for repeat-on-stack patterns.
 			preStmts += "ktc_Int ${vBuf}_sz = ($inRecv.len * ($vN)) + 1; if (${vBuf}_sz > 65536) ${vBuf}_sz = 65536;"
 			preStmts += "ktc_Char* $vBuf = (ktc_Char*)ktc_core_alloca(${vBuf}_sz);"
@@ -329,7 +329,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return "ktc_core_string_padEnd($vBuf, ${vBuf}_sz, $inRecv, $vTarget, $vPadCh)"
 			}
 
-		// String.copy() — a fresh owned, NUL-terminated buffer in the caller's frame (no alias).
+		// String.copy() - a fresh owned, NUL-terminated buffer in the caller's frame (no alias).
 		// String is a read-only Array: copy mirrors Array.copyOf; asRef/copyWith mirror the array ops.
 		"copy" -> if (inRecvTypeKtc is KtcType.Str) {
 			val vBuf = tmp()
@@ -337,13 +337,13 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			return "ktc_core_string_copy($vBuf, $inRecv)"
 			}
 
-		// String.asRef() — &s, a Ref<String> (ktc_String*) aliasing this frame String. Frame-bound:
+		// String.asRef() - &s, a Ref<String> (ktc_String*) aliasing this frame String. Frame-bound:
 		// returning `s.asRef()` dangles (E120 refuses it). Heap escape is .copyWith / .allocWith.
 		// (Ref<String> is a real pointer, NOT a value struct like Ref<Array<T>>: RawArray<String> and
 		// Ref<String> are both Ptr(Str), so the value form would collide with RawArray<String>.)
 		"asRef" -> if (inRecvTypeKtc is KtcType.Str) return "&($inRecv)"
 
-		// String.copyWith(alloc) / allocWith(alloc) — one heap block holding the ktc_String header AND its
+		// String.copyWith(alloc) / allocWith(alloc) - one heap block holding the ktc_String header AND its
 		// NUL-terminated bytes inline; returns a Ref<String> (ktc_String*) that escapes the defining frame.
 		// freeMem(r) releases the whole block. allocWith is the move-to-heap alias for an existing String.
 		"copyWith", "allocWith" -> if (inRecvTypeKtc is KtcType.Str && inArgs.size == 1) {
@@ -577,7 +577,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			val vStart    = if (inArgs.size >= 3) genExpr(inArgs[2].expr) else "0"
 			val vEnd      = when {
 				inArgs.size >= 4 -> genExpr(inArgs[3].expr)
-				vSrcRaw != null  -> codegenError("RawArray.copyInto requires an explicit endIndex — RawArray has no length to default to.")
+				vSrcRaw != null  -> codegenError("RawArray.copyInto requires an explicit endIndex - RawArray has no length to default to.")
 				else             -> "$inRecv.len"
 				}
 			val vDest = tmp()
@@ -595,7 +595,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		}
 	if (vMethod == "fill" && inRecvTypeKtc != null) {
 		val vCore = inRecvTypeKtc.stripNullable
-		// Array<T>.fill(element, fromIndex = 0, toIndex = size) — length known from VarArr / @Size / trampoline.
+		// Array<T>.fill(element, fromIndex = 0, toIndex = size) - length known from VarArr / @Size / trampoline.
 		if (vCore.isArrayLike && inArgs.size in 1..3) {
 			val vElemC   = arrayElementCTypeKtc(vCore)
 			val vObjName = (inDot.obj as? NameExpr)?.name
@@ -616,7 +616,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 			emitArrayFill(fillStart(vPtr, vFrom), fillCount(vFrom, vTo), vElemC, genExpr(inArgs[0].expr), isZeroLit(inArgs[0].expr))
 			return ""
 			}
-		// RawArray<T>.fill(size, element, fromIndex = 0, toIndex = size) — count supplied explicitly.
+		// RawArray<T>.fill(size, element, fromIndex = 0, toIndex = size) - count supplied explicitly.
 		if (vCore is KtcType.Ptr && vCore.inner !is KtcType.Arr && inArgs.size in 2..4) {
 			val vElemC = vCore.inner.toCType()
 			val vSize  = genExpr(inArgs[0].expr)
@@ -632,7 +632,7 @@ internal fun CCodeGen.genBuiltinMethodCallOrNull(
 		val vIsTramp    = vRecvName != null && vRecvName in trampolinedParams
 		val vSizedN     = inRecvTypeKtc.asArr?.sized
 		val vIsSized    = vSizedN != null
-		// arr.get(i)/set(i,v) are the method spelling of arr[i] — apply the SAME default-ON bounds
+		// arr.get(i)/set(i,v) are the method spelling of arr[i] - apply the SAME default-ON bounds
 		// check the IndexExpr path applies, so the safety net isn't silently lost. (RawArray, having
 		// no length, is excluded by the isArrayLike guard and stays unchecked, same as bare-pointer [].)
 		val vLen = when {

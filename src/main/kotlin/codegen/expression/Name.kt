@@ -71,7 +71,7 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 		val vCi = classes[currentClass]
 		if (vCi != null && vCi.props.any { it.first == e.name }) {
 			val vProp = vCi.properties.find { it.name == e.name }
-			// Computed property (custom getter) — recurse through genDot so the
+			// Computed property (custom getter) - recurse through genDot so the
 			// sibling getter is expanded inline. When invoked during a getter
 			// expansion at a user call site, the recorded receiver replaces the
 			// literal `$self` lookup that would otherwise dangle.
@@ -97,7 +97,7 @@ internal fun CCodeGen.genName(e: NameExpr): String {
 internal fun CCodeGen.genLValue(e: Expr): String {
 	return when (e) {
 		// A top-level property (not shadowed by a local) needs the package prefix on the WRITE side
-		// too — the read path (genName) prefixes it, but lookupCName only knows locals and would
+		// too - the read path (genName) prefixes it, but lookupCName only knows locals and would
 		// otherwise emit a bare (undeclared) name on the assignment LHS.
 		is NameExpr -> if (lookupVarKtc(e.name) == null && e.name in topProps) typeFlatName(e.name)
 		               else lookupCName(e.name)

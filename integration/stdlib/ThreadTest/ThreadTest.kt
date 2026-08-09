@@ -2,7 +2,7 @@ package ThreadTest
 
 // Exercises the ktc.std Thread API closure form: spawn 4 OS threads via `thread { capture(ctx); ... }`,
 // each incrementing a shared counter 1000× under a Mutex, join them, and assert no updates were lost
-// (4 × 1000 = 4000). `ctx` is a Ref<Ctx>, so capture passes the pointer — the threads share one Ctx.
+// (4 × 1000 = 4000). `ctx` is a Ref<Ctx>, so capture passes the pointer - the threads share one Ctx.
 // The captured context lives on main's stack, so we join() before main returns (C-style). main returns
 // a non-zero exit code on failure.
 
@@ -26,7 +26,7 @@ fun bump(ctx: Ref<Ctx>) {
 fun main(): Int {
 	val ctx = Ctx(0, Mutex()).allocWith(Heap)
 
-	// thread { capture(...) } — closure form. ctx (a Ref) is shared by pointer across all four threads.
+	// thread { capture(...) } - closure form. ctx (a Ref) is shared by pointer across all four threads.
 	val t0 = thread { capture(ctx); bump(ctx) }
 	val t1 = thread { capture(ctx); bump(ctx) }
 	val t2 = thread { capture(ctx); bump(ctx) }

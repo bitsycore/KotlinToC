@@ -159,7 +159,7 @@ internal fun CCodeGen.genPrintfFromTemplate(tmpl: StrTemplateExpr, nl: String): 
 // ── string template (returns ktc_String via preStmts) ──────────────────
 
 /* Append a string template directly to an external StrBuf (e.g. sb parameter in toString).
-No local allocation — the caller provides the buffer. */
+No local allocation - the caller provides the buffer. */
 internal fun CCodeGen.genStrTemplateToSb(e: StrTemplateExpr, sbExpr: String) {
     for (part in e.parts) {
         when (part) {

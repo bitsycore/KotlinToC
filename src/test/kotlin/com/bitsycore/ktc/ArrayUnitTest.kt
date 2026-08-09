@@ -213,7 +213,7 @@ class ArrayUnitTest : TranspilerTestBase() {
         """)
         r.sourceContains("reallocMem")
         r.sourceContains("sizeof(ktc_Int) * (size_t)(8)")
-        // raw resize returns the bare pointer — no VarArr struct is built
+        // raw resize returns the bare pointer - no VarArr struct is built
         r.sourceNotContains("ktc_VarArr_ktc_Int")
     }
 

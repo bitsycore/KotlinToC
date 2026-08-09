@@ -270,7 +270,7 @@ class NewLintsUnitTest : TranspilerTestBase() {
 	}
 
 	@Test fun floatSelfCompareNotWarned() {
-		// NaN != NaN is intentional — float self-compare must not fire.
+		// NaN != NaN is intentional - float self-compare must not fire.
 		val r = transpile("""
 			package test.Main
 			fun main(args: Array<String>) {
@@ -347,7 +347,7 @@ class NewLintsUnitTest : TranspilerTestBase() {
 	}
 
 	@Test fun returningHeapAllocOk() {
-		// Heap-allocated value escapes legitimately — no E120.
+		// Heap-allocated value escapes legitimately - no E120.
 		val r = transpileWithStdlib("""
 			package test.Main
 			class Box(val v: Int)
@@ -411,7 +411,7 @@ class NewLintsUnitTest : TranspilerTestBase() {
 	}
 
 	@Test fun postIncrementNotWarned() {
-		// `i++` is a side effect — must NOT trigger W033.
+		// `i++` is a side effect - must NOT trigger W033.
 		val r = transpile("""
 			package test.Main
 			fun main(args: Array<String>) {

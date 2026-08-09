@@ -39,7 +39,7 @@ fun makeLabel(inName: String, inN: Int): Ref<String> {
 	return vLocal.copyWith(Heap)
 }
 
-// allocWith on a literal receiver — also a heap Ref<String>.
+// allocWith on a literal receiver - also a heap Ref<String>.
 fun makeOwned(): Ref<String> = "owned-heap-string".allocWith(Heap)
 
 // substring copies and is frame-bound, so a function returning one must be

@@ -2,7 +2,7 @@ package ClosureTest
 
 // Exercises general (non-thread) capture closures: a value-position lambda assigned to a function-typed
 // val is lowered to a per-lambda functor struct (its captures) + a generated invoke fn, and called via
-// f(args). Captures marshal like function arguments — a value is copied, a Ref<T> passes the pointer.
+// f(args). Captures marshal like function arguments - a value is copied, a Ref<T> passes the pointer.
 // Frame-bound (the functor struct is stack-local). main returns non-zero on failure.
 
 class Box(var n: Int)
@@ -12,7 +12,7 @@ class Box(var n: Int)
 fun applyTwice(f: (Int) -> Int, x: Int): Int = f(f(x))
 
 // Chained higher-order: outer's monomorphized body itself passes a (different) capturing lambda to
-// another higher-order function. Exercises the deferred-emission fixpoint — emitting outer's instance
+// another higher-order function. Exercises the deferred-emission fixpoint - emitting outer's instance
 // queues inner's instance + a fresh closure while the pending lists are being flushed.
 fun inner(g: (Int) -> Int, y: Int): Int = g(y)
 fun outer(f: (Int) -> Int, x: Int): Int {

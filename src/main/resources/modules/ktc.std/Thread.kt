@@ -14,7 +14,7 @@ Construct one with the work it should run, then `start()` it:
     t.join()
 
 `entry` is a top-level `fun (AnyPtr) -> Unit` and `arg` is an opaque pointer handed to it. Because KTC
-lambdas are inline-only (no closures), the entry must be a function reference, not a capturing lambda —
+lambdas are inline-only (no closures), the entry must be a function reference, not a capturing lambda -
 pass everything the thread needs through `arg` (typically a heap-allocated context via
 `ctx.allocWith(Heap)`, recovered inside the entry with `arg.cast<Ref<Ctx>>()`).
 
@@ -57,8 +57,8 @@ class Thread(private val entry: (AnyPtr) -> Unit, private val arg: AnyPtr) {
 /*
 Run [block] on a new OS thread (kotlin.concurrent.thread shape). KTC has no closures, so this is a
 transpiler intrinsic: at the call site, every variable the body uses from the enclosing scope must be
-listed with `capture(...)`. Those are marshalled exactly like KTC function arguments — a value is
-copied, a `Ref<T>` passes just the pointer — into a context that lives on the *spawning frame's stack*
+listed with `capture(...)`. Those are marshalled exactly like KTC function arguments - a value is
+copied, a `Ref<T>` passes just the pointer - into a context that lives on the *spawning frame's stack*
 (no heap, no free). You must `join()` before that frame returns, C-style. By default the thread is
 started immediately; pass `start = false` to start it yourself. `name` / `priority` are accepted for
 source parity with kotlin but currently have no native effect.
@@ -72,7 +72,7 @@ fun thread(start: Boolean = true, name: String? = null, priority: Int = -1, bloc
 
 /*
 Marker, inside a `thread { }` body, listing the enclosing values the body needs (KTC has no implicit
-capture). It is a no-op (and a no-op dummy in real kotlin) — the transpiler reads the argument list to
+capture). It is a no-op (and a no-op dummy in real kotlin) - the transpiler reads the argument list to
 build the thread context. Capture is mandatory: using an enclosing local that isn't captured is an
 error (E054).
 */
@@ -105,7 +105,7 @@ class Mutex {
 }
 
 /*
-Run [block] while holding the lock, releasing it afterwards, and return the block's result — the
+Run [block] while holding the lock, releasing it afterwards, and return the block's result - the
 idiomatic kotlin way to guard a critical section. Inline, so there is no call overhead and the block
 may return a value.
 */

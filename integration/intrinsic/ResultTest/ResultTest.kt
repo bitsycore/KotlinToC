@@ -15,7 +15,7 @@ fun failingInt(): Int {
 	error("captured")
 }
 
-// Unit-returning helper — exercises Result<Unit> (Unit lowers to the ktc_Unit
+// Unit-returning helper - exercises Result<Unit> (Unit lowers to the ktc_Unit
 // value in value positions; plain Unit returns stay C void).
 var gSideEffects = 0
 fun unitWork(): Unit {
@@ -32,7 +32,7 @@ fun main() {
 		println("ok: ${ok.value}")
 	}
 
-	// Basic failure — carries the Throwable that produced it
+	// Basic failure - carries the Throwable that produced it
 	val err: Result<Int> = Result.Failure<Int>(RuntimeException("boom"))
 	if (err is Result.Success) fatalError("FAIL: should not be success")
 	if (err !is Result.Failure) fatalError("FAIL: should be failure")
@@ -114,20 +114,20 @@ fun main() {
 	if (err.getOrDefault(-5) != -5) fatalError("FAIL: getOrDefault failure")
 	println("getOrDefault ext: ok")
 
-	// runCatching — success path
+	// runCatching - success path
 	val rc1 = runCatching { 6 * 7 }
 	if (rc1 !is Result.Success) fatalError("FAIL: runCatching success")
 	if (rc1.getOrDefault(0) != 42) fatalError("FAIL: runCatching value")
 	println("runCatching success: ok")
 
-	// runCatching — a thrown exception lands in Failure
+	// runCatching - a thrown exception lands in Failure
 	val rc2 = runCatching { "not a number".toInt() }
 	if (rc2 !is Result.Failure) fatalError("FAIL: runCatching failure")
 	val rcEx = rc2.exceptionOrNull()
 	if (rcEx == null) fatalError("FAIL: runCatching exception missing")
 	println("runCatching failure: ${rcEx.message}")
 
-	// getOrThrow — rethrows the captured exception, catchable by its class
+	// getOrThrow - rethrows the captured exception, catchable by its class
 	if (runCatching { 5 }.getOrThrow() != 5) fatalError("FAIL: getOrThrow success")
 	var caught = 0
 	try {
@@ -140,7 +140,7 @@ fun main() {
 	if (caught != 1) fatalError("FAIL: getOrThrow not caught")
 	println("getOrThrow: ok")
 
-	// Result<Unit> — runCatching over Unit blocks
+	// Result<Unit> - runCatching over Unit blocks
 	val rcu = runCatching { unitWork() }
 	if (rcu !is Result.Success) fatalError("FAIL Result<Unit> success")
 	if (gSideEffects != 1) fatalError("FAIL unit block ran $gSideEffects times")

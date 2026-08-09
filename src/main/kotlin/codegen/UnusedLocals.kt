@@ -3,7 +3,7 @@ package com.bitsycore.ktc.codegen
 import com.bitsycore.ktc.ast.*
 
 // W025 (unused local), W028 (var never reassigned).
-// Static analysis over a function body's AST. We don't try to be flow-sensitive —
+// Static analysis over a function body's AST. We don't try to be flow-sensitive -
 // the question is "anywhere later in the function, is this name read / assigned?"
 // Conservative: if we can't prove it's unread, we say nothing.
 
@@ -16,7 +16,7 @@ internal data class LocalUsage(
 	var writeCount:  Int = 0     // counts reassignments after the initializer
 	)
 
-// Recognize `C.addr(name)` / `c.addr(name)` — returns the name being address-of'd, else null.
+// Recognize `C.addr(name)` / `c.addr(name)` - returns the name being address-of'd, else null.
 // `C` is the C-interop namespace (lowercase `c` accepted for backward compat); `addr` takes
 // a value lvalue and returns its &.
 private fun addressOfTargetName(inCall: CallExpr): String? {
@@ -51,7 +51,7 @@ internal fun CCodeGen.scanUnusedLocals(inBody: Block) {
 				}
 			else if (vU.mutable && vU.writeCount == 0) {
 				codegenWarning("could-be-val",
-					"Local var '${vU.name}' is never reassigned — declare it as 'val' instead.")
+					"Local var '${vU.name}' is never reassigned - declare it as 'val' instead.")
 				}
 			}
 		finally {
@@ -61,7 +61,7 @@ internal fun CCodeGen.scanUnusedLocals(inBody: Block) {
 		}
 	}
 
-// Collect VarDeclStmt names (excluding destructuring and lazy locals — those have
+// Collect VarDeclStmt names (excluding destructuring and lazy locals - those have
 // non-trivial bodies that we don't want to chase here). Skips locals re-declared in
 // inner scopes; the outermost decl wins for the warning location.
 private fun collectLocalDecls(inBlock: Block, ioOut: MutableList<LocalUsage>) {
@@ -126,13 +126,13 @@ private fun scanExpr(inE: Expr, inUsages: Map<String, LocalUsage>) {
 		is NameExpr        -> inUsages[inE.name]?.let { it.readCount++ }
 		is CallExpr        -> {
 			// `c.addr(name)` takes a pointer to `name` and hands it to native code,
-			// which may mutate it through the pointer. Count as an implicit write —
+			// which may mutate it through the pointer. Count as an implicit write -
 			// otherwise we'd falsely flag the var as never-reassigned.
 			val vAddrTarget = addressOfTargetName(inE)
 			if (vAddrTarget != null) {
 				inUsages[vAddrTarget]?.let { it.writeCount++; it.readCount++ }
 				}
-			// Method call on a bare name (e.g. `sb.append(...)`, `arena.reset()`) —
+			// Method call on a bare name (e.g. `sb.append(...)`, `arena.reset()`) -
 			// in KTC a method receiver may be passed by reference and mutated through
 			// it (StringBuffer.len, Arena bump pointer, etc.). Treat the receiver as
 			// a possible write to avoid false-positive W028 on intentional `var`s.
@@ -145,7 +145,7 @@ private fun scanExpr(inE: Expr, inUsages: Map<String, LocalUsage>) {
 			inE.args.forEach { scanExpr(it.expr, inUsages) }
 			}
 		is DotExpr         -> {
-			// `name.asRef()` — same pointer-escape logic as `c.addr(name)`.
+			// `name.asRef()` - same pointer-escape logic as `c.addr(name)`.
 			if (inE.name == "asRef") {
 				val vRecv = inE.obj as? NameExpr
 				if (vRecv != null) inUsages[vRecv.name]?.let { it.writeCount++ }

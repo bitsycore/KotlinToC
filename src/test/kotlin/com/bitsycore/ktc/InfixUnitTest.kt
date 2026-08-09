@@ -33,7 +33,7 @@ class InfixUnitTest : TranspilerTestBase() {
 				val r = 10 addWith 5
 			}
 		""")
-		// Trivial single-expression body collapsed — no $ir temp, expression inlined directly
+		// Trivial single-expression body collapsed - no $ir temp, expression inlined directly
 		vR.sourceNotContains("ktc_Int \$ir")
 		vR.sourceContains("10 + \$il")
 		vR.sourceContains("_other")
@@ -116,7 +116,7 @@ class InfixUnitTest : TranspilerTestBase() {
 	}
 
 	// ── stdlib `to` infix via transpileWithStdlib ────────────────────
-	// `to` is a normal infix extension function in Tuples.kt now — no
+	// `to` is a normal infix extension function in Tuples.kt now - no
 	// special-cased BinExpr handler. These tests guard the dispatch path.
 
 	@Test fun stdlibToInfixProducesStdPairType() {

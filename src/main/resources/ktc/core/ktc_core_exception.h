@@ -1,9 +1,9 @@
-/* ktc_core_exception.h — lightweight Kotlin-style exceptions over setjmp/longjmp
+/* ktc_core_exception.h - lightweight Kotlin-style exceptions over setjmp/longjmp
  *
  * Model (derived from the XCEP library, adapted to KTC objects):
  *
  *   - Each `try` pushes one ktc_ExcFrame (jmp_buf + state flags) onto a
- *     thread-local stack of active frames. Frames live on the C stack —
+ *     thread-local stack of active frames. Frames live on the C stack -
  *     zero heap per try.
  *
  *   - `throw` deep-copies the exception object PLUS its message bytes into a
@@ -37,7 +37,7 @@
  *     once, then the end-of-try pop propagates outward.
  *   - throw inside a finally block      → pops the frame and propagates
  *     immediately (the new exception replaces the in-flight one; the finally
- *     does NOT re-run — no infinite loop).
+ *     does NOT re-run - no infinite loop).
  *   - `return` out of a try/catch       → the transpiler emits KTC_TRY_LEAVE
  *     for each enclosing frame (plus the finally bodies) before the return.
  *
@@ -68,7 +68,7 @@
    modified between setjmp and longjmp and read after the jump are formally
    indeterminate (and ARE clobbered in practice at -O2: they live in registers
    that longjmp rolls back). Kotlin code can't be asked to write `volatile`,
-   so the transpiler disables optimization for just those functions — the cost
+   so the transpiler disables optimization for just those functions - the cost
    stays confined to functions that lexically contain a `try`.
    MSVC has no per-function equivalent; its setjmp intrinsic is more
    conservative, but high /O2 builds of try-heavy code remain at-your-own-risk
@@ -113,8 +113,8 @@ typedef struct ktc_ExcState
                                  the object, or -1 when message is a getter   */
     const char   *msg;        /* message bytes (in arena, NUL-terminated)     */
     ktc_Int       msgLen;     /* message length (excluding the NUL)           */
-    const char   *typeName;   /* Kotlin class name — static literal           */
-    const char   *file;       /* throw site file — static literal             */
+    const char   *typeName;   /* Kotlin class name - static literal           */
+    const char   *file;       /* throw site file - static literal             */
     ktc_Int       line;       /* throw site line                              */
 } ktc_ExcState;
 
@@ -126,7 +126,7 @@ extern ktc_core_tls ktc_ExcState ktc_core_exc;
 
 /** Throw: copy the exception object and its message bytes into the TLS arena
  * (growing it if too small), patch the object's message field to point at the
- * arena copy, then longjmp to the innermost frame — or print an uncaught-
+ * arena copy, then longjmp to the innermost frame - or print an uncaught-
  * exception stack trace and exit when no frame is active.
  * inObj/inMsgPtr must NOT point into the arena itself (the transpiler always
  * passes frame-local storage: a fresh object, or a catch-taken copy). */
@@ -143,7 +143,7 @@ KTC_EXC_NORETURN void ktc_core_exc_throw(
 
 /** Copy the in-flight exception out of the arena onto the catching frame:
  * the object into inDst, the message bytes (NUL-terminated) into inMsgBuf
- * (which must hold KTC_EXC_MSG_LEN() + 1 bytes — typically alloca'd), and
+ * (which must hold KTC_EXC_MSG_LEN() + 1 bytes - typically alloca'd), and
  * re-patch the copied object's message field to inMsgBuf. After this call the
  * arena may be reused by a new throw from inside the catch body. */
 void ktc_core_exc_take(void *inDst, char *inMsgBuf);
@@ -183,7 +183,7 @@ void ktc_core_exc_register(ktc_ExcBuiltin *outSlot, ktc_UInt inTypeId,
                            ktc_Int inSize, ktc_Int inMsgOffset, const char *inTypeName);
 
 /** Throw the registered builtin exception (a zeroed instance with [inMsg]
- * patched in) — or, when the type was never registered, print a Kotlin-style
+ * patched in) - or, when the type was never registered, print a Kotlin-style
  * stack trace and exit. Either way this never returns. */
 KTC_EXC_NORETURN void ktc_core_exc_throw_builtin(
     const ktc_ExcBuiltin *inBuiltin,
@@ -221,7 +221,7 @@ KTC_EXC_NORETURN void ktc_core_exc_throw_builtin(
 #define KTC_END_TRY \
     } while (0)
 
-/** Pop NAME's frame without running ktc_core_exc_end_try — emitted by the
+/** Pop NAME's frame without running ktc_core_exc_end_try - emitted by the
  * transpiler before a `return` that lexically exits the try construct
  * (followed by the finally body, which the transpiler re-emits). */
 #define KTC_TRY_LEAVE(NAME) \

@@ -69,7 +69,7 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("freeMem")
     }
 
-    // ── Ref<T?> — pointer nullable ──────────────────────────────────
+    // ── Ref<T?> - pointer nullable ──────────────────────────────────
 
     @Test fun heapAllocNullCheckSmartCast() {
         // After null check, smart cast should allow access
@@ -133,7 +133,7 @@ class HeapUnitTest : TranspilerTestBase() {
             "val h = Vec2(1.0f, 2.0f).allocWith(Heap)!!\nval p = h.asRef()",
             decls = vec2Decl
         )
-        // asRef() is identity — same pointer, just changes type
+        // asRef() is identity - same pointer, just changes type
         r.sourceContains("= h;")
     }
 
@@ -199,7 +199,7 @@ class HeapUnitTest : TranspilerTestBase() {
     // Value<T> tests
     // ══════════════════════════════════════════════════════════════════
 
-    // ── Value<T> from .refValue — transparent field access ────────────
+    // ── Value<T> from .refValue - transparent field access ────────────
 
     @Test fun valueFieldAccess() {
         val r = transpileMainWithStdlib(
@@ -241,7 +241,7 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("(*h)")
     }
 
-    // ── Value<T> method call — transparent delegation ────────────────
+    // ── Value<T> method call - transparent delegation ────────────────
 
     @Test fun valueMethodCall() {
         val r = transpileMainWithStdlib("""
@@ -302,7 +302,7 @@ class HeapUnitTest : TranspilerTestBase() {
 
     // When a function takes Ref<Allocator> and forwards it to another Ref<Allocator>
     // call site (here: allocWith), the codegen must forward the existing IfacePtr
-    // directly — NOT wrap it again with a bogus ktc_Allocator_Allocator_vt.
+    // directly - NOT wrap it again with a bogus ktc_Allocator_Allocator_vt.
     @Test fun ptrAllocatorForwardedToAllocWith() {
         val r = transpileMainWithStdlib(
             body  = "val p = mk(Heap)!!",
@@ -314,7 +314,7 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceContains("(ktc_Allocator_vt*)")
     }
 
-    // Same forwarding pattern through ArrayList<T>(allocator, n) — exercises the
+    // Same forwarding pattern through ArrayList<T>(allocator, n) - exercises the
     // generic-class ctor arg path in CallArgs.
     @Test fun ptrAllocatorForwardedToGenericCtor() {
         val r = transpileMainWithStdlib(
@@ -338,7 +338,7 @@ class HeapUnitTest : TranspilerTestBase() {
         r.sourceNotContains("ktc_Allocator_Allocator_vt")
     }
 
-    // Heap-allocated Array<T>(size) { init } via allocWith — the lambda init must
+    // Heap-allocated Array<T>(size) { init } via allocWith - the lambda init must
     // actually run (was silently dropped before the fix).
     @Test fun heapArrayInitLambdaRuns() {
         val r = transpileMainWithStdlib(
@@ -367,7 +367,7 @@ class HeapUnitTest : TranspilerTestBase() {
         notYetImpl("user-package class : Allocator triggers cross-package CLS_TYPES forward-decl bug")
     }
 
-    // Pair<T,T>.toList(allocator) — generic extension on a stdlib generic class.
+    // Pair<T,T>.toList(allocator) - generic extension on a stdlib generic class.
     @Test fun pairToListWithAllocator() {
         val r = transpileMainWithStdlib("""
             val pair = 10 to 20
@@ -463,7 +463,7 @@ class HeapUnitTest : TranspilerTestBase() {
     }
 
     // Returning a function type (lambda) from a non-inline function would
-    // dangle captures on the dead caller frame — must be inline.
+    // dangle captures on the dead caller frame - must be inline.
     @Test fun lambdaEscapeIsRejected() {
         val ex = assertThrows<IllegalStateException> {
             transpileMain(
@@ -491,7 +491,7 @@ class HeapUnitTest : TranspilerTestBase() {
         assert(ex.message!!.contains("Operator function 'plus'")) { "got: ${ex.message}" }
     }
 
-    // Direct self-reference without Ref/Array indirection — infinite struct size.
+    // Direct self-reference without Ref/Array indirection - infinite struct size.
     @Test fun recursiveClassWithoutRefIsRejected() {
         val ex = assertThrows<IllegalStateException> {
             transpileMain(
@@ -502,7 +502,7 @@ class HeapUnitTest : TranspilerTestBase() {
         assert(ex.message!!.contains("infinite struct size")) { "got: ${ex.message}" }
     }
 
-    // Same shape but indirected through Ref — accepted.
+    // Same shape but indirected through Ref - accepted.
     @Test fun recursiveClassAllowedWithRef() {
         val r = transpileMain(
             "",

@@ -2,7 +2,7 @@ package com.bitsycore.ktc.codegen
 
 import com.bitsycore.ktc.ast.*
 
-/* Class-inheritance desugaring — runs on the parsed ASTs, before any codegen.
+/* Class-inheritance desugaring - runs on the parsed ASTs, before any codegen.
 
 KTC compiles `open` / `abstract` / `sealed` class hierarchies down to the
 existing interface machinery (fat tagged-union values, per-class vtables,
@@ -17,7 +17,7 @@ whole-program typeId matching), plus data/code inheritance by copying:
                                                }
 
 - An extendable class P (open/abstract/sealed) becomes interface P (its method
-  signatures + stored props) — every type reference to P then lowers through
+  signatures + stored props) - every type reference to P then lowers through
   the interface machinery untouched (is/as/when/catch/dispatch).
 - An `open` class additionally gets a hidden concrete `P$Impl`; constructor
   calls `P(args)` are rewritten to `P$Impl(args)`. abstract/sealed classes are
@@ -26,7 +26,7 @@ whole-program typeId matching), plus data/code inheritance by copying:
   P's stored ctor props as body fields initialized from the super-call args
   (or P's parameter defaults), P's body props, P's concrete method bodies
   (marked override), and P's init blocks. Method copying is monomorphization
-  in the KTC spirit — and it makes virtual dispatch correct even for template
+  in the KTC spirit - and it makes virtual dispatch correct even for template
   methods: a copied parent body resolves calls against the child.
 - Chains (A : B : C) flatten transitively: children copy from the already
   AUGMENTED parent.
@@ -84,7 +84,7 @@ object InheritDesugar {
 		}
 
 		// 4. Rewrite constructor calls of open classes (P(...) → P$Impl(...)) and
-		//    refuse instantiation of abstract/sealed classes — across every expression.
+		//    refuse instantiation of abstract/sealed classes - across every expression.
 		val vAbstractNames = vExtendable.filterValues { !it.isOpen }.keys
 		return vResultFiles.map { vFile ->
 			if (vFile.documentationOnly) vFile
@@ -124,9 +124,9 @@ object InheritDesugar {
 			}
 			val vParentName = vDecl.superClassName ?: continue
 			val vParent = inClasses[vParentName]
-				?: continue  // parens on an interface/unknown name — left for codegen to diagnose
+				?: continue  // parens on an interface/unknown name - left for codegen to diagnose
 			if (vParentName !in inExtendable)
-				error("Class '$vName' extends '$vParentName', which is final — mark it 'open', 'abstract' or 'sealed'")
+				error("Class '$vName' extends '$vParentName', which is final - mark it 'open', 'abstract' or 'sealed'")
 			// Cycle guard: walk the parent chain.
 			var vCur: String? = vParentName
 			val vSeen = mutableSetOf(vName)
@@ -156,7 +156,7 @@ object InheritDesugar {
 			val vSuperRef = inChild.superInterfaces.find { it.name == inChild.superClassName }
 			val vTArgs = vSuperRef?.typeArgs ?: emptyList()
 			if (vTArgs.size != inParent.typeParams.size)
-				error("Class '$vChildName': '${inParent.name}' expects ${inParent.typeParams.size} type argument(s) — " +
+				error("Class '$vChildName': '${inParent.name}' expects ${inParent.typeParams.size} type argument(s) - " +
 					"write ': ${inParent.name}<${inParent.typeParams.joinToString(", ")}>(...)'")
 			inParent.typeParams.zip(vTArgs).toMap()
 		}
@@ -181,7 +181,7 @@ object InheritDesugar {
 			inParent.members.filterIsInstance<PropDecl>().map { it.name }
 		for (vCp in inChild.ctorParams) {
 			if ((vCp.isVal || vCp.isVar) && vCp.name in vParentStored)
-				error("Class '$vChildName': '${vCp.name}' is already a stored property of '${inParent.name}' — " +
+				error("Class '$vChildName': '${vCp.name}' is already a stored property of '${inParent.name}' - " +
 					"pass it through the super-constructor instead of redeclaring it (drop the val/var)")
 		}
 		for (vP in inChild.members.filterIsInstance<PropDecl>()) {
@@ -200,10 +200,10 @@ object InheritDesugar {
 		val vInjectedProps = inParent.ctorParams.filter { it.isVal || it.isVar }.map { vCp ->
 			PropDecl(vCp.name, substT(vCp.type), vParamValue[vCp.name], mutable = vCp.isVar, isPrivate = vCp.isPrivate)
 		}
-		// Plain (forwarding) parent ctor params have no storage — references to them
+		// Plain (forwarding) parent ctor params have no storage - references to them
 		// inside the parent's body-prop initializers and init blocks are substituted
 		// with the super-call argument expression. (An argument referenced more than
-		// once is evaluated once per reference — keep super-args simple.)
+		// once is evaluated once per reference - keep super-args simple.)
 		val vForwardSubst = inParent.ctorParams.filter { !it.isVal && !it.isVar }
 			.associate { it.name to vParamValue[it.name]!! }
 		val vInjectedBodyProps = inParent.members.filterIsInstance<PropDecl>().map { vP ->
@@ -221,17 +221,17 @@ object InheritDesugar {
 			if (vOverride != null) {
 				// An override is itself open for further overriding (Kotlin semantics).
 				if (!vM.isOpen && !vM.isAbstract && !vM.isOverride)
-					error("Class '$vChildName': '${vM.name}' in '${inParent.name}' is final — mark it 'open' (or 'abstract') to override it")
+					error("Class '$vChildName': '${vM.name}' in '${inParent.name}' is final - mark it 'open' (or 'abstract') to override it")
 				if (!vOverride.isOverride)
 					error("Class '$vChildName': '${vOverride.name}' overrides '${inParent.name}.${vM.name}' and must be marked 'override'")
 				continue
 			}
-			if (vM.body == null) continue        // abstract — enforced via the interface (E100)
+			if (vM.body == null) continue        // abstract - enforced via the interface (E100)
 			vInheritedMethods += substTypesInFun(vM.copy(isOverride = !vM.isPrivate, isOpen = vM.isOpen), vTypeSubst)
 		}
 
 		// super.method() / super.prop support: each super-called parent method gets a
-		// private, level-qualified copy (name$super$Parent — multi-level chains stay
+		// private, level-qualified copy (name$super$Parent - multi-level chains stay
 		// distinct), the call rewrites to it, and super.prop collapses to this.prop
 		// (fields are merged; shadowing is refused above).
 		val vSuperCalled = mutableSetOf<String>()
@@ -245,7 +245,7 @@ object InheritDesugar {
 		}
 		val vSuperCopies = vSuperCalled.map { vN ->
 			val vPm = inParent.members.filterIsInstance<FunDecl>().find { it.name == vN && it.body != null }
-				?: error("Class '$vChildName': super.$vN — '${inParent.name}' has no concrete method '$vN'")
+				?: error("Class '$vChildName': super.$vN - '${inParent.name}' has no concrete method '$vN'")
 			substTypesInFun(vPm.copy(name = "$vN\$super\$${inParent.name}", isPrivate = true, isOverride = false, isOpen = false), vTypeSubst)
 		}
 		fun rewriteSuperInDecl(inD: Decl): Decl = when (inD) {
@@ -415,7 +415,7 @@ object InheritDesugar {
 		)
 	}
 
-	/* Hidden concrete class behind an `open` class — what `P(args)` instantiates. */
+	/* Hidden concrete class behind an `open` class - what `P(args)` instantiates. */
 	private fun toImplClass(inDecl: ClassDecl): ClassDecl {
 		val vMembers = inDecl.members.map { vM ->
 			if (vM is FunDecl && !vM.isPrivate) vM.copy(isOverride = true) else vM
@@ -441,7 +441,7 @@ object InheritDesugar {
 	// ==================
 
 	/* True when a statement body contains a `super.` reference (parsed as the
-	identifier `super` — KTC has no super token; any NameExpr("super") counts). */
+	identifier `super` - KTC has no super token; any NameExpr("super") counts). */
 	private fun bodyCallsSuper(inBody: Block?): Boolean {
 		if (inBody == null) return false
 		var vFound = false
@@ -499,7 +499,7 @@ object InheritDesugar {
 			is CallExpr -> {
 				val vName = (inE.callee as? NameExpr)?.name
 				if (vName != null && vName in inAbstract)
-					error("Cannot instantiate '$vName' — it is an abstract/sealed class")
+					error("Cannot instantiate '$vName' - it is an abstract/sealed class")
 				val vCallee = if (vName != null && vName in inOpen) NameExpr("$vName\$Impl") else rw(inE.callee)
 				CallExpr(vCallee, inE.args.map { it.copy(expr = rw(it.expr)) }, inE.typeArgs)
 			}

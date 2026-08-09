@@ -20,7 +20,7 @@ class Ref<T> {
 /**
 Mark a fixed-size stack array.
 @Size(N) Array<T> is emitted as `T[N]` in the struct layout and is passed
-as a raw pointer — no $len companion is added.
+as a raw pointer - no $len companion is added.
 The N argument must be a compile-time integer literal.
 
 Usage:
@@ -55,7 +55,7 @@ Usage:
         @Namespace object Scancode
     }
 
-    // These become plain C constants — no object instance in C:
+    // These become plain C constants - no object instance in C:
     inline val SDL3.Event.Quit    get() = C.SDL_EVENT_QUIT
     inline val SDL3.Scancode.Left get() = C.SDL_SCANCODE_LEFT
 */
@@ -68,7 +68,7 @@ should NOT carry this annotation.
 
 The transpiler uses this marker to fire W018 (Discarded allocator result)
 when a call like `Foo(...).allocWith(MyAlloc)` is made and the returned
-pointer is dropped — that's a guaranteed leak when `MyAlloc` is @RequireFree.
+pointer is dropped - that's a guaranteed leak when `MyAlloc` is @RequireFree.
 
 Usage:
     @RequireFree
@@ -76,7 +76,7 @@ Usage:
 */
 annotation class RequireFree
 /**
-Mark a function — or a type, covering every function returning it — whose
+Mark a function - or a type, covering every function returning it - whose
 result must not be silently discarded. Calling it in statement position
 warns (W036, -Wno-unused-result). `Result` is marked, so a dropped
 `runCatching { ... }` warns like Kotlin's unused-return-value checker.
@@ -91,7 +91,7 @@ Usage:
 annotation class MustUseReturnValue
 
 /**
-Opt a single function out of a @MustUseReturnValue type's check — its result
+Opt a single function out of a @MustUseReturnValue type's check - its result
 is genuinely ignorable.
 
 Usage:

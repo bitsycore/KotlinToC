@@ -367,7 +367,7 @@ internal fun CCodeGen.narrowSubjectForBranch(br: WhenBranch, subjName: String?):
     val currentKtc = if (subjName == "\$self") (lookupVarKtc("\$self") ?: (currentExtRecvType?.let { parseResolvedTypeName(it) })) ?: return null
                       else lookupVarKtc(subjName) ?: return null
     val current = currentKtc.toInternalStr
-    // Don't narrow pointer types (Any* etc.) — they need original type for ->data dereference
+    // Don't narrow pointer types (Any* etc.) - they need original type for ->data dereference
     if (currentKtc is KtcType.Ptr) return null
     val resolved = resolveMonoNestedClass(target, currentKtc.stripNullable.toInternalStr)
     return if (current != resolved) resolved else null
@@ -400,7 +400,7 @@ internal fun CCodeGen.inferWhenExprType(e: WhenExpr): String? {
     return if (vHasNullBranch && !vBase.endsWith("?")) "$vBase?" else vBase
 }
 
-/* Returns true when expr contains no function calls — safe to evaluate multiple times without side effects. */
+/* Returns true when expr contains no function calls - safe to evaluate multiple times without side effects. */
 internal fun isSimpleCExpr(inExpr: String) = '(' !in inExpr
 
-// ── println / print (expression context — rare) ──────────────────
+// ── println / print (expression context - rare) ──────────────────

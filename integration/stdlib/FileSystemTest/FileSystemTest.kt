@@ -1,6 +1,6 @@
 package FileSystemTest
 
-// Smoke test for ktc.std.FileSystem — exercises Path normalization, exists/delete/rename,
+// Smoke test for ktc.std.FileSystem - exercises Path normalization, exists/delete/rename,
 // directory create/list, metadata, and source/sink read/write.
 
 fun testPathBasics() {
@@ -9,17 +9,17 @@ fun testPathBasics() {
 	if (p.name != "baz.kt")        fatalError("FAIL Path.name")
 	if (p.nameWithoutExtension != "baz") fatalError("FAIL Path.nameWithoutExtension")
 	if (p.extension != "kt")       fatalError("FAIL Path.extension")
-	// `!!` on a function/property result that's nullable — exercises the
+	// `!!` on a function/property result that's nullable - exercises the
 	// unwrap path for value-type Optional returns.
 	val pParent = p.parent!!
 	if (pParent.s != "foo/bar") fatalError("FAIL Path.parent: ${pParent.s}")
 
-	// `?.` on a function-result nullable — exercises the spill-to-temp path so
+	// `?.` on a function-result nullable - exercises the spill-to-temp path so
 	// the LHS isn't evaluated twice. `Path("x").parent` returns null (no slash).
 	val noParent = Path("x").parent?.s
 	if (noParent != null) fatalError("FAIL: expected null parent.s, got $noParent")
 
-	// `.cast<T>()` — unchecked reinterpret. Round-trips a Long through Int and
+	// `.cast<T>()` - unchecked reinterpret. Round-trips a Long through Int and
 	// back to confirm the emission produces a usable C cast expression.
 	val raw: Long = 42L
 	val asInt: Int = raw.cast<Long, Int>()
@@ -29,12 +29,12 @@ fun testPathBasics() {
 	val a = Path("/tmp/x")
 	if (!a.isAbsolute) fatalError("FAIL Path.isAbsolute (POSIX abs)")
 
-	// Drive-letter absolute paths (Windows style — use forward slashes)
+	// Drive-letter absolute paths (Windows style - use forward slashes)
 	val w = Path("C:/Users/me/file.txt")
 	if (!w.isAbsolute) fatalError("FAIL Path.isAbsolute (drive)")
 	if (w.extension != "txt") fatalError("FAIL Path drive ext")
 
-	// Chained method calls AND operator overload — `path / "sub"` dispatches
+	// Chained method calls AND operator overload - `path / "sub"` dispatches
 	// to Path.div, then chains again. Exercises both the &-of-rvalue spill
 	// and the new operator-overload dispatch in genBin.
 	val j = Path("a") / "b" / "c.dat"

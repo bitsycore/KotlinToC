@@ -1,4 +1,4 @@
-// ktc_core_fs.h — cross-platform filesystem helpers backing ktc.std.FileSystem.
+// ktc_core_fs.h - cross-platform filesystem helpers backing ktc.std.FileSystem.
 //
 // All `path` arguments are (bytes, len) pairs (NOT NUL-terminated) so KTC strings
 // can be passed straight through. Each helper stack-buffers the path with a NUL
@@ -31,7 +31,7 @@ int  ktc_core_fs_mkdir  (const char* path_bytes, int path_len);
 
 // File I/O ───────────────────────────────────────────────────
 // Returns a FILE* (as void*) or NULL.
-// `mode` is a C-string literal — "rb", "wb", "ab" etc.
+// `mode` is a C-string literal - "rb", "wb", "ab" etc.
 void* ktc_core_fs_fopen (const char* path_bytes, int path_len, const char* mode);
 int   ktc_core_fs_fclose(void* fp);
 int   ktc_core_fs_fread (void* fp, void* buf, int byte_count);   // bytes read; 0 at EOF, -1 on error

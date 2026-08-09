@@ -124,7 +124,7 @@ internal sealed class KtcType {
     // ── Raw pointer ──────────────────────────────────────────────────
 
     /* A pointer/reference type. When [inner] is [Arr], this represents a typed array
-    (e.g. IntArray, ByteArray) — the trampoline is a pointer to the array data.
+    (e.g. IntArray, ByteArray) - the trampoline is a pointer to the array data.
     When [inner] is [User], this is a Ref<T> class reference (e.g. Vec2*).
     Use isArrayLike to cover both Arr and Ptr(Arr). */
     data class Ptr(val inner: KtcType) : KtcType() {
@@ -151,7 +151,7 @@ internal sealed class KtcType {
     }
 
     // ── Heap (boxed) closure ─────────────────────────────────────────
-    /* Closure<F> — a heap-allocated, type-erased closure of function type [sig]. One fixed C representation
+    /* Closure<F> - a heap-allocated, type-erased closure of function type [sig]. One fixed C representation
     (ktc_Closure: { void* env; invoke fn ptr }) holds any closure of that signature; the env is the
     heap-allocated capture struct, freed explicitly. Nameable (return type / field / generic arg), unlike
     the by-value frame-bound functor. Built by closure.copyWith(allocator); called by casting invoke to
@@ -178,7 +178,7 @@ internal sealed class KtcType {
     This replaces the string-based `isArrayType()` check. */
     val isArrayLike: Boolean get() = this is Arr || (this is Ptr && inner is Arr)
 
-    /* True for a user class / data class VALUE — the types guarded by the no-implicit-copy rule
+    /* True for a user class / data class VALUE - the types guarded by the no-implicit-copy rule
     (E071). Excludes ValueClass / Object / Interface / Enum and every non-User type: primitives,
     String, arrays, Ref<T>, closures stay copy-by-value (cheap views / scalars / references). */
     val isUserValueType: Boolean
@@ -194,7 +194,7 @@ internal sealed class KtcType {
 
     /*
     Convert to the internal scope string format used by string-based type tracking.
-    This is the inverse of stringToKtc — produces the same strings that resolveTypeName
+    This is the inverse of stringToKtc - produces the same strings that resolveTypeName
     would return. Used as a compat bridge during Phase 4 migration.
     Examples: Prim(Int) → "Int", Nullable(User(Vec2)) → "Vec2?", Ptr(Arr(Prim(Int))) → "IntArray"
     */

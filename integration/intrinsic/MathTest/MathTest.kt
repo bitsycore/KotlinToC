@@ -3,7 +3,7 @@ package MathTest
 fun main(): Int {
 	var ok = true
 
-	// maxOf / minOf (Int then Double — tests type-correct overload selection)
+	// maxOf / minOf (Int then Double - tests type-correct overload selection)
 	ok = ok && (maxOf(3, 7) == 7) && (minOf(3, 7) == 3)
 	ok = ok && (maxOf(2.5, 1.5) == 2.5) && (minOf(2.5, 1.5) == 1.5)
 

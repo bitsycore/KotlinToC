@@ -20,7 +20,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     val ltKtc = inferExprTypeKtc(e.left)
     // Tautological comparison of a name against itself (e.g. `x == x`, `i >= i`).
     // Always true (or always false for !=). Skip for float NaN-sensitive ops on
-    // unknown types — we restrict to primitive integer / char / boolean receivers.
+    // unknown types - we restrict to primitive integer / char / boolean receivers.
     if (e.op in kTautologyOps && e.left is NameExpr && e.right is NameExpr && e.left.name == e.right.name) {
         if (ltKtc is KtcType.Prim && ltKtc.kind !in kFloatKinds)
             codegenWarning("self-compare", "Comparing '${e.left.name}' to itself with '${e.op}' is ${if (e.op == "!=") "always false" else "always true"}")
@@ -74,7 +74,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     // null comparison
     if ((e.op == "==" || e.op == "!=") && (e.left is NullLit || e.right is NullLit)) {
         val nonNull = if (e.left is NullLit) e.right else e.left
-        // Warn: comparing a non-nullable type to null — always true/false.
+        // Warn: comparing a non-nullable type to null - always true/false.
         // Also short-circuit to a literal so we don't fall through into a
         // class-equality path that would try to call `T.equals(self, NULL)`
         // (which doesn't typecheck for a value-type T).
@@ -127,7 +127,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             if (isValueNullableKtc(varKtc)) {
                 return if (e.op == "==") "$cName.tag == ktc_NONE" else "$cName.tag == ktc_SOME"
             }
-            // Trampolined array param: null is data == NULL — use local copy for consistency
+            // Trampolined array param: null is data == NULL - use local copy for consistency
             if (varName in trampolinedParams) {
                 return if (e.op == "==") "local$$varName == NULL" else "local$$varName != NULL"
             }
@@ -162,7 +162,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
         }
     if (e.op in setOf("==", "!=", "<", ">", "<=", ">=")) {
         val rtKtc = inferExprTypeKtc(e.right)
-        // Both are nullable value types — compare tags and values
+        // Both are nullable value types - compare tags and values
         if (ltKtc is KtcType.Nullable && isValueNullableKtc(ltKtc) &&
             rtKtc is KtcType.Nullable && isValueNullableKtc(rtKtc)) {
             val leftExpr = genExpr(e.left)
@@ -208,7 +208,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
     // Class == / != → ClassName_equals (all classes, not just data)
     // Also handles Ref<T> types by resolving to base class and dereferencing
     val ltKtc2 = ltKtc
-    // Full-enum == / != — compare by ordinal (simple enums fall through to plain int compare).
+    // Full-enum == / != - compare by ordinal (simple enums fall through to plain int compare).
     val ltEnumInfo = enumInfoFor(ltKtc2)
     if ((e.op == "==" || e.op == "!=") && ltEnumInfo != null && !ltEnumInfo.isSimple) {
         val leftExpr  = genExpr(e.left)
@@ -298,7 +298,7 @@ internal fun CCodeGen.genBin(e: BinExpr): String {
             }
         }
         // Fallback: range-based `in` for a literal `a..b` range expression.
-        // Match the rangeTo BinExpr structurally — a name-suffix test (endsWith("Range"))
+        // Match the rangeTo BinExpr structurally - a name-suffix test (endsWith("Range"))
         // would misclassify a user type whose name happens to end in "Range".
         if (e.right is BinExpr && e.right.op == "..") {
             val lo = genExpr(e.right.left)
@@ -427,7 +427,7 @@ internal fun CCodeGen.genStringConcat(e: BinExpr): String {
     preStmts += "ktc_String $vRight = ${genExpr(e.right)};"
     // alloca, not a stack array: the buffer must live in the enclosing function's frame so a
     // String built here survives any surrounding inline `{ }` block and can be safely returned
-    // from inline functions. Sized exactly to the operands (+1 NUL) — no fixed 512 cap, so no
+    // from inline functions. Sized exactly to the operands (+1 NUL) - no fixed 512 cap, so no
     // silent truncation of long concatenations and no 512-byte waste for short ones.
     preStmts += "ktc_Char* $buf = (ktc_Char*)ktc_core_alloca($vLeft.len + $vRight.len + 1);"
     return "ktc_core_string_cat($buf, $vLeft.len + $vRight.len + 1, $vLeft, $vRight)"

@@ -14,7 +14,7 @@ internal fun CCodeGen.collectAndScan() {
 	scanAll()
 	}
 
-/* The scan/materialize sequence shared by collectAndScan() (the --check pass) and generate() —
+/* The scan/materialize sequence shared by collectAndScan() (the --check pass) and generate() -
 kept in one place so the two paths can't drift. (R14) */
 private fun CCodeGen.scanAll() {
 	scanForClassArrayTypes()
@@ -43,7 +43,7 @@ private fun CCodeGen.runGenericScanFixedPoint() {
 /* Translates the parsed KtFile AST into C11 output. Orchestrates all pipeline phases. */
 internal fun CCodeGen.generate(): COutput {
 	/* @file:DocumentationOnly files provide type information to other files but
-	produce no C output themselves — the real implementations live in ktc_core. */
+	produce no C output themselves - the real implementations live in ktc_core. */
 	if (file.documentationOnly) return COutput("", emptyMap())
 
 	collectDecls()
@@ -70,7 +70,7 @@ internal fun CCodeGen.generate(): COutput {
 		hdr.appendLine("#include \"${relIncludePath(vFromDir, "ktc/_package_.h")}\"")
 
 	// Explicit imports (e.g. "ktc.std.*") → C #include directives.
-	// Skip pure "ktc" imports — the intrinsic header is already included above.
+	// Skip pure "ktc" imports - the intrinsic header is already included above.
 	for (imp in file.imports) {
 		if (imp == "ktc" || imp == "ktc.*") continue
 		val parts = imp.removeSuffix(".*").split('.')
@@ -78,7 +78,7 @@ internal fun CCodeGen.generate(): COutput {
 		}
 	hdr.appendLine()
 
-	// Placeholder for primitive/external/string KTC_DEFINE_ARRAY|STRING — replaced after emission.
+	// Placeholder for primitive/external/string KTC_DEFINE_ARRAY|STRING - replaced after emission.
 	hdr.appendLine("/* @SIZED_TYPES@ */")
 	hdr.appendLine()
 
@@ -90,7 +90,7 @@ internal fun CCodeGen.generate(): COutput {
 		}
 
 	// Forward-declare all concrete interface types and monomorphized generic class types,
-	// plus every concrete (non-generic) class — so functions can take/return any user type
+	// plus every concrete (non-generic) class - so functions can take/return any user type
 	// regardless of declaration order in the source file.
 	data class FwdDecl(val vCName: String, val vSrc: String) // one forward declaration line
 	val vFwdDecls = mutableListOf<FwdDecl>()
@@ -120,7 +120,7 @@ internal fun CCodeGen.generate(): COutput {
 			addFwd(genericOptionalCName(baseName, typeArgs), vSrc)
 			}
 		}
-	// Concrete (non-generic) class declarations from the current file — fwd-decl their
+	// Concrete (non-generic) class declarations from the current file - fwd-decl their
 	// flat C struct name so signatures elsewhere in the same package can use them
 	// before the body declaration appears.
 	for (d in file.decls) {
@@ -136,7 +136,7 @@ internal fun CCodeGen.generate(): COutput {
 		for (vFd in vFwdDecls) hdr.appendLine("typedef struct ${vFd.vCName} ${vFd.vCName};${vFd.vSrc}")
 		hdr.appendLine()
 		}
-	// Primitive/external VarArr types (always-visible element types) — must come before class method prototypes.
+	// Primitive/external VarArr types (always-visible element types) - must come before class method prototypes.
 	hdr.appendLine("/* @VAR_ARR_PRIM_TYPES@ */")
 	hdr.appendLine()
 	// Emit struct/enum/object declarations (non-generic).
@@ -203,7 +203,7 @@ internal fun CCodeGen.generate(): COutput {
 		else -> {}
 		}
 
-	// User-package VarArr types — after non-generic type defs, before monomorphized generics.
+	// User-package VarArr types - after non-generic type defs, before monomorphized generics.
 	hdr.appendLine()
 	hdr.appendLine("/* @VAR_ARR_TYPES@ */")
 
@@ -303,7 +303,7 @@ internal fun CCodeGen.generate(): COutput {
 		captureForDecl(vSrcKey) { emitStarExtFunInstantiations(f) }
 		}
 	// Generated `thread { }` entry functions, closure invoke functions, and higher-order
-	// monomorphizations — flushed here, after the decl loop, so they don't nest inside the buffer of
+	// monomorphizations - flushed here, after the decl loop, so they don't nest inside the buffer of
 	// the function that defined the lambda. Iterate to a fixpoint: a monomorphized body may itself
 	// introduce new closures / thread entries.
 	while (pendingThreadEntries.isNotEmpty() || pendingClosures.isNotEmpty() || pendingClosureFnInsts.isNotEmpty()) {
@@ -343,7 +343,7 @@ internal fun CCodeGen.generate(): COutput {
 		vSources[vCFileName] = SourceFile(vSrc, vPkg)
 		}
 
-	// Per-declaration .c files — one per class / object / enum.
+	// Per-declaration .c files - one per class / object / enum.
 	for ((vDeclName, vDeclImpl) in perDeclImpl) {
 		if (vDeclName.startsWith("|")) continue
 		if (vDeclImpl.isEmpty()) continue
@@ -435,8 +435,8 @@ internal fun CCodeGen.generate(): COutput {
 	replaceHdrPlaceholder("/* @SIZED_TYPES@ */",      vEarlyTypesSb, "sized array / string types")
 
 	// VarArr declarations split by when element type is visible:
-	//   @VAR_ARR_PRIM_TYPES@ — primitives/external types: before class method prototypes
-	//   @VAR_ARR_TYPES@      — current-package user types: after all type definitions
+	//   @VAR_ARR_PRIM_TYPES@ - primitives/external types: before class method prototypes
+	//   @VAR_ARR_TYPES@      - current-package user types: after all type definitions
 	fun buildVarArrSection(inTypes: Set<String>): StringBuilder {
 		val vSb = StringBuilder()
 		for (vElemCType in inTypes.toSortedSet()) {
@@ -469,7 +469,7 @@ internal fun CCodeGen.generate(): COutput {
 			val vArr  = "ktc_str_${vPrefix}_$vIdx"
 			val vName = "\$${vPrefix}_s$vIdx"
 			vIdx++
-			// Intern into a named, read-only static array — guarantees .rodata placement + NUL
+			// Intern into a named, read-only static array - guarantees .rodata placement + NUL
 			// termination explicitly (a C string literal already is both) and dedups the value.
 			vStrLitSb.appendLine("static const ktc_Char $vArr[] = \"$vValue\";")
 			vStrLitSb.appendLine("#define $vName ((ktc_String){$vArr, (ktc_Int)(sizeof($vArr) - 1)})")

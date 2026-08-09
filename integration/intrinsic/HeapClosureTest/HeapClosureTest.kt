@@ -1,11 +1,11 @@
 package HeapClosureTest
 
 // Heap closures. A frame-bound closure (val f = { … }) stays a by-value functor for inline/local use and
-// can't escape. To escape — return, store, name a closure — heap-promote it with closure.copyWith(alloc),
+// can't escape. To escape - return, store, name a closure - heap-promote it with closure.copyWith(alloc),
 // which yields a Ref<(P) -> R>: the function type is the closure type (as in Kotlin) and Ref marks the
-// heap form (a single heap block — the type-erased fat pointer with its captures folded in). It is
+// heap form (a single heap block - the type-erased fat pointer with its captures folded in). It is
 // callable like any function (g(x)), can be returned/stored, and is freed in one call with freeMem(g). A
-// closure that captured a stack local by reference (capture(x.asRef())) is refused — its address would
+// closure that captured a stack local by reference (capture(x.asRef())) is refused - its address would
 // dangle once promoted. main returns non-zero on failure.
 
 // The escape the frame-bound functor can't do: return a closure that outlives the function.
@@ -14,7 +14,7 @@ fun makeAdder(base: Int): Ref<(Int) -> Int> {
 	return c.copyWith(Heap)
 }
 
-// A heap closure stored in a class field — called back through the field with obj.f(x).
+// A heap closure stored in a class field - called back through the field with obj.f(x).
 class Handler(val f: Ref<(Int) -> Int>)
 
 fun main(): Int {
@@ -35,7 +35,7 @@ fun main(): Int {
 	Heap.freeMem(h)
 	if (sum != 30) { println("FAIL sum: $sum"); return 2 }
 
-	// Returned (escaped) closure — outlives makeAdder's frame.
+	// Returned (escaped) closure - outlives makeAdder's frame.
 	val adder: Ref<(Int) -> Int> = makeAdder(100)
 	val ar = adder(5)                              // 105
 	Heap.freeMem(adder)

@@ -31,7 +31,7 @@ fun main() {
 	val flash  = Flash(0.8, 255.toByte(), 0.toByte(), 128.toByte())
 	val trail  = Trail(10, 3, 0.9f)
 
-	// Test interface dispatch — Drawable from 5 packages
+	// Test interface dispatch - Drawable from 5 packages
 	checkDrawable(sprite, 42, "Sprite")
 	checkDrawable(circle, 1, "Circle")
 	checkDrawable(rect,   2, "Rect")
@@ -79,7 +79,7 @@ fun main() {
 	arena.dispose()
 	println("Arena cross-pkg alloc OK")
 
-	// Test Particle (only Tickable, not Drawable — different interface combos)
+	// Test Particle (only Tickable, not Drawable - different interface combos)
 	val particle = Particle(10.0f, 1.0f, 2.0f, 4.toByte())
 	checkTickable(particle, 0.5f, 9.5f)
 	println("Particle Tickable OK")

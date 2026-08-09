@@ -1,4 +1,4 @@
-/* ktc_thread.h — portable one-time init (call-once) */
+/* ktc_thread.h - portable one-time init (call-once) */
 #pragma once
 
 /*
@@ -75,7 +75,7 @@ typedef void (*ktc_thread_once_func_t)(void);
  * ==================
  *
  * pthread_once only accepts void (*)(void), so fn is routed through
- * a thread-local pointer — each calling thread sets its own TLS slot
+ * a thread-local pointer - each calling thread sets its own TLS slot
  * before pthread_once, then the trampoline reads from TLS.
  *
  * Note: once->fn is written by every thread that calls ktc_thread_call_once.
@@ -96,7 +96,7 @@ typedef void (*ktc_thread_once_func_t)(void);
             NULL                 \
         }
 
-    /* Defined in ktc_thread.c — one definition per linked binary. */
+    /* Defined in ktc_thread.c - one definition per linked binary. */
     extern ktc_core_tls ktc_thread_once_t *ktc_thread_once_current;
 
     static void ktc_thread_once_trampoline(void)

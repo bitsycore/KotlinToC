@@ -13,20 +13,20 @@ import com.bitsycore.ktc.ast.isRefType
 internal fun isArrayType(inTypeName: String): Boolean =
 	inTypeName.removeSuffix("?").removeSuffix("*").endsWith("Array")
 
-/* True if this TypeRef is a raw Array<T> or primitive array — not Ref<>, not @Size. */
+/* True if this TypeRef is a raw Array<T> or primitive array - not Ref<>, not @Size. */
 internal fun TypeRef.isRawArray(): Boolean {
 	if (hasSizeAnnotation()) return false
 	if (isRefType()) return false
 	return name == "Array" || name in primitiveArraySet
 	}
 
-/* True if this TypeRef is a @Size(N)-annotated array — fixed-size ABI. */
+/* True if this TypeRef is a @Size(N)-annotated array - fixed-size ABI. */
 internal fun TypeRef.isSizedArray(): Boolean {
 	if (!hasSizeAnnotation()) return false
 	return name == "Array" || name in primitiveArraySet
 	}
 
-/* Primitive C types defined in ktc_macro.h — no user package owns them. */
+/* Primitive C types defined in ktc_macro.h - no user package owns them. */
 private val kPrimitiveCTypes = setOf(
 	"ktc_Byte",  "ktc_Short", "ktc_Int",   "ktc_Long",
 	"ktc_Float", "ktc_Double","ktc_Bool",  "ktc_Char",   "ktc_Rune",

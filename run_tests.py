@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-run_tests.py — Build the transpiler, then run unit + integration tests.
+run_tests.py - Build the transpiler, then run unit + integration tests.
 
 Single cross-platform replacement for run_tests.ps1 / run_tests.sh.
 
@@ -55,7 +55,7 @@ kGradlew    = kRoot / ("gradlew.bat" if kIsWindows else "gradlew")
 kExeSuffix  = ".exe" if kIsWindows else ""
 
 # Enable ANSI on Windows 10+ terminals (Windows Terminal handles it automatically;
-# legacy conhost needs the VT processing flag — harmless when already set).
+# legacy conhost needs the VT processing flag - harmless when already set).
 if kIsWindows:
 	try:
 		import ctypes
@@ -64,7 +64,7 @@ if kIsWindows:
 	except Exception:
 		pass
 
-# Force UTF-8 on stdout/stderr — Windows defaults to cp1252 which can't encode
+# Force UTF-8 on stdout/stderr - Windows defaults to cp1252 which can't encode
 # many characters the transpiler emits (Unicode arrows, replacement chars, etc).
 for vStream in (sys.stdout, sys.stderr):
 	try:
@@ -147,7 +147,7 @@ def find_test_dirs() -> list[TestDir]:
 @dataclass
 class ModuleConfig:
 	# Subset of module.ktc.toml that the runner cares about. Anything else
-	# is ignored — full TOML parsing isn't needed for execution.
+	# is ignored - full TOML parsing isn't needed for execution.
 	executable:  str  = ""
 	interactive: bool = False
 	args:        str  = ""
@@ -212,7 +212,7 @@ def find_ninja() -> str | None:
 class RunResult:
 	# Captured result of a child process invocation. stdout and stderr are kept
 	# separate so failure reporting can show normal output (e.g. test "ok"
-	# markers) distinctly from error messages and stack traces — the latter get
+	# markers) distinctly from error messages and stack traces - the latter get
 	# colored red and printed after stdout in the suite output.
 	exit:   int
 	stdout: str
@@ -248,7 +248,7 @@ def run_streamed_split(
 ) -> RunResult:
 	# Streams stdout live to the console (default color) while accumulating
 	# stderr silently. The caller decides when/how to surface the stderr block
-	# — typically AFTER stdout finishes, in red. This ordering avoids the
+	# - typically AFTER stdout finishes, in red. This ordering avoids the
 	# "error message at the top of the dump" issue caused by stderr being
 	# unbuffered while stdout is block-buffered: live-printing both would let
 	# the error appear before the success markers that ran earlier in time.
@@ -483,7 +483,7 @@ def cmd_bench(inTestQuery: str, inN: int, inAllTests: list, inOpts) -> int:
 	for vI in range(inN):
 		vR = invoke_test_verbose(vT, inOpts)
 		if vR.status == "fail":
-			pwrite(f"{kRed}  Iteration {vI + 1} FAILED — aborting benchmark{kRst}")
+			pwrite(f"{kRed}  Iteration {vI + 1} FAILED - aborting benchmark{kRst}")
 			return 1
 		vKtcTimes.append(vR.ktcMs)
 		vCompTimes.append(vR.compileMs)
@@ -539,7 +539,7 @@ def cmd_watch(inRunFn) -> int:
 
 def invoke_build(inBuildMode: str, inRebuild: bool) -> None:
 	# Runs the Gradle wrapper to produce the JAR (or ProGuard release JAR).
-	# The "gradle" mode skips the JAR build entirely — `gradle run` will be
+	# The "gradle" mode skips the JAR build entirely - `gradle run` will be
 	# used at transpile time instead.
 	if inBuildMode == "gradle":
 		return
@@ -713,9 +713,9 @@ def transpile_cmd(inOpts: RunOptions, inKts: list[Path], inOut: Path, inExeName:
 @dataclass
 class TestOutcome:
 	# Outcome of one test in the suite.
-	#  pass     — transpile + compile + run all succeeded.
-	#  skip     — required toolchain/library missing (e.g. cmake or a system lib).
-	#  fail     — any step failed.
+	#  pass     - transpile + compile + run all succeeded.
+	#  skip     - required toolchain/library missing (e.g. cmake or a system lib).
+	#  fail     - any step failed.
 	name:      str
 	status:    str
 	timing:    str   = ""
@@ -738,7 +738,7 @@ def invoke_test_verbose(
 
 	vKts = collect_kt_files(vSrc)
 	if not vKts:
-		pfail(f"{vName} — no .kt files in {vSrc}")
+		pfail(f"{vName} - no .kt files in {vSrc}")
 		return TestOutcome(name=vName, status="fail")
 	prepare_out_dir(vOut)
 
@@ -776,7 +776,7 @@ def invoke_test_verbose(
 	# ── Compile ───────────────────────────────────────────────────
 	vUseCmake = has_user_cmake(vOut)
 	if vUseCmake and not inOpts.cmake:
-		pskip(f"{vName} — ktc_user.cmake/ktc_modules.cmake requires cmake (not on PATH)")
+		pskip(f"{vName} - ktc_user.cmake/ktc_modules.cmake requires cmake (not on PATH)")
 		return TestOutcome(name=vName, status="skip")
 
 	vExePath: Path
@@ -799,7 +799,7 @@ def invoke_test_verbose(
 			vCfgArgs.append("-DKTC_STATIC_LIBC=ON")
 		if inOpts.cmakeArgs:
 			vCfgArgs.extend(inOpts.cmakeArgs.split())
-		# CMake Configure: capture silently — the "-- Configuring done" boilerplate
+		# CMake Configure: capture silently - the "-- Configuring done" boilerplate
 		# is noise on success. Dump it only when configure fails so the user can
 		# diagnose missing-library / wrong-flag errors.
 		psection("CMake Configure")
@@ -814,7 +814,7 @@ def invoke_test_verbose(
 			pwrite()
 			vCfgAll = vConfig.stdout + "\n" + vConfig.stderr
 			if re.search(r"Could not find|not found|NOTFOUND", vCfgAll, re.IGNORECASE):
-				pskip(f"{vName} — required library not found")
+				pskip(f"{vName} - required library not found")
 				return TestOutcome(name=vName, status="skip")
 			pfail(f"CMake configure failed (exit {vConfig.exit})")
 			return TestOutcome(name=vName, status="fail")
@@ -867,7 +867,7 @@ def invoke_test_verbose(
 		pwrite(f"  {kGreen}PASS{kRst} Compilation succeeded -> {vExePath}  {kGray}(comp: {format_ms(vCo.ms)}){kRst}")
 
 	# ── Generated files listing ──────────────────────────────────
-	# Lists transpiler output and the final executable — skips the _cmake/
+	# Lists transpiler output and the final executable - skips the _cmake/
 	# build cache (FetchContent deps like SDL3 dump thousands of files there
 	# that aren't useful to surface in test output).
 	psection("Generated Files")
@@ -903,7 +903,7 @@ def invoke_test_verbose(
 		# Stream stdout live; buffer stderr and render it (red) AFTER stdout
 		# completes. stderr is unbuffered and stdout is block-buffered when
 		# piped, so live-printing both would surface the error message above
-		# the success markers that actually ran first — confusing on a fail.
+		# the success markers that actually ran first - confusing on a fail.
 		vRunRes   = run_streamed_split([str(vExePath), *vRunArgs])
 		vRExit    = vRunRes.exit
 		vRMs      = vRunRes.ms
@@ -946,7 +946,7 @@ def _tail(inText: str, inLines: int = kFailTailLines) -> list[str]:
 def _full(inText: str, inCap: int = kFailFullCap) -> list[str]:
 	# Returns all captured lines up to inCap, with a marker noting any elision.
 	# Used for runtime-error reporting where the actual error message can appear
-	# ANYWHERE in the stream — typically near the top when error() printed to
+	# ANYWHERE in the stream - typically near the top when error() printed to
 	# stderr but stdout was block-buffered and flushed at exit.
 	vAll = inText.splitlines()
 	if len(vAll) <= inCap:
@@ -1020,7 +1020,7 @@ class LiveProgress:
 
 	def update(self, inName: str, inStatus: str) -> None:
 		# Called as each phase finishes. inStatus is the trailing portion
-		# of the row (e.g. "  ktc: 597ms  comp: 4.41s") — the name and
+		# of the row (e.g. "  ktc: 597ms  comp: 4.41s") - the name and
 		# RUN/PASS marker are added by the renderer.
 		with self.lock:
 			if inName not in self.active:
@@ -1052,7 +1052,7 @@ class LiveProgress:
 				self._draw_active()
 
 	def done(self) -> None:
-		# Final cleanup — clears any residual live area so the summary
+		# Final cleanup - clears any residual live area so the summary
 		# section starts on a clean line.
 		with self.lock:
 			if self.isLive:
@@ -1111,7 +1111,7 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 	if vTr.exit != 0:
 		return fail("transpile failed", vTr.stdout, vTr.stderr)
 	# Transpiler warnings can land in either stream depending on how the JVM
-	# routes them — search both so they always surface under PASS.
+	# routes them - search both so they always surface under PASS.
 	vWarnings = [k for k in (vTr.stdout + "\n" + vTr.stderr).splitlines() if "warning:" in k]
 	inProgress.update(vName, status_line(f"ktc: {format_ms(vTr.ms)}"))
 
@@ -1155,7 +1155,7 @@ def invoke_test_concise(inTest: TestDir, inOpts: RunOptions, inProgress: LivePro
 			if re.search(r"Could not find|not found|NOTFOUND", vCfgAll, re.IGNORECASE):
 				return skip("required library not found")
 			return fail("cmake configure failed", vConfig.stdout, vConfig.stderr)
-		# Single-threaded cmake build inside the suite worker — the outer pool
+		# Single-threaded cmake build inside the suite worker - the outer pool
 		# already runs cpu_count tests in parallel, so per-test --parallel would
 		# multiply into hundreds of compiler processes (Windows process-limit
 		# / "insufficient memory resources" failures).
@@ -1396,7 +1396,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	vP.add_argument("--rebuild", action="store_true", help="Force clean rebuild of the JAR")
 	vP.add_argument("--clean",   action="store_true", help="Remove all integration/*/out/ directories")
 	# Compile
-	vP.add_argument("--compiler",   default="", help="C compiler (gcc/clang/cl/cc) — auto-detected if omitted")
+	vP.add_argument("--compiler",   default="", help="C compiler (gcc/clang/cl/cc) - auto-detected if omitted")
 	vP.add_argument("--cc-args",    default="", help="Extra C compiler flags (single quoted string)")
 	vP.add_argument("--cmake-args", default="", help="Extra cmake -D flags")
 	vP.add_argument("--cfg",        default="Release", help="CMake build type")
@@ -1446,7 +1446,7 @@ kStringValueOpts = {"--cc-args", "--cmake-args", "--transpiler-args", "--run", "
 def normalize_argv(inArgv: list[str]) -> list[str]:
 	# Walks the argv and folds `--cc-args VALUE` into `--cc-args=VALUE` when
 	# VALUE starts with '-'. argparse only stumbles when the value starts with
-	# a dash and would otherwise be mistaken for another option — equals-form
+	# a dash and would otherwise be mistaken for another option - equals-form
 	# is unambiguous.
 	vOut: list[str] = []
 	vI = 0

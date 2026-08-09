@@ -83,36 +83,36 @@ private fun CCodeGen.emitNullableArrayCopyWithTmp(
 /*
 Returns the static element count of an array-init expression, or null if unknown at transpile time.
 Handles: literal arrayOf / intArrayOf / etc., function calls with a @Size(N) return type,
-and method calls to copyOf(N) where N is a literal (explicit truncation — no warning needed).
+and method calls to copyOf(N) where N is a literal (explicit truncation - no warning needed).
 */
 internal fun CCodeGen.inferInitArraySize(inInit: Expr?): Int? {
     if (inInit == null) return null
     // Local variable whose array size was recorded when it was declared.
     if (inInit is NameExpr) return lookupArraySize(inInit.name)
     if (inInit !is CallExpr) return null
-    // Method call: arr.copyOf(N) with literal N — explicit size, suppress unsized warning.
+    // Method call: arr.copyOf(N) with literal N - explicit size, suppress unsized warning.
     if (inInit.callee is DotExpr && inInit.callee.name == "copyOf") {
         val vArg = inInit.args.firstOrNull()?.expr
         if (vArg is IntLit)  return vArg.value.toInt()
         if (vArg is LongLit) return vArg.value.toInt()
-        return null  // dynamic size — still unknown
+        return null  // dynamic size - still unknown
     }
     val vCallee = (inInit.callee as? NameExpr)?.name ?: return null
-    // Literal arrayOf / *arrayOf — size equals argument count.
+    // Literal arrayOf / *arrayOf - size equals argument count.
     if (vCallee in kLiteralArrayBuilders) return inInit.args.size
-    // IntArray(N) / LongArray(N) / etc. with a literal size — constant-size allocation.
+    // IntArray(N) / LongArray(N) / etc. with a literal size - constant-size allocation.
     if (vCallee in kSizedArrayCtors) {
         val vArg = inInit.args.firstOrNull()?.expr
         if (vArg is IntLit)  return vArg.value.toInt()
         if (vArg is LongLit) return vArg.value.toInt()
         return null  // dynamic size
     }
-    // Named function call — look up @Size(N) on its return type.
+    // Named function call - look up @Size(N) on its return type.
     return funSigs[vCallee]?.returnType?.getSizeAnnotation()
 }
 
 internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
-    // by lazy { body } — emit bool flag + uninitialized cache; defer init to first access
+    // by lazy { body } - emit bool flag + uninitialized cache; defer init to first access
     if (s.lazyInit != null) {
         emitLazyLocalDecl(s, ind)
         return
@@ -129,7 +129,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             return
         }
     }
-    // templateOf("…") — a frame-local Template handle (compile-time only, no C value). Its operations
+    // templateOf("…") - a frame-local Template handle (compile-time only, no C value). Its operations
     // (.maxLen / .computeLen() / .toString()) expand the stored template at the call site; with no value
     // to copy, the handle cannot escape its scope (a use as a value finds no C symbol).
     val vTmplInit = s.init
@@ -144,7 +144,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         return
     }
     // No-implicit-copy default (P1): an un-annotated `val/var b = a` where `a` is a user-value lvalue
-    // infers a reference (Ref<T>) and ALIASES — no struct copy. Desugar to `.asRef()` so the existing
+    // infers a reference (Ref<T>) and ALIASES - no struct copy. Desugar to `.asRef()` so the existing
     // pointer path emits `T* b = &a;` and member access auto-derefs through it. A real (independent)
     // copy must be explicit via `.copy()` / `.copyWith()`. CallExprs (ctor / .copy() / fn result) are
     // rvalues (isLValueExpr == false) and keep their by-value inference, so this never re-triggers.
@@ -161,19 +161,19 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     val vKtc = when {
         s.type != null       -> resolveTypeName(s.type)
         s.init is LambdaExpr -> inferLambdaFuncType(s.init)
-            ?: codegenError("Cannot infer the type of lambda '${s.name}' — annotate its parameters " +
+            ?: codegenError("Cannot infer the type of lambda '${s.name}' - annotate its parameters " +
                 "(e.g. { x: Int -> … }) or the variable (val ${s.name}: (…) -> … = { … }).")
         else                 -> parseResolvedTypeName(inferExprType(s.init) ?: "Int")
     }
     val vKtcKtc = inferExprTypeKtc(s.init)
 
-    // Unit-valued initializer (`val u = doWork()` where doWork(): Unit — Kotlin allows
+    // Unit-valued initializer (`val u = doWork()` where doWork(): Unit - Kotlin allows
     // binding Unit). The RHS is evaluated for its side effects, then the name becomes a
     // real ktc_Unit local (usable wherever a Unit value is expected, e.g. a generic slot).
     // Warned: there is no useful value, it's almost always unintended.
     if (s.init != null && vKtc is KtcType.Void) {
         codegenWarning("unit-binding",
-            "'${s.name}' binds a Unit result — it has no useful value. Call the expression " +
+            "'${s.name}' binds a Unit result - it has no useful value. Call the expression " +
             "without the val/var, or suppress with -Wno-unit-binding.")
         val vUnitExpr = genExpr(s.init)
         flushPreStmts(ind)
@@ -183,7 +183,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
         return
     }
     val vKtcCore = vKtc.stripNullable
-    val tRaw = vKtc.toInternalStr                                                                    // string type (for structural checks — retained during migration)
+    val tRaw = vKtc.toInternalStr                                                                    // string type (for structural checks - retained during migration)
     val inferredNullable = s.type == null && vKtc is KtcType.Nullable
     // Strip ? suffix when vKtc is itself nullable. Two cases:
     //   1. Inferred nullable (init was a NullLit / nullable expression).
@@ -207,7 +207,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
             if (vInitSize != null && vInitSize > vTargetSize)
                 codegenError("Cannot assign @Size($vInitSize) array to @Size($vTargetSize) variable '${s.name}': source has more elements than the target (would truncate). Use .copyOf($vTargetSize) to truncate explicitly.")
             if (vInitSize == null) {
-                codegenWarning("sized-array-truncate", "Assigning array of unknown compile-time size to @Size($vTargetSize) variable '${s.name}' — applying implicit .copyOf($vTargetSize) to guarantee bounds safety. Use .copyOf($vTargetSize) explicitly to suppress this warning.")
+                codegenWarning("sized-array-truncate", "Assigning array of unknown compile-time size to @Size($vTargetSize) variable '${s.name}' - applying implicit .copyOf($vTargetSize) to guarantee bounds safety. Use .copyOf($vTargetSize) explicitly to suppress this warning.")
                 // Implicitly apply .copyOf(N) so the stored slice is always exactly N elements.
                 val vSyntheticInit = CallExpr(
                     callee = DotExpr(obj = s.init, name = "copyOf"),
@@ -225,7 +225,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
 
     // Type is nullable if the source TypeRef carries `?` directly OR if alias
     // expansion produced a nullable result (e.g. `typealias MaybeInt = Int?`,
-    // `val x: MaybeInt = 42` — the alias name itself isn't marked nullable but
+    // `val x: MaybeInt = 42` - the alias name itself isn't marked nullable but
     // vKtc came out as Nullable<Int>).
     val typeIsNullable = s.type?.isEffectivelyNullable() == true || (s.type != null && vKtc is KtcType.Nullable)
 
@@ -243,7 +243,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     }
 
     // Nullable array (Array<T>?): uses VarArr struct, null = .ptr == NULL.
-    // Use the structured KtcType (matches the rest of this function) — a string endsWith("Array")
+    // Use the structured KtcType (matches the rest of this function) - a string endsWith("Array")
     // check would miss typealiased / generic-substituted array element types.
     val isNullableArray = vKtcCore.isArrayLike && !isPointer &&
             (typeIsNullable || s.init is NullLit || inferredNullable)
@@ -273,7 +273,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
     // ── Function pointer type: special declaration syntax ──
     if (vKtc is KtcType.Func) {
         // A lambda assigned to a function-typed val becomes a closure (functor struct + invoke),
-        // not a bare function pointer — captured state lives in the struct (frame-bound / stack).
+        // not a bare function pointer - captured state lives in the struct (frame-bound / stack).
         if (s.init is LambdaExpr) {
             val (vStructType, vCloExpr) = genClosureValue(s.init, vKtc)
             flushPreStmts(ind)
@@ -321,7 +321,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     impl.appendLine("$ind$mutComment$ct ${s.name} /* nullable */ = $expr;")
                 }
             }
-            // ── Value nullable — use Optional struct ──
+            // ── Value nullable - use Optional struct ──
             isValueNullable -> {
                 val optType = optCTypeName("${t}?")
                 markOptional(s.name)
@@ -339,7 +339,7 @@ internal fun CCodeGen.emitVarDecl(s: VarDeclStmt, ind: String) {
                     }
                 }
             }
-            // ── Nullable array (Array<T>?) — stored as ktc_VarArr_T + bool $has ──
+            // ── Nullable array (Array<T>?) - stored as ktc_VarArr_T + bool $has ──
             isNullableArray -> {
                 val elemCType   = arrayElementCTypeKtc(vKtcCore)
                 val vVarArrType = varArrTypeName(elemCType)
@@ -499,7 +499,7 @@ private fun CCodeGen.emitLazyLocalDecl(s: VarDeclStmt, ind: String) {
 	} ?: codegenError("lazy initializer for '${s.name}' must end with an expression")
 
 	val vKtc = if (s.type != null) resolveTypeName(s.type) else inferExprTypeKtc(lastExpr)
-		?: codegenError("Cannot infer type for lazy property '${s.name}' — add an explicit type annotation")
+		?: codegenError("Cannot infer type for lazy property '${s.name}' - add an explicit type annotation")
 	val ct = cTypeStr(vKtc)
 	defineVar(s.name, LocalVar(ktc = vKtc, mutable = false))
 	impl.appendLine("${ind}bool ${s.name}\$inited = false;")

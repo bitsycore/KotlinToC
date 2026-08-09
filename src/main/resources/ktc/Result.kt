@@ -1,7 +1,7 @@
 package ktc
 
 /**
- * Lightweight Result<T> — Success carries the value, Failure carries the
+ * Lightweight Result<T> - Success carries the value, Failure carries the
  * [Throwable] that produced it (Kotlin semantics). Build one directly, or
  * capture exceptions with [runCatching]:
  *
@@ -44,7 +44,7 @@ inline fun <T> Result<T>.getOrDefault(defaultValue: T): T {
 	return defaultValue
 }
 
-/** The value — or rethrows the captured exception when this is a [Result.Failure]. */
+/** The value - or rethrows the captured exception when this is a [Result.Failure]. */
 inline fun <T> Result<T>.getOrThrow(): T {
 	if (this is Result.Failure) throw this.exception
 	return (this as Result.Success).value

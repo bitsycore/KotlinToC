@@ -3,7 +3,7 @@ package com.bitsycore.ktc
 import kotlin.test.Test
 
 /*
-Unit tests for Sha256 stdlib — verifies transpiler output structure.
+Unit tests for Sha256 stdlib - verifies transpiler output structure.
 */
 class Sha256UnitTest : TranspilerTestBase() {
 

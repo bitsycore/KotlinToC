@@ -21,7 +21,7 @@ fun maxVal(first: Int, vararg rest: Int): Int {
 }
 
 // Counts the bytes a join would produce. Used to size the destination buffer
-// from main before doing the actual concatenation locally — avoids returning a
+// from main before doing the actual concatenation locally - avoids returning a
 // String that would alias the callee's stack frame.
 fun joinedLen(sep: String, vararg parts: String): Int {
     var total = 0

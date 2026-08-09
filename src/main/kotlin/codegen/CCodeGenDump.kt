@@ -7,7 +7,7 @@ Used with the --dump-semantics flag to debug symbol table contents. */
 internal fun CCodeGen.dumpSemantics(): String {
 	val sb = StringBuilder()
 	sb.appendLine("╔══════════════════════════════════════════════════╗")
-	sb.appendLine("║  Semantic Analysis  —  ${file.sourceFile}".padEnd(49) + "║")
+	sb.appendLine("║  Semantic Analysis  -  ${file.sourceFile}".padEnd(49) + "║")
 	sb.appendLine("╚══════════════════════════════════════════════════╝")
 	sb.appendLine()
 

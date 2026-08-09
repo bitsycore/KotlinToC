@@ -4,7 +4,7 @@ package ktc
 // MARK: Math (pure inline)
 // ==================
 // Zero-overhead, zero-dependency numeric helpers. All inline, so they expand at the call site and
-// add nothing to the binary unless used. (Transcendental functions — sqrt/pow/sin/cos — are NOT
+// add nothing to the binary unless used. (Transcendental functions - sqrt/pow/sin/cos - are NOT
 // here: they need <math.h> in every calling TU, a decision deferred per plan.md U4. Until then,
 // call C.sqrtf(...) etc. directly.)
 

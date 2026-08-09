@@ -151,7 +151,7 @@ class FunctionsUnitTest : TranspilerTestBase() {
                 println(describe(5))
             }
         """)
-        // Inline functions don't emit a standalone C function — verify the inline body
+        // Inline functions don't emit a standalone C function - verify the inline body
         // appears in main and the standalone symbol does not.
         r.sourceNotContains("ktc_String test_Main_describe(")
     }

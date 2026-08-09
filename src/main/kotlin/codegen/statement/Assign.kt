@@ -37,7 +37,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         if (s.target.name == "refValue" && s.op == "=" && recvTypeCoreKtc is KtcType.Ptr && !recvTypeCoreKtc.inner.isArrayLike) {
             val innerUser = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
             if (innerUser != null && objects.containsKey(innerUser))
-                codegenError("Cannot assign .refValue on object '$innerUser' — objects are always Ref")
+                codegenError("Cannot assign .refValue on object '$innerUser' - objects are always Ref")
             val userHasRefValueProp = innerUser != null && classes[innerUser]?.properties?.any { it.name == "refValue" } == true
             if (!userHasRefValueProp) {
                 val value = genExpr(s.value)
@@ -99,7 +99,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
     }
 
     // p.refValue = x on Ref<T> → *p = x;  Fires for any Ref<T> whose pointee is a genuine C pointer
-    // target — a Ref<Int> as much as a Ref<Vec2> — rejecting only an object pointee, and stepping aside
+    // target - a Ref<Int> as much as a Ref<Vec2> - rejecting only an object pointee, and stepping aside
     // when the pointee is a user class with its own real 'refValue' property (that property wins over the
     // synthetic ref access). Array-like pointees (Ref<Array<T>> / Ref<IntArray>) carry a VarArr-value
     // representation rather than a bare T*, so they keep the general assignment path below.
@@ -109,7 +109,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
         if (recvTypeCoreKtc is KtcType.Ptr && !recvTypeCoreKtc.inner.isArrayLike) {
             val innerUser = (recvTypeCoreKtc.inner as? KtcType.User)?.baseName
             if (innerUser != null && objects.containsKey(innerUser))
-                codegenError("Cannot assign .refValue on object '$innerUser' — objects are always Ref")
+                codegenError("Cannot assign .refValue on object '$innerUser' - objects are always Ref")
             val userHasRefValueProp = innerUser != null && classes[innerUser]?.properties?.any { it.name == "refValue" } == true
             if (!userHasRefValueProp) {
                 val recv  = genExpr(s.target.obj)
@@ -132,12 +132,12 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
             val vProp = collectAllIfaceProperties(vIfaceInfo).find { it.name == s.target.name }
             if (vProp != null) {
                 if (!vProp.mutable)
-                    codegenError("Property '${s.target.name}' is read-only (val) through '${vIfaceInfo.name}' — " +
+                    codegenError("Property '${s.target.name}' is read-only (val) through '${vIfaceInfo.name}' - " +
                         "write through the concrete type, or declare it 'var' in the parent")
                 if (vIfaceInfo.name in simpleUnionInterfaces)
-                    codegenError("Cannot write '${s.target.name}' through @SimpleUnion '${vIfaceInfo.name}' (no vtable) — write through the concrete type")
+                    codegenError("Cannot write '${s.target.name}' through @SimpleUnion '${vIfaceInfo.name}' (no vtable) - write through the concrete type")
                 if (s.op != "=")
-                    codegenError("Compound assignment '${s.op}' is not supported on interface property '${s.target.name}' — " +
+                    codegenError("Compound assignment '${s.op}' is not supported on interface property '${s.target.name}' - " +
                         "use the explicit form: x.${s.target.name} = x.${s.target.name} ${s.op.dropLast(1)} value")
                 val vRecv = genExpr(s.target.obj)
                 val vVal  = genExpr(s.value)
@@ -274,7 +274,7 @@ internal fun CCodeGen.emitAssign(s: AssignStmt, ind: String, method: Boolean) {
             } else {
                 impl.appendLine("$ind$target ${s.op} $value;")
             }
-            // Array struct assignment: .len already part of ktc_VarArr_T — no separate update needed
+            // Array struct assignment: .len already part of ktc_VarArr_T - no separate update needed
         }
     }
 }
@@ -290,10 +290,10 @@ private fun CCodeGen.emitDeferredReturn(ind: String, varType: String, initExpr: 
 }
 
 internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
-    // E133 — a return from inside a finally would need to suppress an in-flight
+    // E133 - a return from inside a finally would need to suppress an in-flight
     // exception mid-propagation; refused (Kotlin discourages it for the same reason).
     if (tryContexts.any { it.emittingFinally })
-        codegenError("E133", "'return' inside a 'finally' block is not supported — move the return after the try.")
+        codegenError("E133", "'return' inside a 'finally' block is not supported - move the return after the try.")
     val endLabel = inlineEndLabel
     if (endLabel == null) {
         // Check: return with a value from a Unit (void) function
@@ -308,11 +308,11 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
         }
         // E120: returning a Ref<T> that points into the current frame would dangle.
         if (s.value != null) checkReturnDoesNotEscapeFrameLocal(s.value)
-        // E071: returning a value-type lvalue is an implicit copy — require explicit .copy()/.copyWith().
+        // E071: returning a value-type lvalue is an implicit copy - require explicit .copy()/.copyWith().
         // Aliasing (&local) is NOT offered as a fix here: a returned reference to a frame local dangles (E120).
         // @Size(N) array returns are exempt: returning a fixed-size array by value is the sanctioned safe
-        // array-return idiom (the cost is explicit in the @Size(N) signature, and the alternative — a bare
-        // Array<T> return — dangles), so it isn't the accidental copy the rule targets.
+        // array-return idiom (the cost is explicit in the @Size(N) signature, and the alternative - a bare
+        // Array<T> return - dangles), so it isn't the accidental copy the rule targets.
         if (s.value != null && !currentFnReturnsSizedArray) checkImplicitCopy(currentFnReturnKtcType, s.value, "the function's return value", inAllowAlias = false)
     }
     if (endLabel != null) {
@@ -357,7 +357,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
     }
     // Tailrec trampoline: return selfCall(args) → reassign params + goto.
     // Inside a try the trampoline goto would loop back without popping the
-    // exception frame — fall through to a genuine recursive call instead.
+    // exception frame - fall through to a genuine recursive call instead.
     if (tailrecFnName != null && s.value != null && tryContexts.isEmpty()) {
         val selfCall = asTailrecSelfCall(s.value)
         if (selfCall != null) {
@@ -420,7 +420,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 val vElemCStr   = cTypeStr(currentFnSizedArrayElemType!!)
                 val vStructType = sizedArrayCTypeName(vElemCStr, currentFnSizedArraySize)
                 if (expr in arrayOfSizedStructVars) {
-                    // Optimization: genArrayOfExpr already emitted a ktc_Array_T_N struct — return it directly.
+                    // Optimization: genArrayOfExpr already emitted a ktc_Array_T_N struct - return it directly.
                     if (hasReturnCleanup) {
                         emitDeferredReturn(ind, vStructType, expr)
                     } else {
@@ -429,7 +429,7 @@ internal fun CCodeGen.emitReturn(s: ReturnStmt, ind: String) {
                 } else {
                     // General path: copy raw array data into struct and return by value.
                     val vSrcKtc = inferExprTypeKtc(s.value)
-                    // Trampolined @Size params: local$name is already a raw T* pointer — skip .ptr extraction
+                    // Trampolined @Size params: local$name is already a raw T* pointer - skip .ptr extraction
                     val vPtrSrc = if (s.value is NameExpr && s.value.name in trampolinedParams) expr
                         else arrayDataPtr(expr, vSrcKtc)
                     if (hasReturnCleanup) {
@@ -526,7 +526,7 @@ internal fun isSelfAssignment(lhs: Expr, rhs: Expr): Boolean = when {
     else -> false
 }
 
-// E120 — Reject returning a Ref<T> taken from a value-type local or by-value parameter
+// E120 - Reject returning a Ref<T> taken from a value-type local or by-value parameter
 // of the current function. The address dies with the frame; the returned pointer dangles.
 // Only flags the obvious `return name.asRef()` shape; chained-through-local cases like
 // `val p = x.asRef(); return p` are left for a future flow-sensitive pass.
@@ -540,7 +540,7 @@ internal fun CCodeGen.checkReturnDoesNotEscapeFrameLocal(inExpr: Expr) {
     if (vLocal.ktc is KtcType.Ptr) return
     val vWhat = if (vLocal.isParam) "parameter" else "local"
     codegenError("E120",
-        "Returning a Ref to $vWhat '${vRecv.name}' — its address points into this frame and " +
+        "Returning a Ref to $vWhat '${vRecv.name}' - its address points into this frame and " +
         "will dangle after return. Allocate on the heap (.allocWith(Heap)) or pass an out-parameter " +
         "(Ref<T>) instead.")
 }

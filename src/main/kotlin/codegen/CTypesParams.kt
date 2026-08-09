@@ -6,7 +6,7 @@ import com.bitsycore.ktc.types.KtcType
 // C parameter expansion: function/constructor params → C declarations.
 // Type resolution and C type strings are in CTypes.kt.
 
-/** KtcType overload — null-safety comment for pointer params */
+/** KtcType overload - null-safety comment for pointer params */
 internal fun ptrNullComment(kt: KtcType): String = when (kt) {
     is KtcType.Nullable if kt.inner is KtcType.Ptr -> " /** nullable */"
     is KtcType.Ptr -> " /** notnull */"
@@ -33,7 +33,7 @@ internal fun CCodeGen.expandCtorParams(inProps: List<PropertyDef>): String {
                     }
 
                     vKtc is KtcType.Ptr -> {
-                        // Ref<Array<T>>: treat same as regular Array<T> — ktc_VarArr_T
+                        // Ref<Array<T>>: treat same as regular Array<T> - ktc_VarArr_T
                         val vInnerArr = vKtc.inner.asArr!!
                         val vElemCType = elemCTypeStr(vInnerArr.elem)
                         vParts += "${varArrTypeName(vElemCType)} $vName"
@@ -137,7 +137,7 @@ internal fun CCodeGen.emitArrayParamCopies(inParams: List<Param>, inInd: String)
             sizedArrayTrampolinedParams += vP.name
             continue
         }
-        // Regular Array<T> params are now ktc_VarArr_T — no trampolining needed; access via .ptr/.len
+        // Regular Array<T> params are now ktc_VarArr_T - no trampolining needed; access via .ptr/.len
     }
     if (vAny) impl.appendLine("${inInd}// ── sized param unpack end ──")
 }

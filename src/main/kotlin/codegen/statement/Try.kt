@@ -6,7 +6,7 @@ import com.bitsycore.ktc.codegen.expression.genExpr
 import com.bitsycore.ktc.dumpExpr
 import com.bitsycore.ktc.types.KtcType
 
-/* try/catch/finally and throw emission — lowered to setjmp/longjmp through the
+/* try/catch/finally and throw emission - lowered to setjmp/longjmp through the
 KTC_TRY macro family in ktc_core_exception.h.
 
 Lowering shape:
@@ -40,7 +40,7 @@ exception frame(s) and re-emit finally bodies, and so break/continue can be
 refused when they would jump across the try construct. */
 internal data class TryContext(
 	val frameVar:         String,   // C name of the ktc_ExcFrame local for this try
-	val finallyBlock:     Block?,   // finally body — re-emitted at return sites
+	val finallyBlock:     Block?,   // finally body - re-emitted at return sites
 	val loopDepthAtEntry: Int,      // loopDepth when this try was entered
 	var emittingFinally:  Boolean = false  // true while the finally body is being emitted
 )
@@ -107,7 +107,7 @@ private fun CCodeGen.requireStoredMessage(inClass: String) {
 	if (vCi.storedProps.none { it.first == "message" })
 		codegenError("E130",
 			"Exception class '$inClass' must store 'message' as a constructor property " +
-			"(override val message: String) — a computed getter cannot be relocated when the " +
+			"(override val message: String) - a computed getter cannot be relocated when the " +
 			"exception is copied into the throw arena.")
 }
 
@@ -120,7 +120,7 @@ internal fun CCodeGen.emitTry(s: TryStmt, ind: String, insideMethod: Boolean) {
 	for (vC in s.catches) {
 		if (matchedThrowableClasses(vC.type.name) == null)
 			codegenError("E131",
-				"catch type '${vC.type.name}' is not part of the Throwable hierarchy — catch a " +
+				"catch type '${vC.type.name}' is not part of the Throwable hierarchy - catch a " +
 				"class or interface implementing ktc.Throwable (e.g. Exception, RuntimeException).")
 	}
 
@@ -131,16 +131,16 @@ internal fun CCodeGen.emitTry(s: TryStmt, ind: String, insideMethod: Boolean) {
 	emitBlock(s.body, ind, insideMethod)
 	impl.appendLine("$ind}")
 
-	// Catch clauses — matched in source order; track coverage to flag dead clauses.
+	// Catch clauses - matched in source order; track coverage to flag dead clauses.
 	val vCovered = mutableSetOf<String>()
 	for (vC in s.catches) {
 		val vClasses = matchedThrowableClasses(vC.type.name)!!
 		if (vClasses.isEmpty())
 			codegenWarning("catch-no-match",
-				"catch (${vC.name}: ${vC.type.name}) matches no known exception class — no class implements '${vC.type.name}'.")
+				"catch (${vC.name}: ${vC.type.name}) matches no known exception class - no class implements '${vC.type.name}'.")
 		else if (vCovered.containsAll(vClasses))
 			codegenWarning("unreachable-catch",
-				"catch (${vC.name}: ${vC.type.name}) is unreachable — every matching class is already handled by an earlier clause.")
+				"catch (${vC.name}: ${vC.type.name}) is unreachable - every matching class is already handled by an earlier clause.")
 		val vCond = if (vClasses.isEmpty()) "false"
 			else vClasses.joinToString(" || ") { "KTC_EXC_TYPE_ID() == ${typeFlatName(it)}_TYPE_ID" }
 		vCovered += vClasses
@@ -184,7 +184,7 @@ private fun CCodeGen.emitCatchBinding(inClause: CatchClause, ind: String) {
 		impl.appendLine("$vInd    ktc_core_exc_take(&$vName, $vMsgBuf);")
 		impl.appendLine("$vInd}")
 	} else {
-		// Interface binding: fill the tagged-union fat value by hand — typeId from the
+		// Interface binding: fill the tagged-union fat value by hand - typeId from the
 		// in-flight exception, object bytes into the union, vtable picked by typeId.
 		val vCIface = typeFlatName(vTypeName)
 		val vImpls  = matchedThrowableClasses(vTypeName)!!
@@ -208,12 +208,12 @@ private fun CCodeGen.emitCatchBinding(inClause: CatchClause, ind: String) {
 
 internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 	val vTypeName = inferExprType(s.value)?.removeSuffix("?")
-		?: codegenError("E130", "Cannot infer the type of the thrown expression — throw a value of a class implementing ktc.Throwable.")
+		?: codegenError("E130", "Cannot infer the type of the thrown expression - throw a value of a class implementing ktc.Throwable.")
 
 	if (classes.containsKey(vTypeName)) {
 		if (!isThrowableClass(vTypeName))
 			codegenError("E130",
-				"'$vTypeName' does not implement ktc.Throwable — only Throwable values can be thrown " +
+				"'$vTypeName' does not implement ktc.Throwable - only Throwable values can be thrown " +
 				"(declare it as `class $vTypeName(override val message: String) : Exception`).")
 		requireStoredMessage(vTypeName)
 		val vCType = typeFlatName(vTypeName)
@@ -233,7 +233,7 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 		// Rethrow of an interface-typed binding: dispatch on the concrete typeId so the
 		// runtime gets the right sizeof/offsetof for the deep copy.
 		val vImpls = matchedThrowableClasses(vTypeName)
-			?: codegenError("E130", "'$vTypeName' is not part of the Throwable hierarchy — only Throwable values can be thrown.")
+			?: codegenError("E130", "'$vTypeName' is not part of the Throwable hierarchy - only Throwable values can be thrown.")
 		vImpls.forEach { requireStoredMessage(it) }
 		val vExpr = genExpr(s.value)
 		flushPreStmts(ind)
@@ -254,7 +254,7 @@ internal fun CCodeGen.emitThrow(s: ThrowStmt, ind: String) {
 	}
 
 	codegenError("E130",
-		"Cannot throw a value of type '$vTypeName' — only classes implementing ktc.Throwable can be thrown.")
+		"Cannot throw a value of type '$vTypeName' - only classes implementing ktc.Throwable can be thrown.")
 }
 
 // ==================
@@ -271,7 +271,7 @@ private fun CCodeGen.captureImplLines(inBlock: () -> Unit): List<String> {
 	return vBuf.lines().filter { it.isNotBlank() }
 }
 
-/* Lower `left ?: throw X(...)` — evaluate left once into a temp, throw on
+/* Lower `left ?: throw X(...)` - evaluate left once into a temp, throw on
 null, yield the unwrapped value. The throw lowering lands in preStmts. */
 internal fun CCodeGen.genElvisThrow(inLeft: Expr, inThrow: ThrowExpr): String {
 	val vLKtc = inferExprTypeKtc(inLeft)
@@ -282,7 +282,7 @@ internal fun CCodeGen.genElvisThrow(inLeft: Expr, inThrow: ThrowExpr): String {
 	val vThrowStmt = ThrowStmt(inThrow.value).also { it.line = currentStmtLine }
 	val vThrowLines = captureImplLines { emitThrow(vThrowStmt, "    ") }
 	return if (vLKtc is KtcType.Nullable && isValueNullableKtc(vLKtc)) {
-		// Value-nullable left: Optional struct — unwrap after the null gate.
+		// Value-nullable left: Optional struct - unwrap after the null gate.
 		preStmts += "${optCTypeName(vCore.toInternalStr)} $vT = $vL;"
 		preStmts += "if (!KTC_IS_SOME($vT)) {"
 		preStmts += vThrowLines
@@ -360,7 +360,7 @@ private fun exprReferencesName(e: Expr?, inName: String): Boolean = when (e) {
 	else               -> false
 }
 
-/* True when a function body lexically contains a `try` — directly, inside a
+/* True when a function body lexically contains a `try` - directly, inside a
 lambda argument, or through a call to an `inline fun` whose body contains one
 (inline bodies are expanded into this function, so its frame holds the setjmp).
 Drives the KTC_TRY_FN attribute (per-function deoptimization: setjmp/longjmp
@@ -418,7 +418,7 @@ internal fun CCodeGen.bodyContainsTry(inStmts: List<Stmt>, inVisited: MutableSet
 	}
 }
 
-/* All inline extension functions with the given simple name (receiver-agnostic —
+/* All inline extension functions with the given simple name (receiver-agnostic -
 an over-approximation is fine here: worst case a function is needlessly deoptimized). */
 private fun CCodeGen.allInlineExtFunsNamed(inName: String): List<FunDecl> =
 	extensionFuns.values.flatten().filter { it.isInline && it.name == inName }

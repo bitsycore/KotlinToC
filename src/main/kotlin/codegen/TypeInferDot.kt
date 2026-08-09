@@ -48,12 +48,12 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 			}
 		}
 	if (e.name == "size" && recvTypeCoreKtc != null && recvTypeCoreKtc.isArrayLike) return KtcType.Prim(KtcType.PrimKind.Int)
-	// .cPtr → raw C pointer: T* for Array, const ktc_Char* (Ref<Char>) for String. (.ptr is disallowed — E055.)
+	// .cPtr → raw C pointer: T* for Array, const ktc_Char* (Ref<Char>) for String. (.ptr is disallowed - E055.)
 	if (e.name == "cPtr") {
 		if (recvTypeCoreKtc?.isArrayLike == true) { val arr = recvTypeCoreKtc.asArr; if (arr != null) return KtcType.Ptr(arr.elem) }
 		if (recvTypeCoreKtc is KtcType.Str) return KtcType.Ptr(KtcType.Prim(KtcType.PrimKind.Char))
 		}
-	// `.ptr` is not a KTC accessor — `.cPtr` (above) is the only raw-pointer member. A bare `.ptr`
+	// `.ptr` is not a KTC accessor - `.cPtr` (above) is the only raw-pointer member. A bare `.ptr`
 	// falls through to plain field resolution so a genuine C-struct `ptr` field still resolves.
 	if (e.name == "refValue" && recvTypeCoreKtc is KtcType.Ptr) return recvTypeCoreKtc.inner
 	if (e.name == "length" && recvTypeCoreKtc is KtcType.Str) return KtcType.Prim(KtcType.PrimKind.Int)
@@ -76,7 +76,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 		val ci = classes[indirectBase] ?: return null
 		return resolvePropTypeKtc(ci.props, e.name)
 		}
-	// Interface property access (e.g. Throwable.message on a caught binding) —
+	// Interface property access (e.g. Throwable.message on a caught binding) -
 	// resolve through the interface's own + inherited property declarations.
 	val vIface = interfaces[recvType.removeSuffix("?")]
 	if (vIface != null) {
@@ -88,7 +88,7 @@ internal fun CCodeGen.inferDotTypeKtc(e: DotExpr): KtcType? {
 		}
 	// Strip a trailing `?` so `Path?.s` resolves to Path's `s` property.
 	// `?.` codegen passes us the DotExpr wrapper of a nullable receiver and
-	// expects us to dig out the underlying class's field type — without
+	// expects us to dig out the underlying class's field type - without
 	// removing the suffix we'd miss the class lookup and fall back to Int.
 	val ci = classes[recvType.removeSuffix("?")] ?: return null
 	return resolvePropTypeKtc(ci.props, e.name)

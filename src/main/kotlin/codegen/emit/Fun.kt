@@ -30,7 +30,7 @@ internal fun CCodeGen.emitExtensionFun(f: FunDecl) {
 	val cSelfType      = if (isObjectType) "${cRecvType}_t" else cRecvType
 	val selfParam      = if (recvIsNullable) "${optCTypeName(recvTypeName)} \$self" else "$cSelfType \$self"
 	val extraParams    = expandParams(f.params)
-	// @Namespace objects have no C representation — extension functions become free functions (no $self)
+	// @Namespace objects have no C representation - extension functions become free functions (no $self)
 	val allParams = when {
 		isNamespaceObj              -> extraParams.ifEmpty { "void" }
 		extraParams.isNotEmpty()    -> "$selfParam, $extraParams"
@@ -89,7 +89,7 @@ internal fun CCodeGen.emitFun(f: FunDecl) {
 	pushScope()
 	registerParams(f.params)
 	if (isMain) {
-		// main's array params arrive pre-laid-out from main.c — alias to local pointers without copying
+		// main's array params arrive pre-laid-out from main.c - alias to local pointers without copying
 		for (vP in f.params) {
 			if (!vP.type.isRawArray()) continue
 			val vKtcMP   = resolveTypeName(vP.type)
@@ -137,7 +137,7 @@ internal fun CCodeGen.emitFunBodyAndClose(
 	}
 
 internal fun CCodeGen.emitTopProp(d: PropDecl) {
-	// by lazy { body } — thread-safe lazy initialization
+	// by lazy { body } - thread-safe lazy initialization
 	if (d.lazyInit != null) {
 		emitLazyTopProp(d)
 		return
@@ -170,7 +170,7 @@ private fun CCodeGen.emitLazyTopProp(d: PropDecl) {
 	} ?: codegenError("lazy initializer for '${d.name}' must end with an expression")
 
 	val vKtc = if (d.type != null) resolveTypeName(d.type) else inferExprTypeKtc(lastExpr)
-		?: codegenError("Cannot infer type for lazy property '${d.name}' — add an explicit type annotation")
+		?: codegenError("Cannot infer type for lazy property '${d.name}' - add an explicit type annotation")
 	val ct = cTypeStr(vKtc)
 	val cName = typeFlatName(d.name)
 
@@ -181,7 +181,7 @@ private fun CCodeGen.emitLazyTopProp(d: PropDecl) {
 	impl.appendLine("static $ct ${cName}\$cache;")
 	impl.appendLine()
 
-	// Init function — runs exactly once across all threads
+	// Init function - runs exactly once across all threads
 	impl.appendLine("static void ${cName}_lazy_init(void) {")
 	pushScope()
 	for (i in 0 until stmts.size - 1) {

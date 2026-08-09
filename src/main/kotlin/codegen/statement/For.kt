@@ -20,7 +20,7 @@ private fun CCodeGen.emitForVarBlock(varName: String, varKtcType: KtcType, body:
 /* Determines the C type and PrimKind for a range loop variable based on the
 range endpoints. Defaults to Int when the inferred type isn't a known
 ordinal primitive. Supports Int (default), Long, Char, and the unsigned
-integer kinds — anything iterable as a counter. */
+integer kinds - anything iterable as a counter. */
 private fun CCodeGen.rangeElementType(range: BinExpr): Pair<String, KtcType.PrimKind> {
     val lt  = inferExprTypeKtc(range.left)?.stripNullable
     val rt  = inferExprTypeKtc(range.right)?.stripNullable
@@ -49,14 +49,14 @@ private fun CCodeGen.rangeElementType(range: BinExpr): Pair<String, KtcType.Prim
 /* When the for-loop binds a destructuring pattern `for ((a, b) in pairs)`,
 the parser stashes the names in s.destructureNames and gives the iteration
 variable a synthetic name ($ditem_a_b). The body must start by decomposing
-that temp into the user-visible names — same shape as `val (a, b) = $ditem`. */
+that temp into the user-visible names - same shape as `val (a, b) = $ditem`. */
 private fun destructuredBody(s: ForStmt): Block =
     if (s.destructureNames.isEmpty()) s.body
     else Block(listOf(DestructuringDeclStmt(s.destructureNames, NameExpr(s.varName), mutable = false)) + s.body.stmts)
 
 /* True for loop endpoints / steps that are safe to inline into the loop header without a
    re-evaluation hazard: compile-time literals and immutable-val names. Everything else must be
-   hoisted to a temp so it is evaluated exactly once — Kotlin builds the range/progression once,
+   hoisted to a temp so it is evaluated exactly once - Kotlin builds the range/progression once,
    so a mutable name, a property read, or a call must NOT be re-read on every iteration. */
 private fun CCodeGen.isTrivialLoopBound(e: Expr): Boolean = when (e) {
     is IntLit, is LongLit, is UIntLit, is ULongLit, is CharLit -> true
@@ -89,10 +89,10 @@ private fun CCodeGen.emitCountedRangeLoop(
 
 internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
     if (isEmptyBlock(s.body))
-        codegenWarning("empty-body", "Empty 'for' body — the loop has no effect.")
+        codegenWarning("empty-body", "Empty 'for' body - the loop has no effect.")
     loopDepth++
     val iter = s.iter
-    // Unwrap "step" wrapper: (rangeExpr step N) — keep the AST so the step amount can be hoisted.
+    // Unwrap "step" wrapper: (rangeExpr step N) - keep the AST so the step amount can be hoisted.
     val stepExpr: Expr?
     val rangeExpr: Expr
     if (iter is BinExpr && iter.op == "step") {
@@ -112,7 +112,7 @@ internal fun CCodeGen.emitFor(s: ForStmt, ind: String, method: Boolean) {
         // for (i in a downTo b)
         is BinExpr if rangeExpr.op == "downTo" ->
             emitCountedRangeLoop(s, rangeExpr, ">=", descending = true, stepExpr, ind, method)
-        // for (item in array/collection)  — iterate over elements
+        // for (item in array/collection)  - iterate over elements
         else -> {
             val arrType    = inferExprType(rangeExpr)
             val arrTypeKtc = inferExprTypeKtc(rangeExpr)
@@ -202,7 +202,7 @@ internal fun CCodeGen.findOperatorIterator(type: String?): IteratorInfo? {
                     return IteratorInfo(iterType, vIterTypeCI.flatName, elemType, false)
                 }
             } else if (interfaces.containsKey(iterType)) {
-                // Iterator returns an interface — use interface type with vtable dispatch
+                // Iterator returns an interface - use interface type with vtable dispatch
                 val vIterTypeII = interfaces[iterType]!!                               // IfaceInfo for the iterator interface
                 val allMethods = collectAllIfaceMethods(vIterTypeII)
                 val nextMethod = allMethods.find { it.name == "next" && it.isOperator }

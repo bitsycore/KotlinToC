@@ -9,7 +9,7 @@ import com.bitsycore.ktc.codegen.statement.tryFnAttr
 import com.bitsycore.ktc.types.KtcType
 
 // ──────────────────────────────────────────────────────────
-// singleton object — lazy init, methods, Any vtable, as_Any
+// singleton object - lazy init, methods, Any vtable, as_Any
 // ──────────────────────────────────────────────────────────
 
 // ── object ───────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
 
     val vIsNamespace = d.name in namespaceObjects
 
-    // ── @Namespace: pure C namespace — no struct, no instance, no vtable ──────────────────────
+    // ── @Namespace: pure C namespace - no struct, no instance, no vtable ──────────────────────
 
     if (vIsNamespace) {
         hdr.appendLine(classBlockHeader(vKind, vDisplayName, emptyList(), emptyList(), vPkg, currentSourceFile, cName))
@@ -179,7 +179,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     }
 
     if (vHasInit) {
-        // static init function — body run exactly once across all threads
+        // static init function - body run exactly once across all threads
         impl.appendLine("static void ${cName}_init(void) {")
         for (p in props) {
             if (p.init != null) {
@@ -240,7 +240,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     val prevObjectForMethods = currentObject
     currentObject = d.name
 
-    /* Shared body for emitting one object method — used for both regular and any-override passes.
+    /* Shared body for emitting one object method - used for both regular and any-override passes.
     inHdrLines: if non-null, collect hdr declaration strings instead of writing to hdr directly. */
     fun emitOneObjMethod(m: FunDecl, inHdrLines: MutableList<String>?) {
         if (m.isInline) return  // expanded at call sites via inlineFunDecls, not emitted as C functions
@@ -283,7 +283,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     for (m in vAnyOverrides) emitOneObjMethod(m, vAnyOverrideHdrLines)
     impl = vSavedImpl
 
-    // Buffer interface method bodies per interface — consumed by the implsOnly pass in
+    // Buffer interface method bodies per interface - consumed by the implsOnly pass in
     // emitInterfaceVtablesForClass so they appear inside "implements X" in the .c file.
     for (ifaceRef in d.superInterfaces) {
         val vIfaceKey = resolveIfaceName(ifaceRef)
@@ -302,12 +302,12 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
 
     currentObject = prevObjectForMethods
 
-    // Interface implementation sections — inside the object block, before #undef KTC_TYPE_NAME
+    // Interface implementation sections - inside the object block, before #undef KTC_TYPE_NAME
     if (d.superInterfaces.isNotEmpty()) {
         emitInterfaceVtablesForClass(d.name, d.superInterfaces, declsOnly = true)
     }
 
-    // Header: "implements Any" — overrides first, then auto-generated, then equals/copyWith
+    // Header: "implements Any" - overrides first, then auto-generated, then equals/copyWith
     hdr.appendLine()
     hdr.appendLine("// ════ implements Any (implicit) ════")
     for (vLine in vAnyOverrideHdrLines) hdr.appendLine(vLine)
@@ -333,7 +333,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     hdr.appendLine("#undef KTC_TYPE_NAME")
     hdr.appendLine(classBlockFooter(vKind, vDisplayName, emptyList()))
 
-    // Impl: "implements Any" section — overrides first, then auto-generated
+    // Impl: "implements Any" section - overrides first, then auto-generated
     val vDisplaySimple = d.name.substringAfterLast('$')
     impl.appendLine(boxSection("implements Any (implicit)"))
     impl.appendLine()
@@ -386,7 +386,7 @@ internal fun CCodeGen.emitObject(d: ObjectDecl) {
     impl.appendLine("}")
     impl.appendLine()
 
-    // cast to Any — thin wrappers delegating to the public Any methods above
+    // cast to Any - thin wrappers delegating to the public Any methods above
     impl.appendLine(boxSection("cast to Any"))
     impl.appendLine()
 
