@@ -836,6 +836,23 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **The clock** (`objects/Sleep.kt`): `Thread.sleep`, `System.currentTimeMillis`,
   `System.nanoTime`, and with them `measureTimeMillis` / `measureNanoTime` from the library
   sources. `nanoTime` follows the clock of the day; it is not a monotonic counter.
+- **Counting that cannot be observed is left out** (`objects/Borrowing.kt`). A local that is
+  only another name for something held at least as long borrows it: no retain when it is
+  declared, no release when its block ends. That is the case for a copy of a parameter or of
+  a local that is never reassigned, and for a `val` field of either. It is also the case for
+  what is read from a `var` field, an array element or a top-level property when nothing in
+  the rest of the block can overwrite that place; and an argument read from such a place is
+  passed without a temporary when the function called cannot overwrite it. "Cannot" comes
+  from `Effects`, a whole-program summary of what each function may write, the functions it
+  calls included: fields by name, array elements as one, top-level properties one by one.
+  C written by the program and calls through C pointers may write anything, as does printing
+  an object (its `toString` is the program's code). Over the test programs this removes half
+  of the retains (32,900 to 16,400, the thread stress test left aside: its 400,000 are a list
+  handing out each element with a count, which stays). What still counts: storing into a
+  field or an array, and every reference a function returns. `tools/retain_profile.sh` lists
+  the lines of a program that retain most; `tools/arc_compare.py` compares two runs of the
+  suite. Test builds (`KTC2_LEAK_CHECK`) now overwrite an object before freeing it, so a
+  reference that should have been counted shows up as a failure.
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small
@@ -844,7 +861,9 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   a `.def` file takes a fraction of a second, so nothing is cached there. The step that would
   change the order of magnitude is a compiler kept running between compilations.
 
-Known gaps: `isDaemon`, thread names and priorities are ignored.
+Known gaps: `isDaemon`, thread names and priorities are ignored. In a string template the
+`toString` of each object runs as the template is built, left to right; the JVM first evaluates
+every part and then calls them, which shows when a `toString` changes what a later part reads.
 
 `@Value` on array elements (`Array<@Value Particle>`) is **not** going to be done as planned.
 An annotation does not change the Kotlin type, so such an array could be passed wherever an
@@ -853,8 +872,7 @@ for an array of references would then read object bytes as pointers. Guarding ag
 would cost a test on every access to every array of references. What the plan wanted from it
 is available another way: collections store structs and value classes in place
 (`ArrayList<Point>`), and `ktc2.ValueArray<T>` is a fixed-size array that does. A failed check inside a conditional expression may store a
-placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`). Nothing in the ARC pass is
-optimized beyond the three rules above.
+placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`).
 
 **Relation to v1.** v1 integration tests that exercise plain behavior are ported as plain
 Kotlin into `ktc2/integration/` and gain the JVM oracle. Tests of the manual model (`ArenaTest`,

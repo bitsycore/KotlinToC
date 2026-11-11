@@ -254,6 +254,21 @@ ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t 
 	return object;
 }
 
+/*
+ * With KTC2_LEAK_CHECK a freed object is first filled with 0xDD, so that code which still
+ * uses it (a reference that was not counted) reads nonsense and fails instead of appearing to work.
+ */
+#if defined(KTC2_LEAK_CHECK) && (defined(_WIN32) || defined(__GLIBC__))
+#include <malloc.h>
+#ifdef _WIN32
+#define poison(object) memset((object), 0xDD, _msize(object))
+#else
+#define poison(object) memset((object), 0xDD, malloc_usable_size(object))
+#endif
+#else
+#define poison(object) ((void)0)
+#endif
+
 void ktc2_destroy(ktc2_Obj* object)
 {
 	if (object->rc & KTC2_WEAK) weak_drop(object);
@@ -266,6 +281,7 @@ void ktc2_destroy(ktc2_Obj* object)
 		arena_block_drop(*(ArenaBlock**)((char*)object - ARENA_PREFIX));
 		return;
 	}
+	poison(object);
 	free(object);
 }
 
