@@ -48,6 +48,18 @@ enum {
 	KTC2_TYPE_ARRAY_ULONG,
 	KTC2_TYPE_ARRAY_REF,    /* elements are references, released with the array */
 	KTC2_TYPE_ARRAY_VALUE,  /* elements are plain values (nullable primitives, structs) */
+	KTC2_TYPE_BOX_BOOLEAN,  /* a primitive held as an object (an Int seen as Any) */
+	KTC2_TYPE_BOX_BYTE,
+	KTC2_TYPE_BOX_SHORT,
+	KTC2_TYPE_BOX_INT,
+	KTC2_TYPE_BOX_LONG,
+	KTC2_TYPE_BOX_CHAR,
+	KTC2_TYPE_BOX_FLOAT,
+	KTC2_TYPE_BOX_DOUBLE,
+	KTC2_TYPE_BOX_UBYTE,
+	KTC2_TYPE_BOX_USHORT,
+	KTC2_TYPE_BOX_UINT,
+	KTC2_TYPE_BOX_ULONG,
 	KTC2_TYPE_FIRST_USER
 };
 
@@ -69,7 +81,19 @@ void ktc2_array_destroy(struct ktc2_Obj* object);
 	[KTC2_TYPE_ARRAY_UINT] = { "UIntArray", NULL }, \
 	[KTC2_TYPE_ARRAY_ULONG] = { "ULongArray", NULL }, \
 	[KTC2_TYPE_ARRAY_REF] = { "Array", ktc2_array_destroy }, \
-	[KTC2_TYPE_ARRAY_VALUE] = { "Array", NULL }
+	[KTC2_TYPE_ARRAY_VALUE] = { "Array", NULL }, \
+	[KTC2_TYPE_BOX_BOOLEAN] = { "Boolean", NULL }, \
+	[KTC2_TYPE_BOX_BYTE] = { "Byte", NULL }, \
+	[KTC2_TYPE_BOX_SHORT] = { "Short", NULL }, \
+	[KTC2_TYPE_BOX_INT] = { "Int", NULL }, \
+	[KTC2_TYPE_BOX_LONG] = { "Long", NULL }, \
+	[KTC2_TYPE_BOX_CHAR] = { "Char", NULL }, \
+	[KTC2_TYPE_BOX_FLOAT] = { "Float", NULL }, \
+	[KTC2_TYPE_BOX_DOUBLE] = { "Double", NULL }, \
+	[KTC2_TYPE_BOX_UBYTE] = { "UByte", NULL }, \
+	[KTC2_TYPE_BOX_USHORT] = { "UShort", NULL }, \
+	[KTC2_TYPE_BOX_UINT] = { "UInt", NULL }, \
+	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL }
 
 /** Generated in ktc2_main.c. */
 extern const ktc2_TypeInfo ktc2_types[];
@@ -122,6 +146,66 @@ KTC2_OPT(uint32_t);
 KTC2_OPT(uint64_t);
 KTC2_OPT(float);
 KTC2_OPT(double);
+
+_Noreturn void ktc2_fail_when(void);
+
+/* ================== */
+/* MARK: Boxes        */
+/* ================== */
+
+/** A primitive held as an object, for when it is used as `Any`. */
+typedef struct ktc2_Box {
+	ktc2_Obj header;
+	union {
+		bool boolean_;
+		int8_t byte_;
+		int16_t short_;
+		int32_t int_;
+		int64_t long_;
+		uint16_t char_;
+		float float_;
+		double double_;
+		uint8_t ubyte_;
+		uint16_t ushort_;
+		uint32_t uint_;
+		uint64_t ulong_;
+	} value;
+} ktc2_Box;
+
+/* ktc2_box_<kind>(v) returns a new box; ktc2_unbox_<kind>(o) fails unless o is a box of that kind. */
+#define KTC2_BOX(kind, type, id) \
+	static inline ktc2_Obj* ktc2_box_##kind(type v) \
+	{ \
+		ktc2_Box* box = ktc2_alloc(sizeof(ktc2_Box), id); \
+		box->value.kind##_ = v; \
+		return &box->header; \
+	} \
+	static inline type ktc2_unbox_##kind(ktc2_Obj* object) \
+	{ \
+		if (!object) ktc2_fail_null(); \
+		if (object->typeId != id) ktc2_fail_cast(); \
+		return ((ktc2_Box*)object)->value.kind##_; \
+	}
+
+KTC2_BOX(boolean, bool, KTC2_TYPE_BOX_BOOLEAN)
+KTC2_BOX(byte, int8_t, KTC2_TYPE_BOX_BYTE)
+KTC2_BOX(short, int16_t, KTC2_TYPE_BOX_SHORT)
+KTC2_BOX(int, int32_t, KTC2_TYPE_BOX_INT)
+KTC2_BOX(long, int64_t, KTC2_TYPE_BOX_LONG)
+KTC2_BOX(char, uint16_t, KTC2_TYPE_BOX_CHAR)
+KTC2_BOX(float, float, KTC2_TYPE_BOX_FLOAT)
+KTC2_BOX(double, double, KTC2_TYPE_BOX_DOUBLE)
+KTC2_BOX(ubyte, uint8_t, KTC2_TYPE_BOX_UBYTE)
+KTC2_BOX(ushort, uint16_t, KTC2_TYPE_BOX_USHORT)
+KTC2_BOX(uint, uint32_t, KTC2_TYPE_BOX_UINT)
+KTC2_BOX(ulong, uint64_t, KTC2_TYPE_BOX_ULONG)
+
+/* hashCode() of the primitives whose hash is not the value itself (the JVM's formulas). */
+static inline int32_t ktc2_hash_boolean(bool v) { return v ? 1231 : 1237; }
+static inline int32_t ktc2_hash_long(int64_t v) { return (int32_t)((uint64_t)v ^ ((uint64_t)v >> 32)); }
+static inline int32_t ktc2_hash_ulong(uint64_t v) { return (int32_t)(v ^ (v >> 32)); }
+int32_t ktc2_hash_float(float v);
+int32_t ktc2_hash_double(double v);
 
 /* ================== */
 /* MARK: Arrays       */
@@ -179,6 +263,9 @@ uint16_t ktc2_str_get(const ktc2_String* s, int32_t index);
 bool ktc2_str_equals(const ktc2_String* a, const ktc2_String* b);
 int32_t ktc2_str_compare(const ktc2_String* a, const ktc2_String* b);
 int32_t ktc2_str_hashCode(const ktc2_String* s);
+
+/** `Enum.valueOf` found no entry called [name]. */
+_Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
 
 /** Defaults of kotlin.Any, also correct for strings. `toString` returns an owned reference. */
 ktc2_String* ktc2_any_toString(ktc2_Obj* object);

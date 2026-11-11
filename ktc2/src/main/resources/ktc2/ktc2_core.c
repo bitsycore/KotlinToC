@@ -36,6 +36,11 @@ _Noreturn void ktc2_fail_dispatch(void)
 	fail("java.lang.AbstractMethodError", NULL);
 }
 
+_Noreturn void ktc2_fail_when(void)
+{
+	fail("kotlin.NoWhenBranchMatchedException", NULL);
+}
+
 void ktc2_check_step(int64_t step)
 {
 	if (step > 0) return;
@@ -220,6 +225,28 @@ int32_t ktc2_str_hashCode(const ktc2_String* s)
 	return (int32_t)hash;
 }
 
+_Noreturn void ktc2_fail_enum_value(const ktc2_String* name)
+{
+	fflush(stdout);
+	fprintf(stderr, "Exception in thread \"main\" java.lang.IllegalArgumentException: No enum constant %s\n", name->bytes);
+	exit(1);
+}
+
+int32_t ktc2_hash_float(float v)
+{
+	if (v != v) return 0x7FC00000;
+	uint32_t bits;
+	memcpy(&bits, &v, sizeof bits);
+	return (int32_t)bits;
+}
+
+int32_t ktc2_hash_double(double v)
+{
+	uint64_t bits = UINT64_C(0x7FF8000000000000);
+	if (v == v) memcpy(&bits, &v, sizeof bits);
+	return (int32_t)(bits ^ (bits >> 32));
+}
+
 static ktc2_String* new_string(const char* bytes, int32_t size, int32_t length)
 {
 	ktc2_String* s = ktc2_alloc(sizeof(ktc2_String) + (size_t)size + 1, KTC2_TYPE_STRING);
@@ -227,31 +254,6 @@ static ktc2_String* new_string(const char* bytes, int32_t size, int32_t length)
 	s->length = length;
 	memcpy(s->bytes, bytes, (size_t)size);
 	return s;
-}
-
-int32_t ktc2_any_hashCode(ktc2_Obj* object)
-{
-	if (object->typeId == KTC2_TYPE_STRING) return ktc2_str_hashCode((ktc2_String*)object);
-	uintptr_t address = (uintptr_t)object;
-	return (int32_t)((address >> 3) ^ (address >> 35));
-}
-
-bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
-{
-	if (a == b) return true;
-	if (!a || !b) return false;
-	if (a->typeId == KTC2_TYPE_STRING && b->typeId == KTC2_TYPE_STRING) {
-		return ktc2_str_equals((ktc2_String*)a, (ktc2_String*)b);
-	}
-	return false;
-}
-
-ktc2_String* ktc2_any_toString(ktc2_Obj* object)
-{
-	if (object->typeId == KTC2_TYPE_STRING) return ktc2_retain(object);
-	char text[160];
-	int size = snprintf(text, sizeof text, "%s@%" PRIx32, ktc2_types[object->typeId].name, (uint32_t)ktc2_any_hashCode(object));
-	return new_string(text, size, size);
 }
 
 /* ================== */
@@ -425,4 +427,85 @@ void ktc2_print_text(const char* text, int32_t size, int32_t length)
 void ktc2_print_string(const ktc2_String* s)
 {
 	if (s) fwrite(s->bytes, 1, (size_t)s->size, stdout); else fputs("null", stdout);
+}
+
+/* ================== */
+/* MARK: Any defaults */
+/* ================== */
+
+int32_t ktc2_any_hashCode(ktc2_Obj* object)
+{
+	const ktc2_Box* box = (const ktc2_Box*)object;
+	switch (object->typeId) {
+	case KTC2_TYPE_STRING: return ktc2_str_hashCode((ktc2_String*)object);
+	case KTC2_TYPE_BOX_BOOLEAN: return ktc2_hash_boolean(box->value.boolean_);
+	case KTC2_TYPE_BOX_BYTE: return box->value.byte_;
+	case KTC2_TYPE_BOX_SHORT: return box->value.short_;
+	case KTC2_TYPE_BOX_INT: return box->value.int_;
+	case KTC2_TYPE_BOX_LONG: return ktc2_hash_long(box->value.long_);
+	case KTC2_TYPE_BOX_CHAR: return box->value.char_;
+	case KTC2_TYPE_BOX_FLOAT: return ktc2_hash_float(box->value.float_);
+	case KTC2_TYPE_BOX_DOUBLE: return ktc2_hash_double(box->value.double_);
+	case KTC2_TYPE_BOX_UBYTE: return box->value.ubyte_;
+	case KTC2_TYPE_BOX_USHORT: return box->value.ushort_;
+	case KTC2_TYPE_BOX_UINT: return (int32_t)box->value.uint_;
+	case KTC2_TYPE_BOX_ULONG: return ktc2_hash_ulong(box->value.ulong_);
+	default: {
+		uintptr_t address = (uintptr_t)object;
+		return (int32_t)((address >> 3) ^ (address >> 35));
+	}
+	}
+}
+
+bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
+{
+	if (a == b) return true;
+	if (!a || !b || a->typeId != b->typeId) return false;
+	const ktc2_Box* x = (const ktc2_Box*)a;
+	const ktc2_Box* y = (const ktc2_Box*)b;
+	switch (a->typeId) {
+	case KTC2_TYPE_STRING: return ktc2_str_equals((ktc2_String*)a, (ktc2_String*)b);
+	case KTC2_TYPE_BOX_BOOLEAN: return x->value.boolean_ == y->value.boolean_;
+	case KTC2_TYPE_BOX_BYTE: return x->value.byte_ == y->value.byte_;
+	case KTC2_TYPE_BOX_SHORT: return x->value.short_ == y->value.short_;
+	case KTC2_TYPE_BOX_INT: return x->value.int_ == y->value.int_;
+	case KTC2_TYPE_BOX_LONG: return x->value.long_ == y->value.long_;
+	case KTC2_TYPE_BOX_CHAR: return x->value.char_ == y->value.char_;
+	/* Boxed floating-point values compare by bits, as on the JVM: NaN equals NaN, 0.0 differs from -0.0. */
+	case KTC2_TYPE_BOX_FLOAT: return ktc2_hash_float(x->value.float_) == ktc2_hash_float(y->value.float_);
+	case KTC2_TYPE_BOX_DOUBLE: return memcmp(&x->value.double_, &y->value.double_, sizeof(double)) == 0 || (x->value.double_ != x->value.double_ && y->value.double_ != y->value.double_);
+	case KTC2_TYPE_BOX_UBYTE: return x->value.ubyte_ == y->value.ubyte_;
+	case KTC2_TYPE_BOX_USHORT: return x->value.ushort_ == y->value.ushort_;
+	case KTC2_TYPE_BOX_UINT: return x->value.uint_ == y->value.uint_;
+	case KTC2_TYPE_BOX_ULONG: return x->value.ulong_ == y->value.ulong_;
+	default: return false;
+	}
+}
+
+ktc2_String* ktc2_any_toString(ktc2_Obj* object)
+{
+	if (object->typeId == KTC2_TYPE_STRING) return ktc2_retain(object);
+	const ktc2_Box* box = (const ktc2_Box*)object;
+	ktc2_Sb sb;
+	ktc2_sb_init(&sb);
+	switch (object->typeId) {
+	case KTC2_TYPE_BOX_BOOLEAN: ktc2_sb_bool(&sb, box->value.boolean_); break;
+	case KTC2_TYPE_BOX_BYTE: ktc2_sb_int(&sb, box->value.byte_); break;
+	case KTC2_TYPE_BOX_SHORT: ktc2_sb_int(&sb, box->value.short_); break;
+	case KTC2_TYPE_BOX_INT: ktc2_sb_int(&sb, box->value.int_); break;
+	case KTC2_TYPE_BOX_LONG: ktc2_sb_long(&sb, box->value.long_); break;
+	case KTC2_TYPE_BOX_CHAR: ktc2_sb_char(&sb, box->value.char_); break;
+	case KTC2_TYPE_BOX_FLOAT: ktc2_sb_float(&sb, box->value.float_); break;
+	case KTC2_TYPE_BOX_DOUBLE: ktc2_sb_double(&sb, box->value.double_); break;
+	case KTC2_TYPE_BOX_UBYTE: ktc2_sb_uint(&sb, box->value.ubyte_); break;
+	case KTC2_TYPE_BOX_USHORT: ktc2_sb_uint(&sb, box->value.ushort_); break;
+	case KTC2_TYPE_BOX_UINT: ktc2_sb_uint(&sb, box->value.uint_); break;
+	case KTC2_TYPE_BOX_ULONG: ktc2_sb_ulong(&sb, box->value.ulong_); break;
+	default: {
+		char text[160];
+		int size = snprintf(text, sizeof text, "%s@%" PRIx32, ktc2_types[object->typeId].name, (uint32_t)ktc2_any_hashCode(object));
+		ktc2_sb_text(&sb, text, size, size);
+	}
+	}
+	return ktc2_sb_finish(&sb);
 }

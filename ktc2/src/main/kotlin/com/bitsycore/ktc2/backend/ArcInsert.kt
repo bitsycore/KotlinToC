@@ -83,7 +83,7 @@ class ArcInsert(private val mModule: KModule) {
 
 		/** True when [inValue] can be passed without holding it: a local, or something that never dies. */
 		private fun isSafeBorrow(inValue: KExpr): Boolean = when (inValue) {
-			is KRead, is KNull, is KStringLit, is KSingletonRead -> true
+			is KRead, is KNull, is KStringLit, is KStaticRead -> true
 			is KRefCast -> isSafeBorrow(inValue.operand)
 			else -> false
 		}
@@ -91,8 +91,8 @@ class ArcInsert(private val mModule: KModule) {
 		/** [inValue] as a +1 reference: itself when it is a fresh result, retained otherwise. */
 		private fun owned(inValue: KExpr): KExpr = when {
 			inValue.isImpure() -> inValue
-			inValue is KNull || inValue is KStringLit || inValue is KSingletonRead -> inValue
-			inValue is KRefCast && (inValue.operand is KNull || inValue.operand is KStringLit || inValue.operand is KSingletonRead) -> inValue
+			inValue is KNull || inValue is KStringLit || inValue is KStaticRead -> inValue
+			inValue is KRefCast && (inValue.operand is KNull || inValue.operand is KStringLit || inValue.operand is KStaticRead) -> inValue
 			else -> KRetain(inValue)
 		}
 

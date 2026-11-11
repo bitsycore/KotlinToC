@@ -83,6 +83,7 @@ class KUnit(
 ) {
 	val functions = mutableListOf<KFunction>()
 	val globals = mutableListOf<KGlobal>()
+	val statics = mutableListOf<KStatic>()
 	var struct: KStruct? = null
 	var cls: KClass? = null
 
@@ -120,14 +121,14 @@ class KClass(
 	/** Set when the program constructs this class; only such classes get a type id. */
 	var isInstantiated = false
 
-	/** A singleton (`object`): one static, immortal instance. */
-	var isSingleton = false
-
 	fun isSubclassOf(inOther: KClass): Boolean = this === inOther || superClass?.isSubclassOf(inOther) == true
 
 	fun implements(inInterface: KInterface): Boolean =
 		interfaces.any { it === inInterface || inInterface in it.supers } || superClass?.implements(inInterface) == true
 }
+
+/** A static, immortal instance of [cls]: an `object`, or an enum entry. Defined in [unit]. */
+class KStatic(val cName: String, val cls: KClass, val unit: KUnit)
 
 /** An interface, identified for `is` checks. [supers] are the interfaces it extends, transitively. */
 class KInterface(val name: String) {
@@ -197,9 +198,9 @@ class KGlobalRead(val global: KGlobal) : KExpr {
 	override val type: KType get() = global.type
 }
 
-/** The static instance of a singleton class. */
-class KSingletonRead(val cls: KClass) : KExpr {
-	override val type: KType get() = KClassType(cls)
+/** A static instance (an `object` or an enum entry). */
+class KStaticRead(val static: KStatic) : KExpr {
+	override val type: KType get() = KClassType(static.cls)
 }
 
 /** Both operands have type [operandType]; comparisons yield Boolean, `CMP` yields Int. */
@@ -253,6 +254,9 @@ class KClassTarget(val cls: KClass) : KTypeTarget
 class KInterfaceTarget(val iface: KInterface) : KTypeTarget
 
 data object KStringTarget : KTypeTarget
+
+/** A boxed primitive (`x is Int` on an `Any`). */
+class KBoxTarget(val prim: KPrim) : KTypeTarget
 
 /** `operand is target`; false for null. */
 class KInstanceOf(val operand: KExpr, val target: KTypeTarget) : KExpr {

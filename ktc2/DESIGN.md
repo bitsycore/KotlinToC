@@ -35,7 +35,7 @@ The result is a good *C-with-Kotlin-syntax*, but no existing Kotlin code compile
 no KTC code runs on the JVM. Each new feature adds another lifetime rule.
 
 **What is worth keeping:** monomorphized generics (no boxing of primitives in collections),
-fat-pointer interfaces, `@Size(N)` inline arrays, C interop (`C.fn`, `c.Type`, `RawArray`,
+`@Size(N)` inline arrays, C interop (`C.fn`, `c.Type`, `RawArray`,
 `.cPtr`), `Arena`, alloca-backed string templates, the bounds/null checks, the module system,
 and the 89 integration tests + 54 unit test files.
 
@@ -182,9 +182,12 @@ typedef struct {
   fields get `NULL` — release is a bare `free`.
 - When the static type is a final class the release calls its `destroy` directly; the
   `typeInfo` lookup is only used through interfaces, open classes and `Any`.
-- `typeId` moves from the fat interface pointer into the header: `ktc_IfacePtr` shrinks to
-  `{ obj, vt }`, and `Any` becomes a thin pointer (`is` / `as` read the header). Primitives
-  assigned to `Any` box, as in Kotlin, and the box is stack-promoted when it does not escape.
+- Every reference is a thin pointer, including interface and `Any` references. A virtual or
+  interface call goes through a generated dispatcher that switches on the header's `typeId`
+  and calls the implementation of that class directly; only classes the program instantiates
+  appear in it. `is` / `as` are switches on the same id. There are no vtables.
+- Primitives assigned to `Any` are boxed (a small object holding the value), as in Kotlin;
+  nullable primitives (`Int?`) are not: they are a two-field value, flag + primitive.
 
 ### 5.2 Ownership rules — where the overhead is removed
 
@@ -279,9 +282,9 @@ auditable.
   captured by address when the closure does not escape, and moved into a ref-counted cell when
   it does (what `kotlinc` does with `Ref.ObjectRef`). Escaping closures are the existing
   `ktc_Closure` heap form, now ref-counted. `capture(...)` survives only as an optional lint.
-- **Inheritance.** `InheritDesugar` can stay. Its one semantic wart — parent-typed values are
-  copies — disappears on its own, because the fat pointer now points at a shared object.
-  A prefix-layout single-inheritance lowering is a later size optimization, not a requirement.
+- **Inheritance.** A subclass struct starts with its superclass struct, so a pointer to an
+  object is a pointer to each of its ancestors. v1's `InheritDesugar` (copying parent members
+  into children, fat values that are copies) has no equivalent: objects are shared references.
 - **Exceptions.** `longjmp` skips the releases of every frame it crosses, so each throw would
   leak. ktc2 uses **checked propagation** — a may-throw call is followed by a test
   of a thread-local pending-exception slot and a `goto` to the function's cleanup label (the
@@ -316,7 +319,7 @@ Generated C mirrors what `kotlinc` does with `.class` files:
 | `package game; class Player` | `game/Player.h` + `game/Player.c` |
 | nested `Player.Stats` | `game/Player.Stats.h` / `.c` (`.` instead of the JVM's `$`, which CMake and make mishandle) |
 | top-level funs / vals of `Utils.kt` | `game/UtilsKt.h` / `.c` |
-| `interface Shape` | `game/Shape.h` (vtable struct) — no `.c` unless it has default methods |
+| `interface Shape` | `game/Shape.h` + `.c`: its default methods and the dispatchers for its members |
 | generic instantiation `ArrayList<Int>` | `ktc2/std/ArrayList_Int.h` / `.c`, emitted once per distinct instantiation |
 | program-wide tables | `ktc2_program.c`: `ktc_typeInfo[]`, string-literal pool, `main` |
 
@@ -328,7 +331,7 @@ Why this fits the reference model:
   generic instantiation it stores inline. Inline layouts cannot be cyclic (v1's E010 rule),
   so includes are acyclic by construction.
 - The `.h` holds the struct, the method prototypes and the hot `static inline` parts (field
-  getters, retain/release of that type); the `.c` holds method bodies, `destroy`, the vtables.
+  getters, retain/release of that type); the `.c` holds method bodies, `destroy`, the dispatchers.
 - Files are rewritten only when their content changes, so the C build is incremental even
   though ktc2 itself analyses the whole program (escape summaries, monomorphization).
 - `--unity` additionally emits a single `all.c` that includes every `.c`, for release builds
@@ -400,7 +403,7 @@ ktc2/
 |---|---|---|---|
 | 0 | Skeleton + oracle | module, `ktc2.` package, K2 driver, and the dual-run test (`IntegrationTest`: every program in `integration/` runs as JVM classes and as C, outputs must match) — **done** | `./gradlew :ktc2:test` |
 | 1 | KIR + first C | KIR import from K2 IR; per-class C emitter for primitives, functions, control flow, `@Struct`; `println` and operator intrinsics — **done** (see status below) | arithmetic / control-flow programs match the JVM |
-| 2 | Naive ARC | `ktc2_core` header + typeinfo + retain/release at every copy and scope exit; classes, `String`, `Array`, interfaces, inheritance as references; per-type leak report at exit | class / string / array programs match the JVM, zero leaks |
+| 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
 | 3 | Std library + closures | `kotlin.*` sources for collections, `StringBuilder`, scope functions; generics by monomorphization; implicit-capture lambdas | collection and lambda programs match the JVM |
 | 4 | Ownership optimization | rules 1–5 of §5.2; `--arc-stats` | RC operations per test drop sharply, output unchanged |
 | 5 | Escape analysis | stack promotion, alloca, caller-slot returns, `@Value T`, `@Size` inline, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
@@ -410,22 +413,41 @@ ktc2/
 Phases 1 to 3 are the bulk of the effort; Phase 2 carries the most risk. Phases 4 and 5 are pure optimizations
 over a model that is already correct, so each lands rule by rule with numbers attached.
 
-**Status (2026-11-11).** Phase 1 is complete: the five programs in `integration/basic/`
-(`Arithmetic`, `ControlFlow`, `Structs`, `Properties`, `Unsigned`) match the JVM. Covered:
-- all signed, unsigned and floating primitive types with Kotlin's wrapping / saturating / shift
-  semantics, and `Double` / `Float` printing identical to the JVM;
-- top-level and extension functions, default and named arguments, recursion, left-to-right
-  evaluation order;
-- top-level `val` / `var` / `const val` with default or custom accessors, initialized before
-  `main` in file order;
-- `if` / `when` as statements and expressions, `while`, `do-while`, `for` over Int / Long
-  ranges (`..`, `until`, `..<`, `downTo`, `step`), labeled `break` / `continue`;
-- `print` / `println` with templates; immutable `@Struct` classes with methods.
+**Status (2026-11-11).** Phases 0–2 are complete: the eleven programs under `integration/`
+match the JVM, and every C run ends with all objects freed (`-DKTC2_LEAK_CHECK`).
 
-Anything else is rejected with `file:line: not supported yet: …`. `object` declarations move
-to Phase 2 with the other reference types. Failures that Kotlin reports as exceptions
-(`/ by zero`, non-positive `step`) currently print the JVM-style message and exit; they become
-catchable in Phase 6.
+Phase 1 (`integration/basic/`): all signed, unsigned and floating primitives with Kotlin's
+wrapping / saturating / shift semantics and JVM-identical `Double` / `Float` printing;
+top-level and extension functions, default and named arguments, recursion, left-to-right
+evaluation; top-level properties; `if` / `when` / loops / ranges with `step` / labeled jumps;
+`print` / `println`; immutable `@Struct` classes.
+
+Phase 2 (`integration/objects/`): classes with constructors, `init` blocks, properties with
+default or custom accessors; `String` (UTF-8 storage, Kotlin indexing, templates, equality,
+comparison, hash); nullable references and nullable primitives, `?.`, `?:`, `!!`; abstract and
+open classes, interfaces with default methods, `super` calls, `is` / `as` / `as?` and smart
+casts; `equals` / `hashCode` / `toString`; `object` and companion objects; primitive and
+reference arrays, `vararg`, `for` over arrays; enums (with constructor parameters and entry
+bodies, `values()`, `valueOf()`); data classes; primitives boxed when used as `Any`.
+
+How Phase 2 works:
+- **Import on demand.** The importer starts at `main` and declares a function or class the
+  first time it is reached; touching a file brings in its top-level properties. Virtual calls
+  are resolved by a fixpoint: every instantiated class contributes its implementation to the
+  dispatchers already requested.
+- **Naive ARC (`ArcInsert`).** Parameters are borrowed. Every local of reference type owns its
+  value: it is declared null at the top of its scope and released when the scope is left by
+  any route, so jumps can neither skip an initialization nor a release. Stores retain the new
+  value and release the old one. An argument that is not a local is first held in a
+  temporary. Statics (`object`s, enum entries, string literals) are immortal.
+- **Lambdas** passed to array constructors are expanded in place; the same mechanism will
+  serve `inline` functions in Phase 3.
+
+Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
+(null `!!`, bad cast, index out of bounds, `/ by zero`) print the JVM-style message and exit
+until Phase 6; `object` and enum initializers run at startup rather than on first use;
+reference fields in `@Struct` classes, `Enum.entries`, generics and lambdas as values are not
+supported yet. Nothing in the ARC pass is optimized (Phase 4).
 
 **Relation to v1.** v1 integration tests that exercise plain behavior are ported as plain
 Kotlin into `ktc2/integration/` and gain the JVM oracle. Tests of the manual model (`ArenaTest`,

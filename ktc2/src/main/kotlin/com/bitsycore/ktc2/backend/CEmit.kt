@@ -65,8 +65,8 @@ class CEmitter(private val mModule: KModule) {
 	private fun program(inEntry: KFunction): String = buildString {
 		val vStartup = mModule.units.mapNotNull { it.initializer }
 		val vGlobals = mModule.units.flatMap { it.globals }.filter { it.type is KRefType }
-		val vSingletons = mModule.classes.filter { it.isSingleton }
-		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vSingletons.map { it.unit } + vGlobals.map { it.unit } + inEntry.unit
+		val vStatics = mModule.units.flatMap { it.statics }
+		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vStatics.flatMap { listOf(it.unit, it.cls.unit) } + vGlobals.map { it.unit } + inEntry.unit
 		append("#include \"ktc2_types.h\"\n")
 		vUnits.distinct().forEach { append("#include \"${it.path}.h\"\n") }
 
@@ -78,7 +78,7 @@ class CEmitter(private val mModule: KModule) {
 		vStartup.forEach { append("\t${it.cName}();\n") }
 		append("\t${inEntry.cName}();\n")
 		vGlobals.asReversed().forEach { append("\tktc2_release(${it.cName});\n") }
-		vSingletons.asReversed().forEach { append("\t${it.cName}__destroy((ktc2_Obj*)&${it.cName}_instance);\n") }
+		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
 		append("\treturn ktc2_exit();\n}\n")
 	}
 
@@ -131,6 +131,7 @@ class CEmitter(private val mModule: KModule) {
 		val vForward = LinkedHashSet<KClass>()
 		inUnit.cls?.let(vForward::add)
 		vTypes.forEach { vType -> (vType as? KClassType)?.let { vForward += it.cls } }
+		inUnit.statics.forEach { vForward += it.cls }
 		vForward.forEach { append("typedef struct ${it.cName} ${it.cName};\n") }
 		if (vForward.isNotEmpty()) append("\n")
 
@@ -145,10 +146,10 @@ class CEmitter(private val mModule: KModule) {
 			append(vClass.superClass?.let { "\t${it.cName} _super;\n" } ?: "\tktc2_Obj _header;\n")
 			vClass.fields.forEach { append("\t${cType(it.type)} ${it.cName};\n") }
 			append("};\n\n")
-			if (vClass.isSingleton) append("extern ${vClass.cName} ${vClass.cName}_instance;\n")
 			append("/** Releases the references held by the fields of an instance. */\n")
 			append("void ${vClass.cName}__destroy(ktc2_Obj* object);\n")
 		}
+		inUnit.statics.forEach { append("extern ${it.cls.cName} ${it.cName};\n") }
 		inUnit.globals.forEach { append("extern ${cType(it.type)} ${it.cName};\n") }
 		allFunctions(inUnit).forEach { append(signature(it)).append(";\n") }
 		append("\n#endif\n")
@@ -159,11 +160,12 @@ class CEmitter(private val mModule: KModule) {
 		val vState = UnitState()
 		val vPrinter = FunctionPrinter(vBodies, vState)
 
+		for (vStatic in inUnit.statics) {
+			vState.includes += vStatic.cls.unit
+			val vPath = generateSequence(vStatic.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
+			vBodies.append("\n${vStatic.cls.cName} ${vStatic.cName} = { $vPath = { KTC2_IMMORTAL, ${typeId(vStatic.cls)} } };\n")
+		}
 		inUnit.cls?.let { vClass ->
-			if (vClass.isSingleton) {
-				val vPath = generateSequence(vClass) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
-				vBodies.append("\n${vClass.cName} ${vClass.cName}_instance = { $vPath = { KTC2_IMMORTAL, ${typeId(vClass)} } };\n")
-			}
 			vBodies.append("\nvoid ${vClass.cName}__destroy(ktc2_Obj* object)\n{\n")
 			val vOwn = refFields(vClass)
 			if (vOwn.isNotEmpty()) vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n")
@@ -462,6 +464,7 @@ class CEmitter(private val mModule: KModule) {
 		private fun typeTest(inTest: KInstanceOf): String {
 			val vIds = when (val vTarget = inTest.target) {
 				KStringTarget -> listOf("KTC2_TYPE_STRING")
+				is KBoxTarget -> listOf("KTC2_TYPE_BOX_${vTarget.prim.name}")
 				is KClassTarget -> mConcrete.filter { it.isSubclassOf(vTarget.cls) }.map { typeId(it) }
 				is KInterfaceTarget -> mConcrete.filter { it.implements(vTarget.iface) }.map { typeId(it) }
 			}
@@ -483,9 +486,9 @@ class CEmitter(private val mModule: KModule) {
 				mState.includes += inExpr.global.unit
 				inExpr.global.cName
 			}
-			is KSingletonRead -> {
-				mState.includes += inExpr.cls.unit
-				"(&${inExpr.cls.cName}_instance)"
+			is KStaticRead -> {
+				mState.includes += inExpr.static.unit
+				"(&${inExpr.static.cName})"
 			}
 			is KUnary -> unary(inExpr)
 			is KBinary -> binary(inExpr)

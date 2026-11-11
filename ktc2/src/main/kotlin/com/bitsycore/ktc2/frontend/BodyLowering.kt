@@ -56,6 +56,8 @@ private fun one(inPrim: KPrim): KConst =
 
 /** Logical negation, folded into the comparison when that keeps NaN behavior intact. */
 private fun not(inValue: KExpr): KExpr = when {
+	inValue === kTrue -> kFalse
+	inValue === kFalse -> kTrue
 	inValue is KUnary && inValue.op == KUnaryOp.NOT -> inValue.operand
 	inValue is KRefEquals -> KRefEquals(inValue.left, inValue.right, !inValue.negated)
 	inValue is KBinary && inValue.op in kInverse &&
@@ -64,7 +66,20 @@ private fun not(inValue: KExpr): KExpr = when {
 	else -> KUnary(KUnaryOp.NOT, inValue, kBoolType)
 }
 
-private fun and(inLeft: KExpr, inRight: KExpr): KExpr = KSelect(inLeft, inRight, kFalse, kBoolType)
+private fun and(inLeft: KExpr, inRight: KExpr): KExpr = when {
+	inLeft === kFalse || inRight === kFalse -> kFalse
+	inLeft === kTrue -> inRight
+	inRight === kTrue -> inLeft
+	else -> KSelect(inLeft, inRight, kFalse, kBoolType)
+}
+
+/** `inValue == null`, already decided for values that can never be null (literals, static instances). */
+private fun isNull(inValue: KExpr): KExpr = when (inValue) {
+	is KStringLit, is KStaticRead -> kFalse
+	is KRefCast -> isNull(inValue.operand).let { if (it === kFalse) it else KRefEquals(inValue, KNull(inValue.type)) }
+	is KNull -> kTrue
+	else -> KRefEquals(inValue, KNull(inValue.type))
+}
 
 /**
  * Lowers one function body from K2 IR to KIR statements. Every side effect becomes a statement
@@ -98,6 +113,52 @@ internal class BodyBuilder(
 		for ((vGlobal, vValue) in inValues) mBlock += KGlobalSet(vGlobal, coerce(lowerRhs(vValue), vGlobal.type))
 	}
 
+	/** Startup of an enum class: gives each entry its name and ordinal, then runs its constructor. */
+	fun buildEnumInitializer(inEntries: List<IrEnumEntry>, inStatics: List<KStatic>) {
+		val vBaseType = KClassType(mImporter.enumBase())
+		inEntries.forEachIndexed { vOrdinal, vEntry ->
+			val vInstance = KStaticRead(inStatics[vOrdinal])
+			mBlock += KFieldSet(coerce(vInstance, vBaseType), mImporter.enumNameField, KStringLit(vEntry.name.asString()))
+			mBlock += KFieldSet(coerce(vInstance, vBaseType), mImporter.enumOrdinalField, KConst(vOrdinal, kIntType))
+			val vCall = vEntry.initializerExpression?.expression as? IrEnumConstructorCall ?: return@forEachIndexed
+			val vConstructor = vCall.symbol.owner
+			val vTarget = mImporter.functionFor(vConstructor)
+			if (vTarget == null) {
+				fail(vEntry, "enum entry '${vEntry.name}'")
+			} else {
+				val vInit = callFunction(vCall, vTarget, vConstructor, vCall.arguments, coerce(vInstance, vTarget.params[0].type))
+				if (vInit is KCall) mBlock += KEval(vInit)
+			}
+		}
+	}
+
+	/** `values()` and `valueOf()` of an enum class. */
+	private fun buildEnumSynthetic(inFunction: IrFunction, inKind: IrSyntheticBodyKind) {
+		val vEntries = mImporter.enumEntriesOf(inFunction.parentAsClass)
+		val vBaseType = KClassType(mImporter.enumBase())
+		when (inKind) {
+			IrSyntheticBodyKind.ENUM_VALUES -> {
+				val vType = mFunction.returnType as KArrayType
+				val vArray = newTemp(vType)
+				mBlock += KLet(vArray, KArrayNew(KConst(vEntries.size, kIntType), vType))
+				vEntries.forEachIndexed { vIndex, vEntry ->
+					mBlock += KIndexSet(KRead(vArray), KConst(vIndex, kIntType), coerce(KStaticRead(vEntry), vType.element))
+				}
+				mBlock += KReturn(KRead(vArray))
+			}
+			IrSyntheticBodyKind.ENUM_VALUEOF -> {
+				val vName = KRead(mFunction.params[0])
+				for (vEntry in vEntries) {
+					val vEntryName = KFieldRead(coerce(KStaticRead(vEntry), vBaseType), mImporter.enumNameField)
+					val vMatches = KIntrinsic("ktc2_str_equals", listOf(vEntryName, vName), kBoolType)
+					mBlock += KIf(vMatches, listOf(KReturn(coerce(KStaticRead(vEntry), mFunction.returnType))), emptyList())
+				}
+				mBlock += KEval(KIntrinsic("ktc2_fail_enum_value", listOf(vName), KUnitType, isPure = false))
+			}
+			else -> fail(inFunction, "enum '${inFunction.name}'")
+		}
+	}
+
 	fun build() {
 		val vIr = mIrFunction!!
 		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
@@ -113,6 +174,7 @@ internal class BodyBuilder(
 			else -> when (val vBody = vIr.body) {
 				is IrBlockBody -> vBody.statements.forEach { lowerStatement(it) }
 				is IrExpressionBody -> emitReturn(vBody.expression)
+				is IrSyntheticBody -> buildEnumSynthetic(vIr, vBody.kind)
 				else -> fail(vIr, "function without a body")
 			}
 		}
@@ -169,7 +231,7 @@ internal class BodyBuilder(
 
 	/** True when [inValue] cannot be changed by a later statement. */
 	private fun isStable(inValue: KExpr): Boolean = when (inValue) {
-		is KConst, KUnitValue, is KNull, is KStringLit, is KSingletonRead -> true
+		is KConst, KUnitValue, is KNull, is KStringLit, is KStaticRead -> true
 		is KRead -> inValue.local in mTemps
 		is KRefCast -> isStable(inValue.operand)
 		is KOptSome -> isStable(inValue.operand)
@@ -232,12 +294,33 @@ internal class BodyBuilder(
 		if (vFrom == inTo || inValue === KUnitValue) return inValue
 		return when {
 			inTo is KRefType && vFrom is KRefType -> if (inValue is KNull) KNull(inTo) else KRefCast(inValue, inTo)
+			inTo == KObjType && vFrom is KPrimType -> spill(box(if (inValue.isImpure()) spill(inValue) else inValue))
+			inTo == KObjType && vFrom is KOptType -> {
+				val vOptional = spill(inValue)
+				val vBoxed = newTemp(KObjType)
+				mBlock += KLet(vBoxed, null)
+				mBlock += KIf(KOptHas(vOptional), listOf(KSet(vBoxed, box(KOptValue(vOptional)))), listOf(KSet(vBoxed, KNull(KObjType))))
+				KRead(vBoxed)
+			}
+			inTo is KPrimType && vFrom == KObjType -> unbox(if (inValue.isImpure()) spill(inValue) else inValue, inTo.prim)
+			inTo is KOptType && vFrom == KObjType -> {
+				val vObject = spill(inValue)
+				KSelect(KRefEquals(vObject, KNull(KObjType)), KNull(inTo), KOptSome(unbox(vObject, inTo.prim), inTo), inTo)
+			}
 			inTo is KOptType && inValue is KNull -> KNull(inTo)
 			inTo is KOptType && vFrom is KPrimType -> KOptSome(convert(if (inValue.isImpure()) spill(inValue) else inValue, inTo.prim), inTo)
 			inTo is KPrimType && vFrom is KOptType -> convert(KOptValue(if (inValue.isImpure()) spill(inValue) else inValue), inTo.prim)
 			else -> inValue
 		}
 	}
+
+	/** A new box object holding the primitive [inValue]. */
+	private fun box(inValue: KExpr): KExpr =
+		KIntrinsic("ktc2_box_${primOf(inValue)!!.name.lowercase()}", listOf(inValue), KObjType, isPure = false)
+
+	/** The primitive inside a box; fails when the object is not a box of that kind. */
+	private fun unbox(inObject: KExpr, inPrim: KPrim): KExpr =
+		KIntrinsic("ktc2_unbox_${inPrim.name.lowercase()}", listOf(inObject), KPrimType(inPrim))
 
 	/** Common arithmetic type of two primitives (Kotlin's numeric promotion). */
 	private fun promote(inLeft: KPrim, inRight: KPrim): KPrim = when {
@@ -396,6 +479,9 @@ internal class BodyBuilder(
 		}
 		is IrTypeOperatorCall -> lowerTypeOperator(inExpression)
 		is IrGetObjectValue -> lowerObject(inExpression)
+		is IrGetEnumValue -> mImporter.enumEntryFor(inExpression.symbol.owner)?.let { coerce(KStaticRead(it), typeOf(inExpression)) }
+			?: fail(inExpression, "enum entry '${inExpression.symbol.owner.name}'")
+		is IrEnumConstructorCall -> lowerEnumConstructorCall(inExpression)
 		else -> fail(inExpression, inExpression::class.simpleName?.removeSuffix("Impl") ?: "expression")
 	}
 
@@ -414,8 +500,8 @@ internal class BodyBuilder(
 
 	private fun lowerObject(inExpression: IrGetObjectValue): KExpr {
 		if (isUnitObject(inExpression)) return KUnitValue
-		val vClass = mImporter.classFor(inExpression.symbol.owner) ?: return fail(inExpression, "object '${inExpression.symbol.owner.name}'")
-		return KSingletonRead(vClass)
+		val vInstance = mImporter.objectFor(inExpression.symbol.owner) ?: return fail(inExpression, "object '${inExpression.symbol.owner.name}'")
+		return KStaticRead(vInstance)
 	}
 
 	private fun lowerContainer(inBlock: IrContainerExpression): KExpr {
@@ -434,6 +520,7 @@ internal class BodyBuilder(
 	private fun typeTargetOf(inType: IrType): KTypeTarget? {
 		val vBase = inType.makeNotNull()
 		if (vBase.isString()) return KStringTarget
+		(mImporter.kTypeOf(vBase) as? KPrimType)?.let { return KBoxTarget(it.prim) }
 		val vClass = vBase.classOrNull?.owner ?: return null
 		if (vClass.isInterface) return KInterfaceTarget(mImporter.interfaceFor(vClass))
 		return mImporter.classFor(vClass)?.let { KClassTarget(it) }
@@ -442,7 +529,7 @@ internal class BodyBuilder(
 	/** `inValue is inType`, including the nullable and `Any` cases. */
 	private fun instanceTest(inElement: IrElement, inValue: KExpr, inType: IrType): KExpr {
 		if (inValue.type !is KRefType) return fail(inElement, "type test on a primitive")
-		val vIsNull = KRefEquals(inValue, KNull(inValue.type))
+		val vIsNull = isNull(inValue)
 		val vTest: KExpr = if (inType.makeNotNull().isAny()) {
 			not(vIsNull)
 		} else {
@@ -468,6 +555,9 @@ internal class BodyBuilder(
 			val vTo = typeOf(inExpression)
 			if (vValue.type == vTo && vTo !is KRefType) {
 				vValue
+			} else if (vValue.type == KObjType && (vTo is KPrimType || vTo is KOptType)) {
+				// Unboxing checks the kind of box itself.
+				coerce(vValue, vTo)
 			} else if (vValue.type !is KRefType || vTo !is KRefType) {
 				fail(inExpression, "cast to '${inExpression.typeOperand.render()}'")
 			} else {
@@ -791,6 +881,16 @@ internal class BodyBuilder(
 		return KRead(vObject)
 	}
 
+	/** An enum constructor delegating to its superclass constructor (`kotlin.Enum` needs nothing). */
+	private fun lowerEnumConstructorCall(inCall: IrEnumConstructorCall): KExpr {
+		val vConstructor = inCall.symbol.owner
+		if (vConstructor.parentAsClass.kotlinFqName.asString() == "kotlin.Enum") return KUnitValue
+		val vTarget = mImporter.functionFor(vConstructor) ?: return fail(inCall, "enum constructor")
+		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, coerce(selfRead(), vTarget.params[0].type))
+		if (vCall is KCall) mBlock += KEval(vCall)
+		return KUnitValue
+	}
+
 	private fun lowerDelegatingConstructorCall(inCall: IrDelegatingConstructorCall): KExpr {
 		val vConstructor = inCall.symbol.owner
 		if (isAnyClass(vConstructor.parentAsClass)) return KUnitValue
@@ -964,6 +1064,10 @@ internal class BodyBuilder(
 			mBlock += KPrint(lowerParts(vPieces), vName == "println")
 			return KUnitValue
 		}
+		if (vParent == "kotlin.internal.ir" && vName == "noWhenBranchMatchedException") {
+			mBlock += KEval(KIntrinsic("ktc2_fail_when", emptyList(), KUnitType, isPure = false))
+			return KUnitValue
+		}
 		// arrayOf() / emptyArray(): no elements, so no vararg argument at all.
 		if (vParent == "kotlin" && (vName == "emptyArray" || (vName.endsWith("rrayOf") && vArguments.all { it == null }))) {
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, vWhat)
@@ -999,10 +1103,19 @@ internal class BodyBuilder(
 			return toStringOf(inCall, spill(lowerPure(vIrArguments[0])), vIrArguments[0].type)
 		}
 
-		val vOperandTypes = vIrArguments.map { mImporter.kTypeOf(it.type) as? KPrimType }
+		if (vName == "contains" && vParent.startsWith("kotlin.ranges.") && vIrArguments.size == 2) {
+			lowerRangeContains(vIrArguments[0], vIrArguments[1])?.let { return it }
+		}
+
+		// K2 can leave a smart cast implicit (an Any known to be an Int passed where an Int is
+		// expected), so an operand takes the parameter's type when its own is not primitive.
+		val vOperandTypes = vIrArguments.mapIndexed { vIndex, vArgument ->
+			mImporter.kTypeOf(vArgument.type) as? KPrimType ?: mImporter.kTypeOf(vCallee.parameters[vIndex].type) as? KPrimType
+		}
 		if (vOperandTypes.any { it == null }) return fail(inCall, vWhat)
 		val vResultType = typeOf(inCall) as? KPrimType ?: return fail(inCall, vWhat)
 		val vOperands = lowerOperands(vIrArguments)
+		vOperands.indices.forEach { vOperands[it] = coerce(vOperands[it], vOperandTypes[it]!!) }
 		val vFirst = vOperandTypes[0]!!.prim
 		if (vName == "<get-code>" && vFirst == KPrim.CHAR) return convert(vOperands[0], KPrim.INT)
 		// toUInt() and friends on signed types are extensions in package kotlin.
@@ -1018,8 +1131,12 @@ internal class BodyBuilder(
 
 		if (vOperands.size == 1) {
 			kConversionByName[vName]?.let { return convert(vOperands[0], it) }
-			if (vName == "hashCode" && (vFirst == KPrim.INT || vFirst == KPrim.CHAR || vFirst == KPrim.SHORT || vFirst == KPrim.BYTE)) {
-				return convert(vOperands[0], KPrim.INT)
+			if (vName == "hashCode") {
+				return when (vFirst) {
+					KPrim.BOOLEAN, KPrim.LONG, KPrim.ULONG, KPrim.FLOAT, KPrim.DOUBLE ->
+						KIntrinsic("ktc2_hash_${vFirst.name.lowercase()}", listOf(vOperands[0]), kIntType)
+					else -> convert(vOperands[0], KPrim.INT)
+				}
 			}
 			// Arithmetic on Byte / Short / Char is done in Int, then narrowed back.
 			val vWork = promote(vFirst, vFirst)
@@ -1050,6 +1167,23 @@ internal class BodyBuilder(
 		return fail(inCall, vWhat)
 	}
 
+	/** `x in a..b` (also `until`, `..<`) on Int / Long / Char: two comparisons, no range object. */
+	private fun lowerRangeContains(inRange: IrExpression, inValue: IrExpression): KExpr? {
+		val vRange = inRange as? IrCall ?: return null
+		val vKind = vRange.symbol.owner.name.asString()
+		if (vKind !in setOf("rangeTo", "until", "rangeUntil") || vRange.arguments.size != 2) return null
+		val vPieces = listOf(vRange.arguments[0]!!, vRange.arguments[1]!!, inValue)
+		val vPrims = vPieces.map { (mImporter.kTypeOf(it.type) as? KPrimType)?.prim ?: return null }
+		val vCommon = if (vPrims.all { it == KPrim.CHAR }) KPrim.CHAR else promote(promote(vPrims[0], vPrims[1]), vPrims[2])
+		if (vCommon.isFloating) return null
+		val vOperands = lowerOperands(vPieces).map { spill(convert(it, vCommon)) }
+		val vUpper = if (vKind == "rangeTo") KBinaryOp.LE else KBinaryOp.LT
+		return and(
+			KBinary(KBinaryOp.LE, vOperands[0], vOperands[2], vCommon, kBoolType),
+			KBinary(vUpper, vOperands[2], vOperands[1], vCommon, kBoolType),
+		)
+	}
+
 	private fun isArrayClassName(inParent: String): Boolean = inParent == "kotlin.Array" || (inParent.startsWith("kotlin.") && inParent.endsWith("Array"))
 
 	/** `x!!`: fails on null, otherwise yields the value as non-null. */
@@ -1062,7 +1196,8 @@ internal class BodyBuilder(
 				KOptValue(vValue)
 			}
 			is KRefType -> {
-				mBlock += KIf(KRefEquals(vValue, KNull(vType)), vFail, emptyList())
+				val vIsNull = isNull(vValue)
+				if (vIsNull !== kFalse) mBlock += KIf(vIsNull, vFail, emptyList())
 				coerce(vValue, typeOf(inCall))
 			}
 			else -> vValue
@@ -1081,8 +1216,13 @@ internal class BodyBuilder(
 		return when {
 			vLeftType is KOptType || vRightType is KOptType -> optEquals(inCall, spill(vLeft), spill(vRight))
 			vLeft is KNull && vRight is KNull -> kTrue
+			// A primitive compared with an Any: box it and compare as objects.
+			vLeftType == KObjType && vRightType is KPrimType -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
+			vRightType == KObjType && vLeftType is KPrimType -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
 			vLeftType !is KRefType || vRightType !is KRefType -> fail(inCall, "equality between '${inLeft.type.render()}' and '${inRight.type.render()}'")
-			vLeft is KNull || vRight is KNull || inIdentity -> KRefEquals(vLeft, vRight)
+			vRight is KNull -> isNull(vLeft)
+			vLeft is KNull -> isNull(vRight)
+			inIdentity -> KRefEquals(vLeft, vRight)
 			vLeftType == KStringType && vRightType == KStringType ->
 				KIntrinsic("ktc2_str_equals", listOf(vLeft, vRight), kBoolType)
 			else -> objectEquals(inCall, inLeft.type, spill(vLeft), spill(vRight))
@@ -1110,7 +1250,7 @@ internal class BodyBuilder(
 		// A final class that does not override equals compares by identity.
 		if (vTarget.isExternal && vTarget.dispatch == null && inLeft.type is KClassType) return KRefEquals(inLeft, inRight)
 		val vResult = newTemp(kBoolType)
-		val vBothSet = and(not(KRefEquals(inLeft, KNull(inLeft.type))), not(KRefEquals(inRight, KNull(inRight.type))))
+		val vBothSet = and(not(isNull(inLeft)), not(isNull(inRight)))
 		val vCall = KCall(vTarget, listOf(coerce(inLeft, vTarget.params[0].type), coerce(inRight, vTarget.params[1].type)))
 		mBlock += KLet(vResult, null)
 		mBlock += KIf(
@@ -1155,7 +1295,7 @@ internal class BodyBuilder(
 			} else {
 				val vResult = newTemp(KStringType)
 				mBlock += KLet(vResult, null)
-				mBlock += KIf(KRefEquals(inValue, KNull(inValue.type)), listOf(KSet(vResult, KStringLit("null"))), listOf(KSet(vResult, vCall)))
+				mBlock += KIf(isNull(inValue), listOf(KSet(vResult, KStringLit("null"))), listOf(KSet(vResult, vCall)))
 				KRead(vResult)
 			}
 		}

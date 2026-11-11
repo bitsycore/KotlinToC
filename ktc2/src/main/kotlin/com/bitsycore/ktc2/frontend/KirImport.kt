@@ -3,6 +3,7 @@
 package com.bitsycore.ktc2.frontend
 
 import com.bitsycore.ktc2.kir.*
+import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
@@ -85,6 +86,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private val mDispatchers = LinkedHashMap<IrSimpleFunction, KFunction>()
 	private val mDispatchDone = HashSet<Pair<IrSimpleFunction, IrClass>>()
 	private val mRuntime = HashMap<String, KFunction>()
+	private val mObjectStatics = HashMap<IrClass, KStatic>()
+	private val mEnumStatics = HashMap<IrEnumEntry, KStatic>()
+	private val mEnumEntries = HashMap<IrClass, List<KStatic>>()
+	private var mEnumBase: KClass? = null
+	private val mEnumFunctions = HashMap<String, KFunction?>()
 
 	// ==================
 	// MARK: Entry
@@ -172,6 +178,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			else -> {
 				val vClass = vBase.classOrNull?.owner ?: return null
 				when {
+					vClass.kotlinFqName.asString() == "kotlin.Enum" -> KClassType(enumBase())
 					vClass.isInterface -> KObjType
 					isStruct(vClass) -> structFor(vClass)?.let { KStructType(it) }
 					else -> classFor(vClass)?.let { KClassType(it) }
@@ -245,12 +252,12 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	internal fun classFor(inClass: IrClass): KClass? {
 		if (inClass in mClasses) return mClasses[inClass]
 		val vFile = inClass.fileOrNull
-		if (vFile == null || inClass.kind == org.jetbrains.kotlin.descriptors.ClassKind.ENUM_CLASS || inClass.kind == org.jetbrains.kotlin.descriptors.ClassKind.ENUM_ENTRY || inClass.isInterface) {
+		if (vFile == null || inClass.isInterface) {
 			mClasses[inClass] = null
 			return null
 		}
 		val vSuperIr = inClass.superTypes.mapNotNull { it.classOrNull?.owner }.firstOrNull { !it.isInterface && !isAnyClass(it) }
-		val vSuper = vSuperIr?.let { classFor(it) }
+		val vSuper = vSuperIr?.let { if (it.kotlinFqName.asString() == "kotlin.Enum") enumBase() else classFor(it) }
 		if (vSuperIr != null && vSuper == null) {
 			unsupported(vFile, inClass, "superclass '${vSuperIr.kotlinFqName}'")
 			mClasses[inClass] = null
@@ -277,17 +284,103 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		collectInterfaces(inClass, vClass.interfaces)
 
 		if (inClass.isObject) {
-			vClass.isSingleton = true
+			val vInstance = KStatic("${vClass.cName}_instance", vClass, vUnit)
+			vUnit.statics += vInstance
+			mObjectStatics[inClass] = vInstance
 			instantiate(inClass)
 			val vConstructor = inClass.declarations.filterIsInstance<IrConstructor>().firstOrNull()
 			val vInit = vConstructor?.let { functionFor(it) }
 			if (vInit != null) {
-				val vStatic = KFunction("${vClass.cName}_static_init", vUnit, emptyList(), KUnitType)
-				vStatic.body += KEval(KCall(vInit, listOf(KSingletonRead(vClass))))
-				vUnit.initializer = vStatic
+				val vStartup = KFunction("${vClass.cName}_static_init", vUnit, emptyList(), KUnitType)
+				vStartup.body += KEval(KCall(vInit, listOf(KStaticRead(vInstance))))
+				vUnit.initializer = vStartup
 			}
 		}
+		if (inClass.kind == ClassKind.ENUM_CLASS) declareEnumEntries(inClass, vClass, vFile)
 		return vClass
+	}
+
+	/** The instance of an `object` declaration. */
+	internal fun objectFor(inClass: IrClass): KStatic? {
+		classFor(inClass)
+		return mObjectStatics[inClass]
+	}
+
+	// ==================
+	// MARK: Enums
+	// ==================
+
+	lateinit var enumNameField: KField
+		private set
+	lateinit var enumOrdinalField: KField
+		private set
+
+	/** `kotlin.Enum`: the common base of enum classes, holding `name` and `ordinal`. */
+	internal fun enumBase(): KClass {
+		mEnumBase?.let { return it }
+		val vUnit = KUnit("kotlin", "Enum")
+		val vClass = KClass("kotlin_Enum", vUnit, null, "Enum")
+		vUnit.cls = vClass
+		enumNameField = KField("name", KStringType, vClass)
+		enumOrdinalField = KField("ordinal", KPrimType(KPrim.INT), vClass)
+		vClass.fields += enumNameField
+		vClass.fields += enumOrdinalField
+		mEnumBase = vClass
+		mClassList += vClass
+		mUnits += vUnit
+		return vClass
+	}
+
+	/** The members of `kotlin.Enum`, written directly in KIR. */
+	private fun enumFunction(inName: String): KFunction? = mEnumFunctions.getOrPut(inName) {
+		val vClass = enumBase()
+		val vSelf = KLocal("self", KClassType(vClass))
+		fun define(inSuffix: String, inParams: List<KLocal>, inReturn: KType, inValue: KExpr): KFunction =
+			KFunction("kotlin_Enum_$inSuffix", vClass.unit, inParams, inReturn).also {
+				it.body += KReturn(inValue)
+				vClass.unit.functions += it
+			}
+		val vInt = KPrimType(KPrim.INT)
+		when (inName) {
+			"toString", "<get-name>" -> define(cSuffix(inName), listOf(vSelf), KStringType, KFieldRead(KRead(vSelf), enumNameField))
+			"<get-ordinal>" -> define("ordinal", listOf(vSelf), vInt, KFieldRead(KRead(vSelf), enumOrdinalField))
+			"compareTo" -> {
+				val vOther = KLocal("other", KClassType(vClass))
+				val vCompare = KBinary(KBinaryOp.SUB, KFieldRead(KRead(vSelf), enumOrdinalField), KFieldRead(KRead(vOther), enumOrdinalField), KPrim.INT, vInt)
+				define("compareTo", listOf(vSelf, vOther), vInt, vCompare)
+			}
+			else -> anyDefault(inName)
+		}
+	}
+
+	/** Declares one static instance per entry and the startup function that constructs them. */
+	private fun declareEnumEntries(inClass: IrClass, inEnum: KClass, inFile: IrFile) {
+		val vEntries = inClass.declarations.filterIsInstance<IrEnumEntry>()
+		val vStatics = ArrayList<KStatic>()
+		for (vEntry in vEntries) {
+			val vOwn = vEntry.correspondingClass
+			val vEntryClass = if (vOwn != null) classFor(vOwn) ?: inEnum else inEnum
+			instantiate(vOwn ?: inClass)
+			val vStatic = KStatic("${inEnum.cName}__${cSuffix(vEntry.name.asString())}", vEntryClass, inEnum.unit)
+			inEnum.unit.statics += vStatic
+			mEnumStatics[vEntry] = vStatic
+			vStatics += vStatic
+		}
+		mEnumEntries[inClass] = vStatics
+		val vStartup = KFunction("${inEnum.cName}_static_init", inEnum.unit, emptyList(), KUnitType)
+		inEnum.unit.initializer = vStartup
+		mPending += { BodyBuilder(this, vStartup, null, inFile).buildEnumInitializer(vEntries, vStatics) }
+	}
+
+	internal fun enumEntryFor(inEntry: IrEnumEntry): KStatic? {
+		classFor(inEntry.parentAsClass)
+		return mEnumStatics[inEntry]
+	}
+
+	/** The entries of an enum class, in declaration order. */
+	internal fun enumEntriesOf(inClass: IrClass): List<KStatic> {
+		classFor(inClass)
+		return mEnumEntries[inClass] ?: emptyList()
 	}
 
 	private fun collectInterfaces(inClass: IrClass, outInterfaces: MutableSet<KInterface>) {
@@ -440,6 +533,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vOwner = inFunction.parent as? IrClass
 		if (vOwner != null && isAnyClass(vOwner)) {
 			return anyDefault(inFunction.name.asString()).also { mFunctions[inFunction] = it }
+		}
+		if (vOwner != null && vOwner.kotlinFqName.asString() == "kotlin.Enum") {
+			return enumFunction(inFunction.name.asString()).also { mFunctions[inFunction] = it }
 		}
 		val vFile = inFunction.fileOrNull
 		val vIsDefaultAccessor = inFunction.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
