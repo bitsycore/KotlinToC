@@ -275,6 +275,9 @@ class CEmitter(private val mModule: KModule) {
 				inFrom is KRefType && inTo is KOptType -> "ktc2_unbox_opt_${inTo.prim.name.lowercase()}((ktc2_Obj*)$inText)"
 				inFrom is KPrimType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_${inFrom.prim.name.lowercase()}($inText)"
 				inFrom is KOptType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_opt_${inFrom.prim.name.lowercase()}($inText)"
+				// A Java-declared parameter (`T!`) is nullable on the dispatcher's side only.
+				inFrom is KOptType && inTo is KPrimType -> "($inText).v"
+				inFrom is KPrimType && inTo is KOptType -> "((${cType(inTo)}){ true, $inText })"
 				else -> "(${cType(inTo)})$inText"
 			}
 			fun call(inTarget: KFunction): String {

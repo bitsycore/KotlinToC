@@ -1,0 +1,14 @@
+# Classes of the kotlin-stdlib jar hidden from the compilation, in addition to the ones derived
+# from files.txt (the parts holding the top-level declarations of each file compiled from source).
+#
+# These hold the JVM side of declarations the platform layer provides itself: the typealiases to
+# java.util / java.lang classes, and the JVM `actual` classes and functions.
+kotlin/collections/TypeAliasesKt.class
+kotlin/text/TypeAliasesKt.class
+kotlin/io/ConsoleKt.class
+kotlin/io/SerializableKt.class
+kotlin/collections/AbstractMutableCollection.class
+kotlin/collections/AbstractMutableList.class
+kotlin/collections/AbstractMutableMap.class
+kotlin/collections/AbstractMutableSet.class
+kotlin/sequences/ConstrainedOnceSequence.class

@@ -634,9 +634,20 @@ internal class BodyBuilder(
 
 	/** `inValue is inType`, including the nullable and `Any` cases. */
 	private fun instanceTest(inElement: IrElement, inValue: KExpr, inType: IrType): KExpr {
-		if (inValue.type !is KRefType) return fail(inElement, "type test on a primitive")
-		// A type parameter standing for a reference type is `Any?` here: the test always holds.
 		val vType = closed(inType)
+		val vPrim = inValue.type as? KPrimType
+		if (vPrim != null) {
+			// A primitive known statically (a type parameter standing for Int): the answer is a constant.
+			val vTargetName = vType.classOrNull?.owner?.kotlinFqName?.asString()
+			val vIsNumber = vPrim.prim != KPrim.BOOLEAN && vPrim.prim != KPrim.CHAR && !vPrim.prim.isUnsigned
+			val vHolds = kType(vType.makeNotNull()) == vPrim || vTargetName == "kotlin.Any" || vTargetName == "kotlin.Comparable" ||
+				(vTargetName == "kotlin.Number" && vIsNumber)
+			return if (vHolds) kTrue else kFalse
+		}
+		if (inValue.type !is KRefType) return fail(inElement, "type test on a value of type '${inType.render()}'")
+		// An array cast is unchecked: arrays do not record their element type beyond its kind.
+		if (kType(vType.makeNotNull()) is KArrayType) return if (vType.isMarkedNullable()) kTrue else not(isNull(inValue))
+		// A type parameter standing for a reference type is `Any?` here: the test always holds.
 		val vIsNull = isNull(inValue)
 		if (vType.makeNotNull().isAny()) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
 		val vTest = KInstanceOf(inValue, typeTargetOf(vType) ?: return fail(inElement, "type test against '${inType.render()}'"))
@@ -864,7 +875,7 @@ internal class BodyBuilder(
 		}
 		"get" -> {
 			val vOperands = lowerOperands(inArguments)
-			KIndexRead(vOperands[0], vOperands[1], inType.element)
+			adapt(KIndexRead(vOperands[0], vOperands[1], inType.element), inCall)
 		}
 		"set" -> {
 			val vOperands = lowerOperands(inArguments, inLastMayBeImpure = true)
@@ -989,7 +1000,8 @@ internal class BodyBuilder(
 	private fun lowerConstructorCall(inCall: IrConstructorCall): KExpr {
 		val vConstructor = inCall.symbol.owner
 		val vOwner = vConstructor.parentAsClass
-		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null }?.let { return lowerArrayConstructor(inCall, it) }
+		val vIsStorage = vOwner.kotlinFqName.asString() == "ktc2.internal.Storage"
+		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null || vIsStorage }?.let { return lowerArrayConstructor(inCall, it) }
 		val vClassArguments = mImporter.argumentsOf(closed(inCall.type))
 		val vSubst = mImporter.substFor(vConstructor, vClassArguments, emptyList())
 		val vTarget = mImporter.functionFor(vConstructor, vSubst)
@@ -1167,7 +1179,7 @@ internal class BodyBuilder(
 	}
 
 	private fun lowerCall(inCall: IrCall): KExpr {
-		val vCallee = inCall.symbol.owner
+		val vCallee = mImporter.sourceOf(inCall.symbol.owner)
 		val vOwner = vCallee.parent as? IrClass
 		if (vOwner == null && vCallee.name.asString() == "newArray" && vCallee.kotlinFqName.asString() == "ktc2.internal.newArray") {
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, "newArray of '${inCall.type.render()}'")
@@ -1207,6 +1219,10 @@ internal class BodyBuilder(
 		}
 
 		val vReceiver = vArguments.firstOrNull()?.let { closed(it.type) }
+		if (vOwner.kotlinFqName.asString() == "ktc2.internal.Storage") {
+			val vStorage = vReceiver?.let { kType(it) } as? KArrayType ?: return fail(inCall, "use of Storage")
+			return lowerArrayCall(inCall, vCallee.name.asString(), vArguments.map { it!! }, vStorage)
+		}
 		val vIsSuper = inCall.superQualifierSymbol != null
 		if (vIsSuper || !mImporter.isVirtual(vCallee)) {
 			val vInlined = if (vCallee.isFakeOverride) vCallee.resolveFakeOverride() ?: vCallee else vCallee

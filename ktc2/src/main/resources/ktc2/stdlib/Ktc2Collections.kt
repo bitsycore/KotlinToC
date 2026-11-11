@@ -2,6 +2,7 @@
 
 package kotlin.collections
 
+import ktc2.internal.Storage
 import ktc2.internal.newArray
 
 /*
@@ -14,11 +15,11 @@ leaves to its platform (`expect`), and the collection classes the JVM takes from
 // ==================
 
 /**
- * A resizable list over a typed array: an `ArrayList<Int>` stores plain ints.
+ * A resizable list over a typed storage block: an `ArrayList<Int>` stores plain ints.
  */
 public actual class ArrayList<E> actual constructor(initialCapacity: Int) : MutableList<E>, RandomAccess {
 
-	private var array: Array<E> = newArray(if (initialCapacity > 0) initialCapacity else 10)
+	private var array: Storage<E> = Storage(if (initialCapacity > 0) initialCapacity else 10)
 	private var length: Int = 0
 
 	public actual constructor() : this(10)
@@ -43,7 +44,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		if (minCapacity <= array.size) return
 		var vCapacity = array.size * 2
 		if (vCapacity < minCapacity) vCapacity = minCapacity
-		val vBigger = newArray<E>(vCapacity)
+		val vBigger = Storage<E>(vCapacity)
 		for (vIndex in 0 until length) vBigger[vIndex] = array[vIndex]
 		array = vBigger
 	}

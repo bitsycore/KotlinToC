@@ -15,6 +15,21 @@ The functions here are the few primitives the rest is written on.
  */
 public fun <T> newArray(size: Int): Array<T> = arrayOfNulls<Any?>(size) as Array<T>
 
+/**
+ * A fixed-size block of [size] values of type [T], stored as they are: a `Storage<Int>` is a
+ * block of ints, where an `Array<Int>` holds boxed values as Kotlin requires.
+ *
+ * ktc2 lowers the type and its three members directly; the bodies here are never used.
+ */
+public class Storage<T>(size: Int) {
+	public val size: Int = size
+
+	public operator fun get(index: Int): T = throw UnsupportedOperationException()
+
+	public operator fun set(index: Int, value: T) {
+	}
+}
+
 /** Iterates an array; `array.iterator()` is lowered to [arrayIterator]. */
 public class ArrayIterator<T>(private val array: Array<out T>) : Iterator<T> {
 	private var index = 0
@@ -49,4 +64,24 @@ public fun <T> kotlin_collections_asList(array: Array<out T>): List<T> {
 	val vList = ArrayList<T>(array.size)
 	for (vElement in array) vList.add(vElement)
 	return vList
+}
+
+/** `Array<out T>.toSet()` */
+public fun <T> kotlin_collections_toSet(array: Array<out T>): Set<T> {
+	val vSet = LinkedHashSet<T>(array.size)
+	for (vElement in array) vSet.add(vElement)
+	return vSet
+}
+
+/** `Array<out T>.sort()` for comparable elements: a stable insertion sort. */
+public fun <T : Comparable<T>> kotlin_collections_sort(array: Array<T>) {
+	for (vIndex in 1 until array.size) {
+		val vValue = array[vIndex]
+		var vHole = vIndex
+		while (vHole > 0 && array[vHole - 1].compareTo(vValue) > 0) {
+			array[vHole] = array[vHole - 1]
+			vHole--
+		}
+		array[vHole] = vValue
+	}
 }

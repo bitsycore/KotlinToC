@@ -70,11 +70,56 @@ object K2Frontend {
 			add("-Xallow-kotlin-package")
 			add("-d"); add(File(inOutDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
-			add("-cp"); add(userClasspath())
+			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
 			add("-Xplugin=${pluginClasspath()}")
 		}
 		val vExit = K2JVMCompiler().exec(System.err, *vArgs.toTypedArray())
 		return vExit == ExitCode.OK && System.getProperty(kErrorCountProperty) == "0"
+	}
+
+	/**
+	 * A copy of the kotlin-stdlib jar without the classes that hold what [inLibrary] declares
+	 * from source. With both present, a call could see two candidates (the source function
+	 * and the jar's), and the JVM typealiases (`ArrayList` = `java.util.ArrayList`) would
+	 * compete with the platform layer's classes.
+	 *
+	 * The top-level declarations of `Name.kt` are compiled on the JVM into a class
+	 * `<Facade>Kt__NameKt` (or `NameKt`), and their JVM-specific counterparts into
+	 * `…NameJVMKt` / `…NameJvmKt`; those are the classes left out, plus the ones listed in
+	 * `ktc2/stdlib/hidden.txt`. The copy is cached in the temporary directory.
+	 */
+	private fun filteredStdlib(inLibrary: List<File>): File {
+		val vOriginal = File(codeSourceOf(Unit::class.java))
+		if (inLibrary.isEmpty() || !vOriginal.isFile) return vOriginal
+		val vNames = inLibrary.filter { "commonMain" in it.invariantSeparatorsPath }.map { it.nameWithoutExtension.replaceFirstChar { vChar -> vChar.uppercase() } }.toSet()
+		val vHidden = (K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/hidden.txt")?.use { it.readBytes().decodeToString() } ?: "")
+			.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toSet()
+		val vKey = (vOriginal.path + vOriginal.lastModified() + vNames.sorted() + vHidden.sorted()).hashCode().toUInt().toString(16)
+		val vFiltered = File(System.getProperty("java.io.tmpdir"), "ktc2/kotlin-stdlib-$vKey.jar")
+		if (vFiltered.isFile) return vFiltered
+
+		fun isHidden(inEntry: String): Boolean {
+			if (!inEntry.endsWith(".class")) return false
+			if (inEntry in vHidden) return true
+			val vClass = inEntry.substringAfterLast('/').removeSuffix(".class").substringBefore('$')
+			val vPart = vClass.substringAfter("Kt__", vClass)
+			val vFile = vPart.removeSuffix("Kt").removeSuffix("JVM").removeSuffix("Jvm")
+			return vPart.endsWith("Kt") && vFile in vNames
+		}
+		vFiltered.parentFile.mkdirs()
+		val vTemp = File(vFiltered.path + ".tmp")
+		java.util.zip.ZipFile(vOriginal).use { vZip ->
+			java.util.zip.ZipOutputStream(vTemp.outputStream().buffered()).use { vOut ->
+				for (vEntry in vZip.entries()) {
+					if (isHidden(vEntry.name)) continue
+					vOut.putNextEntry(java.util.zip.ZipEntry(vEntry.name))
+					if (!vEntry.isDirectory) vZip.getInputStream(vEntry).use { it.copyTo(vOut) }
+					vOut.closeEntry()
+				}
+			}
+		}
+		vTemp.renameTo(vFiltered)
+		return vFiltered
 	}
 
 	/**

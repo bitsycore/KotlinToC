@@ -191,8 +191,29 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	/** A function of `ktc2.internal`, which library calls without a Kotlin body are redirected to. */
 	internal fun internalFunction(inName: String): IrSimpleFunction? = mInternal[inName]
 
+	/** Top-level functions that have a body in the module, by qualified name and parameter types. */
+	private val mSourceFunctions = HashMap<String, IrSimpleFunction>()
+
+	private fun sourceKey(inFunction: IrSimpleFunction): String =
+		inFunction.kotlinFqName.asString() + inFunction.parameters.joinToString(",", "(", ")") { it.type.render() }
+
+	/**
+	 * The function a call to [inFunction] should run: when the module has a function with a
+	 * body under the same name and signature, that one — the source always wins over the jar,
+	 * and an `actual` over its `expect`.
+	 */
+	internal fun sourceOf(inFunction: IrSimpleFunction): IrSimpleFunction {
+		if (inFunction.parent is IrClass || (inFunction.body != null && inFunction.fileOrNull != null)) return inFunction
+		return mSourceFunctions[sourceKey(inFunction)] ?: inFunction
+	}
+
 	fun import(inModule: IrModuleFragment): KModule {
 		for (vFile in inModule.files) countOverloads(vFile.declarations)
+		for (vFile in inModule.files) {
+			for (vFunction in vFile.declarations.filterIsInstance<IrSimpleFunction>()) {
+				if (vFunction.body != null || vFunction.isExternal) mSourceFunctions[sourceKey(vFunction)] = vFunction
+			}
+		}
 		for (vFile in inModule.files.filter { it.packageFqName.asString() == "ktc2.internal" }) {
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().forEach { mInternal[it.name.asString()] = it }
 		}
@@ -264,9 +285,16 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun arrayTypeOf(inType: IrType): KArrayType? {
 		val vName = inType.classOrNull?.owner?.kotlinFqName?.asString() ?: return null
 		mPrimArrays[vName]?.let { return KArrayType(KPrimType(it)) }
-		if (vName != "kotlin.Array") return null
-		val vElement = argumentsOf(inType).firstOrNull() ?: return null
-		return kTypeOf(vElement)?.takeIf { it != KUnitType && it != KNothingType }?.let { KArrayType(it) }
+		val vElement = argumentsOf(inType).firstOrNull()?.let { kTypeOf(it) } ?: return null
+		if (vElement == KUnitType || vElement == KNothingType) return null
+		return when (vName) {
+			// As in Kotlin, Array<Int> holds boxed values (IntArray is the unboxed one): code may
+			// cast freely between Array<T> and Array<Comparable<T>>.
+			"kotlin.Array" -> KArrayType(if (vElement is KPrimType || vElement is KOptType) KObjType else vElement)
+			// The platform layer's storage block keeps its elements as they are, unboxed.
+			"ktc2.internal.Storage" -> KArrayType(vElement)
+			else -> null
+		}
 	}
 
 	/**
@@ -666,8 +694,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vNames = HashSet<String>()
 		val vParams = ArrayList<KLocal>()
 		for (vParam in inFunction.parameters) {
-			val vType = kTypeOf(vParam.type, inSubst)
-			if (vType == null || vType == KUnitType || vType == KNothingType) {
+			// A parameter of type Nothing can never receive a value; it is declared as a plain reference.
+			val vType = kTypeOf(vParam.type, inSubst).let { if (it == KNothingType) KObjType else it }
+			if (vType == null || vType == KUnitType) {
 				unsupported(inFile, vParam, "parameter type '${vParam.type.render()}'")
 				vOk = false
 				continue
@@ -684,12 +713,39 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return if (vOk) Signature(vParams, vReturn) else null
 	}
 
+	/** How many functions share the qualified name of [inFunction]. */
+	private fun overloadCount(inFunction: IrFunction): Int {
+		val vOwner = inFunction.parent as? IrClass
+		// A library class is not part of the module scan: count among its own members.
+		if (vOwner != null && vOwner.fileOrNull == null) {
+			return vOwner.declarations.count { it is IrFunction && it.name == inFunction.name }
+		}
+		return mOverloads[inFunction.kotlinFqName.asString()] ?: 0
+	}
+
+	/** The class or type-parameter name of [inType], for mangled names. */
+	private fun shortName(inType: IrType): String {
+		val vName = inType.classOrNull?.owner?.name?.asString() ?: (inType.classifierOrNull?.owner as? IrTypeParameter)?.name?.asString() ?: "Any"
+		return cSuffix(vName) + if (inType.isMarkedNullable()) "Opt" else ""
+	}
+
+	private val mUsedNames = HashSet<String>()
+
+	/** [inName], or a numbered variant when another function already took it. */
+	private fun uniqueName(inName: String): String {
+		var vName = inName
+		var vNumber = 2
+		while (!mUsedNames.add(vName)) vName = "${inName}_${vNumber++}"
+		return vName
+	}
+
 	/** Suffix telling apart overloads and the instantiations of a generic function. */
 	private fun nameSuffix(inFunction: IrFunction, inSubst: Subst): String {
 		var vSuffix = ""
-		if ((mOverloads[inFunction.kotlinFqName.asString()] ?: 0) > 1) {
-			val vRegular = inFunction.parameters.filter { it.kind == IrParameterKind.Regular }
-			vSuffix += "__" + vRegular.joinToString("_") { cSuffix(it.type.render().substringAfterLast('.')) }
+		if (overloadCount(inFunction) > 1) {
+			// Overloads can differ by their receiver alone (Iterable.first / List.first).
+			val vParams = inFunction.parameters.filter { it.kind != IrParameterKind.DispatchReceiver }
+			vSuffix += "__" + vParams.joinToString("_") { shortName(it.type) }
 		}
 		val vOwn = ownParameters(inFunction)
 		if (vOwn.isNotEmpty()) {
@@ -768,7 +824,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vIsConstructor -> KUnitType
 			else -> vSignature.returnType
 		}
-		val vFunction = KFunction(vScope + vBase + nameSuffix(inFunction, inSubst), vUnit, vParams, vReturn)
+		val vFunction = KFunction(uniqueName(vScope + vBase + nameSuffix(inFunction, inSubst)), vUnit, vParams, vReturn)
 		vUnit.functions += vFunction
 		mFunctions[vKey] = vFunction
 		mPending += { BodyBuilder(this, vFunction, inFunction, vFile, inSubst).build() }
@@ -797,8 +853,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			else -> mDispatchUnit
 		}
 		val vScope = vClass?.cName ?: (cPrefix(vFile?.packageFqName?.asString() ?: vOwner.kotlinFqName.parent().asString()) + cSuffix(nestedName(vOwner)))
-		val vGeneric = if (vClass == null && vKey.arguments.isNotEmpty()) "__" + vKey.arguments.joinToString("_") { mangle(it) } else nameSuffix(inFunction, inSubst)
-		val vName = "${vScope}_${cSuffix(inFunction.name.asString())}${vGeneric}__v"
+		val vGeneric = if (vClass == null && vKey.arguments.isNotEmpty()) "__" + vKey.arguments.joinToString("_") { mangle(it) } else ""
+		val vName = uniqueName("${vScope}_${cSuffix(inFunction.name.asString())}${nameSuffix(inFunction, inSubst)}${vGeneric}__v")
 		val vTarget = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
 		vTarget.dispatch = mutableListOf()
 		vTarget.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }

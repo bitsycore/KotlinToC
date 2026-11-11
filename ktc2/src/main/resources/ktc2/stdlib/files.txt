@@ -45,6 +45,9 @@ commonMain/kotlin/collections/SlidingWindow.kt
 commonMain/kotlin/collections/UArraySorting.kt
 commonMain/kotlin/JsAnnotationsH.kt
 commonMain/kotlin/util/Tuples.kt
+commonMain/kotlin/util/Preconditions.kt
+commonMain/generated/_Maps.kt
+commonMain/generated/_Sets.kt
 Ktc2Internal.kt
 Ktc2Collections.kt
 Ktc2HashMap.kt

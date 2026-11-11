@@ -2,7 +2,7 @@
 
 package kotlin.collections
 
-import ktc2.internal.newArray
+import ktc2.internal.Storage
 
 /*
 ktc2 platform layer: the hash collections.
@@ -19,8 +19,8 @@ in insertion order, which is what LinkedHashMap requires and HashMap permits.
 
 public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : MutableMap<K, V> {
 
-	private var keyArray: Array<K> = newArray(if (initialCapacity > 8) initialCapacity else 8)
-	private var valueArray: Array<V> = newArray(keyArray.size)
+	private var keyArray: Storage<K> = Storage(if (initialCapacity > 8) initialCapacity else 8)
+	private var valueArray: Storage<V> = Storage(keyArray.size)
 	private var hashArray: IntArray = IntArray(keyArray.size)
 	private var liveArray: BooleanArray = BooleanArray(keyArray.size)
 
@@ -73,8 +73,8 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	/** Drops the holes and makes room for at least one more entry. */
 	private fun rebuild() {
 		val vCapacity = if (live * 2 > keyArray.size) keyArray.size * 2 else keyArray.size
-		val vKeys = newArray<K>(vCapacity)
-		val vValues = newArray<V>(vCapacity)
+		val vKeys = Storage<K>(vCapacity)
+		val vValues = Storage<V>(vCapacity)
 		val vHashes = IntArray(vCapacity)
 		val vLive = BooleanArray(vCapacity)
 		var vCount = 0
@@ -145,8 +145,8 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	}
 
 	actual override fun clear() {
-		keyArray = newArray(8)
-		valueArray = newArray(8)
+		keyArray = Storage(8)
+		valueArray = Storage(8)
 		hashArray = IntArray(8)
 		liveArray = BooleanArray(8)
 		table = IntArray(tableSizeFor(8))
