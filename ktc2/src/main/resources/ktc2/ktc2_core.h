@@ -340,6 +340,15 @@ void ktc2_sb_double(ktc2_Sb* sb, double v);
 /** Returns the built string (owned by the caller) and releases the builder. */
 ktc2_String* ktc2_sb_finish(ktc2_Sb* sb);
 
+/** Size of the block-local buffer a string that stays in its block is built in. */
+#define KTC2_STACK_STRING_SIZE 128
+
+/**
+ * Like ktc2_sb_finish, but puts the string in [storage] (of [capacity] bytes, in the caller's
+ * frame) when it fits; such a string must not outlive that frame.
+ */
+ktc2_String* ktc2_sb_finish_into(ktc2_Sb* sb, void* storage, size_t capacity);
+
 /* ================== */
 /* MARK: Primitives   */
 /* ================== */

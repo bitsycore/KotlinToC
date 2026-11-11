@@ -276,8 +276,16 @@ class KIndexRead(val array: KExpr, val index: KExpr, override val type: KType) :
  */
 class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type: KType, val isPure: Boolean = true) : KExpr
 
-/** Allocates a zeroed array of [length] elements. Not pure; the caller owns the result. */
-class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr
+/**
+ * Allocates a zeroed array of [length] elements. Not pure; the caller owns the result.
+ * [onStack] is set by `EscapeAnalysis` for a small array of constant size that cannot outlive its block.
+ */
+class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr {
+	var onStack: Boolean = false
+
+	/** Source position ("File.kt:12"), for the heap report. */
+	var origin: String? = null
+}
 
 /**
  * Allocates a zeroed instance of [cls]. Not pure; the caller owns the result.
@@ -286,6 +294,9 @@ class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr
  */
 class KAlloc(val cls: KClass) : KExpr {
 	var onStack: Boolean = false
+
+	/** Source position ("File.kt:12"), for the heap report. */
+	var origin: String? = null
 	override val type: KType get() = KClassType(cls)
 }
 
@@ -343,8 +354,17 @@ class KReturn(val value: KExpr?) : KStmt
 /** `print` / `println` of a sequence of literal and value parts (primitives or strings). */
 class KPrint(val parts: List<KPrintPart>, val newline: Boolean) : KStmt
 
-/** Declares [target] and assigns it a new string made of [parts]. */
-class KConcat(val target: KLocal, val parts: List<KPrintPart>) : KStmt
+/**
+ * Declares [target] and assigns it a new string made of [parts].
+ * [onStack] is set by `EscapeAnalysis` when the string cannot outlive its block: it is then
+ * built in a buffer of that block when it fits.
+ */
+class KConcat(val target: KLocal, val parts: List<KPrintPart>) : KStmt {
+	var onStack: Boolean = false
+
+	/** Source position ("File.kt:12"), for the heap report. */
+	var origin: String? = null
+}
 
 /** Added by `ArcInsert`: decrements the count of [operand] (null-safe), destroying it at zero. */
 class KRelease(val operand: KExpr) : KStmt

@@ -432,11 +432,15 @@ class CEmitter(private val mModule: KModule) {
 		}
 
 		private fun concat(inConcat: KConcat, inDepth: Int) {
+			// A string that stays in this block is built in a buffer of the block when it fits.
+			val vBuffer = "${inConcat.target.cName}_buffer"
+			if (inConcat.onStack) line(inDepth, "_Alignas(ktc2_String) char $vBuffer[KTC2_STACK_STRING_SIZE];")
 			line(inDepth, "{")
 			line(inDepth + 1, "ktc2_Sb sb;")
 			line(inDepth + 1, "ktc2_sb_init(&sb);")
 			parts(inConcat.parts, "ktc2_sb", "&sb, ", "", inDepth + 1)
-			line(inDepth + 1, "${inConcat.target.cName} = ktc2_sb_finish(&sb);")
+			val vFinish = if (inConcat.onStack) "ktc2_sb_finish_into(&sb, $vBuffer, sizeof $vBuffer)" else "ktc2_sb_finish(&sb)"
+			line(inDepth + 1, "${inConcat.target.cName} = $vFinish;")
 			line(inDepth, "}")
 		}
 
@@ -543,7 +547,12 @@ class CEmitter(private val mModule: KModule) {
 			is KIndexRead -> element(inExpr.array, inExpr.index, inExpr.type)
 			is KArrayNew -> {
 				need(inExpr.type.element)
-				"ktc2_array_new(${bare(expr(inExpr.length))}, sizeof(${cType(inExpr.type.element)}), ${arrayTypeId(inExpr.type.element)})"
+				val vLength = (inExpr.length as? KConst)?.value as? Int
+				if (inExpr.onStack && vLength != null) {
+					val vElement = cType(inExpr.type.element)
+					val vStorage = "struct { ktc2_Array header; $vElement data[${maxOf(vLength, 1)}]; }"
+					"((ktc2_Array*)&($vStorage){ .header = { { KTC2_STACK | 1, ${arrayTypeId(inExpr.type.element)} }, $vLength, sizeof($vElement) } })"
+				} else "ktc2_array_new(${bare(expr(inExpr.length))}, sizeof(${cType(inExpr.type.element)}), ${arrayTypeId(inExpr.type.element)})"
 			}
 			is KIntrinsic -> "${inExpr.name}(${arguments(inExpr.arguments)})"
 			is KAlloc -> {

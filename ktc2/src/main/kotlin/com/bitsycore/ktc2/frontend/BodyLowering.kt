@@ -312,6 +312,12 @@ internal class BodyBuilder(
 	// MARK: Helpers
 	// ==================
 
+	/** "File.kt:12" for [inElement], for reports. */
+	private fun originOf(inElement: IrElement): String? {
+		if (inElement.startOffset < 0) return null
+		return java.io.File(mFile.fileEntry.name).name + ":" + (mFile.fileEntry.getLineNumber(inElement.startOffset) + 1)
+	}
+
 	private fun fail(inElement: IrElement, inWhat: String): KExpr {
 		mImporter.unsupported(mFile, inElement, inWhat)
 		return KUnitValue
@@ -1051,7 +1057,7 @@ internal class BodyBuilder(
 		val vObject = newTemp(KClassType(vClass))
 		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, KRead(vObject), vSubst)
 		if (vCall !is KCall) return vCall
-		mBlock += KLet(vObject, KAlloc(vClass))
+		mBlock += KLet(vObject, KAlloc(vClass).also { it.origin = originOf(inCall) })
 		// A local class instance carries the outer values it uses; they are set before its constructor runs.
 		for (vBinding in mImporter.localBindingsOf(vClass)) {
 			val vSource = mLocals[vBinding.declaration as IrValueDeclaration]

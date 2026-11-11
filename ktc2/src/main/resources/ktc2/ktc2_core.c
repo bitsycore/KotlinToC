@@ -397,6 +397,20 @@ ktc2_String* ktc2_sb_finish(ktc2_Sb* sb)
 	return s;
 }
 
+ktc2_String* ktc2_sb_finish_into(ktc2_Sb* sb, void* storage, size_t capacity)
+{
+	if (sizeof(ktc2_String) + (size_t)sb->size + 1 > capacity) return ktc2_sb_finish(sb);
+	ktc2_String* s = storage;
+	s->header.rc = KTC2_STACK | 1;
+	s->header.typeId = KTC2_TYPE_STRING;
+	s->size = sb->size;
+	s->length = sb->length;
+	memcpy(s->bytes, sb->data, (size_t)sb->size);
+	s->bytes[sb->size] = 0;
+	if (sb->data != sb->local) free(sb->data);
+	return s;
+}
+
 /* Each value kind is formatted once, into a small buffer, for both the builder and stdout. */
 #define KTC2_FORMATTED(name, type, format_call) \
 	void ktc2_sb_##name(ktc2_Sb* sb, type v) \
