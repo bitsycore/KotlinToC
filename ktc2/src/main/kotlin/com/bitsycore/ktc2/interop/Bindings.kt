@@ -22,6 +22,10 @@ class DefFile(val file: File) {
 	val linkerOpts: List<String>
 	val inlineC: String
 
+	/** Enums to bind as Kotlin enum classes, and as integers, whatever their declaration; `*` stands for all. */
+	val strictEnums: List<String>
+	val nonStrictEnums: List<String>
+
 	init {
 		val vLines = file.readLines()
 		val vSeparator = vLines.indexOfFirst { it.trim() == "---" }
@@ -41,6 +45,8 @@ class DefFile(val file: File) {
 		packageName = vProperties["package"] ?: file.nameWithoutExtension
 		compilerOpts = words("compilerOpts")
 		linkerOpts = words("linkerOpts")
+		strictEnums = words("strictEnums")
+		nonStrictEnums = words("nonStrictEnums")
 		inlineC = if (vSeparator < 0) "" else vLines.subList(vSeparator + 1, vLines.size).joinToString("\n")
 	}
 }
@@ -75,7 +81,11 @@ private val kKotlinKeywords = setOf(
  * - functions, with `const char*` parameters as `String?` and other pointers as `CValuesRef<T>?`;
  *   variadic functions take `vararg`;
  * - structs and unions as classes with a property per field; a type known only by name is opaque;
- * - enums as an integer `typealias` with a `const val` per constant;
+ * - enums whose constants are simply listed as Kotlin enum classes (`Color.RED`, `.value`,
+ *   `Color.byValue(n)`), converted where a function, a field or a variable has that type; enums
+ *   whose constants are given values, which are often flags, as an integer `typealias` with a
+ *   `const val` per constant — as Kotlin/Native does, with `strictEnums` / `nonStrictEnums` in
+ *   the .def to decide otherwise;
  * - object-like macros with an integer, floating-point or string value as `const val`.
  *
  * - variables declared `extern` as properties.
@@ -197,7 +207,29 @@ class BindingGenerator(
 		inRecord.typedefName ?: inRecord.tag!!
 	}
 
-	private fun enumType(inEnum: CEnum): String = mEnumAlias[inEnum] ?: if (inEnum.isUnsigned) "UInt" else "Int"
+	/** The enums bound as Kotlin enum classes, with the name of the class. */
+	private val mStrictEnums = HashMap<CEnum, String>()
+
+	/** The integer type a C value of [inEnum] is read and written as. */
+	private fun enumBase(inEnum: CEnum): String = if (inEnum.isUnsigned) "UInt" else "Int"
+
+	/** The Kotlin type of a value of [inEnum]: its enum class, or with [inIsRaw] (and for a plain enum) the integer type. */
+	private fun enumType(inEnum: CEnum, inIsRaw: Boolean = false): String =
+		mStrictEnums[inEnum]?.takeIf { !inIsRaw } ?: mEnumAlias[inEnum] ?: enumBase(inEnum)
+
+	/** The enum class of [inType] when it is an enum bound as one. */
+	private fun strictEnum(inType: CType): String? = (inType.resolved() as? CEnum)?.let { mStrictEnums[it] }
+
+	private fun isStrict(inEnum: CEnum, inName: String): Boolean {
+		val vNames = listOfNotNull(inName, inEnum.tag, inEnum.typedefName)
+		fun listed(inList: List<String>): Boolean = "*" in inList || vNames.any { it in inList }
+		return when {
+			inEnum.constants.isEmpty() || inEnum.constants.any { it.second == null } -> false
+			listed(mDef.strictEnums) -> true
+			listed(mDef.nonStrictEnums) -> false
+			else -> !inEnum.hasExplicitValues
+		}
+	}
 
 	/** The interop class of a C variable of type [inType] (`IntVar`, a struct class…); null for void and what cannot be bound. */
 	private fun variableType(inType: CType): String? = when (val vType = inType.resolved()) {
@@ -213,8 +245,9 @@ class BindingGenerator(
 	/** `(P1, P2) -> R` of a C function type, or null when a type in it cannot be bound. */
 	private fun signature(inType: CFunctionType): String? {
 		if (inType.isVariadic) return null
-		val vParams = inType.params.map { valueType(it.type, inIsParameter = false) ?: return null }
-		val vResult = if (inType.result.resolved() == CVoid) "Unit" else valueType(inType.result, inIsParameter = false) ?: return null
+		// A function called from C receives and returns an enum as the integer it is.
+		val vParams = inType.params.map { valueType(it.type, inIsParameter = false, inIsRaw = true) ?: return null }
+		val vResult = if (inType.result.resolved() == CVoid) "Unit" else valueType(inType.result, inIsParameter = false, inIsRaw = true) ?: return null
 		return "(${vParams.joinToString(", ")}) -> $vResult"
 	}
 
@@ -223,9 +256,9 @@ class BindingGenerator(
 	 * `CValuesRef<T>?` for other pointers) or as a result or field (`CPointer<T>?`). Null when it
 	 * cannot be bound — a struct by value, an unsupported type.
 	 */
-	private fun valueType(inType: CType, inIsParameter: Boolean): String? = when (val vType = inType.resolved()) {
+	private fun valueType(inType: CType, inIsParameter: Boolean, inIsRaw: Boolean = false): String? = when (val vType = inType.resolved()) {
 		is CPrim -> vType.kotlin
-		is CEnum -> enumType(vType)
+		is CEnum -> enumType(vType, inIsRaw)
 		is CPointerTo -> {
 			val vTarget = vType.target.resolved()
 			val vVariable = variableType(vTarget)
@@ -283,9 +316,30 @@ class BindingGenerator(
 	//  Declarations
 
 	private fun enumeration(inEnum: CEnum) {
-		val vBase = if (inEnum.isUnsigned) "UInt" else "Int"
+		val vBase = enumBase(inEnum)
 		val vName = inEnum.typedefName ?: inEnum.tag
 		mOut.append("\n")
+		if (vName != null && isStrict(inEnum, vName) && mDeclared.add(vName)) {
+			// A Kotlin enum class: one entry per value, a second name for a value as a property of the companion.
+			val vSuffix = if (inEnum.isUnsigned) "u" else ""
+			val vFirstOf = LinkedHashMap<Long, String>()
+			val vAliases = ArrayList<Pair<String, String>>()
+			for ((vConstant, vValue) in inEnum.constants) {
+				val vFirst = vFirstOf[vValue!!]
+				if (vFirst == null) vFirstOf[vValue] = vConstant else vAliases += vConstant to vFirst
+			}
+			val vClass = identifier(vName)
+			mStrictEnums[inEnum] = vClass
+			mOut.append("public enum class $vClass(public val value: $vBase) {\n")
+			mOut.append(vFirstOf.entries.joinToString(",\n") { (vValue, vConstant) -> "\t${identifier(vConstant)}(${if (vValue < 0) "($vValue)" else "$vValue$vSuffix"})" })
+			mOut.append(";\n\n\tpublic companion object {\n")
+			for ((vAlias, vFirst) in vAliases) mOut.append("\t\tpublic val ${identifier(vAlias)}: $vClass get() = ${identifier(vFirst)}\n")
+			mOut.append("\t\t/** The entry whose C value is [value]. */\n")
+			mOut.append("\t\tpublic fun byValue(value: $vBase): $vClass {\n")
+			mOut.append("\t\t\tfor (vEntry in entries) if (vEntry.value == value) return vEntry\n")
+			mOut.append("\t\t\tthrow NotImplementedError(\"no entry of $vName has the value \$value\")\n\t\t}\n\t}\n}\n")
+			return
+		}
 		if (vName != null && mDeclared.add(vName)) {
 			mOut.append("public typealias ${identifier(vName)} = $vBase\n")
 			mEnumAlias[inEnum] = identifier(vName)
@@ -335,8 +389,14 @@ class BindingGenerator(
 				}
 				else -> {
 					val vKotlin = valueType(vField.type, inIsParameter = false)
+					val vEnumClass = strictEnum(vField.type)
 					if (vKotlin == null) {
 						mOut.append("\t// skipped: ${vField.name} (an unsupported type)\n")
+					} else if (vEnumClass != null) {
+						val vRaw = enumBase(vType as CEnum)
+						mOut.append("\tpublic var $vFieldName: $vEnumClass\n")
+						mOut.append("\t\tget() = $vEnumClass.byValue(cExpr<$vRaw>(\"$vAccess\", this))\n")
+						mOut.append("\t\tset(value) {\n\t\t\tcExpr<Unit>(\"$vAccess = \$1\", this, value.value)\n\t\t}\n")
 					} else {
 						val vRead = if (isPointer(vField.type)) "(void*)$vAccess" else vAccess
 						mOut.append("\tpublic var $vFieldName: $vKotlin\n")
@@ -354,8 +414,10 @@ class BindingGenerator(
 		if (vName.startsWith("__builtin") || !mDeclared.add("fun $vName")) return
 		val vType = inFunction.type
 		val vIsVoid = vType.result.resolved() == CVoid
-		val vResult = if (vIsVoid) "Unit" else valueType(vType.result, inIsParameter = false)
-		val vParamTypes = vType.params.map { valueType(it.type, inIsParameter = true) }
+		// The extra arguments of a variadic function are passed as they are, so its enums stay integers.
+		val vIsRaw = vType.isVariadic
+		val vResult = if (vIsVoid) "Unit" else valueType(vType.result, inIsParameter = false, inIsRaw = vIsRaw)
+		val vParamTypes = vType.params.map { valueType(it.type, inIsParameter = true, inIsRaw = vIsRaw) }
 		if (vResult == null || vParamTypes.any { it == null }) {
 			mOut.append("\n// skipped: $vName (a parameter or the result has a type that cannot be bound)\n")
 			mDeclared.remove("fun $vName")
@@ -389,9 +451,16 @@ class BindingGenerator(
 			mOut.append("public fun ${identifier(vName)}(${(vDeclared + "vararg variadicArguments: Any?").joinToString(", ")}): $vResult = throw NotImplementedError()\n")
 			return
 		}
-		val vPassed = (listOf("\"$vText\"") + vNames.map { identifier(it) }).joinToString(", ")
+		// An enum class goes to C as its value, and comes back as the entry with that value.
+		val vPassed = (listOf("\"$vText\"") + vNames.mapIndexed { vIndex, vParamName ->
+			identifier(vParamName) + if (strictEnum(vType.params[vIndex].type) != null) ".value" else ""
+		}).joinToString(", ")
+		val vResultEnum = strictEnum(vType.result)
 		if (vIsVoid) {
 			mOut.append("public fun ${identifier(vName)}(${vDeclared.joinToString(", ")}) {\n\tcExpr<Unit>($vPassed)\n}\n")
+		} else if (vResultEnum != null) {
+			val vRaw = enumBase(vType.result.resolved() as CEnum)
+			mOut.append("public fun ${identifier(vName)}(${vDeclared.joinToString(", ")}): $vResult = $vResultEnum.byValue(cExpr<$vRaw>($vPassed))\n")
 		} else {
 			mOut.append("public fun ${identifier(vName)}(${vDeclared.joinToString(", ")}): $vResult = cExpr($vPassed)\n")
 		}
@@ -411,6 +480,12 @@ class BindingGenerator(
 		val vDeclaration = when {
 			vType is CRecord -> if (vType.spelling.isEmpty() || vType.fields == null) null else "public val $vKotlin: ${identifier(classFor(vType))} get() = cExpr(\"(void*)&$vName\")\n"
 			vType is CArrayOf -> variableType(vType.element)?.let { "public val $vKotlin: CArrayPointer<$it> get() = cExpr(\"(void*)$vName\")\n" }
+			strictEnum(inVariable.type) != null -> {
+				val vClass = strictEnum(inVariable.type)!!
+				val vRaw = enumBase(vType as CEnum)
+				if (inVariable.isConst) "public val $vKotlin: $vClass get() = $vClass.byValue(cExpr<$vRaw>(\"$vName\"))\n"
+				else "public var $vKotlin: $vClass\n\tget() = $vClass.byValue(cExpr<$vRaw>(\"$vName\"))\n\tset(value) {\n\t\tcExpr<Unit>(\"$vName = \$0\", value.value)\n\t}\n"
+			}
 			else -> valueType(inVariable.type, inIsParameter = false)?.let { vValue ->
 				val vRead = if (isPointer(inVariable.type)) "(void*)$vName" else vName
 				if (inVariable.isConst) "public val $vKotlin: $vValue get() = cExpr(\"$vRead\")\n"

@@ -1,0 +1,52 @@
+package = callbacks
+---
+#include <stdint.h>
+
+struct vec {
+	int32_t x;
+	int32_t y;
+};
+
+typedef struct {
+	double left;
+	double right;
+	struct vec offset;
+} span_t;
+
+typedef struct vec (*vec_map)(struct vec value);
+typedef int32_t (*vec_weight)(struct vec value, int32_t scale);
+typedef span_t (*span_make)(struct vec from, struct vec to);
+typedef void (*vec_sink)(struct vec value, void* user_data);
+
+/* Calls [map] on each of [count] vectors along a diagonal and adds up what it returns. */
+static inline struct vec map_all(vec_map map, int32_t count)
+{
+	struct vec total = { 0, 0 };
+	for (int32_t i = 1; i <= count; i++) {
+		struct vec in = { i, i * 10 };
+		struct vec out = map(in);
+		total.x += out.x;
+		total.y += out.y;
+	}
+	return total;
+}
+
+static inline int32_t weigh(vec_weight weight, struct vec value, int32_t scale)
+{
+	return weight(value, scale) + weight(value, scale + 1);
+}
+
+static inline span_t make_span(span_make make, int32_t size)
+{
+	struct vec from = { -size, size };
+	struct vec to = { size, size * 2 };
+	return make(from, to);
+}
+
+static inline void feed(vec_sink sink, void* user_data, int32_t count)
+{
+	for (int32_t i = 0; i < count; i++) {
+		struct vec value = { i, -i };
+		sink(value, user_data);
+	}
+}

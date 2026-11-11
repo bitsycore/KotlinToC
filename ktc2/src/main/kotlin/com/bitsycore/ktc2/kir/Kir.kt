@@ -358,7 +358,20 @@ class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type
 
 	/** C interop: generated functions the text names, whose declarations it needs. */
 	var functions: List<KFunction> = emptyList()
+
+	/** C interop: the C function the text names, to be written into the file that uses it. */
+	var trampoline: KTrampoline? = null
 }
+
+/**
+ * A C function that C code calls with structs by value, standing in front of [target], which
+ * takes and returns them as `CValue`s: it copies each struct argument into a `CValue` for the
+ * call, and the returned `CValue` out into a struct.
+ *
+ * @property paramSpellings for each parameter, how C names its struct type; null for a parameter passed as it is
+ * @property resultSpelling the same for the result
+ */
+class KTrampoline(val name: String, val target: KFunction, val paramSpellings: List<String?>, val resultSpelling: String?)
 
 /**
  * Allocates a zeroed array of [length] elements. Not pure; the caller owns the result.

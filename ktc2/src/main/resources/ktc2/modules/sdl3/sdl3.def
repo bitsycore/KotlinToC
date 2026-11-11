@@ -5,3 +5,5 @@ headerFilter = SDL3/*
 package = sdl3
 compilerOpts = -DSDL_MAIN_HANDLED
 linkerOpts = -lSDL3
+# The module names SDL's constants as integers throughout.
+nonStrictEnums = *

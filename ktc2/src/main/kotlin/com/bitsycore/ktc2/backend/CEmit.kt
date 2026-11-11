@@ -315,8 +315,37 @@ class CEmitter(private val mModule: KModule) {
 					append("\t\treturn true;\n\tdefault:\n\t\treturn false;\n\t}\n}\n")
 				}
 			}
+			vState.trampolines.values.forEach { append(trampoline(it)) }
 			append(vBodies)
 		}
+	}
+
+	/** The C function [inTrampoline] describes: structs by value on the C side, `CValue`s on the Kotlin side. */
+	private fun trampoline(inTrampoline: KTrampoline): String = buildString {
+		val vTarget = inTrampoline.target
+		val vIsVoid = vTarget.returnType == KUnitType
+		val vResultType = inTrampoline.resultSpelling ?: if (vIsVoid) "void" else cType(vTarget.returnType)
+		val vParams = vTarget.params.mapIndexed { vIndex, vParam -> "${inTrampoline.paramSpellings[vIndex] ?: cType(vParam.type)} p$vIndex" }
+		append("\nstatic $vResultType ${inTrampoline.name}(${vParams.joinToString(", ").ifEmpty { "void" }})\n{\n")
+		val vArguments = vTarget.params.indices.map { vIndex ->
+			if (inTrampoline.paramSpellings[vIndex] == null) {
+				"p$vIndex"
+			} else {
+				append("\tktc2_Array* v$vIndex = ktc2_cvalue_copy(&p$vIndex, sizeof p$vIndex);\n")
+				"v$vIndex"
+			}
+		}
+		val vCall = "${vTarget.cName}(${vArguments.joinToString(", ")})"
+		append(if (vIsVoid) "\t$vCall;\n" else "\t${cType(vTarget.returnType)} result = $vCall;\n")
+		vTarget.params.indices.filter { inTrampoline.paramSpellings[it] != null }.forEach { append("\tktc2_release(v$it);\n") }
+		if (inTrampoline.resultSpelling != null) {
+			// Nothing is returned by a function that left with an exception: C then receives zeroes.
+			append("\t$vResultType value;\n\tmemset(&value, 0, sizeof value);\n")
+			append("\tif (result) {\n\t\tmemcpy(&value, ktc2_cvalue_data(result), sizeof value);\n\t\tktc2_release(result);\n\t}\n\treturn value;\n")
+		} else if (!vIsVoid) {
+			append("\treturn result;\n")
+		}
+		append("}\n")
 	}
 
 	/** What a `.c` file collects while its functions are printed. */
@@ -325,6 +354,9 @@ class CEmitter(private val mModule: KModule) {
 
 		/** C headers of the libraries this unit calls into. */
 		val cHeaders = LinkedHashSet<String>()
+
+		/** The C functions standing in front of callbacks that take or return structs by value, by name. */
+		val trampolines = LinkedHashMap<String, KTrampoline>()
 		val literals = LinkedHashMap<String, String>()
 		val typeTests = ArrayList<List<String>>()
 	}
@@ -773,6 +805,10 @@ class CEmitter(private val mModule: KModule) {
 			is KIntrinsic -> {
 				mState.cHeaders += inExpr.headers
 				inExpr.functions.forEach { mState.includes += it.unit }
+				inExpr.trampoline?.let {
+					mState.trampolines[it.name] = it
+					mState.cHeaders += "<string.h>"
+				}
 				val vTemplate = inExpr.template
 				if (inExpr.name == "ktc2_call_pointer") {
 					// The first argument is a C function pointer, called with the others.

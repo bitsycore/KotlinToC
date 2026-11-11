@@ -912,6 +912,20 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   of a chain of `+`, is evaluated before the first `toString` runs. `Any()` makes an object.
 - **Standard input** (`stdlib/Input.kt`): `readln`, `readlnOrNull`, `readLine`. A test may
   have a `<Name>.in` next to it, given to both the C program and the JVM.
+- **C enums as enum classes** (`interop/Enums.kt`). As in Kotlin/Native, an enum whose
+  constants are simply listed is bound as a Kotlin enum class: `color_t.COLOR_RED`, `.value`,
+  `color_t.byValue(n)`, usable in `when`. Functions, struct fields and variables of that type
+  take and give the entry; the conversion is in the generated binding. An enum whose constants
+  are given values, which is often a set of flags, stays an integer `typealias` with
+  constants. `strictEnums` and `nonStrictEnums` in the .def decide otherwise, by name (`*` for
+  all, which the sdl3 module uses to keep its integers). A second name for a value is a
+  property of the companion. A function called from C, and a variadic function, see the enum
+  as the integer it is.
+- **Callbacks with structs by value** (`interop/StructCallbacks.kt`).
+  `staticCFunction { v: CValue<vec> -> … }` and a function returning a `CValue` can be handed
+  to C. C calls a small function of its own shape, written into the file that takes the
+  address, which copies each struct argument into a `CValue` for the call and the returned
+  `CValue` out into a struct (zeroes if the Kotlin function left with an exception).
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small

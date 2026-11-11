@@ -2136,10 +2136,7 @@ internal class BodyBuilder(
 					}
 					val vFunction = mImporter.staticFunctionFor(vLambda.function, mFile, mSubst)
 						?: return fail(inCall, "staticCFunction of this lambda")
-					return KIntrinsic("cFunction", emptyList(), KPtrType).also {
-						it.template = "(void*)${vFunction.cName}"
-						it.functions = listOf(vFunction)
-					}
+					return callbackPointer(vFunction, vLambda.function)
 				}
 				(inCall.arguments[0] as? IrRichFunctionReference)?.let { vRich ->
 					if (vRich.boundValues.isNotEmpty()) return fail(inCall, "staticCFunction of a bound reference (C has nowhere to keep the receiver)")
@@ -2149,10 +2146,7 @@ internal class BodyBuilder(
 					} else {
 						mImporter.staticFunctionFor(vRich.invokeFunction, mFile, mSubst)
 					} ?: return fail(inCall, "staticCFunction of this reference")
-					return KIntrinsic("cFunction", emptyList(), KPtrType).also {
-						it.template = "(void*)${vFunction.cName}"
-						it.functions = listOf(vFunction)
-					}
+					return callbackPointer(vFunction, vNamed?.takeIf { it.parent !is IrClass } ?: vRich.invokeFunction)
 				}
 				val vReference = inCall.arguments[0] as? IrFunctionReference ?: return fail(inCall, "staticCFunction of something else than a function reference (::name)")
 				val vTarget = vReference.symbol.owner as? IrSimpleFunction
@@ -2161,13 +2155,40 @@ internal class BodyBuilder(
 				}
 				val vFunction = mImporter.functionFor(vTarget, mImporter.substFor(vTarget, emptyList(), emptyList()))
 					?: return fail(inCall, "reference to '${vTarget.kotlinFqName}'")
-				return KIntrinsic("cFunction", emptyList(), KPtrType).also {
-					it.template = "(void*)${vFunction.cName}"
-					it.functions = listOf(vFunction)
-				}
+				return callbackPointer(vFunction, vTarget)
 			}
 		}
 		return null
+	}
+
+	/**
+	 * The address C calls for [inFunction], generated from the Kotlin function [inSource]. When
+	 * that one takes or returns a struct by value (`CValue<T>`), C calls a function of its own
+	 * shape placed in front of it, which moves the structs in and out of `CValue`s.
+	 */
+	private fun callbackPointer(inFunction: KFunction, inSource: IrFunction): KExpr {
+		val vHeaders = LinkedHashSet<String>()
+		fun structOf(inType: IrType): String? {
+			val vType = closed(inType) as? IrSimpleType ?: return null
+			if (vType.classOrNull?.owner?.kotlinFqName?.asString() != "kotlinx.cinterop.CValue") return null
+			val vStruct = vType.arguments.firstOrNull()?.typeOrNull ?: return null
+			return cSpelling(vStruct)?.also { vHeaders += it.second }?.first
+		}
+		val vParams = inSource.parameters.map { structOf(it.type) }
+		val vResult = structOf(inSource.returnType)
+		if ((vParams.all { it == null } && vResult == null) || vParams.size != inFunction.params.size) {
+			return KIntrinsic("cFunction", emptyList(), KPtrType).also {
+				it.template = "(void*)${inFunction.cName}"
+				it.functions = listOf(inFunction)
+			}
+		}
+		val vTrampoline = KTrampoline("${inFunction.cName}_c", inFunction, vParams, vResult)
+		return KIntrinsic("cFunction", emptyList(), KPtrType).also {
+			it.template = "(void*)${vTrampoline.name}"
+			it.functions = listOf(inFunction)
+			it.headers = vHeaders.toList()
+			it.trampoline = vTrampoline
+		}
 	}
 
 	// ==================

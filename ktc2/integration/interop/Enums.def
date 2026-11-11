@@ -1,0 +1,70 @@
+package = enums
+strictEnums = level
+nonStrictEnums = plain_t
+---
+#include <stdint.h>
+
+/* Constants simply listed: a Kotlin enum class. */
+typedef enum { COLOR_RED, COLOR_GREEN, COLOR_BLUE } color_t;
+
+enum direction { NORTH, EAST, SOUTH, WEST };
+
+/* Constants given values: integers, unless the .def says otherwise (it does, for this one). */
+enum level { LEVEL_LOW = 10, LEVEL_HIGH = 20, LEVEL_TOP = 20, LEVEL_BELOW = -5 };
+
+/* Simply listed, but the .def asks for integers. */
+typedef enum { PLAIN_A, PLAIN_B } plain_t;
+
+/* Given values and left alone: integers. */
+enum flags { FLAG_READ = 1, FLAG_WRITE = 2, FLAG_ALL = FLAG_READ | FLAG_WRITE };
+
+struct pixel {
+	int32_t x;
+	color_t color;
+	enum direction facing;
+};
+
+
+static inline color_t next_color(color_t color)
+{
+	return color == COLOR_BLUE ? COLOR_RED : (color_t)(color + 1);
+}
+
+static inline enum direction turn(enum direction from, int quarters)
+{
+	return (enum direction)((from + quarters) % 4);
+}
+
+static inline const char* color_name(color_t color)
+{
+	switch (color) {
+	case COLOR_RED: return "red";
+	case COLOR_GREEN: return "green";
+	default: return "blue";
+	}
+}
+
+static inline enum level raise(enum level from)
+{
+	return from == LEVEL_BELOW ? LEVEL_LOW : LEVEL_HIGH;
+}
+
+static inline plain_t other_plain(plain_t value)
+{
+	return value == PLAIN_A ? PLAIN_B : PLAIN_A;
+}
+
+static inline int has_flag(unsigned flags, enum flags flag)
+{
+	return (flags & flag) != 0;
+}
+
+static inline color_t bad_color(void)
+{
+	return (color_t)42;
+}
+
+static inline int apply(color_t (*change)(color_t), color_t start)
+{
+	return (int)change(start);
+}

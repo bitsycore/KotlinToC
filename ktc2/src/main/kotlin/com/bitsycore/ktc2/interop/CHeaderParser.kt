@@ -43,6 +43,9 @@ class CEnum(var tag: String?, val file: String) : CType {
 	/** Name and value of each constant; the value is null when it could not be computed here. */
 	val constants = ArrayList<Pair<String, Long?>>()
 
+	/** Set when a constant is given its value in the declaration (`A = 4`). */
+	var hasExplicitValues = false
+
 	val isUnsigned: Boolean get() = constants.none { (it.second ?: 0L) < 0L }
 }
 
@@ -397,6 +400,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 			val vName = next().text
 			skipNoise()
 			if (accept("=")) {
+				vEnum.hasExplicitValues = true
 				val vStart = mAt
 				vNextValue = try {
 					constantExpression()
