@@ -115,6 +115,26 @@ internal class BodyBuilder(
 	private class InlineTarget(val result: KLocal?, val blockId: Int)
 
 	private val mInlineTargets = HashMap<Any, InlineTarget>()
+
+	/** A lambda bound to a parameter of an `inline` function being expanded, with the substitution it was written under. */
+	private class InlineLambda(val expression: IrFunctionExpression, val subst: Subst)
+
+	private val mInlineLambdas = HashMap<IrValueDeclaration, InlineLambda>()
+
+	/** Mutable variables shared with a closure: the local holds a cell, the value is in this field of it. */
+	private val mCells = HashMap<IrValueDeclaration, KField>()
+	private val mCellVariables = HashSet<IrValueDeclaration>()
+
+	/** A local function: the closure object in [holder], called through [invoke]. */
+	private class LocalFunction(val invoke: KFunction, val holder: KLocal)
+
+	private val mLocalFunctions = HashMap<IrFunction, LocalFunction>()
+
+	/** What a closure body finds in its closure object: a captured value, cell or local function. */
+	internal class Binding(val declaration: Any, val field: KField, val cell: KField?, val invoke: KFunction?)
+
+	private var mBindings: List<Binding> = emptyList()
+	private var mSelfFunction: IrFunction? = null
 	private var mBlock: MutableList<KStmt> = mFunction.body
 
 	// ==================
@@ -172,11 +192,44 @@ internal class BodyBuilder(
 		}
 	}
 
+	/** Body of a closure's `invoke`: the captured values are read from the closure object first. */
+	fun buildClosure(inBindings: List<Binding>, inSelfFunction: IrFunction?) {
+		mBindings = inBindings
+		mSelfFunction = inSelfFunction
+		build()
+	}
+
+	/** Body of the `invoke` of a function reference: forwards to [inTarget] with the bound values first. */
+	fun buildReferenceInvoke(inTarget: KFunction, inBoundFields: List<KField>) {
+		val vSelf = KRead(mFunction.params[0])
+		val vArguments = inBoundFields.map<KField, KExpr> { KFieldRead(vSelf, it) } + mFunction.params.drop(1).map { KRead(it) }
+		val vCall = KCall(inTarget, vArguments.mapIndexed { vIndex, vValue -> coerce(vValue, inTarget.params[vIndex].type) })
+		if (mFunction.returnType == KUnitType) {
+			mBlock += KEval(vCall)
+		} else {
+			mBlock += KReturn(coerce(vCall, mFunction.returnType))
+		}
+	}
+
 	fun build() {
 		val vIr = mIrFunction!!
 		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
 		val vOffset = mFunction.params.size - vIr.parameters.size
 		vIr.parameters.forEachIndexed { vIndex, vParam -> mLocals[vParam] = mFunction.params[vIndex + vOffset] }
+		mCellVariables += mImporter.captures.cellVariables(vIr)
+		for (vBinding in mBindings) {
+			val vLocal = KLocal(freshName("captured"), vBinding.field.type)
+			mTemps += vLocal
+			mBlock += KLet(vLocal, KFieldRead(KRead(mFunction.params[0]), vBinding.field))
+			when (val vDeclaration = vBinding.declaration) {
+				is IrValueDeclaration -> {
+					mLocals[vDeclaration] = vLocal
+					vBinding.cell?.let { mCells[vDeclaration] = it }
+				}
+				is IrFunction -> mLocalFunctions[vDeclaration] = LocalFunction(vBinding.invoke!!, vLocal)
+			}
+		}
+		mSelfFunction?.let { mLocalFunctions[it] = LocalFunction(mFunction, mFunction.params[0]) }
 		when {
 			vIr is IrConstructor && mFunction.returnType is KStructType -> buildStructConstructor(vIr)
 			vIr is IrConstructor -> {
@@ -359,6 +412,18 @@ internal class BodyBuilder(
 					return
 				}
 				val vInit = inStatement.initializer?.let { coerce(lowerRhs(it), vType) }
+				if (inStatement in mCellVariables && vType != KUnitType && vType != KNothingType) {
+					// Shared with a closure: the value lives in a cell both sides point to.
+					val (vCellClass, vValueField) = mImporter.cellFor(vType)
+					val vCell = KLocal(freshName(inStatement.name.asString()), KClassType(vCellClass))
+					mTemps += vCell
+					val vValue = vInit?.let { if (it.isImpure()) spill(it) else it }
+					mBlock += KLet(vCell, KAlloc(vCellClass))
+					if (vValue != null) mBlock += KFieldSet(KRead(vCell), vValueField, vValue)
+					mLocals[inStatement] = vCell
+					mCells[inStatement] = vValueField
+					return
+				}
 				val vLocal = KLocal(freshName(inStatement.name.asString()), vType)
 				mLocals[inStatement] = vLocal
 				if (vType == KUnitType || vType == KNothingType) {
@@ -368,6 +433,9 @@ internal class BodyBuilder(
 				}
 			}
 			is IrExpression -> discard(lowerRhs(inStatement))
+			is IrSimpleFunction -> makeClosure(inStatement, inStatement, inStatement)?.let { (vHolder, vInvoke) ->
+				mLocalFunctions[inStatement] = LocalFunction(vInvoke, vHolder)
+			}
 			else -> fail(inStatement, "local declaration")
 		}
 	}
@@ -431,12 +499,27 @@ internal class BodyBuilder(
 	/** Lowers to an expression that may be impure; the caller consumes it immediately. */
 	private fun lowerRhs(inExpression: IrExpression): KExpr = when (inExpression) {
 		is IrConst -> lowerConst(inExpression)
-		is IrGetValue -> mLocals[inExpression.symbol.owner]?.let { if (it.type == KUnitType) KUnitValue else KRead(it) }
-			?: fail(inExpression, "reference to '${inExpression.symbol.owner.name}'")
+		is IrGetValue -> {
+			val vDeclaration = inExpression.symbol.owner
+			val vLocal = mLocals[vDeclaration]
+			val vCell = mCells[vDeclaration]
+			when {
+				vLocal == null -> fail(inExpression, "reference to '${vDeclaration.name}'")
+				vCell != null -> KFieldRead(KRead(vLocal), vCell)
+				vLocal.type == KUnitType -> KUnitValue
+				else -> KRead(vLocal)
+			}
+		}
+		is IrFunctionExpression -> makeClosure(inExpression, inExpression.function, null)?.let { KRead(it.first) } ?: KUnitValue
+		is IrFunctionReference -> lowerFunctionReference(inExpression)
 		is IrSetValue -> {
 			val vLocal = mLocals[inExpression.symbol.owner]
+			val vCell = mCells[inExpression.symbol.owner]
 			if (vLocal == null) {
 				fail(inExpression, "assignment to '${inExpression.symbol.owner.name}'")
+			} else if (vCell != null) {
+				mBlock += KFieldSet(KRead(vLocal), vCell, coerce(lowerRhs(inExpression.value), vCell.type))
+				KUnitValue
 			} else {
 				mBlock += KSet(vLocal, coerce(lowerRhs(inExpression.value), vLocal.type))
 				KUnitValue
@@ -681,6 +764,12 @@ internal class BodyBuilder(
 			mBlock += KLet(vLocal, coerce(inArguments[vIndex], vType))
 			mLocals[vParam] = vLocal
 		}
+		return expandBody(vFunction, inResultType)
+	}
+
+	/** Expands the body of [vFunction] (its parameters already bound); a `return` from it leaves the expansion. */
+	private fun expandBody(vFunction: IrFunction, inResultType: KType): KExpr {
+		val inLambda = vFunction
 		val vResult = if (inResultType == KUnitType || inResultType == KNothingType) null else newTemp(inResultType)
 		vResult?.let { mBlock += KLet(it, null) }
 		val vId = mNextLoopId++
@@ -1061,6 +1150,12 @@ internal class BodyBuilder(
 	private fun lowerCall(inCall: IrCall): KExpr {
 		val vCallee = inCall.symbol.owner
 		val vOwner = vCallee.parent as? IrClass
+		mLocalFunctions[vCallee]?.let { return adapt(callFunction(inCall, it.invoke, vCallee, inCall.arguments, KRead(it.holder), mSubst), inCall) }
+		if (vOwner != null && vCallee.name.asString() == "invoke" && isFunctionType(vOwner.symbol.typeWith())) {
+			// Calling a lambda bound to an inline parameter expands it; any other function value is an interface call.
+			val vBoundLambda = (inCall.arguments.firstOrNull() as? IrGetValue)?.let { mInlineLambdas[it.symbol.owner] }
+			if (vBoundLambda != null) return adapt(expandLambda(vBoundLambda, inCall.arguments.drop(1)), inCall)
+		}
 		if (vCallee.fileOrNull == null && vOwner != null && vOwner.isInterface) {
 			// A library interface (Comparable…): primitives and strings have direct answers,
 			// everything else is an ordinary interface call.
@@ -1079,6 +1174,7 @@ internal class BodyBuilder(
 				mBlock += KGlobalSet(vGlobal, coerce(lowerRhs(vArguments.last()!!), vGlobal.type))
 				return KUnitValue
 			}
+			if (isExpanded(vCallee)) return expandInline(inCall, vCallee, exactSubst(vCallee, emptyList(), vOwnArguments))
 			val vSubst = mImporter.substFor(vCallee, emptyList(), vOwnArguments)
 			val vTarget = mImporter.functionFor(vCallee, vSubst) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
 			return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
@@ -1086,6 +1182,12 @@ internal class BodyBuilder(
 
 		val vReceiver = vArguments.firstOrNull()?.let { closed(it.type) }
 		val vIsSuper = inCall.superQualifierSymbol != null
+		if (vIsSuper || !mImporter.isVirtual(vCallee)) {
+			val vInlined = if (vCallee.isFakeOverride) vCallee.resolveFakeOverride() ?: vCallee else vCallee
+			if (isExpanded(vInlined)) {
+				return expandInline(inCall, vInlined, exactSubst(vInlined, mImporter.superArguments(vReceiver, vInlined.parentAsClass), vOwnArguments))
+			}
+		}
 		// A default accessor that cannot be overridden is a plain field access.
 		if (vProperty != null && (vIsSuper || !mImporter.isVirtual(vCallee))) {
 			val vReal = if (vCallee.isFakeOverride) vCallee.resolveFakeOverride() ?: vCallee else vCallee
@@ -1102,6 +1204,183 @@ internal class BodyBuilder(
 		}
 		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vReceiver, vOwnArguments) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
 		return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
+	}
+
+	// ==================
+	// MARK: Inline functions and closures
+	// ==================
+
+	/** Runs [inBlock] with the type parameters read under [inSubst]. */
+	private inline fun <R> under(inSubst: Subst, inBlock: () -> R): R {
+		val vOuter = mSubst
+		mSubst = inSubst
+		try {
+			return inBlock()
+		} finally {
+			mSubst = vOuter
+		}
+	}
+
+	/** Calls a lambda bound to an `inline` parameter: its body is expanded here. */
+	private fun expandLambda(inLambda: InlineLambda, inArguments: List<IrExpression?>): KExpr {
+		val vValues = lowerOperands(inArguments.filterNotNull()).map { spill(it) }
+		return under(inLambda.subst) {
+			val vFunction = inLambda.expression.function
+			inlineLambda(inLambda.expression, vValues, kType(vFunction.returnType) ?: KUnitType)
+		}
+	}
+
+	/** The substitution for an expanded call: the actual type arguments, not shared between reference types. */
+	private fun exactSubst(inFunction: IrFunction, inClassArguments: List<IrType>, inOwnArguments: List<IrType?>): Subst {
+		val vSubst = HashMap<org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol, IrType>()
+		(inFunction.parent as? IrClass)?.typeParameters?.forEachIndexed { vIndex, vParam ->
+			vSubst[vParam.symbol] = inClassArguments.getOrNull(vIndex) ?: mImporter.mBuiltIns.anyNType
+		}
+		inFunction.typeParameters.forEachIndexed { vIndex, vParam ->
+			vSubst[vParam.symbol] = inOwnArguments.getOrNull(vIndex) ?: mImporter.mBuiltIns.anyNType
+		}
+		return vSubst
+	}
+
+	/**
+	 * Expands a call to an `inline` function: arguments are evaluated once into locals, lambda
+	 * arguments are bound without being evaluated, and the callee's body is lowered here.
+	 */
+	private fun expandInline(inCall: IrCall, inCallee: IrSimpleFunction, inSubst: Subst): KExpr {
+		val vParams = inCallee.parameters
+		val vArguments = inCall.arguments
+		val vLambdas = vParams.indices.map { vIndex ->
+			if (!isInlinedParameter(vParams[vIndex])) return@map null
+			when (val vArgument = vArguments[vIndex]) {
+				is IrFunctionExpression -> InlineLambda(vArgument, mSubst)
+				is IrGetValue -> mInlineLambdas[vArgument.symbol.owner]
+				else -> null
+			}
+		}
+		val vValueIndices = vParams.indices.filter { vArguments[it] != null && vLambdas[it] == null }
+		val vValues = lowerOperands(vValueIndices.map { vArguments[it]!! })
+
+		val vSavedLocals = HashMap(mLocals)
+		val vSavedLambdas = HashMap(mInlineLambdas)
+		val vSavedCells = HashMap(mCells)
+		val vResult = under(inSubst) {
+			fun bind(inParam: IrValueParameter, inValue: KExpr) {
+				val vType = kType(inParam.type)
+				if (vType == null || vType == KUnitType || vType == KNothingType) {
+					fail(inParam, "inline parameter of type '${inParam.type.render()}'")
+					return
+				}
+				val vLocal = KLocal(freshName(if (inParam.kind == IrParameterKind.Regular) inParam.name.asString() else "self"), vType)
+				mTemps += vLocal
+				mBlock += KLet(vLocal, coerce(inValue, vType))
+				mLocals[inParam] = vLocal
+			}
+			vValueIndices.forEachIndexed { vPosition, vIndex -> bind(vParams[vIndex], vValues[vPosition]) }
+			vParams.indices.forEach { vIndex -> vLambdas[vIndex]?.let { mInlineLambdas[vParams[vIndex]] = it } }
+			for (vIndex in vParams.indices) {
+				if (vArguments[vIndex] != null) continue
+				val vDefault = defaultOf(inCallee, vIndex)
+				when {
+					vDefault == null -> fail(inCall, "call with a missing argument")
+					vDefault is IrFunctionExpression && isInlinedParameter(vParams[vIndex]) -> mInlineLambdas[vParams[vIndex]] = InlineLambda(vDefault, inSubst)
+					else -> bind(vParams[vIndex], lowerRhs(vDefault))
+				}
+			}
+			mCellVariables += mImporter.captures.cellVariables(inCallee)
+			expandBody(inCallee, kType(inCallee.returnType) ?: KUnitType)
+		}
+		mLocals.clear()
+		mLocals += vSavedLocals
+		mInlineLambdas.clear()
+		mInlineLambdas += vSavedLambdas
+		mCells.clear()
+		mCells += vSavedCells
+		return adapt(vResult, inCall)
+	}
+
+	/**
+	 * Creates the closure object for [inFunction] (a lambda or a local function): a class with
+	 * one field per captured value, and an `invoke` whose body is imported later.
+	 *
+	 * @param inSelf the function itself when it is a local function that may call itself
+	 * @return the local holding the new object, and its `invoke`
+	 */
+	private fun makeClosure(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?): Pair<KLocal, KFunction>? {
+		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
+
+		val vCaptures = ArrayList<Capture>()
+		for (vFree in mImporter.captures.freeVariables(inFunction)) {
+			when (vFree) {
+				is IrValueDeclaration -> {
+					val vLocal = mLocals[vFree]
+					if (vLocal == null) {
+						if (vFree in mInlineLambdas) fail(inElement, "an inline lambda parameter used inside another lambda (crossinline)")
+						continue
+					}
+					val vName = if (vFree is IrValueParameter && vFree.kind != IrParameterKind.Regular) "self" else vFree.name.asString()
+					vCaptures += Capture(vFree, vName, vLocal, mCells[vFree], null)
+				}
+				is IrFunction -> mLocalFunctions[vFree]?.let { vCaptures += Capture(vFree, vFree.name.asString(), it.holder, null, it.invoke) }
+			}
+		}
+		val vReturn = kType(inFunction.returnType)
+		val vNames = HashSet<String>()
+		val vParams = ArrayList<KLocal>()
+		for (vParam in inFunction.parameters) {
+			val vType = kType(vParam.type)
+			if (vType == null || vType == KUnitType || vType == KNothingType) {
+				fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
+				return null
+			}
+			var vName = cIdentifier(vParam.name.asString().trim('<', '>'))
+			while (!vNames.add(vName) || vName == "self") vName += "_"
+			vParams += KLocal(vName, vType)
+		}
+		if (vReturn == null) {
+			fail(inElement, "lambda returning '${inFunction.returnType.render()}'")
+			return null
+		}
+		val vClass = mImporter.newClosureClass(mFile, vCaptures.map { it.name to it.source.type })
+		val vInvoke = KFunction("${vClass.cName}_invoke", vClass.unit, listOf(KLocal("self", KClassType(vClass))) + vParams, vReturn)
+		vClass.unit.functions += vInvoke
+		mImporter.registerClosure(vClass, vInvoke)
+		val vBindings = vCaptures.mapIndexed { vIndex, vCapture -> Binding(vCapture.declaration, vClass.fields[vIndex], vCapture.cell, vCapture.invoke) }
+		val vSubst = mSubst
+		mImporter.later { BodyBuilder(mImporter, vInvoke, inFunction, mFile, vSubst).buildClosure(vBindings, inSelf) }
+
+		val vObject = newTemp(KClassType(vClass))
+		mBlock += KLet(vObject, KAlloc(vClass))
+		vCaptures.forEachIndexed { vIndex, vCapture -> mBlock += KFieldSet(KRead(vObject), vClass.fields[vIndex], KRead(vCapture.source)) }
+		return vObject to vInvoke
+	}
+
+	/** `::function`, `value::method`: a closure object forwarding to the function, holding the bound receiver if any. */
+	private fun lowerFunctionReference(inReference: IrFunctionReference): KExpr {
+		val vTarget = inReference.symbol.owner as? IrSimpleFunction ?: return fail(inReference, "constructor reference")
+		val vTypes = mImporter.argumentsOf(closed(inReference.type))
+		val vBoundIndices = inReference.arguments.indices.filter { inReference.arguments[it] != null }
+		val vBound = lowerOperands(vBoundIndices.map { inReference.arguments[it]!! }).map { spill(it) }
+		val vOwnArguments = inReference.typeArguments.map { vType -> vType?.let { closed(it) } }
+		val vFunction = if (vTarget.parent is IrClass) {
+			val vReceiver = vBoundIndices.firstOrNull()?.let { closed(inReference.arguments[it]!!.type) } ?: vTypes.firstOrNull()
+			memberTarget(vTarget, false, vReceiver, vOwnArguments)?.first
+		} else {
+			mImporter.functionFor(vTarget, mImporter.substFor(vTarget, emptyList(), vOwnArguments))
+		} ?: return fail(inReference, "reference to '${vTarget.kotlinFqName}'")
+
+		val vParamTypes = vTypes.dropLast(1).map { kType(it) ?: KObjType }
+		val vReturn = vTypes.lastOrNull()?.let { kType(it) } ?: KUnitType
+		val vClass = mImporter.newClosureClass(mFile, vBound.mapIndexed { vIndex, vValue -> "bound$vIndex" to vValue.type })
+		val vParams = listOf(KLocal("self", KClassType(vClass))) + vParamTypes.mapIndexed { vIndex, vType -> KLocal("p$vIndex", vType) }
+		val vInvoke = KFunction("${vClass.cName}_invoke", vClass.unit, vParams, vReturn)
+		vClass.unit.functions += vInvoke
+		mImporter.registerClosure(vClass, vInvoke)
+		BodyBuilder(mImporter, vInvoke, null, mFile, mSubst).buildReferenceInvoke(vFunction, vClass.fields)
+
+		val vObject = newTemp(KClassType(vClass))
+		mBlock += KLet(vObject, KAlloc(vClass))
+		vBound.forEachIndexed { vIndex, vValue -> mBlock += KFieldSet(KRead(vObject), vClass.fields[vIndex], vValue) }
+		return KRead(vObject)
 	}
 
 	// ==================

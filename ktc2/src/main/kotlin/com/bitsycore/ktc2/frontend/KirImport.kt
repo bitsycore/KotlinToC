@@ -124,6 +124,63 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private var mEnumBase: KClass? = null
 	private val mEnumFunctions = HashMap<String, KFunction?>()
 
+	/** A closure class and the function type it implements (`FunctionN` with these type arguments). */
+	private class Closure(val functionClass: IrClass, val arguments: List<KType>, val cls: KClass, val invoke: KFunction)
+
+	private val mClosures = ArrayList<Closure>()
+	private val mCells = HashMap<KType, Pair<KClass, KField>>()
+
+	internal val captures = CaptureAnalysis()
+
+	/** Queues [inTask] (a body to import) for the reachability loop. */
+	internal fun later(inTask: () -> Unit) {
+		mPending += inTask
+	}
+
+	// ==================
+	// MARK: Closures
+	// ==================
+
+	/** The class of the cell holding a captured mutable variable of type [inType], and its `value` field. */
+	internal fun cellFor(inType: KType): Pair<KClass, KField> = mCells.getOrPut(inType) {
+		val vUnit = KUnit("ktc2", "Cell_${mangle(inType)}")
+		val vClass = KClass("ktc2_Cell_${mangle(inType)}", vUnit, null, "Cell")
+		vUnit.cls = vClass
+		val vField = KField("value", inType, vClass)
+		vClass.fields += vField
+		mClassList += vClass
+		mUnits += vUnit
+		instantiate(vClass)
+		vClass to vField
+	}
+
+	/** A new class for a lambda declared in [inFile], with one field per captured value. */
+	internal fun newClosureClass(inFile: IrFile, inCaptures: List<Pair<String, KType>>): KClass {
+		val vFacade = facadeFor(inFile)
+		val vNumber = mClosures.size + mClassList.count { it.name == "lambda" }
+		val vUnit = KUnit(vFacade.pkg, "${vFacade.name}.lambda$vNumber")
+		val vClass = KClass("${cPrefix(vFacade.pkg)}${vFacade.name}_lambda$vNumber", vUnit, null, "lambda")
+		vUnit.cls = vClass
+		val vNames = HashSet<String>()
+		for ((vName, vType) in inCaptures) {
+			var vUnique = cIdentifier(vName)
+			while (!vNames.add(vUnique)) vUnique += "_"
+			vClass.fields += KField(vUnique, vType, vClass)
+		}
+		mClassList += vClass
+		mUnits += vUnit
+		instantiate(vClass)
+		return vClass
+	}
+
+	/** Makes [inClass] callable as a function value through [inInvoke] (its first parameter is the closure). */
+	internal fun registerClosure(inClass: KClass, inInvoke: KFunction) {
+		fun shared(inType: KType): KType = if (inType is KRefType) KObjType else inType
+		val vParams = inInvoke.params.drop(1)
+		val vArguments = vParams.map { shared(it.type) } + shared(inInvoke.returnType)
+		mClosures += Closure(mBuiltIns.functionN(vParams.size), vArguments, inClass, inInvoke)
+	}
+
 	// ==================
 	// MARK: Entry
 	// ==================
@@ -759,6 +816,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		for ((vKey, vDispatcher) in mDispatchers.entries.toList()) {
 			val vFunction = vDispatcher.function
 			val vOwner = vFunction.parentAsClass
+			if (vFunction.name.asString() == "invoke") {
+				for (vClosure in mClosures.toList()) {
+					if (vClosure.functionClass != vOwner || vClosure.arguments != vDispatcher.classArguments) continue
+					if (!mDispatchDone.add(vKey to vClosure.cls)) continue
+					vDispatcher.target.dispatch!! += vClosure.cls to vClosure.invoke
+					vChanged = true
+				}
+			}
 			for (vConcrete in mInstantiated.toList()) {
 				if (!mDispatchDone.add(vKey to vConcrete)) continue
 				val vInfo = mClassInfo[vConcrete] ?: continue
