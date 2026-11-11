@@ -35,6 +35,9 @@ private const val kLinkerOptsProperty = "ktc2.linkerOpts"
 /** Name of the file, in the output directory, that lists what a compilation produced. */
 const val kManifestName = "ktc2_build.txt"
 
+/** System property listing the source files that are not the program's, one absolute path per line. */
+private const val kLibraryFilesProperty = "ktc2.libraryFiles"
+
 /** System property holding the `System.nanoTime()` at which the compiler was started. */
 private const val kStartProperty = "ktc2.startTime"
 
@@ -88,6 +91,8 @@ object K2Frontend {
 		}
 		System.setProperty(kCompilerOptsProperty, vBindings.flatMap { it.compilerOpts }.distinct().joinToString("\n"))
 		System.setProperty(kLinkerOptsProperty, vBindings.flatMap { it.linkerOpts }.distinct().joinToString("\n"))
+		// The files that are not the program's: the library sources and the generated bindings.
+		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.invariantSeparatorsPath })
 		val vArgs = buildList {
 			(inSources - vDefinitions.toSet()).forEach { add(it.path) }
 			vBindings.forEach { add(it.source.path) }
@@ -290,6 +295,13 @@ class Ktc2Extension : IrGenerationExtension {
 		}
 
 		val vImporter = KirImporter(pluginContext.irBuiltIns)
+		val vJavaUses = JavaUseCheck(System.getProperty(kLibraryFilesProperty, "").lines().toSet()).also { it.check(moduleFragment.files) }
+		if (vJavaUses.errors.isNotEmpty()) {
+			// Nothing else is said about such a program: every use would be reported again as unsupported.
+			vJavaUses.errors.forEach { System.err.println("ktc2: error: $it") }
+			System.setProperty(kErrorCountProperty, vJavaUses.errors.size.toString())
+			return
+		}
 		val vModule = vImporter.import(moduleFragment)
 		if (vModule.entry == null) vImporter.errors += "no 'fun main()' found"
 		vImporter.errors.forEach { System.err.println("ktc2: error: $it") }

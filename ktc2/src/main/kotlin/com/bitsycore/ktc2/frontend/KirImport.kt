@@ -547,6 +547,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (vStartup.isNotEmpty()) {
 			val vInit = KFunction("${cPrefix(vUnit.pkg)}${vUnit.name}_init", vUnit, emptyList(), KUnitType)
 			vUnit.initializer = vInit
+			mFileEnsures[vUnit] = newEnsure("${cPrefix(vUnit.pkg)}${vUnit.name}", vUnit, vInit, vUnit)
 			mPending += { BodyBuilder(this, vInit, null, inFile, emptyMap()).buildGlobalInitializer(vStartup) }
 		}
 		return vUnit
@@ -988,23 +989,35 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	/*
 	Kotlin creates an `object`, and the entries of an enum class, when the program first touches
-	them. Every access is therefore preceded by a call to the class's `ensure` function, which
-	runs the initializer the first time. When importing is over, the initializers that only
-	store values — which is most of them — are found, and for those classes the calls are taken
-	out again and the initializer runs at startup: nobody can tell when it ran.
+	them, and gives the top-level properties of a file their values when the program first uses
+	something of that file. Every such use is therefore preceded by a call to an `ensure`
+	function, which runs the initializer the first time. When importing is over, the
+	initializers that only compute and store — which is most of them — are found; for those
+	the calls are taken out again and the initializer runs at startup: nobody can tell when it
+	ran. The calls that stay are made only while the initializer has not finished.
 	*/
 
-	private class Ensure(val function: KFunction, val flag: KGlobal, val unit: KUnit, val initializer: KFunction)
+	/**
+	 * @property function what a use calls first
+	 * @property flag set when the initializer starts, [done] when it has finished
+	 * @property ownUnit for a file: its unit, whose properties the initializer may read as it goes
+	 */
+	private class Ensure(val function: KFunction, val flag: KGlobal, val done: KGlobal, val unit: KUnit, val initializer: KFunction, val ownUnit: KUnit?)
 
 	private val mEnsures = LinkedHashMap<KClass, Ensure>()
+	private val mFileEnsures = LinkedHashMap<KUnit, Ensure>()
 
 	private fun declareEnsure(inClass: KClass, inUnit: KUnit, inInitializer: KFunction) {
+		mEnsures[inClass] = newEnsure(inClass.cName, inUnit, inInitializer, null)
+	}
+
+	private fun newEnsure(inName: String, inUnit: KUnit, inInitializer: KFunction, inOwnUnit: KUnit?): Ensure {
 		val vBoolean = KPrimType(KPrim.BOOLEAN)
-		val vFlag = KGlobal("${inClass.cName}_ready", vBoolean, inUnit)
+		val vFlag = KGlobal("${inName}_ready", vBoolean, inUnit)
 		inUnit.globals += vFlag
-		val vDone = KGlobal("${inClass.cName}_done", vBoolean, inUnit)
+		val vDone = KGlobal("${inName}_done", vBoolean, inUnit)
 		inUnit.globals += vDone
-		val vFunction = KFunction("${inClass.cName}_ensure", inUnit, emptyList(), KUnitType)
+		val vFunction = KFunction("${inName}_ensure", inUnit, emptyList(), KUnitType)
 		// `ready` is set first: an initializer that comes back to its own object finds it as far as it got.
 		// Another thread does not: it waits for the lock, which the initializing thread holds until it is done.
 		val vInitialize = KIf(
@@ -1022,72 +1035,107 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			emptyList(),
 		)
 		inUnit.functions += vFunction
-		mEnsures[inClass] = Ensure(vFunction, vFlag, inUnit, inInitializer)
+		return Ensure(vFunction, vFlag, vDone, inUnit, inInitializer, inOwnUnit)
 	}
 
 	/** The function to call before using the object or an entry of the enum class [inClass]; null when there is nothing to initialize. */
 	internal fun ensureFor(inClass: IrClass): KFunction? = classFor(inClass)?.let { mEnsures[it]?.function }
 
-	/** True when running [inFunction] earlier than Kotlin would cannot be observed: it only computes and stores. */
-	private fun isUnobservable(inFunction: KFunction, inKnown: MutableMap<KFunction, Boolean>): Boolean {
+	/**
+	 * The function to call before [inFrom] uses a top-level property or function of the file
+	 * behind [inUnit]; null when the file has nothing to initialize, or when [inFrom] is its
+	 * initializer.
+	 */
+	internal fun fileEnsureFor(inUnit: KUnit, inFrom: KFunction): KFunction? =
+		mFileEnsures[inUnit]?.takeIf { it.initializer !== inFrom && it.function !== inFrom }?.function
+
+	/**
+	 * True when running [inFunction] earlier than Kotlin would cannot be observed: it only
+	 * computes and stores. It may read the top-level properties of [inOwnUnit], the file whose
+	 * initializer it is; anything else that has an initializer of its own it must leave alone,
+	 * so that the initializers run at startup do not depend on one another.
+	 */
+	private fun isUnobservable(inFunction: KFunction, inKnown: MutableMap<KFunction, Boolean>, inOwnUnit: KUnit? = null): Boolean {
 		inKnown[inFunction]?.let { return it }
 		// A function that leads back to itself is taken to be observable.
 		inKnown[inFunction] = false
 		if (inFunction.isExternal || inFunction.dispatch != null) return false
-		val vEnsured = mEnsures.values.firstOrNull { it.function === inFunction }
-		val vHolds = if (vEnsured != null) {
-			isUnobservable(vEnsured.initializer, inKnown)
-		} else {
-			!inFunction.body.anyStatement { vStatement ->
-				vStatement is KPrint || vStatement is KThrow || vStatement is KTryRegion || vStatement is KGlobalSet ||
-					vStatement.ownExpressions().any { vRoot ->
-						vRoot.anyNode { vNode ->
-							vNode is KGlobalRead || vNode.isRuntimeCheck() ||
-								(vNode is KCall && !isUnobservable(vNode.function, inKnown)) ||
-								(vNode is KIntrinsic && !vNode.isPure && !vNode.name.startsWith("ktc2_box_"))
-						}
+		val vIsEnsure = mEnsures.values.any { it.function === inFunction } || mFileEnsures.values.any { it.function === inFunction }
+		val vHolds = !vIsEnsure && !inFunction.body.anyStatement { vStatement ->
+			vStatement is KPrint || vStatement is KThrow || vStatement is KTryRegion || vStatement is KGlobalSet ||
+				vStatement.ownExpressions().any { vRoot ->
+					vRoot.anyNode { vNode ->
+						(vNode is KGlobalRead && vNode.global.unit !== inOwnUnit) || vNode.isRuntimeCheck() ||
+							(vNode is KCall && !isUnobservable(vNode.function, inKnown)) ||
+							(vNode is KIntrinsic && !vNode.isPure && !vNode.name.startsWith("ktc2_box_"))
 					}
-			}
+				}
 		}
 		inKnown[inFunction] = vHolds
 		return vHolds
 	}
 
-	private fun withoutCalls(inBlock: List<KStmt>, inFunctions: Set<KFunction>): List<KStmt> = inBlock.mapNotNull { vStatement ->
+	/** [inBlock] with each `ensure` call of [inEager] taken out, and each one of [inLazy] made only while its initializer has not finished. */
+	private fun settled(inBlock: List<KStmt>, inEager: Set<KFunction>, inLazy: Map<KFunction, KGlobal>): List<KStmt> = inBlock.mapNotNull { vStatement ->
+		val vCalled = ((vStatement as? KEval)?.expr as? KCall)?.function
 		when {
-			vStatement is KEval && (vStatement.expr as? KCall)?.function in inFunctions -> null
-			vStatement is KIf -> KIf(vStatement.condition, withoutCalls(vStatement.thenBlock, inFunctions), withoutCalls(vStatement.elseBlock, inFunctions))
-			vStatement is KLoop -> KLoop(vStatement.id, withoutCalls(vStatement.body, inFunctions), withoutCalls(vStatement.latch, inFunctions))
-			vStatement is KTryRegion -> KTryRegion(vStatement.id, withoutCalls(vStatement.body, inFunctions))
+			vCalled != null && vCalled in inEager -> null
+			vCalled != null && vCalled in inLazy ->
+				KIf(KUnary(KUnaryOp.NOT, KGlobalRead(inLazy.getValue(vCalled)), KPrimType(KPrim.BOOLEAN)), listOf(vStatement), emptyList())
+			vStatement is KIf -> KIf(vStatement.condition, settled(vStatement.thenBlock, inEager, inLazy), settled(vStatement.elseBlock, inEager, inLazy))
+			vStatement is KLoop -> KLoop(vStatement.id, settled(vStatement.body, inEager, inLazy), settled(vStatement.latch, inEager, inLazy))
+			vStatement is KTryRegion -> KTryRegion(vStatement.id, settled(vStatement.body, inEager, inLazy))
 			else -> vStatement
 		}
 	}
 
-	/** Decides, once everything is imported, which objects and enums are initialized at startup and which on first use. */
+	/** Decides, once everything is imported, what is initialized at startup and what on first use. */
 	private fun settleInitialization() {
-		val vKnown = HashMap<KFunction, Boolean>()
 		val vEager = HashSet<KFunction>()
-		for (vEnsure in mEnsures.values) {
-			if (isUnobservable(vEnsure.initializer, vKnown)) {
+		val vLazy = HashMap<KFunction, KGlobal>()
+		for (vEnsure in mEnsures.values + mFileEnsures.values) {
+			// The initializer may come back to what it initializes: that call finds it under way and returns.
+			val vKnown = HashMap<KFunction, Boolean>()
+			vKnown[vEnsure.function] = true
+			// The file initializer writes the properties of its file: that is its job, not something to observe.
+			val vIsQuiet = if (vEnsure.ownUnit != null) isQuietFileInitializer(vEnsure, vKnown) else isUnobservable(vEnsure.initializer, vKnown)
+			if (vIsQuiet) {
 				vEager += vEnsure.function
 				vEnsure.unit.functions -= vEnsure.function
 				vEnsure.unit.globals -= vEnsure.flag
-			} else if (vEnsure.unit.initializer === vEnsure.initializer) {
-				// Initialized on first use: not at startup. The initializer stays, as a function the `ensure` calls.
-				vEnsure.unit.initializer = null
-				vEnsure.unit.functions += vEnsure.initializer
+				vEnsure.unit.globals -= vEnsure.done
+			} else {
+				vLazy[vEnsure.function] = vEnsure.done
+				if (vEnsure.unit.initializer === vEnsure.initializer) {
+					// Initialized on first use: not at startup. The initializer stays, as a function the `ensure` calls.
+					vEnsure.unit.initializer = null
+					vEnsure.unit.functions += vEnsure.initializer
+				}
 			}
 		}
-		if (vEager.isEmpty()) return
 		for (vUnit in mUnits) {
 			for (vFunction in vUnit.functions + listOfNotNull(vUnit.initializer)) {
-				if (vFunction.isExternal || vFunction.dispatch != null) continue
-				val vBody = withoutCalls(vFunction.body, vEager)
+				if (vFunction.isExternal || vFunction.dispatch != null || vFunction in vLazy) continue
+				val vBody = settled(vFunction.body, vEager, vLazy)
 				vFunction.body.clear()
 				vFunction.body += vBody
 			}
 		}
 	}
+
+	/** [isUnobservable] for the initializer of a file, whose statements are the stores into the file's own properties. */
+	private fun isQuietFileInitializer(inEnsure: Ensure, inKnown: MutableMap<KFunction, Boolean>): Boolean =
+		!inEnsure.initializer.body.anyStatement { vStatement ->
+			vStatement is KPrint || vStatement is KThrow || vStatement is KTryRegion ||
+				(vStatement is KGlobalSet && vStatement.global.unit !== inEnsure.ownUnit) ||
+				vStatement.ownExpressions().any { vRoot ->
+					vRoot.anyNode { vNode ->
+						(vNode is KGlobalRead && vNode.global.unit !== inEnsure.ownUnit) || vNode.isRuntimeCheck() ||
+							(vNode is KCall && !isUnobservable(vNode.function, inKnown)) ||
+							(vNode is KIntrinsic && !vNode.isPure && !vNode.name.startsWith("ktc2_box_"))
+					}
+				}
+		}
 
 	internal fun enumEntryFor(inEntry: IrEnumEntry): KStatic? {
 		classFor(inEntry.parentAsClass)

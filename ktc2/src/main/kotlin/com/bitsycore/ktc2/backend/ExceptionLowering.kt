@@ -75,6 +75,15 @@ class ExceptionLowering(private val mModule: KModule) {
 		else -> null
 	}
 
+	/** For a statement that assigns to something that exists already: the value assigned, and the same statement for another value. */
+	private fun storeOf(inStatement: KStmt): Pair<KExpr, (KExpr) -> KStmt>? = when (inStatement) {
+		is KSet -> inStatement.value to { vValue -> KSet(inStatement.local, vValue) }
+		is KGlobalSet -> inStatement.value to { vValue -> KGlobalSet(inStatement.global, vValue) }
+		is KFieldSet -> inStatement.value to { vValue -> KFieldSet(inStatement.target, inStatement.field, vValue) }
+		is KIndexSet -> inStatement.value to { vValue -> KIndexSet(inStatement.array, inStatement.index, vValue).also { it.isChecked = inStatement.isChecked } }
+		else -> null
+	}
+
 	private fun hasCheck(inStatement: KStmt): Boolean =
 		mChecksThrow && ((inStatement is KIndexSet && !inStatement.isChecked) || inStatement.ownExpressions().any { vRoot -> vRoot.anyNode { it.isRuntimeCheck() } })
 
@@ -193,8 +202,18 @@ class ExceptionLowering(private val mModule: KModule) {
 					}
 				}
 				else -> {
-					vOut += vStatement
-					if (vParks || callThrows(valueOf(vStatement))) vOut += KIf(pending(), vLeave, emptyList())
+					val vFails = vParks || callThrows(valueOf(vStatement))
+					val vStore = if (vFails) storeOf(vStatement) else null
+					if (vStore != null) {
+						// What is assigned is computed first: if that fails, the variable, field or element keeps what it had.
+						val vValue = KLocal("ktc2_x${mNextTemp++}", vStore.first.type)
+						vOut += KLet(vValue, vStore.first)
+						vOut += KIf(pending(), vLeave, emptyList())
+						vOut += vStore.second(KRead(vValue))
+					} else {
+						vOut += vStatement
+						if (vFails) vOut += KIf(pending(), vLeave, emptyList())
+					}
 				}
 			}
 		}

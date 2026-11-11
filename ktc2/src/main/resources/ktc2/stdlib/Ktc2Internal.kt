@@ -84,8 +84,17 @@ public external fun threadJoin(handle: Long)
 /** Suspends the calling thread for [milliseconds]; returns at once for zero or less. */
 public external fun threadSleep(milliseconds: Long)
 
+/** The next line of the standard input as UTF-8 bytes, without its line end; null at the end of the input. */
+public external fun readLineBytes(): ByteArray?
+
 /** The time of day, in nanoseconds since 1970. */
 public external fun timeNanos(): Long
+
+/** What `Any()` creates. */
+private class PlainObject
+
+/** A new object with nothing in it: `Any()`. */
+public fun newObject(): Any = PlainObject()
 
 /** Where the runtime enters a new thread. */
 public fun threadEntry(thread: Any) {

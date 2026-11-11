@@ -38,7 +38,11 @@ class IntegrationTest {
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
 			.toList()
 
+	/** The standard input of the program being checked; null when it has none. */
+	private var mInput: File? = null
+
 	private fun check(inSource: File) {
+		mInput = File(inSource.parentFile, inSource.nameWithoutExtension + ".in").takeIf { it.isFile }
 		val vOutDir = File("build/integration/${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		// `<name>.def` next to the program describes a C library it uses.
 		val vDefinition = File(inSource.parentFile, inSource.nameWithoutExtension + ".def")
@@ -74,7 +78,13 @@ class IntegrationTest {
 	private fun run(inCommand: List<String>, inDirectory: File): String {
 		val vErrors = File.createTempFile("ktc2", ".err")
 		try {
-			val vProcess = ProcessBuilder(inCommand).directory(inDirectory).redirectError(vErrors).start()
+			// `<name>.in` next to a program is what it reads from its standard input; without one, there is nothing to read.
+			val vBuilder = ProcessBuilder(inCommand).directory(inDirectory).redirectError(vErrors)
+			val vProcess = if (mInput != null) {
+				vBuilder.redirectInput(mInput).start()
+			} else {
+				vBuilder.start().also { it.outputStream.close() }
+			}
 			val vOutput = vProcess.inputStream.readBytes().decodeToString()
 			if (!vProcess.waitFor(kTimeoutSeconds, TimeUnit.SECONDS)) {
 				vProcess.destroyForcibly()

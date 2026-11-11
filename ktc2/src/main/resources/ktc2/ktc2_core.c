@@ -920,6 +920,55 @@ ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end)
 	return new_string(data, size, length);
 }
 
+/* ================== */
+/* MARK: Input        */
+/* ================== */
+
+/** A ByteArray holding the [size] bytes at [data]. */
+static ktc2_Array* bytes_of(const char* data, size_t size)
+{
+	ktc2_Array* bytes = ktc2_array_new((int32_t)size, 1, KTC2_TYPE_ARRAY_BYTE);
+	memcpy(bytes + 1, data, size);
+	return bytes;
+}
+
+/** Appends [byte] to a buffer that grows; false when memory ran out. */
+static bool buffer_add(char** buffer, size_t* size, size_t* capacity, const char* data, size_t count)
+{
+	if (*size + count > *capacity) {
+		size_t wanted = *capacity ? *capacity : 256;
+		while (wanted < *size + count) wanted *= 2;
+		char* grown = realloc(*buffer, wanted);
+		if (!grown) return false;
+		*buffer = grown;
+		*capacity = wanted;
+	}
+	memcpy(*buffer + *size, data, count);
+	*size += count;
+	return true;
+}
+
+ktc2_Array* ktc2_readLineBytes(void)
+{
+	char* line = NULL;
+	size_t size = 0;
+	size_t capacity = 0;
+	int next;
+	fflush(stdout);
+	while ((next = getchar()) != EOF && next != '\n') {
+		char byte = (char)next;
+		if (!buffer_add(&line, &size, &capacity, &byte, 1)) fail("java.lang.OutOfMemoryError", NULL);
+	}
+	if (next == EOF && size == 0) {
+		free(line);
+		return NULL;
+	}
+	if (size > 0 && line[size - 1] == '\r') size--;
+	ktc2_Array* bytes = bytes_of(line ? line : "", size);
+	free(line);
+	return bytes;
+}
+
 ktc2_Obj* ktc2_cs_subSequence(ktc2_Obj* object, int32_t start, int32_t end)
 {
 	if (object->typeId != KTC2_TYPE_STRING) ktc2_fail_dispatch();

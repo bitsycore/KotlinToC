@@ -562,6 +562,9 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end);
 /** Parses as Double.parseDouble into the first element of a DoubleArray; false when not a number. */
 bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result);
+/** The next line of stdin as a ByteArray, without its line end; NULL at the end of the input. */
+ktc2_Array* ktc2_readLineBytes(void);
+
 /** The UTF-8 bytes of a string, as a ByteArray. */
 ktc2_Array* ktc2_stringUtf8(ktc2_String* s);
 /** A string from the UTF-8 bytes [start, end) of a ByteArray. */

@@ -259,6 +259,8 @@ internal class BodyBuilder(
 	fun build() {
 		val vIr = mIrFunction!!
 		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
+		// Calling a top-level function is a use of its file: the file's properties get their values first.
+		if (vIr is IrSimpleFunction && vIr.parent is IrFile) mImporter.fileEnsureFor(mFunction.unit, mFunction)?.let { mBlock += KEval(KCall(it, emptyList())) }
 		val vOffset = mFunction.params.size - vIr.parameters.size
 		// The first parameters of a function reference's `invoke` are its bound values: they come from the closure, below.
 		vIr.parameters.forEachIndexed { vIndex, vParam -> if (vIndex + vOffset >= 0) mLocals[vParam] = mFunction.params[vIndex + vOffset] }
@@ -780,6 +782,12 @@ internal class BodyBuilder(
 	}
 
 	/** An `object` or an enum class is created when it is first used: here, if not before. */
+	/** [inGlobal], after making sure the top-level properties of its file have their values (a constant needs none). */
+	private fun ensuredFile(inGlobal: KGlobal): KGlobal {
+		if (inGlobal.constInit == null) mImporter.fileEnsureFor(inGlobal.unit, mFunction)?.let { mBlock += KEval(KCall(it, emptyList())) }
+		return inGlobal
+	}
+
 	private fun ensureInitialized(inClass: IrClass) {
 		mImporter.ensureFor(inClass)?.let { mBlock += KEval(KCall(it, emptyList())) }
 	}
@@ -1451,6 +1459,11 @@ internal class BodyBuilder(
 			setThrowableFields(KRead(vObject), vConstructor, inCall.arguments)
 			return KRead(vObject)
 		}
+		if (isAnyClass(vOwner)) {
+			// `Any()`: an object with nothing in it, of use as a lock or as a mark.
+			val vFactory = mImporter.internalFunction("newObject")?.let { mImporter.functionFor(it) } ?: return fail(inCall, "construction of 'kotlin.Any'")
+			return spill(KCall(vFactory, emptyList()))
+		}
 		val vIsStorage = vOwner.kotlinFqName.asString() == "ktc2.internal.Storage"
 		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null || vIsStorage }?.let { return lowerArrayConstructor(inCall, it) }
 		val vClassArguments = mImporter.argumentsOf(closed(inCall.type))
@@ -1566,7 +1579,7 @@ internal class BodyBuilder(
 	}
 
 	private fun lowerGetField(inExpression: IrGetField): KExpr {
-		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(it) }
+		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(ensuredFile(it)) }
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field access")
 		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
 		return adapt(readField(fieldTarget(lowerPure(vReceiver), vField), vField), inExpression)
@@ -1575,7 +1588,7 @@ internal class BodyBuilder(
 	private fun lowerSetField(inExpression: IrSetField): KExpr {
 		val vGlobal = mImporter.globalFor(inExpression.symbol.owner)
 		if (vGlobal != null) {
-			mBlock += KGlobalSet(vGlobal, coerce(lowerRhs(inExpression.value), vGlobal.type))
+			mBlock += KGlobalSet(ensuredFile(vGlobal), coerce(lowerRhs(inExpression.value), vGlobal.type))
 			return KUnitValue
 		}
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field assignment")
@@ -1750,9 +1763,9 @@ internal class BodyBuilder(
 		val vOwnArguments = inCall.typeArguments.map { vType -> vType?.let { closed(it) } }
 		val vProperty = vCallee.correspondingPropertySymbol?.owner
 		if (vOwner == null) {
-			mImporter.globalGetter(vCallee)?.let { return KGlobalRead(it) }
+			mImporter.globalGetter(vCallee)?.let { return KGlobalRead(ensuredFile(it)) }
 			mImporter.globalSetter(vCallee)?.let { vGlobal ->
-				mBlock += KGlobalSet(vGlobal, coerce(lowerRhs(vArguments.last()!!), vGlobal.type))
+				mBlock += KGlobalSet(ensuredFile(vGlobal), coerce(lowerRhs(vArguments.last()!!), vGlobal.type))
 				return KUnitValue
 			}
 			if (isExpanded(vCallee)) return expandInline(inCall, vCallee, exactSubst(vCallee, emptyList(), vOwnArguments))
@@ -2489,6 +2502,7 @@ internal class BodyBuilder(
 		val vParts = ArrayList<KPrintPart>()
 		val vValues = ArrayList<KExpr>()
 		val vSlots = ArrayList<Int>()
+		val vObjects = ArrayList<Pair<Int, IrExpression>>()
 		for (vPiece in inPieces) {
 			if (vPiece is IrConst && vPiece.value is String) {
 				vParts += KPrintText(vPiece.value as String)
@@ -2496,22 +2510,49 @@ internal class BodyBuilder(
 			}
 			val vMark = mBlock.size
 			var vValue = lowerPure(vPiece)
-			if (vValue.type is KClassType || vValue.type == KObjType || vValue.type is KStructType) vValue = toStringOf(vPiece, spill(vValue), vPiece.type)
 			if (vValue === KUnitValue) {
 				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
 				continue
+			}
+			if (vValue.type is KClassType || vValue.type == KObjType || vValue.type is KStructType) {
+				vValue = spill(vValue)
+				vObjects += vValues.size to vPiece
 			}
 			protect(vValues, vMark)
 			vSlots += vParts.size
 			vValues += vValue
 			vParts += KPrintValue(vValue)
 		}
+		// As on the JVM, every part is evaluated before the first `toString` runs: a `toString` that
+		// changes something does not change what the parts after it show.
+		for ((vIndex, vPiece) in vObjects) {
+			val vMark = mBlock.size
+			val vText = toStringOf(vPiece, vValues[vIndex], vPiece.type)
+			if (vText === KUnitValue) {
+				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
+				continue
+			}
+			protect(vValues, vMark)
+			vValues[vIndex] = vText
+		}
 		vSlots.forEachIndexed { vIndex, vSlot -> vParts[vSlot] = KPrintValue(vValues[vIndex]) }
 		return vParts
 	}
 
+	/** The pieces of a chain of `+` on strings and of a template, as one list: `a + b + "$c$d"` is built in one go. */
+	private fun concatPieces(inExpression: IrExpression): List<IrExpression> {
+		if (inExpression is IrStringConcatenation) return inExpression.arguments
+		val vCall = inExpression as? IrCall ?: return listOf(inExpression)
+		val vCallee = vCall.symbol.owner
+		val vIsStringPlus = vCallee.name.asString() == "plus" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString() == "kotlin.String"
+		val vReceiver = vCall.arguments.getOrNull(0)
+		val vOther = vCall.arguments.getOrNull(1)
+		if (!vIsStringPlus || vCall.arguments.size != 2 || vReceiver == null || vOther == null) return listOf(inExpression)
+		return concatPieces(vReceiver) + vOther
+	}
+
 	private fun lowerStringCall(inCall: IrCall, inName: String, inArguments: List<IrExpression>): KExpr {
-		if (inName == "plus" && inArguments.size == 2) return concat(lowerParts(inArguments))
+		if (inName == "plus" && inArguments.size == 2) return concat(lowerParts(concatPieces(inArguments[0]) + inArguments[1]))
 		val vOperands = lowerOperands(inArguments)
 		return when {
 			inName == "<get-length>" -> KIntrinsic("ktc2_str_length", vOperands, kIntType)

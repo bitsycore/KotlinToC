@@ -1,0 +1,7 @@
+hello input
+3 4 5 30
+
+  spaces kept
+accents: é ü ñ
+a line long enough to need more than one small buffer, with some more words added to it to be sure it does grow at least once or twice
+last line without an end

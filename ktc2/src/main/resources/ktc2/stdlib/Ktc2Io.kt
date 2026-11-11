@@ -18,8 +18,15 @@ public actual fun println(message: Any?) {
 public actual fun print(message: Any?) {
 }
 
-public actual fun readln(): String = throw UnsupportedOperationException("readln")
+/** The next line of the standard input, without its line end. */
+public actual fun readln(): String = readlnOrNull() ?: throw ReadAfterEOFException("EOF has already been reached")
 
-public actual fun readlnOrNull(): String? = null
+/** The next line of the standard input, without its line end; null when there is none left. */
+public actual fun readlnOrNull(): String? {
+	val vBytes = ktc2.internal.readLineBytes() ?: return null
+	return ktc2.internal.stringOfUtf8(vBytes, 0, vBytes.size)
+}
+
+public fun readLine(): String? = readlnOrNull()
 
 internal actual interface Serializable

@@ -878,6 +878,32 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   an argument that is itself a temporary; 45 are followed by a write to an array of
   references (a loop that adds to a list), which is where telling arrays apart would help. `KTC2_DEBUG_BORROW=1` prints why a function does not qualify or a caller does not
   borrow.
+- **No JDK.** As in Kotlin/Native, a program has nothing of `java.*` or `javax.*`. The Kotlin
+  compiler ktc2 runs is the JVM one and cannot be told so (it needs the JDK for the built-in
+  types), so `JavaUseCheck` looks for such uses in the files of the program and reports each
+  with its line. What is left under `java.lang` is ktc2's own platform layer, compiled from
+  source: `Thread` (behind `kotlin.concurrent.thread` and `synchronized`), `Thread.sleep`,
+  `System.currentTimeMillis` / `nanoTime`. They are still accepted, and are to move to an API
+  that does not carry the name of the JDK. Files are not part of ktc2's library: they are to
+  come from kotlinx.io or okio through a ktc2 compatibility layer, as other kotlinx libraries
+  later. Until then a program reads files through `platform.posix`.
+- **Top-level properties get their values on first use of their file**
+  (`objects/TopLevelInitialization.kt`), in the order Kotlin gives: touching a property or
+  calling a top-level function of the file runs the file's initializer first, and that
+  creates the objects it refers to on the way. As for objects, an initializer that only
+  computes and stores runs at startup instead and costs nothing later. The rule for that is
+  now stricter, for objects too: such an initializer may not use anything that has an
+  initializer of its own, so the ones run at startup do not depend on the order they are run
+  in. A use that keeps its `ensure` call makes it only while the initializer has not
+  finished (one flag tested in place).
+- **A failed assignment leaves its target alone** (`objects/StoreOnFailure.kt`). `x = f()`,
+  `obj.p = f()`, `a[i] = f()` and the same with a check of the language inside a condition
+  compute the value first; if that throws, the variable, field, element or top-level
+  property keeps what it had. Before, it received a zero on the way out.
+- **String templates as on the JVM** (`objects/Templates.kt`): every part of a template, or
+  of a chain of `+`, is evaluated before the first `toString` runs. `Any()` makes an object.
+- **Standard input** (`stdlib/Input.kt`): `readln`, `readlnOrNull`, `readLine`. A test may
+  have a `<Name>.in` next to it, given to both the C program and the JVM.
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small
@@ -886,9 +912,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   a `.def` file takes a fraction of a second, so nothing is cached there. The step that would
   change the order of magnitude is a compiler kept running between compilations.
 
-Known gaps: `Any()` cannot be constructed (use any other object as a lock); `isDaemon`, thread names and priorities are ignored. In a string template the
-`toString` of each object runs as the template is built, left to right; the JVM first evaluates
-every part and then calls them, which shows when a `toString` changes what a later part reads.
+Known gaps: `isDaemon`, thread names and priorities are ignored.
 
 `@Value` on array elements (`Array<@Value Particle>`) is **not** going to be done as planned.
 An annotation does not change the Kotlin type, so such an array could be passed wherever an
@@ -896,8 +920,7 @@ An annotation does not change the Kotlin type, so such an array could be passed 
 for an array of references would then read object bytes as pointers. Guarding against it
 would cost a test on every access to every array of references. What the plan wanted from it
 is available another way: collections store structs and value classes in place
-(`ArrayList<Point>`), and `ktc2.ValueArray<T>` is a fixed-size array that does. A failed check inside a conditional expression may store a
-placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`).
+(`ArrayList<Point>`), and `ktc2.ValueArray<T>` is a fixed-size array that does. 
 
 **Relation to v1.** v1 integration tests that exercise plain behavior are ported as plain
 Kotlin into `ktc2/integration/` and gain the JVM oracle. Tests of the manual model (`ArenaTest`,
