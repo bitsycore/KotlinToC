@@ -397,6 +397,10 @@ internal class BodyBuilder(
 		if (vFrom == inTo || inValue === KUnitValue) return inValue
 		return when {
 			inTo is KRefType && vFrom is KRefType -> if (inValue is KNull) KNull(inTo) else KRefCast(inValue, inTo)
+			inTo == KPtrType && inValue is KNull -> KNull(KPtrType)
+			// An address held as Any (an element of a List<CPointer<…>>) is boxed like a Long.
+			inTo is KRefType && vFrom == KPtrType -> coerce(spill(KIntrinsic("ktc2_box_ptr", listOf(if (inValue.isImpure()) spill(inValue) else inValue), KObjType, isPure = false)), inTo)
+			inTo == KPtrType && vFrom is KRefType -> KIntrinsic("ktc2_unbox_ptr", listOf(if (inValue.isImpure()) spill(inValue) else inValue), KPtrType)
 			inTo == KObjType && vFrom is KPrimType -> spill(box(if (inValue.isImpure()) spill(inValue) else inValue))
 			inTo == KObjType && vFrom is KOptType -> {
 				val vOptional = spill(inValue)
@@ -1432,6 +1436,12 @@ internal class BodyBuilder(
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, "newArray of '${inCall.type.render()}'")
 			return KArrayNew(lowerPure(inCall.arguments[0]!!), vType)
 		}
+		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "kotlinx.cinterop.internal") {
+			lowerInteropIntrinsic(inCall, vCallee.name.asString())?.let { return it }
+		}
+		if (vOwner == null && vCallee.kotlinFqName.asString() == "kotlinx.cinterop.staticCFunction") {
+			lowerInteropIntrinsic(inCall, "cFunction")?.let { return it }
+		}
 		if (vOwner == null && (vCallee.name.asString() == "println" || vCallee.name.asString() == "print") && vCallee.parent.kotlinFqName.asString() == "kotlin.io") {
 			return lowerLibraryCall(inCall)
 		}
@@ -1669,6 +1679,69 @@ internal class BodyBuilder(
 	}
 
 	// ==================
+	// MARK: C interop
+	// ==================
+
+	/** The C spelling `@CType` gives the class of [inType] (`struct point`, `int32_t`). */
+	private fun cSpelling(inType: IrType): Pair<String, List<String>>? {
+		val vClass = closed(inType).classOrNull?.owner ?: return null
+		val vAnnotation = vClass.annotations.firstOrNull { it.type.classFqName?.asString() == "kotlinx.cinterop.internal.CType" } ?: return null
+		val vSpelling = (vAnnotation.arguments.firstOrNull() as? IrConst)?.value as? String ?: return null
+		return vSpelling to cHeadersOf(vClass.fileOrNull)
+	}
+
+	/**
+	 * The functions of `kotlinx.cinterop.internal` that the interop library and generated
+	 * bindings are written with; null when [inName] is an ordinary function of that package.
+	 *
+	 * - `cExpr<R>("C text with $0 $1", a, b)` is that C expression, of type `R`. A String
+	 *   argument stands for its `const char*`.
+	 * - `cSizeOf<T>()` / `cAlignOf<T>()` are `sizeof` / `_Alignof` of the C type behind `T`.
+	 * - `cFunction(::f)` is the address of the C function generated for `f`.
+	 */
+	private fun lowerInteropIntrinsic(inCall: IrCall, inName: String): KExpr? {
+		when (inName) {
+			"cExpr" -> {
+				val vTemplate = (inCall.arguments[0] as? IrConst)?.value as? String ?: return fail(inCall, "cExpr with a text that is not a string literal")
+				val vElements = (inCall.arguments.getOrNull(1) as? IrVararg)?.elements ?: emptyList()
+				val vExpressions = vElements.map { it as? IrExpression ?: return fail(inCall, "cExpr with a spread argument") }
+				val vArguments = lowerOperands(vExpressions).mapIndexed { vIndex, vValue ->
+					val vAccessor = if (vExpressions[vIndex].type.isMarkedNullable()) "ktc2_str_cptr" else "ktc2_str_bytes"
+					if (vValue.type == KStringType) KIntrinsic(vAccessor, listOf(vValue), KPtrType) else vValue
+				}
+				val vType = kType(inCall.type) ?: return fail(inCall, "cExpr of type '${inCall.type.render()}'")
+				return KIntrinsic("cExpr", vArguments, vType, isPure = false).also {
+					it.template = vTemplate
+					it.headers = cHeadersOf(mFile)
+				}
+			}
+			"cSizeOf", "cAlignOf" -> {
+				val vType = inCall.typeArguments.firstOrNull() ?: return fail(inCall, "$inName without a type")
+				val (vSpelling, vHeaders) = cSpelling(vType) ?: return fail(inCall, "$inName of '${closed(vType).render()}', which is not a C type")
+				val vOperator = if (inName == "cSizeOf") "sizeof" else "_Alignof"
+				return KIntrinsic(inName, emptyList(), kType(inCall.type) ?: kIntType).also {
+					it.template = (if (inName == "cSizeOf") "(int64_t)" else "(int32_t)") + "$vOperator($vSpelling)"
+					it.headers = vHeaders
+				}
+			}
+			"cFunction" -> {
+				val vReference = inCall.arguments[0] as? IrFunctionReference ?: return fail(inCall, "staticCFunction of something else than a function reference (::name)")
+				val vTarget = vReference.symbol.owner as? IrSimpleFunction
+				if (vTarget == null || vTarget.parent is IrClass || vReference.arguments.any { it != null }) {
+					return fail(inCall, "staticCFunction of something else than a top-level function")
+				}
+				val vFunction = mImporter.functionFor(vTarget, mImporter.substFor(vTarget, emptyList(), emptyList()))
+					?: return fail(inCall, "reference to '${vTarget.kotlinFqName}'")
+				return KIntrinsic("cFunction", emptyList(), KPtrType).also {
+					it.template = "(void*)${vFunction.cName}"
+					it.functions = listOf(vFunction)
+				}
+			}
+		}
+		return null
+	}
+
+	// ==================
 	// MARK: Library intrinsics
 	// ==================
 
@@ -1846,7 +1919,7 @@ internal class BodyBuilder(
 				mBlock += KIf(not(KOptHas(vValue)), vFail, emptyList())
 				KOptValue(vValue)
 			}
-			is KRefType -> {
+			is KRefType, KPtrType -> {
 				val vIsNull = isNull(vValue)
 				if (vIsNull !== kFalse) mBlock += KIf(vIsNull, vFail, emptyList())
 				coerce(vValue, typeOf(inCall))
@@ -1870,6 +1943,10 @@ internal class BodyBuilder(
 			// A primitive compared with an Any: box it and compare as objects.
 			vLeftType == KObjType && vRightType is KPrimType -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
 			vRightType == KObjType && vLeftType is KPrimType -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
+			// C addresses compare by value.
+			vLeftType == KPtrType && vRight is KNull -> isNull(vLeft)
+			vRightType == KPtrType && vLeft is KNull -> isNull(vRight)
+			vLeftType == KPtrType && vRightType == KPtrType -> KRefEquals(vLeft, vRight)
 			vLeftType !is KRefType || vRightType !is KRefType -> fail(inCall, "equality between '${inLeft.type.render()}' and '${inRight.type.render()}'")
 			vRight is KNull -> isNull(vLeft)
 			vLeft is KNull -> isNull(vRight)

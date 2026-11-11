@@ -45,11 +45,17 @@ class IntegrationTest {
 		val vCDir = File(vOutDir, "c")
 		val vCSources = vManifest.filter { it.startsWith("c=") }.map { it.substringAfter('=') }
 
-		val vJvmDir = File(vOutDir, "jvm")
-		assertTrue(K2Frontend.compileJvm(listOf(inSource), vJvmDir), "kotlinc failed on $inSource")
-		val vJava = File(System.getProperty("java.home"), "bin/java").path
-		val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
-		val vExpected = run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
+		// A program using C interop cannot run on the JVM: its output is compared with `<name>.expected`.
+		val vExpectedFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".expected")
+		val vExpected = if (vExpectedFile.isFile) {
+			vExpectedFile.readText().replace("\r\n", "\n")
+		} else {
+			val vJvmDir = File(vOutDir, "jvm")
+			assertTrue(K2Frontend.compileJvm(listOf(inSource), vJvmDir), "kotlinc failed on $inSource")
+			val vJava = File(System.getProperty("java.home"), "bin/java").path
+			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
+			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
+		}
 
 		val vExe = File(vOutDir, "program.exe")
 		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-pthread", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)

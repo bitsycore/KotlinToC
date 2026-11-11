@@ -34,7 +34,11 @@ internal fun isInlinedParameter(inParameter: IrValueParameter): Boolean =
 /** True when calls to [inFunction] are expanded in place rather than emitted as calls. */
 internal fun isExpanded(inFunction: IrFunction): Boolean =
 	inFunction.isInline && inFunction.body != null &&
-		(inFunction.parameters.any { isInlinedParameter(it) } || inFunction.typeParameters.any { it.isReified })
+		(inFunction.parameters.any { isInlinedParameter(it) } || inFunction.typeParameters.any { it.isReified } || isInteropAccessor(inFunction))
+
+/** The small `inline` functions of C interop (`ptr`, `pointed`, `value`…) are a line of C each: always expanded. */
+private fun isInteropAccessor(inFunction: IrFunction): Boolean =
+	inFunction.parent !is IrClass && inFunction.kotlinFqName.asString().startsWith("kotlinx.cinterop.")
 
 /**
  * Finds what closures capture. A lambda passed to an expanded `inline` function (or to an

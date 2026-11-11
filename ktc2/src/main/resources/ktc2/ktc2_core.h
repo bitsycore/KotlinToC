@@ -182,6 +182,34 @@ static inline void ktc2_release(void* pointer)
 int ktc2_exit(void);
 
 /* ================== */
+/* MARK: C interop    */
+/* ================== */
+
+struct ktc2_String;
+
+/** The bytes of a string as C sees them (UTF-8, NUL-terminated). Valid while the string lives. */
+#define ktc2_str_bytes(string) ((void*)((ktc2_String*)(string))->bytes)
+
+/** The same for a string that may be null: NULL for NULL. */
+void* ktc2_str_cptr(struct ktc2_String* string);
+
+/** A new string from NUL-terminated UTF-8 text. */
+struct ktc2_String* ktc2_string_of_cstr(const char* text);
+
+/** A C address held as an object: a boxed Long, NULL staying NULL. */
+ktc2_Obj* ktc2_box_ptr(void* address);
+void* ktc2_unbox_ptr(ktc2_Obj* object);
+
+/**
+ * Memory of a `memScoped` block: a zeroed block of [size] bytes chained in front of [head],
+ * the previous block of the scope. The usable bytes start 16 bytes into the block.
+ */
+void* ktc2_scope_alloc(void* head, int64_t size);
+
+/** Frees the chain of blocks starting at [head]. */
+void ktc2_scope_free(void* head);
+
+/* ================== */
 /* MARK: Arena        */
 /* ================== */
 

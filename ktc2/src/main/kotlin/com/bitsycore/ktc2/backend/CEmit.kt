@@ -101,6 +101,7 @@ class CEmitter(private val mModule: KModule) {
 		is KPrimType -> inType.prim.cName
 		is KOptType -> "ktc2_Opt_${inType.prim.cName}"
 		is KStructType -> inType.struct.cName
+		KPtrType -> "void*"
 		KStringType -> "ktc2_String*"
 		is KClassType -> "${inType.cls.cName}*"
 		KObjType -> "ktc2_Obj*"
@@ -273,6 +274,7 @@ class CEmitter(private val mModule: KModule) {
 		return buildString {
 			append("#include \"${inUnit.path}.h\"\n#include \"ktc2_types.h\"\n")
 			vState.includes.filter { it !== inUnit && it.name != "ktc2_core" }.forEach { append("#include \"${it.path}.h\"\n") }
+			vState.cHeaders.forEach { append("#include $it\n") }
 			if (vState.literals.isNotEmpty()) append("\n")
 			vState.literals.forEach { (vText, vName) ->
 				append("KTC2_STRING_LIT($vName, ${vText.encodeToByteArray().size}, ${vText.length}, ${cString(vText)});\n")
@@ -294,6 +296,9 @@ class CEmitter(private val mModule: KModule) {
 	/** What a `.c` file collects while its functions are printed. */
 	private class UnitState {
 		val includes = LinkedHashSet<KUnit>()
+
+		/** C headers of the libraries this unit calls into. */
+		val cHeaders = LinkedHashSet<String>()
 		val literals = LinkedHashMap<String, String>()
 		val typeTests = ArrayList<List<String>>()
 	}
@@ -353,6 +358,8 @@ class CEmitter(private val mModule: KModule) {
 			// between reference types, and boxing where one side is erased and the other is not.
 			fun adapt(inText: String, inFrom: KType, inTo: KType): String = when {
 				inFrom == inTo -> inText
+				inFrom is KRefType && inTo == KPtrType -> "ktc2_unbox_ptr((ktc2_Obj*)$inText)"
+				inFrom == KPtrType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_ptr($inText)"
 				inFrom is KRefType && inTo is KPrimType -> "ktc2_unbox_${inTo.prim.name.lowercase()}((ktc2_Obj*)$inText)"
 				inFrom is KRefType && inTo is KOptType -> "ktc2_unbox_opt_${inTo.prim.name.lowercase()}((ktc2_Obj*)$inText)"
 				inFrom is KPrimType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_${inFrom.prim.name.lowercase()}($inText)"
@@ -602,7 +609,7 @@ class CEmitter(private val mModule: KModule) {
 
 		fun zero(inType: KType): String = when (inType) {
 			is KPrimType -> if (inType.prim == KPrim.BOOLEAN) "false" else "0"
-			is KRefType -> "NULL"
+			is KRefType, KPtrType -> "NULL"
 			else -> "((${cType(inType)}){ 0 })"
 		}
 
@@ -672,7 +679,18 @@ class CEmitter(private val mModule: KModule) {
 					"((ktc2_Array*)&($vStorage){ .header = { { KTC2_STACK | 1, ${arrayTypeId(inExpr.type.element)} }, $vLength, sizeof($vElement) } })"
 				} else "ktc2_array_new(${bare(expr(inExpr.length))}, sizeof(${cType(inExpr.type.element)}), ${arrayTypeId(inExpr.type.element)})"
 			}
-			is KIntrinsic -> "${inExpr.name}(${arguments(inExpr.arguments)})"
+			is KIntrinsic -> {
+				mState.cHeaders += inExpr.headers
+				inExpr.functions.forEach { mState.includes += it.unit }
+				val vTemplate = inExpr.template
+				if (vTemplate == null) {
+					"${inExpr.name}(${arguments(inExpr.arguments)})"
+				} else {
+					// C text of the program's own: its `$n` are replaced by the arguments.
+					val vArguments = inExpr.arguments.map { expr(it) }
+					"(" + Regex("\\$(\\d+)").replace(vTemplate) { vMatch -> vArguments[vMatch.groupValues[1].toInt()] } + ")"
+				}
+			}
 			is KAlloc -> {
 				mState.includes += inExpr.cls.unit
 				if (inExpr.onStack) {

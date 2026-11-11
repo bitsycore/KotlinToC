@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrConst
+import org.jetbrains.kotlin.ir.expressions.IrVararg
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
@@ -48,6 +49,25 @@ private fun cPrefix(inPackage: String): String = if (inPackage.isEmpty()) "kt_" 
 /** The runtime function that starts a thread; a program reaching it is built with atomic counts. */
 private const val kThreadStart = "ktc2_threadStart"
 
+/** The `kotlinx.cinterop` classes whose values, and whose subclasses' values, are bare C addresses. */
+private val kPointerRoots = setOf(
+	"kotlinx.cinterop.NativePtr", "kotlinx.cinterop.NativePointed", "kotlinx.cinterop.CValuesRef", "kotlinx.cinterop.StableRef",
+)
+
+/**
+ * True for a class of C interop that stands for an address: a pointer, or the thing pointed at
+ * (a C variable or struct, which Kotlin code only ever holds by its location).
+ */
+internal fun isPointerClass(inClass: IrClass): Boolean =
+	inClass.kotlinFqName.asString() in kPointerRoots || inClass.superTypes.any { vSuper -> vSuper.classOrNull?.owner?.let { isPointerClass(it) } == true }
+
+/** The `#include` operands a file of bindings names with `@file:CHeaders`. */
+internal fun cHeadersOf(inFile: IrFile?): List<String> {
+	val vAnnotation = inFile?.annotations?.firstOrNull { it.type.classFqName?.asString() == "kotlinx.cinterop.internal.CHeaders" } ?: return emptyList()
+	val vNames = vAnnotation.arguments.firstOrNull() as? IrVararg ?: return emptyList()
+	return vNames.elements.mapNotNull { (it as? IrConst)?.value as? String }
+}
+
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
@@ -71,6 +91,7 @@ private fun mangle(inType: KType): String = when (inType) {
 	is KPrimType -> inType.prim.name.lowercase().replaceFirstChar { it.uppercase() }
 	is KOptType -> mangle(KPrimType(inType.prim)) + "Opt"
 	is KStructType -> inType.struct.cName
+	KPtrType -> "Ptr"
 	KStringType -> "String"
 	is KClassType -> inType.cls.name
 	KObjType -> "Any"
@@ -219,6 +240,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				if (vFunction.body != null || vFunction.isExternal) mSourceFunctions[sourceKey(vFunction)] = vFunction
 			}
 		}
+		mPointerType = inModule.files.filter { it.packageFqName.asString() == "kotlinx.cinterop" }
+			.firstNotNullOfOrNull { vFile -> vFile.declarations.filterIsInstance<IrClass>().firstOrNull { it.name.asString() == "NativePtr" } }
+			?.symbol?.defaultType
 		for (vFile in inModule.files.filter { it.packageFqName.asString() == "ktc2.internal" }) {
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().forEach { mInternal[it.name.asString()] = it }
 		}
@@ -321,6 +345,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				arrayTypeOf(vBase)?.let { return it }
 				val vClass = vBase.classOrNull?.owner ?: return null
 				when {
+					isPointerClass(vClass) -> KPtrType
 					vClass.kotlinFqName.asString() == "kotlin.Enum" -> KClassType(enumBase())
 					vClass.isInterface -> KObjType
 					isStruct(vClass) -> structFor(vClass)?.let { KStructType(it) }
@@ -331,7 +356,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	}
 
 	/** A type argument as used to pick an instantiation: every reference type is `Any?`. */
-	private fun canonical(inType: IrType): IrType = if (kTypeOf(inType) is KRefType) mBuiltIns.anyNType else inType
+	private fun canonical(inType: IrType): IrType = when (kTypeOf(inType)) {
+		is KRefType -> mBuiltIns.anyNType
+		// Every C address type shares one instantiation too, without being boxed.
+		KPtrType -> mPointerType ?: inType
+		else -> inType
+	}
+
+	/** `kotlinx.cinterop.NativePtr`, standing for every C address type as a type argument. */
+	private var mPointerType: IrType? = null
 
 	private fun isStruct(inClass: IrClass): Boolean =
 		inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Struct" }
@@ -970,18 +1003,21 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vSignature = signatureOf(inFunction, vFile, inSubst) ?: return null
 
 		val vStruct = vOwner?.takeIf { isStruct(it) }?.let { structFor(it) }
-		val vClass = if (vOwner != null && vStruct == null && !vOwner.isInterface) {
+		// A member of a C interop class takes the address as `self`; there is no object behind it.
+		val vIsPointer = vOwner != null && isPointerClass(vOwner)
+		val vClass = if (vOwner != null && vStruct == null && !vOwner.isInterface && !vIsPointer) {
 			inOwnerClass ?: classFor(vOwner, vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType })
 		} else {
 			null
 		}
-		if (vOwner != null && vStruct == null && vClass == null && !vOwner.isInterface) {
+		if (vOwner != null && vStruct == null && vClass == null && !vOwner.isInterface && !vIsPointer) {
 			unsupported(vFile, vOwner, "class '${vOwner.name}'")
 			return null
 		}
 		val vUnit = when {
 			vStruct != null -> vStruct.unit
 			vClass != null -> vClass.unit
+			vIsPointer -> facadeFor(vFile)
 			vOwner != null -> interfaceUnitFor(vOwner)
 			else -> facadeFor(vFile)
 		}
@@ -1125,7 +1161,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	/** True when a call to [inFunction] must go through a dispatcher. */
 	internal fun isVirtual(inFunction: IrSimpleFunction): Boolean {
 		val vOwner = inFunction.parent as? IrClass ?: return false
-		if (isStruct(vOwner)) return false
+		if (isStruct(vOwner) || isPointerClass(vOwner)) return false
 		return vOwner.isInterface || (inFunction.modality != Modality.FINAL && vOwner.modality != Modality.FINAL)
 	}
 }

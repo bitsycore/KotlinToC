@@ -855,6 +855,54 @@ ktc2_Obj* ktc2_cs_subSequence(ktc2_Obj* object, int32_t start, int32_t end)
 }
 
 /* ================== */
+/* MARK: C interop    */
+/* ================== */
+
+void* ktc2_str_cptr(ktc2_String* string)
+{
+	return string ? string->bytes : NULL;
+}
+
+ktc2_String* ktc2_string_of_cstr(const char* text)
+{
+	if (!text) ktc2_fail_null();
+	size_t size = strlen(text);
+	int32_t length = 0;
+	for (size_t i = 0; i < size; i++) {
+		unsigned char byte = (unsigned char)text[i];
+		if ((byte & 0xC0) != 0x80) length += byte >= 0xF0 ? 2 : 1;
+	}
+	return new_string(text, (int32_t)size, length);
+}
+
+ktc2_Obj* ktc2_box_ptr(void* address)
+{
+	return address ? ktc2_box_long((int64_t)(intptr_t)address) : NULL;
+}
+
+void* ktc2_unbox_ptr(ktc2_Obj* object)
+{
+	return object ? (void*)(intptr_t)ktc2_unbox_long(object) : NULL;
+}
+
+void* ktc2_scope_alloc(void* head, int64_t size)
+{
+	void** block = calloc(1, 16 + (size_t)size);
+	if (!block) fail("java.lang.OutOfMemoryError", NULL);
+	block[0] = head;
+	return block;
+}
+
+void ktc2_scope_free(void* head)
+{
+	while (head) {
+		void* next = *(void**)head;
+		free(head);
+		head = next;
+	}
+}
+
+/* ================== */
 /* MARK: Weak         */
 /* ================== */
 

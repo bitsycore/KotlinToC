@@ -46,6 +46,12 @@ data object KNothingType : KType
 /** A nullable primitive (`Int?`): a value holding a presence flag and the primitive. No heap. */
 data class KOptType(val prim: KPrim) : KType
 
+/**
+ * A C address (`void*`): what `kotlinx.cinterop` pointers and the objects they point at are.
+ * Not counted, never owned; null is NULL.
+ */
+data object KPtrType : KType
+
 /** A `@Struct` class: a plain C struct passed by value. */
 data class KStructType(val struct: KStruct) : KType
 
@@ -307,7 +313,19 @@ class KIndexRead(val array: KExpr, val index: KExpr, override val type: KType) :
  * I/O) only as the whole right-hand side of a statement, like [KCall], and a reference it
  * returns is owned by the caller.
  */
-class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type: KType, val isPure: Boolean = true) : KExpr
+class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type: KType, val isPure: Boolean = true) : KExpr {
+	/**
+	 * C interop: when set, the C text to emit instead of a call to [name], with `$0`, `$1`…
+	 * standing for the arguments.
+	 */
+	var template: String? = null
+
+	/** C interop: the headers the text needs, as written after `#include`. */
+	var headers: List<String> = emptyList()
+
+	/** C interop: generated functions the text names, whose declarations it needs. */
+	var functions: List<KFunction> = emptyList()
+}
 
 /**
  * Allocates a zeroed array of [length] elements. Not pure; the caller owns the result.
