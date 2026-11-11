@@ -269,6 +269,9 @@ class KIndexRead(val array: KExpr, val index: KExpr, override val type: KType) :
  */
 class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type: KType, val isPure: Boolean = true) : KExpr
 
+/** Allocates a zeroed array of [length] elements. Not pure; the caller owns the result. */
+class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr
+
 /** Allocates a zeroed instance of [cls]. Not pure; the caller owns the result. */
 class KAlloc(val cls: KClass) : KExpr {
 	override val type: KType get() = KClassType(cls)
@@ -286,7 +289,7 @@ class KRetain(val operand: KExpr) : KExpr {
 
 /** True for the expressions that may only be the whole right-hand side of a statement. */
 fun KExpr.isImpure(): Boolean = when (this) {
-	is KCall, is KAlloc -> true
+	is KCall, is KAlloc, is KArrayNew -> true
 	is KIntrinsic -> !isPure
 	is KRefCast -> operand.isImpure()
 	else -> false

@@ -81,6 +81,12 @@ internal class BodyBuilder(
 	private val mLoops = HashMap<IrLoop, Int>()
 	private val mTemps = HashSet<KLocal>()
 	private val mNotSelectable = HashSet<IrWhen>()
+	private var mNextLoopId = 0
+
+	/** Where a `return` from an inlined lambda goes: its result local and the block to leave. */
+	private class InlineTarget(val result: KLocal?, val blockId: Int)
+
+	private val mInlineTargets = HashMap<Any, InlineTarget>()
 	private var mBlock: MutableList<KStmt> = mFunction.body
 
 	// ==================
@@ -349,9 +355,17 @@ internal class BodyBuilder(
 		is IrContainerExpression -> lowerContainer(inExpression)
 		is IrStringConcatenation -> concat(lowerParts(inExpression.arguments))
 		is IrReturn -> {
-			emitReturn(inExpression.value.takeUnless { isUnitObject(it) })
+			val vInline = mInlineTargets[inExpression.returnTargetSymbol]
+			if (vInline == null) {
+				emitReturn(inExpression.value.takeUnless { isUnitObject(it) })
+			} else {
+				val vValue = lowerRhs(inExpression.value)
+				if (vInline.result != null && vValue !== KUnitValue) mBlock += KSet(vInline.result, coerce(vValue, vInline.result.type)) else discard(vValue)
+				mBlock += KBreak(vInline.blockId)
+			}
 			KUnitValue
 		}
+		is IrVararg -> lowerVararg(inExpression)
 		is IrWhileLoop -> {
 			val vId = loopId(inExpression)
 			val vBody = inBlock {
@@ -388,7 +402,7 @@ internal class BodyBuilder(
 	private fun isUnitObject(inExpression: IrExpression): Boolean =
 		inExpression is IrGetObjectValue && inExpression.symbol.owner.kotlinFqName.asString() == "kotlin.Unit"
 
-	private fun loopId(inLoop: IrLoop): Int = mLoops.getOrPut(inLoop) { mLoops.size }
+	private fun loopId(inLoop: IrLoop): Int = mLoops.getOrPut(inLoop) { mNextLoopId++ }
 
 	private fun lowerConst(inConst: IrConst): KExpr {
 		val vValue = inConst.value
@@ -539,6 +553,136 @@ internal class BodyBuilder(
 	}
 
 	// ============
+	//  Inlined lambdas
+
+	private fun containsBreak(inStatements: List<KStmt>, inId: Int): Boolean = inStatements.any { vStatement ->
+		when (vStatement) {
+			is KBreak -> vStatement.loopId == inId
+			is KIf -> containsBreak(vStatement.thenBlock, inId) || containsBreak(vStatement.elseBlock, inId)
+			is KLoop -> containsBreak(vStatement.body, inId) || containsBreak(vStatement.latch, inId)
+			else -> false
+		}
+	}
+
+	/**
+	 * Expands the body of [inLambda] here, with its parameters bound to [inArguments]. A `return`
+	 * from the lambda assigns the result and leaves the expanded block.
+	 */
+	private fun inlineLambda(inLambda: IrFunctionExpression, inArguments: List<KExpr>, inResultType: KType): KExpr {
+		val vFunction = inLambda.function
+		vFunction.parameters.forEachIndexed { vIndex, vParam ->
+			val vType = mImporter.kTypeOf(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
+			val vLocal = KLocal(freshName(vParam.name.asString().trim('<', '>')), vType)
+			mBlock += KLet(vLocal, coerce(inArguments[vIndex], vType))
+			mLocals[vParam] = vLocal
+		}
+		val vResult = if (inResultType == KUnitType || inResultType == KNothingType) null else newTemp(inResultType)
+		vResult?.let { mBlock += KLet(it, null) }
+		val vId = mNextLoopId++
+		mInlineTargets[vFunction.symbol] = InlineTarget(vResult, vId)
+		val vBody = inBlock {
+			when (val vIrBody = vFunction.body) {
+				is IrBlockBody -> vIrBody.statements.forEach { lowerStatement(it) }
+				is IrExpressionBody -> {
+					val vValue = lowerRhs(vIrBody.expression)
+					if (vResult != null) mBlock += KSet(vResult, coerce(vValue, vResult.type)) else discard(vValue)
+				}
+				else -> fail(inLambda, "lambda without a body")
+			}
+		}
+		mInlineTargets.remove(vFunction.symbol)
+		// The usual lambda returns once, at its end: then no block is needed to return from.
+		val vTail = vBody.lastOrNull()
+		val vHead = if (vTail is KBreak && vTail.loopId == vId) vBody.dropLast(1) else vBody
+		if (containsBreak(vHead, vId)) {
+			mBlock += KLoop(vId, vHead + KBreak(vId), emptyList())
+		} else {
+			mBlock += vHead
+		}
+		return vResult?.let { KRead(it) } ?: KUnitValue
+	}
+
+	// ============
+	//  Arrays
+
+	private fun arrayLength(inArray: KExpr): KExpr = KIntrinsic("ktc2_array_length", listOf(inArray), kIntType)
+
+	/** `counter` from 0 until [inLength], running [inBody] with the counter each time. */
+	private fun countedLoop(inLength: KExpr, inBody: (KExpr) -> Unit) {
+		val vCounter = KLocal(freshName("i"), kIntType)
+		mBlock += KLet(vCounter, KConst(0, kIntType))
+		val vId = mNextLoopId++
+		val vBody = inBlock {
+			mBlock += KIf(KBinary(KBinaryOp.GE, KRead(vCounter), inLength, KPrim.INT, kBoolType), listOf(KBreak(vId)), emptyList())
+			inBody(KRead(vCounter))
+		}
+		mBlock += KLoop(vId, vBody, listOf(KSet(vCounter, KBinary(KBinaryOp.ADD, KRead(vCounter), KConst(1, kIntType), KPrim.INT, kIntType))))
+	}
+
+	/** `IntArray(n)`, `IntArray(n) { ... }`, `Array(n) { ... }`. */
+	private fun lowerArrayConstructor(inCall: IrConstructorCall, inType: KArrayType): KExpr {
+		val vSize = inCall.arguments.getOrNull(0) ?: return fail(inCall, "array constructor")
+		val vInit = inCall.arguments.getOrNull(1)
+		val vLength = spill(lowerPure(vSize))
+		val vArray = newTemp(inType)
+		mBlock += KLet(vArray, KArrayNew(vLength, inType))
+		if (vInit != null) {
+			val vLambda = vInit as? IrFunctionExpression ?: return fail(vInit, "array initializer that is not a lambda")
+			countedLoop(vLength) { vIndex ->
+				val vValue = inlineLambda(vLambda, listOf(vIndex), inType.element)
+				mBlock += KIndexSet(KRead(vArray), vIndex, coerce(vValue, inType.element))
+			}
+		}
+		return KRead(vArray)
+	}
+
+	/** A `vararg` argument or `arrayOf(...)` list: a new array holding the elements. */
+	private fun lowerVararg(inVararg: IrVararg): KExpr {
+		val vType = typeOf(inVararg) as? KArrayType ?: return fail(inVararg, "vararg of type '${inVararg.type.render()}'")
+		if (inVararg.elements.any { it !is IrExpression }) return fail(inVararg, "spread (*) in a vararg")
+		val vValues = lowerOperands(inVararg.elements.map { it as IrExpression })
+		val vArray = newTemp(vType)
+		mBlock += KLet(vArray, KArrayNew(KConst(vValues.size, kIntType), vType))
+		vValues.forEachIndexed { vIndex, vValue ->
+			mBlock += KIndexSet(KRead(vArray), KConst(vIndex, kIntType), coerce(vValue, vType.element))
+		}
+		return KRead(vArray)
+	}
+
+	/** Members of `Array` and the primitive arrays. */
+	private fun lowerArrayCall(inCall: IrCall, inName: String, inArguments: List<IrExpression>, inType: KArrayType): KExpr = when (inName) {
+		"<get-size>" -> arrayLength(lowerPure(inArguments[0]))
+		"get" -> {
+			val vOperands = lowerOperands(inArguments)
+			KIndexRead(vOperands[0], vOperands[1], inType.element)
+		}
+		"set" -> {
+			val vOperands = lowerOperands(inArguments, inLastMayBeImpure = true)
+			mBlock += KIndexSet(vOperands[0], vOperands[1], coerce(vOperands[2], inType.element))
+			KUnitValue
+		}
+		else -> fail(inCall, "call to 'kotlin.Array.$inName'")
+	}
+
+	/** `for (x in array)`: an index loop over the array as it is when the loop starts. */
+	private fun lowerArrayFor(inSource: IrExpression, inLoop: IrWhileLoop, inVariable: IrVariable, inBody: List<IrStatement>, inType: KArrayType): KExpr {
+		val vArray = spill(lowerPure(inSource))
+		val vLength = spill(arrayLength(vArray))
+		val vCounter = KLocal(freshName("i"), kIntType)
+		mBlock += KLet(vCounter, KConst(0, kIntType))
+		val vId = loopId(inLoop)
+		val vElement = KLocal(freshName(inVariable.name.asString()), mImporter.kTypeOf(inVariable.type) ?: inType.element)
+		mLocals[inVariable] = vElement
+		val vBody = inBlock {
+			mBlock += KIf(KBinary(KBinaryOp.GE, KRead(vCounter), vLength, KPrim.INT, kBoolType), listOf(KBreak(vId)), emptyList())
+			mBlock += KLet(vElement, coerce(KIndexRead(vArray, KRead(vCounter), inType.element), vElement.type))
+			inBody.forEach { lowerStatement(it) }
+		}
+		mBlock += KLoop(vId, vBody, listOf(KSet(vCounter, KBinary(KBinaryOp.ADD, KRead(vCounter), KConst(1, kIntType), KPrim.INT, kIntType))))
+		return KUnitValue
+	}
+
+	// ============
 	//  for over a range
 
 	private fun lowerFor(inBlock: IrContainerExpression): KExpr {
@@ -547,7 +691,12 @@ internal class BodyBuilder(
 		val vInner = vLoop?.body as? IrContainerExpression
 		val vLoopVariable = vInner?.statements?.firstOrNull() as? IrVariable
 		fun nameOf(inCall: IrCall?) = inCall?.symbol?.owner?.kotlinFqName?.asString()?.substringAfterLast('.')
-		var vRange = (vIterator?.initializer as? IrCall)?.arguments?.firstOrNull() as? IrCall
+		val vSource = (vIterator?.initializer as? IrCall)?.arguments?.firstOrNull()
+		val vSourceType = vSource?.let { mImporter.kTypeOf(it.type) }
+		if (vSource != null && vSourceType is KArrayType && vLoop != null && vInner != null && vLoopVariable != null) {
+			return lowerArrayFor(vSource, vLoop, vLoopVariable, vInner.statements.drop(1), vSourceType)
+		}
+		var vRange = vSource as? IrCall
 		var vStepArgument: IrExpression? = null
 		if (nameOf(vRange) == "step" && vRange?.arguments?.size == 2) {
 			vStepArgument = vRange.arguments[1]
@@ -555,16 +704,25 @@ internal class BodyBuilder(
 		}
 		val vKind = nameOf(vRange)
 		val vElement = vLoopVariable?.let { mImporter.kTypeOf(it.type) } as? KPrimType
-		if (vLoop == null || vInner == null || vLoopVariable == null || vRange == null || vRange.arguments.size != 2 ||
-			vKind !in setOf("until", "rangeUntil", "rangeTo", "downTo") ||
+		// `array.indices` is the range 0 until size.
+		val vIndicesOf = vRange?.takeIf { vKind == "<get-indices>" && it.arguments.size == 1 }?.arguments?.get(0)
+			?.takeIf { mImporter.kTypeOf(it.type) is KArrayType }
+		val vIsRange = vRange != null && vRange.arguments.size == 2 && vKind in setOf("until", "rangeUntil", "rangeTo", "downTo")
+		if (vLoop == null || vInner == null || vLoopVariable == null || vRange == null || (!vIsRange && vIndicesOf == null) ||
 			vElement == null || (vElement.prim != KPrim.INT && vElement.prim != KPrim.LONG)
 		) {
-			return fail(inBlock, "'for' over anything but an Int/Long range (until, .., ..<, downTo, step)")
+			return fail(inBlock, "'for' over anything but an array or an Int/Long range (until, .., ..<, downTo, step)")
 		}
 		val vPrim = vElement.prim
 		val vDown = vKind == "downTo"
 
-		val vBounds = lowerOperands(vRange.arguments.map { it!! } + listOfNotNull(vStepArgument))
+		val vBounds = if (vIndicesOf != null) {
+			val vArray = lowerPure(vIndicesOf)
+			val vStepValues = listOfNotNull(vStepArgument).map { lowerPure(it) }
+			(listOf<KExpr>(KConst(0, kIntType), spill(arrayLength(vArray))) + vStepValues).toMutableList()
+		} else {
+			lowerOperands(vRange.arguments.map { it!! } + listOfNotNull(vStepArgument))
+		}
 		val vCounter = KLocal(freshName("i"), vElement)
 		mBlock += KLet(vCounter, convert(vBounds[0], vPrim))
 		val vEnd = spill(convert(vBounds[1], vPrim))
@@ -578,7 +736,7 @@ internal class BodyBuilder(
 
 		val vVariable = KLocal(freshName(vLoopVariable.name.asString()), vElement)
 		mLocals[vLoopVariable] = vVariable
-		val vExclusive = vKind == "until" || vKind == "rangeUntil"
+		val vExclusive = vKind == "until" || vKind == "rangeUntil" || vIndicesOf != null
 		val vBody = inBlock {
 			if (vExclusive && vStepArgument == null) mBlock += KIf(compare(KBinaryOp.GE), listOf(KBreak(vId)), emptyList())
 			mBlock += KLet(vVariable, KRead(vCounter))
@@ -618,6 +776,7 @@ internal class BodyBuilder(
 	private fun lowerConstructorCall(inCall: IrConstructorCall): KExpr {
 		val vConstructor = inCall.symbol.owner
 		val vOwner = vConstructor.parentAsClass
+		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null }?.let { return lowerArrayConstructor(inCall, it) }
 		val vTarget = mImporter.functionFor(vConstructor)
 			?: return fail(inCall, "construction of '${vOwner.kotlinFqName}'")
 		if (vTarget.returnType is KStructType) return callFunction(inCall, vTarget, vConstructor, inCall.arguments, null)
@@ -805,6 +964,11 @@ internal class BodyBuilder(
 			mBlock += KPrint(lowerParts(vPieces), vName == "println")
 			return KUnitValue
 		}
+		// arrayOf() / emptyArray(): no elements, so no vararg argument at all.
+		if (vParent == "kotlin" && (vName == "emptyArray" || (vName.endsWith("rrayOf") && vArguments.all { it == null }))) {
+			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, vWhat)
+			return KArrayNew(KConst(0, kIntType), vType)
+		}
 		if (vArguments.isEmpty() || vArguments.any { it == null }) return fail(inCall, vWhat)
 		val vIrArguments = vArguments.map { it!! }
 
@@ -816,6 +980,17 @@ internal class BodyBuilder(
 			}
 		}
 		if (vParent == "kotlin.String") return lowerStringCall(inCall, vName, vIrArguments)
+		(mImporter.kTypeOf(vIrArguments[0].type) as? KArrayType)?.let { vArrayType ->
+			if (isArrayClassName(vParent)) return lowerArrayCall(inCall, vName, vIrArguments, vArrayType)
+		}
+		// arrayOf(1, 2), intArrayOf(...): the vararg already is the array.
+		if (vParent == "kotlin" && vName.endsWith("rrayOf") && vIrArguments.size == 1 && vIrArguments[0] is IrVararg) {
+			return lowerRhs(vIrArguments[0])
+		}
+		if (vParent == "kotlin" && vName == "arrayOfNulls" && vIrArguments.size == 1) {
+			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, vWhat)
+			return KArrayNew(lowerPure(vIrArguments[0]), vType)
+		}
 		// String?.plus(Any?) is an extension in package kotlin.
 		if (vParent == "kotlin" && vName == "plus" && vIrArguments.size == 2 && mImporter.kTypeOf(vIrArguments[0].type) == KStringType) {
 			return concat(lowerParts(vIrArguments))
@@ -874,6 +1049,8 @@ internal class BodyBuilder(
 		}
 		return fail(inCall, vWhat)
 	}
+
+	private fun isArrayClassName(inParent: String): Boolean = inParent == "kotlin.Array" || (inParent.startsWith("kotlin.") && inParent.endsWith("Array"))
 
 	/** `x!!`: fails on null, otherwise yields the value as non-null. */
 	private fun lowerNotNull(inCall: IrCall, inArgument: IrExpression): KExpr {

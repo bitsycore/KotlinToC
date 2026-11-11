@@ -296,7 +296,7 @@ class CEmitter(private val mModule: KModule) {
 					store(inStatement.global.cName, inStatement.value, inStatement.releasesOld, inDepth)
 				}
 				is KFieldSet -> store(field(inStatement.target, inStatement.field), inStatement.value, inStatement.releasesOld, inDepth)
-				is KIndexSet -> line(inDepth, "/* array store: not implemented */")
+				is KIndexSet -> store(element(inStatement.array, inStatement.index, inStatement.value.type), inStatement.value, inStatement.releasesOld, inDepth)
 				is KEval -> line(inDepth, "${bare(expr(inStatement.expr))};")
 				is KRelease -> line(inDepth, "ktc2_release(${bare(expr(inStatement.operand))});")
 				is KReturn -> line(inDepth, inStatement.value?.let { "return ${bare(expr(it))};" } ?: "return;")
@@ -351,6 +351,9 @@ class CEmitter(private val mModule: KModule) {
 
 		private fun loop(inLoop: KLoop, inDepth: Int) {
 			line(inDepth, "for (;;) {")
+			// Loop ids are per function: forget labels requested by an earlier function's loop.
+			mBreakLabels -= inLoop.id
+			mContinueLabels -= inLoop.id
 			mLoops += inLoop
 			block(inLoop.body, inDepth + 1)
 			if (inLoop.id in mContinueLabels) line(inDepth, "continue_${inLoop.id}: ;")
@@ -444,6 +447,18 @@ class CEmitter(private val mModule: KModule) {
 			return "${expr(inTarget)}${if (inTarget.type is KClassType) "->" else "."}${inField.cName}"
 		}
 
+		/** The bounds-checked element `array[index]`, usable as a value or as a slot. */
+		private fun element(inArray: KExpr, inIndex: KExpr, inType: KType): String {
+			need(inType)
+			return "KTC2_ARRAY_AT(${bare(expr(inArray))}, ${cType(inType)}, ${bare(expr(inIndex))})"
+		}
+
+		private fun arrayTypeId(inElement: KType): String = when (inElement) {
+			is KPrimType -> "KTC2_TYPE_ARRAY_${inElement.prim.name}"
+			is KRefType -> "KTC2_TYPE_ARRAY_REF"
+			else -> "KTC2_TYPE_ARRAY_VALUE"
+		}
+
 		private fun typeTest(inTest: KInstanceOf): String {
 			val vIds = when (val vTarget = inTest.target) {
 				KStringTarget -> listOf("KTC2_TYPE_STRING")
@@ -502,7 +517,11 @@ class CEmitter(private val mModule: KModule) {
 				"((${cType(inExpr.type)})${expr(inExpr.operand)})"
 			}
 			is KInstanceOf -> typeTest(inExpr)
-			is KIndexRead -> "0 /* array read: not implemented */"
+			is KIndexRead -> element(inExpr.array, inExpr.index, inExpr.type)
+			is KArrayNew -> {
+				need(inExpr.type.element)
+				"ktc2_array_new(${bare(expr(inExpr.length))}, sizeof(${cType(inExpr.type.element)}), ${arrayTypeId(inExpr.type.element)})"
+			}
 			is KIntrinsic -> "${inExpr.name}(${arguments(inExpr.arguments)})"
 			is KAlloc -> {
 				mState.includes += inExpr.cls.unit

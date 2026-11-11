@@ -94,6 +94,37 @@ int ktc2_exit(void)
 }
 
 /* ================== */
+/* MARK: Arrays       */
+/* ================== */
+
+_Noreturn void ktc2_fail_index(int32_t index, int32_t length)
+{
+	fflush(stdout);
+	fprintf(stderr, "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, length);
+	exit(1);
+}
+
+ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)
+{
+	if (length < 0) {
+		char text[16];
+		snprintf(text, sizeof text, "%" PRId32, length);
+		fail("java.lang.NegativeArraySizeException", text);
+	}
+	ktc2_Array* array = ktc2_alloc(sizeof(ktc2_Array) + (size_t)length * elementSize, typeId);
+	array->length = length;
+	array->elementSize = (int32_t)elementSize;
+	return array;
+}
+
+void ktc2_array_destroy(ktc2_Obj* object)
+{
+	ktc2_Array* array = (ktc2_Array*)object;
+	void** elements = (void**)(array + 1);
+	for (int32_t i = 0; i < array->length; i++) ktc2_release(elements[i]);
+}
+
+/* ================== */
 /* MARK: Strings      */
 /* ================== */
 

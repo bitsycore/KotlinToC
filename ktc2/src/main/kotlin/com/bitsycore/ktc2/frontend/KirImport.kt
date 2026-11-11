@@ -143,6 +143,21 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		else -> null
 	}
 
+	private val mPrimArrays = mapOf(
+		"kotlin.BooleanArray" to KPrim.BOOLEAN, "kotlin.ByteArray" to KPrim.BYTE, "kotlin.ShortArray" to KPrim.SHORT,
+		"kotlin.IntArray" to KPrim.INT, "kotlin.LongArray" to KPrim.LONG, "kotlin.CharArray" to KPrim.CHAR,
+		"kotlin.FloatArray" to KPrim.FLOAT, "kotlin.DoubleArray" to KPrim.DOUBLE,
+	)
+
+	/** The array type of [inType] (`Array<T>` or a primitive array), or null when it is not an array. */
+	private fun arrayTypeOf(inType: IrType): KArrayType? {
+		val vName = inType.classOrNull?.owner?.kotlinFqName?.asString() ?: return null
+		mPrimArrays[vName]?.let { return KArrayType(KPrimType(it)) }
+		if (vName != "kotlin.Array") return null
+		val vElement = (inType as? IrSimpleType)?.arguments?.firstOrNull()?.typeOrNull ?: return null
+		return kTypeOf(vElement)?.takeIf { it != KUnitType && it != KNothingType }?.let { KArrayType(it) }
+	}
+
 	/** The KIR type of [inType], or null when it is not supported (the caller reports where). */
 	internal fun kTypeOf(inType: IrType): KType? {
 		primOf(inType)?.let { return KPrimType(it) }
@@ -153,6 +168,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vBase.isNothing() -> if (inType.isMarkedNullable()) KObjType else KNothingType
 			vBase.isString() -> KStringType
 			vBase.isAny() -> KObjType
+			arrayTypeOf(vBase) != null -> arrayTypeOf(vBase)
 			else -> {
 				val vClass = vBase.classOrNull?.owner ?: return null
 				when {

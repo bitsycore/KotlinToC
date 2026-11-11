@@ -34,10 +34,42 @@ typedef struct ktc2_TypeInfo {
 enum {
 	KTC2_TYPE_NONE = 0,
 	KTC2_TYPE_STRING = 1,
-	KTC2_TYPE_FIRST_USER = 8
+	KTC2_TYPE_ARRAY_BOOLEAN,
+	KTC2_TYPE_ARRAY_BYTE,
+	KTC2_TYPE_ARRAY_SHORT,
+	KTC2_TYPE_ARRAY_INT,
+	KTC2_TYPE_ARRAY_LONG,
+	KTC2_TYPE_ARRAY_CHAR,
+	KTC2_TYPE_ARRAY_FLOAT,
+	KTC2_TYPE_ARRAY_DOUBLE,
+	KTC2_TYPE_ARRAY_UBYTE,
+	KTC2_TYPE_ARRAY_USHORT,
+	KTC2_TYPE_ARRAY_UINT,
+	KTC2_TYPE_ARRAY_ULONG,
+	KTC2_TYPE_ARRAY_REF,    /* elements are references, released with the array */
+	KTC2_TYPE_ARRAY_VALUE,  /* elements are plain values (nullable primitives, structs) */
+	KTC2_TYPE_FIRST_USER
 };
 
-#define KTC2_BUILTIN_TYPES [KTC2_TYPE_STRING] = { "String", NULL }
+struct ktc2_Obj;
+void ktc2_array_destroy(struct ktc2_Obj* object);
+
+#define KTC2_BUILTIN_TYPES \
+	[KTC2_TYPE_STRING] = { "String", NULL }, \
+	[KTC2_TYPE_ARRAY_BOOLEAN] = { "BooleanArray", NULL }, \
+	[KTC2_TYPE_ARRAY_BYTE] = { "ByteArray", NULL }, \
+	[KTC2_TYPE_ARRAY_SHORT] = { "ShortArray", NULL }, \
+	[KTC2_TYPE_ARRAY_INT] = { "IntArray", NULL }, \
+	[KTC2_TYPE_ARRAY_LONG] = { "LongArray", NULL }, \
+	[KTC2_TYPE_ARRAY_CHAR] = { "CharArray", NULL }, \
+	[KTC2_TYPE_ARRAY_FLOAT] = { "FloatArray", NULL }, \
+	[KTC2_TYPE_ARRAY_DOUBLE] = { "DoubleArray", NULL }, \
+	[KTC2_TYPE_ARRAY_UBYTE] = { "UByteArray", NULL }, \
+	[KTC2_TYPE_ARRAY_USHORT] = { "UShortArray", NULL }, \
+	[KTC2_TYPE_ARRAY_UINT] = { "UIntArray", NULL }, \
+	[KTC2_TYPE_ARRAY_ULONG] = { "ULongArray", NULL }, \
+	[KTC2_TYPE_ARRAY_REF] = { "Array", ktc2_array_destroy }, \
+	[KTC2_TYPE_ARRAY_VALUE] = { "Array", NULL }
 
 /** Generated in ktc2_main.c. */
 extern const ktc2_TypeInfo ktc2_types[];
@@ -90,6 +122,34 @@ KTC2_OPT(uint32_t);
 KTC2_OPT(uint64_t);
 KTC2_OPT(float);
 KTC2_OPT(double);
+
+/* ================== */
+/* MARK: Arrays       */
+/* ================== */
+
+/** Header of every array; the elements follow it. */
+typedef struct ktc2_Array {
+	ktc2_Obj header;
+	int32_t length;
+	int32_t elementSize;
+} ktc2_Array;
+
+/** A zeroed array; fails on a negative length. */
+ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId);
+
+_Noreturn void ktc2_fail_index(int32_t index, int32_t length);
+
+static inline int32_t ktc2_array_length(const ktc2_Array* array) { return array->length; }
+
+/** Returns [index] after checking it against the array's bounds. */
+static inline int32_t ktc2_array_index(const ktc2_Array* array, int32_t index)
+{
+	if ((uint32_t)index >= (uint32_t)array->length) ktc2_fail_index(index, array->length);
+	return index;
+}
+
+/** The bounds-checked element, as an lvalue. */
+#define KTC2_ARRAY_AT(array, type, index) (((type*)((array) + 1))[ktc2_array_index((array), (index))])
 
 /* ================== */
 /* MARK: Strings      */
