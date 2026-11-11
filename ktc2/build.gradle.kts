@@ -25,9 +25,9 @@ val stdlibSources: Configuration by configurations.creating {
 }
 
 dependencies {
-	stdlibSources("org.jetbrains.kotlin:kotlin-stdlib:2.3.20:sources")
+	stdlibSources("org.jetbrains.kotlin:kotlin-stdlib:2.5.0-RC:sources")
 	// Frontend: the Kotlin K2 compiler. Pinned — its IR API is experimental.
-	implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20")
+	implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.5.0-RC")
 	testImplementation(kotlin("test"))
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

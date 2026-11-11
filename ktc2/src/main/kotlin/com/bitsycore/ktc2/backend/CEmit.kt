@@ -400,7 +400,7 @@ class CEmitter(private val mModule: KModule) {
 				}
 				val vCall = "${inTarget.cName}($vArguments)"
 				if (vIsVoid) return "{ $vBefore$vCall; ${vAfter}return; }"
-				if (inTarget.returnType == KUnitType || inTarget.returnType == KNothingType) return "{ $vBefore$vCall; ${vAfter}return NULL; }"
+				if (inTarget.returnType == KUnitType || inTarget.returnType == KNothingType) return "{ $vBefore$vCall; ${vAfter}return ${zero(inFunction.returnType)}; }"
 				if (inTarget.returnType is KRefType && isUnboxed(inFunction.returnType)) {
 					// The implementation returns a box it owns: its content is taken out and the box released.
 					// (NULL is what it returns when it left with an exception.)

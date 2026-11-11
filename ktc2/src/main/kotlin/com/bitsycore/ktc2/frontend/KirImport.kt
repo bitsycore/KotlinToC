@@ -79,6 +79,22 @@ private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBo
 internal fun classParameters(inClass: IrClass): List<IrTypeParameter> =
 	inClass.typeParameters + if (inClass.isInner) classParameters(inClass.parentAsClass) else emptyList()
 
+/**
+ * True for a function declared in a `companion { }` block: it sits in its class but has no
+ * receiver, so it is a top-level function in everything but its name.
+ */
+internal fun isStaticMember(inFunction: IrFunction): Boolean =
+	inFunction is IrSimpleFunction && inFunction.parent is IrClass && inFunction.dispatchReceiverParameter == null &&
+		inFunction.origin != IrDeclarationOrigin.ENUM_CLASS_SPECIAL_MEMBER
+
+/** True for a property of a `companion { }` block: one variable for the whole program. */
+internal fun isStaticProperty(inProperty: IrProperty): Boolean {
+	val vClass = inProperty.parent as? IrClass ?: return false
+	val vGetter = inProperty.getter
+	if (vGetter != null) return isStaticMember(vGetter)
+	return !vClass.isObject && inProperty.backingField?.isStatic == true
+}
+
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
@@ -423,8 +439,28 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	/** `kotlinx.cinterop.NativePtr`, standing for every C address type as a type argument. */
 	private var mPointerType: IrType? = null
 
-	private fun isStruct(inClass: IrClass): Boolean =
-		inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Struct" }
+	private val mValueStructs = HashMap<IrClass, Boolean>()
+
+	/**
+	 * True for a class whose values are plain C structs: one marked `@Struct`, or a final
+	 * `value class` holding only numbers and other such values. A value class has no identity
+	 * in Kotlin either, so keeping it out of the heap changes nothing a program can observe.
+	 */
+	private fun isStruct(inClass: IrClass): Boolean {
+		if (inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Struct" }) return true
+		mValueStructs[inClass]?.let { return it }
+		// While its own fields are being looked at, a class is not yet known to be a struct.
+		mValueStructs[inClass] = false
+		val vIsValue = inClass.isValue && inClass.kind == ClassKind.CLASS && inClass.modality == Modality.FINAL &&
+			inClass.typeParameters.isEmpty() && inClass.fileOrNull != null && !isPointerClass(inClass)
+		val vFields = inClass.declarations.filterIsInstance<IrProperty>().mapNotNull { it.backingField }
+		val vHolds = vIsValue && vFields.isNotEmpty() && vFields.all { vField ->
+			val vType = vField.type.makeNotNull()
+			primOf(vType) != null || vType.classOrNull?.owner?.let { it != inClass && isStruct(it) } == true
+		}
+		mValueStructs[inClass] = vHolds
+		return vHolds
+	}
 
 	/** The dotted name of [inClass] within its file; an anonymous object is called "object". */
 	private fun nestedName(inClass: IrClass): String =
@@ -488,6 +524,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		for (vProperty in inFile.declarations.filterIsInstance<IrProperty>()) {
 			declareProperty(vProperty, vUnit, inFile)?.let { vStartup += it }
 		}
+		// The properties of `companion { }` blocks are variables of the program like the top-level ones.
+		fun declareStatics(inClass: IrClass) {
+			for (vDeclaration in inClass.declarations) {
+				if (vDeclaration is IrProperty && isStaticProperty(vDeclaration)) declareProperty(vDeclaration, vUnit, inFile, inClass)?.let { vStartup += it }
+				if (vDeclaration is IrClass) declareStatics(vDeclaration)
+			}
+		}
+		inFile.declarations.filterIsInstance<IrClass>().forEach { declareStatics(it) }
 		if (vStartup.isNotEmpty()) {
 			val vInit = KFunction("${cPrefix(vUnit.pkg)}${vUnit.name}_init", vUnit, emptyList(), KUnitType)
 			vUnit.initializer = vInit
@@ -942,6 +986,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	internal fun globalFor(inField: IrField): KGlobal? {
 		mGlobals[inField]?.let { return it }
 		(inField.parent as? IrFile)?.let { facadeFor(it) }
+		if (inField.isStatic && inField.parent is IrClass) inField.fileOrNull?.let { facadeFor(it) }
 		return mGlobals[inField]
 	}
 
@@ -958,6 +1003,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun touchFile(inFunction: IrFunction) {
 		val vProperty = (inFunction as? IrSimpleFunction)?.correspondingPropertySymbol?.owner ?: return
 		(vProperty.parent as? IrFile)?.let { facadeFor(it) }
+		if (isStaticProperty(vProperty)) vProperty.fileOrNull?.let { facadeFor(it) }
 	}
 
 	/**
@@ -966,7 +1012,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 *
 	 * @return the global and its initializer when that initializer has to run at startup
 	 */
-	private fun declareProperty(inProperty: IrProperty, inUnit: KUnit, inFile: IrFile): Pair<KGlobal, IrExpression>? {
+	private fun declareProperty(inProperty: IrProperty, inUnit: KUnit, inFile: IrFile, inOwner: IrClass? = null): Pair<KGlobal, IrExpression>? {
 		if (inProperty.isDelegated || inProperty.isLateinit) {
 			unsupported(inFile, inProperty, "delegated or lateinit property")
 			return null
@@ -977,7 +1023,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			unsupported(inFile, inProperty, "property type '${vBacking.type.render()}'")
 			return null
 		}
-		val vGlobal = KGlobal(cPrefix(inUnit.pkg) + cSuffix(inProperty.name.asString()), vType, inUnit)
+		val vScope = cPrefix(inUnit.pkg) + (inOwner?.let { cSuffix(nestedName(it)) + "_" } ?: "")
+		val vGlobal = KGlobal(vScope + cSuffix(inProperty.name.asString()), vType, inUnit)
 		inUnit.globals += vGlobal
 		mGlobals[vBacking] = vGlobal
 		for (vAccessor in listOfNotNull(inProperty.getter, inProperty.setter)) {
@@ -1099,7 +1146,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	internal fun functionFor(inFunction: IrFunction, inSubst: Subst = emptyMap(), inOwnerClass: KClass? = null): KFunction? {
 		val vKey = monoOf(inFunction, inSubst, inOwnerClass)
 		if (vKey in mFunctions) return mFunctions[vKey]
-		val vOwner = inFunction.parent as? IrClass
+		// A function of a `companion { }` block belongs to no instance: it is imported as a top-level one.
+		val vStaticOwner = (inFunction.parent as? IrClass)?.takeIf { isStaticMember(inFunction) }
+		val vOwner = (inFunction.parent as? IrClass)?.takeIf { vStaticOwner == null }
 		if (vOwner != null && isAnyClass(vOwner)) {
 			return anyDefault(inFunction.name.asString()).also { mFunctions[vKey] = it }
 		}
@@ -1145,6 +1194,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vStruct != null -> vStruct.cName + "_"
 			vClass != null -> vClass.cName + "_"
 			vOwner != null -> cPrefix(vUnit.pkg) + cSuffix(nestedName(vOwner)) + "_"
+			vStaticOwner != null -> cPrefix(vUnit.pkg) + cSuffix(nestedName(vStaticOwner)) + "_"
 			else -> cPrefix(vUnit.pkg)
 		}
 		val vIsConstructor = inFunction is IrConstructor
@@ -1284,7 +1334,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	private fun accepts(inDispatcher: List<KType>, inActual: List<KType>): Boolean =
 		inDispatcher.size == inActual.size && inDispatcher.indices.all {
-			inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType || inActual[it] == KObjType
+			// `Nothing` as an argument (the empty list is a List<Nothing>) fits every instantiation.
+			inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType || inActual[it] == KObjType || inActual[it] == KNothingType
 		}
 
 	/** True when a call to [inFunction] must go through a dispatcher. */

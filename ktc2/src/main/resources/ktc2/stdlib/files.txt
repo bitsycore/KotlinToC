@@ -71,6 +71,7 @@ commonMain/kotlin/ExceptionsH.kt
 commonMain/kotlin/Comparator.kt
 commonMain/kotlin/comparisons/Comparisons.kt
 commonMain/generated/_Arrays.kt
+commonMain/kotlin/collections/UByteValueSet.kt
 Ktc2Internal.kt
 Ktc2Exceptions.kt
 Ktc2Collections.kt
@@ -81,6 +82,8 @@ Ktc2Strings.kt
 Ktc2Io.kt
 Ktc2Sequences.kt
 Ktc2Lifetime.kt
+commonMain/kotlin/internal/throwNoWhenBranchMatchedException.kt
+Ktc2KotlinInternal.kt
 Ktc2Thread.kt
 Ktc2JavaLang.kt
 Ktc2Concurrent.kt

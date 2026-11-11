@@ -245,7 +245,8 @@ internal class BodyBuilder(
 		val vIr = mIrFunction!!
 		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
 		val vOffset = mFunction.params.size - vIr.parameters.size
-		vIr.parameters.forEachIndexed { vIndex, vParam -> mLocals[vParam] = mFunction.params[vIndex + vOffset] }
+		// The first parameters of a function reference's `invoke` are its bound values: they come from the closure, below.
+		vIr.parameters.forEachIndexed { vIndex, vParam -> if (vIndex + vOffset >= 0) mLocals[vParam] = mFunction.params[vIndex + vOffset] }
 		mCellVariables += mImporter.captures.cellVariables(vIr)
 		for (vBinding in mBindings) {
 			val vLocal = KLocal(freshName("captured"), vBinding.field.type)
@@ -276,12 +277,31 @@ internal class BodyBuilder(
 		}
 	}
 
-	/** A `@Struct` constructor: each field takes its property initializer. */
+	/**
+	 * A struct constructor returns the new value. The primary one gives each field its property
+	 * initializer and then runs the `init` blocks, which see the finished value as `this`; a
+	 * secondary one starts from the value the constructor it delegates to returns.
+	 */
 	private fun buildStructConstructor(inConstructor: IrConstructor) {
 		val vClass = inConstructor.parentAsClass
 		val vStruct = (mFunction.returnType as KStructType).struct
-		if (!inConstructor.isPrimary) fail(inConstructor, "secondary constructor in a @Struct class")
-		if (vClass.declarations.any { it is IrAnonymousInitializer }) fail(inConstructor, "init block in a @Struct class")
+		val vSelf = KLocal(freshName("self"), mFunction.returnType)
+		if (!inConstructor.isPrimary) {
+			for (vStatement in (inConstructor.body as? IrBlockBody)?.statements ?: emptyList()) {
+				when (vStatement) {
+					is IrDelegatingConstructorCall -> {
+						val vDelegate = vStatement.symbol.owner
+						val vTarget = mImporter.functionFor(vDelegate) ?: return run { fail(vStatement, "constructor of '${vClass.name}'") }
+						mBlock += KLet(vSelf, callFunction(vStatement, vTarget, vDelegate, vStatement.arguments, null))
+						vClass.thisReceiver?.let { mLocals[it] = vSelf }
+					}
+					is IrInstanceInitializerCall -> {}
+					else -> lowerStatement(vStatement)
+				}
+			}
+			mBlock += KReturn(KRead(vSelf))
+			return
+		}
 		val vValues = ArrayList<KExpr>()
 		for (vProperty in vClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
@@ -289,7 +309,16 @@ internal class BodyBuilder(
 			val vInit = vBacking.initializer?.expression
 			vValues += if (vInit == null) fail(vProperty, "property without initializer") else spill(coerce(lowerPure(vInit), vField.type))
 		}
-		if (vValues.size == vStruct.fields.size) mBlock += KReturn(KStructNew(vStruct, vValues))
+		if (vValues.size != vStruct.fields.size) return
+		val vInits = vClass.declarations.filterIsInstance<IrAnonymousInitializer>()
+		if (vInits.isEmpty()) {
+			mBlock += KReturn(KStructNew(vStruct, vValues))
+			return
+		}
+		mBlock += KLet(vSelf, KStructNew(vStruct, vValues))
+		vClass.thisReceiver?.let { mLocals[it] = vSelf }
+		for (vInit in vInits) vInit.body.statements.forEach { lowerStatement(it) }
+		mBlock += KReturn(KRead(vSelf))
 	}
 
 	/** A property accessor without a body reads or writes the backing field. */
@@ -574,6 +603,7 @@ internal class BodyBuilder(
 		}
 		is IrFunctionExpression -> makeClosure(inExpression, inExpression.function, null)?.let { KRead(it.first) } ?: KUnitValue
 		is IrFunctionReference -> lowerFunctionReference(inExpression)
+		is IrRichFunctionReference -> lowerRichFunctionReference(inExpression)
 		is IrSetValue -> {
 			val vLocal = mLocals[inExpression.symbol.owner]
 			val vCell = mCells[inExpression.symbol.owner]
@@ -1520,7 +1550,8 @@ internal class BodyBuilder(
 
 	private fun lowerCall(inCall: IrCall): KExpr {
 		val vCallee = mImporter.sourceOf(inCall.symbol.owner)
-		val vOwner = vCallee.parent as? IrClass
+		// A call into a `companion { }` block has no receiver: it is a call to a top-level function.
+		val vOwner = (vCallee.parent as? IrClass)?.takeUnless { isStaticMember(vCallee) }
 		if (vOwner == null && vCallee.name.asString() == "newArray" && vCallee.kotlinFqName.asString() == "ktc2.internal.newArray") {
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, "newArray of '${inCall.type.render()}'")
 			return KArrayNew(lowerPure(inCall.arguments[0]!!), vType)
@@ -1696,12 +1727,20 @@ internal class BodyBuilder(
 	 * @param inSelf the function itself when it is a local function that may call itself
 	 * @return the local holding the new object, and its `invoke`
 	 */
-	private fun makeClosure(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?, inSam: IrType? = null): Pair<KLocal, KFunction>? {
+	private fun makeClosure(
+		inElement: IrElement,
+		inFunction: IrSimpleFunction,
+		inSelf: IrFunction?,
+		inSam: IrType? = null,
+		/** The values bound to the first parameters of [inFunction] (a function reference `x::f`). */
+		inBound: List<KLocal> = emptyList(),
+	): Pair<KLocal, KFunction>? {
 		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
 
 		val vSet = CaptureSet()
 		collectCaptures(mImporter.captures.freeVariables(inFunction), vSet)
 		val vCaptures = ArrayList<Capture>()
+		inBound.forEachIndexed { vIndex, vLocal -> vCaptures += Capture(inFunction.parameters[vIndex], "bound$vIndex", vLocal, null, null) }
 		for ((vDeclaration, vLocal) in vSet.values) {
 			val vName = if (vDeclaration is IrValueParameter && vDeclaration.kind != IrParameterKind.Regular) "self" else vDeclaration.name.asString()
 			vCaptures += Capture(vDeclaration, vName, vLocal, mCells[vDeclaration], null)
@@ -1713,7 +1752,7 @@ internal class BodyBuilder(
 		val vReturn = kType(inFunction.returnType)
 		val vNames = HashSet<String>()
 		val vParams = ArrayList<KLocal>()
-		for (vParam in inFunction.parameters) {
+		for (vParam in inFunction.parameters.drop(inBound.size)) {
 			val vType = kType(vParam.type)
 			if (vType == null || vType == KUnitType || vType == KNothingType) {
 				fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
@@ -1743,6 +1782,25 @@ internal class BodyBuilder(
 	}
 
 	/** `::function`, `value::method`: a closure object forwarding to the function, holding the bound receiver if any. */
+	/**
+	 * `::f`, `x::f`, `Type::f` as the compiler hands them over since Kotlin 2.4: an `invoke`
+	 * function that calls the target, whose first parameters take the bound values. It is
+	 * lowered like a lambda that captures those values.
+	 */
+	private fun lowerRichFunctionReference(inReference: IrRichFunctionReference): KExpr {
+		val vBound = lowerOperands(inReference.boundValues).mapIndexed { vIndex, vValue ->
+			val vType = kType(inReference.invokeFunction.parameters[vIndex].type) ?: vValue.type
+			KLocal(freshName("bound"), vType).also {
+				mTemps += it
+				mBlock += KLet(it, coerce(vValue, vType))
+			}
+		}
+		// A reference used where a `fun interface` is expected implements that interface.
+		val vInterface = inReference.overriddenFunctionSymbol.owner.parentAsClass
+		val vSam = inReference.type.takeIf { !isFunctionType(vInterface.symbol.typeWith()) && !vInterface.kotlinFqName.asString().startsWith("kotlin.reflect.") }
+		return makeClosure(inReference, inReference.invokeFunction, null, vSam, vBound)?.let { KRead(it.first) } ?: KUnitValue
+	}
+
 	private fun lowerFunctionReference(inReference: IrFunctionReference): KExpr {
 		val vTarget = inReference.symbol.owner as? IrSimpleFunction ?: return fail(inReference, "constructor reference")
 		val vTypes = mImporter.argumentsOf(closed(inReference.type))
@@ -1853,6 +1911,19 @@ internal class BodyBuilder(
 					}
 					val vFunction = mImporter.staticFunctionFor(vLambda.function, mFile, mSubst)
 						?: return fail(inCall, "staticCFunction of this lambda")
+					return KIntrinsic("cFunction", emptyList(), KPtrType).also {
+						it.template = "(void*)${vFunction.cName}"
+						it.functions = listOf(vFunction)
+					}
+				}
+				(inCall.arguments[0] as? IrRichFunctionReference)?.let { vRich ->
+					if (vRich.boundValues.isNotEmpty()) return fail(inCall, "staticCFunction of a bound reference (C has nowhere to keep the receiver)")
+					val vNamed = vRich.reflectionTargetSymbol?.owner as? IrSimpleFunction
+					val vFunction = if (vNamed != null && vNamed.parent !is IrClass) {
+						mImporter.functionFor(vNamed, mImporter.substFor(vNamed, emptyList(), emptyList()))
+					} else {
+						mImporter.staticFunctionFor(vRich.invokeFunction, mFile, mSubst)
+					} ?: return fail(inCall, "staticCFunction of this reference")
 					return KIntrinsic("cFunction", emptyList(), KPtrType).also {
 						it.template = "(void*)${vFunction.cName}"
 						it.functions = listOf(vFunction)

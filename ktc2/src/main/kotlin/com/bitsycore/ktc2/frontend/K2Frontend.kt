@@ -26,6 +26,9 @@ import java.io.File
 private const val kOutDirProperty = "ktc2.outDir"
 private const val kDumpIrProperty = "ktc2.dumpIr"
 private const val kErrorCountProperty = "ktc2.errorCount"
+
+/** The experimental language features programs may use; given to both the C and the JVM reference compilation. */
+private val kLanguageOptions = listOf("-Xcompanion-blocks-and-extensions", "-Xcollection-literals", "-Xfull-value-classes")
 private const val kCompilerOptsProperty = "ktc2.compilerOpts"
 private const val kLinkerOptsProperty = "ktc2.linkerOpts"
 
@@ -101,6 +104,10 @@ object K2Frontend {
 			}
 			// Library sources are declared in the real kotlin.* packages and stand in for the jar's declarations.
 			add("-Xallow-kotlin-package")
+			// The language as of Kotlin 2.5, with what it still calls experimental: `companion { }`
+			// blocks and companion extensions, collection literals (`[1, 2, 3]`), full value classes.
+			// The standard library's own sources use the first two.
+			addAll(kLanguageOptions)
 			add("-d"); add(File(inOutDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
 			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
@@ -167,7 +174,7 @@ object K2Frontend {
 			"-d", inOutDir.path, "-no-stdlib", "-no-reflect", "-nowarn", "-cp", userClasspath(),
 			// The inline functions of the `ktc2.` package are built for the JVM this runs on.
 			"-jvm-target", System.getProperty("java.specification.version"),
-		)
+		) + kLanguageOptions
 		return K2JVMCompiler().exec(System.err, *vArgs.toTypedArray()) == ExitCode.OK
 	}
 
