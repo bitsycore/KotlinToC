@@ -283,13 +283,55 @@ internal class BodyBuilder(
 				(vIr.body as? IrBlockBody)?.statements?.forEach { lowerStatement(it) }
 			}
 			vIr.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR -> buildDefaultAccessor(vIr as IrSimpleFunction)
-			else -> when (val vBody = vIr.body) {
-				is IrBlockBody -> vBody.statements.forEach { lowerStatement(it) }
-				is IrExpressionBody -> emitReturn(vBody.expression)
-				is IrSyntheticBody -> buildEnumSynthetic(vIr, vBody.kind)
-				else -> fail(vIr, "function without a body")
-			}
+			vIr is IrSimpleFunction && vIr.isTailrec && vIr.body !is IrSyntheticBody -> buildTailRecursive(vIr)
+			else -> buildBody(vIr)
 		}
+	}
+
+	private fun buildBody(inFunction: IrFunction) {
+		when (val vBody = inFunction.body) {
+			is IrBlockBody -> vBody.statements.forEach { lowerStatement(it) }
+			is IrExpressionBody -> emitReturn(vBody.expression)
+			is IrSyntheticBody -> buildEnumSynthetic(inFunction, vBody.kind)
+			else -> fail(inFunction, "function without a body")
+		}
+	}
+
+	/** The `tailrec` function being built, and the loop its body runs in. */
+	private var mTailFunction: IrSimpleFunction? = null
+	private var mTailLoop = -1
+
+	/**
+	 * A `tailrec` function is a loop: its parameters become variables, and `return f(args)`
+	 * gives them their new values and goes round again instead of calling.
+	 */
+	private fun buildTailRecursive(inFunction: IrSimpleFunction) {
+		for (vParam in inFunction.parameters) {
+			val vGiven = mLocals[vParam] ?: continue
+			val vVariable = KLocal(freshName(if (vParam.kind == IrParameterKind.Regular) vParam.name.asString() else "self"), vGiven.type)
+			mBlock += KLet(vVariable, KRead(vGiven))
+			mLocals[vParam] = vVariable
+		}
+		mTailFunction = inFunction
+		mTailLoop = mNextLoopId++
+		val vBody = inBlock { buildBody(inFunction) }
+		mBlock += KLoop(mTailLoop, vBody + KBreak(mTailLoop), emptyList())
+		mTailFunction = null
+	}
+
+	/** `return f(args)` in the `tailrec` function `f`: true when it was turned into another round of the loop. */
+	private fun tailCall(inValue: IrExpression?): Boolean {
+		val vFunction = mTailFunction ?: return false
+		val vCall = inValue as? IrCall ?: return false
+		// Out of a `try` or an expanded inline function the jump would skip what they have to do: an ordinary call then.
+		if (vCall.symbol.owner !== vFunction || mControl.isNotEmpty() || vCall.arguments.any { it == null }) return false
+		val vValues = lowerOperands(vCall.arguments.map { it!! }).map { spill(it) }
+		vFunction.parameters.forEachIndexed { vIndex, vParam ->
+			val vVariable = mLocals[vParam] ?: return@forEachIndexed
+			mBlock += KSet(vVariable, coerce(vValues[vIndex], vVariable.type))
+		}
+		mBlock += KContinue(mTailLoop)
+		return true
 	}
 
 	/**
@@ -559,6 +601,7 @@ internal class BodyBuilder(
 	}
 
 	private fun emitReturn(inValue: IrExpression?) {
+		if (tailCall(inValue)) return
 		if (inValue == null || mFunction.returnType == KUnitType) {
 			inValue?.let { discard(lowerRhs(it)) }
 			mBlock += KReturn(null)
@@ -857,7 +900,14 @@ internal class BodyBuilder(
 		IrTypeOperator.SAFE_CAST -> {
 			val vValue = spill(lowerPure(inExpression.argument)).let { if (it.type is KStructType) spill(coerce(it, KObjType)) else it }
 			val vTo = typeOf(inExpression)
-			if (vValue.type !is KRefType || vTo !is KRefType) {
+			if (vValue.type is KRefType && vTo is KOptType) {
+				// `x as? Int`: the number in the box when it is one of that kind, otherwise null.
+				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
+				KSelect(vTest, KOptSome(KIntrinsic("ktc2_unbox_${vTo.prim.name.lowercase()}", listOf(vValue), KPrimType(vTo.prim)), vTo), KNull(vTo), vTo)
+			} else if (vValue.type is KPrimType && vTo is KOptType) {
+				// A number whose kind is known: the cast holds or it does not.
+				if (instanceTest(inExpression, vValue, inExpression.typeOperand) === kTrue) coerce(vValue, vTo) else KNull(vTo)
+			} else if (vValue.type !is KRefType || vTo !is KRefType) {
 				fail(inExpression, "safe cast to '${inExpression.typeOperand.render()}'")
 			} else {
 				KSelect(instanceTest(inExpression, vValue, inExpression.typeOperand), coerce(vValue, vTo), KNull(vTo), vTo)
@@ -1163,7 +1213,10 @@ internal class BodyBuilder(
 		// `vararg elements: UInt` is a UIntArray: the unsigned values in the signed array that class wraps.
 		val vWrapper = (vDeclared as? KStructType)?.struct?.takeIf { it.fields.size == 1 && it.fields[0].type is KArrayType }
 		val vType = (vWrapper?.fields?.get(0)?.type ?: vDeclared) as? KArrayType ?: return fail(inVararg, "vararg of type '${inVararg.type.render()}'")
-		if (inVararg.elements.any { it !is IrExpression }) return fail(inVararg, "spread (*) in a vararg")
+		if (inVararg.elements.any { it !is IrExpression }) {
+			if (vWrapper != null) return fail(inVararg, "spread (*) in a vararg of an unsigned type")
+			return lowerSpreadVararg(inVararg, vType)
+		}
 		if (vWrapper != null) {
 			val vElement = (vType.element as? KPrimType)?.prim ?: return fail(inVararg, "vararg of type '${inVararg.type.render()}'")
 			val vValues = lowerOperands(inVararg.elements.map { it as IrExpression })
@@ -1177,6 +1230,45 @@ internal class BodyBuilder(
 		mBlock += KLet(vArray, KArrayNew(KConst(vValues.size, kIntType), vType))
 		vValues.forEachIndexed { vIndex, vValue ->
 			mBlock += KIndexSet(KRead(vArray), KConst(vIndex, kIntType), coerce(vValue, vType.element))
+		}
+		return KRead(vArray)
+	}
+
+	/** The empty array a `vararg` parameter receives when the call names no element; null for any other parameter. */
+	private fun emptyVararg(inParam: IrValueParameter, inType: KType): KExpr? {
+		if (inParam.varargElementType == null || inType !is KArrayType) return null
+		return KArrayNew(KConst(0, kIntType), inType)
+	}
+
+	/** `f(1, *more, 2)`: a new array with the single elements and the elements of each spread array, in order. */
+	private fun lowerSpreadVararg(inVararg: IrVararg, inType: KArrayType): KExpr {
+		val vExpressions = inVararg.elements.map { if (it is IrSpreadElement) it.expression else it as IrExpression }
+		val vValues = lowerOperands(vExpressions).map { spill(it) }
+		var vTotal: KExpr = KConst(inVararg.elements.count { it !is IrSpreadElement }, kIntType)
+		inVararg.elements.forEachIndexed { vIndex, vElement ->
+			if (vElement is IrSpreadElement) vTotal = KBinary(KBinaryOp.ADD, vTotal, arrayLength(vValues[vIndex]), KPrim.INT, kIntType)
+		}
+		val vArray = newTemp(inType)
+		mBlock += KLet(vArray, KArrayNew(spill(vTotal), inType))
+		val vAt = KLocal(freshName("at"), kIntType)
+		mBlock += KLet(vAt, KConst(0, kIntType))
+		fun advance(inBy: KExpr) {
+			mBlock += KSet(vAt, KBinary(KBinaryOp.ADD, KRead(vAt), inBy, KPrim.INT, kIntType))
+		}
+		inVararg.elements.forEachIndexed { vIndex, vElement ->
+			val vValue = vValues[vIndex]
+			if (vElement is IrSpreadElement) {
+				val vLength = spill(arrayLength(vValue))
+				val vElementType = (vValue.type as? KArrayType)?.element ?: inType.element
+				countedLoop(vLength) { vOffset ->
+					val vTarget = KBinary(KBinaryOp.ADD, KRead(vAt), vOffset, KPrim.INT, kIntType)
+					mBlock += KIndexSet(KRead(vArray), vTarget, coerce(KIndexRead(vValue, vOffset, vElementType), inType.element))
+				}
+				advance(vLength)
+			} else {
+				mBlock += KIndexSet(KRead(vArray), KRead(vAt), coerce(vValue, inType.element))
+				advance(KConst(1, kIntType))
+			}
 		}
 		return KRead(vArray)
 	}
@@ -1551,7 +1643,15 @@ internal class BodyBuilder(
 			if (vArgument == null) {
 				val vDefault = defaultOf(inCallee, vIndex)
 				if (vDefault == null) {
-					vFailed = true
+					// A `vararg` given nothing is an empty array.
+					val vEmpty = emptyVararg(inCallee.parameters[vIndex], inTarget.params[vIndex + vOffset].type)
+					if (vEmpty == null) {
+						vFailed = true
+					} else {
+						val vHolder = newTemp(inTarget.params[vIndex + vOffset].type)
+						mBlock += KLet(vHolder, vEmpty)
+						vBound[vIndex] = vHolder
+					}
 					return@forEachIndexed
 				}
 				val vTemp = newTemp(inTarget.params[vIndex + vOffset].type)
@@ -1608,7 +1708,11 @@ internal class BodyBuilder(
 	}
 
 	private fun lowerCall(inCall: IrCall): KExpr {
-		val vCallee = mImporter.sourceOf(inCall.symbol.owner)
+		var vCallee = mImporter.sourceOf(inCall.symbol.owner)
+		// `f(x)` on a function reference (`val f = ::name`, a KFunctionN) is the `invoke` of the function type it extends.
+		if (vCallee.name.asString() == "invoke" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString()?.startsWith("kotlin.reflect.KFunction") == true) {
+			vCallee.overriddenSymbols.map { it.owner }.firstOrNull { isFunctionType(it.parentAsClass.symbol.typeWith()) }?.let { vCallee = it }
+		}
 		// A call into a `companion { }` block has no receiver: it is a call to a top-level function.
 		val vOwner = (vCallee.parent as? IrClass)?.takeUnless { isStaticMember(vCallee) }
 		if (vOwner == null && vCallee.name.asString() == "newArray" && vCallee.kotlinFqName.asString() == "ktc2.internal.newArray") {
@@ -1762,7 +1866,10 @@ internal class BodyBuilder(
 				if (vArguments[vIndex] != null) continue
 				val vDefault = defaultOf(inCallee, vIndex)
 				when {
-					vDefault == null -> fail(inCall, "call with a missing argument")
+					vDefault == null -> {
+						val vEmpty = kType(vParams[vIndex].type)?.let { emptyVararg(vParams[vIndex], it) }
+						if (vEmpty == null) fail(inCall, "call with a missing argument") else bind(vParams[vIndex], vEmpty)
+					}
 					vDefault is IrFunctionExpression && isInlinedParameter(vParams[vIndex]) -> mInlineLambdas[vParams[vIndex]] = InlineLambda(vDefault, inSubst)
 					else -> bind(vParams[vIndex], lowerRhs(vDefault))
 				}
@@ -2087,6 +2194,15 @@ internal class BodyBuilder(
 			}
 			mBlock += KPrint(lowerParts(vPieces), vName == "println")
 			return KUnitValue
+		}
+		if (vParent == "kotlin" && (vName == "enumValues" || vName == "enumValueOf")) {
+			// The enum class is known where the call is written: these are its `values()` and `valueOf()`.
+			val vEnum = inCall.typeArguments.firstOrNull()?.let { closed(it).classOrNull?.owner } ?: return fail(inCall, vWhat)
+			val vWanted = if (vName == "enumValues") "values" else "valueOf"
+			val vTarget = vEnum.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == vWanted && it.body is IrSyntheticBody }
+				?.let { mImporter.functionFor(it) } ?: return fail(inCall, vWhat)
+			val vValues = lowerOperands(vArguments.filterNotNull())
+			return adapt(spill(KCall(vTarget, vValues.mapIndexed { vIndex, vValue -> coerce(vValue, vTarget.params[vIndex].type) })), inCall)
 		}
 		if (vParent == "kotlin.internal.ir" && vName == "noWhenBranchMatchedException") {
 			mBlock += KEval(KIntrinsic("ktc2_fail_when", emptyList(), KUnitType, isPure = false))

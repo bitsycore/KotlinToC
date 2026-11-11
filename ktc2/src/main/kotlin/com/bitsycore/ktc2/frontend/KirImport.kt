@@ -95,6 +95,13 @@ internal fun isStaticProperty(inProperty: IrProperty): Boolean {
 	return !vClass.isObject && inProperty.backingField?.isStatic == true
 }
 
+/** True for `fun main()` and `fun main(args: Array<String>)`. */
+internal fun isEntryPoint(inFunction: IrSimpleFunction): Boolean {
+	if (inFunction.name.asString() != "main" || inFunction.parent !is IrFile) return false
+	val vParams = inFunction.parameters
+	return vParams.isEmpty() || (vParams.size == 1 && vParams[0].type.classFqName?.asString() == "kotlin.Array")
+}
+
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
@@ -300,7 +307,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().forEach { mInternal[it.name.asString()] = it }
 		}
 		val vMain = inModule.files.filter { !it.packageFqName.asString().startsWith("kotlin") }.firstNotNullOfOrNull { vFile ->
-			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "main" && it.parameters.isEmpty() }
+			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { isEntryPoint(it) }
 		}
 		val vEntry = vMain?.let { functionFor(it) }
 

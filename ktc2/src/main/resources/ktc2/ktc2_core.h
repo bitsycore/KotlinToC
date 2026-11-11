@@ -419,6 +419,9 @@ typedef struct ktc2_Array {
 	int32_t elementSize;
 } ktc2_Array;
 
+/** The arguments of the program as an `Array<String>`: the command line without the program's name. */
+struct ktc2_Array* ktc2_args(int argc, char** argv);
+
 /** The kind of array [object] is, as `ktc2.internal.arrayKind` documents; 0 for anything else. */
 int32_t ktc2_arrayKind(ktc2_Obj* object);
 

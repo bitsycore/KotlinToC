@@ -279,7 +279,7 @@ class Ktc2Extension : IrGenerationExtension {
 		}
 		ArcInsert(vModule).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
-		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && it.name.asString() == "main" && it.parameters.isEmpty() } }
+		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && isEntryPoint(it) } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"
 		val vPackage = vMain.packageFqName.asString()
 		File(vOutDir, kManifestName).writeText(buildString {

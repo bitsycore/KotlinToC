@@ -83,10 +83,17 @@ class CEmitter(private val mModule: KModule) {
 		mConcrete.forEach { append("\t[${typeId(it)}] = { ${cString(it.name)}, ${it.cName}__destroy },\n") }
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 
-		append("\nint main(void)\n{\n")
+		val vTakesArguments = inEntry.params.isNotEmpty()
+		append(if (vTakesArguments) "\nint main(int argc, char** argv)\n{\n" else "\nint main(void)\n{\n")
 		// An exception that reaches main unhandled ends the program, as on the JVM.
 		vStartup.forEach { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
-		append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
+		if (vTakesArguments) {
+			// `fun main(args: Array<String>)`: the command line without the program's name.
+			append("\tktc2_Array* arguments = ktc2_args(argc, argv);\n")
+			append("\t${inEntry.cName}(arguments);\n\tif (ktc2_has_pending()) ktc2_uncaught();\n\tktc2_release(arguments);\n")
+		} else {
+			append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
+		}
 		vGlobals.asReversed().forEach { append("\t${releaseText(it.type, it.cName)};\n") }
 		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
 		append("\treturn ktc2_exit();\n}\n")

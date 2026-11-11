@@ -71,6 +71,8 @@ commonMain/kotlin/ranges/Ranges.kt
 commonMain/kotlin/ExceptionsH.kt
 commonMain/kotlin/Comparator.kt
 commonMain/kotlin/comparisons/Comparisons.kt
+commonMain/generated/_Comparisons.kt
+Ktc2Comparisons.kt
 commonMain/generated/_Arrays.kt
 commonMain/kotlin/collections/UByteValueSet.kt
 commonMain/kotlin/UByteArray.kt

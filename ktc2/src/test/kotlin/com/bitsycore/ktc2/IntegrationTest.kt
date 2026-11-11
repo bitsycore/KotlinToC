@@ -32,6 +32,8 @@ class IntegrationTest {
 	private fun programList(): List<DynamicTest> =
 		File("integration").walkTopDown()
 			.filter { it.isFile && it.extension == "kt" }
+			// KTC2_TEST_FILTER=v1/ runs only the programs whose path contains that text.
+			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
 			.toList()

@@ -935,6 +935,14 @@ ktc2_Array* ktc2_cvalue_copy(const void* data, int64_t size)
 	return value;
 }
 
+ktc2_Array* ktc2_args(int argc, char** argv)
+{
+	int32_t count = argc > 1 ? argc - 1 : 0;
+	ktc2_Array* arguments = ktc2_array_new(count, sizeof(ktc2_String*), KTC2_TYPE_ARRAY_REF);
+	for (int32_t i = 0; i < count; i++) ((ktc2_String**)(arguments + 1))[i] = ktc2_string_of_cstr(argv[i + 1]);
+	return arguments;
+}
+
 ktc2_Obj* ktc2_box_ptr(void* address)
 {
 	return address ? ktc2_box_long((int64_t)(intptr_t)address) : NULL;
