@@ -44,6 +44,7 @@ commonMain/kotlin/collections/Sets.kt
 commonMain/kotlin/collections/SlidingWindow.kt
 commonMain/kotlin/collections/UArraySorting.kt
 commonMain/kotlin/JsAnnotationsH.kt
+Ktc2CommonAnnotations.kt
 commonMain/kotlin/util/Tuples.kt
 commonMain/kotlin/util/Preconditions.kt
 commonMain/kotlin/util/Result.kt
@@ -72,6 +73,11 @@ commonMain/kotlin/Comparator.kt
 commonMain/kotlin/comparisons/Comparisons.kt
 commonMain/generated/_Arrays.kt
 commonMain/kotlin/collections/UByteValueSet.kt
+commonMain/kotlin/UByteArray.kt
+commonMain/kotlin/UShortArray.kt
+commonMain/kotlin/UIntArray.kt
+commonMain/kotlin/ULongArray.kt
+commonMain/generated/_UArrays.kt
 Ktc2Internal.kt
 Ktc2Exceptions.kt
 Ktc2Collections.kt

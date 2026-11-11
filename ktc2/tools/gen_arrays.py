@@ -5,6 +5,8 @@ vPrims = ['Boolean', 'Byte', 'Short', 'Int', 'Long', 'Float', 'Double', 'Char']
 
 vOut = r'''@file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "UNCHECKED_CAST", "ACTUAL_ANNOTATIONS_NOT_MATCH_EXPECT", "ACTUAL_WITHOUT_EXPECT", "NOTHING_TO_INLINE")
 
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package kotlin.collections
 
 import ktc2.internal.arrayKind
@@ -399,5 +401,26 @@ for vPrim in vPrims:
 	vOut += vTemplate.replace('#DIFFERS#', vDiffers).replace('@', vPrim)
 	if vPrim != 'Boolean':
 		vOut += vSort.replace('@', vPrim)
+
+
+vUnsigned = r'''
+// ==================
+// MARK: @Array
+// ==================
+
+private class @ArrayAsList(private val mArray: @Array) : AbstractList<@>(), RandomAccess {
+	override val size: Int get() = mArray.size
+
+	override fun get(index: Int): @ = mArray[index]
+}
+
+public actual fun @Array.elementAt(index: Int): @ = get(index)
+
+public actual fun @Array.asList(): List<@> = @ArrayAsList(this)
+'''
+
+# The unsigned arrays are the standard library's own classes over a signed array; only these two functions are left to the platform.
+for vPrim in ['UByte', 'UShort', 'UInt', 'ULong']:
+	vOut += vUnsigned.replace('@', vPrim)
 
 io.open('src/main/resources/ktc2/stdlib/Ktc2Arrays.kt', 'w', encoding='utf-8', newline='\n').write(vOut)

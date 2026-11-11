@@ -1226,13 +1226,32 @@ static Monitor** monitor_link(const ktc2_Obj* object)
 	return link;
 }
 
+/*
+ * The table has a lock of its own, and a thread that finds its monitor taken sleeps on a
+ * condition until some monitor is given up.
+ */
+#ifdef _WIN32
+static SRWLOCK monitor_mutex = SRWLOCK_INIT;
+static CONDITION_VARIABLE monitor_freed = CONDITION_VARIABLE_INIT;
+#define monitor_lock() AcquireSRWLockExclusive(&monitor_mutex)
+#define monitor_unlock() ReleaseSRWLockExclusive(&monitor_mutex)
+#define monitor_wait() SleepConditionVariableSRW(&monitor_freed, &monitor_mutex, INFINITE, 0)
+#define monitor_wake() WakeAllConditionVariable(&monitor_freed)
+#else
+static pthread_mutex_t monitor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t monitor_freed = PTHREAD_COND_INITIALIZER;
+#define monitor_lock() pthread_mutex_lock(&monitor_mutex)
+#define monitor_unlock() pthread_mutex_unlock(&monitor_mutex)
+#define monitor_wait() pthread_cond_wait(&monitor_freed, &monitor_mutex)
+#define monitor_wake() pthread_cond_broadcast(&monitor_freed)
+#endif
+
 void ktc2_monitorEnter(ktc2_Obj* lock)
 {
 	if (!lock) ktc2_fail_null();
 	uintptr_t self = (uintptr_t)&monitor_self;
-	bool counted = false;
+	monitor_lock();
 	for (;;) {
-		runtime_enter();
 		Monitor** link = monitor_link(lock);
 		Monitor* monitor = *link;
 		if (!monitor) {
@@ -1244,23 +1263,19 @@ void ktc2_monitorEnter(ktc2_Obj* lock)
 		if (monitor->owner == 0 || monitor->owner == self) {
 			monitor->owner = self;
 			monitor->depth++;
-			if (counted) monitor->waiting--;
-			runtime_leave();
-			return;
+			break;
 		}
-		/* Held by another thread: stay registered, so the entry is kept, and try again. */
-		if (!counted) {
-			monitor->waiting++;
-			counted = true;
-		}
-		runtime_leave();
-		thread_yield();
+		/* Held by another thread: registered as waiting, the entry stays while this thread sleeps. */
+		monitor->waiting++;
+		monitor_wait();
+		(*monitor_link(lock))->waiting--;
 	}
+	monitor_unlock();
 }
 
 void ktc2_monitorExit(ktc2_Obj* lock)
 {
-	runtime_enter();
+	monitor_lock();
 	Monitor** link = monitor_link(lock);
 	Monitor* monitor = *link;
 	if (monitor && --monitor->depth == 0) {
@@ -1268,9 +1283,11 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 		if (monitor->waiting == 0) {
 			*link = monitor->next;
 			free(monitor);
+		} else {
+			monitor_wake();
 		}
 	}
-	runtime_leave();
+	monitor_unlock();
 }
 
 #else

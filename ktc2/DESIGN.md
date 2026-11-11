@@ -259,7 +259,7 @@ way and replaces `defer`.
 | `alloca` | compiler | non-escaping variable-size strings/arrays under a size cap, outside loops |
 | Caller-slot return | compiler | fresh-object returns (rule 7) |
 | Static/immortal | compiler | literals, `object`, enum entries, constant `@Struct` tables |
-| `@Value T` / `@Struct` | programmer | inline in field, array element, or local |
+| `@Value T` / `@Struct` | programmer | inline in a field or a local; `ValueArray<T>` and collections for elements |
 | `@Size(N)` | programmer | inline fixed arrays and strings |
 | `arena(size) { }` | programmer | every allocation in the dynamic scope bumps the arena; freed at block exit |
 | Monomorphization | compiler | `List<Int>`, `Map<Int, Vec2>` store elements inline, never boxed |
@@ -565,7 +565,8 @@ Effect on heap allocations (before any promotion → now): `objects/Classes` 202
 are the collections' own storage, which has to live on the heap.
 
 Not done in Phase 5 (the first two were done later, see the end of this section): returning
-a new object directly into the caller's slot, `@Value` on locals; `@Value` on array elements, arrays of variable
+a new object directly into the caller's slot, `@Value` on locals; `@Value` on array elements
+(dropped, see the end of this section), arrays of variable
 size on the stack, and the `.copy()` rule for assigning a *mutable* object into an inline
 field from a non-fresh source (the content is copied; on the JVM the two would alias).
 
@@ -768,6 +769,16 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   the object from another function that has such a form, so the room is handed down a chain
   (`midpoint` → `scaled`). A function that returns one of its arguments, or one of several
   objects, has no such form. If the function throws, the slot is simply left unused.
+- **Unsigned arrays** (`stdlib/UnsignedArrays.kt`): `UByteArray`, `UShortArray`, `UIntArray`
+  and `ULongArray` are the standard library's own classes — value classes over the signed
+  array — compiled from its sources together with their functions (`_UArrays.kt`). Being
+  value classes over one reference they are structs here: a `UIntArray` is the pointer to its
+  `IntArray` and nothing more.
+- **`ktc2.ValueArray<T>`** (`values/ValueArrays.kt`): a fixed-size array that stores its
+  elements themselves, so structs, value classes and numbers lie side by side in one block.
+  It is a type of its own, which is what makes that safe.
+- **A waiting monitor sleeps.** A thread that finds its monitor taken sleeps on a condition
+  variable until a monitor is given up, instead of spinning.
 - **`Regex`** (`stdlib/Regexes.kt`, `Ktc2Regex.kt`): a backtracking matcher written in Kotlin
   with the syntax and behavior of `java.util.regex` for what it covers — classes, anchors,
   groups (numbered, named, non-capturing), alternation, greedy and lazy quantifiers, back
@@ -781,9 +792,15 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
 use; a function value whose static type differs in variance from the lambda's own, an
 inline lambda used inside another lambda (`crossinline`), and SAM conversion of a function
-value that is not a lambda written in place are not supported yet. The functions of the
-unsigned array types (`UIntArray.sum()`…) are missing from the library. A monitor waits by
-yielding rather than sleeping. A failed check inside a conditional expression may store a
+value that is not a lambda written in place are not supported yet.
+
+`@Value` on array elements (`Array<@Value Particle>`) is **not** going to be done as planned.
+An annotation does not change the Kotlin type, so such an array could be passed wherever an
+`Array<Particle>` is expected — to any function of the standard library — and code compiled
+for an array of references would then read object bytes as pointers. Guarding against it
+would cost a test on every access to every array of references. What the plan wanted from it
+is available another way: collections store structs and value classes in place
+(`ArrayList<Point>`), and `ktc2.ValueArray<T>` is a fixed-size array that does. A failed check inside a conditional expression may store a
 placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`). Nothing in the ARC pass is
 optimized beyond the three rules above.
 

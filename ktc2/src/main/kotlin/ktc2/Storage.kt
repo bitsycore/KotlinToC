@@ -32,6 +32,36 @@ annotation class Struct
 annotation class Size(val inN: Int)
 
 /**
+ * An array that stores its elements themselves: numbers, `@Struct` values and value classes
+ * lie side by side in one block, with nothing boxed (an `Array<Point>` holds a reference per
+ * element). For any other element type it is an ordinary array. On the JVM it behaves the
+ * same and is stored however the JVM stores it.
+ *
+ * @param inSize number of elements
+ * @param inInit gives the element at each index
+ */
+class ValueArray<T>(inSize: Int, inInit: (Int) -> T) : Iterable<T> {
+
+	private val mItems = ArrayList<T>(inSize)
+
+	init {
+		for (vIndex in 0 until inSize) mItems.add(inInit(vIndex))
+	}
+
+	val size: Int get() = mItems.size
+
+	val indices: IntRange get() = 0 until mItems.size
+
+	operator fun get(inIndex: Int): T = mItems[inIndex]
+
+	operator fun set(inIndex: Int, inValue: T) {
+		mItems[inIndex] = inValue
+	}
+
+	override fun iterator(): Iterator<T> = mItems.iterator()
+}
+
+/**
  * Runs [inBlock] with every object it creates — directly or in the functions it calls —
  * carved out of blocks of [inSize] bytes that are freed together when the block returns.
  * An object still referred to afterwards (the result, typically) stays valid: it keeps its

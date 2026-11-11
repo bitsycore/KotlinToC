@@ -1149,8 +1149,19 @@ internal class BodyBuilder(
 
 	/** A `vararg` argument or `arrayOf(...)` list: a new array holding the elements. */
 	private fun lowerVararg(inVararg: IrVararg): KExpr {
-		val vType = typeOf(inVararg) as? KArrayType ?: return fail(inVararg, "vararg of type '${inVararg.type.render()}'")
+		val vDeclared = typeOf(inVararg)
+		// `vararg elements: UInt` is a UIntArray: the unsigned values in the signed array that class wraps.
+		val vWrapper = (vDeclared as? KStructType)?.struct?.takeIf { it.fields.size == 1 && it.fields[0].type is KArrayType }
+		val vType = (vWrapper?.fields?.get(0)?.type ?: vDeclared) as? KArrayType ?: return fail(inVararg, "vararg of type '${inVararg.type.render()}'")
 		if (inVararg.elements.any { it !is IrExpression }) return fail(inVararg, "spread (*) in a vararg")
+		if (vWrapper != null) {
+			val vElement = (vType.element as? KPrimType)?.prim ?: return fail(inVararg, "vararg of type '${inVararg.type.render()}'")
+			val vValues = lowerOperands(inVararg.elements.map { it as IrExpression })
+			val vArray = newTemp(vType)
+			mBlock += KLet(vArray, KArrayNew(KConst(vValues.size, kIntType), vType))
+			vValues.forEachIndexed { vIndex, vValue -> mBlock += KIndexSet(KRead(vArray), KConst(vIndex, kIntType), convert(vValue, vElement)) }
+			return KStructNew(vWrapper, listOf(KRead(vArray)))
+		}
 		val vValues = lowerOperands(inVararg.elements.map { it as IrExpression })
 		val vArray = newTemp(vType)
 		mBlock += KLet(vArray, KArrayNew(KConst(vValues.size, kIntType), vType))

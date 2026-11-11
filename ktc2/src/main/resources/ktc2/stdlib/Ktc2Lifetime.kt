@@ -1,5 +1,6 @@
 package ktc2
 
+import ktc2.internal.Storage
 import ktc2.internal.arenaEnter
 import ktc2.internal.arenaLeave
 import ktc2.internal.weakCell
@@ -21,6 +22,42 @@ public inline fun <R> arena(inSize: Int, inBlock: () -> R): R {
 		return inBlock()
 	} finally {
 		arenaLeave(vArena)
+	}
+}
+
+/**
+ * An array that stores its elements themselves. The C side of `ktc2.ValueArray`: one block
+ * of the element type, so structs and numbers lie in it unboxed.
+ */
+public class ValueArray<T>(inSize: Int, inInit: (Int) -> T) : Iterable<T> {
+
+	private val mItems = Storage<T>(inSize)
+
+	init {
+		for (vIndex in 0 until inSize) mItems[vIndex] = inInit(vIndex)
+	}
+
+	public val size: Int get() = mItems.size
+
+	public val indices: IntRange get() = 0 until mItems.size
+
+	public operator fun get(inIndex: Int): T = mItems[inIndex]
+
+	public operator fun set(inIndex: Int, inValue: T) {
+		mItems[inIndex] = inValue
+	}
+
+	override fun iterator(): Iterator<T> = ValueArrayIterator(this)
+}
+
+private class ValueArrayIterator<T>(private val mArray: ValueArray<T>) : Iterator<T> {
+	private var mIndex = 0
+
+	override fun hasNext(): Boolean = mIndex < mArray.size
+
+	override fun next(): T {
+		if (mIndex >= mArray.size) throw NoSuchElementException()
+		return mArray[mIndex++]
 	}
 }
 

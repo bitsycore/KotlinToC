@@ -213,5 +213,32 @@ public class PropertyReference(override val name: String) : kotlin.reflect.KProp
 
 public fun propertyReference(name: String): Any = PropertyReference(name)
 
+/** How a data or value class describes a property that is an array: by its content. */
+public fun kotlin_internal_ir_dataClassArrayMemberToString(value: Any?): String = when (arrayKind(value)) {
+	1 -> (value as Array<*>).contentToString()
+	2 -> (value as BooleanArray).contentToString()
+	3 -> (value as ByteArray).contentToString()
+	4 -> (value as ShortArray).contentToString()
+	5 -> (value as IntArray).contentToString()
+	6 -> (value as LongArray).contentToString()
+	7 -> (value as CharArray).contentToString()
+	8 -> (value as FloatArray).contentToString()
+	9 -> (value as DoubleArray).contentToString()
+	else -> value.toString()
+}
+
+public fun kotlin_internal_ir_dataClassArrayMemberHashCode(value: Any?): Int = when (arrayKind(value)) {
+	1 -> (value as Array<*>).contentHashCode()
+	2 -> (value as BooleanArray).contentHashCode()
+	3 -> (value as ByteArray).contentHashCode()
+	4 -> (value as ShortArray).contentHashCode()
+	5 -> (value as IntArray).contentHashCode()
+	6 -> (value as LongArray).contentHashCode()
+	7 -> (value as CharArray).contentHashCode()
+	8 -> (value as FloatArray).contentHashCode()
+	9 -> (value as DoubleArray).contentHashCode()
+	else -> value?.hashCode() ?: 0
+}
+
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()

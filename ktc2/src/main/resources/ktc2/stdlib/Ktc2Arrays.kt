@@ -1,5 +1,7 @@
 @file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "UNCHECKED_CAST", "ACTUAL_ANNOTATIONS_NOT_MATCH_EXPECT", "ACTUAL_WITHOUT_EXPECT", "NOTHING_TO_INLINE")
 
+@file:OptIn(ExperimentalUnsignedTypes::class)
+
 package kotlin.collections
 
 import ktc2.internal.arrayKind
@@ -1299,3 +1301,59 @@ public actual fun CharArray.sort(fromIndex: Int, toIndex: Int): Unit {
 	checkRange(fromIndex, toIndex, size)
 	sortRange(this, fromIndex, toIndex)
 }
+
+// ==================
+// MARK: UByteArray
+// ==================
+
+private class UByteArrayAsList(private val mArray: UByteArray) : AbstractList<UByte>(), RandomAccess {
+	override val size: Int get() = mArray.size
+
+	override fun get(index: Int): UByte = mArray[index]
+}
+
+public actual fun UByteArray.elementAt(index: Int): UByte = get(index)
+
+public actual fun UByteArray.asList(): List<UByte> = UByteArrayAsList(this)
+
+// ==================
+// MARK: UShortArray
+// ==================
+
+private class UShortArrayAsList(private val mArray: UShortArray) : AbstractList<UShort>(), RandomAccess {
+	override val size: Int get() = mArray.size
+
+	override fun get(index: Int): UShort = mArray[index]
+}
+
+public actual fun UShortArray.elementAt(index: Int): UShort = get(index)
+
+public actual fun UShortArray.asList(): List<UShort> = UShortArrayAsList(this)
+
+// ==================
+// MARK: UIntArray
+// ==================
+
+private class UIntArrayAsList(private val mArray: UIntArray) : AbstractList<UInt>(), RandomAccess {
+	override val size: Int get() = mArray.size
+
+	override fun get(index: Int): UInt = mArray[index]
+}
+
+public actual fun UIntArray.elementAt(index: Int): UInt = get(index)
+
+public actual fun UIntArray.asList(): List<UInt> = UIntArrayAsList(this)
+
+// ==================
+// MARK: ULongArray
+// ==================
+
+private class ULongArrayAsList(private val mArray: ULongArray) : AbstractList<ULong>(), RandomAccess {
+	override val size: Int get() = mArray.size
+
+	override fun get(index: Int): ULong = mArray[index]
+}
+
+public actual fun ULongArray.elementAt(index: Int): ULong = get(index)
+
+public actual fun ULongArray.asList(): List<ULong> = ULongArrayAsList(this)
