@@ -90,6 +90,9 @@ class BindingGenerator(
 	private val mCompiler: String,
 	/** Kotlin declarations added at the end of the generated file. */
 	private val mExtraKotlin: String = "",
+	/** Compiler and linker options given on the command line, on top of the .def's own. */
+	private val mExtraCompilerOpts: List<String> = emptyList(),
+	private val mExtraLinkerOpts: List<String> = emptyList(),
 ) {
 
 	private val mOut = StringBuilder()
@@ -115,7 +118,7 @@ class BindingGenerator(
 			append("\n#endif\n")
 		})
 		// Headers next to the .def file are found without an option of their own.
-		val vCompilerOpts = mDef.compilerOpts + "-I${mDef.file.absoluteFile.parentFile.invariantSeparatorsPath}"
+		val vCompilerOpts = mDef.compilerOpts + mExtraCompilerOpts + "-I${mDef.file.absoluteFile.parentFile.invariantSeparatorsPath}"
 		// The headers are read as the C the program is compiled as, unless the .def says otherwise.
 		val vDialect = if (mDef.compilerOpts.any { it.startsWith("-std=") }) emptyList() else listOf("-std=gnu11")
 		val vPredefined = run(listOf(mCompiler, "-dM", "-E", "-x", "c", "-") + vDialect + vCompilerOpts, "")
@@ -146,12 +149,25 @@ class BindingGenerator(
 		while (mPendingRecords.isNotEmpty()) record(mPendingRecords.removeFirst(), ::isWanted)
 		for (vVariable in vParser.variables.filter { isWanted(it.file) }) variable(vVariable)
 		while (mPendingRecords.isNotEmpty()) record(mPendingRecords.removeFirst(), ::isWanted)
-		for (vMacro in vParser.macros.filter { isWanted(it.file) }) macro(vMacro, vParser)
+		// A macro's value is what the preprocessor makes of it: each one is expanded by a second run.
+		val vMacros = vParser.macros.filter { isWanted(it.file) && it.body.isNotEmpty() && !it.name.startsWith("_") }.distinctBy { it.name }
+		val vProbe = File(inCDir, "ktc2_interop_probe.h")
+		vProbe.writeText(buildString {
+			append("#include \"$vStubName\"\n")
+			vMacros.forEachIndexed { vIndex, vMacro -> append("__KTC2_MACRO_${vIndex}__ ${vMacro.name}\n") }
+		})
+		val vExpanded = HashMap<Int, String>()
+		for (vLine in run(listOf(mCompiler, "-E", "-P", "-x", "c") + vDialect + vCompilerOpts + vProbe.absolutePath, null).lineSequence()) {
+			val vMatch = Regex("^__KTC2_MACRO_(\\d+)__ (.*)$").find(vLine.trim()) ?: continue
+			vExpanded[vMatch.groupValues[1].toInt()] = vMatch.groupValues[2].trim()
+		}
+		vProbe.delete()
+		vMacros.forEachIndexed { vIndex, vMacro -> macro(CMacro(vMacro.name, vExpanded[vIndex] ?: vMacro.body, vMacro.file), vParser) }
 
 		mOut.append(mExtraKotlin)
 		val vSource = File(inKotlinDir, mDef.packageName.replace('.', '_') + ".kt")
 		vSource.writeText(mOut.toString())
-		return Bindings(vSource, vCompilerOpts, mDef.linkerOpts)
+		return Bindings(vSource, vCompilerOpts, mDef.linkerOpts + mExtraLinkerOpts)
 	}
 
 	/** Runs the C compiler and returns what it prints; [inInput] is given on stdin when not null. */
@@ -419,7 +435,12 @@ class BindingGenerator(
 		val vDeclaration = when {
 			vInteger != null -> {
 				val (vValue, vIsUnsigned) = vInteger
+				// A 64-bit literal or cast makes the constant 64 bits wide whatever its value.
+				val vIsWide = Regex("[0-9a-fA-F][uU]?[lL]{2}|[0-9a-fA-F][lL]{2}[uU]?|\\b(Uint64|Sint64|uint64_t|int64_t)\\b").containsMatchIn(vBody)
 				when {
+					vValue == Long.MIN_VALUE && !vIsUnsigned -> "Long = Long.MIN_VALUE"
+					vIsWide && vIsUnsigned -> "ULong = ${vValue.toULong()}uL"
+					vIsWide -> "Long = ${vValue}L"
 					vIsUnsigned && vValue in 0..0xFFFFFFFFL -> "UInt = ${vValue}u"
 					vIsUnsigned -> "ULong = ${vValue.toULong()}uL"
 					vValue in Int.MIN_VALUE..Int.MAX_VALUE -> "Int = $vValue"

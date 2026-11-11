@@ -61,7 +61,11 @@ object K2Frontend {
 		val vDefinitions = inSources.filter { it.extension == "def" }
 		val vCompiler = System.getenv("KTC2_CC") ?: "gcc"
 		val vBindings = try {
-			val vGenerated = vDefinitions.map { BindingGenerator(DefFile(it), vCompiler).generate(File(inOutDir, "interop"), File(inOutDir, "c")) }
+			val vExtraCompilerOpts = System.getProperty("ktc2.copt", "").lines().filter { it.isNotEmpty() }
+			val vExtraLinkerOpts = System.getProperty("ktc2.lopt", "").lines().filter { it.isNotEmpty() }
+			val vGenerated = vDefinitions.map {
+				BindingGenerator(DefFile(it), vCompiler, "", vExtraCompilerOpts, vExtraLinkerOpts).generate(File(inOutDir, "interop"), File(inOutDir, "c"))
+			}
 			// `import platform.posix.*` asks for the C library, described by a .def of ktc2's own.
 			val vUsesPosix = (inSources - vDefinitions.toSet()).any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
 			if (vUsesPosix && vDefinitions.none { DefFile(it).packageName == "platform.posix" }) {

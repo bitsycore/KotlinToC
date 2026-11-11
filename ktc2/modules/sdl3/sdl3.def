@@ -1,0 +1,7 @@
+# SDL3 for ktc2. The headers and the library have to be where the C compiler looks for them,
+# or be named on the command line: -copt -I<sdl>/include -lopt -L<sdl>/lib
+headers = SDL3/SDL.h
+headerFilter = SDL3/*
+package = sdl3
+compilerOpts = -DSDL_MAIN_HANDLED
+linkerOpts = -lSDL3

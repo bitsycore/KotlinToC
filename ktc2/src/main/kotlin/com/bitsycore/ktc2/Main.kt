@@ -4,7 +4,7 @@ import com.bitsycore.ktc2.frontend.K2Frontend
 import java.io.File
 import kotlin.system.exitProcess
 
-private const val kUsage = "Usage: ktc2 <file.kt...> [library.def...] [-o <output_dir>] [--dump-ir] [--warn-heap] [--no-warn-cycles] [--checks=abort]"
+private const val kUsage = "Usage: ktc2 <file.kt | library.def | directory>... [-o <output_dir>] [-copt <c option>]... [-lopt <linker option>]... [--dump-ir] [--warn-heap] [--no-warn-cycles] [--checks=abort]"
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC — see ktc2/DESIGN.md).
@@ -29,6 +29,11 @@ fun main(args: Array<String>) {
 			vArg == "--no-warn-cycles" -> System.setProperty("ktc2.warnCycles", "false")
 			// A Kotlin/Native interop definition: bindings for the C library it names are generated.
 			vArg.endsWith(".kt") || vArg.endsWith(".def") -> vSources += File(vArg)
+			// An option for the C compiler when it reads the headers of .def files and compiles the result; one for the linker.
+			vArg == "-copt" && vIndex < args.size -> System.setProperty("ktc2.copt", (System.getProperty("ktc2.copt", "") + "\n" + args[vIndex++]).trim())
+			vArg == "-lopt" && vIndex < args.size -> System.setProperty("ktc2.lopt", (System.getProperty("ktc2.lopt", "") + "\n" + args[vIndex++]).trim())
+			// A directory stands for the sources and definitions in it: a module.
+			File(vArg).isDirectory -> vSources += File(vArg).listFiles { vFile -> vFile.isFile && (vFile.extension == "kt" || vFile.extension == "def") }!!.sortedBy { it.name }
 			else -> fail("unknown argument '$vArg'")
 		}
 	}
