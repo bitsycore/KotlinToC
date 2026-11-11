@@ -80,6 +80,7 @@ Ktc2Io.kt
 Ktc2Sequences.kt
 Ktc2Lifetime.kt
 Ktc2Thread.kt
+Ktc2JavaLang.kt
 Ktc2Concurrent.kt
 Ktc2Synchronized.kt
 Ktc2CinteropInternal.kt

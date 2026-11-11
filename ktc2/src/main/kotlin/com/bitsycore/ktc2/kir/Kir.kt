@@ -83,6 +83,13 @@ class KModule(
 ) {
 	/** Set when the program can start a thread: the runtime then counts references atomically. */
 	var usesThreads: Boolean = false
+
+	/**
+	 * The platform layer's functions that throw the exceptions of the language's own checks
+	 * (index out of bounds, division by zero), by name. Empty when the program has no such
+	 * check or is built with `--checks=abort`: those failures then end the program.
+	 */
+	var throwers: Map<String, KFunction> = emptyMap()
 }
 
 /** One generated `.h` / `.c` pair: a class, or the top-level declarations of one file. */
@@ -305,8 +312,10 @@ class KInstanceOf(val operand: KExpr, val target: KTypeTarget) : KExpr {
 /** The zero value of [type]: what a function returns when it leaves with an exception. */
 class KZero(override val type: KType) : KExpr
 
-/** `array[index]`, bounds-checked. */
-class KIndexRead(val array: KExpr, val index: KExpr, override val type: KType) : KExpr
+/** `array[index]`, bounds-checked unless [isChecked] says the index was tested before the statement. */
+class KIndexRead(val array: KExpr, val index: KExpr, override val type: KType) : KExpr {
+	var isChecked: Boolean = false
+}
 
 /**
  * A call to a runtime helper. Pure ones may appear anywhere; an impure one (allocation, check,
@@ -370,6 +379,43 @@ fun KExpr.isImpure(): Boolean = when (this) {
 	else -> false
 }
 
+/** The expressions [this] is made of, in evaluation order. */
+fun KExpr.children(): List<KExpr> = when (this) {
+	is KBinary -> listOf(left, right)
+	is KRefEquals -> listOf(left, right)
+	is KUnary -> listOf(operand)
+	is KConvert -> listOf(operand)
+	is KOptSome -> listOf(operand)
+	is KOptHas -> listOf(operand)
+	is KOptValue -> listOf(operand)
+	is KSelect -> listOf(condition, whenTrue, whenFalse)
+	is KFieldRead -> listOf(target)
+	is KStructNew -> values
+	is KRefCast -> listOf(operand)
+	is KInstanceOf -> listOf(operand)
+	is KIndexRead -> listOf(array, index)
+	is KIntrinsic -> arguments
+	is KArrayNew -> listOf(length)
+	is KCall -> arguments
+	is KRetain -> listOf(operand)
+	else -> emptyList()
+}
+
+/** True when [inTest] holds for this expression or one inside it. */
+fun KExpr.anyNode(inTest: (KExpr) -> Boolean): Boolean = inTest(this) || children().any { it.anyNode(inTest) }
+
+/**
+ * True for an operation Kotlin defines to fail with an exception: indexing an array or a
+ * string, and an integer division whose divisor is not a constant other than zero.
+ */
+fun KExpr.isRuntimeCheck(): Boolean = when (this) {
+	is KIndexRead -> !isChecked
+	is KBinary -> (op == KBinaryOp.DIV || op == KBinaryOp.REM) && !operandType.isFloating &&
+		(right as? KConst)?.value.let { it == null || (it as? Number)?.toLong() == 0L }
+	is KIntrinsic -> name == "ktc2_str_get"
+	else -> false
+}
+
 // ==================
 // MARK: Statements
 // ==================
@@ -385,7 +431,10 @@ class KGlobalSet(val global: KGlobal, val value: KExpr, val releasesOld: Boolean
 
 class KFieldSet(val target: KExpr, val field: KField, val value: KExpr, val releasesOld: Boolean = false) : KStmt
 
-class KIndexSet(val array: KExpr, val index: KExpr, val value: KExpr, val releasesOld: Boolean = false) : KStmt
+class KIndexSet(val array: KExpr, val index: KExpr, val value: KExpr, val releasesOld: Boolean = false) : KStmt {
+	/** Set when the index was tested before the statement: the store is then emitted unchecked. */
+	var isChecked: Boolean = false
+}
 
 class KEval(val expr: KExpr) : KStmt
 
@@ -429,6 +478,33 @@ class KTryRegion(val id: Int, val body: List<KStmt>) : KStmt
 
 /** Added by `ArcInsert`: decrements the count of [operand] (null-safe), destroying it at zero. */
 class KRelease(val operand: KExpr) : KStmt
+
+/** The expressions a statement evaluates itself (not those of the blocks inside it), in order. */
+fun KStmt.ownExpressions(): List<KExpr> = when (this) {
+	is KLet -> listOfNotNull(init)
+	is KSet -> listOf(value)
+	is KGlobalSet -> listOf(value)
+	is KFieldSet -> listOf(target, value)
+	is KIndexSet -> listOf(array, index, value)
+	is KEval -> listOf(expr)
+	is KIf -> listOf(condition)
+	is KReturn -> listOfNotNull(value)
+	is KPrint -> parts.mapNotNull { (it as? KPrintValue)?.value }
+	is KConcat -> parts.mapNotNull { (it as? KPrintValue)?.value }
+	is KThrow -> listOf(value)
+	is KRelease -> listOf(operand)
+	is KLoop, is KBreak, is KContinue, is KTryRegion -> emptyList()
+}
+
+/** True when [inTest] holds for a statement of [this] block or of a block nested in it. */
+fun List<KStmt>.anyStatement(inTest: (KStmt) -> Boolean): Boolean = any { vStatement ->
+	inTest(vStatement) || when (vStatement) {
+		is KIf -> vStatement.thenBlock.anyStatement(inTest) || vStatement.elseBlock.anyStatement(inTest)
+		is KLoop -> vStatement.body.anyStatement(inTest) || vStatement.latch.anyStatement(inTest)
+		is KTryRegion -> vStatement.body.anyStatement(inTest)
+		else -> false
+	}
+}
 
 sealed interface KPrintPart
 

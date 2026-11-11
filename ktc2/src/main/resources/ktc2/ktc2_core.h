@@ -405,14 +405,34 @@ typedef struct ktc2_Array {
 /** A zeroed array; fails on a negative length. */
 ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId);
 
-_Noreturn void ktc2_fail_index(int32_t index, int32_t length);
+/*
+ * A failed check of the language. With KTC2_CHECKS_THROW these park the Kotlin exception and
+ * return, and the caller carries on with a harmless value until the generated code tests for
+ * the exception; otherwise they end the program.
+ */
+#ifdef KTC2_CHECKS_THROW
+#define KTC2_FAILS
+#else
+#define KTC2_FAILS _Noreturn
+#endif
+
+KTC2_FAILS void ktc2_fail_index(int32_t index, int32_t length);
+
+/** True when [index] is outside [array]. */
+#define ktc2_index_bad(array, index) ((uint32_t)(index) >= (uint32_t)((ktc2_Array*)(array))->length)
+
+#define ktc2_is_zero(value) ((value) == 0)
 
 static inline int32_t ktc2_array_length(const ktc2_Array* array) { return array->length; }
 
 /** Returns [index] after checking it against the array's bounds. */
 static inline int32_t ktc2_array_index(const ktc2_Array* array, int32_t index)
 {
-	if ((uint32_t)index >= (uint32_t)array->length) ktc2_fail_index(index, array->length);
+	if ((uint32_t)index >= (uint32_t)array->length) {
+		ktc2_fail_index(index, array->length);
+		/* Every array has room for one element: a failed read yields that one. */
+		return 0;
+	}
 	return index;
 }
 
@@ -424,6 +444,9 @@ void ktc2_array_assign(ktc2_Array* slot, int32_t length, uint32_t typeId, size_t
 
 /** The bounds-checked element, as an lvalue. */
 #define KTC2_ARRAY_AT(array, type, index) (((type*)((array) + 1))[ktc2_array_index((array), (index))])
+
+/** The same for an index the generated code has already tested. */
+#define KTC2_ARRAY_AT_UNCHECKED(array, type, index) (((type*)((array) + 1))[(index)])
 
 /* ================== */
 /* MARK: Strings      */
@@ -524,7 +547,7 @@ ktc2_String* ktc2_sb_finish_into(ktc2_Sb* sb, void* storage, size_t capacity);
 #define KTC2_CMP(a, b) (((a) > (b)) - ((a) < (b)))
 
 /** Reports `ArithmeticException: / by zero` and exits. */
-_Noreturn void ktc2_fail_div_zero(void);
+KTC2_FAILS void ktc2_fail_div_zero(void);
 
 static inline int32_t ktc2_iadd(int32_t a, int32_t b) { return (int32_t)((uint32_t)a + (uint32_t)b); }
 static inline int32_t ktc2_isub(int32_t a, int32_t b) { return (int32_t)((uint32_t)a - (uint32_t)b); }
@@ -536,13 +559,19 @@ static inline int32_t ktc2_iushr(int32_t a, int32_t n) { return (int32_t)((uint3
 
 static inline int32_t ktc2_idiv(int32_t a, int32_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return b == -1 ? ktc2_ineg(a) : a / b;
 }
 
 static inline int32_t ktc2_irem(int32_t a, int32_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return b == -1 ? 0 : a % b;
 }
 
@@ -556,13 +585,19 @@ static inline int64_t ktc2_lushr(int64_t a, int32_t n) { return (int64_t)((uint6
 
 static inline int64_t ktc2_ldiv(int64_t a, int64_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return b == -1 ? ktc2_lneg(a) : a / b;
 }
 
 static inline int64_t ktc2_lrem(int64_t a, int64_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return b == -1 ? 0 : a % b;
 }
 
@@ -574,13 +609,19 @@ static inline uint32_t ktc2_ushr(uint32_t a, int32_t n) { return a >> (n & 31); 
 
 static inline uint32_t ktc2_udiv(uint32_t a, uint32_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return a / b;
 }
 
 static inline uint32_t ktc2_urem(uint32_t a, uint32_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return a % b;
 }
 
@@ -592,13 +633,19 @@ static inline uint64_t ktc2_ulshr(uint64_t a, int32_t n) { return a >> (n & 63);
 
 static inline uint64_t ktc2_uldiv(uint64_t a, uint64_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return a / b;
 }
 
 static inline uint64_t ktc2_ulrem(uint64_t a, uint64_t b)
 {
-	if (b == 0) ktc2_fail_div_zero();
+	if (b == 0) {
+		ktc2_fail_div_zero();
+		return 0;
+	}
 	return a % b;
 }
 

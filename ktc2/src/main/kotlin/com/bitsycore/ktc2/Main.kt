@@ -4,7 +4,7 @@ import com.bitsycore.ktc2.frontend.K2Frontend
 import java.io.File
 import kotlin.system.exitProcess
 
-private const val kUsage = "Usage: ktc2 <file.kt...> [library.def...] [-o <output_dir>] [--dump-ir] [--warn-heap] [--no-warn-cycles]"
+private const val kUsage = "Usage: ktc2 <file.kt...> [library.def...] [-o <output_dir>] [--dump-ir] [--warn-heap] [--no-warn-cycles] [--checks=abort]"
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC — see ktc2/DESIGN.md).
@@ -22,6 +22,9 @@ fun main(args: Array<String>) {
 			vArg == "--dump-ir" -> vDumpIr = true
 			// Lists every allocation that stays on the heap, with the reason.
 			vArg == "--warn-heap" -> System.setProperty("ktc2.warnHeap", "true")
+			// An index out of bounds or a division by zero ends the program instead of throwing: no test after such operations.
+			vArg == "--checks=abort" -> System.setProperty("ktc2.checks", "abort")
+			vArg == "--checks=throw" -> System.setProperty("ktc2.checks", "throw")
 			// Silences the report of classes that can form reference cycles.
 			vArg == "--no-warn-cycles" -> System.setProperty("ktc2.warnCycles", "false")
 			// A Kotlin/Native interop definition: bindings for the C library it names are generated.

@@ -16,9 +16,20 @@ static _Noreturn void fail(const char* exception, const char* message)
 	exit(1);
 }
 
-_Noreturn void ktc2_fail_div_zero(void)
+#ifdef KTC2_CHECKS_THROW
+/* `ktc2.internal`, generated with the program: each throws the exception Kotlin specifies. */
+void ktc2_internal_throwIndexOutOfBounds(int32_t index, int32_t size);
+void ktc2_internal_throwStringIndexOutOfBounds(int32_t index, int32_t length);
+void ktc2_internal_throwDivideByZero(void);
+#endif
+
+KTC2_FAILS void ktc2_fail_div_zero(void)
 {
+#ifdef KTC2_CHECKS_THROW
+	ktc2_internal_throwDivideByZero();
+#else
 	fail("java.lang.ArithmeticException", "/ by zero");
+#endif
 }
 
 _Noreturn void ktc2_fail_null(void)
@@ -261,11 +272,21 @@ int ktc2_exit(void)
 /* MARK: Arrays       */
 /* ================== */
 
-_Noreturn void ktc2_fail_index(int32_t index, int32_t length)
+/** A range that does not fit its array, in a runtime function: always fatal. */
+static _Noreturn void fail_range(int32_t index, int32_t length)
 {
 	fflush(stdout);
 	fprintf(stderr, "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, length);
 	exit(1);
+}
+
+KTC2_FAILS void ktc2_fail_index(int32_t index, int32_t length)
+{
+#ifdef KTC2_CHECKS_THROW
+	ktc2_internal_throwIndexOutOfBounds(index, length);
+#else
+	fail_range(index, length);
+#endif
 }
 
 ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)
@@ -275,7 +296,8 @@ ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)
 		snprintf(text, sizeof text, "%" PRId32, length);
 		fail("java.lang.NegativeArraySizeException", text);
 	}
-	ktc2_Array* array = ktc2_alloc(sizeof(ktc2_Array) + (size_t)length * elementSize, typeId);
+	/* Room for at least one element, so that a read with a bad index has something to yield. */
+	ktc2_Array* array = ktc2_alloc(sizeof(ktc2_Array) + (size_t)(length > 0 ? length : 1) * elementSize, typeId);
 	array->length = length;
 	array->elementSize = (int32_t)elementSize;
 	return array;
@@ -367,6 +389,10 @@ static uint16_t cursor_next(UnitCursor* cursor)
 uint16_t ktc2_str_get(const ktc2_String* s, int32_t index)
 {
 	if (index < 0 || index >= s->length) {
+#ifdef KTC2_CHECKS_THROW
+		ktc2_internal_throwStringIndexOutOfBounds(index, s->length);
+		return 0;
+#endif
 		fflush(stdout);
 		fprintf(stderr, "Exception in thread \"main\" java.lang.StringIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, s->length);
 		exit(1);
@@ -753,7 +779,7 @@ _Noreturn void ktc2_fail_throw(const ktc2_String* exception, const ktc2_String* 
 ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length)
 {
 	const uint16_t* units = (const uint16_t*)(chars + 1);
-	if (start < 0 || length < 0 || start + length > chars->length) ktc2_fail_index(start + length, chars->length);
+	if (start < 0 || length < 0 || start + length > chars->length) fail_range(start + length, chars->length);
 	ktc2_Sb sb;
 	ktc2_sb_init(&sb);
 	for (int32_t i = start; i < start + length; i++) {
@@ -836,7 +862,7 @@ ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
 
 ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end)
 {
-	if (start < 0 || end > bytes->length || start > end) ktc2_fail_index(end, bytes->length);
+	if (start < 0 || end > bytes->length || start > end) fail_range(end, bytes->length);
 	const char* data = (const char*)(bytes + 1) + start;
 	int32_t size = end - start;
 	int32_t length = 0;

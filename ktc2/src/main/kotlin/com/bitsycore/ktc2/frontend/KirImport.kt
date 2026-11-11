@@ -68,6 +68,9 @@ internal fun cHeadersOf(inFile: IrFile?): List<String> {
 	return vNames.elements.mapNotNull { (it as? IrConst)?.value as? String }
 }
 
+/** The functions of `ktc2.internal` that throw for the language's own checks. */
+private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBounds", "throwDivideByZero")
+
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
@@ -257,8 +260,25 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			while (mPending.isNotEmpty()) mPending.removeFirst().invoke()
 		} while (resolveDispatch() || mPending.isNotEmpty())
 
+		// A program that indexes or divides needs the functions that throw when that fails.
+		val vThrowers = HashMap<String, KFunction>()
+		val vHasChecks = mUnits.any { vUnit ->
+			vUnit.functions.any { vFunction ->
+				vFunction.body.anyStatement { vStatement -> vStatement is KIndexSet || vStatement.ownExpressions().any { vRoot -> vRoot.anyNode { it.isRuntimeCheck() } } }
+			}
+		}
+		if (vHasChecks && System.getProperty("ktc2.checks") != "abort") {
+			for (vName in kThrowers) internalFunction(vName)?.let { functionFor(it) }?.let { vThrowers[vName] = it }
+			do {
+				while (mPending.isNotEmpty()) mPending.removeFirst().invoke()
+			} while (resolveDispatch() || mPending.isNotEmpty())
+		}
+
 		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
-		return KModule(mUnits, vEntry, mClassList).also { it.usesThreads = kThreadStart in mRuntime }
+		return KModule(mUnits, vEntry, mClassList).also {
+			it.usesThreads = kThreadStart in mRuntime
+			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
+		}
 	}
 
 	private fun countOverloads(inDeclarations: List<IrDeclaration>) {

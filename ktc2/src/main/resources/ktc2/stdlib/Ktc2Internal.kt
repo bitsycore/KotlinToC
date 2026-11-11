@@ -153,5 +153,16 @@ public fun kotlin_Char_rangeTo(start: Char, end: Char): CharRange = CharRange(st
 /** `x!!` on null. */
 public fun throwNullPointer(): Nothing = throw NullPointerException()
 
+/** An array index outside the array. */
+public fun throwIndexOutOfBounds(index: Int, size: Int): Nothing =
+	throw ArrayIndexOutOfBoundsException("Index $index out of bounds for length $size")
+
+/** A string index outside the string. */
+public fun throwStringIndexOutOfBounds(index: Int, length: Int): Nothing =
+	throw StringIndexOutOfBoundsException("Index $index out of bounds for length $length")
+
+/** An integer division or remainder by zero. */
+public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")
+
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()
