@@ -946,6 +946,7 @@ internal class BodyBuilder(
 			is KBreak -> vStatement.loopId == inId
 			is KIf -> containsBreak(vStatement.thenBlock, inId) || containsBreak(vStatement.elseBlock, inId)
 			is KLoop -> containsBreak(vStatement.body, inId) || containsBreak(vStatement.latch, inId)
+			is KTryRegion -> containsBreak(vStatement.body, inId)
 			else -> false
 		}
 	}
@@ -1179,6 +1180,13 @@ internal class BodyBuilder(
 	 * of its own so the escape analysis can see where it goes.
 	 */
 	private fun readField(inTarget: KExpr, inField: KField): KExpr {
+		val vWeakType = inField.weakType
+		if (vWeakType != null) {
+			// The field holds the weak cell; the read asks it for the target, null once that died.
+			val vAlive = newTemp(KObjType)
+			mBlock += KLet(vAlive, KCall(mImporter.weakGetFunction(), listOf(KFieldRead(inTarget, inField))))
+			return coerce(KRead(vAlive), vWeakType)
+		}
 		if (!inField.isInline) return KFieldRead(inTarget, inField)
 		val vOwner = newTemp(inTarget.type)
 		mBlock += KLet(vOwner, inTarget)
@@ -1189,6 +1197,12 @@ internal class BodyBuilder(
 
 	/** Writes [inField] of [inTarget]; an inline field takes a copy of the value's content. */
 	private fun writeField(inTarget: KExpr, inField: KField, inValue: KExpr) {
+		if (inField.weakType != null) {
+			val vCell = newTemp(KObjType)
+			mBlock += KLet(vCell, KCall(mImporter.weakCellFunction(), listOf(coerce(inValue, KObjType))))
+			mBlock += KFieldSet(inTarget, inField, KRead(vCell))
+			return
+		}
 		mBlock += KFieldSet(inTarget, inField, if (inField.isInline) spill(inValue) else inValue)
 	}
 

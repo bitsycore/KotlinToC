@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
+import com.bitsycore.ktc2.backend.CycleLint
 import com.bitsycore.ktc2.backend.EscapeAnalysis
 import com.bitsycore.ktc2.backend.ExceptionLowering
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
@@ -220,6 +221,9 @@ class Ktc2Extension : IrGenerationExtension {
 		System.setProperty(kErrorCountProperty, vImporter.errors.size.toString())
 		if (vImporter.errors.isNotEmpty()) return
 
+		if (System.getProperty("ktc2.warnCycles") != "false") {
+			CycleLint(vModule).also { it.run() }.warnings.forEach { System.err.println("ktc2: warning: $it") }
+		}
 		ExceptionLowering(vModule).run()
 		val vEscapes = EscapeAnalysis(vModule)
 		vEscapes.run()

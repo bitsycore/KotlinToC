@@ -78,3 +78,7 @@ Ktc2Text.kt
 Ktc2Strings.kt
 Ktc2Io.kt
 Ktc2Sequences.kt
+Ktc2Lifetime.kt
+Ktc2Thread.kt
+Ktc2Concurrent.kt
+Ktc2Synchronized.kt

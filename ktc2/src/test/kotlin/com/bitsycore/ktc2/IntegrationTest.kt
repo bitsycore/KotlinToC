@@ -52,7 +52,7 @@ class IntegrationTest {
 		val vExpected = run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
 
 		val vExe = File(vOutDir, "program.exe")
-		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
+		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-pthread", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 
 		assertEquals(vExpected, vActual, "C output differs from the JVM for $inSource")

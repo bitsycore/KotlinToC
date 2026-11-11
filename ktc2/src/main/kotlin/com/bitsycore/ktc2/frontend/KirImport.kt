@@ -45,6 +45,9 @@ internal fun cIdentifier(inName: String): String {
 
 private fun cPrefix(inPackage: String): String = if (inPackage.isEmpty()) "kt_" else inPackage.replace('.', '_') + "_"
 
+/** The runtime function that starts a thread; a program reaching it is built with atomic counts. */
+private const val kThreadStart = "ktc2_threadStart"
+
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
@@ -231,7 +234,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		} while (resolveDispatch() || mPending.isNotEmpty())
 
 		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
-		return KModule(mUnits, vEntry, mClassList)
+		return KModule(mUnits, vEntry, mClassList).also { it.usesThreads = kThreadStart in mRuntime }
 	}
 
 	private fun countOverloads(inDeclarations: List<IrDeclaration>) {
@@ -477,7 +480,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				unsupported(vFile, vProperty, "property of type '${vBacking.type.render()}'")
 				continue
 			}
-			val vField = KField(cIdentifier(vProperty.name.asString()), vType, vClass, isImmutable = !vProperty.isVar)
+			val vIsWeak = isWeak(vProperty, vBacking, vType, vFile)
+			val vField = KField(cIdentifier(vProperty.name.asString()), if (vIsWeak) KObjType else vType, vClass, isImmutable = !vProperty.isVar)
+			if (vIsWeak) vField.weakType = vType
+			vField.isAcyclic = vProperty.annotations.any { it.type.classFqName?.asString() == "ktc2.Acyclic" }
 			inlineSizeOf(vProperty, vBacking, vType, vClass, vFile)?.let { vField.inlineSize = it }
 			vClass.fields += vField
 			mFields[vBacking to vClass] = vField
@@ -500,6 +506,22 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (inClass.kind == ClassKind.ENUM_CLASS) declareEnumEntries(inClass, vClass, vFile)
 		return vClass
 	}
+
+	/** True for a property marked `@Weak`, which has to be a nullable reference. */
+	private fun isWeak(inProperty: IrProperty, inBacking: IrField, inType: KType, inFile: IrFile): Boolean {
+		if (inProperty.annotations.none { it.type.classFqName?.asString() == "ktc2.Weak" }) return false
+		if (inType !is KRefType || !inBacking.type.isMarkedNullable()) {
+			unsupported(inFile, inProperty, "@Weak on '${inProperty.name}' (it needs a nullable reference type)")
+			return false
+		}
+		return true
+	}
+
+	/** The runtime function giving the weak cell of an object. */
+	internal fun weakCellFunction(): KFunction = runtime("ktc2_weakCell", listOf(KObjType), KObjType)
+
+	/** The runtime function reading the target of a weak cell. */
+	internal fun weakGetFunction(): KFunction = runtime("ktc2_weakGet", listOf(KObjType), KObjType)
 
 	/**
 	 * The inline storage a property asks for with `@Value` (0) or `@Size(N)` (N), on its type or
@@ -940,6 +962,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (inFunction.isExternal && vOwner == null) {
 			// An `external` function is implemented by the C runtime under the name ktc2_<name>.
 			val vExternal = signatureOf(inFunction, vFile, inSubst) ?: return null
+			// The runtime starts a thread in `ktc2.internal.threadEntry`, which has to be generated then.
+			if ("ktc2_${inFunction.name.asString()}" == kThreadStart) internalFunction("threadEntry")?.let { functionFor(it) }
 			return runtime("ktc2_${inFunction.name.asString()}", vExternal.params.map { it.type }, vExternal.returnType).also { mFunctions[vKey] = it }
 		}
 		if (vFile == null || (inFunction.body == null && !vIsDefaultAccessor && inFunction !is IrConstructor)) return null

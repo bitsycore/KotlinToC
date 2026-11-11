@@ -62,6 +62,28 @@ public external fun stringUtf8(string: String): ByteArray
 /** A String from the UTF-8 bytes [startIndex, endIndex) of [bytes]. */
 public external fun stringOfUtf8(bytes: ByteArray, startIndex: Int, endIndex: Int): String
 
+/** The weak cell of [target]: refers to it without keeping it alive. Null for null. */
+public external fun weakCell(target: Any?): Any?
+
+/** The target of a weak [cell], or null once it has been destroyed. */
+public external fun weakGet(cell: Any?): Any?
+
+/** Runs [thread] on a new thread, entering through [threadEntry]; returns the handle [threadJoin] takes. */
+public external fun threadStart(thread: Any): Long
+
+/** Waits for the thread behind [handle] to end. */
+public external fun threadJoin(handle: Long)
+
+/** Where the runtime enters a new thread. */
+public fun threadEntry(thread: Any) {
+	(thread as Thread).run()
+}
+
+/** Takes the program-wide lock behind `synchronized`; recursive. */
+public external fun monitorEnter(lock: Any)
+
+public external fun monitorExit(lock: Any)
+
 // ==================
 // MARK: Library functions provided here
 // ==================

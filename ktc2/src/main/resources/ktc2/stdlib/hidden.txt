@@ -15,3 +15,5 @@ kotlin/sequences/ConstrainedOnceSequence.class
 kotlin/TypeAliasesKt.class
 kotlin/NoWhenBranchMatchedException.class
 kotlin/UninitializedPropertyAccessException.class
+kotlin/StandardKt__SynchronizedKt.class
+kotlin/concurrent/ThreadsKt.class

@@ -15,6 +15,15 @@ import java.lang.ref.WeakReference
 annotation class Weak
 
 /**
+ * States that a reference property never closes a cycle (the `next` of a list that is not
+ * circular, for example), which silences the reference-cycle warning for it. If a cycle forms
+ * anyway its objects are never freed.
+ */
+@Target(AnnotationTarget.PROPERTY)
+@Retention(AnnotationRetention.SOURCE)
+annotation class Acyclic
+
+/**
  * Non-owning reference usable as a value (in collections, locals, parameters).
  */
 class WeakRef<T : Any>(inTarget: T) {

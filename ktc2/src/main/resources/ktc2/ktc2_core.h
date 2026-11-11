@@ -13,6 +13,32 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Generated for each program: defines KTC2_THREADS when the program starts threads. */
+#include "ktc2_config.h"
+
+/* ================== */
+/* MARK: Threads      */
+/* ================== */
+
+/*
+ * A program that never starts a thread counts references with plain increments. One that
+ * does is built with KTC2_THREADS: counts become atomic, and the state that belongs to one
+ * thread (the exception in flight) becomes thread-local.
+ */
+#ifdef KTC2_THREADS
+#define KTC2_TLS _Thread_local
+#define KTC2_RC_LOAD(object) __atomic_load_n(&(object)->rc, __ATOMIC_RELAXED)
+#define KTC2_RC_INC(object) ((void)__atomic_fetch_add(&(object)->rc, 1, __ATOMIC_RELAXED))
+#define KTC2_RC_DEC(object) __atomic_sub_fetch(&(object)->rc, 1, __ATOMIC_ACQ_REL)
+#define KTC2_STAT_INC(counter) ((void)__atomic_fetch_add(&(counter), 1, __ATOMIC_RELAXED))
+#else
+#define KTC2_TLS
+#define KTC2_RC_LOAD(object) ((object)->rc)
+#define KTC2_RC_INC(object) ((void)(object)->rc++)
+#define KTC2_RC_DEC(object) (--(object)->rc)
+#define KTC2_STAT_INC(counter) ((void)(counter)++)
+#endif
+
 /* ================== */
 /* MARK: Objects      */
 /* ================== */
@@ -27,6 +53,12 @@ typedef struct ktc2_Obj {
 
 /** Flag in `rc` of an object that lives on the stack: at a count of zero it is cleaned up but not freed. */
 #define KTC2_STACK UINT32_C(0x80000000)
+
+/** Flag in `rc` of an object that has a weak cell: destroying it clears the cell. */
+#define KTC2_WEAK UINT32_C(0x40000000)
+
+/** The bits of `rc` that count references. */
+#define KTC2_COUNT_MASK UINT32_C(0x3FFFFFFF)
 
 /** Per-type data. `destroy` releases the references an instance holds; NULL when it holds none. */
 typedef struct ktc2_TypeInfo {
@@ -63,11 +95,13 @@ enum {
 	KTC2_TYPE_BOX_USHORT,
 	KTC2_TYPE_BOX_UINT,
 	KTC2_TYPE_BOX_ULONG,
+	KTC2_TYPE_WEAK_CELL,    /* what a weak reference holds: see ktc2_weakCell */
 	KTC2_TYPE_FIRST_USER
 };
 
 struct ktc2_Obj;
 void ktc2_array_destroy(struct ktc2_Obj* object);
+void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
 
 #define KTC2_BUILTIN_TYPES \
 	[KTC2_TYPE_STRING] = { "String", NULL }, \
@@ -96,7 +130,8 @@ void ktc2_array_destroy(struct ktc2_Obj* object);
 	[KTC2_TYPE_BOX_UBYTE] = { "UByte", NULL }, \
 	[KTC2_TYPE_BOX_USHORT] = { "UShort", NULL }, \
 	[KTC2_TYPE_BOX_UINT] = { "UInt", NULL }, \
-	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL }
+	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL }, \
+	[KTC2_TYPE_WEAK_CELL] = { "ktc2.WeakRef cell", ktc2_weak_cell_destroy }
 
 /** Generated in ktc2_main.c. */
 extern const ktc2_TypeInfo ktc2_types[];
@@ -112,7 +147,7 @@ void ktc2_destroy(ktc2_Obj* object);
 #ifdef KTC2_ARC_STATS
 extern uint64_t ktc2_stat_retains;
 extern uint64_t ktc2_stat_releases;
-#define KTC2_COUNT(counter) ((counter)++)
+#define KTC2_COUNT(counter) KTC2_STAT_INC(counter)
 #else
 #define KTC2_COUNT(counter) ((void)0)
 #endif
@@ -122,7 +157,7 @@ static inline void* ktc2_retain(void* pointer)
 {
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_retains);
-	if (object && object->rc != KTC2_IMMORTAL) object->rc++;
+	if (object && KTC2_RC_LOAD(object) != KTC2_IMMORTAL) KTC2_RC_INC(object);
 	return pointer;
 }
 
@@ -131,7 +166,7 @@ static inline void ktc2_release(void* pointer)
 {
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_releases);
-	if (object && object->rc != KTC2_IMMORTAL && (--object->rc & ~KTC2_STACK) == 0) ktc2_destroy(object);
+	if (object && KTC2_RC_LOAD(object) != KTC2_IMMORTAL && (KTC2_RC_DEC(object) & KTC2_COUNT_MASK) == 0) ktc2_destroy(object);
 }
 
 /**
@@ -144,6 +179,40 @@ static inline void ktc2_release(void* pointer)
 int ktc2_exit(void);
 
 /* ================== */
+/* MARK: Concurrency  */
+/* ================== */
+
+/**
+ * Runs `java.lang.Thread.run` of [thread] on a new thread, which holds a reference to it
+ * until it ends. Returns a handle for [ktc2_threadJoin]. Only with KTC2_THREADS.
+ */
+int64_t ktc2_threadStart(ktc2_Obj* thread);
+
+/** Waits for the thread behind [handle] to end and gives the handle up. */
+void ktc2_threadJoin(int64_t handle);
+
+/**
+ * `synchronized`: one recursive lock for the whole program, whatever the object. That is
+ * stricter than a monitor per object but cannot be told apart by a correct program, and
+ * needs no room in the object.
+ */
+void ktc2_monitorEnter(ktc2_Obj* lock);
+void ktc2_monitorExit(ktc2_Obj* lock);
+
+/* ================== */
+/* MARK: Weak         */
+/* ================== */
+
+/**
+ * The weak cell of [target]: an object that refers to it without keeping it alive, shared by
+ * every weak reference to the same target. Returns an owned reference, NULL for NULL.
+ */
+ktc2_Obj* ktc2_weakCell(ktc2_Obj* target);
+
+/** The target of a weak cell as an owned reference, or NULL once it has been destroyed. */
+ktc2_Obj* ktc2_weakGet(ktc2_Obj* cell);
+
+/* ================== */
 /* MARK: Exceptions   */
 /* ================== */
 
@@ -151,7 +220,7 @@ int ktc2_exit(void);
  * The exception in flight, or NULL. A function that throws parks it here and returns; each
  * caller that can receive one tests for it and leaves in turn, until a `try` takes it.
  */
-extern ktc2_Obj* ktc2_pending;
+extern KTC2_TLS ktc2_Obj* ktc2_pending;
 
 static inline bool ktc2_has_pending(void) { return ktc2_pending != NULL; }
 

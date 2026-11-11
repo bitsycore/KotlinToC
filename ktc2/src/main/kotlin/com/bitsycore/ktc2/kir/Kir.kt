@@ -74,7 +74,10 @@ class KModule(
 	val units: List<KUnit>,
 	val entry: KFunction?,
 	val classes: List<KClass>,
-)
+) {
+	/** Set when the program can start a thread: the runtime then counts references atomically. */
+	var usesThreads: Boolean = false
+}
 
 /** One generated `.h` / `.c` pair: a class, or the top-level declarations of one file. */
 class KUnit(
@@ -113,6 +116,15 @@ class KField(val cName: String, val type: KType, val owner: KClass? = null, val 
 	var inlineSize: Int = -1
 
 	val isInline: Boolean get() = inlineSize >= 0
+
+	/**
+	 * Set for a `@Weak` property, to the type the program sees. The field itself ([type] is then
+	 * the plain object type) holds the weak cell of the target, not the target.
+	 */
+	var weakType: KType? = null
+
+	/** Set for an `@Acyclic` property: the cycle lint does not follow it. */
+	var isAcyclic: Boolean = false
 }
 
 /**

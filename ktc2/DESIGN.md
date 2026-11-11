@@ -64,7 +64,7 @@ C build). `kotlinc` becomes the oracle for "is this still Kotlin".
 
 | `ktc2.` declaration | JVM definition (`ktc2/src/main/kotlin/ktc2/`) |
 |---|---|
-| `@Value`, `@Struct`, `@Size(N)`, `@Weak`, `@Tls`, `@Namespace`, `@SimpleEnum` | no-op annotations |
+| `@Value`, `@Struct`, `@Size(N)`, `@Weak`, `@Acyclic`, `@Tls`, `@Namespace`, `@SimpleEnum` | no-op annotations |
 | `arena(size) { ... }` | `inline fun <R> arena(size: Int, block: () -> R): R = block()` |
 | `WeakRef<T>` | wrapper over `java.lang.ref.WeakReference` |
 | `Deinit` | plain interface |
@@ -229,6 +229,7 @@ ARC does not free cycles. Two layers:
 2. **`@Weak var parent: Node?`** and **`WeakRef<T>`** break the reported cycles. A weak read
    yields `null` after the target died. Implemented with a side table used only by objects
    whose `HAS_WEAK` bit is set, so the header stays 8 bytes and unused weak support costs nothing.
+   `@Acyclic` on a property tells the lint that it never closes a cycle.
 3. A cycle collector was considered (Bacon–Rajan trial deletion over the flagged types) and
    **rejected** to keep the runtime minimal; see §11.
 
@@ -237,8 +238,8 @@ turned on for the whole integration suite.
 
 ### 5.4 Threads
 
-Non-atomic counts when the program does not link `ktc.std.Thread` (known at compile time);
-atomic counts when it does. Later refinement: a `SHARED` header bit set when an object crosses
+Non-atomic counts when the program does not reach the thread API (`kotlin.concurrent.thread`,
+`java.lang.Thread` — known at compile time); atomic counts when it does. Later refinement: a `SHARED` header bit set when an object crosses
 a thread boundary, so only shared objects pay for atomics.
 
 ### 5.5 Deterministic destruction
@@ -407,7 +408,7 @@ ktc2/
 | 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources — **done** | collection, string and lambda programs match the JVM |
 | 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) — **done** (see status) | RC operations per test drop sharply, output unchanged |
 | 5 | Escape analysis | whole-program escape summaries; stack promotion of objects, closures, cells, strings and small arrays; `@Value` / `@Size` inline fields with autobox; `--warn-heap` — **done** (see status; caller-slot returns and inline array elements are left) | heap allocations drop where objects are temporary, output unchanged |
-| 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>`; atomic mode | exception programs leak-free; thread programs under atomic RC |
+| 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>` / `@Acyclic`; threads with atomic counts — **done** (see status; index and division failures are still fatal) | exception programs leak-free; thread programs under atomic RC |
 | 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator; port of the SDL3 module | v1's interop tests ported and passing |
 
 Phases 1 to 3 are the bulk of the effort; Phase 2 carries the most risk. Phases 4 and 5 are pure optimizations
@@ -564,9 +565,55 @@ object is always heap-allocated), `@Value` on array elements and locals, arrays 
 size on the stack, and the `.copy()` rule for assigning a *mutable* object into an inline
 field from a non-fresh source (the content is copied; on the JVM the two would alias).
 
-Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
-(null `!!`, bad cast, index out of bounds, `/ by zero`, `throw`) print the JVM-style message
-and exit until Phase 6; `object` and enum initializers run at startup rather than on first
+Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `Weak.kt`,
+`Threads.kt`):
+- **Exceptions by checked propagation** (`ExceptionLowering`, the first back-end pass).
+  `throw` parks the exception in the runtime and leaves the function — to the end of the
+  enclosing `try`, or by returning a zero value. After each call to a function that may
+  throw, the caller tests for a parked exception and leaves the same way. "May throw" is
+  computed for the whole program, so call chains that cannot throw carry no test. Leaving is
+  expressed with `break` and `return`, which `ArcInsert` already handles: every local of every
+  scope that is left gets released, and exception programs are leak-free. `try` is an
+  expression; `finally` runs on normal exit, on a throw, and on `return` / `break` / `continue`
+  out of it. `kotlin.Throwable` is a built-in base class (message, cause, `toString`); the
+  exception classes of the standard library are ordinary Kotlin classes of the platform
+  layer (`Ktc2Exceptions.kt`). `!!` and a failed cast throw; an uncaught exception prints the
+  JVM-style line and exits with status 1.
+- **`@Weak` and `WeakRef<T>`.** A weak reference holds a *weak cell*: a small counted object
+  that points at the target without owning it, shared by all weak references to that
+  target. The target only carries a bit in its count; when it is destroyed the runtime looks
+  its cell up in a side table and clears it, so later reads give `null`. Objects never
+  referred to weakly pay nothing, and the header stays 8 bytes. A `@Weak` property has to be
+  a nullable reference. Because a weak target dies at its last strong reference rather than
+  at some later collection, a program stays erasable only if it does not depend on *when* a
+  weak reference turns null.
+- **Cycle lint** (`CycleLint`, on by default, `--no-warn-cycles`). Reports each class that
+  can reach itself through owning fields, with the path:
+  `reference cycle possible: Shape.group -> Group.first -> Shape`. A field of class `D` is
+  taken to hold `D` or any subclass; a cycle needs at least one `var` on the way; an
+  inherited field is reported once. The answer is `@Weak`, `WeakRef`, or `@Acyclic` on a
+  property that by construction never closes a cycle (the `next` of a plain linked list).
+  Fields typed as an interface, `Any` or a type parameter — which is how collections hold
+  their elements — are not followed, so the lint is silent about cycles through a collection
+  or a captured lambda.
+- **Threads.** `kotlin.concurrent.thread { }` and `java.lang.Thread` (`start`, `join`,
+  overriding `run`) run on operating-system threads, and `synchronized` works. A program that
+  reaches the thread API gets `#define KTC2_THREADS` in its generated `ktc2_config.h`: counts
+  become atomic, the exception in flight thread-local, and the runtime's own tables locked.
+  Every other program keeps plain increments. As on the JVM the process ends when its last
+  thread does. As in Swift, a property written by one thread while another reads it needs
+  `synchronized` — unsynchronized access is a data race that can corrupt a count, where the
+  JVM would only show a stale value.
+
+Not done in Phase 6: an array index out of bounds, an integer division by zero and a string
+index out of range are still fatal instead of throwing; `Result` / `runCatching` (value
+classes) are not supported; `synchronized` is one recursive lock for the whole program
+rather than a monitor per object, and waits by yielding; an uncaught exception in a thread
+ends the program instead of only that thread; `isDaemon`, thread names and priorities are
+ignored; lazy initialization is not synchronized; atomic counting applies to every object
+of a threaded program (the `SHARED`-bit refinement of §5.4 is open).
+
+Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
 use; reference fields in `@Struct` classes, `Enum.entries`, inner classes, a function value
 whose static type differs in variance from the lambda's own, and an inline lambda used
 inside another lambda (`crossinline`) are not supported yet. Nothing in the ARC pass is

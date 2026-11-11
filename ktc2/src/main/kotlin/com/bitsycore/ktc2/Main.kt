@@ -4,7 +4,7 @@ import com.bitsycore.ktc2.frontend.K2Frontend
 import java.io.File
 import kotlin.system.exitProcess
 
-private const val kUsage = "Usage: ktc2 <file.kt...> [-o <output_dir>] [--dump-ir] [--warn-heap]"
+private const val kUsage = "Usage: ktc2 <file.kt...> [-o <output_dir>] [--dump-ir] [--warn-heap] [--no-warn-cycles]"
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC — see ktc2/DESIGN.md).
@@ -22,6 +22,8 @@ fun main(args: Array<String>) {
 			vArg == "--dump-ir" -> vDumpIr = true
 			// Lists every allocation that stays on the heap, with the reason.
 			vArg == "--warn-heap" -> System.setProperty("ktc2.warnHeap", "true")
+			// Silences the report of classes that can form reference cycles.
+			vArg == "--no-warn-cycles" -> System.setProperty("ktc2.warnCycles", "false")
 			vArg.endsWith(".kt") -> vSources += File(vArg)
 			else -> fail("unknown argument '$vArg'")
 		}

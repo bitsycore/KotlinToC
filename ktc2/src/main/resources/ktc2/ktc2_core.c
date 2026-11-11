@@ -53,14 +53,49 @@ void ktc2_check_step(int64_t step)
 /* MARK: Objects      */
 /* ================== */
 
+#ifdef KTC2_THREADS
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#define thread_yield() Sleep(0)
+#else
+#include <pthread.h>
+#include <sched.h>
+#define thread_yield() sched_yield()
+#endif
+
+/** Guards the runtime's own tables (weak cells, leak counts): held for a few instructions only. */
+static char runtime_lock;
+
+static void runtime_enter(void)
+{
+	while (__atomic_test_and_set(&runtime_lock, __ATOMIC_ACQUIRE)) thread_yield();
+}
+
+static void runtime_leave(void)
+{
+	__atomic_clear(&runtime_lock, __ATOMIC_RELEASE);
+}
+
+#define KTC2_RC_OR(object, bits) ((void)__atomic_fetch_or(&(object)->rc, (bits), __ATOMIC_ACQ_REL))
+#define KTC2_RC_AND(object, bits) ((void)__atomic_fetch_and(&(object)->rc, (bits), __ATOMIC_ACQ_REL))
+#else
+#define runtime_enter() ((void)0)
+#define runtime_leave() ((void)0)
+#define KTC2_RC_OR(object, bits) ((void)((object)->rc |= (bits)))
+#define KTC2_RC_AND(object, bits) ((void)((object)->rc &= (bits)))
+#endif
+
 #ifdef KTC2_LEAK_CHECK
 /** Live objects per type id. */
 static int64_t* live_counts;
 
 static void count_live(uint32_t typeId, int delta)
 {
+	runtime_enter();
 	if (!live_counts) live_counts = calloc(ktc2_type_count, sizeof *live_counts);
 	if (live_counts && typeId < ktc2_type_count) live_counts[typeId] += delta;
+	runtime_leave();
 }
 #else
 #define count_live(typeId, delta) ((void)0)
@@ -75,7 +110,7 @@ static uint64_t stat_allocs;
 void* ktc2_alloc(size_t size, uint32_t typeId)
 {
 #ifdef KTC2_ARC_STATS
-	stat_allocs++;
+	KTC2_STAT_INC(stat_allocs);
 #endif
 	ktc2_Obj* object = calloc(1, size);
 	if (!object) fail("java.lang.OutOfMemoryError", NULL);
@@ -85,8 +120,11 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 	return object;
 }
 
+static void weak_drop(ktc2_Obj* target);
+
 void ktc2_destroy(ktc2_Obj* object)
 {
+	if (object->rc & KTC2_WEAK) weak_drop(object);
 	void (*destroy)(ktc2_Obj*) = ktc2_types[object->typeId].destroy;
 	if (destroy) destroy(object);
 	/* A stack object only gives up what it refers to; its memory belongs to a frame. */
@@ -95,8 +133,12 @@ void ktc2_destroy(ktc2_Obj* object)
 	free(object);
 }
 
+static void threads_wait(void);
+
 int ktc2_exit(void)
 {
+	/* As on the JVM, the program ends when its last thread does. */
+	threads_wait();
 	fflush(stdout);
 #ifdef KTC2_ARC_STATS
 	fprintf(stderr, "ktc2: arc: allocs=%" PRIu64 " retains=%" PRIu64 " releases=%" PRIu64 "\n", stat_allocs, ktc2_stat_retains, ktc2_stat_releases);
@@ -710,10 +752,291 @@ ktc2_Obj* ktc2_cs_subSequence(ktc2_Obj* object, int32_t start, int32_t end)
 }
 
 /* ================== */
+/* MARK: Weak         */
+/* ================== */
+
+/**
+ * Weak references go through a cell. The cell is an ordinary counted object, owned by the
+ * weak references; the target does not know it, apart from the KTC2_WEAK bit in its count.
+ * A table from target to cell lets the dying target find its cell and clear it, so objects
+ * that are never weakly referenced pay nothing.
+ */
+typedef struct WeakCell {
+	ktc2_Obj header;
+	ktc2_Obj* target;        /* NULL once the target is destroyed */
+	struct WeakCell* next;   /* next cell of the same bucket */
+} WeakCell;
+
+static WeakCell** weak_buckets;
+static size_t weak_bucket_count;
+static size_t weak_cell_count;
+
+static size_t weak_hash(const ktc2_Obj* target, size_t bucketCount)
+{
+	return (size_t)((((uint64_t)(uintptr_t)target >> 3) * UINT64_C(0x9E3779B97F4A7C15)) >> 32) & (bucketCount - 1);
+}
+
+/** The link that holds the cell of [target]; the cell is known to be in the table. */
+static WeakCell** weak_link(const ktc2_Obj* target)
+{
+	WeakCell** link = &weak_buckets[weak_hash(target, weak_bucket_count)];
+	while ((*link)->target != target) link = &(*link)->next;
+	return link;
+}
+
+static void weak_insert(WeakCell* cell)
+{
+	if (weak_cell_count >= weak_bucket_count) {
+		size_t count = weak_bucket_count ? weak_bucket_count * 2 : 64;
+		WeakCell** buckets = calloc(count, sizeof *buckets);
+		if (!buckets) fail("java.lang.OutOfMemoryError", NULL);
+		for (size_t i = 0; i < weak_bucket_count; i++) {
+			for (WeakCell* moved = weak_buckets[i]; moved;) {
+				WeakCell* next = moved->next;
+				size_t slot = weak_hash(moved->target, count);
+				moved->next = buckets[slot];
+				buckets[slot] = moved;
+				moved = next;
+			}
+		}
+		free(weak_buckets);
+		weak_buckets = buckets;
+		weak_bucket_count = count;
+	}
+	size_t slot = weak_hash(cell->target, weak_bucket_count);
+	cell->next = weak_buckets[slot];
+	weak_buckets[slot] = cell;
+	weak_cell_count++;
+}
+
+static void weak_remove(const ktc2_Obj* target)
+{
+	WeakCell** link = weak_link(target);
+	*link = (*link)->next;
+	weak_cell_count--;
+}
+
+/** The target is being destroyed: its cell reads NULL from now on. */
+static void weak_drop(ktc2_Obj* target)
+{
+	runtime_enter();
+	WeakCell* cell = *weak_link(target);
+	weak_remove(target);
+	cell->target = NULL;
+	runtime_leave();
+}
+
+/**
+ * Takes a reference to [object] unless its count already reached zero — another thread is
+ * then about to destroy it, and is waiting for the runtime lock the caller holds.
+ */
+static ktc2_Obj* retain_if_alive(ktc2_Obj* object)
+{
+	if (!object) return NULL;
+	uint32_t rc = KTC2_RC_LOAD(object);
+	if (rc == KTC2_IMMORTAL) return object;
+#ifdef KTC2_THREADS
+	while ((rc & KTC2_COUNT_MASK) != 0) {
+		if (__atomic_compare_exchange_n(&object->rc, &rc, rc + 1, true, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) return object;
+	}
+	return NULL;
+#else
+	object->rc++;
+	return object;
+#endif
+}
+
+ktc2_Obj* ktc2_weakCell(ktc2_Obj* target)
+{
+	if (!target) return NULL;
+	if (target->rc == KTC2_IMMORTAL) {
+		/* Never destroyed: the cell needs no tracking. */
+		WeakCell* cell = ktc2_alloc(sizeof *cell, KTC2_TYPE_WEAK_CELL);
+		cell->target = target;
+		return &cell->header;
+	}
+	WeakCell* fresh = NULL;
+	runtime_enter();
+	WeakCell* cell = NULL;
+	if (KTC2_RC_LOAD(target) & KTC2_WEAK) {
+		WeakCell* existing = *weak_link(target);
+		cell = (WeakCell*)retain_if_alive(&existing->header);
+		if (!cell) {
+			/* The last weak reference is going away right now: its cell is replaced. */
+			weak_remove(target);
+			existing->target = NULL;
+		}
+	}
+	runtime_leave();
+	if (cell) return &cell->header;
+	fresh = ktc2_alloc(sizeof *fresh, KTC2_TYPE_WEAK_CELL);
+	fresh->target = target;
+	runtime_enter();
+	if (KTC2_RC_LOAD(target) & KTC2_WEAK) {
+		/* Another thread made the cell in the meantime. */
+		cell = (WeakCell*)retain_if_alive(&(*weak_link(target))->header);
+	}
+	if (!cell) {
+		if (KTC2_RC_LOAD(target) & KTC2_WEAK) {
+			WeakCell* dying = *weak_link(target);
+			weak_remove(target);
+			dying->target = NULL;
+		}
+		weak_insert(fresh);
+		KTC2_RC_OR(target, KTC2_WEAK);
+		cell = fresh;
+		fresh = NULL;
+	}
+	runtime_leave();
+	if (fresh) {
+		fresh->target = NULL;
+		ktc2_release(fresh);
+	}
+	return &cell->header;
+}
+
+ktc2_Obj* ktc2_weakGet(ktc2_Obj* object)
+{
+	WeakCell* cell = (WeakCell*)object;
+	if (!cell) return NULL;
+	runtime_enter();
+	ktc2_Obj* target = retain_if_alive(cell->target);
+	runtime_leave();
+	return target;
+}
+
+void ktc2_weak_cell_destroy(ktc2_Obj* object)
+{
+	WeakCell* cell = (WeakCell*)object;
+	runtime_enter();
+	if (cell->target && KTC2_RC_LOAD(cell->target) != KTC2_IMMORTAL) {
+		weak_remove(cell->target);
+		KTC2_RC_AND(cell->target, ~KTC2_WEAK);
+	}
+	runtime_leave();
+}
+
+/* ================== */
+/* MARK: Concurrency  */
+/* ================== */
+
+#ifdef KTC2_THREADS
+
+/** `ktc2.internal.threadEntry`, generated with the program: calls `run` of the Thread object. */
+void ktc2_internal_threadEntry(ktc2_Obj* thread);
+
+/** Threads started and not yet ended. */
+static uint32_t threads_running;
+
+static void thread_body(ktc2_Obj* thread)
+{
+	ktc2_internal_threadEntry(thread);
+	if (ktc2_has_pending()) ktc2_uncaught();
+	ktc2_release(thread);
+	__atomic_fetch_sub(&threads_running, 1, __ATOMIC_RELEASE);
+}
+
+static void threads_wait(void)
+{
+	while (__atomic_load_n(&threads_running, __ATOMIC_ACQUIRE) != 0) thread_yield();
+}
+
+#ifdef _WIN32
+
+static DWORD WINAPI thread_main(LPVOID argument)
+{
+	thread_body(argument);
+	return 0;
+}
+
+int64_t ktc2_threadStart(ktc2_Obj* thread)
+{
+	ktc2_retain(thread);
+	__atomic_fetch_add(&threads_running, 1, __ATOMIC_RELEASE);
+	HANDLE handle = CreateThread(NULL, 0, thread_main, thread, 0, NULL);
+	if (!handle) fail("java.lang.OutOfMemoryError", "unable to create native thread");
+	return (int64_t)(intptr_t)handle;
+}
+
+void ktc2_threadJoin(int64_t handle)
+{
+	WaitForSingleObject((HANDLE)(intptr_t)handle, INFINITE);
+	CloseHandle((HANDLE)(intptr_t)handle);
+}
+
+#else
+
+static void* thread_main(void* argument)
+{
+	thread_body(argument);
+	return NULL;
+}
+
+int64_t ktc2_threadStart(ktc2_Obj* thread)
+{
+	pthread_t* handle = malloc(sizeof *handle);
+	ktc2_retain(thread);
+	__atomic_fetch_add(&threads_running, 1, __ATOMIC_RELEASE);
+	if (!handle || pthread_create(handle, NULL, thread_main, thread) != 0) fail("java.lang.OutOfMemoryError", "unable to create native thread");
+	return (int64_t)(intptr_t)handle;
+}
+
+void ktc2_threadJoin(int64_t handle)
+{
+	pthread_t* thread = (pthread_t*)(intptr_t)handle;
+	pthread_join(*thread, NULL);
+	free(thread);
+}
+
+#endif
+
+/* The thread holding the monitor (the address of one of its thread-locals), and how many times. */
+static KTC2_TLS char monitor_self;
+static uintptr_t monitor_owner;
+static uint32_t monitor_depth;
+
+void ktc2_monitorEnter(ktc2_Obj* lock)
+{
+	if (!lock) ktc2_fail_null();
+	uintptr_t self = (uintptr_t)&monitor_self;
+	if (__atomic_load_n(&monitor_owner, __ATOMIC_ACQUIRE) != self) {
+		uintptr_t nobody = 0;
+		while (!__atomic_compare_exchange_n(&monitor_owner, &nobody, self, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+			nobody = 0;
+			thread_yield();
+		}
+	}
+	monitor_depth++;
+}
+
+void ktc2_monitorExit(ktc2_Obj* lock)
+{
+	(void)lock;
+	if (--monitor_depth == 0) __atomic_store_n(&monitor_owner, 0, __ATOMIC_RELEASE);
+}
+
+#else
+
+static void threads_wait(void) {}
+
+/* Without threads nothing can contend for a monitor. */
+void ktc2_monitorEnter(ktc2_Obj* lock)
+{
+	if (!lock) ktc2_fail_null();
+}
+
+void ktc2_monitorExit(ktc2_Obj* lock)
+{
+	(void)lock;
+}
+
+#endif
+
+/* ================== */
 /* MARK: Exceptions   */
 /* ================== */
 
-ktc2_Obj* ktc2_pending;
+KTC2_TLS ktc2_Obj* ktc2_pending;
 
 void ktc2_throw(ktc2_Obj* exception)
 {
