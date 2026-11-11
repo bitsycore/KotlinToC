@@ -117,7 +117,7 @@ internal class BodyBuilder(
 	private val mInlineTargets = HashMap<Any, InlineTarget>()
 
 	/** A lambda bound to a parameter of an `inline` function being expanded, with the substitution it was written under. */
-	private class InlineLambda(val expression: IrFunctionExpression, val subst: Subst)
+	internal class InlineLambda(val expression: IrFunctionExpression, val subst: Subst)
 
 	private val mInlineLambdas = HashMap<IrValueDeclaration, InlineLambda>()
 
@@ -193,10 +193,40 @@ internal class BodyBuilder(
 	}
 
 	/** Body of a closure's `invoke`: the captured values are read from the closure object first. */
-	fun buildClosure(inBindings: List<Binding>, inSelfFunction: IrFunction?) {
+	fun buildClosure(inBindings: List<Binding>, inSelfFunction: IrFunction?, inLambdas: Map<IrValueDeclaration, InlineLambda> = emptyMap()) {
 		mBindings = inBindings
 		mSelfFunction = inSelfFunction
+		mInlineLambdas += inLambdas
 		build()
+	}
+
+	/** What a closure or local class takes from the function it is created in. */
+	private class CaptureSet {
+		val values = LinkedHashMap<IrValueDeclaration, KLocal>()
+		val functions = LinkedHashMap<IrFunction, LocalFunction>()
+		val lambdas = LinkedHashMap<IrValueDeclaration, InlineLambda>()
+	}
+
+	/**
+	 * Sorts the free variables [inFree] into [outSet]. A lambda bound to an `inline` parameter
+	 * (`crossinline`) is not a value: it is passed along to be expanded inside the closure, and
+	 * what it uses itself is captured too.
+	 */
+	private fun collectCaptures(inFree: List<Any>, outSet: CaptureSet) {
+		for (vFree in inFree) {
+			when (vFree) {
+				is IrValueDeclaration -> {
+					val vLocal = mLocals[vFree]
+					val vLambda = mInlineLambdas[vFree]
+					if (vLocal != null) {
+						outSet.values[vFree] = vLocal
+					} else if (vLambda != null && outSet.lambdas.put(vFree, vLambda) == null) {
+						collectCaptures(mImporter.captures.freeVariables(vLambda.expression.function), outSet)
+					}
+				}
+				is IrFunction -> mLocalFunctions[vFree]?.let { outSet.functions[vFree] = it }
+			}
+		}
 	}
 
 	/** Body of the `invoke` of a function reference: forwards to [inTarget] with the bound values first. */
@@ -436,6 +466,7 @@ internal class BodyBuilder(
 			is IrSimpleFunction -> makeClosure(inStatement, inStatement, inStatement)?.let { (vHolder, vInvoke) ->
 				mLocalFunctions[inStatement] = LocalFunction(vInvoke, vHolder)
 			}
+			is IrClass -> declareLocalClass(inStatement)
 			else -> fail(inStatement, "local declaration")
 		}
 	}
@@ -645,6 +676,13 @@ internal class BodyBuilder(
 			return if (vHolds) kTrue else kFalse
 		}
 		if (inValue.type !is KRefType) return fail(inElement, "type test on a value of type '${inType.render()}'")
+		// A String is a CharSequence and a Comparable.
+		if (inValue.type == KStringType) {
+			val vTargetName = vType.classOrNull?.owner?.kotlinFqName?.asString()
+			if (vTargetName == "kotlin.CharSequence" || vTargetName == "kotlin.Comparable") {
+				return if (vType.isMarkedNullable()) kTrue else not(isNull(inValue))
+			}
+		}
 		// An array cast is unchecked: arrays do not record their element type beyond its kind.
 		if (kType(vType.makeNotNull()) is KArrayType) return if (vType.isMarkedNullable()) kTrue else not(isNull(inValue))
 		// A type parameter standing for a reference type is `Any?` here: the test always holds.
@@ -1014,8 +1052,25 @@ internal class BodyBuilder(
 		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, KRead(vObject), vSubst)
 		if (vCall !is KCall) return vCall
 		mBlock += KLet(vObject, KAlloc(vClass))
+		// A local class instance carries the outer values it uses; they are set before its constructor runs.
+		for (vBinding in mImporter.localBindingsOf(vClass)) {
+			val vSource = mLocals[vBinding.declaration as IrValueDeclaration]
+			if (vSource == null) {
+				fail(inCall, "creating a local class instance where '${(vBinding.declaration as IrValueDeclaration).name}' is not in scope")
+			} else {
+				mBlock += KFieldSet(KRead(vObject), vBinding.field, KRead(vSource))
+			}
+		}
 		mBlock += KEval(vCall)
 		return KRead(vObject)
+	}
+
+	/** A class declared inside a function (or an object expression): its captures become fields. */
+	private fun declareLocalClass(inClass: IrClass) {
+		val vSet = CaptureSet()
+		collectCaptures(mImporter.captures.freeVariablesOfClass(inClass), vSet)
+		val vCaptures = vSet.values.map { (vDeclaration, vLocal) -> Triple(vDeclaration, vLocal.type, mCells[vDeclaration]) }
+		if (mImporter.declareLocalClass(inClass, vCaptures, HashMap(vSet.lambdas)) == null) fail(inClass, "local class '${inClass.name}'")
 	}
 
 	/** An enum constructor delegating to its superclass constructor (`kotlin.Enum` needs nothing). */
@@ -1350,21 +1405,17 @@ internal class BodyBuilder(
 	private fun makeClosure(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?): Pair<KLocal, KFunction>? {
 		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
 
+		val vSet = CaptureSet()
+		collectCaptures(mImporter.captures.freeVariables(inFunction), vSet)
 		val vCaptures = ArrayList<Capture>()
-		for (vFree in mImporter.captures.freeVariables(inFunction)) {
-			when (vFree) {
-				is IrValueDeclaration -> {
-					val vLocal = mLocals[vFree]
-					if (vLocal == null) {
-						if (vFree in mInlineLambdas) fail(inElement, "an inline lambda parameter used inside another lambda (crossinline)")
-						continue
-					}
-					val vName = if (vFree is IrValueParameter && vFree.kind != IrParameterKind.Regular) "self" else vFree.name.asString()
-					vCaptures += Capture(vFree, vName, vLocal, mCells[vFree], null)
-				}
-				is IrFunction -> mLocalFunctions[vFree]?.let { vCaptures += Capture(vFree, vFree.name.asString(), it.holder, null, it.invoke) }
-			}
+		for ((vDeclaration, vLocal) in vSet.values) {
+			val vName = if (vDeclaration is IrValueParameter && vDeclaration.kind != IrParameterKind.Regular) "self" else vDeclaration.name.asString()
+			vCaptures += Capture(vDeclaration, vName, vLocal, mCells[vDeclaration], null)
 		}
+		for ((vLocalFunction, vHolder) in vSet.functions) {
+			vCaptures += Capture(vLocalFunction, vLocalFunction.name.asString(), vHolder.holder, null, vHolder.invoke)
+		}
+		val vLambdas = HashMap(vSet.lambdas)
 		val vReturn = kType(inFunction.returnType)
 		val vNames = HashSet<String>()
 		val vParams = ArrayList<KLocal>()
@@ -1388,7 +1439,7 @@ internal class BodyBuilder(
 		mImporter.registerClosure(vClass, vInvoke)
 		val vBindings = vCaptures.mapIndexed { vIndex, vCapture -> Binding(vCapture.declaration, vClass.fields[vIndex], vCapture.cell, vCapture.invoke) }
 		val vSubst = mSubst
-		mImporter.later { BodyBuilder(mImporter, vInvoke, inFunction, mFile, vSubst).buildClosure(vBindings, inSelf) }
+		mImporter.later { BodyBuilder(mImporter, vInvoke, inFunction, mFile, vSubst).buildClosure(vBindings, inSelf, vLambdas) }
 
 		val vObject = newTemp(KClassType(vClass))
 		mBlock += KLet(vObject, KAlloc(vClass))
@@ -1435,8 +1486,13 @@ internal class BodyBuilder(
 	 */
 	private fun redirectToPlatform(inCall: IrCall): KExpr? {
 		val vCallee = inCall.symbol.owner
-		val vFunction = mImporter.internalFunction(vCallee.kotlinFqName.asString().replace('.', '_')) ?: return null
-		val vSubst = mImporter.substFor(vFunction, emptyList(), inCall.typeArguments.map { vType -> vType?.let { closed(it) } })
+		val vBase = vCallee.kotlinFqName.asString().replace('.', '_')
+		// A name ending in __<ReceiverClass> covers one overload among several (single() on a CharArray).
+		val vReceiverClass = inCall.arguments.firstOrNull()?.let { closed(it.type).classOrNull?.owner?.name?.asString() }
+		val vFunction = (vReceiverClass?.let { mImporter.internalFunction("${vBase}__$it") } ?: mImporter.internalFunction(vBase)) ?: return null
+		val vOwnArguments = inCall.typeArguments.map { vType -> vType?.let { closed(it) } }
+		if (isExpanded(vFunction)) return expandInline(inCall, vFunction, exactSubst(vFunction, emptyList(), vOwnArguments))
+		val vSubst = mImporter.substFor(vFunction, emptyList(), vOwnArguments)
 		val vTarget = mImporter.functionFor(vFunction, vSubst) ?: return null
 		return adapt(callFunction(inCall, vTarget, vFunction, inCall.arguments, null, vSubst), inCall)
 	}

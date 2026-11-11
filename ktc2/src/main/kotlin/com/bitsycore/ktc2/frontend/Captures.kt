@@ -3,6 +3,7 @@
 package com.bitsycore.ktc2.frontend
 
 import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrParameterKind
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
@@ -70,6 +71,13 @@ internal class CaptureAnalysis {
 				super.visitVariable(declaration)
 			}
 
+			override fun visitClass(declaration: IrClass) {
+				// A local class or object expression uses outer variables like a closure does.
+				vDepth++
+				super.visitClass(declaration)
+				vDepth--
+			}
+
 			override fun visitCall(expression: IrCall) {
 				vInlined += inlinedArguments(expression)
 				super.visitCall(expression)
@@ -120,6 +128,44 @@ internal class CaptureAnalysis {
 			}
 		})
 		vCells
+	}
+
+	/**
+	 * The value declarations a local class (or object expression) uses from the function it is
+	 * declared in, in first-use order.
+	 */
+	fun freeVariablesOfClass(inClass: IrClass): List<IrValueDeclaration> {
+		val vDeclared = HashSet<Any>()
+		val vFree = LinkedHashSet<IrValueDeclaration>()
+		inClass.acceptVoid(object : IrVisitorVoid() {
+			override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
+
+			override fun visitClass(declaration: IrClass) {
+				declaration.thisReceiver?.let { vDeclared += it }
+				super.visitClass(declaration)
+			}
+
+			override fun visitFunction(declaration: IrFunction) {
+				vDeclared.addAll(declaration.parameters)
+				super.visitFunction(declaration)
+			}
+
+			override fun visitVariable(declaration: IrVariable) {
+				vDeclared += declaration
+				super.visitVariable(declaration)
+			}
+
+			override fun visitGetValue(expression: IrGetValue) {
+				if (expression.symbol.owner !in vDeclared) vFree += expression.symbol.owner
+				super.visitGetValue(expression)
+			}
+
+			override fun visitSetValue(expression: IrSetValue) {
+				if (expression.symbol.owner !in vDeclared) vFree += expression.symbol.owner
+				super.visitSetValue(expression)
+			}
+		})
+		return vFree.toList()
 	}
 
 	/**

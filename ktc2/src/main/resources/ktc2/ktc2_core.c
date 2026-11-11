@@ -581,3 +581,81 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 	}
 	return ktc2_sb_finish(&sb);
 }
+
+/** The byte offset of UTF-16 unit [index] in a non-ASCII string (at a code point boundary). */
+static int32_t byte_offset_of_unit(const ktc2_String* s, int32_t index)
+{
+	const char* at = s->bytes;
+	const char* end = s->bytes + s->size;
+	int32_t unit = 0;
+	while (at < end && unit < index) {
+		uint32_t point = next_code_point(&at);
+		unit += point >= 0x10000 ? 2 : 1;
+	}
+	return (int32_t)(at - s->bytes);
+}
+
+ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
+{
+	if (start < 0 || end > s->length || start > end) {
+		fflush(stdout);
+		fprintf(stderr, "Exception in thread \"main\" java.lang.StringIndexOutOfBoundsException: begin %" PRId32 ", end %" PRId32 ", length %" PRId32 "\n", start, end, s->length);
+		exit(1);
+	}
+	if (start == 0 && end == s->length) return ktc2_retain(s);
+	if (s->size == s->length) return new_string(s->bytes + start, end - start, end - start);
+	int32_t from = byte_offset_of_unit(s, start);
+	int32_t to = byte_offset_of_unit(s, end);
+	return new_string(s->bytes + from, to - from, end - start);
+}
+
+bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
+{
+	const char* at = s->bytes;
+	const char* last = s->bytes + s->size;
+	while (at < last && (unsigned char)*at <= ' ') at++;
+	while (last > at && (unsigned char)last[-1] <= ' ') last--;
+	if (at == last) return false;
+	/* Java accepts a trailing type suffix. */
+	if (last - at > 1 && (last[-1] == 'd' || last[-1] == 'D' || last[-1] == 'f' || last[-1] == 'F')) last--;
+	char text[400];
+	size_t size = (size_t)(last - at);
+	if (size >= sizeof text) return false;
+	memcpy(text, at, size);
+	text[size] = 0;
+	/* strtod also takes "inf" and "nan"; Java only "Infinity" and "NaN". */
+	const char* digits = text + (text[0] == '-' || text[0] == '+');
+	if ((digits[0] < '0' || digits[0] > '9') && digits[0] != '.' && strcmp(digits, "Infinity") != 0 && strcmp(digits, "NaN") != 0) return false;
+	char* stop = NULL;
+	double value = strtod(text, &stop);
+	if (stop == text || *stop != 0) return false;
+	((double*)(result + 1))[0] = value;
+	return true;
+}
+
+ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
+{
+	ktc2_Array* bytes = ktc2_array_new(s->size, 1, KTC2_TYPE_ARRAY_BYTE);
+	memcpy(bytes + 1, s->bytes, (size_t)s->size);
+	return bytes;
+}
+
+ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end)
+{
+	if (start < 0 || end > bytes->length || start > end) ktc2_fail_index(end, bytes->length);
+	const char* data = (const char*)(bytes + 1) + start;
+	int32_t size = end - start;
+	int32_t length = 0;
+	for (int32_t i = 0; i < size; i++) {
+		unsigned char byte = (unsigned char)data[i];
+		/* Count code units: one per lead byte, two for a four-byte sequence. */
+		if ((byte & 0xC0) != 0x80) length += byte >= 0xF0 ? 2 : 1;
+	}
+	return new_string(data, size, length);
+}
+
+ktc2_Obj* ktc2_cs_subSequence(ktc2_Obj* object, int32_t start, int32_t end)
+{
+	if (object->typeId != KTC2_TYPE_STRING) ktc2_fail_dispatch();
+	return (ktc2_Obj*)ktc2_stringSubstring((ktc2_String*)object, start, end);
+}

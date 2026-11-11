@@ -50,6 +50,18 @@ public fun <T> arrayIterator(array: Array<out T>): Iterator<T> = ArrayIterator(a
  */
 public external fun stringOfChars(chars: CharArray, start: Int, length: Int): String
 
+/** The UTF-16 code units [startIndex, endIndex) of [string] as a new String. */
+public external fun stringSubstring(string: String, startIndex: Int, endIndex: Int): String
+
+/** Parses [string] as `Double.parseDouble` does into `result[0]`; false when it is not a number. */
+public external fun stringToDouble(string: String, result: DoubleArray): Boolean
+
+/** The UTF-8 bytes of [string]. */
+public external fun stringUtf8(string: String): ByteArray
+
+/** A String from the UTF-8 bytes [startIndex, endIndex) of [bytes]. */
+public external fun stringOfUtf8(bytes: ByteArray, startIndex: Int, endIndex: Int): String
+
 // ==================
 // MARK: Library functions provided here
 // ==================
@@ -85,3 +97,24 @@ public fun <T : Comparable<T>> kotlin_collections_sort(array: Array<T>) {
 		array[vHole] = vValue
 	}
 }
+
+/** `CharArray.single()` */
+public fun kotlin_collections_single__CharArray(array: CharArray): Char {
+	if (array.size != 1) throw IllegalArgumentException(if (array.size == 0) "Array is empty." else "Array has more than one element.")
+	return array[0]
+}
+
+/** `CharArray.any { }` */
+public inline fun kotlin_collections_any__CharArray(array: CharArray, predicate: (Char) -> Boolean): Boolean {
+	for (vElement in array) {
+		if (predicate(vElement)) return true
+	}
+	return false
+}
+
+/** `a..b` used as a value (a loop over a range does not build one). */
+public fun kotlin_Int_rangeTo(start: Int, end: Int): IntRange = IntRange(start, end)
+
+public fun kotlin_Long_rangeTo(start: Long, end: Long): LongRange = LongRange(start, end)
+
+public fun kotlin_Char_rangeTo(start: Char, end: Char): CharRange = CharRange(start, end)

@@ -478,7 +478,15 @@ class CEmitter(private val mModule: KModule) {
 				KStringTarget -> listOf("KTC2_TYPE_STRING")
 				is KBoxTarget -> listOf("KTC2_TYPE_BOX_${vTarget.prim.name}")
 				is KClassTarget -> mConcrete.filter { it.isSubclassOf(vTarget.cls) }.map { typeId(it) }
-				is KInterfaceTarget -> mConcrete.filter { it.implements(vTarget.iface) }.map { typeId(it) }
+				is KInterfaceTarget -> {
+					// The built-in types implement these library interfaces too.
+					val vBuiltIn = when (vTarget.iface.name) {
+						"CharSequence" -> listOf("KTC2_TYPE_STRING")
+						"Comparable" -> listOf("KTC2_TYPE_STRING") + KPrim.entries.map { "KTC2_TYPE_BOX_${it.name}" }
+						else -> emptyList()
+					}
+					vBuiltIn + mConcrete.filter { it.implements(vTarget.iface) }.map { typeId(it) }
+				}
 			}
 			var vIndex = mState.typeTests.indexOf(vIds)
 			if (vIndex < 0) {

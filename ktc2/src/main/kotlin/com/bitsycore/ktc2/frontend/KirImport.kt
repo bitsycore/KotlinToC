@@ -331,8 +331,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun isStruct(inClass: IrClass): Boolean =
 		inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Struct" }
 
+	/** The dotted name of [inClass] within its file; an anonymous object is called "object". */
 	private fun nestedName(inClass: IrClass): String =
-		generateSequence(inClass) { it.parent as? IrClass }.toList().reversed().joinToString(".") { it.name.asString() }
+		generateSequence(inClass) { it.parent as? IrClass }.toList().reversed().joinToString(".") { vClass ->
+			if (vClass.name.isSpecial) "object" else vClass.name.asString()
+		}
 
 	/** [inType] seen as its supertype [inTarget], with that class's type arguments filled in. */
 	private fun findSuperType(inType: IrType, inTarget: IrClass): IrSimpleType? {
@@ -365,9 +368,13 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun ownParameters(inFunction: IrFunction): List<IrTypeParameter> =
 		if (inFunction is IrConstructor) emptyList() else inFunction.typeParameters
 
-	private fun monoOf(inFunction: IrFunction, inSubst: Subst): Mono {
+	private fun monoOf(inFunction: IrFunction, inSubst: Subst, inOwner: KClass? = null): Mono {
 		val vParams = ((inFunction.parent as? IrClass)?.typeParameters ?: emptyList()) + ownParameters(inFunction)
-		return Mono(inFunction, vParams.map { kTypeOf(inSubst[it.symbol] ?: mBuiltIns.anyNType) ?: KObjType })
+		val vArguments = vParams.map { kTypeOf(inSubst[it.symbol] ?: mBuiltIns.anyNType) ?: KObjType }
+		// A local class is declared anew each time its declaration is lowered (once per expansion
+		// of an inline function): its members belong to that particular class.
+		val vLocal = inOwner?.takeIf { it in mLocalCaptures } ?: (inFunction.parent as? IrClass)?.let { mLatestLocalClass[it] }
+		return Mono(inFunction, if (vLocal == null) vArguments else vArguments + KClassType(vLocal))
 	}
 
 	// ==================
@@ -429,10 +436,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * The reference class for [inClass] with [inArguments] for its type parameters, declared
 	 * (layout only) on first use.
 	 */
-	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList()): KClass? {
+	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList(), inFresh: Boolean = false): KClass? {
 		val vArguments = inClass.typeParameters.indices.map { canonical(inArguments.getOrNull(it) ?: mBuiltIns.anyNType) }
 		val vKey = Mono(inClass, vArguments.map { kTypeOf(it) ?: KObjType })
-		if (vKey in mClasses) return mClasses[vKey]
+		if (vKey in mClasses && !inFresh) return mClasses[vKey]
 		val vFile = inClass.fileOrNull
 		if (vFile == null || inClass.isInterface) {
 			mClasses[vKey] = null
@@ -449,7 +456,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			unsupported(vFile, inClass, "superclass '${vSuperIr.kotlinFqName}'")
 			return null
 		}
-		val vSuffix = if (vKey.arguments.isEmpty()) "" else "__" + vKey.arguments.joinToString("_") { mangle(it) }
+		var vSuffix = if (vKey.arguments.isEmpty()) "" else "__" + vKey.arguments.joinToString("_") { mangle(it) }
+		// A local class has no name of its own that is unique in the program.
+		if (inClass.parent !is IrClass && inClass.parent !is IrFile) vSuffix += "__local${mClassList.size}"
 		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
 		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, inClass.name.asString())
 		vUnit.cls = vClass
@@ -489,6 +498,45 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	}
 
 	internal fun infoOf(inClass: KClass): ClassInfo? = mClassInfo[inClass]
+
+	/** What a local class takes from the function that declares it. */
+	internal class LocalCaptures(
+		/** Outer values, each held in a field of the object. */
+		val bindings: List<BodyBuilder.Binding>,
+		/** Lambdas bound to `inline` parameters that its members call: expanded in those members. */
+		val lambdas: Map<IrValueDeclaration, BodyBuilder.InlineLambda>,
+	)
+
+	private val mLocalCaptures = HashMap<KClass, LocalCaptures>()
+	private val mLatestLocalClass = HashMap<IrClass, KClass>()
+
+	/**
+	 * Declares the local class [inClass] with one extra field per captured outer value.
+	 *
+	 * @param inCaptures each captured declaration with its name, the type of the local that
+	 *   holds it in the declaring function, and the cell field when it is a shared variable
+	 * @return the fields to fill when an instance is created, in the order of [inCaptures]
+	 */
+	internal fun declareLocalClass(
+		inClass: IrClass,
+		inCaptures: List<Triple<IrValueDeclaration, KType, KField?>>,
+		inLambdas: Map<IrValueDeclaration, BodyBuilder.InlineLambda>,
+	): List<KField>? {
+		val vClass = classFor(inClass, inFresh = true) ?: return null
+		mLatestLocalClass[inClass] = vClass
+		val vNames = vClass.fields.map { it.cName }.toHashSet()
+		val vBindings = inCaptures.mapIndexed { vIndex, (vDeclaration, vType, vCell) ->
+			var vName = "captured$vIndex"
+			while (!vNames.add(vName)) vName += "_"
+			val vField = KField(vName, vType, vClass)
+			vClass.fields += vField
+			BodyBuilder.Binding(vDeclaration, vField, vCell, null)
+		}
+		mLocalCaptures[vClass] = LocalCaptures(vBindings, inLambdas)
+		return vBindings.map { it.field }
+	}
+
+	internal fun localBindingsOf(inClass: KClass): List<BodyBuilder.Binding> = mLocalCaptures[inClass]?.bindings ?: emptyList()
 
 	/** The instance of an `object` declaration. */
 	internal fun objectFor(inClass: IrClass): KStatic? {
@@ -768,8 +816,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * The KIR function for [inFunction] under [inSubst], declared on first use with its body
 	 * queued for import. [inFunction] must not be a fake override (see [resolveMember]).
 	 */
-	internal fun functionFor(inFunction: IrFunction, inSubst: Subst = emptyMap()): KFunction? {
-		val vKey = monoOf(inFunction, inSubst)
+	internal fun functionFor(inFunction: IrFunction, inSubst: Subst = emptyMap(), inOwnerClass: KClass? = null): KFunction? {
+		val vKey = monoOf(inFunction, inSubst, inOwnerClass)
 		if (vKey in mFunctions) return mFunctions[vKey]
 		val vOwner = inFunction.parent as? IrClass
 		if (vOwner != null && isAnyClass(vOwner)) {
@@ -791,7 +839,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 		val vStruct = vOwner?.takeIf { isStruct(it) }?.let { structFor(it) }
 		val vClass = if (vOwner != null && vStruct == null && !vOwner.isInterface) {
-			classFor(vOwner, vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType })
+			inOwnerClass ?: classFor(vOwner, vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType })
 		} else {
 			null
 		}
@@ -827,7 +875,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vFunction = KFunction(uniqueName(vScope + vBase + nameSuffix(inFunction, inSubst)), vUnit, vParams, vReturn)
 		vUnit.functions += vFunction
 		mFunctions[vKey] = vFunction
-		mPending += { BodyBuilder(this, vFunction, inFunction, vFile, inSubst).build() }
+		// The members of a local class read the values it captured from its fields.
+		val vCaptures = vClass?.let { mLocalCaptures[it] }
+		mPending += { BodyBuilder(this, vFunction, inFunction, vFile, inSubst).buildClosure(vCaptures?.bindings ?: emptyList(), null, vCaptures?.lambdas ?: emptyMap()) }
 		return vFunction
 	}
 
@@ -868,6 +918,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vTarget.dispatchDefault = when (inFunction.name.asString()) {
 				"<get-length>" -> runtime("ktc2_cs_length", listOf(KObjType), KPrimType(KPrim.INT))
 				"get" -> runtime("ktc2_cs_get", listOf(KObjType, KPrimType(KPrim.INT)), KPrimType(KPrim.CHAR))
+				"subSequence" -> runtime("ktc2_cs_subSequence", listOf(KObjType, KPrimType(KPrim.INT), KPrimType(KPrim.INT)), KObjType)
 				else -> vTarget.dispatchDefault
 			}
 		}
@@ -913,7 +964,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				val vOwnArguments = vFunction.typeParameters.map { vDispatcher.subst[it.symbol] }
 				val (vImplementation, vSubst) = resolveMember(vMember, vInfo.type, vOwnArguments)
 				if (isAnyClass(vImplementation.parentAsClass)) continue
-				val vTarget = functionFor(vImplementation, vSubst) ?: continue
+				val vOwnerClass = vConcrete.takeIf { it in mLocalCaptures && vImplementation.parent == vInfo.irClass }
+				val vTarget = functionFor(vImplementation, vSubst, vOwnerClass) ?: continue
 				vDispatcher.target.dispatch!! += vConcrete to vTarget
 				vChanged = true
 			}

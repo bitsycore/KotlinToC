@@ -404,7 +404,7 @@ ktc2/
 | 0 | Skeleton + oracle | module, `ktc2.` package, K2 driver, and the dual-run test (`IntegrationTest`: every program in `integration/` runs as JVM classes and as C, outputs must match) — **done** | `./gradlew :ktc2:test` |
 | 1 | KIR + first C | KIR import from K2 IR; per-class C emitter for primitives, functions, control flow, `@Struct`; `println` and operator intrinsics — **done** (see status below) | arithmetic / control-flow programs match the JVM |
 | 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
-| 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, and `kotlin.collections` + `StringBuilder` compiled from the Kotlin stdlib's own sources — **done**; `kotlin.text` string functions, array extension functions, sequences, comparators — next | collection and lambda programs match the JVM |
+| 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources — **done** | collection, string and lambda programs match the JVM |
 | 4 | Ownership optimization | rules 1–5 of §5.2; `--arc-stats` | RC operations per test drop sharply, output unchanged |
 | 5 | Escape analysis | stack promotion, alloca, caller-slot returns, `@Value T`, `@Size` inline, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
 | 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>`; atomic mode | exception programs leak-free; thread programs under atomic RC |
@@ -413,7 +413,7 @@ ktc2/
 Phases 1 to 3 are the bulk of the effort; Phase 2 carries the most risk. Phases 4 and 5 are pure optimizations
 over a model that is already correct, so each lands rule by rule with numbers attached.
 
-**Status (2026-11-11).** Phases 0–2 are complete: the eleven programs under `integration/`
+**Status (2026-11-11).** Phases 0–3 are complete: the sixteen programs under `integration/`
 match the JVM, and every C run ends with all objects freed (`-DKTC2_LEAK_CHECK`).
 
 Phase 1 (`integration/basic/`): all signed, unsigned and floating primitives with Kotlin's
@@ -443,7 +443,7 @@ How Phase 2 works:
 - **Lambdas** passed to array constructors are expanded in place; the same mechanism will
   serve `inline` functions in Phase 3.
 
-Phase 3 so far (`integration/generics/`, `integration/stdlib/`), 14 programs in total:
+Phase 3 (`integration/generics/`, `integration/stdlib/`):
 - **Generics.** A generic function or class is instantiated per distinct tuple of type
   arguments, where every reference type counts as `Any?` (they are all pointers). `Box<Int>`
   is its own class holding an `int32_t`; `Box<String>` and `Box<User>` share one. Results of
@@ -457,19 +457,26 @@ Phase 3 so far (`integration/generics/`, `integration/stdlib/`), 14 programs in 
   interface call on `FunctionN.invoke` for that signature, so `(Int) -> Int` passes ints
   unboxed. A captured `var` lives in a ref-counted cell shared by the closure and its
   creator; captured `val`s are copied. Local functions and `::references` are closures too.
-- **Std library from its own sources.** 44 files of the Kotlin stdlib sources jar (unpacked
+- **Object expressions and local classes.** A class declared inside a function gets one
+  field per outer value it uses; each lowering of the declaration makes its own class (an
+  inline function expanded twice yields two). A lambda bound to an `inline` parameter and
+  used inside such a class or another lambda (`crossinline`) is expanded there, and what it
+  captures travels with the object.
+- **Std library from its own sources.** 62 files of the Kotlin stdlib sources jar (unpacked
   by Gradle, listed in `resources/ktc2/stdlib/files.txt`) are compiled, unmodified, with
-  every program: scope functions, the whole `kotlin.collections` package (lists, maps, sets,
-  their extension functions, `ArrayDeque`, sequences' basics), `Pair` / `Triple`,
+  every program: scope functions, `kotlin.collections` (lists, maps, sets and their
+  extension functions, `ArrayDeque`), `kotlin.text` (`Strings.kt`, `_Strings.kt`, `Char.kt`,
+  number conversions, indentation), ranges and progressions, sequences, `Pair` / `Triple`,
   preconditions. Only what a program reaches is translated to C.
 
 How the stdlib is brought in:
 - **Multiplatform mode.** The stdlib files are the *common* source set; ktc2's platform
-  layer (`resources/ktc2/stdlib/Ktc2*.kt`, about 1,300 lines) is the platform one and
-  provides an `actual` for each of their 59 `expect` declarations. K2 checks every one
+  layer (`resources/ktc2/stdlib/Ktc2*.kt`, about 1,900 lines) is the platform one and
+  provides an `actual` for each of their 140 `expect` declarations. K2 checks every one
   against the real API. The layer holds `ArrayList`, the four hash collections (one
   insertion-ordered open-addressing implementation), the `AbstractMutable*` bases,
-  `StringBuilder`, `Appendable`, sorting, and the builder functions.
+  `StringBuilder`, `Appendable`, sorting, the builder functions, and the String / Char
+  functions (`substring`, `replace`, case conversion, number parsing and formatting).
 - **Unboxed storage.** `kotlin.Array<T>` is a reference array as in Kotlin (`Array<Int>`
   holds boxes; the stdlib casts between `Array<T>` and `Array<Comparable<T>>`). The platform
   layer stores elements in `ktc2.internal.Storage<T>`, which ktc2 lowers to a typed block,
@@ -488,13 +495,15 @@ How the stdlib is brought in:
 - **Erased dispatch.** A call through a star projection (`Collection<*>.size`) builds a
   dispatcher for `Any?`, which accepts every instantiation and boxes or unboxes at that
   boundary.
-- **Cost.** The stdlib sources add about three seconds to every compile (K2 analyses them
+- **Cost.** The stdlib sources add about four seconds to every compile (K2 analyses them
   each time). Caching that work is the obvious next optimization.
 
-Not ported yet: `kotlin.text` string functions (`_Strings.kt`, `Strings.kt`), the array
-extension functions (`_Arrays.kt`), `collections/Arrays.kt`, comparators built from lambdas
-(`compareBy`, `sortedBy` — SAM conversion), ranges as objects, `Regex`, `Random`.
-`throw` reports the exception and exits (Phase 6 makes it catchable).
+Not ported yet: the array extension functions (`_Arrays.kt`, 1 MB; a handful are provided
+by hand), `collections/Arrays.kt`, comparators built from lambdas (`compareBy`, `sortedBy` —
+SAM conversion), `Random`, `kotlin.math`. In `kotlin.text`, case conversion and the Char
+classification functions cover ASCII and Latin-1 and treat the rest of Unicode
+approximately, and `Regex` is declared but throws. `throw` reports the exception and exits
+(Phase 6 makes it catchable).
 
 Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
 (null `!!`, bad cast, index out of bounds, `/ by zero`, `throw`) print the JVM-style message
