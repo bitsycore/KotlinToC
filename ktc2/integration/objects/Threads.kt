@@ -79,5 +79,13 @@ fun main() {
 
 	// A thread nobody joins still finishes before the program ends.
 	thread { vCounter.add(1) }
+	// Recursive locking, and nested locks on different objects.
+	val vOuter = Counter()
+	val vInner = Counter()
+	synchronized(vOuter) {
+		synchronized(vOuter) { vOuter.add(1) }
+		synchronized(vInner) { vInner.add(2) }
+	}
+	println("${vOuter.value()} ${vInner.value()}")
 	println("done")
 }

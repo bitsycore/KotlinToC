@@ -609,10 +609,9 @@ Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `W
   `synchronized` — unsynchronized access is a data race that can corrupt a count, where the
   JVM would only show a stale value.
 
-Not done in Phase 6: `synchronized` is one recursive lock for the whole program
-rather than a monitor per object, and waits by yielding; an uncaught exception in a thread
+Not done in Phase 6: an uncaught exception in a thread
 ends the program instead of only that thread; `isDaemon`, thread names and priorities are
-ignored; lazy initialization is not synchronized; atomic counting applies to every object
+ignored; atomic counting applies to every object
 of a threaded program (the `SHARED`-bit refinement of §5.4 is open).
 
 Phase 7 — arena and C interop (`integration/values/Arena.kt`, `integration/interop/`):
@@ -726,13 +725,20 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   calls with the struct's own functions. A box that does not outlive its block is itself a
   stack object (comparing two structs allocates nothing). A member called on a struct value is
   called directly, never through its box. `Array<Point>` holds boxes, as `Array<Int>` holds
-  boxed ints; collections hold the values. Fields of a struct are numbers and other structs;
-  references are not allowed in them.
+  boxed ints; collections hold the values.
+- **References inside structs** (`values/StructReferences.kt`). A struct may hold a String,
+  an object or an array. Such a value owns what it refers to: copying it into a local, a field
+  or a box retains each reference (one generated `Entry__retain` per struct), dropping it
+  releases them, exactly where a plain reference would be retained and released — `ArcInsert`
+  treats "a struct that holds references" as it treats a reference. The escape analysis
+  follows references into and out of struct values, so an object referred to by a struct that
+  escapes is not put on the stack. Inside generic code (the element blocks of collections)
+  such a struct is kept in its box, since those blocks only know how to release objects.
 - **Value classes are structs.** A final `value class` whose properties are numbers or other
   such values (`value class Complex(val re: Double, val im: Double)`, `@JvmInline value class
-  Meters(val v: Double)`) is treated exactly like a `@Struct` class. Kotlin gives such a class
-  no identity, so nothing observable changes; it simply never touches the heap. One that holds
-  a reference (`Result`) stays an ordinary class.
+  Meters(val v: Double)`, `value class Email(val address: String)`) is treated exactly like a
+  `@Struct` class. Kotlin gives such a class no identity, so nothing observable changes; it
+  simply never touches the heap. A generic one (`Result<T>`) stays an ordinary class.
 - **`@Size(N)` and `@Value` on locals** (`values/StackLocals.kt`). `@Size(2000) val buffer =
   BooleanArray(2000)` and `val p: @Value Particle = Particle(0f, 0f)` require the array or the
   object to live in the stack frame, whatever its size. If the program then lets it escape
@@ -749,13 +755,18 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **SDL3 module**: `FRect`, `Rect`, `FPoint`, `Color` and `FColor` are structs. The demo
   allocates five objects in its whole run.
 
+- **Threads**: `synchronized(object)` is a recursive monitor per object, kept in a table of
+  the runtime while the object is locked — two threads holding different objects no longer
+  wait for each other. `lazy` computes its value once whichever thread asks first.
+- **Delegates** receive a property object that knows its name (`property.name`); anything
+  else asked of it fails, there being no reflection.
+
 Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
-use; reference fields in `@Struct` classes, a function value
-whose static type differs in variance from the lambda's own, an inline lambda used
-inside another lambda (`crossinline`), and SAM conversion of a function value that is not a
-lambda written in place are not supported yet. The property handed to a delegate
-(`getValue(thisRef, property)`) is null: there is no reflection, so a delegate that reads
-`property.name` fails. `lazy` is not synchronized. A failed check inside a conditional expression may store a
+use; a function value whose static type differs in variance from the lambda's own, an
+inline lambda used inside another lambda (`crossinline`), and SAM conversion of a function
+value that is not a lambda written in place are not supported yet. `Regex` and the functions
+of the unsigned array types (`UIntArray.sum()`…) are missing from the library. A monitor
+waits by yielding rather than sleeping. A failed check inside a conditional expression may store a
 placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`). Nothing in the ARC pass is
 optimized beyond the three rules above.
 

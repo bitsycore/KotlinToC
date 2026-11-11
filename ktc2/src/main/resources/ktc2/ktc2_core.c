@@ -1201,29 +1201,76 @@ void ktc2_threadJoin(int64_t handle)
 
 #endif
 
-/* The thread holding the monitor (the address of one of its thread-locals), and how many times. */
+/*
+ * `synchronized(object)`: a monitor per object, kept in a table while the object is locked or
+ * waited for. An object that is never locked has no entry and pays nothing; the lock is
+ * recursive, as Kotlin's is.
+ */
+typedef struct Monitor {
+	const ktc2_Obj* object;
+	uintptr_t owner;       /* the thread inside (the address of one of its thread-locals), or 0 */
+	uint32_t depth;        /* how many times the owner entered */
+	uint32_t waiting;      /* threads that want in */
+	struct Monitor* next;
+} Monitor;
+
+#define MONITOR_BUCKETS 64
+
+static Monitor* monitor_buckets[MONITOR_BUCKETS];
 static KTC2_TLS char monitor_self;
-static uintptr_t monitor_owner;
-static uint32_t monitor_depth;
+
+static Monitor** monitor_link(const ktc2_Obj* object)
+{
+	Monitor** link = &monitor_buckets[(((uintptr_t)object >> 4) * 2654435761u >> 8) % MONITOR_BUCKETS];
+	while (*link && (*link)->object != object) link = &(*link)->next;
+	return link;
+}
 
 void ktc2_monitorEnter(ktc2_Obj* lock)
 {
 	if (!lock) ktc2_fail_null();
 	uintptr_t self = (uintptr_t)&monitor_self;
-	if (__atomic_load_n(&monitor_owner, __ATOMIC_ACQUIRE) != self) {
-		uintptr_t nobody = 0;
-		while (!__atomic_compare_exchange_n(&monitor_owner, &nobody, self, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-			nobody = 0;
-			thread_yield();
+	bool counted = false;
+	for (;;) {
+		runtime_enter();
+		Monitor** link = monitor_link(lock);
+		Monitor* monitor = *link;
+		if (!monitor) {
+			monitor = calloc(1, sizeof *monitor);
+			if (!monitor) fail("java.lang.OutOfMemoryError", NULL);
+			monitor->object = lock;
+			*link = monitor;
 		}
+		if (monitor->owner == 0 || monitor->owner == self) {
+			monitor->owner = self;
+			monitor->depth++;
+			if (counted) monitor->waiting--;
+			runtime_leave();
+			return;
+		}
+		/* Held by another thread: stay registered, so the entry is kept, and try again. */
+		if (!counted) {
+			monitor->waiting++;
+			counted = true;
+		}
+		runtime_leave();
+		thread_yield();
 	}
-	monitor_depth++;
 }
 
 void ktc2_monitorExit(ktc2_Obj* lock)
 {
-	(void)lock;
-	if (--monitor_depth == 0) __atomic_store_n(&monitor_owner, 0, __ATOMIC_RELEASE);
+	runtime_enter();
+	Monitor** link = monitor_link(lock);
+	Monitor* monitor = *link;
+	if (monitor && --monitor->depth == 0) {
+		monitor->owner = 0;
+		if (monitor->waiting == 0) {
+			*link = monitor->next;
+			free(monitor);
+		}
+	}
+	runtime_leave();
 }
 
 #else

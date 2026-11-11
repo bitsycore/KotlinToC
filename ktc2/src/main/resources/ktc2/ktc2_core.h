@@ -262,9 +262,8 @@ int64_t ktc2_threadStart(ktc2_Obj* thread);
 void ktc2_threadJoin(int64_t handle);
 
 /**
- * `synchronized`: one recursive lock for the whole program, whatever the object. That is
- * stricter than a monitor per object but cannot be told apart by a correct program, and
- * needs no room in the object.
+ * `synchronized`: a recursive monitor per object, kept in a table of the runtime for as long
+ * as the object is locked. It needs no room in the object.
  */
 void ktc2_monitorEnter(ktc2_Obj* lock);
 void ktc2_monitorExit(ktc2_Obj* lock);
