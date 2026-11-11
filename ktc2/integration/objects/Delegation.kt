@@ -21,6 +21,16 @@ val gTable: List<Int> by lazy { listOf(1, 2, 3) }
 
 class Holder { var name: String by Upper() }
 
+/** A delegate that uses the name of the property it serves. */
+class Named {
+	operator fun getValue(thisRef: Any?, property: KProperty<*>): String = "<${property.name}>"
+}
+
+class Labels {
+	val title: String by Named()
+	val footer: String by Named()
+}
+
 fun main() {
 	val vConfig = Config()
 	println("before")
@@ -35,6 +45,8 @@ fun main() {
 	val vHolder = Holder()
 	vHolder.name = "abc"
 	println(vHolder.name)
+	val vLabels = Labels()
+	println(vLabels.title + vLabels.footer)
 	lateinit var vLate: String
 	vLate = "late"
 	println(vLate)

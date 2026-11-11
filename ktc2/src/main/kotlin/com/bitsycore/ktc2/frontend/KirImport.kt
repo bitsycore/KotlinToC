@@ -429,8 +429,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	}
 
 	/** A type argument as used to pick an instantiation: every reference type is `Any?`. */
-	private fun canonical(inType: IrType): IrType = when (kTypeOf(inType)) {
+	private fun canonical(inType: IrType): IrType = when (val vKind = kTypeOf(inType)) {
 		is KRefType -> mBuiltIns.anyNType
+		// A struct holding references is kept in its box inside generic code, whose storage
+		// (the blocks behind collections) only knows how to release objects.
+		is KStructType -> if (vKind.struct.holdsReferences) mBuiltIns.anyNType else inType
 		// Every C address type shares one instantiation too, without being boxed.
 		KPtrType -> mPointerType ?: inType
 		else -> inType
@@ -456,7 +459,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vFields = inClass.declarations.filterIsInstance<IrProperty>().mapNotNull { it.backingField }
 		val vHolds = vIsValue && vFields.isNotEmpty() && vFields.all { vField ->
 			val vType = vField.type.makeNotNull()
-			primOf(vType) != null || vType.classOrNull?.owner?.let { it != inClass && isStruct(it) } == true
+			// Numbers, other such values, and references of any kind; not a type parameter, and not itself.
+			primOf(vType) != null || vType.classOrNull?.owner?.let { it != inClass } == true
 		}
 		mValueStructs[inClass] = vHolds
 		return vHolds
@@ -561,7 +565,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vBacking = vProperty.backingField ?: continue
 			if (vProperty.isVar) unsupported(vFile, vProperty, "'var' property in a @Struct class")
 			val vType = kTypeOf(vBacking.type)
-			if (vType == null || vType is KRefType || (vType is KStructType && vType.struct === vStruct)) {
+			if (vType == null || vType == KUnitType || vType == KNothingType || (vType is KStructType && vType.struct === vStruct)) {
 				unsupported(vFile, vProperty, "@Struct property of type '${vBacking.type.render()}'")
 				continue
 			}

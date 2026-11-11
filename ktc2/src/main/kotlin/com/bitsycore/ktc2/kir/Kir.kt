@@ -72,6 +72,9 @@ data object KObjType : KRefType
 /** `Array<T>` or a primitive array, by element type. */
 data class KArrayType(val element: KType) : KRefType
 
+/** True for a type whose values are counted: a reference, or a struct that holds some. */
+fun KType.isCounted(): Boolean = this is KRefType || (this as? KStructType)?.struct?.holdsReferences == true
+
 // ==================
 // MARK: Declarations
 // ==================
@@ -115,6 +118,14 @@ class KStruct(
 	val unit: KUnit,
 ) {
 	val fields = mutableListOf<KField>()
+
+	/**
+	 * True when a value of this struct carries references (a String, an object, an array),
+	 * directly or in a struct inside it. Such a value owns what it refers to: copying it
+	 * retains, dropping it releases.
+	 */
+	val holdsReferences: Boolean
+		get() = fields.any { vField -> vField.type is KRefType || (vField.type as? KStructType)?.struct?.holdsReferences == true }
 
 	/**
 	 * The class a value of this struct is wrapped in where an object is required: seen as

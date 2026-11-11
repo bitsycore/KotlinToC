@@ -181,5 +181,37 @@ public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")
 /** `Enum.entries`: the constants of an enum class as a list. */
 public fun <E : Enum<E>> enumEntriesOf(values: Array<E>): kotlin.enums.EnumEntries<E> = kotlin.enums.enumEntries(values)
 
+/**
+ * What a delegate is told about the property it serves (`getValue(thisRef, property)`): its
+ * name. There is no reflection behind it — everything else a `KProperty` offers fails.
+ */
+public class PropertyReference(override val name: String) : kotlin.reflect.KProperty<Any?> {
+	private fun unavailable(): Nothing = throw UnsupportedOperationException("Reflection is not available: property '$name'")
+
+	override val annotations: List<Annotation> get() = unavailable()
+	override val parameters: List<kotlin.reflect.KParameter> get() = unavailable()
+	override val returnType: kotlin.reflect.KType get() = unavailable()
+	override val typeParameters: List<kotlin.reflect.KTypeParameter> get() = unavailable()
+	override val visibility: kotlin.reflect.KVisibility? get() = unavailable()
+	override val isFinal: Boolean get() = unavailable()
+	override val isOpen: Boolean get() = unavailable()
+	override val isAbstract: Boolean get() = unavailable()
+	override val isSuspend: Boolean get() = unavailable()
+	@OptIn(kotlin.reflect.ExperimentalCompanionExtensions::class)
+	override val companionExtensionClass: kotlin.reflect.KClass<*>? get() = unavailable()
+	override val container: kotlin.reflect.KDeclarationContainer? get() = unavailable()
+	override val isLateinit: Boolean get() = unavailable()
+	override val isConst: Boolean get() = unavailable()
+	override val getter: kotlin.reflect.KProperty.Getter<Any?> get() = unavailable()
+
+	override fun call(vararg args: Any?): Any? = unavailable()
+
+	override fun callBy(args: Map<kotlin.reflect.KParameter, Any?>): Any? = unavailable()
+
+	override fun toString(): String = "property $name"
+}
+
+public fun propertyReference(name: String): Any = PropertyReference(name)
+
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()

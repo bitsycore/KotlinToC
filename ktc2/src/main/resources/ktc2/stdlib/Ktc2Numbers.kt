@@ -1,4 +1,4 @@
-@file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "ACTUAL_ANNOTATIONS_NOT_MATCH_EXPECT", "ACTUAL_WITHOUT_EXPECT")
+@file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "ACTUAL_ANNOTATIONS_NOT_MATCH_EXPECT", "ACTUAL_WITHOUT_EXPECT", "UNCHECKED_CAST", "UNUSED_PARAMETER")
 
 package kotlin
 
@@ -78,9 +78,35 @@ public actual fun Float.Companion.fromBits(bits: Int): Float = cExpr("((union { 
 // MARK: Lazy
 // ==================
 
-/** A value computed on first use. Not synchronized: a lazy value shared between threads needs its own lock. */
-public actual fun <T> lazy(initializer: () -> T): Lazy<T> = UnsafeLazyImpl(initializer)
+/**
+ * A value computed on first use, once, whichever thread asks first: the others wait for it.
+ * After that, reading it takes no lock.
+ */
+private class SynchronizedLazy<T>(initializer: () -> T) : Lazy<T> {
+	private var mInitializer: (() -> T)? = initializer
+	private var mValue: Any? = null
 
-public actual fun <T> lazy(mode: LazyThreadSafetyMode, initializer: () -> T): Lazy<T> = UnsafeLazyImpl(initializer)
+	override val value: T
+		get() {
+			if (mInitializer == null) return mValue as T
+			return synchronized(this) {
+				val vInitializer = mInitializer
+				if (vInitializer != null) {
+					mValue = vInitializer()
+					mInitializer = null
+				}
+				mValue as T
+			}
+		}
 
-public actual fun <T> lazy(lock: Any?, initializer: () -> T): Lazy<T> = UnsafeLazyImpl(initializer)
+	override fun isInitialized(): Boolean = mInitializer == null
+
+	override fun toString(): String = if (isInitialized()) value.toString() else "Lazy value not initialized yet."
+}
+
+public actual fun <T> lazy(initializer: () -> T): Lazy<T> = SynchronizedLazy(initializer)
+
+public actual fun <T> lazy(mode: LazyThreadSafetyMode, initializer: () -> T): Lazy<T> =
+	if (mode == LazyThreadSafetyMode.NONE) UnsafeLazyImpl(initializer) else SynchronizedLazy(initializer)
+
+public actual fun <T> lazy(lock: Any?, initializer: () -> T): Lazy<T> = SynchronizedLazy(initializer)

@@ -184,6 +184,9 @@ static inline void ktc2_release(void* pointer)
  */
 #define KTC2_ASSIGN(slot, value) 	do { 		void* ktc2_new = (value); 		void* ktc2_old = (slot); 		(slot) = ktc2_new; 		ktc2_release(ktc2_old); 	} while (0)
 
+/** The same for a slot holding a struct with references in it; [release] gives up those of the old value. */
+#define KTC2_ASSIGN_VALUE(type, slot, value, release) 	do { 		type ktc2_new = (value); 		type ktc2_old = (slot); 		(slot) = ktc2_new; 		release(ktc2_old); 	} while (0)
+
 /** Called at the end of main: reports objects still alive when built with KTC2_LEAK_CHECK. Returns the exit code. */
 int ktc2_exit(void);
 

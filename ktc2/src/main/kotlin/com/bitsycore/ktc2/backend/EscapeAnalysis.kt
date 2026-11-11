@@ -95,6 +95,9 @@ class EscapeAnalysis(private val mModule: KModule) {
 				sources(inValue.whenFalse, outLocals)
 			}
 			is KRetain -> sources(inValue.operand, outLocals)
+			// A struct carries the references put into it, and gives them back when a field is read.
+			is KStructNew -> inValue.values.forEach { sources(it, outLocals) }
+			is KFieldRead -> if (inValue.target.type is KStructType) sources(inValue.target, outLocals)
 			else -> {}
 		}
 	}

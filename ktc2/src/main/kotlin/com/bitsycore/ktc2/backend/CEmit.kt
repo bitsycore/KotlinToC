@@ -73,7 +73,7 @@ class CEmitter(private val mModule: KModule) {
 
 	private fun program(inEntry: KFunction): String = buildString {
 		val vStartup = mModule.units.mapNotNull { it.initializer }
-		val vGlobals = mModule.units.flatMap { it.globals }.filter { it.type is KRefType }
+		val vGlobals = mModule.units.flatMap { it.globals }.filter { it.type.isCounted() }
 		val vStatics = mModule.units.flatMap { it.statics }
 		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vStatics.flatMap { listOf(it.unit, it.cls.unit) } + vGlobals.map { it.unit } + inEntry.unit
 		append("#include \"ktc2_types.h\"\n")
@@ -87,7 +87,7 @@ class CEmitter(private val mModule: KModule) {
 		// An exception that reaches main unhandled ends the program, as on the JVM.
 		vStartup.forEach { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
 		append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
-		vGlobals.asReversed().forEach { append("\tktc2_release(${it.cName});\n") }
+		vGlobals.asReversed().forEach { append("\t${releaseText(it.type, it.cName)};\n") }
 		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
 		append("\treturn ktc2_exit();\n}\n")
 	}
@@ -118,7 +118,14 @@ class CEmitter(private val mModule: KModule) {
 	private fun allFunctions(inUnit: KUnit): List<KFunction> = inUnit.functions + listOfNotNull(inUnit.initializer)
 
 	/** Reference fields of [inClass] itself (not inherited). */
-	private fun refFields(inClass: KClass): List<KField> = inClass.fields.filter { it.type is KRefType && !it.isInline }
+	private fun refFields(inClass: KClass): List<KField> = inClass.fields.filter { it.type.isCounted() && !it.isInline }
+
+	/** C that takes a reference to [inText]: the object's count, or those of everything a struct holds. Yields the value. */
+	private fun retainText(inType: KType, inText: String): String =
+		if (inType is KStructType) "${inType.struct.cName}__retain($inText)" else "ktc2_retain($inText)"
+
+	private fun releaseText(inType: KType, inText: String): String =
+		if (inType is KStructType) "${inType.struct.cName}__release($inText)" else "ktc2_release($inText)"
 
 	/** The C declaration of a field: a pointer, a value, or inline storage. */
 	private fun fieldDeclaration(inField: KField): String {
@@ -172,6 +179,17 @@ class CEmitter(private val mModule: KModule) {
 			if (vStruct.fields.isEmpty()) append("\tchar _empty;\n")
 			vStruct.fields.forEach { append("\t${cType(it.type)} ${it.cName};\n") }
 			append("} ${vStruct.cName};\n\n")
+			if (vStruct.holdsReferences) {
+				val vCounted = vStruct.fields.filter { it.type.isCounted() }
+				append("/** Takes a reference to everything the value refers to; yields the value. */\n")
+				append("static inline ${vStruct.cName} ${vStruct.cName}__retain(${vStruct.cName} value)\n{\n")
+				vCounted.forEach { append("\t${retainText(it.type, "value.${it.cName}")};\n") }
+				append("\treturn value;\n}\n\n")
+				append("/** Gives up the references the value holds. */\n")
+				append("static inline void ${vStruct.cName}__release(${vStruct.cName} value)\n{\n")
+				vCounted.forEach { append("\t${releaseText(it.type, "value.${it.cName}")};\n") }
+				append("}\n\n")
+			}
 		}
 		inUnit.cls?.let { vClass ->
 			append("struct ${vClass.cName} {\n")
@@ -209,7 +227,7 @@ class CEmitter(private val mModule: KModule) {
 			vBodies.append("\nvoid ${vClass.cName}__destroy(ktc2_Obj* object)\n{\n")
 			val vOwn = refFields(vClass)
 			if (vOwn.isNotEmpty()) vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n")
-			vOwn.forEach { vBodies.append("\tktc2_release(self->${it.cName});\n") }
+			vOwn.forEach { vBodies.append("\t${releaseText(it.type, "self->${it.cName}")};\n") }
 			val vInline = vClass.fields.filter { it.isInline }
 			if (vInline.isNotEmpty() && vOwn.isEmpty()) vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n")
 			for (vField in vInline) {
@@ -231,7 +249,7 @@ class CEmitter(private val mModule: KModule) {
 		inUnit.cls?.let { vClass ->
 			val vName = vClass.cName
 			vBodies.append("\nvoid ${vName}__retain_fields($vName* self)\n{\n")
-			refFields(vClass).forEach { vBodies.append("\tktc2_retain(self->${it.cName});\n") }
+			refFields(vClass).forEach { vBodies.append("\t${retainText(it.type, "self->${it.cName}")};\n") }
 			for (vField in vClass.fields.filter { it.isInline }) {
 				val vType = vField.type
 				if (vType is KClassType) {
@@ -388,7 +406,9 @@ class CEmitter(private val mModule: KModule) {
 				val vAfter = StringBuilder()
 				var vBoxes = 0
 				val vArguments = inFunction.params.zip(inTarget.params).joinToString(", ") { (vFrom, vTo) ->
-					val vText = adapt(vFrom.cName, vFrom.type, vTo.type)
+					// The box made for the call owns what the struct refers to, until it is released after the call.
+					val vGiven = if (vFrom.type.isCounted() && vFrom.type is KStructType && vTo.type is KRefType) retainText(vFrom.type, vFrom.cName) else vFrom.cName
+					val vText = adapt(vGiven, vFrom.type, vTo.type)
 					if (isUnboxed(vFrom.type) && vTo.type is KRefType) {
 						val vBox = "boxed${vBoxes++}"
 						vBefore.append("${cType(vTo.type)} $vBox = $vText; ")
@@ -404,7 +424,9 @@ class CEmitter(private val mModule: KModule) {
 				if (inTarget.returnType is KRefType && isUnboxed(inFunction.returnType)) {
 					// The implementation returns a box it owns: its content is taken out and the box released.
 					// (NULL is what it returns when it left with an exception.)
-					val vContent = adapt("result", inTarget.returnType, inFunction.returnType)
+					// The struct taken out of the box keeps its own references: the box is about to give up its ones.
+					val vTaken = adapt("result", inTarget.returnType, inFunction.returnType)
+					val vContent = if (inFunction.returnType.isCounted()) retainText(inFunction.returnType, vTaken) else vTaken
 					val vValue = when (inFunction.returnType) {
 						is KPrimType -> "result ? $vContent : 0"
 						is KStructType -> "result ? $vContent : (${cType(inFunction.returnType)}){ 0 }"
@@ -457,7 +479,7 @@ class CEmitter(private val mModule: KModule) {
 				}
 				is KIndexSet -> store(element(inStatement.array, inStatement.index, inStatement.value.type, inStatement.isChecked), inStatement.value, inStatement.releasesOld, inDepth)
 				is KEval -> line(inDepth, "${bare(expr(inStatement.expr))};")
-				is KRelease -> line(inDepth, "ktc2_release(${bare(expr(inStatement.operand))});")
+				is KRelease -> line(inDepth, "${releaseText(inStatement.operand.type, bare(expr(inStatement.operand)))};")
 				is KReturn -> line(inDepth, inStatement.value?.let { "return ${bare(expr(it))};" } ?: "return;")
 				is KIf -> ifChain(inStatement, inDepth)
 				is KLoop -> loop(inStatement, inDepth)
@@ -486,7 +508,12 @@ class CEmitter(private val mModule: KModule) {
 
 		private fun store(inSlot: String, inValue: KExpr, inReleasesOld: Boolean, inDepth: Int) {
 			val vValue = bare(expr(inValue))
-			line(inDepth, if (inReleasesOld) "KTC2_ASSIGN($inSlot, $vValue);" else "$inSlot = $vValue;")
+			val vType = inValue.type
+			line(inDepth, when {
+				!inReleasesOld -> "$inSlot = $vValue;"
+				vType is KStructType -> "KTC2_ASSIGN_VALUE(${cType(vType)}, $inSlot, $vValue, ${vType.struct.cName}__release);"
+				else -> "KTC2_ASSIGN($inSlot, $vValue);"
+			})
 		}
 
 		private fun ifChain(inIf: KIf, inDepth: Int) {
@@ -657,7 +684,12 @@ class CEmitter(private val mModule: KModule) {
 			is KConst -> constant(inExpr)
 			KUnitValue -> "((void)0)"
 			is KZero -> zero(inExpr.type)
-			is KNull -> if (inExpr.type is KOptType) "((${cType(inExpr.type)}){ false })" else "NULL"
+			is KNull -> when (inExpr.type) {
+				is KOptType -> "((${cType(inExpr.type)}){ false })"
+				// A struct local that holds nothing yet (or no longer): all its references are null.
+				is KStructType -> zero(inExpr.type)
+				else -> "NULL"
+			}
 			is KStringLit -> "KTC2_STR(${mState.literals.getOrPut(inExpr.text) { "lit_${mState.literals.size}" }})"
 			is KRead -> inExpr.local.cName
 			is KGlobalRead -> {
@@ -750,7 +782,7 @@ class CEmitter(private val mModule: KModule) {
 				mState.includes += inExpr.function.unit
 				"${inExpr.function.cName}(${arguments(inExpr.arguments)})"
 			}
-			is KRetain -> "ktc2_retain(${bare(expr(inExpr.operand))})"
+			is KRetain -> retainText(inExpr.type, bare(expr(inExpr.operand)))
 		}
 
 		fun constant(inConst: KConst): String = when (val vValue = inConst.value) {

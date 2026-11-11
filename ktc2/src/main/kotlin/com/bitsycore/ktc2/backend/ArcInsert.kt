@@ -159,7 +159,7 @@ class ArcInsert(private val mModule: KModule) {
 		// MARK: Values
 		// ==================
 
-		private fun isRef(inType: KType): Boolean = inType is KRefType
+		private fun isRef(inType: KType): Boolean = inType.isCounted()
 
 		/** True when [inValue] can be passed without holding it: a local, or something that never dies. */
 		private fun isSafeBorrow(inValue: KExpr): Boolean = when (inValue) {

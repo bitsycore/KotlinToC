@@ -627,7 +627,9 @@ internal class BodyBuilder(
 		is IrRichFunctionReference -> lowerRichFunctionReference(inExpression)
 		// The property a delegate is told about (`getValue(thisRef, property)`): there is no
 		// reflection here, so it is passed as null — fine for the delegates that ignore it.
-		is IrRichPropertyReference, is IrPropertyReference, is IrLocalDelegatedPropertyReference -> KNull(KObjType)
+		is IrRichPropertyReference -> propertyObject(inExpression, (inExpression.reflectionTargetSymbol?.owner as? IrDeclarationWithName)?.name?.asString())
+		is IrPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
+		is IrLocalDelegatedPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
 		is IrSetValue -> {
 			val vLocal = mLocals[inExpression.symbol.owner]
 			val vCell = mCells[inExpression.symbol.owner]
@@ -1832,6 +1834,16 @@ internal class BodyBuilder(
 		val vInterface = inReference.overriddenFunctionSymbol.owner.parentAsClass
 		val vSam = inReference.type.takeIf { !isFunctionType(vInterface.symbol.typeWith()) && !vInterface.kotlinFqName.asString().startsWith("kotlin.reflect.") }
 		return makeClosure(inReference, inReference.invokeFunction, null, vSam, vBound)?.let { KRead(it.first) } ?: KUnitValue
+	}
+
+	/**
+	 * `::name` as a value, which is what a delegate receives as its `property`: an object that
+	 * knows the name and nothing else, there being no reflection.
+	 */
+	private fun propertyObject(inElement: IrElement, inName: String?): KExpr {
+		val vFactory = mImporter.internalFunction("propertyReference")?.let { mImporter.functionFor(it) }
+			?: return fail(inElement, "property reference")
+		return spill(KCall(vFactory, listOf(KStringLit(inName ?: "<unknown>"))))
 	}
 
 	private fun lowerFunctionReference(inReference: IrFunctionReference): KExpr {
