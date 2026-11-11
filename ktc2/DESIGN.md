@@ -947,6 +947,54 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   character tried. Finding 4,000 matches and replacing 2,000 in one text went from 123,700
   allocations to 14,100. The object a delegate receives as its `property` is one static
   object per property name, in place of a new one at each access.
+- **Module file, git and CMake.** A module file now also has `executable` (the program built),
+  `main` (the function the program starts with, `pkg.function`), `fetch` (C sources to have at
+  hand: `NAME=url@tag`, usable as `${NAME}` in the options) and `cmake` (a CMake file of the
+  module). A dependency can be a module in a git repository: `url[#directory][@branch or tag]`.
+  Repositories are cloned once into `~/.ktc2/cache` (`KTC2_CACHE` names another place). Every
+  compilation writes a `CMakeLists.txt` next to the C: the program, the options the bindings
+  ask for, threads, and the CMake file of each module, which sees the program as
+  `${KTC2_TARGET}` and a fetched repository as `${KTC2_FETCH_<NAME>}`. `--cmake` builds through
+  it, and so does `--build` when a module has a CMake file; `KTC2_CMAKE_ARGS` adds arguments
+  (a generator, a toolchain file), `KTC2_CC` names the compiler. Without a CMake file in play
+  `--build` still calls the C compiler directly, which needs nothing installed but that.
+- **The sdl3 module no longer needs SDL3 installed.** It fetches SDL3 from GitHub
+  (`release-3.4.8`); the bindings are made from those headers, and its `module.cmake` builds the
+  library from them, statically, unless CMake finds an SDL3 on the system. First build of the
+  demo, SDL3 included: one minute here.
+- **The showcase** (`examples/showcase`): one program of three modules — a small library
+  (`shapes/`), 92 checks in seven groups over the language, the library, errors, values,
+  threads and the other module (`core/`, plain Kotlin, so the suite also runs it against the
+  JVM as `projects/examples/showcase/core`), and a window with a button per group
+  (`src/`, SDL3). `--headless` prints, `--auto` clicks every button by itself and
+  `--shot file.bmp` saves what the window shows, which is how it is checked without a screen.
+  Writing it found three gaps, now closed: `Number` as a type, a cast of a nullable number to
+  its type in generic library code (`Map.getValue`), and library functions that have one path
+  through coroutines (`chunked`, `windowed`): those now compile, and fail only if that path is
+  taken. `sequence { }` and `iterator { }` themselves are still not supported.
+- **Compilers.** The generated C and the runtime are C11 with nothing of one compiler left
+  outside one block of `ktc2_core.h`. Built and run here, on Windows:
+  gcc 15 (the whole suite), clang 23 with the MSVC ABI (the showcase, no warning), and
+  MSVC 19.51 through CMake's Visual Studio generator (the showcase, threads and leak check
+  included). For MSVC three things had to change: the `__atomic` operations (now macros, the
+  `Interlocked` functions there), the bit-counting builtins, and a division by the constant
+  zero, which MSVC refuses even for floating-point numbers, where it is how NaN is written.
+  What remains per compiler and system:
+  - *gcc, clang on Linux and macOS*: nothing known, but never run. The runtime's POSIX side
+    (threads, monitors, sleeping, the clock) has only been read, not compiled. macOS before
+    10.15 has no `timespec_get`.
+  - *MSVC*: warning C4116 on each array kept in the frame (a struct type written inside a
+    cast); the bindings generator runs gcc or clang to read headers, so one of them is still
+    needed when a program uses a `.def`; `-pthread`, `-lm` and other gcc-style options in a
+    module's `compilerOpts` / `linkerOpts` are not translated, which is what CMake files are for.
+  - *Android NDK* (clang and bionic, not installed here): the C should compile as it does
+    with clang elsewhere. What is missing is around it: `println` goes to a console Android
+    does not have (it should go to the log), a program is a shared library entered from Java
+    rather than a `main`, `timespec_get` needs API 29, and the build has to be driven by the
+    NDK's CMake toolchain file, which `KTC2_CMAKE_ARGS` can pass.
+  - *Everywhere*: paths and arguments are taken as UTF-8, which on Windows is right only for
+    ASCII; 32-bit targets have not been considered (pointers kept in `Long`s are fine, the
+    object header is the same).
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small

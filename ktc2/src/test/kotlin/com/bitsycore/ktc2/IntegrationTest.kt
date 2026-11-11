@@ -36,7 +36,33 @@ class IntegrationTest {
 			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
-			.toList()
+			.toList() + projectList()
+
+	/**
+	 * Programs of several files and modules: each directory named here has a module file, and is
+	 * compiled as `ktc2 <directory>` compiles it. They are plain Kotlin, so they are compared with
+	 * the JVM like the single files.
+	 */
+	private val kProjects = listOf("examples/showcase/core")
+
+	private fun projectList(): List<DynamicTest> =
+		kProjects
+			.filter { vPath -> System.getenv("KTC2_TEST_FILTER")?.let { it in "projects/$vPath" } ?: true }
+			.map { vPath -> DynamicTest.dynamicTest("projects/$vPath") { checkProject(File(vPath)) } }
+
+	private fun checkProject(inDirectory: File) {
+		val vName = "project-" + inDirectory.name
+		val vOutDir = File("build/integration/$vName").apply { deleteRecursively() }
+		val vProject = loadProject(inDirectory, vOutDir) ?: fail("the module in $inDirectory could not be loaded")
+		mInput = null
+		System.clearProperty("ktc2.main")
+		vProject.main?.let { System.setProperty("ktc2.main", it) }
+		try {
+			verify(vName, vProject.sources.toList(), vOutDir, null)
+		} finally {
+			System.clearProperty("ktc2.main")
+		}
+	}
 
 	/** The standard input of the program being checked; null when it has none. */
 	private var mInput: File? = null
@@ -46,7 +72,18 @@ class IntegrationTest {
 		val vOutDir = File("build/integration/${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		// `<name>.def` next to the program describes a C library it uses.
 		val vDefinition = File(inSource.parentFile, inSource.nameWithoutExtension + ".def")
-		assertTrue(K2Frontend.compile(listOf(inSource) + listOfNotNull(vDefinition.takeIf { it.isFile }), vOutDir, inDumpIr = true), "ktc2 failed on $inSource")
+		// A program using C interop cannot run on the JVM: its output is compared with `<name>.expected`.
+		val vExpectedFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".expected")
+		verify(inSource.path, listOf(inSource) + listOfNotNull(vDefinition.takeIf { it.isFile }), vOutDir, vExpectedFile.takeIf { it.isFile })
+	}
+
+	/**
+	 * Translates [inSources] to C, builds and runs the program, and compares what it prints with
+	 * [inExpected] or, without one, with what the same sources print on the JVM.
+	 */
+	private fun verify(inName: String, inSources: List<File>, inOutDir: File, inExpected: File?) {
+		val vOutDir = inOutDir
+		assertTrue(K2Frontend.compile(inSources, vOutDir, inDumpIr = true), "ktc2 failed on $inName")
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
 		val vJvmMain = vManifest.first { it.startsWith("jvmMain=") }.substringAfter('=')
@@ -55,13 +92,11 @@ class IntegrationTest {
 		val vCompilerOpts = vManifest.filter { it.startsWith("cflag=") }.map { it.substringAfter('=') }
 		val vLinkerOpts = vManifest.filter { it.startsWith("ldflag=") }.map { it.substringAfter('=') }
 
-		// A program using C interop cannot run on the JVM: its output is compared with `<name>.expected`.
-		val vExpectedFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".expected")
-		val vExpected = if (vExpectedFile.isFile) {
-			vExpectedFile.readText().replace("\r\n", "\n")
+		val vExpected = if (inExpected != null) {
+			inExpected.readText().replace("\r\n", "\n")
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
-			assertTrue(K2Frontend.compileJvm(listOf(inSource), vJvmDir), "kotlinc failed on $inSource")
+			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" }, vJvmDir), "kotlinc failed on $inName")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
 			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
 			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File("."))
@@ -71,7 +106,7 @@ class IntegrationTest {
 		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-pthread", "-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + "-lm" + vLinkerOpts, vCDir)
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 
-		assertEquals(vExpected, vActual, "C output differs from the JVM for $inSource")
+		assertEquals(vExpected, vActual, "C output differs from the JVM for $inName")
 	}
 
 	/** Runs a process and returns its stdout with normalized line endings; fails on a non-zero exit. */

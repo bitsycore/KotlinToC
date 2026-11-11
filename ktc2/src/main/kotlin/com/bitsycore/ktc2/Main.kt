@@ -6,7 +6,9 @@ import kotlin.system.exitProcess
 
 private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
   -o <dir>           where the output goes (default: <module>/build, or ./out)
-  --build            also compile the C into a program (C compiler: KTC2_CC, default gcc)
+  --build            also compile the C into a program (C compiler: KTC2_CC, else gcc, clang or cc)
+  --cmake            build with CMake, from the CMakeLists.txt written next to the C
+                     (always so when a module has a CMake file; KTC2_CMAKE_ARGS: more arguments)
   --run              build, then run the program with the arguments after --
   --debug            build without optimization, with debug information and the leak report
   -copt <option>     an option for the C compiler; -lopt <option> one for the linker
@@ -17,7 +19,8 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC — see ktc2/DESIGN.md).
- * Writes the generated C under `<out>/c`; with `--build` or `--run` also the program.
+ * Writes the generated C under `<out>/c` and a `CMakeLists.txt` for it; with `--build`,
+ * `--cmake` or `--run` also the program.
  */
 fun main(args: Array<String>) {
 	val vSources = LinkedHashSet<File>()
@@ -27,6 +30,7 @@ fun main(args: Array<String>) {
 	var vBuild = false
 	var vRun = false
 	var vDebug = false
+	var vCMake = false
 	var vProgramArguments = emptyList<String>()
 	var vIndex = 0
 	while (vIndex < args.size) {
@@ -38,6 +42,7 @@ fun main(args: Array<String>) {
 			}
 			vArg == "-o" && vIndex < args.size -> vOutDir = File(args[vIndex++])
 			vArg == "--build" -> vBuild = true
+			vArg == "--cmake" -> vCMake = true
 			vArg == "--run" -> vRun = true
 			vArg == "--debug" -> vDebug = true
 			vArg == "--dump-ir" -> vDumpIr = true
@@ -57,19 +62,26 @@ fun main(args: Array<String>) {
 
 	val vOut = vOutDir ?: vModules.firstOrNull()?.let { File(it, "build") } ?: File("out")
 	var vName = vSources.firstOrNull { it.extension == "kt" }?.nameWithoutExtension ?: "program"
-	for (vModule in vModules) {
-		val vProject = loadProject(vModule, vOut) ?: exitProcess(1)
-		if (vModule === vModules.first()) vName = vProject.name
-		vSources += vProject.sources
-		vProject.compilerOpts.forEach { addOption("ktc2.copt", it) }
-		vProject.linkerOpts.forEach { addOption("ktc2.lopt", it) }
+	val vProjects = vModules.map { loadProject(it, vOut) ?: exitProcess(1) }
+	// The first module is the program: its name, and where it starts.
+	val vProject = vProjects.firstOrNull()
+	if (vProject != null) {
+		vName = vProject.executable
+		vProject.main?.let { System.setProperty("ktc2.main", it) }
+	}
+	val vUsesCMake = vCMake || vProjects.any { it.needsCMake }
+	for (vEach in vProjects) {
+		vSources += vEach.sources
+		vEach.compilerOpts.forEach { addOption("ktc2.copt", it) }
+		(if (vUsesCMake) vEach.linkerOpts else vEach.directLinkerOpts).forEach { addOption("ktc2.lopt", it) }
 	}
 	if (vSources.isEmpty()) fail("no source file")
 	vSources.firstOrNull { !it.isFile }?.let { fail("no such file '$it'") }
 
 	if (!K2Frontend.compile(vSources.toList(), vOut, vDumpIr)) exitProcess(1)
-	if (!vBuild && !vRun) return
-	val vProgram = buildProgram(vOut, vName, vDebug) ?: exitProcess(1)
+	writeCMake(vOut, vName, vProject)
+	if (!vBuild && !vRun && !vCMake) return
+	val vProgram = (if (vUsesCMake) buildWithCMake(vOut, vName, vDebug) else buildProgram(vOut, vName, vDebug)) ?: exitProcess(1)
 	if (!vRun) {
 		println("ktc2: built $vProgram")
 		return

@@ -1,9 +1,7 @@
-# SDL3 for ktc2. The headers and the library have to be where the C compiler looks for them,
-# or be named on the command line: -copt -I<sdl>/include -lopt -L<sdl>/lib
+# SDL3 for ktc2. The module file says where the headers are; the library is linked by module.cmake.
 headers = SDL3/SDL.h
 headerFilter = SDL3/*
 package = sdl3
 compilerOpts = -DSDL_MAIN_HANDLED
-linkerOpts = -lSDL3
 # The module names SDL's constants as integers throughout.
 nonStrictEnums = *

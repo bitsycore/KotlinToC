@@ -91,20 +91,20 @@ int ktc2_threaded = 0;
 #endif
 
 /** Guards the runtime's own tables (weak cells, leak counts): held for a few instructions only. */
-static char runtime_lock;
+static uint32_t runtime_lock;
 
 static void runtime_enter(void)
 {
-	while (__atomic_test_and_set(&runtime_lock, __ATOMIC_ACQUIRE)) thread_yield();
+	while (ktc2_atomic_exchange(&runtime_lock, 1)) thread_yield();
 }
 
 static void runtime_leave(void)
 {
-	__atomic_clear(&runtime_lock, __ATOMIC_RELEASE);
+	ktc2_atomic_exchange(&runtime_lock, 0);
 }
 
-#define KTC2_RC_OR(object, bits) ((void)__atomic_fetch_or(&(object)->rc, (bits), __ATOMIC_ACQ_REL))
-#define KTC2_RC_AND(object, bits) ((void)__atomic_fetch_and(&(object)->rc, (bits), __ATOMIC_ACQ_REL))
+#define KTC2_RC_OR(object, bits) ktc2_atomic_or(&(object)->rc, (bits))
+#define KTC2_RC_AND(object, bits) ktc2_atomic_and(&(object)->rc, (bits))
 #else
 #define runtime_enter() ((void)0)
 #define runtime_leave() ((void)0)
@@ -166,7 +166,7 @@ static uint64_t stat_arena_allocs;
 static void arena_block_drop(ArenaBlock* block)
 {
 #ifdef KTC2_THREADS
-	if (__atomic_sub_fetch(&block->holds, 1, __ATOMIC_ACQ_REL) == 0) free(block);
+	if (ktc2_atomic_sub(&block->holds, 1) == 0) free(block);
 #else
 	if (--block->holds == 0) free(block);
 #endif
@@ -189,7 +189,7 @@ static ktc2_Obj* arena_alloc(Arena* arena, size_t size)
 	char* slot = (char*)block + ARENA_ALIGN(sizeof *block) + block->used;
 	block->used += need;
 #ifdef KTC2_THREADS
-	__atomic_fetch_add(&block->holds, 1, __ATOMIC_RELAXED);
+	ktc2_atomic_add(&block->holds, 1);
 #else
 	block->holds++;
 #endif
@@ -1129,7 +1129,7 @@ static ktc2_Obj* retain_if_alive(ktc2_Obj* object)
 	if (rc == KTC2_IMMORTAL) return object;
 #ifdef KTC2_THREADS
 	while ((rc & KTC2_COUNT_MASK) != 0) {
-		if (__atomic_compare_exchange_n(&object->rc, &rc, rc + 1, true, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) return object;
+		if (ktc2_atomic_replace(&object->rc, &rc, rc + 1)) return object;
 	}
 	return NULL;
 #else
@@ -1227,19 +1227,19 @@ static void thread_body(ktc2_Obj* thread)
 		/* As on the JVM, an exception nobody caught ends this thread only: it is reported and the program goes on. */
 		ktc2_Throwable* exception = (ktc2_Throwable*)ktc2_take_pending();
 		static uint32_t reported;
-		uint32_t number = __atomic_fetch_add(&reported, 1, __ATOMIC_RELAXED);
+		uint32_t number = ktc2_atomic_add(&reported, 1) - 1;
 		fflush(stdout);
 		fprintf(stderr, "Exception in thread \"Thread-%" PRIu32 "\" %s%s%s\n", number, ktc2_types[exception->header.typeId].name,
 			exception->message ? ": " : "", exception->message ? exception->message->bytes : "");
 		ktc2_release(exception);
 	}
 	ktc2_release(thread);
-	__atomic_fetch_sub(&threads_running, 1, __ATOMIC_RELEASE);
+	ktc2_atomic_sub(&threads_running, 1);
 }
 
 static void threads_wait(void)
 {
-	while (__atomic_load_n(&threads_running, __ATOMIC_ACQUIRE) != 0) thread_yield();
+	while (ktc2_atomic_load(&threads_running) != 0) thread_yield();
 }
 
 #ifdef _WIN32
@@ -1254,7 +1254,7 @@ int64_t ktc2_threadStart(ktc2_Obj* thread)
 {
 	ktc2_threaded = 1;
 	ktc2_retain(thread);
-	__atomic_fetch_add(&threads_running, 1, __ATOMIC_RELEASE);
+	ktc2_atomic_add(&threads_running, 1);
 	HANDLE handle = CreateThread(NULL, 0, thread_main, thread, 0, NULL);
 	if (!handle) fail("java.lang.OutOfMemoryError", "unable to create native thread");
 	return (int64_t)(intptr_t)handle;
@@ -1279,7 +1279,7 @@ int64_t ktc2_threadStart(ktc2_Obj* thread)
 	pthread_t* handle = malloc(sizeof *handle);
 	ktc2_threaded = 1;
 	ktc2_retain(thread);
-	__atomic_fetch_add(&threads_running, 1, __ATOMIC_RELEASE);
+	ktc2_atomic_add(&threads_running, 1);
 	if (!handle || pthread_create(handle, NULL, thread_main, thread) != 0) fail("java.lang.OutOfMemoryError", "unable to create native thread");
 	return (int64_t)(intptr_t)handle;
 }
@@ -1294,6 +1294,13 @@ void ktc2_threadJoin(int64_t handle)
 #endif
 
 #endif
+
+double ktc2_divide_by_zero(double a, double b)
+{
+	/* Read through a volatile, so that no compiler works the division out and objects to it. */
+	volatile double divisor = b;
+	return a / divisor;
+}
 
 /* The clock, in nanoseconds since 1970. */
 int64_t ktc2_timeNanos(void)

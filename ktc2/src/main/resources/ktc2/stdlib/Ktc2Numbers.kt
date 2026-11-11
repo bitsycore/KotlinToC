@@ -13,11 +13,11 @@ compiler's built-ins.
 // MARK: Int
 // ==================
 
-public actual fun Int.countOneBits(): Int = cExpr("__builtin_popcount((unsigned)$0)", this)
+public actual fun Int.countOneBits(): Int = cExpr("ktc2_popcount32((unsigned)$0)", this)
 
-public actual fun Int.countLeadingZeroBits(): Int = if (this == 0) 32 else cExpr("__builtin_clz((unsigned)$0)", this)
+public actual fun Int.countLeadingZeroBits(): Int = if (this == 0) 32 else cExpr("ktc2_clz32((unsigned)$0)", this)
 
-public actual fun Int.countTrailingZeroBits(): Int = if (this == 0) 32 else cExpr("__builtin_ctz((unsigned)$0)", this)
+public actual fun Int.countTrailingZeroBits(): Int = if (this == 0) 32 else cExpr("ktc2_ctz32((unsigned)$0)", this)
 
 public actual fun Int.takeHighestOneBit(): Int = if (this == 0) 0 else 1 shl (31 - countLeadingZeroBits())
 
@@ -31,11 +31,11 @@ public actual fun Int.rotateRight(bitCount: Int): Int = (this shl -bitCount) or 
 // MARK: Long
 // ==================
 
-public actual fun Long.countOneBits(): Int = cExpr("__builtin_popcountll((unsigned long long)$0)", this)
+public actual fun Long.countOneBits(): Int = cExpr("ktc2_popcount64((unsigned long long)$0)", this)
 
-public actual fun Long.countLeadingZeroBits(): Int = if (this == 0L) 64 else cExpr("__builtin_clzll((unsigned long long)$0)", this)
+public actual fun Long.countLeadingZeroBits(): Int = if (this == 0L) 64 else cExpr("ktc2_clz64((unsigned long long)$0)", this)
 
-public actual fun Long.countTrailingZeroBits(): Int = if (this == 0L) 64 else cExpr("__builtin_ctzll((unsigned long long)$0)", this)
+public actual fun Long.countTrailingZeroBits(): Int = if (this == 0L) 64 else cExpr("ktc2_ctz64((unsigned long long)$0)", this)
 
 public actual fun Long.takeHighestOneBit(): Long = if (this == 0L) 0L else 1L shl (63 - countLeadingZeroBits())
 

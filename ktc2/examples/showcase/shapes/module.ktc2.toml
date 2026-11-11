@@ -1,0 +1,3 @@
+# A small library: shapes and what can be done to them. Used by the showcase.
+name    = "shapes"
+sources = ["src"]

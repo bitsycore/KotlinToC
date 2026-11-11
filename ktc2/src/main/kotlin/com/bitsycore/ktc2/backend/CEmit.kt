@@ -898,7 +898,14 @@ class CEmitter(private val mModule: KModule) {
 				KBinaryOp.ADD -> if (vInt != null) helper("add") else infix("+")
 				KBinaryOp.SUB -> if (vInt != null) helper("sub") else infix("-")
 				KBinaryOp.MUL -> if (vInt != null) helper("mul") else infix("*")
-				KBinaryOp.DIV -> if (vInt != null) helper("div") else infix("/")
+				KBinaryOp.DIV -> when {
+					vInt != null -> helper("div")
+					// A division by the constant zero is an error for some compilers, even of floating-point
+					// numbers, where it is how infinity and NaN are written: a function does it out of their sight.
+					((inExpr.right as? KConst)?.value as? Number)?.toDouble() == 0.0 ->
+						"((${cType(inExpr.type)})ktc2_divide_by_zero(${bare(vLeft)}, ${bare(vRight)}))"
+					else -> infix("/")
+				}
 				KBinaryOp.REM -> when {
 					vInt != null -> helper("rem")
 					inExpr.operandType == KPrim.FLOAT -> "fmodf(${bare(vLeft)}, ${bare(vRight)})"

@@ -19,14 +19,14 @@ import sdl3.*
  */
 @PublishedApi
 internal inline fun <reified T : CVariable> onStack(): T =
-	cExpr("__builtin_memset(__builtin_alloca((size_t)$0), 0, (size_t)$0)", cSizeOf<T>())
+	cExpr("ktc2_stack_zeroed((size_t)$0)", cSizeOf<T>())
 
 /** [inCount] zeroed C variables in the frame of the calling function. */
 @PublishedApi
 internal inline fun <reified T : CVariable> onStackArray(inCount: Int): CArrayPointer<T> =
-	cExpr("__builtin_memset(__builtin_alloca((size_t)($0 * $1)), 0, (size_t)($0 * $1))", cSizeOf<T>(), inCount.toLong())
+	cExpr("ktc2_stack_zeroed((size_t)($0 * $1))", cSizeOf<T>(), inCount.toLong())
 
-internal fun squareRoot(inValue: Float): Float = cExpr("__builtin_sqrtf($0)", inValue)
+internal fun squareRoot(inValue: Float): Float = kotlin.math.sqrt(inValue)
 
 /** What SDL reports for the last failure. */
 internal fun lastError(): String = SDL_GetError()?.toKString() ?: "unknown error"

@@ -891,6 +891,9 @@ internal class BodyBuilder(
 				coerce(vValue, vTo)
 			} else if (vValue.type is KStructType && vTo is KRefType) {
 				coerce(vValue, vTo)
+			} else if (vValue.type is KOptType && vTo is KPrimType) {
+				// `x as V` where x is a `V?` and V a number: the number that is there.
+				coerce(vValue, vTo)
 			} else if (vValue.type is KRefType && vTo is KStructType) {
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
 				if (vTest !== kTrue) mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
@@ -2221,6 +2224,12 @@ internal class BodyBuilder(
 		val vWhat = "call to '$vParent.$vName'"
 		redirectToPlatform(inCall)?.let { return it }
 
+		if (vParent.startsWith("kotlin.coroutines")) {
+			// There are no coroutines. A library function that uses them on one of its paths (`windowed`
+			// on something that is not a list) still works on the others: this path fails when it is taken.
+			mBlock += failure("throwNoCoroutines", "ktc2_fail_when")
+			return KZero(typeOf(inCall)?.takeIf { it != KNothingType } ?: KObjType)
+		}
 		if (vParent == "kotlin.io" && (vName == "println" || vName == "print")) {
 			val vPieces = when (val vArgument = vArguments.firstOrNull()) {
 				null -> emptyList()

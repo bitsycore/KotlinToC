@@ -1,0 +1,11 @@
+# The showcase: a window with a button for each group of tests; a click runs the group and
+# shows what it gave. Several modules (this one, its tests in core/, a small library in
+# shapes/), SDL3 fetched from GitHub and built by CMake.
+#   ktc2 ktc2/examples/showcase --run                 the window
+#   ktc2 ktc2/examples/showcase --run -- --auto       clicks every button by itself, then closes
+#   ktc2 ktc2/examples/showcase --run -- --headless   no window: the tests, printed
+name         = "showcase"
+executable   = "showcase"
+main         = "showcase.app.start"
+sources      = ["src"]
+dependencies = ["core", "sdl3"]

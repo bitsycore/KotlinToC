@@ -17,6 +17,92 @@
 #include "ktc2_config.h"
 
 /* ================== */
+/* MARK: Compilers    */
+/* ================== */
+
+/*
+ * What is not the same in every C compiler is named here once. gcc and clang (on every
+ * system, clang-cl included) have the `__atomic` and `__builtin` operations; the compiler of
+ * Visual Studio has its own, or none, in which case plain C does the work.
+ */
+#include <string.h>
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#include <malloc.h>
+
+/* Atomic operations on a 32-bit count. `add` and `sub` give the value after the operation. */
+/* A plain read: the count of a constant object is in memory that cannot be written, which an interlocked operation would do. */
+#define ktc2_atomic_load(address) (*(volatile uint32_t*)(address))
+#define ktc2_atomic_add(address, amount) ((uint32_t)_InterlockedExchangeAdd((volatile long*)(address), (long)(amount)) + (uint32_t)(amount))
+#define ktc2_atomic_sub(address, amount) ((uint32_t)_InterlockedExchangeAdd((volatile long*)(address), -(long)(amount)) - (uint32_t)(amount))
+#define ktc2_atomic_or(address, bits) ((void)_InterlockedOr((volatile long*)(address), (long)(bits)))
+#define ktc2_atomic_and(address, bits) ((void)_InterlockedAnd((volatile long*)(address), (long)(bits)))
+#define ktc2_atomic_exchange(address, value) ((uint32_t)_InterlockedExchange((volatile long*)(address), (long)(value)))
+#define ktc2_atomic_add64(address, amount) ((void)_InterlockedExchangeAdd64((volatile __int64*)(address), (__int64)(amount)))
+
+/** Stores [desired] where [expected] is found; otherwise tells in [expected] what is there. */
+static __inline int ktc2_atomic_replace(uint32_t* address, uint32_t* expected, uint32_t desired)
+{
+	uint32_t found = (uint32_t)_InterlockedCompareExchange((volatile long*)address, (long)desired, (long)*expected);
+	if (found == *expected) return 1;
+	*expected = found;
+	return 0;
+}
+
+#define ktc2_alloca(size) _alloca(size)
+
+#else
+
+#define ktc2_atomic_load(address) __atomic_load_n((address), __ATOMIC_RELAXED)
+#define ktc2_atomic_add(address, amount) __atomic_add_fetch((address), (amount), __ATOMIC_ACQ_REL)
+#define ktc2_atomic_sub(address, amount) __atomic_sub_fetch((address), (amount), __ATOMIC_ACQ_REL)
+#define ktc2_atomic_or(address, bits) ((void)__atomic_fetch_or((address), (bits), __ATOMIC_ACQ_REL))
+#define ktc2_atomic_and(address, bits) ((void)__atomic_fetch_and((address), (bits), __ATOMIC_ACQ_REL))
+#define ktc2_atomic_exchange(address, value) __atomic_exchange_n((address), (value), __ATOMIC_ACQ_REL)
+#define ktc2_atomic_add64(address, amount) ((void)__atomic_fetch_add((address), (amount), __ATOMIC_RELAXED))
+#define ktc2_atomic_replace(address, expected, desired) __atomic_compare_exchange_n((address), (expected), (desired), 1, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)
+
+#define ktc2_alloca(size) __builtin_alloca(size)
+
+#endif
+
+/** [size] zeroed bytes in the frame of the function that asks. */
+#define ktc2_stack_zeroed(size) memset(ktc2_alloca(size), 0, (size))
+
+/* Counting bits. The arguments of the zero counts are not zero: Kotlin's functions test for it first. */
+#if defined(__GNUC__) || defined(__clang__)
+#define ktc2_popcount32(value) __builtin_popcount(value)
+#define ktc2_popcount64(value) __builtin_popcountll(value)
+#define ktc2_clz32(value) __builtin_clz(value)
+#define ktc2_clz64(value) __builtin_clzll(value)
+#define ktc2_ctz32(value) __builtin_ctz(value)
+#define ktc2_ctz64(value) __builtin_ctzll(value)
+#else
+static __inline int ktc2_popcount64(uint64_t value)
+{
+	int count = 0;
+	for (; value; value &= value - 1) count++;
+	return count;
+}
+static __inline int ktc2_clz64(uint64_t value)
+{
+	int count = 0;
+	for (uint64_t bit = UINT64_C(1) << 63; bit && !(value & bit); bit >>= 1) count++;
+	return count;
+}
+static __inline int ktc2_ctz64(uint64_t value)
+{
+	int count = 0;
+	for (; !(value & 1); value >>= 1) count++;
+	return count;
+}
+#define ktc2_popcount32(value) ktc2_popcount64((uint32_t)(value))
+#define ktc2_clz32(value) (ktc2_clz64((uint32_t)(value)) - 32)
+#define ktc2_ctz32(value) ktc2_ctz64((uint32_t)(value))
+#endif
+
+/* ================== */
 /* MARK: Threads      */
 /* ================== */
 
@@ -33,11 +119,11 @@
 /** Set by the first thread the program starts, before that thread exists. */
 extern int ktc2_threaded;
 #define KTC2_TLS _Thread_local
-#define KTC2_RC_LOAD(object) __atomic_load_n(&(object)->rc, __ATOMIC_RELAXED)
+#define KTC2_RC_LOAD(object) ktc2_atomic_load(&(object)->rc)
 #define KTC2_RC_ALONE(count) (!ktc2_threaded || ((count) & KTC2_STACK))
-#define KTC2_RC_INC(object, count) (KTC2_RC_ALONE(count) ? (void)(object)->rc++ : (void)__atomic_fetch_add(&(object)->rc, 1, __ATOMIC_RELAXED))
-#define KTC2_RC_DEC(object, count) (KTC2_RC_ALONE(count) ? --(object)->rc : __atomic_sub_fetch(&(object)->rc, 1, __ATOMIC_ACQ_REL))
-#define KTC2_STAT_INC(counter) ((void)__atomic_fetch_add(&(counter), 1, __ATOMIC_RELAXED))
+#define KTC2_RC_INC(object, count) (KTC2_RC_ALONE(count) ? (void)(object)->rc++ : (void)ktc2_atomic_add(&(object)->rc, 1))
+#define KTC2_RC_DEC(object, count) (KTC2_RC_ALONE(count) ? --(object)->rc : ktc2_atomic_sub(&(object)->rc, 1))
+#define KTC2_STAT_INC(counter) ((void)ktc2_atomic_add64(&(counter), 1))
 #else
 #define KTC2_TLS
 #define KTC2_RC_LOAD(object) ((object)->rc)
@@ -282,6 +368,9 @@ void ktc2_threadJoin(int64_t handle);
 
 /** The time of day in nanoseconds since 1970 (`System.currentTimeMillis`, `System.nanoTime`). */
 int64_t ktc2_timeNanos(void);
+
+/** `a / b` for a `b` that is written as zero in the program: infinity or NaN, as Kotlin has it. */
+double ktc2_divide_by_zero(double a, double b);
 
 /** Suspends the calling thread for [milliseconds]. */
 void ktc2_threadSleep(int64_t milliseconds);

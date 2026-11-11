@@ -1,0 +1,6 @@
+# The tests of the showcase, without anything to look at: they print what they find.
+# Plain Kotlin and the ktc2 package only, so the same sources also run on the JVM.
+#   ktc2 ktc2/examples/showcase/core --run
+name         = "showcase-core"
+sources      = ["src"]
+dependencies = ["../shapes"]

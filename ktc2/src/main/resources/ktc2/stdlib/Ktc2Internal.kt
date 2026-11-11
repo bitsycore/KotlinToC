@@ -255,5 +255,9 @@ public fun kotlin_internal_ir_dataClassArrayMemberHashCode(value: Any?): Int = w
 	else -> value?.hashCode() ?: 0
 }
 
+/** What is reached through coroutines, which are not there. */
+public fun throwNoCoroutines(): Nothing =
+	throw UnsupportedOperationException("coroutines are not supported: this is reached through sequence { } or iterator { }")
+
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()

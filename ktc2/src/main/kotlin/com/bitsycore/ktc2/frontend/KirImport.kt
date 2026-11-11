@@ -95,9 +95,14 @@ internal fun isStaticProperty(inProperty: IrProperty): Boolean {
 	return !vClass.isObject && inProperty.backingField?.isStatic == true
 }
 
-/** True for `fun main()` and `fun main(args: Array<String>)`. */
+/**
+ * True for the function the program starts with: `fun main()` or `fun main(args: Array<String>)`,
+ * or, when the module file names one (`main = "app.start"`), that function.
+ */
 internal fun isEntryPoint(inFunction: IrSimpleFunction): Boolean {
-	if (inFunction.name.asString() != "main" || inFunction.parent !is IrFile) return false
+	if (inFunction.parent !is IrFile) return false
+	val vNamed = System.getProperty("ktc2.main")
+	if (if (vNamed != null) inFunction.kotlinFqName.asString() != vNamed else inFunction.name.asString() != "main") return false
 	val vParams = inFunction.parameters
 	return vParams.isEmpty() || (vParams.size == 1 && vParams[0].type.classFqName?.asString() == "kotlin.Array")
 }
@@ -455,6 +460,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 					vClass.kotlinFqName.asString() == "kotlinx.cinterop.CValue" -> KArrayType(KPrimType(KPrim.BYTE))
 					isPointerClass(vClass) -> KPtrType
 					vClass.kotlinFqName.asString() == "kotlin.Enum" -> KClassType(enumBase())
+					// `Number` is what every number is when its kind is not known: an object, the number in its box.
+					vClass.kotlinFqName.asString() == "kotlin.Number" -> KObjType
 					vClass.isInterface -> KObjType
 					// A struct that may be null is held in its box: null needs a pointer.
 					isStruct(vClass) -> structFor(vClass)?.let { if (vType.isMarkedNullable()) KClassType(boxFor(it)) else KStructType(it) }

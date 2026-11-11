@@ -1,3 +1,10 @@
 # SDL3 for ktc2: the C API as package `sdl3`, and the Kotlin API of package `ktc.sdl3` on top.
-name  = "sdl3"
-files = ["SDL3.kt", "Window.kt", "Renderer.kt", "Draw.kt", "Input.kt", "Math.kt", "sdl3.def"]
+#
+# The sources of SDL3 are fetched from GitHub the first time (into ~/.ktc2/cache): the bindings
+# are made from their headers, and CMake builds the library from them unless it finds an SDL3
+# installed on the system. A program that depends on this module is therefore built with CMake.
+name         = "sdl3"
+files        = ["SDL3.kt", "Window.kt", "Renderer.kt", "Draw.kt", "Input.kt", "Math.kt", "sdl3.def"]
+fetch        = ["SDL3=https://github.com/libsdl-org/SDL.git@release-3.4.8"]
+compilerOpts = ["-I${SDL3}/include"]
+cmake        = "module.cmake"
