@@ -72,6 +72,8 @@ void ktc2_check_step(int64_t step)
 /* ================== */
 
 #ifdef KTC2_THREADS
+int ktc2_threaded = 0;
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -1179,6 +1181,7 @@ static DWORD WINAPI thread_main(LPVOID argument)
 
 int64_t ktc2_threadStart(ktc2_Obj* thread)
 {
+	ktc2_threaded = 1;
 	ktc2_retain(thread);
 	__atomic_fetch_add(&threads_running, 1, __ATOMIC_RELEASE);
 	HANDLE handle = CreateThread(NULL, 0, thread_main, thread, 0, NULL);
@@ -1203,6 +1206,7 @@ static void* thread_main(void* argument)
 int64_t ktc2_threadStart(ktc2_Obj* thread)
 {
 	pthread_t* handle = malloc(sizeof *handle);
+	ktc2_threaded = 1;
 	ktc2_retain(thread);
 	__atomic_fetch_add(&threads_running, 1, __ATOMIC_RELEASE);
 	if (!handle || pthread_create(handle, NULL, thread_main, thread) != 0) fail("java.lang.OutOfMemoryError", "unable to create native thread");

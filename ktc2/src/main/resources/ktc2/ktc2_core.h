@@ -24,18 +24,25 @@
  * A program that never starts a thread counts references with plain increments. One that
  * does is built with KTC2_THREADS: counts become atomic, and the state that belongs to one
  * thread (the exception in flight) becomes thread-local.
+ *
+ * Even then a count is atomic only where two threads can meet on it: not before the program
+ * starts its first thread, and never for an object in a frame, which no other thread reaches
+ * (an object handed to a thread is one that leaves its frame, so it is not built there).
  */
 #ifdef KTC2_THREADS
+/** Set by the first thread the program starts, before that thread exists. */
+extern int ktc2_threaded;
 #define KTC2_TLS _Thread_local
 #define KTC2_RC_LOAD(object) __atomic_load_n(&(object)->rc, __ATOMIC_RELAXED)
-#define KTC2_RC_INC(object) ((void)__atomic_fetch_add(&(object)->rc, 1, __ATOMIC_RELAXED))
-#define KTC2_RC_DEC(object) __atomic_sub_fetch(&(object)->rc, 1, __ATOMIC_ACQ_REL)
+#define KTC2_RC_ALONE(count) (!ktc2_threaded || ((count) & KTC2_STACK))
+#define KTC2_RC_INC(object, count) (KTC2_RC_ALONE(count) ? (void)(object)->rc++ : (void)__atomic_fetch_add(&(object)->rc, 1, __ATOMIC_RELAXED))
+#define KTC2_RC_DEC(object, count) (KTC2_RC_ALONE(count) ? --(object)->rc : __atomic_sub_fetch(&(object)->rc, 1, __ATOMIC_ACQ_REL))
 #define KTC2_STAT_INC(counter) ((void)__atomic_fetch_add(&(counter), 1, __ATOMIC_RELAXED))
 #else
 #define KTC2_TLS
 #define KTC2_RC_LOAD(object) ((object)->rc)
-#define KTC2_RC_INC(object) ((void)(object)->rc++)
-#define KTC2_RC_DEC(object) (--(object)->rc)
+#define KTC2_RC_INC(object, count) ((void)(object)->rc++)
+#define KTC2_RC_DEC(object, count) (--(object)->rc)
 #define KTC2_STAT_INC(counter) ((void)(counter)++)
 #endif
 
@@ -172,7 +179,10 @@ static inline void* ktc2_retain(void* pointer)
 {
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_retains);
-	if (object && KTC2_RC_LOAD(object) != KTC2_IMMORTAL) KTC2_RC_INC(object);
+	if (object) {
+		uint32_t count = KTC2_RC_LOAD(object);
+		if (count != KTC2_IMMORTAL) KTC2_RC_INC(object, count);
+	}
 	return pointer;
 }
 
@@ -181,7 +191,10 @@ static inline void ktc2_release(void* pointer)
 {
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_releases);
-	if (object && KTC2_RC_LOAD(object) != KTC2_IMMORTAL && (KTC2_RC_DEC(object) & KTC2_COUNT_MASK) == 0) ktc2_destroy(object);
+	if (object) {
+		uint32_t count = KTC2_RC_LOAD(object);
+		if (count != KTC2_IMMORTAL && (KTC2_RC_DEC(object, count) & KTC2_COUNT_MASK) == 0) ktc2_destroy(object);
+	}
 }
 
 /**
@@ -430,6 +443,26 @@ int32_t ktc2_arrayKind(ktc2_Obj* object);
 
 /** A zeroed array; fails on a negative length. */
 ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId);
+
+/** Bytes of elements a frame keeps for an array whose size is known only at run time. */
+#ifndef KTC2_STACK_ARRAY_BYTES
+#define KTC2_STACK_ARRAY_BYTES 256
+#endif
+
+/**
+ * An array that does not leave the block it is created in: [storage] (zeroed, in the caller's
+ * frame, with room for KTC2_STACK_ARRAY_BYTES of elements) when [length] elements fit there,
+ * otherwise a new array.
+ */
+static inline ktc2_Array* ktc2_array_local(ktc2_Array* storage, int32_t length, size_t elementSize, uint32_t typeId)
+{
+	if (length < 0 || (size_t)length * elementSize > KTC2_STACK_ARRAY_BYTES) return ktc2_array_new(length, elementSize, typeId);
+	storage->header.rc = KTC2_STACK | 1;
+	storage->header.typeId = typeId;
+	storage->length = length;
+	storage->elementSize = (int32_t)elementSize;
+	return storage;
+}
 
 /*
  * A failed check of the language. With KTC2_CHECKS_THROW these park the Kotlin exception and

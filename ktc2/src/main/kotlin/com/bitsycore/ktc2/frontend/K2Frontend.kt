@@ -35,6 +35,9 @@ private const val kLinkerOptsProperty = "ktc2.linkerOpts"
 /** Name of the file, in the output directory, that lists what a compilation produced. */
 const val kManifestName = "ktc2_build.txt"
 
+/** System property holding the `System.nanoTime()` at which the compiler was started. */
+private const val kStartProperty = "ktc2.startTime"
+
 // ==================
 // MARK: Driver
 // ==================
@@ -113,8 +116,16 @@ object K2Frontend {
 			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
 			add("-Xplugin=${pluginClasspath()}")
 		}
+		val vStart = System.nanoTime()
+		System.setProperty(kStartProperty, vStart.toString())
 		val vExit = K2JVMCompiler().exec(System.err, *vArgs.toTypedArray())
+		reportTime("total", vStart)
 		return vExit == ExitCode.OK && System.getProperty(kErrorCountProperty) == "0"
+	}
+
+	/** With `KTC2_TIMING` set, prints how long the step [inWhat] took since [inSince] (a `System.nanoTime()`). */
+	internal fun reportTime(inWhat: String, inSince: Long) {
+		if (System.getenv("KTC2_TIMING") != null) System.err.println("ktc2: time: $inWhat ${(System.nanoTime() - inSince) / 1_000_000} ms")
 	}
 
 	/**
@@ -182,7 +193,7 @@ object K2Frontend {
 	 * The library sources compiled with every program:
 	 * - files of the Kotlin standard library, unmodified, listed in `ktc2/stdlib/files.txt` and
 	 *   read from the directory named by the `ktc2.stdlibDir` system property (the unpacked
-	 *   kotlin-stdlib sources jar);
+	 *   kotlin-stdlib sources jar) or, without it, from the copies ktc2 is packaged with;
 	 * - ktc2's platform layer, the `.kt` resources under `ktc2/stdlib/`, copied to `<inOutDir>/stdlib`.
 	 */
 	private fun librarySources(inOutDir: File): List<File> {
@@ -199,6 +210,13 @@ object K2Frontend {
 				vResult += vCopy
 			} else if (vStdlibDir != null) {
 				File(vStdlibDir, vEntry).takeIf { it.isFile }?.let { vResult += it }
+			} else {
+				// The installed ktc2 carries the files it needs of the standard library sources.
+				val vBytes = K2Frontend::class.java.getResourceAsStream("/ktc2/kotlin-stdlib/$vEntry")?.use { it.readBytes() } ?: continue
+				val vCopy = File(inOutDir, "stdlib/$vEntry")
+				vCopy.parentFile.mkdirs()
+				if (!vCopy.isFile || !vCopy.readBytes().contentEquals(vBytes)) vCopy.writeBytes(vBytes)
+				vResult += vCopy
 			}
 		}
 		return vResult
@@ -252,6 +270,19 @@ class Ktc2Registrar : CompilerPluginRegistrar() {
 class Ktc2Extension : IrGenerationExtension {
 
 	override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
+		K2Frontend.reportTime("Kotlin front end", System.getProperty(kStartProperty).toLong())
+		val vStart = System.nanoTime()
+		try {
+			translate(moduleFragment, pluginContext)
+		} finally {
+			K2Frontend.reportTime("translation to C", vStart)
+			// The compiler would go on to produce JVM classes of the program and the library sources,
+			// which nobody wants: with no file left, it has nothing to produce.
+			moduleFragment.files.clear()
+		}
+	}
+
+	private fun translate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
 		val vOutDir = File(System.getProperty(kOutDirProperty))
 		if (System.getProperty(kDumpIrProperty) == "true") {
 			File(vOutDir, "ir.txt").writeText(moduleFragment.dump())

@@ -193,7 +193,9 @@ class EscapeAnalysis(private val mModule: KModule) {
 					val vLength = (inValue.length as? KConst)?.value as? Int
 					// The size limit is the compiler's caution; an array the program asked for is taken as it is.
 					val vUnfit = when {
-						vLength == null -> "its size is not a constant"
+						// A size known only when the program runs: the frame keeps room for a small one, a larger one goes to the heap.
+						vLength == null && inValue.forcedBy != null -> "its size is not a constant"
+						vLength == null -> null
 						vLength > kStackArrayLimit && inValue.forcedBy == null -> "it has more than $kStackArrayLimit elements"
 						else -> null
 					}

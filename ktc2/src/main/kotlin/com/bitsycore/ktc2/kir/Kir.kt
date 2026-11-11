@@ -355,7 +355,8 @@ class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type
 
 /**
  * Allocates a zeroed array of [length] elements. Not pure; the caller owns the result.
- * [onStack] is set by `EscapeAnalysis` for a small array of constant size that cannot outlive its block.
+ * [onStack] is set by `EscapeAnalysis` for an array that cannot outlive its block: a small one of
+ * constant size, or one whose size is known only at run time (it then goes to the heap when it is large).
  */
 class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr {
 	var onStack: Boolean = false

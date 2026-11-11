@@ -756,6 +756,10 @@ class CEmitter(private val mModule: KModule) {
 					val vElement = cType(inExpr.type.element)
 					val vStorage = "struct { ktc2_Array header; $vElement data[${maxOf(vLength, 1)}]; }"
 					"((ktc2_Array*)&($vStorage){ .header = { { KTC2_STACK | 1, ${arrayTypeId(inExpr.type.element)} }, $vLength, sizeof($vElement) } })"
+				} else if (inExpr.onStack) {
+					val vElement = cType(inExpr.type.element)
+					val vStorage = "struct { ktc2_Array header; $vElement data[KTC2_STACK_ARRAY_BYTES / sizeof($vElement)]; }"
+					"ktc2_array_local((ktc2_Array*)&($vStorage){ .header = { { 0, 0 }, 0, 0 } }, ${bare(expr(inExpr.length))}, sizeof($vElement), ${arrayTypeId(inExpr.type.element)})"
 				} else "ktc2_array_new(${bare(expr(inExpr.length))}, sizeof(${cType(inExpr.type.element)}), ${arrayTypeId(inExpr.type.element)})"
 			}
 			is KIntrinsic -> {

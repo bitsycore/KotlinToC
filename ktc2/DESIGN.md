@@ -801,6 +801,39 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **Variables changed by a `crossinline` lambda** live in a shared cell when that lambda ends
   up inside a closure of the inline function; before, the closure changed a copy.
 - **An uncaught exception in a thread** is reported on stderr and ends that thread only.
+- **Modules and building.** A directory with a `module.ktc2.toml` (name, sources,
+  dependencies, compilerOpts, linkerOpts) is a module; a dependency is a path to another
+  module or the name of one shipped with ktc2 (`sdl3`). `ktc2 <module> --build` compiles the
+  generated C with the options the bindings ask for, `--run` runs the program (arguments after
+  `--`), `--debug` builds without optimization and with the leak report. The installed ktc2
+  carries the standard library sources it needs, so it runs without the Gradle project.
+- **v1's plain-Kotlin tests** (`integration/v1/`, 36 programs, adjusted by
+  `tools/port_v1.py`) run under the JVM oracle. What they found and what was added:
+  `tailrec` (the function becomes a loop: parameters are variables, `return f(args)` assigns
+  them and goes round again; a tail call inside a `try` or an expanded inline function stays
+  a call), vararg spread (`f(1, *more, 2)`) and a `vararg` given nothing, `x as? Int`,
+  `fun main(args: Array<String>)`, `enumValues<T>()` / `enumValueOf<T>()`, calling a function
+  reference held in a variable (`val f = ::add; f(1, 2)`), `minOf` / `maxOf`. The eight v1
+  tests written in v1's own dialect (`Heap`, `dispose`, `@SimpleUnion`, rune functions) stay
+  with v1, as do its `stdlib` tests, which are written against v1's library.
+- **Arrays of run-time size in the frame** (`values/StackArrays.kt`). `IntArray(n)` that does
+  not leave its block no longer goes to the heap because `n` is not a constant: the frame
+  keeps `KTC2_STACK_ARRAY_BYTES` (256) bytes of elements for it and `ktc2_array_local` uses
+  them when the array fits, the heap otherwise. The storage belongs to the block, so a loop
+  reuses it each round. `@Size` / `@Value` on such an array is still refused: those promise
+  the stack, and a size known only at run time cannot.
+- **Atomic counts only where two threads can meet.** In a program that starts threads,
+  counts were atomic from the first instruction and for every object. They are now plain until
+  the first thread is started (`ktc2_threaded`), and always plain for an object in a frame: an
+  object a thread can reach is one that left its frame, and escape analysis keeps those on
+  the heap.
+- **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
+  and of the library sources after the translation to C; it is now left with nothing to
+  produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small
+  program compiles in about 11 s instead of 20 s. Nearly all of it is the Kotlin front end
+  reading the library sources (`KTC2_TIMING=1` prints the split); generating the bindings of
+  a `.def` file takes a fraction of a second, so nothing is cached there. The step that would
+  change the order of magnitude is a compiler kept running between compilations.
 
 Known gaps: initialization on first use is not synchronized between threads; `isDaemon`,
 thread names and priorities are ignored.
