@@ -208,6 +208,13 @@ class KFunction(
 	 */
 	var dispatch: MutableList<Pair<KClass, KFunction>>? = null
 	var dispatchDefault: KFunction? = null
+
+	/**
+	 * Set by `ArcInsert` on the `__m` form of a dispatcher (see `BorrowedReturns`): the result of
+	 * [dispatchDefault] is owned, and is also stored through the last parameter, the address of
+	 * the variable of the caller that is to release it.
+	 */
+	var keepsDefault = false
 }
 
 class KLocal(val cName: String, val type: KType)

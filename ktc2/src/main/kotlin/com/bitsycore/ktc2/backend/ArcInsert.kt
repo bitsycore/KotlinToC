@@ -43,23 +43,30 @@ class ArcInsert(private val mModule: KModule) {
 				if (vFunction.isExternal || vFunction.dispatch != null) continue
 				val vOriginal = vFunction.body.toList()
 				if (vReturns.of(vFunction) != null) vOriginals[vFunction] = vOriginal
-				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null).block(vOriginal, Scope(null))
+				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null, null).block(vOriginal, Scope(null))
 				vFunction.body.clear()
 				vFunction.body += vBody
 			}
 		}
 		// The borrowed forms that were asked for; building one may ask for others.
 		while (vReturns.pending.isNotEmpty()) {
-			val (vVariant, vFunction) = vReturns.pending.removeLast()
-			val vDispatch = vFunction.dispatch
-			if (vDispatch != null) {
-				fun borrowed(inTarget: KFunction): KFunction = if (inTarget.returnType is KRefType && inTarget.returnType != KNothingType) vReturns.variant(inTarget) else inTarget
-				vVariant.dispatch = vDispatch.mapTo(ArrayList()) { (vClass, vTarget) -> vClass to borrowed(vTarget) }
-				vVariant.dispatchDefault = vFunction.dispatchDefault?.let { borrowed(it) }
+			val vPending = vReturns.pending.removeLast()
+			val vFunction = vPending.function
+			val vInfo = vReturns.of(vFunction)!!
+			if (vFunction.dispatch != null) {
+				// The implementations whose result is borrowed, each in its own borrowed form (one that only throws has none).
+				vPending.form.dispatch = vInfo.borrowedTargets.mapTo(ArrayList()) { (vClass, vTarget) ->
+					vClass to if (vReturns.of(vTarget) != null) vReturns.form(vTarget) else vTarget
+				}
+				if (vInfo.isMixed) {
+					// The others go through the ordinary dispatcher, and their result into the caller's variable.
+					vPending.form.dispatchDefault = vFunction
+					vPending.form.keepsDefault = true
+				}
 			} else {
 				val vOriginal = vOriginals.getValue(vFunction)
-				val vInfo = vReturns.of(vFunction)!!
-				vVariant.body += FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, vInfo).block(vOriginal, Scope(null))
+				vPending.form.body += FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, vInfo, vPending.keep)
+					.block(vOriginal, Scope(null))
 			}
 		}
 	}
@@ -149,6 +156,8 @@ class ArcInsert(private val mModule: KModule) {
 		private val mReturns: BorrowedReturns,
 		/** Set when the borrowed form of a function is being built: what it returns is not counted. */
 		private val mBorrowedForm: BorrowedReturns.Info?,
+		/** In a `__m` form: the parameter holding the address of the caller's variable for an owned result. */
+		private val mKeep: KLocal?,
 	) {
 		/** The statements that run after the one being translated, in its block (for a loop: to the end of the iteration). */
 		private var mRest: List<KStmt> = emptyList()
@@ -177,7 +186,7 @@ class ArcInsert(private val mModule: KModule) {
 		 */
 		private fun stays(inValue: KExpr, inWritten: Lazy<Effects.Summary>, inIsHeld: (KExpr) -> Boolean): Boolean = when (inValue) {
 			is KRefCast -> stays(inValue.operand, inWritten, inIsHeld)
-			is KFieldRead -> !inValue.field.isInline && inValue.field.weakType == null && !inValue.needsCopy &&
+			is KFieldRead -> BorrowedReturns.isPlainField(inValue) &&
 				(inValue.field.isImmutable || !inWritten.value.writesField(inValue.field)) && stays(inValue.target, inWritten, inIsHeld)
 			is KIndexRead -> !inWritten.value.writesElements() && stays(inValue.array, inWritten, inIsHeld)
 			is KGlobalRead -> !inWritten.value.writesGlobal(inValue.global)
@@ -413,22 +422,37 @@ class ArcInsert(private val mModule: KModule) {
 		 */
 		private fun borrowedCall(inLocal: KLocal, inValue: KExpr): KExpr? {
 			val vCall = BorrowedReturns.callOf(inValue) ?: return null
-			val vInfo = mReturns.of(vCall.function) ?: return null
+			val vInfo = mReturns.of(vCall.function)
+			if (vInfo == null) {
+				if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: its result is its own")
+				return null
+			}
 			// In the borrowed form of a function, the calls its result comes from were checked when it qualified.
 			if (mBorrowedForm?.callLocals?.get(inLocal) !== vCall.function) {
 				val vRest = mEffects.of(mRest)
 				if (vInfo.place.isWrittenBy(vRest)) {
 					if (System.getenv("KTC2_DEBUG_BORROW") != null) {
-						System.err.println("ktc2: borrow: result of ${vCall.function.cName} in ${inLocal.cName}: the rest of the block writes all=${vRest.all} elements=${vRest.elements && vInfo.place.elements} fields=${vInfo.place.fields.intersect(vRest.fields)}")
+						System.err.println("ktc2: borrow: result of ${vCall.function.cName} in ${inLocal.cName}: the rest of the block writes all=${vRest.all} elements=${vRest.elements && vInfo.place.elements} fields=${vInfo.place.fields.filter { vRest.writesField(it) }.map { it.cName }}")
 					}
 					return null
 				}
 				val vIsHeld = { vBase: KExpr -> (vBase is KRead && isSteady(vBase.local)) || vBase is KStaticRead || vBase is KStringLit || vBase is KNull }
-				if (!vCall.arguments.all { !isRef(it.type) || stays(it, lazyOf(vRest), vIsHeld) }) return null
+				if (!vCall.arguments.all { !isRef(it.type) || stays(it, lazyOf(vRest), vIsHeld) }) {
+					if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: an argument may not stay")
+					return null
+				}
+				if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: borrowed")
+			}
+			// A mixed result may be an object of its own: it then also goes into a variable that owns it,
+			// this function's (declared empty, released with the block) or, in a `__m` form, the caller's.
+			val vKeep: KExpr? = when {
+				!vInfo.isMixed -> null
+				mBorrowedForm?.callLocals?.get(inLocal) === vCall.function -> KRead(mKeep!!)
+				else -> KIntrinsic("ktc2_address", listOf(KRead(own(KObjType))), KPtrType).also { it.template = "&$0" }
 			}
 			fun rebuilt(inExpr: KExpr): KExpr = when (inExpr) {
 				is KRefCast -> KRefCast(rebuilt(inExpr.operand), inExpr.type)
-				else -> KCall(mReturns.variant(vCall.function), vCall.arguments)
+				else -> KCall(mReturns.form(vCall.function), vCall.arguments + listOfNotNull(vKeep))
 			}
 			return rebuilt(inValue)
 		}

@@ -844,9 +844,12 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   the rest of the block can overwrite that place; and an argument read from such a place is
   passed without a temporary when the function called cannot overwrite it. "Cannot" comes
   from `Effects`, a whole-program summary of what each function may write, the functions it
-  calls included: fields by name, array elements as one, top-level properties one by one.
-  C written by the program and calls through C pointers may write anything, as does printing
-  an object (its `toString` is the program's code). Over the test programs this removes half
+  calls included: each field of each class, the elements of arrays of references as one,
+  top-level properties one by one. C written by the program and calls through C pointers may
+  write anything. So may starting or joining a thread and entering or leaving a monitor:
+  another thread's writes come through there, so nothing is borrowed across them
+  (`objects/ThreadBorrowing.kt`). A field of a class that is stored inline somewhere is never
+  borrowed from: assigning to that storage overwrites the whole object. Over the test programs this removes half
   of the retains (32,900 to 16,400, the thread stress test left aside: its 400,000 are a list
   handing out each element with a count; see the next entry). What still counts: storing into
   a field or an array, and a returned reference the caller cannot borrow. `tools/retain_profile.sh` lists
@@ -859,14 +862,21 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   count. A function qualifies when everything it returns is read from a place reached from
   its parameters, or is the result of a qualifying function called with such arguments, and
   it does not itself write those places; a virtual dispatcher qualifies when every
-  implementation behind it in the program does. The caller uses the borrowed form where the
+  implementation behind it in the program does. When only some do — one list computes its
+  elements, one iterator returns boxed numbers — the dispatcher's form is `name__m`: it takes
+  the address of a variable of the caller, borrows where the implementation allows it, and
+  otherwise puts the owned result in that variable as well, which the caller releases with
+  the block (a release of nothing on the borrowed path). A function whose result comes from
+  such a call passes the address on. The caller uses the borrowed form where the
   result goes into a local that is never reassigned and nothing in the rest of that local's
   block can overwrite the places the result may have come from; otherwise it calls the
   ordinary form as before. Forms are generated only when some caller asks for one. A loop
   that reads the elements of a list (50 elements, 2000 rounds, four threads) went from
-  400,000 retains to none. Across the test programs the gain is small (16,400 to 16,200):
-  their loops print objects or change collections, and either makes the caller keep the
-  count. `KTC2_DEBUG_BORROW=1` prints why a function does not qualify or a caller does not
+  400,000 retains to none. Across the test programs the gain is small (16,400 to 15,500).
+  Measured over five of the larger ones, of 729 calls whose result goes into a local, 172
+  borrow; 450 return an object of their own (`toString`, `iterator()`, `substring`); 62 pass
+  an argument that is itself a temporary; 45 are followed by a write to an array of
+  references (a loop that adds to a list), which is where telling arrays apart would help. `KTC2_DEBUG_BORROW=1` prints why a function does not qualify or a caller does not
   borrow.
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
@@ -876,7 +886,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   a `.def` file takes a fraction of a second, so nothing is cached there. The step that would
   change the order of magnitude is a compiler kept running between compilations.
 
-Known gaps: `isDaemon`, thread names and priorities are ignored. In a string template the
+Known gaps: `Any()` cannot be constructed (use any other object as a lock); `isDaemon`, thread names and priorities are ignored. In a string template the
 `toString` of each object runs as the template is built, left to right; the JVM first evaluates
 every part and then calls them, which shows when a `toString` changes what a later part reads.
 

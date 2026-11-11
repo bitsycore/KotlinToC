@@ -7,8 +7,8 @@ import com.bitsycore.ktc2.kir.*
  * `ArcInsert` asks it whether a reference read from such a place stays there for the length
  * of a call or of a block, in which case the reader may borrow it instead of taking a count.
  *
- * Fields are told apart by name only (a write to `next` of any class counts for every `next`),
- * elements of arrays of references not at all: the answer errs towards "written".
+ * A field is the field of its class (a write to `next` of one class says nothing of another's);
+ * elements of arrays of references are not told apart at all: the answer errs towards "written".
  */
 class Effects(inModule: KModule) {
 
@@ -16,10 +16,10 @@ class Effects(inModule: KModule) {
 	class Summary {
 		var all = false
 		var elements = false
-		val fields = HashSet<String>()
+		val fields = HashSet<KField>()
 		val globals = HashSet<KGlobal>()
 
-		fun writesField(inField: KField): Boolean = all || inField.cName in fields
+		fun writesField(inField: KField): Boolean = all || inField in fields
 		fun writesElements(): Boolean = all || elements
 		fun writesGlobal(inGlobal: KGlobal): Boolean = all || inGlobal in globals
 
@@ -75,9 +75,14 @@ class Effects(inModule: KModule) {
 		return vSummary
 	}
 
-	/** A function without a body here: the runtime's own write no field of the program, anything else might do anything. */
+	/**
+	 * A function without a body here. The runtime's own write nothing a reference is borrowed
+	 * from — except that starting or joining a thread, and entering or leaving a monitor, let
+	 * another thread's writes through: what was read before may be gone after. Anything else
+	 * (C called by the program) might do anything.
+	 */
 	private fun opaque(inFunction: KFunction): Summary = Summary().also {
-		if (inFunction.cName.startsWith("ktc2_")) it.elements = true else it.all = true
+		if (!inFunction.cName.startsWith("ktc2_") || inFunction.cName in kOtherThreads) it.all = true
 	}
 
 	private fun own(inFunction: KFunction, outCallees: MutableSet<KFunction>): Summary {
@@ -95,7 +100,8 @@ class Effects(inModule: KModule) {
 	private fun scan(inBlock: List<KStmt>, outSummary: Summary, outCallees: MutableSet<KFunction>) {
 		inBlock.anyStatement { vStatement ->
 			when (vStatement) {
-				is KFieldSet -> outSummary.fields += vStatement.field.cName
+				// Assigning to inline storage copies a whole object over the one that is there.
+				is KFieldSet -> if (vStatement.field.isInline) outSummary.all = true else outSummary.fields += vStatement.field
 				// Only an array of references can hold what a borrowed reference depends on.
 				is KIndexSet -> if (vStatement.value.type.isCounted()) outSummary.elements = true
 				is KGlobalSet -> outSummary.globals += vStatement.global
@@ -123,6 +129,9 @@ class Effects(inModule: KModule) {
 	}
 
 	private companion object {
+		/** Runtime functions after which another thread may have changed anything. */
+		val kOtherThreads = setOf("ktc2_threadStart", "ktc2_threadJoin", "ktc2_monitorEnter", "ktc2_monitorExit")
+
 		/** Runtime helpers that are impure (they allocate, or deal with the exception in flight) but store into no array. */
 		val kHarmless = listOf("ktc2_box_", "ktc2_unbox_", "ktc2_throw", "ktc2_take_pending", "ktc2_slot_take", "ktc2_fail_")
 	}

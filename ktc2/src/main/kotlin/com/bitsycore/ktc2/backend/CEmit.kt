@@ -450,6 +450,14 @@ class CEmitter(private val mModule: KModule) {
 				mState.includes += vClass.unit
 				line(1, "case ${typeId(vClass)}: ${call(vTarget)}")
 			}
+			if (inFunction.keepsDefault) {
+				val vDefault = inFunction.dispatchDefault!!
+				val vKeep = inFunction.params.last().cName
+				val vArguments = inFunction.params.dropLast(1).joinToString(", ") { it.cName }
+				line(1, "default: { ${cType(inFunction.returnType)} result = ${vDefault.cName}($vArguments); *(ktc2_Obj**)$vKeep = (ktc2_Obj*)result; return result; }")
+				line(1, "}")
+				return
+			}
 			line(1, "default: ${inFunction.dispatchDefault?.let { call(it) } ?: "ktc2_fail_dispatch_of(\"${inFunction.cName}\", ${vSelf} ? ((ktc2_Obj*)${vSelf})->typeId : 0);"}")
 			line(1, "}")
 		}
