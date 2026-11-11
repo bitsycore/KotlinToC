@@ -1,64 +1,31 @@
+### Gradle ###
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
+/gradle/gradle-daemon-jvm.properties
+/local.properties
 
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-*.iws
-*.iml
-*.ipr
+### ktc2 output ###
+# What ktc2 writes when no module says where: ./out. A module's output is its build/ directory.
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
+*.exe
 
 ### Kotlin ###
 .kotlin
 
-### Eclipse ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-### VS Code ###
+### Editors ###
+.idea/
+*.iws
+*.iml
+*.ipr
 .vscode/
 
-### Mac OS ###
+### Systems ###
 .DS_Store
-
-### KtC test output ###
-/tests/**/out/
-
-
-.idea/
-
-**/output/
-ktc_std.c
-ktc_std.h
-*.exe
-
-/.idea/
-/test_out/
-/gradle/gradle-daemon-jvm.properties
-/local.properties
 
 ### Python ###
 __pycache__/

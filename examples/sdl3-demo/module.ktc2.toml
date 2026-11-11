@@ -1,0 +1,5 @@
+# Opens a window and draws for a second.
+#   ktc2 examples/sdl3-demo --run
+# SDL3 comes with the sdl3 module: fetched from GitHub and built by CMake the first time.
+name         = "sdl3-demo"
+dependencies = ["sdl3"]

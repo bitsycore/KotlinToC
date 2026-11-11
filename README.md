@@ -1,144 +1,104 @@
-# Kotlin.toC()
+# ktc2 — Kotlin to C
 
-Proof of concept
-Rules and internal working will change often until a stable plan is made
-
-Write Kotlin, get C11. No runtime, no GC, no dependencies beyond the C standard library.
-
-KTC is a source-to-source transpiler targeting **embedded, game, and systems** use cases
-where you want Kotlin's ergonomics but C's performance and portability.
-
----
-
-## Quick Start
-
-```bash
-./gradlew jar
-java -jar build/libs/KotlinToC-1.0-SNAPSHOT.jar myfile.kt
-cc -std=c11 -o myfile ktc_intrinsic.c myfile.c
-./myfile
-```
-
-Or with multiple files and an output directory:
-
-```bash
-java -jar KotlinToC.jar GameEngine.kt Physics.kt -o out/
-cc -std=c11 -o game out/ktc_intrinsic.c out/GameEngine.c out/Physics.c
-```
-
----
-
-## What it looks like
+ktc2 translates Kotlin to C11. The Kotlin is real Kotlin: the front end is the Kotlin compiler
+itself (K2), and a program behaves as it does on the JVM. The C has no garbage collector:
+objects are reference counted, and the compiler keeps them out of the heap where it can — in
+the frame, inside their owner, in an arena.
 
 ```kotlin
-package game
-
-data class Vec2(val x: Float, val y: Float) {
-    fun dot(other: Vec2): Float = x * other.x + y * other.y
-}
+data class Point(val x: Int, val y: Int)
 
 fun main() {
-    val a = Vec2(1.0f, 0.0f)
-    val b = Vec2(0.0f, 1.0f)
-    println("dot = ${a.dot(b)}")   // → dot = 0.0
+	val points = (1..5).map { Point(it, it * it) }
+	println(points.filter { it.y > 4 }.sumOf { it.x })
 }
 ```
-
-Generated C (simplified):
-
-```c
-typedef struct {
-    ktc_Int __type_id;
-    ktc_Float x;
-    ktc_Float y;
-} game_Vec2;
-
-ktc_Float game_Vec2_dot(game_Vec2* $self, game_Vec2 other) {
-    return ($self->x * other.x) + ($self->y * other.y);
-}
-
-int main(void) {
-    game_Vec2 a = game_Vec2_primaryConstructor(1.0f, 0.0f);
-    game_Vec2 b = game_Vec2_primaryConstructor(0.0f, 1.0f);
-    ktc_Float $t0 = game_Vec2_dot(&a, b);
-    printf("dot = %g\n", $t0);
-    return 0;
-}
-```
-
----
-
-## Features
-
-**Types and memory**
-- All types are **by value** on the stack by default — no hidden allocations
-- `Ref<T>` for reference/pointer semantics; `Ref<T?>` for nullable references (NULL)
-- `T?` value-nullable via `ktc_T$Optional { tag, value }` struct
-- Heap allocation via `T(args).allocWith(Heap)` (explicit, allocator-based, no GC)
-
-**Classes and interfaces**
-- `class`, `data class`, `object`, `companion object`, `enum class`
-- Interfaces with vtable dispatch (fat pointer: `{ void* obj, const vtable* vt }`)
-- Generics via **monomorphization** — each `Box<Int>` / `Box<String>` is a distinct C type
-- `private` fields get `PRIV_` prefix enforced by the C compiler
-
-**Functions**
-- Extension functions, operator overloading, `vararg`
-- Default parameter values (filled at call site)
-- `inline fun` with lambda arguments — expanded at call site, zero overhead
-- Function references `::fun` → raw C function pointer
-
-**Control flow**
-- `if`/`else`, `when`, `for`/`while`/`do-while`, `break`/`continue`
-- `defer { }` — RAII-style LIFO cleanup blocks
-- Smart casts on `val` after null check or `is` check
-
-**Arrays**
-- `IntArray`, `Array<T>`, `@Size(N) Array<T>`, `Ref<Array<T>>` — see [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md)
-- `Pair<A,B>`, `Triple<A,B,C>` as intrinsic stack structs
-
-**Stdlib** (`package ktc.std`)
-- `ArrayList<T>`, `HashMap<K,V>`, `List<T>`, `MutableList<T>`, `Map<K,V>`, `MutableMap<K,V>`
-- `Sha256`, `Random`, `error()`, `TODO()`
-
-**C interop**
-- `c.printf(...)`, `c.memcpy(...)`, `c.malloc(...)` — direct C function calls
-- String literals passed as raw C strings in interop calls
-
----
-
-## CLI Flags
-
-```
-java -jar KotlinToC.jar <file.kt...> [-o <dir>] [--mem-track] [--ast] [--dump-semantics]
-```
-
-| Flag | Effect |
-|---|---|
-| `-o <dir>` | Output directory for `.c`/`.h` files (default: `.`) |
-| `--mem-track` | Track allocations and report leaks at exit |
-| `--ast` | Print parsed AST then exit |
-| `--dump-semantics` | Print symbol tables and resolved types then exit |
-
----
-
-## Documentation
-
-| Document | Contents |
-|---|---|
-| [KOTLIN_TO_C.md](docs/KOTLIN_TO_C.md) | Full language reference: every supported feature with Kotlin → C examples and known limitations |
-| [TRANSPILER.md](docs/TRANSPILER.md) | Transpiler internals: architecture, type system, how to add features, evolution rules |
-| [AGENTS.md](AGENTS.md) | How to write unit and integration tests, contributor conventions |
-
----
-
-## Building
 
 ```bash
-./gradlew jar        # fat JAR in build/libs/
-./gradlew test       # 577 unit tests
-./run_tests.sh       # unit + integration tests (Unix)
-.\run_tests.ps1      # unit + integration tests (Windows)
+./gradlew installDist
 ```
 
-Requires JDK 21+ and a C11 compiler (GCC, Clang, or MSVC) on PATH.
+```bash
+build/install/ktc2/bin/ktc2 hello.kt --run
+```
+
+## What it takes
+
+- **The language**: classes, inheritance, interfaces, generics, lambdas and closures, data and
+  enum classes, sealed types, objects, inner classes, extensions, operators, properties and
+  delegation, exceptions, string templates, inline functions, `tailrec`, the features of
+  Kotlin 2.5. Not coroutines, and no reflection.
+- **The standard library**, compiled from the sources of the real one: collections, sequences,
+  strings and `Char` with Unicode, `Regex`, ranges, `kotlin.math`, `kotlin.time`, `Random`,
+  `Result`, `lazy` and the other delegates.
+- **No JDK**: as in Kotlin/Native, nothing of `java.*`.
+
+## What it adds, in the `ktc2.` package
+
+Every addition is an annotation or a type that changes where things are stored and what they
+cost, never what the program does: each has a plain definition for the JVM, so the same source
+also runs there.
+
+| | |
+|---|---|
+| `@Struct` | a class held by value, like a number |
+| `@Value`, `@Size(n)` | an object or an array stored inside its owner, or kept in the frame |
+| `ValueArray<T>` | an array that holds its elements in place |
+| `arena(size) { }` | what a block allocates is given back in one go |
+| `@Weak`, `WeakRef<T>` | references that do not keep their target alive, to break cycles |
+| `ktc2.concurrent` | `thread { }`, `synchronized(lock) { }`, `sleep(ms)` |
+
+## C libraries
+
+C is called the way Kotlin/Native calls it: a `.def` file names the headers, ktc2 generates
+the bindings (functions, structs, enums, constants, callbacks), and the program uses them
+through `kotlinx.cinterop`. `import platform.posix.*` gives the C library.
+
+## Programs made of modules
+
+A directory with a `module.ktc2.toml` is a module:
+
+```toml
+name         = "game"
+executable   = "game"
+main         = "game.start"
+sources      = ["src"]
+dependencies = ["sdl3", "../engine", "https://github.com/user/repo.git#modules/ui@v1.2"]
+```
+
+A dependency is a module shipped with ktc2 (`sdl3`), a directory, or a place in a git
+repository. Every compilation writes a `CMakeLists.txt` next to the generated C, and a module
+can bring a CMake file of its own: the `sdl3` module fetches SDL3 from GitHub and builds it,
+so nothing has to be installed.
+
+```bash
+build/install/ktc2/bin/ktc2 examples/showcase --run
+```
+
+That opens the showcase: a window with a button for each group of its tests. `-- --headless`
+prints them instead.
+
+```
+ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
+  -o <dir>        where the output goes (default: <module>/build, or ./out)
+  --build         also compile the C into a program (KTC2_CC names the compiler)
+  --cmake         build with CMake (always so when a module has a CMake file)
+  --run           build, then run the program
+  --debug         no optimization, debug information, and a report of what was left allocated
+  --warn-heap     list every allocation left on the heap, with the reason
+```
+
+## Compilers and systems
+
+The generated C is C11. It is built and run on Windows with gcc, clang and MSVC. Linux and
+macOS are written for and not yet tried; Android is not there yet.
+
+## Working on ktc2
+
+```bash
+./gradlew test
+```
+
+runs every program under `integration/` twice — as C, compiled with `-Wall -Werror` and
+checked for leaks, and on the JVM — and compares what they print. `DESIGN.md` is the design
+and the record of what was built; `CLAUDE.md` is the short map of the code.
