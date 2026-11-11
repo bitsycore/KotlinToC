@@ -112,6 +112,7 @@ commonMain/kotlin/internal/throwNoWhenBranchMatchedException.kt
 Ktc2KotlinInternal.kt
 Ktc2Thread.kt
 Ktc2JavaLang.kt
+jvmMain/kotlin/system/Timing.kt
 Ktc2Concurrent.kt
 Ktc2Synchronized.kt
 Ktc2CinteropInternal.kt

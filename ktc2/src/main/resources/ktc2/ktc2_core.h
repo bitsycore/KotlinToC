@@ -280,12 +280,31 @@ int64_t ktc2_threadStart(ktc2_Obj* thread);
 /** Waits for the thread behind [handle] to end and gives the handle up. */
 void ktc2_threadJoin(int64_t handle);
 
+/** The time of day in nanoseconds since 1970 (`System.currentTimeMillis`, `System.nanoTime`). */
+int64_t ktc2_timeNanos(void);
+
+/** Suspends the calling thread for [milliseconds]. */
+void ktc2_threadSleep(int64_t milliseconds);
+
 /**
  * `synchronized`: a recursive monitor per object, kept in a table of the runtime for as long
  * as the object is locked. It needs no room in the object.
  */
 void ktc2_monitorEnter(ktc2_Obj* lock);
 void ktc2_monitorExit(ktc2_Obj* lock);
+
+/**
+ * Around the first use of an object or an enum class: one thread initializes, a thread that
+ * arrives meanwhile waits until it has finished. The lock is recursive, an initializer may
+ * use other objects. Nothing to do in a program without threads.
+ */
+#ifdef KTC2_THREADS
+void ktc2_initEnter(void);
+void ktc2_initExit(void);
+#else
+#define ktc2_initEnter() ((void)0)
+#define ktc2_initExit() ((void)0)
+#endif
 
 /* ================== */
 /* MARK: Weak         */

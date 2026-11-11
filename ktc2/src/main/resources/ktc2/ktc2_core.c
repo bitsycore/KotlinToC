@@ -4,6 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 /* ================== */
 /* MARK: Failures     */
@@ -1222,6 +1228,52 @@ void ktc2_threadJoin(int64_t handle)
 
 #endif
 
+#endif
+
+/* The clock, in nanoseconds since 1970. */
+int64_t ktc2_timeNanos(void)
+{
+#if defined(_WIN32)
+	/* Windows counts 100 ns steps from 1601. */
+	FILETIME now;
+	GetSystemTimeAsFileTime(&now);
+	int64_t steps = (int64_t)(((uint64_t)now.dwHighDateTime << 32) | now.dwLowDateTime);
+	return (steps - INT64_C(116444736000000000)) * 100;
+#elif defined(TIME_UTC)
+	struct timespec now;
+	timespec_get(&now, TIME_UTC);
+	return (int64_t)now.tv_sec * INT64_C(1000000000) + now.tv_nsec;
+#else
+	return (int64_t)time(NULL) * INT64_C(1000000000);
+#endif
+}
+
+/* `Thread.sleep`, which a program without threads may call too. */
+#ifdef _WIN32
+
+void ktc2_threadSleep(int64_t milliseconds)
+{
+	if (milliseconds > 0) Sleep((unsigned long)milliseconds);
+}
+
+#else
+
+/* Declared here: <time.h> shows it only when asked for POSIX, which -std=c11 does not do. */
+int nanosleep(const struct timespec* wanted, struct timespec* remaining);
+
+void ktc2_threadSleep(int64_t milliseconds)
+{
+	if (milliseconds <= 0) return;
+	struct timespec wanted = { (time_t)(milliseconds / 1000), (long)(milliseconds % 1000) * 1000000L };
+	struct timespec remaining;
+	/* An interrupted sleep goes on with what is left. */
+	while (nanosleep(&wanted, &remaining) != 0) wanted = remaining;
+}
+
+#endif
+
+#ifdef KTC2_THREADS
+
 /*
  * `synchronized(object)`: a monitor per object, kept in a table while the object is locked or
  * waited for. An object that is never locked has no entry and pays nothing; the lock is
@@ -1309,6 +1361,19 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 		}
 	}
 	monitor_unlock();
+}
+
+/* The monitor of an object nobody else can name is the lock of first-use initialization. */
+static ktc2_Obj init_lock = { KTC2_IMMORTAL, 0 };
+
+void ktc2_initEnter(void)
+{
+	ktc2_monitorEnter(&init_lock);
+}
+
+void ktc2_initExit(void)
+{
+	ktc2_monitorExit(&init_lock);
 }
 
 #else

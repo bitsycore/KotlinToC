@@ -827,6 +827,15 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   the first thread is started (`ktc2_threaded`), and always plain for an object in a frame: an
   object a thread can reach is one that left its frame, and escape analysis keeps those on
   the heap.
+- **First use from several threads** (`objects/ThreadInitialization.kt`). One thread runs the
+  initializer of an object or enum class; a thread that arrives meanwhile waits until it has
+  finished, instead of seeing the object half built. The initializing thread itself may come
+  back to the object, as before. One recursive lock serves all initializers
+  (`ktc2_initEnter` / `ktc2_initExit`); it is taken only until the object is marked done, and
+  not at all in a program without threads.
+- **The clock** (`objects/Sleep.kt`): `Thread.sleep`, `System.currentTimeMillis`,
+  `System.nanoTime`, and with them `measureTimeMillis` / `measureNanoTime` from the library
+  sources. `nanoTime` follows the clock of the day; it is not a monotonic counter.
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small
@@ -835,8 +844,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   a `.def` file takes a fraction of a second, so nothing is cached there. The step that would
   change the order of magnitude is a compiler kept running between compilations.
 
-Known gaps: initialization on first use is not synchronized between threads; `isDaemon`,
-thread names and priorities are ignored.
+Known gaps: `isDaemon`, thread names and priorities are ignored.
 
 `@Value` on array elements (`Array<@Value Particle>`) is **not** going to be done as planned.
 An annotation does not change the Kotlin type, so such an array could be passed wherever an

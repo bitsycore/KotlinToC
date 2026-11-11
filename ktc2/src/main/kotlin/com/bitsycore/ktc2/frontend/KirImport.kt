@@ -1002,11 +1002,23 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vBoolean = KPrimType(KPrim.BOOLEAN)
 		val vFlag = KGlobal("${inClass.cName}_ready", vBoolean, inUnit)
 		inUnit.globals += vFlag
+		val vDone = KGlobal("${inClass.cName}_done", vBoolean, inUnit)
+		inUnit.globals += vDone
 		val vFunction = KFunction("${inClass.cName}_ensure", inUnit, emptyList(), KUnitType)
-		// The flag is set first: an initializer that comes back to its own object finds it as far as it got.
-		vFunction.body += KIf(
+		// `ready` is set first: an initializer that comes back to its own object finds it as far as it got.
+		// Another thread does not: it waits for the lock, which the initializing thread holds until it is done.
+		val vInitialize = KIf(
 			KUnary(KUnaryOp.NOT, KGlobalRead(vFlag), vBoolean),
-			listOf(KGlobalSet(vFlag, KConst(true, vBoolean)), KEval(KCall(inInitializer, emptyList()))),
+			listOf(KGlobalSet(vFlag, KConst(true, vBoolean)), KEval(KCall(inInitializer, emptyList())), KGlobalSet(vDone, KConst(true, vBoolean))),
+			emptyList(),
+		)
+		vFunction.body += KIf(
+			KUnary(KUnaryOp.NOT, KGlobalRead(vDone), vBoolean),
+			listOf(
+				KEval(KIntrinsic("ktc2_initEnter", emptyList(), KUnitType, isPure = false)),
+				vInitialize,
+				KEval(KIntrinsic("ktc2_initExit", emptyList(), KUnitType, isPure = false)),
+			),
 			emptyList(),
 		)
 		inUnit.functions += vFunction

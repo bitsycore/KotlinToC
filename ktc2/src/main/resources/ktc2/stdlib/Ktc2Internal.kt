@@ -81,6 +81,12 @@ public external fun threadStart(thread: Any): Long
 /** Waits for the thread behind [handle] to end. */
 public external fun threadJoin(handle: Long)
 
+/** Suspends the calling thread for [milliseconds]; returns at once for zero or less. */
+public external fun threadSleep(milliseconds: Long)
+
+/** The time of day, in nanoseconds since 1970. */
+public external fun timeNanos(): Long
+
 /** Where the runtime enters a new thread. */
 public fun threadEntry(thread: Any) {
 	(thread as Thread).run()

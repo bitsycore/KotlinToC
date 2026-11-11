@@ -3,6 +3,7 @@
 package java.lang
 
 import ktc2.internal.threadJoin
+import ktc2.internal.threadSleep
 import ktc2.internal.threadStart
 
 // ==================
@@ -42,6 +43,15 @@ public open class Thread() {
 		if (vHandle != 0L) {
 			mHandle = 0L
 			threadJoin(vHandle)
+		}
+	}
+
+	public companion object {
+		/** Suspends the calling thread for [millis] milliseconds. */
+		@JvmStatic
+		public fun sleep(millis: kotlin.Long) {
+			if (millis < 0L) throw kotlin.IllegalArgumentException("timeout value is negative")
+			threadSleep(millis)
 		}
 	}
 }
