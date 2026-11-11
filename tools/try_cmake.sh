@@ -1,6 +1,7 @@
 #!/bin/bash
 # Usage: tools/try_cmake.sh <path under integration, without .kt> [arguments for cmake's configure step]
 # Transpiles one program, builds it through the CMakeLists.txt ktc2 writes, and runs it.
+# Uses the installed tool: run `./gradlew installDist` first, and again after a change.
 # Without arguments CMake picks its default generator and compiler (Visual Studio and MSVC on
 # Windows); `-G Ninja -DCMAKE_C_COMPILER=clang` and the like choose another.
 cd "$(dirname "$0")/.." || exit 1

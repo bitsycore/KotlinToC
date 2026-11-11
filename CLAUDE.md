@@ -1,38 +1,70 @@
 # ktc2 - Kotlin to C
 
-Source-to-source transpiler: **Kotlin → C11**, with real Kotlin semantics (the front end is the
-Kotlin K2 compiler) on automatic reference counting, no GC. `DESIGN.md` is the design and the
-record of what was built, phase by phase; read its end for the latest state.
+Source-to-source transpiler: **Kotlin -> C11**, with real Kotlin semantics (the front end is the
+Kotlin K2 compiler) on automatic reference counting, no GC.
+
+## Read first
+- `DESIGN.md`: how ktc2 works now. Meant to be read whole before changing anything; section 13 is the map of the code.
+- `PLAN.md`: what is left to do, with estimates, and what to do first.
+- `HISTORY.md`: the original design and the log of the work. Not reference: only for the reasoning behind a decision, or to see what was tried and dropped.
+- `README.md`: the user's view.
+
+## What you need
+- A JDK to start Gradle. Gradle then fetches JDK 21 (the toolchain), the Kotlin compiler `2.5.0-RC` and the stdlib sources: the first build needs the network and takes a few minutes.
+- gcc on the path (mingw on Windows): the tests build with it. `KTC2_CC` names another compiler, but the tests' options are gcc's.
+- For anything that depends on the `sdl3` module: git, CMake, and a generator CMake can use.
+- Python 3 for `tools/*.py`; Git Bash on Windows for `tools/*.sh`.
+- There is no CI. The gate is the suite, run locally; so far only on Windows.
 
 ## Build / Run / Test
-- Build the tool: `./gradlew installDist` → `build/install/ktc2/bin/ktc2`
-- Translate, build, run: `ktc2 <module dir | file.kt | lib.def>... [-o dir] [--build | --cmake | --run [-- args]] [--debug]`
-- Tests: `./gradlew test` runs every `integration/**/*.kt` as C (gcc, `-Wall -Werror`, leak check) and on the JVM, and compares the output. `--rerun` forces it when only an environment variable changed.
-  - `KTC2_TEST_FILTER=<path part>` runs a subset (`objects/`, `stdlib/Regex`, `projects/`).
+- Build the tool: `./gradlew installDist` -> `build/install/ktc2/bin/ktc2`. Do it again after a change before using the installed tool or `tools/try_cmake.sh`.
+- Translate, build, run: `ktc2 <module dir | file.kt | lib.def>... [-o dir] [--build | --cmake | --run [-- args]] [--debug] [-copt x] [-lopt x] [--checks=abort] [--warn-heap] [--no-warn-cycles] [--dump-ir]`
+- Tests: `./gradlew test --rerun` runs every `integration/**/*.kt` as C (gcc, `-O1 -Wall -Werror`, leak check) and on the JVM, and compares the output. About 9 minutes, one program after another. Without `--rerun` Gradle may answer "up to date" and run nothing.
+  - `KTC2_TEST_FILTER=<path part>` runs a subset in under a minute (`objects/`, `stdlib/Regex`, `projects/`).
   - `python tools/failures.py` summarizes the failures of the last run.
-  - `tools/try.sh <group/Name>` runs one program; `tools/try_cmake.sh <group/Name> [cmake args]` builds it through CMake (with no arguments on Windows: MSVC).
+  - `tools/try.sh <group/Name>` builds and runs one program as the tests do, through Gradle, so it always uses the current sources. `tools/try_cmake.sh <group/Name> [cmake args]` builds it through CMake (with no arguments on Windows: MSVC).
   - A test with a `<Name>.expected` is compared with that file instead of the JVM (C interop); `<Name>.def` is its C library; `<Name>.in` its standard input.
-  - `examples/showcase/core` is run by the suite as a program of several modules (`projects/…`).
-- `KTC2_CC` names the C compiler (default: gcc, else clang, else cc); `KTC2_CMAKE_ARGS` adds CMake arguments; `KTC2_TIMING=1` prints where compile time goes; `KTC2_DEBUG_BORROW=1` explains reference-count decisions.
+  - `examples/showcase/core` is run by the suite as a program of several modules: its name is `projects/examples/showcase/core`, its build directory `build/integration/project-core`.
+- `KTC2_CC` names the C compiler (default: the first of gcc, clang, cc on the path); `KTC2_CMAKE_ARGS` adds CMake arguments; `KTC2_TIMING=1` prints where compile time goes; `KTC2_DEBUG_BORROW=1` explains reference-count decisions.
 
 ## Architecture (`src/main/kotlin/com/bitsycore/ktc2/`)
-- Pipeline: Kotlin K2 compiler (embeddable, pinned in `build.gradle.kts`) with the `Ktc2Extension` IR plugin (`frontend/K2Frontend.kt`) → `JavaUseCheck` → `KirImporter` + `BodyBuilder` (`frontend/KirImport.kt`, `BodyLowering.kt`: IR → KIR, monomorphizing from `main`) → `CycleLint` → `ExceptionLowering` → `EscapeAnalysis` → `ArcInsert` (with `Effects`, `BorrowedReturns`) → `CEmitter` (`backend/`).
+- Pipeline: Kotlin K2 compiler (embeddable, pinned in `build.gradle.kts`) with the `Ktc2Extension` IR plugin (`frontend/K2Frontend.kt`) -> `JavaUseCheck` -> `KirImporter` + `BodyBuilder` (`frontend/KirImport.kt`, `BodyLowering.kt`, with `Captures.kt`: IR -> KIR, monomorphizing from `main`) -> `CycleLint` -> `ExceptionLowering` -> `EscapeAnalysis` -> `ArcInsert` (with `Effects`, `BorrowedReturns`) -> `CEmitter` (`backend/`).
 - KIR, the intermediate form, is `kir/Kir.kt`. The C runtime is `src/main/resources/ktc2/ktc2_core.{h,c}`; everything specific to one C compiler is in one block at the top of the header.
 - The standard library is the real Kotlin stdlib sources (listed in `resources/ktc2/stdlib/files.txt`, fetched by Gradle) plus a platform layer, the `Ktc2*.kt` files next to that list. `hidden.txt` lists the classes of the stdlib jar hidden from the compilation.
-- C interop (`interop/`): `.def` files → generated bindings over `kotlinx.cinterop`; `platform.posix` is generated on demand.
-- Modules (`Project.kt`): `module.ktc2.toml` with `name`, `executable`, `main`, `sources`, `dependencies` (a path, a bundled module, or a git URL `url#dir@tag`), `fetch`, `compilerOpts`, `linkerOpts`, `cmake`. Bundled modules are under `resources/ktc2/modules/` (`sdl3`, which fetches SDL3 and builds it with CMake). Each compilation writes a `CMakeLists.txt` next to the C.
+- C interop (`interop/`): `.def` files -> generated bindings over `kotlinx.cinterop`; `platform.posix` is generated on demand.
+- Modules (`Project.kt`): `module.ktc2.toml` with `name`, `executable`, `main`, `sources`, `dependencies` (a path, a bundled module, or a git URL `url#dir@tag`), `fetch`, `compilerOpts`, `linkerOpts`, `cmake`, and for a bundled module `files`. Bundled modules are under `resources/ktc2/modules/` (`sdl3`, which fetches SDL3 and builds it with CMake). Each compilation writes a `CMakeLists.txt` next to the C.
 
 ## Rules of the design
 - Plain Kotlin behaves as on the JVM; the tests enforce it. A difference is a bug.
-- ktc2-only features live in the `ktc2.` package (`@Struct`, `@Value`, `@Size`, `arena`, `ValueArray`, `@Weak`, `WeakRef`, and `ktc2.concurrent`: `Thread`, `thread`, `synchronized`, `sleep`). Each changes storage and cost, never behavior, and has a JVM side under `src/main/kotlin/ktc2` so programs also run on the JVM.
-- As in Kotlin/Native a program has no JDK: nothing of `java.*` (reported by `JavaUseCheck`). Do not add platform classes under `java.*`; files and similar are to come from kotlinx libraries (kotlinx.io or okio) through ktc2 compatibility layers.
+- ktc2-only features live in the `ktc2.` package (`@Struct`, `@Value`, `@Size`, `arena`, `ValueArray`, `@Weak`, `WeakRef`, `@Acyclic`, and `ktc2.concurrent`: `Thread`, `thread`, `synchronized`, `sleep`). Each changes storage and cost, never behavior. `Deinit` is declared there and not implemented in C (`PLAN.md`).
+- As in Kotlin/Native a program has no JDK: nothing of `java.*` (reported by `JavaUseCheck`). Do not add anything under `java.*` for programs to use; files and similar are to come from kotlinx libraries (kotlinx.io or okio) through ktc2 compatibility layers. The one platform file in package `java.lang`, `Ktc2JavaLang.kt`, is not an exception to this: it only declares the exception classes the runtime throws under their JVM names (`ArrayIndexOutOfBoundsException`...), which Kotlin code can catch by their Kotlin supertypes.
 - Memory: objects are references, counted; `EscapeAnalysis` moves them to the frame, `ArcInsert` leaves out the counting nobody can observe. Cycles are reported at compile time (`@Weak`, `WeakRef`, `@Acyclic`); there is no cycle collector.
 - Exceptions are a pending value tested after each call that can throw; no `setjmp`.
 - Not supported: coroutines (`sequence { }`, `iterator { }`), reflection.
-- Generated sources - `Ktc2Arrays.kt`, `Ktc2Math.kt`, `Ktc2Comparisons.kt`, `Ktc2Unicode.kt` (by `tools/GenUnicode.java`, run with the JDK 21 of the build so the tables match what the tests compare with): change the script in `tools/`, not the file.
+
+## How to
+- **Fix a difference from Kotlin**: write the program under `integration/<group>/`, see it fail against the JVM, fix, run the whole suite, commit.
+- **Add a test**: one `.kt` file with its own `fun main()` (a package is allowed), in the group it fits (`basic`, `objects`, `generics`, `stdlib`, `values` for the `ktc2.` package, `interop` for C). Give it a file name no other test has: the name is its build directory and its key in the counts. What it prints must be the same on every run: no times, no addresses or default `toString()` of objects, no order that depends on threads. For C interop, where the JVM cannot run it, write `<Name>.expected` by hand or from the C output after checking each line. A program that must fail to compile cannot be a test yet.
+- **Find out why a test fails**: `python tools/failures.py` for the first lines; then `tools/try.sh <group/Name>`. Its directory `build/try/` (or `build/integration/<Name>/` after a suite run) has `c/` (the generated C, which follows KIR closely: there is no dump of KIR), `ir.txt` and `ir.kt.txt` (the Kotlin IR the importer received), `jvm/` (the classes it was compared with), `stdlib/` and `interop/` (the library and binding sources that were compiled in), `ktc2_build.txt` and `program.exe`. "not supported yet: ..." comes from the importer with a file and a line. `ktc2: leak: N object(s) of type X` at exit means a count was not given back. A crash or nonsense output after a change to counting is a use of freed memory: test builds fill freed objects with `0xDD`. Each process has 60 seconds. To step through the transpiler, run `IntegrationTest` under a debugger with `KTC2_TEST_FILTER` set: the passes run inside the Kotlin compiler, in the same process.
+- **Add a library function**: if the Kotlin stdlib has it in common code, add its file to `stdlib/files.txt`; if it is an `expect`, write the `actual` in the matching `Ktc2*.kt`. If the program then fails to compile with an ambiguous call or a JVM type inside library code, the jar's JVM version is competing: hide its class in `hidden.txt`. A function that needs the runtime is an `external fun` in `ktc2.internal` (`Ktc2Internal.kt`), implemented as `ktc2_<name>` in `ktc2_core.c` and declared in `ktc2_core.h`.
+- **Add something to the `ktc2.` package**: it is declared twice, with the same signatures: for the JVM in `src/main/kotlin/ktc2/`, for C in the platform layer (`stdlib/Ktc2Lifetime.kt`, `Ktc2Concurrent.kt`). Annotations are recognized by name in the importer (`frontend/KirImport.kt`).
+- **Regenerate a generated source** (from the repository root; change the script, not the file): `python tools/gen_arrays.py` (`Ktc2Arrays.kt`), `python tools/gen_math.py` (`Ktc2Math.kt`), `python tools/gen_comparisons.py` (`Ktc2Comparisons.kt`), and `<JDK 21>/bin/java tools/GenUnicode.java` (`Ktc2Unicode.kt`; it appends `tools/unicode_lookup.kt.txt`, the hand-written lookup code, and must be run with the JDK the tests compare with so the tables agree).
+- **Change reference counting or escape analysis**: copy `build/integration/arc-stats.txt` first and compare after with `tools/arc_compare.py` (after a filtered run the file holds only the subset). A wrong answer is a use of freed memory: run the whole suite, and add the case to `integration/objects/Borrowing.kt` or `ThreadBorrowing.kt`.
+- **Try another compiler**: `tools/try_cmake.sh <group/Name>` for MSVC; `KTC2_CC=clang tools/try.sh <group/Name>` for clang.
+
+## Things that cost time before
+- Shell heredocs mangle backslashes, `$` and tabs in Kotlin and C text. For an edit with any of those, write a small Python script to a file (with exact-match replacements that assert they matched once), run it, delete it.
+- Inside a platform file in package `java.lang`, plain `String`, `Long`, `Boolean` and the exception names resolve to the Java classes: write `kotlin.String`.
+- A new platform function that has the same JVM signature as another needs `@JvmName`.
+- The JVM the tests compare with runs with an English locale on purpose: number formatting follows the locale otherwise.
+- Example `build/` directories hold CMake caches with absolute paths: delete them after moving anything.
+- CMake's default generator on Windows is Visual Studio, that is MSVC. For gcc or clang pass a generator in `KTC2_CMAKE_ARGS` (`-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>`) and set `KTC2_CC`. The first build of a program that uses `sdl3` fetches and compiles SDL3: about a minute.
+- A compile error inside library sources that makes no sense: see "Where a small mistake costs most" in `DESIGN.md` (the cached jar, `hidden.txt`).
 
 ## Conventions
-- Kotlin: standard Kotlin conventions, tabs, KDoc on classes and functions; section markers `// ====` + `// MARK: Name` between major groups; concise comments only when non-obvious.
-- Names in the transpiler's source: locals `v…`, parameters `in…` (not on overrides of library members, nor on the public API of the `ktc2.` package, where names are used as named arguments), private members `m…`, constants `k…`.
+These are what the code uses; follow the code where another instruction differs.
+- Kotlin: standard Kotlin conventions, tabs, KDoc on classes and functions; section markers `// ====` + `// MARK: Name` between major groups; concise comments only when non-obvious, saying what the code is for and not how it changed.
+- Names in the transpiler's source and in the `ktc2.` package: locals `v...`, parameters `in...`, private members `m...`, constants `k...`. Parameters have no prefix where the name is the API: overrides of library members, platform functions that stand for library ones, and `ktc2.concurrent`.
 - Generated C and the runtime: K&R style, doc comments with `/** */`.
-- Commits: no Co-Authored-By / AI attribution.
+- No em dashes anywhere: plain punctuation.
+- Commits: one logical change each, only when the suite is green, no Co-Authored-By / AI attribution. The work is on `master`.

@@ -5,10 +5,11 @@ package ktc2
 // ==================
 
 /**
- * Use-site storage hint: the object is stored inline in its slot (field, array element or
- * local) instead of behind a counted reference. Ignored on the JVM.
+ * Use-site storage hint: the object is stored inline in its slot (a field or a local)
+ * instead of behind a counted reference. Ignored on the JVM.
  *
- * Written on the type: `val origin: @Value Vec2`, `Array<@Value Particle>`.
+ * Written on the type: `val origin: @Value Vec2`. For the elements of an array there is
+ * [ValueArray]: `Array<@Value T>` is not accepted.
  */
 @Target(AnnotationTarget.TYPE)
 @Retention(AnnotationRetention.SOURCE)
@@ -23,7 +24,7 @@ annotation class Value
 annotation class Struct
 
 /**
- * Fixed element count of an array or string slot, stored inline in its owner.
+ * Fixed element count of an array slot, stored inline in its owner or, for a local, in the frame.
  *
  * @property inN element count, a compile-time constant
  */

@@ -68,7 +68,7 @@ object K2Frontend {
 		val vLibrary = librarySources(inOutDir)
 		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
 		val vDefinitions = inSources.filter { it.extension == "def" }
-		val vCompiler = System.getenv("KTC2_CC") ?: "gcc"
+		val vCompiler = com.bitsycore.ktc2.cCompiler()
 		val vBindings = try {
 			val vExtraCompilerOpts = System.getProperty("ktc2.copt", "").lines().filter { it.isNotEmpty() }
 			val vExtraLinkerOpts = System.getProperty("ktc2.lopt", "").lines().filter { it.isNotEmpty() }

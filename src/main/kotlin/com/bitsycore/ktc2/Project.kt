@@ -311,9 +311,13 @@ fun writeCMake(inOutDir: File, inExecutable: String, inProject: Project?) {
 fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vProgram = File(inOutDir, if (kIsWindows) "$inName.exe" else inName)
 	val vMode = if (inIsDebug) listOf("-O0", "-g", "-DKTC2_LEAK_CHECK") else listOf("-O2")
-	val vThreads = if (manifestValues(inOutDir, "threads").isNotEmpty()) listOf("-pthread") else emptyList()
+	// On Windows the runtime uses the system's own threads and the math functions are in the C
+	// library every program links: naming a thread or a math library there only breaks the
+	// compilers that have none (clang with the MSVC libraries).
+	val vThreads = if (!kIsWindows && manifestValues(inOutDir, "threads").isNotEmpty()) listOf("-pthread") else emptyList()
+	val vMath = if (kIsWindows) emptyList() else listOf("-lm")
 	val vCommand = listOf(cCompiler(), "-std=c11") + vMode + vThreads + listOf("-I", ".", "-o", vProgram.absolutePath) +
-		manifestValues(inOutDir, "cflag") + manifestValues(inOutDir, "c") + "-lm" + manifestValues(inOutDir, "ldflag")
+		manifestValues(inOutDir, "cflag") + manifestValues(inOutDir, "c") + vMath + manifestValues(inOutDir, "ldflag")
 	val vProcess = ProcessBuilder(vCommand).directory(File(inOutDir, "c")).inheritIO().start()
 	if (vProcess.waitFor() != 0) {
 		System.err.println("ktc2: error: the C compiler failed: ${vCommand.take(8).joinToString(" ")} …")

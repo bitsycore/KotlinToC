@@ -23,6 +23,9 @@ class IntegrationTest {
 
 	private val mCompiler = System.getenv("KTC2_CC") ?: "gcc"
 
+	/** The thread option and the math library: needed on POSIX systems; on Windows neither exists for every compiler, nor is needed. */
+	private val kSystemLibraries = if ("win" in System.getProperty("os.name").lowercase()) emptyList() else listOf("-pthread", "-lm")
+
 	@TestFactory
 	fun programs(): List<DynamicTest> {
 		File("build/integration/arc-stats.txt").delete()
@@ -103,7 +106,7 @@ class IntegrationTest {
 		}
 
 		val vExe = File(vOutDir, "program.exe")
-		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-pthread", "-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + "-lm" + vLinkerOpts, vCDir)
+		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable") + kSystemLibraries.take(1) + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 
 		assertEquals(vExpected, vActual, "C output differs from the JVM for $inName")

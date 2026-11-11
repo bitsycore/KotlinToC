@@ -45,8 +45,8 @@ also runs there.
 | `@Value`, `@Size(n)` | an object or an array stored inside its owner, or kept in the frame |
 | `ValueArray<T>` | an array that holds its elements in place |
 | `arena(size) { }` | what a block allocates is given back in one go |
-| `@Weak`, `WeakRef<T>` | references that do not keep their target alive, to break cycles |
-| `ktc2.concurrent` | `thread { }`, `synchronized(lock) { }`, `sleep(ms)` |
+| `@Weak`, `WeakRef<T>`, `@Acyclic` | references that do not keep their target alive, to break cycles; and a way to say a reference never closes one |
+| `ktc2.concurrent` | `Thread`, `thread { }`, `synchronized(lock) { }`, `sleep(ms)` |
 
 ## C libraries
 
@@ -75,30 +75,43 @@ so nothing has to be installed.
 build/install/ktc2/bin/ktc2 examples/showcase --run
 ```
 
-That opens the showcase: a window with a button for each group of its tests. `-- --headless`
-prints them instead.
+That opens the showcase: a window with a button for each group of its tests and a log of
+what they did. `-- --headless` opens no window and prints the results instead.
+
+## What you need
+
+A JDK to start Gradle (it fetches JDK 21, the Kotlin compiler and the library sources the
+first time, so the first build needs the network); a C compiler, gcc for the tests; git and
+CMake with a generator it can use (Visual Studio, or Ninja or make) for programs that depend
+on `sdl3`.
 
 ```
 ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
-  -o <dir>        where the output goes (default: <module>/build, or ./out)
-  --build         also compile the C into a program (KTC2_CC names the compiler)
-  --cmake         build with CMake (always so when a module has a CMake file)
-  --run           build, then run the program
-  --debug         no optimization, debug information, and a report of what was left allocated
-  --warn-heap     list every allocation left on the heap, with the reason
+  -o <dir>           where the output goes (default: <module>/build, or ./out)
+  --build            also compile the C into a program (KTC2_CC names the compiler)
+  --cmake            build with CMake (always so when a module has a CMake file)
+  --run              build, then run the program
+  --debug            no optimization, debug information, and a report of what was left allocated
+  -copt <option>     an option for the C compiler; -lopt <option> one for the linker
+  --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
+  --warn-heap        list every allocation left on the heap, with the reason
+  --no-warn-cycles   do not report classes that can form reference cycles
+  --dump-ir          also write the IR received from the Kotlin compiler
 ```
 
 ## Compilers and systems
 
-The generated C is C11. It is built and run on Windows with gcc, clang and MSVC. Linux and
-macOS are written for and not yet tried; Android is not there yet.
+The generated C is C11. On Windows the whole test suite runs with gcc, and the showcase's
+tests also pass with clang and with MSVC. Linux and macOS are written for and not yet tried;
+Android is not there yet.
 
 ## Working on ktc2
 
 ```bash
-./gradlew test
+./gradlew test --rerun
 ```
 
 runs every program under `integration/` twice - as C, compiled with `-Wall -Werror` and
-checked for leaks, and on the JVM - and compares what they print. `DESIGN.md` is the design
-and the record of what was built; `CLAUDE.md` is the short map of the code.
+checked for leaks, and on the JVM - and compares what they print. `DESIGN.md` describes
+how ktc2 works, `PLAN.md` what is left to do, `HISTORY.md` how it got here; `CLAUDE.md` is
+the short map of the code and of how to work on it.
