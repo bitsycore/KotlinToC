@@ -78,8 +78,10 @@ private val kKotlinKeywords = setOf(
  * - enums as an integer `typealias` with a `const val` per constant;
  * - object-like macros with an integer, floating-point or string value as `const val`.
  *
- * Skipped, with a comment in the generated file: functions passing or returning a struct by
- * value, and types Kotlin has no counterpart for (`long double`, `va_list`).
+ * A struct passed or returned by value is a `CValue<T>`.
+ *
+ * Skipped, with a comment in the generated file: what uses a type Kotlin has no counterpart
+ * for (`long double`, `va_list`), or a struct without a name by value.
  */
 class BindingGenerator(private val mDef: DefFile, private val mCompiler: String) {
 
@@ -211,7 +213,9 @@ class BindingGenerator(private val mDef: DefFile, private val mCompiler: String)
 			}
 		}
 		is CArrayOf -> variableType(vType.element)?.let { (if (inIsParameter) "CValuesRef" else "CPointer") + "<$it>?" }
-		CVoid, is CRecord, is CFunctionType, is CUnsupported, is CTypedefRef -> null
+		// A struct by value; one that is incomplete or has no name cannot be passed.
+		is CRecord -> if (vType.fields != null && vType.spelling.isNotEmpty()) "CValue<${identifier(classFor(vType))}>" else null
+		CVoid, is CFunctionType, is CUnsupported, is CTypedefRef -> null
 	}
 
 	/** How C names [inType], for a cast: only needed, and only produced, for function pointers. */
@@ -340,10 +344,17 @@ class BindingGenerator(private val mDef: DefFile, private val mCompiler: String)
 		val vArguments = vType.params.mapIndexed { vIndex, vParam ->
 			// A function pointer does not convert from void* in standard C: it is cast to its type.
 			val vCast = if (isFunctionPointer(vParam.type)) cSpelling(vParam.type)?.let { "($it)" } ?: "" else ""
-			"$vCast\$$vIndex"
+			// A struct by value is read out of the CValue that holds it.
+			(vParam.type.resolved() as? CRecord)?.let { "(*(${it.spelling}*)ktc2_cvalue_data(\$$vIndex))" } ?: "$vCast\$$vIndex"
 		}
 		val vCall = "$vName(${vArguments.joinToString(", ")}${if (vType.isVariadic) "\$*" else ""})"
-		val vText = if (isPointer(vType.result)) "(void*)$vCall" else vCall
+		val vRecord = vType.result.resolved() as? CRecord
+		val vText = when {
+			// The returned struct is copied into a new CValue.
+			vRecord != null -> "ktc2_cvalue_copy((${vRecord.spelling}[1]){ $vCall }, sizeof(${vRecord.spelling}))"
+			isPointer(vType.result) -> "(void*)$vCall"
+			else -> vCall
+		}
 		val vDeclared = vNames.mapIndexed { vIndex, vParamName -> "${identifier(vParamName)}: ${vParamTypes[vIndex]}" }
 		mOut.append("\n")
 		if (vType.isVariadic) {

@@ -186,6 +186,7 @@ int ktc2_exit(void);
 /* ================== */
 
 struct ktc2_String;
+struct ktc2_Array;
 
 /** The bytes of a string as C sees them (UTF-8, NUL-terminated). Valid while the string lives. */
 #define ktc2_str_bytes(string) ((void*)((ktc2_String*)(string))->bytes)
@@ -195,6 +196,18 @@ void* ktc2_str_cptr(struct ktc2_String* string);
 
 /** A new string from NUL-terminated UTF-8 text. */
 struct ktc2_String* ktc2_string_of_cstr(const char* text);
+
+/**
+ * A C struct held by value (`CValue<T>`) is a byte array with the struct as its content.
+ * This is the address of that struct.
+ */
+#define ktc2_cvalue_data(value) ((void*)((ktc2_Array*)(value) + 1))
+
+/** The same for a value that may be null: NULL for NULL. */
+void* ktc2_cvalue_ptr(struct ktc2_Array* value);
+
+/** A new struct value holding a copy of the [size] bytes at [data]. */
+struct ktc2_Array* ktc2_cvalue_copy(const void* data, int64_t size);
 
 /** A C address held as an object: a boxed Long, NULL staying NULL. */
 ktc2_Obj* ktc2_box_ptr(void* address);

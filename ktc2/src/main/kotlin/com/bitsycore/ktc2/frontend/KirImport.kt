@@ -345,6 +345,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				arrayTypeOf(vBase)?.let { return it }
 				val vClass = vBase.classOrNull?.owner ?: return null
 				when {
+					// A C struct held by value: a counted block of bytes with the struct inside.
+					vClass.kotlinFqName.asString() == "kotlinx.cinterop.CValue" -> KArrayType(KPrimType(KPrim.BYTE))
 					isPointerClass(vClass) -> KPtrType
 					vClass.kotlinFqName.asString() == "kotlin.Enum" -> KClassType(enumBase())
 					vClass.isInterface -> KObjType

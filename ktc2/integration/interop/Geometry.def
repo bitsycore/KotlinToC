@@ -78,6 +78,23 @@ static inline void geometry_canvas_free(canvas_t* canvas)
 	free(canvas);
 }
 
+static inline struct point geometry_point(int x, int y)
+{
+	struct point point = { x, y };
+	return point;
+}
+
+static inline struct point geometry_add(struct point a, struct point b)
+{
+	return geometry_point(a.x + b.x, a.y + b.y);
+}
+
+static inline rect_t geometry_rect(struct point origin, struct point size, const char* label)
+{
+	rect_t rect = { origin, size, label, 0 };
+	return rect;
+}
+
 static inline double geometry_scale(double value, float factor)
 {
 	return value * factor;

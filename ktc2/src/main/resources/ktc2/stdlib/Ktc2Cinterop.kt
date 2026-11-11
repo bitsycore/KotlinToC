@@ -68,6 +68,12 @@ public abstract class CValuesRef<T : CPointed> internal constructor()
 /** C values located somewhere for the time of a call (a string's bytes, an array's elements). */
 public abstract class CValues<T : CVariable> internal constructor() : CValuesRef<T>()
 
+/**
+ * A C struct held by value: what a C function taking or returning a struct exchanges with
+ * Kotlin. It is an ordinary counted object containing the bytes of the struct.
+ */
+public class CValue<T : CVariable> private constructor() : CValues<T>()
+
 /** A C pointer. */
 public class CPointer<T : CPointed> private constructor() : CValuesRef<T>()
 
@@ -537,6 +543,48 @@ public inline fun <R> memScoped(block: MemScope.() -> R): R {
 }
 
 public fun <T : CVariable> CValues<T>.getPointer(scope: AutofreeScope): CPointer<T> = cExpr("$0", this)
+
+// ==================
+// MARK: Structs by value
+// ==================
+
+/** A zeroed struct value. */
+public inline fun <reified T : CStructVar> cValue(): CValue<T> = cExpr("ktc2_array_new((int32_t)$0, 1, KTC2_TYPE_ARRAY_BYTE)", cSizeOf<T>())
+
+/** A struct value filled in by [initialize]. */
+public inline fun <reified T : CStructVar> cValue(initialize: T.() -> Unit): CValue<T> {
+	val vValue = cValue<T>()
+	vValue.useContents(initialize)
+	return vValue
+}
+
+/**
+ * Runs [block] on the struct inside this value. Unlike Kotlin/Native, which hands the block a
+ * temporary copy, the block sees the value itself: what it writes stays.
+ */
+public inline fun <reified T : CStructVar, R> CValue<T>.useContents(block: T.() -> R): R =
+	cExpr<T>("ktc2_cvalue_data($0)", this).block()
+
+/** A copy, as a value, of the struct at this location. */
+public inline fun <reified T : CStructVar> T.readValue(): CValue<T> = cExpr("ktc2_cvalue_copy($0, $1)", this, cSizeOf<T>())
+
+/** A copy of this value changed by [modify]. */
+public inline fun <reified T : CStructVar> CValue<T>.copy(modify: T.() -> Unit): CValue<T> {
+	val vCopy: CValue<T> = cExpr("ktc2_cvalue_copy(ktc2_cvalue_data($0), $1)", this, cSizeOf<T>())
+	vCopy.useContents(modify)
+	return vCopy
+}
+
+/** Copies the struct to [placement] and returns it. */
+public inline fun <reified T : CStructVar> CValue<T>.place(placement: CPointer<T>): CPointer<T> {
+	cExpr<Unit>("memcpy($0, ktc2_cvalue_data($1), (size_t)$2)", placement, this, cSizeOf<T>())
+	return placement
+}
+
+/** Copies the struct to [location]. */
+public inline fun <reified T : CStructVar> CValue<T>.write(location: NativePtr) {
+	cExpr<Unit>("memcpy($0, ktc2_cvalue_data($1), (size_t)$2)", location, this, cSizeOf<T>())
+}
 
 // ==================
 // MARK: Strings

@@ -400,6 +400,8 @@ internal class BodyBuilder(
 			inTo == KPtrType && inValue is KNull -> KNull(KPtrType)
 			// An address held as Any (an element of a List<CPointer<…>>) is boxed like a Long.
 			inTo is KRefType && vFrom == KPtrType -> coerce(spill(KIntrinsic("ktc2_box_ptr", listOf(if (inValue.isImpure()) spill(inValue) else inValue), KObjType, isPure = false)), inTo)
+			// A struct value given where C wants a pointer: the address of the struct inside it.
+			inTo == KPtrType && vFrom is KArrayType -> KIntrinsic("ktc2_cvalue_ptr", listOf(inValue), KPtrType)
 			inTo == KPtrType && vFrom is KRefType -> KIntrinsic("ktc2_unbox_ptr", listOf(if (inValue.isImpure()) spill(inValue) else inValue), KPtrType)
 			inTo == KObjType && vFrom is KPrimType -> spill(box(if (inValue.isImpure()) spill(inValue) else inValue))
 			inTo == KObjType && vFrom is KOptType -> {

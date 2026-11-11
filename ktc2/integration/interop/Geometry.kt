@@ -73,6 +73,30 @@ fun main() {
 		println("${vBuffer.toKString()} [$vWritten]")
 	}
 
+	// Structs passed and returned by value.
+	val vFirst = geometry_point(3, 4)
+	val vSecond = cValue<point> {
+		x = 10
+		y = 20
+	}
+	val vSum = geometry_add(vFirst, vSecond)
+	println(vSum.useContents { "$x,$y" })
+	val vRect = geometry_rect(vSum, geometry_point(2, 5), "box")
+	println(vRect.useContents { "${origin.x},${origin.y} ${size.x}x${size.y} ${label?.toKString()}" })
+	println(geometry_area(vRect))
+	val vMoved = vSum.copy { x = -1 }
+	println("${vMoved.useContents { x }} ${vSum.useContents { x }}")
+	memScoped {
+		val vPlace = alloc<point>()
+		vPlace.x = 7
+		vPlace.y = 8
+		val vSnapshot = vPlace.readValue()
+		vPlace.x = 0
+		println(vSnapshot.useContents { x + y })
+		vFirst.place(vPlace.ptr)
+		println("${vPlace.x},${vPlace.y}")
+	}
+
 	// A type known only by name, and a function of the C library itself.
 	val vCanvas = geometry_canvas_new(4, 4)
 	println(geometry_canvas_plot(vCanvas, 1, 1) + geometry_canvas_plot(vCanvas, 9, 9) + geometry_canvas_plot(vCanvas, 3, 0))

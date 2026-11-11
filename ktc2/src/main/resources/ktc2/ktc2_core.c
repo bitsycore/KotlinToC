@@ -875,6 +875,18 @@ ktc2_String* ktc2_string_of_cstr(const char* text)
 	return new_string(text, (int32_t)size, length);
 }
 
+void* ktc2_cvalue_ptr(ktc2_Array* value)
+{
+	return value ? value + 1 : NULL;
+}
+
+ktc2_Array* ktc2_cvalue_copy(const void* data, int64_t size)
+{
+	ktc2_Array* value = ktc2_array_new((int32_t)size, 1, KTC2_TYPE_ARRAY_BYTE);
+	memcpy(value + 1, data, (size_t)size);
+	return value;
+}
+
 ktc2_Obj* ktc2_box_ptr(void* address)
 {
 	return address ? ktc2_box_long((int64_t)(intptr_t)address) : NULL;

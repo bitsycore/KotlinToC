@@ -646,14 +646,20 @@ Phase 7 — arena and C interop (`integration/values/Arena.kt`, `integration/int
   (nested structs and arrays in place); a type known only by name is opaque; enums are an
   integer `typealias` plus `const val`s; object-like macros with a number or string value
   are `const val`s. The compiler and linker options go to `ktc2_build.txt` (`cflag=`, `ldflag=`).
-- **SDL3.** A three-line `.def` over the real SDL3 headers yields 1234 functions (15 skipped);
+- **Structs by value.** `CValue<T>` is a counted block of bytes holding the struct (the KIR
+  type of a `ByteArray`), so it is freed like any object and needs no scope. A bound function
+  reads a by-value parameter out of it (`*(struct point*)data`) and copies a returned struct
+  into a new one. `cValue<T> { }`, `useContents`, `readValue`, `copy { }`, `place` and `write`
+  work on it, and a `CValue` passed where C wants a pointer gives the address of its struct.
+  One difference from Kotlin/Native: `useContents` runs on the value itself, not on a
+  temporary copy, so what the block writes stays.
+- **SDL3.** A three-line `.def` over the real SDL3 headers yields 1242 functions (7 skipped, all taking `va_list`);
   a program that initializes SDL, opens a window, polls events and fills an `SDL_FRect`
   compiles with `-Wall -Werror`, links and runs. This is the raw C API; the Kotlin wrapper
   module of v1 (`ktc.sdl3`: Window, Renderer…) is not ported.
 
-Not done in Phase 7: structs passed or returned by value (`CValue<T>`, `cValue { }`,
-`useContents`, `readValue`) and `cValuesOf` — functions using them are skipped with a comment
-in the generated file; calling through a C function pointer from Kotlin (`invoke`);
+Not done in Phase 7: `cValuesOf`; a Kotlin callback (`staticCFunction`) that takes or returns
+a struct by value; calling through a C function pointer from Kotlin (`invoke`);
 `staticCFunction` of a lambda; global C variables; C enums as Kotlin `enum class` (always
 the `typealias` form); `platform.posix` (a `.def` naming the libc headers gives the same
 functions); bindings are regenerated on every compilation. Programs using interop have no
