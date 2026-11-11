@@ -7,3 +7,19 @@ package kotlin.internal
 internal actual fun throwNoWhenBranchMatchedException(subject: Any): Nothing {
 	throw NoWhenBranchMatchedException("No branch matched for subject: $subject")
 }
+
+// ==================
+// MARK: Serialization hooks
+// ==================
+
+/*
+The standard library's classes carry hooks for Java serialization, which does not exist here.
+*/
+
+internal actual inline fun throwReadObjectNotSupported(): Nothing = throw UnsupportedOperationException("Deserialization is not supported")
+
+internal actual inline fun wrapAsDeserializationException(action: () -> Unit) {
+	action()
+}
+
+internal actual class ReadObjectParameterType

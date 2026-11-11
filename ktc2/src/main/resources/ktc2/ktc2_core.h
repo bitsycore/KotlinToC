@@ -414,6 +414,9 @@ typedef struct ktc2_Array {
 /** The kind of array [object] is, as `ktc2.internal.arrayKind` documents; 0 for anything else. */
 int32_t ktc2_arrayKind(ktc2_Obj* object);
 
+/** True when [object] is an array of the kind [kind] names (`x is IntArray`). */
+#define ktc2_array_is(object, kind) ((object) != NULL && ((ktc2_Obj*)(object))->typeId == (kind))
+
 /** A zeroed array; fails on a negative length. */
 ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId);
 

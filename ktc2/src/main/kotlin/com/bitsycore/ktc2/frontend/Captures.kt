@@ -36,9 +36,12 @@ internal fun isExpanded(inFunction: IrFunction): Boolean =
 	inFunction.isInline && inFunction.body != null &&
 		(inFunction.parameters.any { isInlinedParameter(it) } || inFunction.typeParameters.any { it.isReified } || isInteropAccessor(inFunction))
 
-/** The small `inline` functions of C interop (`ptr`, `pointed`, `value`…) are a line of C each: always expanded. */
+/**
+ * The small `inline` functions of C interop (`ptr`, `pointed`, `value`…) and of `kotlin.math`
+ * (`sqrt`, `sin`…) are a line of C each: always expanded.
+ */
 private fun isInteropAccessor(inFunction: IrFunction): Boolean =
-	inFunction.parent !is IrClass && inFunction.kotlinFqName.asString().startsWith("kotlinx.cinterop.")
+	inFunction.parent !is IrClass && inFunction.kotlinFqName.asString().let { it.startsWith("kotlinx.cinterop.") || it.startsWith("kotlin.math.") }
 
 /**
  * Finds what closures capture. A lambda passed to an expanded `inline` function (or to an

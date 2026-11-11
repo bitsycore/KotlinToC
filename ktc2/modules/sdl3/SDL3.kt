@@ -5,6 +5,7 @@ package ktc.sdl3
 import kotlinx.cinterop.*
 import kotlinx.cinterop.internal.cExpr
 import kotlinx.cinterop.internal.cSizeOf
+import ktc2.Struct
 import sdl3.*
 
 // ==================
@@ -68,14 +69,22 @@ object SDL3 {
 	// ============
 	//  Values
 
+	/*
+	Plain values, passed around like numbers: none of them is ever allocated.
+	*/
+
+	@Struct
 	data class FRect(val x: Float, val y: Float, val w: Float, val h: Float)
 
+	@Struct
 	data class Rect(val x: Int, val y: Int, val w: Int, val h: Int) {
 		fun toFRect(): FRect = FRect(x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat())
 	}
 
+	@Struct
 	data class FPoint(val x: Float, val y: Float)
 
+	@Struct
 	data class Color(val r: UByte, val g: UByte, val b: UByte, val a: UByte) {
 		/** From 0xRRGGBBAA. */
 		constructor(color: UInt) : this(
@@ -86,6 +95,7 @@ object SDL3 {
 		)
 	}
 
+	@Struct
 	data class FColor(val r: Float, val g: Float, val b: Float, val a: Float) {
 		/** From 0xRRGGBBAA. */
 		constructor(color: UInt) : this(

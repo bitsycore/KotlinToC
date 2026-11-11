@@ -179,6 +179,20 @@ internal class BodyBuilder(
 				}
 				mBlock += KReturn(KRead(vArray))
 			}
+			IrSyntheticBodyKind.ENUM_ENTRIES -> {
+				val vType = KArrayType(KObjType)
+				val vArray = newTemp(vType)
+				mBlock += KLet(vArray, KArrayNew(KConst(vEntries.size, kIntType), vType))
+				vEntries.forEachIndexed { vIndex, vEntry ->
+					mBlock += KIndexSet(KRead(vArray), KConst(vIndex, kIntType), coerce(KStaticRead(vEntry), KObjType))
+				}
+				val vList = mImporter.internalFunction("enumEntriesOf")?.let { mImporter.functionFor(it) }
+				if (vList == null) {
+					fail(inFunction, "enum entries")
+				} else {
+					mBlock += KReturn(coerce(spill(KCall(vList, listOf(KRead(vArray)))), mFunction.returnType))
+				}
+			}
 			IrSyntheticBodyKind.ENUM_VALUEOF -> {
 				val vName = KRead(mFunction.params[0])
 				for (vEntry in vEntries) {
@@ -761,8 +775,17 @@ internal class BodyBuilder(
 				return if (vType.isMarkedNullable()) kTrue else not(isNull(inValue))
 			}
 		}
-		// An array cast is unchecked: arrays do not record their element type beyond its kind.
-		if (kType(vType.makeNotNull()) is KArrayType) return if (vType.isMarkedNullable()) kTrue else not(isNull(inValue))
+		// An array records the kind of its elements (ints, references…), which is what can be tested.
+		(kType(vType.makeNotNull()) as? KArrayType)?.let { vArrayType ->
+			if (inValue.type is KArrayType) return if (vType.isMarkedNullable()) kTrue else not(isNull(inValue))
+			val vKind = when (val vElement = vArrayType.element) {
+				is KPrimType -> "KTC2_TYPE_ARRAY_${vElement.prim.name}"
+				is KRefType -> "KTC2_TYPE_ARRAY_REF"
+				else -> "KTC2_TYPE_ARRAY_VALUE"
+			}
+			val vTest = KIntrinsic("ktc2_array_is", listOf(inValue), kBoolType).also { it.template = "ktc2_array_is($0, $vKind)" }
+			return if (vType.isMarkedNullable()) KSelect(isNull(inValue), kTrue, vTest, kBoolType) else vTest
+		}
 		// A type parameter standing for a reference type is `Any?` here: the test always holds.
 		val vIsNull = isNull(inValue)
 		if (vType.makeNotNull().isAny()) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
@@ -1579,7 +1602,7 @@ internal class BodyBuilder(
 			// everything else is an ordinary interface call.
 			val vReceiverType = inCall.arguments.firstOrNull()?.let { kType(it.type) }
 			if ((vReceiverType !is KRefType && vReceiverType !is KStructType) || vReceiverType == KStringType) return lowerLibraryCall(inCall)
-		} else if (vCallee.fileOrNull == null && !(vOwner != null && (isAnyClass(vOwner) || isThrowableClass(vOwner)))) {
+		} else if (vCallee.fileOrNull == null && !(vOwner != null && (isAnyClass(vOwner) || isThrowableClass(vOwner) || vOwner.kotlinFqName.asString() == "kotlin.Enum"))) {
 			return lowerLibraryCall(inCall)
 		}
 

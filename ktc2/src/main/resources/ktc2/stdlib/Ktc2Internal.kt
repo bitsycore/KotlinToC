@@ -153,6 +153,13 @@ public fun kotlin_Long_rangeTo(start: Long, end: Long): LongRange = LongRange(st
 
 public fun kotlin_Char_rangeTo(start: Char, end: Char): CharRange = CharRange(start, end)
 
+/** `a..<b` used as a value. */
+public fun kotlin_Int_rangeUntil(start: Int, end: Int): IntRange = start until end
+
+public fun kotlin_Long_rangeUntil(start: Long, end: Long): LongRange = start until end
+
+public fun kotlin_Char_rangeUntil(start: Char, end: Char): CharRange = start until end
+
 // ==================
 // MARK: Failures raised by generated code
 // ==================
@@ -170,6 +177,9 @@ public fun throwStringIndexOutOfBounds(index: Int, length: Int): Nothing =
 
 /** An integer division or remainder by zero. */
 public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")
+
+/** `Enum.entries`: the constants of an enum class as a list. */
+public fun <E : Enum<E>> enumEntriesOf(values: Array<E>): kotlin.enums.EnumEntries<E> = kotlin.enums.enumEntries(values)
 
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()
