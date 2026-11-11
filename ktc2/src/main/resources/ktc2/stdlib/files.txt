@@ -1,0 +1,3 @@
+# Files of the Kotlin standard library sources compiled, unmodified, with every program.
+# Paths are relative to the unpacked kotlin-stdlib sources jar.
+commonMain/kotlin/util/Standard.kt

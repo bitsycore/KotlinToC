@@ -10,11 +10,22 @@ application {
 	mainClass.set("com.bitsycore.ktc2.MainKt")
 }
 
+tasks.named<JavaExec>("run") {
+	dependsOn("unpackStdlibSources")
+	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
+}
+
 repositories {
 	mavenCentral()
 }
 
+/** The Kotlin standard library sources (Apache-2), compiled together with user programs. */
+val stdlibSources: Configuration by configurations.creating {
+	isTransitive = false
+}
+
 dependencies {
+	stdlibSources("org.jetbrains.kotlin:kotlin-stdlib:2.3.20:sources")
 	// Frontend: the Kotlin K2 compiler. Pinned — its IR API is experimental.
 	implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.3.20")
 	testImplementation(kotlin("test"))
@@ -25,8 +36,15 @@ kotlin {
 	jvmToolchain(21)
 }
 
+val unpackStdlibSources by tasks.registering(Sync::class) {
+	from({ stdlibSources.map { zipTree(it) } })
+	into(layout.buildDirectory.dir("stdlib-src"))
+}
+
 tasks.test {
 	useJUnitPlatform()
+	dependsOn(unpackStdlibSources)
+	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// The integration programs and the bundled runtime are inputs of the oracle test.
 	inputs.dir("integration")
 	testLogging { events("failed"); showStandardStreams = true; exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }

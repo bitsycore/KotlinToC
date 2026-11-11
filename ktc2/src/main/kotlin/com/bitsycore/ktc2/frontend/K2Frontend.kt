@@ -36,7 +36,10 @@ const val kManifestName = "ktc2_build.txt"
 object K2Frontend {
 
 	/**
-	 * Compiles [inSources] into [inOutDir].
+	 * Compiles [inSources] into C under `<inOutDir>/c`.
+	 *
+	 * The Kotlin standard library is compiled from source together with the program (see
+	 * [librarySources]); only what the program reaches ends up in the output.
 	 *
 	 * @param inDumpIr also write the IR received from K2 (`ir.txt`, `ir.kt.txt`)
 	 * @return true when neither K2 nor the ktc2 back end reported an error
@@ -46,17 +49,64 @@ object K2Frontend {
 		System.setProperty(kOutDirProperty, inOutDir.absolutePath)
 		System.setProperty(kDumpIrProperty, inDumpIr.toString())
 		System.setProperty(kErrorCountProperty, "0")
+		val vLibrary = librarySources(inOutDir)
 		val vArgs = buildList {
 			inSources.forEach { add(it.path) }
-			// Lets the ktc2 std library declare its sources in the real kotlin.* packages.
+			vLibrary.forEach { add(it.path) }
+			if (vLibrary.isNotEmpty()) {
+				// The flags the standard library itself is built with; its internals are visible to its own sources.
+				add("-Xfriend-paths=" + codeSourceOf(Unit::class.java))
+				add("-opt-in=kotlin.RequiresOptIn")
+				add("-opt-in=kotlin.contracts.ExperimentalContracts")
+				add("-opt-in=kotlin.ExperimentalMultiplatform")
+				add("-opt-in=kotlin.ExperimentalStdlibApi")
+				add("-Xreturn-value-checker=check")
+				add("-Xdont-warn-on-error-suppression")
+			}
+			// Library sources are declared in the real kotlin.* packages and stand in for the jar's declarations.
 			add("-Xallow-kotlin-package")
-			add("-d"); add(File(inOutDir, "jvm").path)
+			add("-d"); add(File(inOutDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
 			add("-cp"); add(userClasspath())
 			add("-Xplugin=${pluginClasspath()}")
 		}
 		val vExit = K2JVMCompiler().exec(System.err, *vArgs.toTypedArray())
 		return vExit == ExitCode.OK && System.getProperty(kErrorCountProperty) == "0"
+	}
+
+	/**
+	 * Compiles [inSources] as ordinary Kotlin/JVM into [inOutDir], against the real standard
+	 * library and nothing of ktc2 but the `ktc2.` package: the reference build tests compare with.
+	 */
+	fun compileJvm(inSources: List<File>, inOutDir: File): Boolean {
+		val vArgs = inSources.map { it.path } + listOf("-d", inOutDir.path, "-no-stdlib", "-no-reflect", "-nowarn", "-cp", userClasspath())
+		return K2JVMCompiler().exec(System.err, *vArgs.toTypedArray()) == ExitCode.OK
+	}
+
+	/**
+	 * The library sources compiled with every program:
+	 * - files of the Kotlin standard library, unmodified, listed in `ktc2/stdlib/files.txt` and
+	 *   read from the directory named by the `ktc2.stdlibDir` system property (the unpacked
+	 *   kotlin-stdlib sources jar);
+	 * - ktc2's platform layer, the `.kt` resources under `ktc2/stdlib/`, copied to `<inOutDir>/stdlib`.
+	 */
+	private fun librarySources(inOutDir: File): List<File> {
+		val vResult = ArrayList<File>()
+		val vListing = K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/files.txt")?.use { it.readBytes().decodeToString() } ?: ""
+		val vEntries = vListing.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+		val vStdlibDir = System.getProperty("ktc2.stdlibDir")?.let { File(it) }
+		for (vEntry in vEntries) {
+			if (vEntry.endsWith(".kt") && !vEntry.contains('/')) {
+				val vText = K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/$vEntry")?.use { it.readBytes().decodeToString() } ?: continue
+				val vCopy = File(inOutDir, "stdlib/$vEntry")
+				vCopy.parentFile.mkdirs()
+				if (!vCopy.isFile || vCopy.readText() != vText) vCopy.writeText(vText)
+				vResult += vCopy
+			} else if (vStdlibDir != null) {
+				File(vStdlibDir, vEntry).takeIf { it.isFile }?.let { vResult += it }
+			}
+		}
+		return vResult
 	}
 
 	/** Classpath user programs compile against: the Kotlin builtins and the `ktc2.` package. */
@@ -122,7 +172,7 @@ class Ktc2Extension : IrGenerationExtension {
 
 		ArcInsert(vModule).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
-		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && it.name.asString() == "main" } }
+		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && it.name.asString() == "main" && it.parameters.isEmpty() } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"
 		val vPackage = vMain.packageFqName.asString()
 		File(vOutDir, kManifestName).writeText(buildString {

@@ -13,8 +13,9 @@ import kotlin.test.fail
 private const val kTimeoutSeconds = 60L
 
 /**
- * Dual-run oracle: every program under `integration/` is compiled once by ktc2, then its JVM
- * classes and its C build are both executed and must print the same text.
+ * Dual-run oracle: every program under `integration/` is compiled by ktc2 to C and, separately,
+ * as ordinary Kotlin/JVM against the real standard library; both are executed and must print
+ * the same text.
  *
  * The C compiler is `gcc`, or the `KTC2_CC` environment variable.
  */
@@ -39,8 +40,10 @@ class IntegrationTest {
 		val vCDir = File(vOutDir, "c")
 		val vCSources = vManifest.filter { it.startsWith("c=") }.map { it.substringAfter('=') }
 
+		val vJvmDir = File(vOutDir, "jvm")
+		assertTrue(K2Frontend.compileJvm(listOf(inSource), vJvmDir), "kotlinc failed on $inSource")
 		val vJava = File(System.getProperty("java.home"), "bin/java").path
-		val vClasspath = File(vOutDir, "jvm").path + File.pathSeparator + K2Frontend.userClasspath()
+		val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
 		val vExpected = run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
 
 		val vExe = File(vOutDir, "program.exe")
