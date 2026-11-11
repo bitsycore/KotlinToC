@@ -848,11 +848,26 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   C written by the program and calls through C pointers may write anything, as does printing
   an object (its `toString` is the program's code). Over the test programs this removes half
   of the retains (32,900 to 16,400, the thread stress test left aside: its 400,000 are a list
-  handing out each element with a count, which stays). What still counts: storing into a
-  field or an array, and every reference a function returns. `tools/retain_profile.sh` lists
+  handing out each element with a count; see the next entry). What still counts: storing into
+  a field or an array, and a returned reference the caller cannot borrow. `tools/retain_profile.sh` lists
   the lines of a program that retain most; `tools/arc_compare.py` compares two runs of the
   suite. Test builds (`KTC2_LEAK_CHECK`) now overwrite an object before freeing it, so a
   reference that should have been counted shows up as a failure.
+- **Results that are borrowed** (`backend/BorrowedReturns.kt`). A function that only hands out
+  a reference something else keeps — `list[i]`, a getter, `iterator.next()` over such a list,
+  `append` returning its receiver — gets a second form, `name__b`, whose result carries no
+  count. A function qualifies when everything it returns is read from a place reached from
+  its parameters, or is the result of a qualifying function called with such arguments, and
+  it does not itself write those places; a virtual dispatcher qualifies when every
+  implementation behind it in the program does. The caller uses the borrowed form where the
+  result goes into a local that is never reassigned and nothing in the rest of that local's
+  block can overwrite the places the result may have come from; otherwise it calls the
+  ordinary form as before. Forms are generated only when some caller asks for one. A loop
+  that reads the elements of a list (50 elements, 2000 rounds, four threads) went from
+  400,000 retains to none. Across the test programs the gain is small (16,400 to 16,200):
+  their loops print objects or change collections, and either makes the caller keep the
+  count. `KTC2_DEBUG_BORROW=1` prints why a function does not qualify or a caller does not
+  borrow.
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small

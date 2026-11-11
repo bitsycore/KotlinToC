@@ -8,7 +8,7 @@ import com.bitsycore.ktc2.kir.*
  * of a call or of a block, in which case the reader may borrow it instead of taking a count.
  *
  * Fields are told apart by name only (a write to `next` of any class counts for every `next`),
- * array elements not at all: the answer errs towards "written".
+ * elements of arrays of references not at all: the answer errs towards "written".
  */
 class Effects(inModule: KModule) {
 
@@ -96,7 +96,8 @@ class Effects(inModule: KModule) {
 		inBlock.anyStatement { vStatement ->
 			when (vStatement) {
 				is KFieldSet -> outSummary.fields += vStatement.field.cName
-				is KIndexSet -> outSummary.elements = true
+				// Only an array of references can hold what a borrowed reference depends on.
+				is KIndexSet -> if (vStatement.value.type.isCounted()) outSummary.elements = true
 				is KGlobalSet -> outSummary.globals += vStatement.global
 				// Printing or joining an object calls its `toString`, which is the program's code.
 				is KPrint -> if (vStatement.parts.any { isObject(it) }) outSummary.all = true
@@ -110,7 +111,7 @@ class Effects(inModule: KModule) {
 						is KIntrinsic -> when {
 							// C written by the program, or a call through a C pointer: it may call back into anything.
 							vNode.template != null || vNode.functions.isNotEmpty() || vNode.name == "ktc2_call_pointer" -> outSummary.all = true
-							!vNode.isPure -> outSummary.elements = true
+							!vNode.isPure && kHarmless.none { vNode.name.startsWith(it) } -> outSummary.elements = true
 						}
 						else -> {}
 					}
@@ -119,6 +120,11 @@ class Effects(inModule: KModule) {
 			}
 			false
 		}
+	}
+
+	private companion object {
+		/** Runtime helpers that are impure (they allocate, or deal with the exception in flight) but store into no array. */
+		val kHarmless = listOf("ktc2_box_", "ktc2_unbox_", "ktc2_throw", "ktc2_take_pending", "ktc2_slot_take", "ktc2_fail_")
 	}
 
 	private fun isObject(inPart: KPrintPart): Boolean =

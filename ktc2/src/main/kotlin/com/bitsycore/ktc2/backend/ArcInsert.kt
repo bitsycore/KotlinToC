@@ -26,18 +26,40 @@ import com.bitsycore.ktc2.kir.*
  * - the same for what is read from a `var` field, an array element or a top-level property,
  *   when nothing in the rest of the local's block can overwrite that place ([Effects]); and an
  *   argument read from such a place needs no temporary when the function called cannot
- *   overwrite it.
+ *   overwrite it;
+ * - a function that only hands out a reference something else keeps has a second form whose
+ *   result is borrowed ([BorrowedReturns]), called where the result is held by a local and
+ *   nothing in the rest of that local's block can overwrite the place it came from.
  */
 class ArcInsert(private val mModule: KModule) {
 
 	fun run() {
 		val vEffects = Effects(mModule)
+		val vReturns = BorrowedReturns(mModule, vEffects)
+		// The borrowed form of a function is built from its body as it is before this pass.
+		val vOriginals = HashMap<KFunction, List<KStmt>>()
 		for (vUnit in mModule.units) {
-			for (vFunction in vUnit.functions + listOfNotNull(vUnit.initializer)) {
+			for (vFunction in vUnit.functions.toList() + listOfNotNull(vUnit.initializer)) {
 				if (vFunction.isExternal || vFunction.dispatch != null) continue
-				val vBody = FunctionPass(readCounts(vFunction.body), reassigned(vFunction.body), vFunction.params.toSet(), vEffects).block(vFunction.body, Scope(null))
+				val vOriginal = vFunction.body.toList()
+				if (vReturns.of(vFunction) != null) vOriginals[vFunction] = vOriginal
+				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null).block(vOriginal, Scope(null))
 				vFunction.body.clear()
 				vFunction.body += vBody
+			}
+		}
+		// The borrowed forms that were asked for; building one may ask for others.
+		while (vReturns.pending.isNotEmpty()) {
+			val (vVariant, vFunction) = vReturns.pending.removeLast()
+			val vDispatch = vFunction.dispatch
+			if (vDispatch != null) {
+				fun borrowed(inTarget: KFunction): KFunction = if (inTarget.returnType is KRefType && inTarget.returnType != KNothingType) vReturns.variant(inTarget) else inTarget
+				vVariant.dispatch = vDispatch.mapTo(ArrayList()) { (vClass, vTarget) -> vClass to borrowed(vTarget) }
+				vVariant.dispatchDefault = vFunction.dispatchDefault?.let { borrowed(it) }
+			} else {
+				val vOriginal = vOriginals.getValue(vFunction)
+				val vInfo = vReturns.of(vFunction)!!
+				vVariant.body += FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, vInfo).block(vOriginal, Scope(null))
 			}
 		}
 	}
@@ -124,6 +146,9 @@ class ArcInsert(private val mModule: KModule) {
 		private val mReassigned: Set<KLocal>,
 		private val mParams: Set<KLocal>,
 		private val mEffects: Effects,
+		private val mReturns: BorrowedReturns,
+		/** Set when the borrowed form of a function is being built: what it returns is not counted. */
+		private val mBorrowedForm: BorrowedReturns.Info?,
 	) {
 		/** The statements that run after the one being translated, in its block (for a loop: to the end of the iteration). */
 		private var mRest: List<KStmt> = emptyList()
@@ -309,6 +334,13 @@ class ArcInsert(private val mModule: KModule) {
 						outStatements += inStatement
 						return
 					}
+					if (vGiven != null && vLocal.type is KRefType && vLocal !in mReassigned) {
+						borrowedCall(vLocal, vGiven)?.let {
+							mBorrowed += vLocal
+							outStatements += KLet(vLocal, it)
+							return
+						}
+					}
 					val vInit = vGiven?.let { stored(it, vLocal.type, outStatements) }
 					if (isRef(vLocal.type)) {
 						mScopes.last().owned += vLocal
@@ -374,7 +406,47 @@ class ArcInsert(private val mModule: KModule) {
 			}
 		}
 
+		/**
+		 * [inValue], the call that gives [inLocal] its value, as a call to the borrowed form of the
+		 * function; null when the result has to be owned. It can be borrowed when the place it comes
+		 * from, and the arguments it is reached through, stay as they are for the rest of the block.
+		 */
+		private fun borrowedCall(inLocal: KLocal, inValue: KExpr): KExpr? {
+			val vCall = BorrowedReturns.callOf(inValue) ?: return null
+			val vInfo = mReturns.of(vCall.function) ?: return null
+			// In the borrowed form of a function, the calls its result comes from were checked when it qualified.
+			if (mBorrowedForm?.callLocals?.get(inLocal) !== vCall.function) {
+				val vRest = mEffects.of(mRest)
+				if (vInfo.place.isWrittenBy(vRest)) {
+					if (System.getenv("KTC2_DEBUG_BORROW") != null) {
+						System.err.println("ktc2: borrow: result of ${vCall.function.cName} in ${inLocal.cName}: the rest of the block writes all=${vRest.all} elements=${vRest.elements && vInfo.place.elements} fields=${vInfo.place.fields.intersect(vRest.fields)}")
+					}
+					return null
+				}
+				val vIsHeld = { vBase: KExpr -> (vBase is KRead && isSteady(vBase.local)) || vBase is KStaticRead || vBase is KStringLit || vBase is KNull }
+				if (!vCall.arguments.all { !isRef(it.type) || stays(it, lazyOf(vRest), vIsHeld) }) return null
+			}
+			fun rebuilt(inExpr: KExpr): KExpr = when (inExpr) {
+				is KRefCast -> KRefCast(rebuilt(inExpr.operand), inExpr.type)
+				else -> KCall(mReturns.variant(vCall.function), vCall.arguments)
+			}
+			return rebuilt(inValue)
+		}
+
 		private fun returnValue(inReturn: KReturn, outStatements: MutableList<KStmt>) {
+			if (mBorrowedForm != null) {
+				// What is returned stays held by the place it was read from: it goes out without a count.
+				val vValue = inReturn.value!!
+				if (mScopes.all { it.owned.isEmpty() }) {
+					outStatements += KReturn(vValue)
+					return
+				}
+				val vResult = KLocal("ktc2_r${mNextTemp++}", vValue.type)
+				outStatements += KLet(vResult, vValue)
+				for (vScope in mScopes.asReversed()) outStatements += releases(vScope)
+				outStatements += KReturn(KRead(vResult))
+				return
+			}
 			// Returning an owning local hands its reference to the caller: no retain, no release.
 			val vReturned = inReturn.value?.let { localOf(it) }?.takeIf { vLocal -> isRef(vLocal.type) && mScopes.any { vLocal in it.owned } }
 			if (vReturned != null) {

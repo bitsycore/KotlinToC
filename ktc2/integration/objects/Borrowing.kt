@@ -27,6 +27,21 @@ class Loud(val holder: Holder) {
 	}
 }
 
+class Wrapper(private var mItem: Item) {
+	private var mSwaps = 0
+
+	fun current(): Item = mItem
+
+	fun swap() {
+		mSwaps++
+		mItem = Item("swap " + mSwaps)
+	}
+}
+
+class Outer(private val mWrapper: Wrapper) {
+	fun inner(): Wrapper = mWrapper
+}
+
 var gCurrent = Item("global one")
 
 fun swapGlobal() {
@@ -88,6 +103,52 @@ fun main() {
 	// A chain whose link is cut while it is being followed.
 	val vChain = Chain(Chain(null, "tail"), "head")
 	println(vChain.cut() + " " + vChain.cut())
+
+	// What a function hands out — an element of a list, the value of a key, a field through a
+	// getter — while the collection or the field changes under it.
+	val vNames = arrayListOf(Item("n0"), Item("n1"), Item("n2"), Item("n3"))
+	for (vIndex in vNames.indices) {
+		val vName = vNames[vIndex]
+		vNames[vIndex] = Item("new" + vIndex)
+		print(vName.name + ">" + vNames[vIndex].name + " ")
+	}
+	println()
+	val vMoved = ArrayList<Item>()
+	for (vName in vNames) {
+		vMoved.add(vName)
+		if (vMoved.size == 2) vMoved.clear()
+		print(vName.name + " ")
+	}
+	println(vMoved.size)
+	val vLast = vNames.last()
+	vNames.removeAt(vNames.size - 1)
+	val vPicked = vNames.first { it.name.endsWith("1") }
+	vNames.clear()
+	println(vLast.name + " " + vPicked.name + " " + vNames.size)
+
+	val vByName = HashMap<String, Item>()
+	vByName["a"] = Item("value a")
+	vByName["b"] = Item("value b")
+	val vFound = vByName["a"]!!
+	vByName["a"] = Item("other a")
+	val vAgain = vByName.getValue("b")
+	vByName.remove("b")
+	println(vFound.name + " / " + vAgain.name + " / " + vByName["a"]!!.name + " / " + vByName.size)
+
+	val vWrapped = Wrapper(Item("inside"))
+	val vInside = vWrapped.current()
+	vWrapped.swap()
+	println(vInside.name + " then " + vWrapped.current().name)
+	val vDeep = Outer(vWrapped).inner().current()
+	vWrapped.swap()
+	println(vDeep.name + " then " + vWrapped.current().name)
+
+	// Read only: every element is seen once, whatever the list is.
+	var vLength = 0
+	for (vList2 in listOf(listOf(Item("p"), Item("qq")), arrayListOf(Item("rrr")), emptyList())) {
+		for (vEach in vList2) vLength += vEach.name.length
+	}
+	println(vLength)
 
 	// Nothing overwrites here: the same values either way.
 	var vTotal = 0

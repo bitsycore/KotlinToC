@@ -33,10 +33,12 @@ class Worker(private val mId: Int, private val mLedger: Ledger) : Thread() {
 
 fun sumOfIds(inSamples: List<Sample>, inRounds: Int): Long {
 	var vSum = 0L
+	// Each visit stores the sample, which every thread shares: one retain, and one release of the one before.
+	val vHeld = arrayOfNulls<Sample>(1)
 	for (vRound in 0 until inRounds) {
 		for (vSample in inSamples) {
-			// A local copy of the reference: one retain and one release per visit.
-			val vCopy = vSample
+			vHeld[0] = vSample
+			val vCopy = vHeld[0]!!
 			vSum += vCopy.id + vCopy.label.length
 		}
 	}
