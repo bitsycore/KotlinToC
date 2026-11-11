@@ -575,6 +575,15 @@ internal class BodyBuilder(
 			KUnitValue
 		}
 		is IrTypeOperatorCall -> lowerTypeOperator(inExpression)
+		is IrThrow -> {
+			// Until exceptions exist (Phase 6) a throw reports the exception and stops the program.
+			val vThrown = inExpression.value
+			val vMessageArgument = (vThrown as? IrConstructorCall)?.arguments?.firstOrNull()
+			val vMessage = if (vMessageArgument != null && kType(vMessageArgument.type) == KStringType) lowerPure(vMessageArgument) else KNull(KStringType)
+			val vName = vThrown.type.classOrNull?.owner?.kotlinFqName?.asString() ?: "kotlin.Throwable"
+			mBlock += KEval(KIntrinsic("ktc2_fail_throw", listOf(KStringLit(vName), vMessage), KUnitType, isPure = false))
+			KUnitValue
+		}
 		is IrGetObjectValue -> lowerObject(inExpression)
 		is IrGetEnumValue -> mImporter.enumEntryFor(inExpression.symbol.owner)?.let { coerce(KStaticRead(it), typeOf(inExpression)) }
 			?: fail(inExpression, "enum entry '${inExpression.symbol.owner.name}'")
@@ -846,6 +855,13 @@ internal class BodyBuilder(
 	/** Members of `Array` and the primitive arrays. */
 	private fun lowerArrayCall(inCall: IrCall, inName: String, inArguments: List<IrExpression>, inType: KArrayType): KExpr = when (inName) {
 		"<get-size>" -> arrayLength(lowerPure(inArguments[0]))
+		"iterator" -> {
+			// The platform layer's iterator class, for the element type of this array.
+			val vFunction = mImporter.internalFunction("arrayIterator")
+			val vElement = mImporter.argumentsOf(closed(inArguments[0].type)).firstOrNull()
+			val vTarget = if (vFunction == null || vElement == null) null else mImporter.functionFor(vFunction, mImporter.substFor(vFunction, emptyList(), listOf(vElement)))
+			if (vTarget == null) fail(inCall, "iterator() on this array") else adapt(KCall(vTarget, listOf(coerce(lowerPure(inArguments[0]), vTarget.params[0].type))), inCall)
+		}
 		"get" -> {
 			val vOperands = lowerOperands(inArguments)
 			KIndexRead(vOperands[0], vOperands[1], inType.element)
@@ -905,7 +921,10 @@ internal class BodyBuilder(
 		if (vLoop == null || vInner == null || vLoopVariable == null || vRange == null || (!vIsRange && vIndicesOf == null) ||
 			vElement == null || (vElement.prim != KPrim.INT && vElement.prim != KPrim.LONG)
 		) {
-			return fail(inBlock, "'for' over anything but an array or an Int/Long range (until, .., ..<, downTo, step)")
+			// Anything else is iterated through its iterator(), exactly as K2 wrote it.
+			for (vIndex in 0 until inBlock.statements.size - 1) lowerStatement(inBlock.statements[vIndex])
+			inBlock.statements.lastOrNull()?.let { lowerStatement(it) }
+			return KUnitValue
 		}
 		val vPrim = vElement.prim
 		val vDown = vKind == "downTo"
@@ -1150,6 +1169,10 @@ internal class BodyBuilder(
 	private fun lowerCall(inCall: IrCall): KExpr {
 		val vCallee = inCall.symbol.owner
 		val vOwner = vCallee.parent as? IrClass
+		if (vOwner == null && vCallee.name.asString() == "newArray" && vCallee.kotlinFqName.asString() == "ktc2.internal.newArray") {
+			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, "newArray of '${inCall.type.render()}'")
+			return KArrayNew(lowerPure(inCall.arguments[0]!!), vType)
+		}
 		mLocalFunctions[vCallee]?.let { return adapt(callFunction(inCall, it.invoke, vCallee, inCall.arguments, KRead(it.holder), mSubst), inCall) }
 		if (vOwner != null && vCallee.name.asString() == "invoke" && isFunctionType(vOwner.symbol.typeWith())) {
 			// Calling a lambda bound to an inline parameter expands it; any other function value is an interface call.

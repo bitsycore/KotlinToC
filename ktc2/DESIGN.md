@@ -404,7 +404,7 @@ ktc2/
 | 0 | Skeleton + oracle | module, `ktc2.` package, K2 driver, and the dual-run test (`IntegrationTest`: every program in `integration/` runs as JVM classes and as C, outputs must match) — **done** | `./gradlew :ktc2:test` |
 | 1 | KIR + first C | KIR import from K2 IR; per-class C emitter for primitives, functions, control flow, `@Struct`; `println` and operator intrinsics — **done** (see status below) | arithmetic / control-flow programs match the JVM |
 | 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
-| 3 | Std library + closures | `kotlin.*` sources for collections, `StringBuilder`, scope functions; generics by monomorphization; implicit-capture lambdas | collection and lambda programs match the JVM |
+| 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures — **done**; the Kotlin stdlib compiled from its own sources — **in progress** (see status) | collection and lambda programs match the JVM |
 | 4 | Ownership optimization | rules 1–5 of §5.2; `--arc-stats` | RC operations per test drop sharply, output unchanged |
 | 5 | Escape analysis | stack promotion, alloca, caller-slot returns, `@Value T`, `@Size` inline, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
 | 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>`; atomic mode | exception programs leak-free; thread programs under atomic RC |
@@ -443,11 +443,55 @@ How Phase 2 works:
 - **Lambdas** passed to array constructors are expanded in place; the same mechanism will
   serve `inline` functions in Phase 3.
 
+Phase 3 so far (`integration/generics/`, `integration/stdlib/`), 14 programs in total:
+- **Generics.** A generic function or class is instantiated per distinct tuple of type
+  arguments, where every reference type counts as `Any?` (they are all pointers). `Box<Int>`
+  is its own class holding an `int32_t`; `Box<String>` and `Box<User>` share one. Results of
+  shared instantiations are cast back to the caller's static type. Dispatchers are per
+  instantiation. An unbound type parameter falls back to `Any?`, with boxing at the boundary.
+- **Inline functions** are expanded at the call site: arguments are evaluated once into
+  locals, lambda arguments are bound unevaluated and expanded at each call, `return` inside a
+  lambda returns from the enclosing function as in Kotlin.
+- **Function values.** A lambda that is not expanded becomes a closure object: one class per
+  lambda with a field per captured value and an `invoke`. Calling a function value is an
+  interface call on `FunctionN.invoke` for that signature, so `(Int) -> Int` passes ints
+  unboxed. A captured `var` lives in a ref-counted cell shared by the closure and its
+  creator; captured `val`s are copied. Local functions and `::references` are closures too.
+- **Std library from its own sources.** Files of the Kotlin stdlib sources jar (unpacked by
+  Gradle, listed in `resources/ktc2/stdlib/files.txt`) are compiled, unmodified, with every
+  program, in multiplatform mode: they are the *common* source set, ktc2's platform layer
+  (`resources/ktc2/stdlib/*.kt`) is the platform one and provides the `actual` declarations.
+  In use today: `util/Standard.kt` (`let`, `run`, `with`, `apply`, `also`, `takeIf`, `repeat`).
+
+**The collections port (next).** Findings from bringing in `kotlin.collections`:
+- The common collection files only compile as a group (they use each other's `internal`
+  helpers): 38 files, listed in `resources/ktc2/stdlib/collections-port.txt`. Together they
+  add about two seconds to a compile.
+- With that group in, K2 reports exactly what the platform must provide: 59 `expect`
+  declarations — `ArrayList`, `HashMap`, `LinkedHashMap`, `HashSet`, `LinkedHashSet`, the
+  `AbstractMutable*` bases, `StringBuilder` and its extension functions, `Appendable`,
+  `Serializable`, `RandomAccess`, and about twenty functions (`sort`, `fill`, `mapOf(pair)`,
+  `buildListInternal`, `println`, …). `Ktc2Collections.kt` already has `ArrayList` (over a
+  typed array, so `ArrayList<Int>` stores ints) and the list functions; the rest is to write,
+  and the compiler checks each against the real API.
+- Three constraints found on the way: (1) common sources cannot see platform declarations,
+  so a class the JVM gets from `java.util` must be an `actual class` matching the stdlib's
+  `expect class`, not a look-alike; (2) the stdlib jar must not be a "friend" of the
+  compilation — its internal functions then compete with the source ones — so the stdlib's
+  internal annotations come from `internal/Annotations.kt`; (3) while the JVM stdlib jar is on
+  the classpath, a cross-package call from one common file to another can be ambiguous
+  between source and jar (`collections/Arrays.kt` calling `buildString`); that file is left
+  out. The clean end state is to compile without the JVM stdlib jar at all.
+- `throw` currently reports the exception and exits (Phase 6 makes it catchable), and
+  `for` over anything but a range or an array goes through `iterator()` as K2 writes it.
+
 Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
-(null `!!`, bad cast, index out of bounds, `/ by zero`) print the JVM-style message and exit
-until Phase 6; `object` and enum initializers run at startup rather than on first use;
-reference fields in `@Struct` classes, `Enum.entries`, generics and lambdas as values are not
-supported yet. Nothing in the ARC pass is optimized (Phase 4).
+(null `!!`, bad cast, index out of bounds, `/ by zero`, `throw`) print the JVM-style message
+and exit until Phase 6; `object` and enum initializers run at startup rather than on first
+use; reference fields in `@Struct` classes, `Enum.entries`, inner classes, a function value
+whose static type differs in variance from the lambda's own, and an inline lambda used
+inside another lambda (`crossinline`) are not supported yet. Nothing in the ARC pass is
+optimized (Phase 4).
 
 **Relation to v1.** v1 integration tests that exercise plain behavior are ported as plain
 Kotlin into `ktc2/integration/` and gain the JVM oracle. Tests of the manual model (`ArenaTest`,

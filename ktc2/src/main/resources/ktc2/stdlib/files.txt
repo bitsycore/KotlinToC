@@ -1,3 +1,7 @@
-# Files of the Kotlin standard library sources compiled, unmodified, with every program.
-# Paths are relative to the unpacked kotlin-stdlib sources jar.
+# Library sources compiled with every program. Only what a program reaches is translated.
+#
+# A path with a directory is a file of the Kotlin standard library sources, used unmodified
+# (relative to the unpacked kotlin-stdlib sources jar). A bare file name is part of ktc2's
+# platform layer, next to this list.
+commonMain/kotlin/internal/Annotations.kt
 commonMain/kotlin/util/Standard.kt

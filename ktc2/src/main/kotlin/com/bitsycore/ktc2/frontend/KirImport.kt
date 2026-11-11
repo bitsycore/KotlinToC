@@ -185,9 +185,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	// MARK: Entry
 	// ==================
 
+	/** The functions of the platform layer's `ktc2.internal` package, by name. */
+	private val mInternal = HashMap<String, IrSimpleFunction>()
+
+	/** A function of `ktc2.internal`, which library calls without a Kotlin body are redirected to. */
+	internal fun internalFunction(inName: String): IrSimpleFunction? = mInternal[inName]
+
 	fun import(inModule: IrModuleFragment): KModule {
 		for (vFile in inModule.files) countOverloads(vFile.declarations)
-		val vMain = inModule.files.firstNotNullOfOrNull { vFile ->
+		for (vFile in inModule.files.filter { it.packageFqName.asString() == "ktc2.internal" }) {
+			vFile.declarations.filterIsInstance<IrSimpleFunction>().forEach { mInternal[it.name.asString()] = it }
+		}
+		val vMain = inModule.files.filter { !it.packageFqName.asString().startsWith("kotlin") }.firstNotNullOfOrNull { vFile ->
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "main" && it.parameters.isEmpty() }
 		}
 		val vEntry = vMain?.let { functionFor(it) }
@@ -792,6 +801,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vIsCompare = vOwner.kotlinFqName.asString() == "kotlin.Comparable" && inFunction.name.asString() == "compareTo"
 		if (vIsCompare && vSignature.params.all { it.type == KObjType }) {
 			vTarget.dispatchDefault = runtime("ktc2_any_compareTo", listOf(KObjType, KObjType), KPrimType(KPrim.INT))
+		}
+		// A String is also a CharSequence.
+		if (vOwner.kotlinFqName.asString() == "kotlin.CharSequence") {
+			vTarget.dispatchDefault = when (inFunction.name.asString()) {
+				"<get-length>" -> runtime("ktc2_cs_length", listOf(KObjType), KPrimType(KPrim.INT))
+				"get" -> runtime("ktc2_cs_get", listOf(KObjType, KPrimType(KPrim.INT)), KPrimType(KPrim.CHAR))
+				else -> vTarget.dispatchDefault
+			}
 		}
 		vUnit.functions += vTarget
 		mDispatchers[vKey] = Dispatcher(inFunction, inSubst, vClassArguments.map { kTypeOf(it) ?: KObjType }, vTarget)

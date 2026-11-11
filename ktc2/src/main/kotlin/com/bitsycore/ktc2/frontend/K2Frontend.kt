@@ -54,14 +54,17 @@ object K2Frontend {
 			inSources.forEach { add(it.path) }
 			vLibrary.forEach { add(it.path) }
 			if (vLibrary.isNotEmpty()) {
-				// The flags the standard library itself is built with; its internals are visible to its own sources.
-				add("-Xfriend-paths=" + codeSourceOf(Unit::class.java))
+				// The flags the standard library itself is built with.
 				add("-opt-in=kotlin.RequiresOptIn")
 				add("-opt-in=kotlin.contracts.ExperimentalContracts")
 				add("-opt-in=kotlin.ExperimentalMultiplatform")
 				add("-opt-in=kotlin.ExperimentalStdlibApi")
 				add("-Xreturn-value-checker=check")
 				add("-Xdont-warn-on-error-suppression")
+				// The common sources declare `expect`s; the platform layer provides the `actual`s.
+				add("-Xmulti-platform")
+				add("-Xcommon-sources=" + vLibrary.filter { "commonMain" in it.invariantSeparatorsPath }.joinToString(",") { it.path })
+				add("-nowarn")
 			}
 			// Library sources are declared in the real kotlin.* packages and stand in for the jar's declarations.
 			add("-Xallow-kotlin-package")

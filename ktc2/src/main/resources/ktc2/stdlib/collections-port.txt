@@ -1,0 +1,49 @@
+# Work in progress: the file set for the collections port.
+#
+# These files of the Kotlin standard library compile together, unmodified, once ktc2's platform
+# layer provides an `actual` for each of their `expect` declarations (59 at the last count; the
+# compiler lists them). When it does, this list replaces the entries of files.txt.
+# Left out on purpose: commonMain/kotlin/collections/Arrays.kt (its call to buildString is
+# ambiguous between the source and the jar while the JVM stdlib jar is still on the classpath).
+commonMain/kotlin/internal/Annotations.kt
+commonMain/kotlin/util/Standard.kt
+commonMain/kotlin/ioH.kt
+commonMain/kotlin/SequencesH.kt
+commonMain/generated/_Collections.kt
+commonMain/kotlin/text/Appendable.kt
+commonMain/kotlin/text/StringBuilder.kt
+commonMain/kotlin/collections/AbstractCollection.kt
+commonMain/kotlin/collections/AbstractIterator.kt
+commonMain/kotlin/collections/AbstractList.kt
+commonMain/kotlin/collections/AbstractMap.kt
+commonMain/kotlin/collections/AbstractMutableCollection.kt
+commonMain/kotlin/collections/AbstractMutableList.kt
+commonMain/kotlin/collections/AbstractMutableMap.kt
+commonMain/kotlin/collections/AbstractMutableSet.kt
+commonMain/kotlin/collections/AbstractSet.kt
+commonMain/kotlin/collections/ArrayDeque.kt
+commonMain/kotlin/collections/ArrayList.kt
+commonMain/kotlin/collections/Collections.kt
+commonMain/kotlin/collections/CollectionsH.kt
+commonMain/kotlin/collections/Grouping.kt
+commonMain/kotlin/collections/HashMap.kt
+commonMain/kotlin/collections/HashSet.kt
+commonMain/kotlin/collections/IndexedValue.kt
+commonMain/kotlin/collections/Iterables.kt
+commonMain/kotlin/collections/Iterators.kt
+commonMain/kotlin/collections/LinkedHashMap.kt
+commonMain/kotlin/collections/LinkedHashSet.kt
+commonMain/kotlin/collections/MapAccessors.kt
+commonMain/kotlin/collections/MapWithDefault.kt
+commonMain/kotlin/collections/Maps.kt
+commonMain/kotlin/collections/MutableCollections.kt
+commonMain/kotlin/collections/PrimitiveIterators.kt
+commonMain/kotlin/collections/ReversedViews.kt
+commonMain/kotlin/collections/Sequence.kt
+commonMain/kotlin/collections/SequenceBuilder.kt
+commonMain/kotlin/collections/Sequences.kt
+commonMain/kotlin/collections/Sets.kt
+commonMain/kotlin/collections/SlidingWindow.kt
+commonMain/kotlin/collections/UArraySorting.kt
+Ktc2Internal.kt
+Ktc2Collections.kt

@@ -271,6 +271,11 @@ _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
 ktc2_String* ktc2_any_toString(ktc2_Obj* object);
 bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b);
 int32_t ktc2_any_hashCode(ktc2_Obj* object);
+/** `CharSequence` members for the built-in implementation, String. */
+int32_t ktc2_cs_length(ktc2_Obj* object);
+uint16_t ktc2_cs_get(ktc2_Obj* object, int32_t index);
+/** Reports a thrown exception and exits (until exceptions can be caught). [message] may be NULL. */
+_Noreturn void ktc2_fail_throw(const ktc2_String* exception, const ktc2_String* message);
 /** `Comparable.compareTo` for the built-in comparable types: strings and boxed primitives. */
 int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b);
 

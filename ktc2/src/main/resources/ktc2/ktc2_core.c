@@ -532,3 +532,26 @@ int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
 	default: ktc2_fail_dispatch();
 	}
 }
+
+/* ================== */
+/* MARK: CharSequence */
+/* ================== */
+
+int32_t ktc2_cs_length(ktc2_Obj* object)
+{
+	if (object->typeId != KTC2_TYPE_STRING) ktc2_fail_dispatch();
+	return ((ktc2_String*)object)->length;
+}
+
+uint16_t ktc2_cs_get(ktc2_Obj* object, int32_t index)
+{
+	if (object->typeId != KTC2_TYPE_STRING) ktc2_fail_dispatch();
+	return ktc2_str_get((ktc2_String*)object, index);
+}
+
+_Noreturn void ktc2_fail_throw(const ktc2_String* exception, const ktc2_String* message)
+{
+	fflush(stdout);
+	fprintf(stderr, "Exception in thread \"main\" %s%s%s\n", exception->bytes, message ? ": " : "", message ? message->bytes : "");
+	exit(1);
+}
