@@ -279,8 +279,13 @@ class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type
 /** Allocates a zeroed array of [length] elements. Not pure; the caller owns the result. */
 class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr
 
-/** Allocates a zeroed instance of [cls]. Not pure; the caller owns the result. */
+/**
+ * Allocates a zeroed instance of [cls]. Not pure; the caller owns the result.
+ * [onStack] is set by `EscapeAnalysis` when the object cannot outlive the block it is created
+ * in: it then lives in that block's stack frame instead of the heap.
+ */
 class KAlloc(val cls: KClass) : KExpr {
+	var onStack: Boolean = false
 	override val type: KType get() = KClassType(cls)
 }
 

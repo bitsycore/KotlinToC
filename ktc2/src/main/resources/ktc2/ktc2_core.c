@@ -89,6 +89,8 @@ void ktc2_destroy(ktc2_Obj* object)
 {
 	void (*destroy)(ktc2_Obj*) = ktc2_types[object->typeId].destroy;
 	if (destroy) destroy(object);
+	/* A stack object only gives up what it refers to; its memory belongs to a frame. */
+	if (object->rc & KTC2_STACK) return;
 	count_live(object->typeId, -1);
 	free(object);
 }

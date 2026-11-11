@@ -11,6 +11,7 @@ import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
+import com.bitsycore.ktc2.backend.EscapeAnalysis
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.util.dump
@@ -218,6 +219,7 @@ class Ktc2Extension : IrGenerationExtension {
 		System.setProperty(kErrorCountProperty, vImporter.errors.size.toString())
 		if (vImporter.errors.isNotEmpty()) return
 
+		EscapeAnalysis(vModule).run()
 		ArcInsert(vModule).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && it.name.asString() == "main" && it.parameters.isEmpty() } }

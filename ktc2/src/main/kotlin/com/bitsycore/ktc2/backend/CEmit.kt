@@ -548,7 +548,13 @@ class CEmitter(private val mModule: KModule) {
 			is KIntrinsic -> "${inExpr.name}(${arguments(inExpr.arguments)})"
 			is KAlloc -> {
 				mState.includes += inExpr.cls.unit
-				"ktc2_alloc(sizeof(${inExpr.cls.cName}), ${typeId(inExpr.cls)})"
+				if (inExpr.onStack) {
+					// The object lives in the enclosing block: a compound literal, zeroed each time it is reached.
+					val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
+					"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1, ${typeId(inExpr.cls)} } })"
+				} else {
+					"ktc2_alloc(sizeof(${inExpr.cls.cName}), ${typeId(inExpr.cls)})"
+				}
 			}
 			is KCall -> {
 				mState.includes += inExpr.function.unit

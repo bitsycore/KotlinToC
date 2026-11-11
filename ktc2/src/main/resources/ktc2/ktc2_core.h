@@ -25,6 +25,9 @@ typedef struct ktc2_Obj {
 
 #define KTC2_IMMORTAL UINT32_MAX
 
+/** Flag in `rc` of an object that lives on the stack: at a count of zero it is cleaned up but not freed. */
+#define KTC2_STACK UINT32_C(0x80000000)
+
 /** Per-type data. `destroy` releases the references an instance holds; NULL when it holds none. */
 typedef struct ktc2_TypeInfo {
 	const char* name;
@@ -128,7 +131,7 @@ static inline void ktc2_release(void* pointer)
 {
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_releases);
-	if (object && object->rc != KTC2_IMMORTAL && --object->rc == 0) ktc2_destroy(object);
+	if (object && object->rc != KTC2_IMMORTAL && (--object->rc & ~KTC2_STACK) == 0) ktc2_destroy(object);
 }
 
 /**

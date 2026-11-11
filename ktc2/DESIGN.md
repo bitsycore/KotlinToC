@@ -406,7 +406,7 @@ ktc2/
 | 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
 | 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources — **done** | collection, string and lambda programs match the JVM |
 | 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) — **done** (see status) | RC operations per test drop sharply, output unchanged |
-| 5 | Escape analysis | stack promotion, alloca, caller-slot returns, `@Value T`, `@Size` inline, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
+| 5 | Escape analysis | whole-program escape summaries and stack promotion of class instances, closures and cells — **done**; still to do: stack buffers for non-escaping strings and arrays, caller-slot returns, `@Value` / `@Size` inline storage, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
 | 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>`; atomic mode | exception programs leak-free; thread programs under atomic RC |
 | 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator; port of the SDL3 module | v1's interop tests ported and passing |
 
@@ -529,6 +529,19 @@ that path (hoisted declarations, branches not taken) is counted; those cost a nu
 What remains for later: borrowing a `val` field read into a local, releasing a temporary at
 its last use rather than at scope end, and not counting at all for objects that never
 escape (Phase 5).
+
+Phase 5 so far — escape analysis (`EscapeAnalysis`, before `ArcInsert`). A reference escapes
+when it is returned, stored into a field, global or array element, or passed to a parameter
+that escapes; the per-parameter summary is a fixpoint over the whole program (a dispatcher's
+is the union of its targets', a runtime function is assumed to keep its arguments). An
+allocation whose object and every copy of its reference stay inside the block of the
+allocation is emitted as a C compound literal in that block. Such an object carries a flag
+in its count: reaching zero releases what it refers to but frees nothing. This applies to
+class instances, closure objects and captured-variable cells alike.
+
+Effect on heap allocations: `objects/Classes` 2025 → 1020 (the temporaries of a loop),
+`generics/Lambdas` 47 → 36, `generics/Generics` 73 → 60. Programs dominated by strings and
+arrays barely change yet: those are not promoted so far.
 
 Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
 (null `!!`, bad cast, index out of bounds, `/ by zero`, `throw`) print the JVM-style message
