@@ -4,46 +4,86 @@ import com.bitsycore.ktc2.frontend.K2Frontend
 import java.io.File
 import kotlin.system.exitProcess
 
-private const val kUsage = "Usage: ktc2 <file.kt | library.def | directory>... [-o <output_dir>] [-copt <c option>]... [-lopt <linker option>]... [--dump-ir] [--warn-heap] [--no-warn-cycles] [--checks=abort]"
+private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
+  -o <dir>           where the output goes (default: <module>/build, or ./out)
+  --build            also compile the C into a program (C compiler: KTC2_CC, default gcc)
+  --run              build, then run the program with the arguments after --
+  --debug            build without optimization, with debug information and the leak report
+  -copt <option>     an option for the C compiler; -lopt <option> one for the linker
+  --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
+  --warn-heap        list every allocation left on the heap, with the reason
+  --no-warn-cycles   do not report classes that can form reference cycles
+  --dump-ir          also write the IR received from the Kotlin compiler"""
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC — see ktc2/DESIGN.md).
- * Writes the generated C under `<out>/c` and the JVM reference classes under `<out>/jvm`.
+ * Writes the generated C under `<out>/c`; with `--build` or `--run` also the program.
  */
 fun main(args: Array<String>) {
-	val vSources = mutableListOf<File>()
-	var vOutDir = File("out")
+	val vSources = LinkedHashSet<File>()
+	val vModules = ArrayList<File>()
+	var vOutDir: File? = null
 	var vDumpIr = false
+	var vBuild = false
+	var vRun = false
+	var vDebug = false
+	var vProgramArguments = emptyList<String>()
 	var vIndex = 0
 	while (vIndex < args.size) {
 		val vArg = args[vIndex++]
 		when {
+			vArg == "--" -> {
+				vProgramArguments = args.drop(vIndex)
+				vIndex = args.size
+			}
 			vArg == "-o" && vIndex < args.size -> vOutDir = File(args[vIndex++])
+			vArg == "--build" -> vBuild = true
+			vArg == "--run" -> vRun = true
+			vArg == "--debug" -> vDebug = true
 			vArg == "--dump-ir" -> vDumpIr = true
-			// Lists every allocation that stays on the heap, with the reason.
 			vArg == "--warn-heap" -> System.setProperty("ktc2.warnHeap", "true")
-			// An index out of bounds or a division by zero ends the program instead of throwing: no test after such operations.
 			vArg == "--checks=abort" -> System.setProperty("ktc2.checks", "abort")
 			vArg == "--checks=throw" -> System.setProperty("ktc2.checks", "throw")
-			// Silences the report of classes that can form reference cycles.
 			vArg == "--no-warn-cycles" -> System.setProperty("ktc2.warnCycles", "false")
-			// A Kotlin/Native interop definition: bindings for the C library it names are generated.
+			vArg == "-copt" && vIndex < args.size -> addOption("ktc2.copt", args[vIndex++])
+			vArg == "-lopt" && vIndex < args.size -> addOption("ktc2.lopt", args[vIndex++])
 			vArg.endsWith(".kt") || vArg.endsWith(".def") -> vSources += File(vArg)
-			// An option for the C compiler when it reads the headers of .def files and compiles the result; one for the linker.
-			vArg == "-copt" && vIndex < args.size -> System.setProperty("ktc2.copt", (System.getProperty("ktc2.copt", "") + "\n" + args[vIndex++]).trim())
-			vArg == "-lopt" && vIndex < args.size -> System.setProperty("ktc2.lopt", (System.getProperty("ktc2.lopt", "") + "\n" + args[vIndex++]).trim())
-			// A directory stands for the sources and definitions in it: a module.
+			File(vArg, kModuleFileName).isFile -> vModules += File(vArg)
+			// A directory without a module file stands for the sources and definitions directly in it.
 			File(vArg).isDirectory -> vSources += File(vArg).listFiles { vFile -> vFile.isFile && (vFile.extension == "kt" || vFile.extension == "def") }!!.sortedBy { it.name }
 			else -> fail("unknown argument '$vArg'")
 		}
 	}
+
+	val vOut = vOutDir ?: vModules.firstOrNull()?.let { File(it, "build") } ?: File("out")
+	var vName = vSources.firstOrNull { it.extension == "kt" }?.nameWithoutExtension ?: "program"
+	for (vModule in vModules) {
+		val vProject = loadProject(vModule, vOut) ?: exitProcess(1)
+		if (vModule === vModules.first()) vName = vProject.name
+		vSources += vProject.sources
+		vProject.compilerOpts.forEach { addOption("ktc2.copt", it) }
+		vProject.linkerOpts.forEach { addOption("ktc2.lopt", it) }
+	}
 	if (vSources.isEmpty()) fail("no source file")
 	vSources.firstOrNull { !it.isFile }?.let { fail("no such file '$it'") }
 
-	if (!K2Frontend.compile(vSources, vOutDir, vDumpIr)) exitProcess(1)
+	if (!K2Frontend.compile(vSources.toList(), vOut, vDumpIr)) exitProcess(1)
+	if (!vBuild && !vRun) return
+	val vProgram = buildProgram(vOut, vName, vDebug) ?: exitProcess(1)
+	if (!vRun) {
+		println("ktc2: built $vProgram")
+		return
+	}
+	val vProcess = ProcessBuilder(listOf(vProgram.absolutePath) + vProgramArguments).inheritIO().start()
+	exitProcess(vProcess.waitFor())
 }
 
-/** Prints [inMessage] with the usage line and exits with status 2. */
+/** Adds [inOption] to the newline-separated list held in the system property [inProperty]. */
+private fun addOption(inProperty: String, inOption: String) {
+	System.setProperty(inProperty, (System.getProperty(inProperty, "") + "\n" + inOption).trim())
+}
+
+/** Prints [inMessage] with the usage text and exits with status 2. */
 private fun fail(inMessage: String): Nothing {
 	System.err.println("ktc2: $inMessage")
 	System.err.println(kUsage)

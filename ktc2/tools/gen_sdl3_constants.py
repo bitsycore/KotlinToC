@@ -1,5 +1,5 @@
 """
-Fills the constant tables of ktc2/modules/sdl3/SDL3.kt (between its `// <constants>` and
+Fills the constant tables of ktc2/src/main/resources/ktc2/modules/sdl3/SDL3.kt (between its `// <constants>` and
 `// </constants>` lines) from those of the v1 module (src/main/resources/modules/ktc.sdl3):
 each `inline val SDL3.Group.Name get() = C.SDL_X` becomes `const val Name = SDL_X` inside
 `object Group`, nested in `object SDL3`.
@@ -49,7 +49,7 @@ for vGroup, vEntries in vGroups.items():
 		vOut += '\t\tconst val %s = %s\n' % (vName, vC)
 	vOut += '\t}\n'
 
-vPath = 'modules/sdl3/SDL3.kt'
+vPath = 'src/main/resources/ktc2/modules/sdl3/SDL3.kt'
 vText = io.open(vPath, encoding='utf-8').read()
 vStart = vText.index('// <constants>') + len('// <constants>')
 vEnd = vText.index('\t// </constants>')

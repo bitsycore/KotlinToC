@@ -1,0 +1,3 @@
+# SDL3 for ktc2: the C API as package `sdl3`, and the Kotlin API of package `ktc.sdl3` on top.
+name  = "sdl3"
+files = ["SDL3.kt", "Window.kt", "Renderer.kt", "Draw.kt", "Input.kt", "Math.kt", "sdl3.def"]

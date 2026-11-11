@@ -285,6 +285,8 @@ class Ktc2Extension : IrGenerationExtension {
 		File(vOutDir, kManifestName).writeText(buildString {
 			appendLine("jvmMain=" + if (vPackage.isEmpty()) vFacade else "$vPackage.$vFacade")
 			vSources.forEach { appendLine("c=$it") }
+			// A program that starts threads is linked with the thread library.
+			if (vModule.usesThreads) appendLine("threads=true")
 			// What the C libraries bound with .def files ask of the C compiler and the linker.
 			System.getProperty(kCompilerOptsProperty, "").lines().filter { it.isNotEmpty() }.forEach { appendLine("cflag=$it") }
 			System.getProperty(kLinkerOptsProperty, "").lines().filter { it.isNotEmpty() }.forEach { appendLine("ldflag=$it") }

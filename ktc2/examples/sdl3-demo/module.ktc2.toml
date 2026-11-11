@@ -1,0 +1,6 @@
+# Opens a window and draws for a second.
+#   ktc2 ktc2/examples/sdl3-demo --run -copt -I<sdl>/include -lopt -L<sdl>/lib
+# (the two options are only needed when SDL3 is not where the C compiler looks by itself;
+#  they can also be written here as compilerOpts / linkerOpts)
+name         = "sdl3-demo"
+dependencies = ["sdl3"]
