@@ -12,3 +12,6 @@ kotlin/collections/AbstractMutableList.class
 kotlin/collections/AbstractMutableMap.class
 kotlin/collections/AbstractMutableSet.class
 kotlin/sequences/ConstrainedOnceSequence.class
+kotlin/TypeAliasesKt.class
+kotlin/NoWhenBranchMatchedException.class
+kotlin/UninitializedPropertyAccessException.class

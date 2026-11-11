@@ -39,7 +39,7 @@ class ArcInsert(private val mModule: KModule) {
 		val vCounts = HashMap<KLocal, Int>()
 		fun expr(inExpr: KExpr?) {
 			when (inExpr) {
-				null, is KConst, KUnitValue, is KNull, is KStringLit, is KGlobalRead, is KStaticRead, is KAlloc -> {}
+				null, is KConst, KUnitValue, is KNull, is KStringLit, is KGlobalRead, is KStaticRead, is KAlloc, is KZero -> {}
 				is KRead -> vCounts.merge(inExpr.local, 1, Int::plus)
 				is KBinary -> { expr(inExpr.left); expr(inExpr.right) }
 				is KRefEquals -> { expr(inExpr.left); expr(inExpr.right) }
@@ -77,6 +77,7 @@ class ArcInsert(private val mModule: KModule) {
 					is KConcat -> parts(vStatement.parts)
 					is KRelease -> expr(vStatement.operand)
 					is KBreak, is KContinue -> {}
+					is KThrow, is KTryRegion -> error("exceptions are lowered before this pass")
 				}
 			}
 		}
@@ -272,6 +273,7 @@ class ArcInsert(private val mModule: KModule) {
 				}
 				is KReturn -> returnValue(inStatement, outStatements)
 				is KPrint, is KRelease -> outStatements += inStatement
+				is KThrow, is KTryRegion -> error("exceptions are lowered before this pass")
 			}
 		}
 

@@ -118,3 +118,13 @@ public fun kotlin_Int_rangeTo(start: Int, end: Int): IntRange = IntRange(start, 
 public fun kotlin_Long_rangeTo(start: Long, end: Long): LongRange = LongRange(start, end)
 
 public fun kotlin_Char_rangeTo(start: Char, end: Char): CharRange = CharRange(start, end)
+
+// ==================
+// MARK: Failures raised by generated code
+// ==================
+
+/** `x!!` on null. */
+public fun throwNullPointer(): Nothing = throw NullPointerException()
+
+/** A failed `as` cast. */
+public fun throwClassCast(): Nothing = throw ClassCastException()

@@ -195,6 +195,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 						mCandidates += Candidate(vStatement.target, "a string", vStatement.origin, null) { vStatement.onStack = true }
 					}
 					is KPrint, is KBreak, is KContinue, is KRelease -> {}
+					is KThrow, is KTryRegion -> error("exceptions are lowered before this pass")
 				}
 			}
 		}

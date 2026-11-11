@@ -573,11 +573,23 @@ internal class BodyBuilder(
 		is IrStringConcatenation -> concat(lowerParts(inExpression.arguments))
 		is IrReturn -> {
 			val vInline = mInlineTargets[inExpression.returnTargetSymbol]
-			if (vInline == null) {
-				emitReturn(inExpression.value.takeUnless { isUnitObject(it) })
+			val vResultExpression = inExpression.value.takeUnless { isUnitObject(it) }
+			if (vInline == null && mControl.none { it is FinallyMark }) {
+				emitReturn(vResultExpression)
+			} else if (vInline == null) {
+				// The result is computed first, then every enclosing `finally` runs, then the function returns.
+				val vValue = if (vResultExpression == null || mFunction.returnType == KUnitType) {
+					vResultExpression?.let { discard(lowerRhs(it)) }
+					null
+				} else {
+					spill(coerce(lowerRhs(vResultExpression), mFunction.returnType))
+				}
+				runFinallys { false }
+				mBlock += KReturn(vValue)
 			} else {
 				val vValue = lowerRhs(inExpression.value)
 				if (vInline.result != null && vValue !== KUnitValue) mBlock += KSet(vInline.result, coerce(vValue, vInline.result.type)) else discard(vValue)
+				runFinallys { it is InlineMark && it.symbol === inExpression.returnTargetSymbol }
 				mBlock += KBreak(vInline.blockId)
 			}
 			KUnitValue
@@ -588,14 +600,14 @@ internal class BodyBuilder(
 			val vBody = inBlock {
 				val vCondition = lowerPure(inExpression.condition)
 				mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
-				inExpression.body?.let { discard(lowerRhs(it)) }
+				inLoopBody(inExpression) { inExpression.body?.let { discard(lowerRhs(it)) } }
 			}
 			mBlock += KLoop(vId, vBody, emptyList())
 			KUnitValue
 		}
 		is IrDoWhileLoop -> {
 			val vId = loopId(inExpression)
-			val vBody = inBlock { inExpression.body?.let { discard(lowerRhs(it)) } }
+			val vBody = inBlock { inLoopBody(inExpression) { inExpression.body?.let { discard(lowerRhs(it)) } } }
 			val vLatch = inBlock {
 				val vCondition = lowerPure(inExpression.condition)
 				mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
@@ -604,23 +616,21 @@ internal class BodyBuilder(
 			KUnitValue
 		}
 		is IrBreak -> {
+			runFinallys { it is LoopMark && it.loop === inExpression.loop }
 			mBlock += KBreak(loopId(inExpression.loop))
 			KUnitValue
 		}
 		is IrContinue -> {
+			runFinallys { it is LoopMark && it.loop === inExpression.loop }
 			mBlock += KContinue(loopId(inExpression.loop))
 			KUnitValue
 		}
 		is IrTypeOperatorCall -> lowerTypeOperator(inExpression)
 		is IrThrow -> {
-			// Until exceptions exist (Phase 6) a throw reports the exception and stops the program.
-			val vThrown = inExpression.value
-			val vMessageArgument = (vThrown as? IrConstructorCall)?.arguments?.firstOrNull()
-			val vMessage = if (vMessageArgument != null && kType(vMessageArgument.type) == KStringType) lowerPure(vMessageArgument) else KNull(KStringType)
-			val vName = vThrown.type.classOrNull?.owner?.kotlinFqName?.asString() ?: "kotlin.Throwable"
-			mBlock += KEval(KIntrinsic("ktc2_fail_throw", listOf(KStringLit(vName), vMessage), KUnitType, isPure = false))
+			mBlock += KThrow(coerce(spill(lowerPure(inExpression.value)), KObjType))
 			KUnitValue
 		}
+		is IrTry -> lowerTry(inExpression)
 		is IrGetObjectValue -> lowerObject(inExpression)
 		is IrGetEnumValue -> mImporter.enumEntryFor(inExpression.symbol.owner)?.let { coerce(KStaticRead(it), typeOf(inExpression)) }
 			?: fail(inExpression, "enum entry '${inExpression.symbol.owner.name}'")
@@ -723,7 +733,7 @@ internal class BodyBuilder(
 			} else {
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
 				if (vTest !== kTrue) {
-					mBlock += KIf(not(vTest), listOf(KEval(KIntrinsic("ktc2_fail_cast", emptyList(), KUnitType, isPure = false))), emptyList())
+					mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
 				}
 				coerce(vValue, vTo)
 			}
@@ -805,6 +815,130 @@ internal class BodyBuilder(
 	}
 
 	// ============
+	//  Exceptions
+
+	/** What a jump has to pass on its way out: loops, `finally` blocks, and inline expansions. */
+	private sealed class Control
+
+	private class LoopMark(val loop: IrLoop) : Control()
+
+	private class FinallyMark(val body: IrExpression) : Control()
+
+	private class InlineMark(val symbol: Any) : Control()
+
+	private val mControl = ArrayList<Control>()
+
+	private inline fun inLoopBody(inLoop: IrLoop, inFill: () -> Unit) {
+		mControl += LoopMark(inLoop)
+		try {
+			inFill()
+		} finally {
+			mControl.removeLast()
+		}
+	}
+
+	/**
+	 * Lowers, innermost first, the `finally` blocks a jump leaves, down to the entry [inStop]
+	 * accepts (the loop or expansion the jump stays inside). Each block is lowered as if the
+	 * jump had already left it.
+	 */
+	private fun runFinallys(inStop: (Control) -> Boolean) {
+		var vIndex = mControl.size - 1
+		while (vIndex >= 0 && !inStop(mControl[vIndex])) {
+			val vEntry = mControl[vIndex]
+			if (vEntry is FinallyMark) {
+				val vLeft = ArrayList(mControl.subList(vIndex, mControl.size))
+				while (mControl.size > vIndex) mControl.removeLast()
+				discard(lowerRhs(vEntry.body))
+				mControl += vLeft
+			}
+			vIndex--
+		}
+	}
+
+	/** A call to the platform layer's function that throws the failure, or the fatal runtime fallback. */
+	private fun failure(inThrower: String, inFallback: String): KStmt {
+		val vTarget = mImporter.internalFunction(inThrower)?.let { mImporter.functionFor(it) }
+		return KEval(if (vTarget != null) KCall(vTarget, emptyList()) else KIntrinsic(inFallback, emptyList(), KUnitType, isPure = false))
+	}
+
+	/** The `message` and `cause` given to a constructor of `kotlin.Throwable`. */
+	private fun setThrowableFields(inObject: KExpr, inConstructor: IrConstructor, inArguments: List<IrExpression?>) {
+		inConstructor.parameters.forEachIndexed { vIndex, vParam ->
+			val vArgument = inArguments.getOrNull(vIndex) ?: return@forEachIndexed
+			val vField = when (vParam.name.asString()) {
+				"message" -> mImporter.throwableMessageField
+				"cause" -> mImporter.throwableCauseField
+				else -> return@forEachIndexed
+			}
+			mBlock += KFieldSet(inObject, vField, coerce(lowerRhs(vArgument), vField.type))
+		}
+	}
+
+	private fun hasPending(): KExpr = KIntrinsic("ktc2_has_pending", emptyList(), kBoolType)
+
+	private fun takePending(): KExpr {
+		val vTaken = newTemp(KObjType)
+		mBlock += KLet(vTaken, KIntrinsic("ktc2_take_pending", emptyList(), KObjType, isPure = false))
+		return KRead(vTaken)
+	}
+
+	/**
+	 * `try` / `catch` / `finally`. The protected part is a region an exception leaves at once;
+	 * after it, a parked exception is taken and matched against the `catch` clauses in order,
+	 * and thrown again if none applies. A `finally` block runs after that, on every path, with
+	 * any exception still in flight set aside while it runs.
+	 */
+	private fun lowerTry(inTry: IrTry): KExpr {
+		val vType = typeOf(inTry)
+		val vResult = if (vType is KUnitType || vType is KNothingType) null else newTemp(vType)
+		vResult?.let { mBlock += KLet(it, null) }
+		fun assign(inExpression: IrExpression) {
+			val vValue = lowerRhs(inExpression)
+			if (vResult != null && !inExpression.type.isNothing() && vValue !== KUnitValue) mBlock += KSet(vResult, coerce(vValue, vResult.type)) else discard(vValue)
+		}
+
+		fun handlers(inCaught: KExpr, inIndex: Int) {
+			if (inIndex == inTry.catches.size) {
+				mBlock += KThrow(inCaught)
+				return
+			}
+			val vCatch = inTry.catches[inIndex]
+			val vParameter = vCatch.catchParameter
+			val vMatches = instanceTest(vCatch, inCaught, vParameter.type)
+			val vThen = inBlock {
+				val vLocalType = kType(vParameter.type) ?: KObjType
+				val vLocal = KLocal(freshName(vParameter.name.asString()), vLocalType)
+				mBlock += KLet(vLocal, coerce(inCaught, vLocalType))
+				mLocals[vParameter] = vLocal
+				assign(vCatch.result)
+			}
+			val vElse = inBlock { handlers(inCaught, inIndex + 1) }
+			mBlock += KIf(vMatches, vThen, vElse)
+		}
+
+		fun protectedPart() {
+			mBlock += KTryRegion(mNextLoopId++, inBlock { assign(inTry.tryResult) })
+			if (inTry.catches.isNotEmpty()) {
+				mBlock += KIf(hasPending(), inBlock { handlers(takePending(), 0) }, emptyList())
+			}
+		}
+
+		val vFinally = inTry.finallyExpression
+		if (vFinally == null) {
+			protectedPart()
+		} else {
+			mControl += FinallyMark(vFinally)
+			mBlock += KTryRegion(mNextLoopId++, inBlock { protectedPart() })
+			mControl.removeLast()
+			val vInFlight = takePending()
+			discard(lowerRhs(vFinally))
+			mBlock += KIf(not(isNull(vInFlight)), listOf(KThrow(vInFlight)), emptyList())
+		}
+		return vResult?.let { KRead(it) } ?: KUnitValue
+	}
+
+	// ============
 	//  Inlined lambdas
 
 	private fun containsBreak(inStatements: List<KStmt>, inId: Int): Boolean = inStatements.any { vStatement ->
@@ -838,6 +972,7 @@ internal class BodyBuilder(
 		vResult?.let { mBlock += KLet(it, null) }
 		val vId = mNextLoopId++
 		mInlineTargets[vFunction.symbol] = InlineTarget(vResult, vId)
+		mControl += InlineMark(vFunction.symbol)
 		val vBody = inBlock {
 			when (val vIrBody = vFunction.body) {
 				is IrBlockBody -> vIrBody.statements.forEach { lowerStatement(it) }
@@ -848,6 +983,7 @@ internal class BodyBuilder(
 				else -> fail(inLambda, "lambda without a body")
 			}
 		}
+		mControl.removeLast()
 		mInlineTargets.remove(vFunction.symbol)
 		// The usual lambda returns once, at its end: then no block is needed to return from.
 		val vTail = vBody.lastOrNull()
@@ -941,7 +1077,7 @@ internal class BodyBuilder(
 		val vBody = inBlock {
 			mBlock += KIf(KBinary(KBinaryOp.GE, KRead(vCounter), vLength, KPrim.INT, kBoolType), listOf(KBreak(vId)), emptyList())
 			mBlock += KLet(vElement, coerce(KIndexRead(vArray, KRead(vCounter), inType.element), vElement.type))
-			inBody.forEach { lowerStatement(it) }
+			inLoopBody(inLoop) { inBody.forEach { lowerStatement(it) } }
 		}
 		mBlock += KLoop(vId, vBody, listOf(KSet(vCounter, KBinary(KBinaryOp.ADD, KRead(vCounter), KConst(1, kIntType), KPrim.INT, kIntType))))
 		return KUnitValue
@@ -1008,7 +1144,7 @@ internal class BodyBuilder(
 		val vBody = inBlock {
 			if (vExclusive && vStepArgument == null) mBlock += KIf(compare(KBinaryOp.GE), listOf(KBreak(vId)), emptyList())
 			mBlock += KLet(vVariable, KRead(vCounter))
-			for (vIndex in 1 until vInner.statements.size) lowerStatement(vInner.statements[vIndex])
+			inLoopBody(vLoop) { for (vIndex in 1 until vInner.statements.size) lowerStatement(vInner.statements[vIndex]) }
 		}
 		if (vExclusive && vStepArgument == null) {
 			mBlock += KLoop(vId, vBody, listOf(vStep))
@@ -1063,6 +1199,15 @@ internal class BodyBuilder(
 	private fun lowerConstructorCall(inCall: IrConstructorCall): KExpr {
 		val vConstructor = inCall.symbol.owner
 		val vOwner = vConstructor.parentAsClass
+		if (isThrowableClass(vOwner)) {
+			// A plain Throwable: the built-in base class itself.
+			val vBase = mImporter.throwableBase()
+			mImporter.instantiate(vBase)
+			val vObject = newTemp(KClassType(vBase))
+			mBlock += KLet(vObject, KAlloc(vBase).also { it.origin = originOf(inCall) })
+			setThrowableFields(KRead(vObject), vConstructor, inCall.arguments)
+			return KRead(vObject)
+		}
 		val vIsStorage = vOwner.kotlinFqName.asString() == "ktc2.internal.Storage"
 		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null || vIsStorage }?.let { return lowerArrayConstructor(inCall, it) }
 		val vClassArguments = mImporter.argumentsOf(closed(inCall.type))
@@ -1111,6 +1256,10 @@ internal class BodyBuilder(
 	private fun lowerDelegatingConstructorCall(inCall: IrDelegatingConstructorCall): KExpr {
 		val vConstructor = inCall.symbol.owner
 		if (isAnyClass(vConstructor.parentAsClass)) return KUnitValue
+		if (isThrowableClass(vConstructor.parentAsClass)) {
+			setThrowableFields(coerce(selfRead(), KClassType(mImporter.throwableBase())), vConstructor, inCall.arguments)
+			return KUnitValue
+		}
 		val vSubst = mImporter.substFor(vConstructor, inCall.typeArguments.map { vType -> vType?.let { closed(it) } ?: mImporter.mBuiltIns.anyNType }, emptyList())
 		val vTarget = mImporter.functionFor(vConstructor, vSubst)
 			?: return fail(inCall, "superclass constructor of '${vConstructor.parentAsClass.kotlinFqName}'")
@@ -1249,6 +1398,10 @@ internal class BodyBuilder(
 			return mImporter.dispatcherFor(inFunction, vSubst)?.let { it to vSubst }
 		}
 		val (vReal, vSubst) = mImporter.resolveMember(inFunction, inReceiver, inOwnArguments)
+		if (isAnyClass(vReal.parentAsClass)) {
+			val vReceiverClass = (inReceiver?.let { kType(it) } as? KClassType)?.cls
+			mImporter.throwableToStringFor(vReceiverClass, vReal)?.let { return it to vSubst }
+		}
 		return mImporter.functionFor(vReal, vSubst)?.let { it to vSubst }
 	}
 
@@ -1279,7 +1432,7 @@ internal class BodyBuilder(
 			// everything else is an ordinary interface call.
 			val vReceiverType = inCall.arguments.firstOrNull()?.let { kType(it.type) }
 			if (vReceiverType !is KRefType || vReceiverType == KStringType) return lowerLibraryCall(inCall)
-		} else if (vCallee.fileOrNull == null && !(vOwner != null && isAnyClass(vOwner))) {
+		} else if (vCallee.fileOrNull == null && !(vOwner != null && (isAnyClass(vOwner) || isThrowableClass(vOwner)))) {
 			return lowerLibraryCall(inCall)
 		}
 
@@ -1673,7 +1826,7 @@ internal class BodyBuilder(
 	/** `x!!`: fails on null, otherwise yields the value as non-null. */
 	private fun lowerNotNull(inCall: IrCall, inArgument: IrExpression): KExpr {
 		val vValue = spill(lowerPure(inArgument))
-		val vFail = listOf<KStmt>(KEval(KIntrinsic("ktc2_fail_null", emptyList(), KUnitType, isPure = false)))
+		val vFail = listOf(failure("throwNullPointer", "ktc2_fail_null"))
 		return when (val vType = vValue.type) {
 			is KOptType -> {
 				mBlock += KIf(not(KOptHas(vValue)), vFail, emptyList())

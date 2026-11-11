@@ -708,3 +708,44 @@ ktc2_Obj* ktc2_cs_subSequence(ktc2_Obj* object, int32_t start, int32_t end)
 	if (object->typeId != KTC2_TYPE_STRING) ktc2_fail_dispatch();
 	return (ktc2_Obj*)ktc2_stringSubstring((ktc2_String*)object, start, end);
 }
+
+/* ================== */
+/* MARK: Exceptions   */
+/* ================== */
+
+ktc2_Obj* ktc2_pending;
+
+void ktc2_throw(ktc2_Obj* exception)
+{
+	if (!exception) ktc2_fail_null();
+	ktc2_retain(exception);
+	ktc2_release(ktc2_pending);
+	ktc2_pending = exception;
+}
+
+ktc2_Obj* ktc2_take_pending(void)
+{
+	ktc2_Obj* exception = ktc2_pending;
+	ktc2_pending = NULL;
+	return exception;
+}
+
+ktc2_String* ktc2_throwable_toString(ktc2_Obj* exception, ktc2_String* message)
+{
+	ktc2_Sb sb;
+	ktc2_sb_init(&sb);
+	const char* name = ktc2_types[exception->typeId].name;
+	int32_t size = (int32_t)strlen(name);
+	ktc2_sb_text(&sb, name, size, size);
+	if (message) {
+		ktc2_sb_text(&sb, ": ", 2, 2);
+		ktc2_sb_string(&sb, message);
+	}
+	return ktc2_sb_finish(&sb);
+}
+
+_Noreturn void ktc2_uncaught(void)
+{
+	const ktc2_Throwable* exception = (const ktc2_Throwable*)ktc2_pending;
+	fail(ktc2_types[exception->header.typeId].name, exception->message ? exception->message->bytes : NULL);
+}

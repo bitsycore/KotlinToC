@@ -2,7 +2,7 @@
 #
 # A path with a directory is a file of the Kotlin standard library sources, used unmodified
 # (relative to the unpacked kotlin-stdlib sources jar). A bare file name is part of ktc2's
-# platform layer, next to this list.
+# platform layer, next to this list (a Ktc2Common*.kt file is compiled with the common sources).
 commonMain/kotlin/internal/Annotations.kt
 commonMain/kotlin/util/Standard.kt
 commonMain/kotlin/ioH.kt
@@ -66,7 +66,12 @@ commonMain/kotlin/ranges/Progressions.kt
 commonMain/kotlin/ranges/Range.kt
 commonMain/kotlin/internal/progressionUtil.kt
 commonMain/kotlin/ranges/Ranges.kt
+commonMain/kotlin/ExceptionsH.kt
+commonMain/kotlin/Comparator.kt
+commonMain/kotlin/comparisons/Comparisons.kt
+Ktc2CommonArrays.kt
 Ktc2Internal.kt
+Ktc2Exceptions.kt
 Ktc2Collections.kt
 Ktc2HashMap.kt
 Ktc2Text.kt

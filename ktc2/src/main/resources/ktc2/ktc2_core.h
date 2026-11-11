@@ -143,6 +143,37 @@ static inline void ktc2_release(void* pointer)
 /** Called at the end of main: reports objects still alive when built with KTC2_LEAK_CHECK. Returns the exit code. */
 int ktc2_exit(void);
 
+/* ================== */
+/* MARK: Exceptions   */
+/* ================== */
+
+/**
+ * The exception in flight, or NULL. A function that throws parks it here and returns; each
+ * caller that can receive one tests for it and leaves in turn, until a `try` takes it.
+ */
+extern ktc2_Obj* ktc2_pending;
+
+static inline bool ktc2_has_pending(void) { return ktc2_pending != NULL; }
+
+/** Parks [exception] (taking a reference of its own), replacing one already in flight. */
+void ktc2_throw(ktc2_Obj* exception);
+
+/** Takes the exception in flight out of the runtime; the caller owns it. NULL when there is none. */
+ktc2_Obj* ktc2_take_pending(void);
+
+/** Reports the exception in flight as the JVM reports an uncaught one, and exits. */
+_Noreturn void ktc2_uncaught(void);
+
+/** Layout of kotlin.Throwable, the base of every exception object. */
+typedef struct ktc2_Throwable {
+	ktc2_Obj header;
+	struct ktc2_String* message;
+	struct ktc2_Throwable* cause;
+} ktc2_Throwable;
+
+/** `Throwable.toString()`: the class name, then ": message" when there is one. Owned by the caller. */
+struct ktc2_String* ktc2_throwable_toString(ktc2_Obj* exception, struct ktc2_String* message);
+
 _Noreturn void ktc2_fail_null(void);
 _Noreturn void ktc2_fail_cast(void);
 _Noreturn void ktc2_fail_dispatch(void);

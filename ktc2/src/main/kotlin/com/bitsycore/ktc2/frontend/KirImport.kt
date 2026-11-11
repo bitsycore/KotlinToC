@@ -47,6 +47,8 @@ private fun cPrefix(inPackage: String): String = if (inPackage.isEmpty()) "kt_" 
 
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
+internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
+
 /** True when [inClass] is [inAncestor] or inherits from it (class or interface). */
 internal fun isSubtype(inClass: IrClass, inAncestor: IrClass): Boolean =
 	inClass == inAncestor || inClass.superTypes.any { vSuper -> vSuper.classOrNull?.owner?.let { isSubtype(it, inAncestor) } == true }
@@ -437,6 +439,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * (layout only) on first use.
 	 */
 	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList(), inFresh: Boolean = false): KClass? {
+		if (isThrowableClass(inClass)) return throwableBase()
 		val vArguments = inClass.typeParameters.indices.map { canonical(inArguments.getOrNull(it) ?: mBuiltIns.anyNType) }
 		val vKey = Mono(inClass, vArguments.map { kTypeOf(it) ?: KObjType })
 		if (vKey in mClasses && !inFresh) return mClasses[vKey]
@@ -460,7 +463,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		// A local class has no name of its own that is unique in the program.
 		if (inClass.parent !is IrClass && inClass.parent !is IrFile) vSuffix += "__local${mClassList.size}"
 		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
-		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, inClass.name.asString())
+		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, jvmNameOf(inClass))
 		vUnit.cls = vClass
 		mClasses[vKey] = vClass
 		mClassInfo[vClass] = ClassInfo(inClass, vSubst, inClass.symbol.typeWith(vArguments))
@@ -612,6 +615,78 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		val vClass = classFor(vOwner, superArguments(inReceiver, vOwner)) ?: return null
 		return mFields[inField to vClass]
+	}
+
+	// ==================
+	// MARK: Throwable
+	// ==================
+
+	private var mThrowableBase: KClass? = null
+	private val mThrowableFunctions = HashMap<String, KFunction?>()
+
+	lateinit var throwableMessageField: KField
+		private set
+	lateinit var throwableCauseField: KField
+		private set
+
+	/**
+	 * The name a class reports at run time (`toString`, an uncaught exception): its qualified
+	 * name, and for the standard exceptions the `java.lang` / `java.util` name they have on
+	 * the JVM, so that messages read the same.
+	 */
+	private fun jvmNameOf(inClass: IrClass): String {
+		val vName = inClass.kotlinFqName.asString()
+		if (inClass.fileOrNull?.packageFqName?.asString() != "kotlin" || inClass.parent !is IrFile) return vName
+		return when (val vSimple = inClass.name.asString()) {
+			"NoSuchElementException", "ConcurrentModificationException" -> "java.util.$vSimple"
+			"Error", "Exception", "RuntimeException", "IllegalArgumentException", "IllegalStateException", "IndexOutOfBoundsException",
+			"UnsupportedOperationException", "NumberFormatException", "NullPointerException", "ClassCastException", "AssertionError",
+			"ArithmeticException" -> "java.lang.$vSimple"
+			else -> vName
+		}
+	}
+
+	/** `kotlin.Throwable`: the base of every exception, holding `message` and `cause` (same layout as `ktc2_Throwable`). */
+	internal fun throwableBase(): KClass {
+		mThrowableBase?.let { return it }
+		val vUnit = KUnit("kotlin", "Throwable")
+		val vClass = KClass("kotlin_Throwable", vUnit, null, "java.lang.Throwable")
+		vUnit.cls = vClass
+		mThrowableBase = vClass
+		throwableMessageField = KField("message", KStringType, vClass, isImmutable = true)
+		throwableCauseField = KField("cause", KClassType(vClass), vClass, isImmutable = true)
+		vClass.fields += throwableMessageField
+		vClass.fields += throwableCauseField
+		mClassList += vClass
+		mUnits += vUnit
+		return vClass
+	}
+
+	/** `Throwable.toString` when [inImplementation] is `Any.toString` reached on an exception class, else null. */
+	internal fun throwableToStringFor(inClass: KClass?, inImplementation: IrFunction): KFunction? {
+		val vBase = mThrowableBase ?: return null
+		if (inClass == null || inImplementation.name.asString() != "toString" || !inClass.isSubclassOf(vBase)) return null
+		return throwableFunction("toString")
+	}
+
+	/** The members of `kotlin.Throwable`, written directly in KIR. */
+	internal fun throwableFunction(inName: String): KFunction? = mThrowableFunctions.getOrPut(inName) {
+		val vClass = throwableBase()
+		val vSelf = KLocal("self", KClassType(vClass))
+		fun define(inSuffix: String, inReturn: KType, inValue: KExpr): KFunction =
+			KFunction("kotlin_Throwable_$inSuffix", vClass.unit, listOf(vSelf), inReturn).also {
+				it.body += KReturn(inValue)
+				vClass.unit.functions += it
+			}
+		when (inName) {
+			"<get-message>" -> define("message", KStringType, KFieldRead(KRead(vSelf), throwableMessageField))
+			"<get-cause>" -> define("cause", KClassType(vClass), KFieldRead(KRead(vSelf), throwableCauseField))
+			"toString" -> {
+				val vDescribe = runtime("ktc2_throwable_toString", listOf(KObjType, KStringType), KStringType)
+				define("toString", KStringType, KCall(vDescribe, listOf(KRefCast(KRead(vSelf), KObjType), KFieldRead(KRead(vSelf), throwableMessageField))))
+			}
+			else -> anyDefault(inName)
+		}
 	}
 
 	// ==================
@@ -856,6 +931,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (vOwner != null && vOwner.kotlinFqName.asString() == "kotlin.Enum") {
 			return enumFunction(inFunction.name.asString()).also { mFunctions[vKey] = it }
 		}
+		if (vOwner != null && isThrowableClass(vOwner) && inFunction !is IrConstructor) {
+			return throwableFunction(inFunction.name.asString()).also { mFunctions[vKey] = it }
+		}
 		val vFile = inFunction.fileOrNull
 		val vIsDefaultAccessor = inFunction.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
 		mFunctions[vKey] = null
@@ -938,6 +1016,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vTarget = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
 		vTarget.dispatch = mutableListOf()
 		vTarget.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }
+		// A plain Throwable, created directly, has no class of its own in the module.
+		if (isThrowableClass(vOwner)) vTarget.dispatchDefault = throwableFunction(inFunction.name.asString())
 		// Comparable<T> on a reference T also receives strings and boxed primitives.
 		val vIsCompare = vOwner.kotlinFqName.asString() == "kotlin.Comparable" && inFunction.name.asString() == "compareTo"
 		if (vIsCompare && vSignature.params.all { it.type == KObjType }) {
@@ -993,7 +1073,13 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				val vMember = membersOf(vInfo.irClass).firstOrNull { it == vFunction || overrides(it, vFunction) } ?: continue
 				val vOwnArguments = vFunction.typeParameters.map { vDispatcher.subst[it.symbol] }
 				val (vImplementation, vSubst) = resolveMember(vMember, vInfo.type, vOwnArguments)
-				if (isAnyClass(vImplementation.parentAsClass)) continue
+				if (isAnyClass(vImplementation.parentAsClass)) {
+					// An exception that does not override toString() describes itself as "Class: message".
+					val vDescribe = throwableToStringFor(vConcrete, vImplementation) ?: continue
+					vDispatcher.target.dispatch!! += vConcrete to vDescribe
+					vChanged = true
+					continue
+				}
 				val vOwnerClass = vConcrete.takeIf { it in mLocalCaptures && vImplementation.parent == vInfo.irClass }
 				val vTarget = functionFor(vImplementation, vSubst, vOwnerClass) ?: continue
 				vDispatcher.target.dispatch!! += vConcrete to vTarget

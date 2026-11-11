@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.config.CompilerConfiguration
 import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
 import com.bitsycore.ktc2.backend.EscapeAnalysis
+import com.bitsycore.ktc2.backend.ExceptionLowering
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.util.dump
@@ -64,7 +65,7 @@ object K2Frontend {
 				add("-Xdont-warn-on-error-suppression")
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.
 				add("-Xmulti-platform")
-				add("-Xcommon-sources=" + vLibrary.filter { "commonMain" in it.invariantSeparatorsPath }.joinToString(",") { it.path })
+				add("-Xcommon-sources=" + vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") }.joinToString(",") { it.path })
 				add("-nowarn")
 			}
 			// Library sources are declared in the real kotlin.* packages and stand in for the jar's declarations.
@@ -219,6 +220,7 @@ class Ktc2Extension : IrGenerationExtension {
 		System.setProperty(kErrorCountProperty, vImporter.errors.size.toString())
 		if (vImporter.errors.isNotEmpty()) return
 
+		ExceptionLowering(vModule).run()
 		val vEscapes = EscapeAnalysis(vModule)
 		vEscapes.run()
 		if (System.getProperty("ktc2.warnHeap") == "true") vEscapes.heapReport.forEach { System.err.println("ktc2: heap: $it") }

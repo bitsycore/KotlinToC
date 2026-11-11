@@ -75,8 +75,9 @@ class CEmitter(private val mModule: KModule) {
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 
 		append("\nint main(void)\n{\n")
-		vStartup.forEach { append("\t${it.cName}();\n") }
-		append("\t${inEntry.cName}();\n")
+		// An exception that reaches main unhandled ends the program, as on the JVM.
+		vStartup.forEach { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
+		append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
 		vGlobals.asReversed().forEach { append("\tktc2_release(${it.cName});\n") }
 		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
 		append("\treturn ktc2_exit();\n}\n")
@@ -250,7 +251,14 @@ class CEmitter(private val mModule: KModule) {
 		}
 		for (vFunction in allFunctions(inUnit)) {
 			vBodies.append("\n").append(signature(vFunction)).append("\n{\n")
-			if (vFunction.dispatch != null) vPrinter.dispatcher(vFunction) else vPrinter.block(vFunction.body, 1)
+			if (vFunction.dispatch != null) {
+				vPrinter.dispatcher(vFunction)
+			} else {
+				vPrinter.block(vFunction.body, 1)
+				// Kotlin has checked that every path returns or throws; the C compiler has not.
+				val vReturns = vFunction.returnType != KUnitType && vFunction.returnType != KNothingType
+				if (vReturns && vFunction.body.lastOrNull() !is KReturn) vBodies.append("\treturn ${vPrinter.zero(vFunction.returnType)};\n")
+			}
 			vBodies.append("}\n")
 		}
 
@@ -367,7 +375,9 @@ class CEmitter(private val mModule: KModule) {
 			when (inStatement) {
 				is KLet -> {
 					need(inStatement.local.type)
-					val vInit = inStatement.init?.let { " = ${bare(expr(it))}" } ?: ""
+					// A local without an initializer starts at zero: a path that leaves through a call
+					// that always throws never assigns it, which the C compiler cannot know.
+					val vInit = " = ${bare(expr(inStatement.init ?: KZero(inStatement.local.type)))}"
 					line(inDepth, "${cType(inStatement.local.type)} ${inStatement.local.cName}$vInit;")
 				}
 				is KSet -> store(inStatement.local.cName, inStatement.value, inStatement.releasesOld, inDepth)
@@ -415,6 +425,7 @@ class CEmitter(private val mModule: KModule) {
 					}
 				}
 				is KPrint -> print(inStatement, inDepth)
+				is KThrow, is KTryRegion -> error("exceptions are lowered before emission")
 				is KConcat -> concat(inStatement, inDepth)
 			}
 		}
@@ -581,9 +592,16 @@ class CEmitter(private val mModule: KModule) {
 			return "is_$vIndex(${bare(expr(inTest.operand))})"
 		}
 
+		fun zero(inType: KType): String = when (inType) {
+			is KPrimType -> if (inType.prim == KPrim.BOOLEAN) "false" else "0"
+			is KRefType -> "NULL"
+			else -> "((${cType(inType)}){ 0 })"
+		}
+
 		private fun expr(inExpr: KExpr): String = when (inExpr) {
 			is KConst -> constant(inExpr)
 			KUnitValue -> "((void)0)"
+			is KZero -> zero(inExpr.type)
 			is KNull -> if (inExpr.type is KOptType) "((${cType(inExpr.type)}){ false })" else "NULL"
 			is KStringLit -> "KTC2_STR(${mState.literals.getOrPut(inExpr.text) { "lit_${mState.literals.size}" }})"
 			is KRead -> inExpr.local.cName

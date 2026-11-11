@@ -284,6 +284,9 @@ class KInstanceOf(val operand: KExpr, val target: KTypeTarget) : KExpr {
 	override val type: KType get() = KPrimType(KPrim.BOOLEAN)
 }
 
+/** The zero value of [type]: what a function returns when it leaves with an exception. */
+class KZero(override val type: KType) : KExpr
+
 /** `array[index]`, bounds-checked. */
 class KIndexRead(val array: KExpr, val index: KExpr, override val type: KType) : KExpr
 
@@ -384,6 +387,15 @@ class KConcat(val target: KLocal, val parts: List<KPrintPart>) : KStmt {
 	/** Source position ("File.kt:12"), for the heap report. */
 	var origin: String? = null
 }
+
+/** `throw value`. Replaced by `ExceptionLowering`. */
+class KThrow(val value: KExpr) : KStmt
+
+/**
+ * The protected part of a `try`: when an exception is thrown inside [body], control continues
+ * after the region with the exception parked in the runtime. Replaced by `ExceptionLowering`.
+ */
+class KTryRegion(val id: Int, val body: List<KStmt>) : KStmt
 
 /** Added by `ArcInsert`: decrements the count of [operand] (null-safe), destroying it at zero. */
 class KRelease(val operand: KExpr) : KStmt
