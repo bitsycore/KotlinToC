@@ -15,7 +15,7 @@ private const val kStackArrayLimit = 64
  * the union of its targets', and a runtime function is assumed to keep what it is given.
  *
  * An allocation is moved to the stack when neither the local that receives it nor any local
- * it is copied to escapes, and all of those are declared inside the block of the allocation —
+ * it is copied to escapes, and all of those are declared inside the block of the allocation -
  * so nothing can still refer to the object when that block ends. This covers class instances
  * (closures and cells included), strings built by concatenation, and arrays of a small
  * constant size.
@@ -351,7 +351,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 			return vCore
 		}
 
-		/** The class of the new object [inInit] yields — an allocation, or a call that can build in place — or null. */
+		/** The class of the new object [inInit] yields - an allocation, or a call that can build in place - or null. */
 		private fun builtClass(inInit: KExpr?): KClass? = when (val vCore = coreOf(inInit)) {
 			is KAlloc -> vCore.cls.takeIf { vCore.forcedBy == null }
 			is KCall -> inPlaceForm(vCore.function)?.second

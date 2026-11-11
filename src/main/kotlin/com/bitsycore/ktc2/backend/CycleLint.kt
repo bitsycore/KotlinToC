@@ -9,7 +9,7 @@ import com.bitsycore.ktc2.kir.*
  * knows the shape cannot occur.
  *
  * The check works on declared field types: a field of class `D` may hold `D` or any subclass.
- * A cycle needs at least one `var` on the way — an object reachable only through `val`s was
+ * A cycle needs at least one `var` on the way - an object reachable only through `val`s was
  * complete before its owner existed, so it cannot point back at it. Fields typed as an
  * interface, `Any` or a type parameter (which is how collections hold their elements) are not
  * followed: classes that pass the check are cycle-free only as far as their class-typed

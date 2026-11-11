@@ -13,8 +13,8 @@ import kotlinx.cinterop.internal.cSizeOf
 /*
 kotlinx.cinterop as Kotlin/Native defines it, for ktc2.
 
-Every type below that stands for a C address — a pointer, or the variable or struct it points
-at — is a bare `void*` in the generated C: no object, no reference count. The functions are
+Every type below that stands for a C address - a pointer, or the variable or struct it points
+at - is a bare `void*` in the generated C: no object, no reference count. The functions are
 written with `cExpr`, so `p.pointed.value` is a plain C load.
 */
 
@@ -592,7 +592,7 @@ public inline fun <reified T : CStructVar> CValue<T>.write(location: NativePtr) 
 // ==================
 
 /*
-C values to pass by address — `sum(cValuesOf(1, 2, 3), 3)`. Each is a counted copy of the
+C values to pass by address - `sum(cValuesOf(1, 2, 3), 3)`. Each is a counted copy of the
 elements, alive for as long as the Kotlin code holds it.
 */
 
@@ -737,7 +737,7 @@ public inline fun <T : Any> CPointer<*>.asStableRef(): StableRef<T> = cExpr("$0"
 
 /*
 Calling a C function through its pointer. The pointer is cast to the C function type that the
-Kotlin types of the call give — Int is int32_t, a pointer is void* — which is the same call
+Kotlin types of the call give - Int is int32_t, a pointer is void* - which is the same call
 for every C type of the same size and kind.
 */
 

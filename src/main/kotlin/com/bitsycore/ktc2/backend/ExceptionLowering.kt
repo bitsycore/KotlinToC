@@ -12,15 +12,15 @@ import com.bitsycore.ktc2.kir.*
  * exception and leaves the same way. Whether a function may throw is computed for the whole
  * program, so call chains that cannot throw carry no test at all.
  *
- * The failures the language itself raises — an index out of bounds, an integer division by
- * zero — are made explicit here too (unless the program is built with `--checks=abort`): the
+ * The failures the language itself raises - an index out of bounds, an integer division by
+ * zero - are made explicit here too (unless the program is built with `--checks=abort`): the
  * test is placed in front of the statement and throws through the platform layer, and the
  * operation behind it is emitted unchecked. An operation that is only evaluated on one side
  * of a condition cannot be tested ahead; it keeps its check in the runtime, which parks the
  * exception, and the statement is followed by the usual test.
  *
- * Leaving is expressed with the constructs KIR already has — `break` out of a one-pass loop,
- * or `return` — so `ArcInsert` releases the locals of every scope that is left.
+ * Leaving is expressed with the constructs KIR already has - `break` out of a one-pass loop,
+ * or `return` - so `ArcInsert` releases the locals of every scope that is left.
  */
 class ExceptionLowering(private val mModule: KModule) {
 

@@ -137,7 +137,7 @@ static uint64_t stat_allocs;
  * An arena is a list of blocks objects are carved out of. Arena objects are counted like any
  * other, so nothing about them is unsafe: at a count of zero an object gives up what it
  * refers to, and tells its block instead of calling free. A block is freed when the arena has
- * ended and no object of it is still alive — normally the moment the arena ends.
+ * ended and no object of it is still alive - normally the moment the arena ends.
  */
 typedef struct ArenaBlock {
 	struct ArenaBlock* next;
@@ -1119,7 +1119,7 @@ static void weak_drop(ktc2_Obj* target)
 }
 
 /**
- * Takes a reference to [object] unless its count already reached zero — another thread is
+ * Takes a reference to [object] unless its count already reached zero - another thread is
  * then about to destroy it, and is waiting for the runtime lock the caller holds.
  */
 static ktc2_Obj* retain_if_alive(ktc2_Obj* object)

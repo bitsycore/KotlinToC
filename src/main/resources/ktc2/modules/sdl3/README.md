@@ -1,7 +1,7 @@
 # ktc.sdl3
 
 SDL3 for ktc2: the raw C API as package `sdl3` (generated from `sdl3.def`), and on top of it
-the small Kotlin API of package `ktc.sdl3` — `SDL3.Window`, `SDL3.Renderer`, shapes, textures,
+the small Kotlin API of package `ktc.sdl3` - `SDL3.Window`, `SDL3.Renderer`, shapes, textures,
 events, input and a game loop.
 
 A program uses it by naming it in its `module.ktc2.toml`:

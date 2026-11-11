@@ -12,7 +12,7 @@ import sdl3.*
 /**
  * Run a delta-timed game loop capped at targetFps.
  * The block receives dt (seconds since last frame) and returns true to keep running.
- * Inline — the block lambda expands at the call site with no extra call overhead.
+ * Inline - the block lambda expands at the call site with no extra call overhead.
  */
 inline fun gameLoop(targetFps: Int = 60, block: (Float) -> Boolean) {
 	val vFrameMs = 1000L / targetFps.toLong()
@@ -36,7 +36,7 @@ inline fun gameLoop(targetFps: Int = 60, block: (Float) -> Boolean) {
 @PublishedApi
 internal val gEvent: SDL_Event = nativeHeap.alloc()
 
-/** Drain SDL's event queue, calling block for each event. Inline — block expands at call site. */
+/** Drain SDL's event queue, calling block for each event. Inline - block expands at call site. */
 inline fun pollEvents(block: (SDL_Event) -> Unit) {
 	while (SDL_PollEvent(gEvent.ptr)) block(gEvent)
 }

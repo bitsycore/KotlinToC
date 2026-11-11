@@ -84,7 +84,7 @@ private val kKotlinKeywords = setOf(
  * - enums whose constants are simply listed as Kotlin enum classes (`Color.RED`, `.value`,
  *   `Color.byValue(n)`), converted where a function, a field or a variable has that type; enums
  *   whose constants are given values, which are often flags, as an integer `typealias` with a
- *   `const val` per constant — as Kotlin/Native does, with `strictEnums` / `nonStrictEnums` in
+ *   `const val` per constant - as Kotlin/Native does, with `strictEnums` / `nonStrictEnums` in
  *   the .def to decide otherwise;
  * - object-like macros with an integer, floating-point or string value as `const val`.
  *
@@ -254,7 +254,7 @@ class BindingGenerator(
 	/**
 	 * The Kotlin type of a C value of type [inType]: as a parameter (`String?` for `const char*`,
 	 * `CValuesRef<T>?` for other pointers) or as a result or field (`CPointer<T>?`). Null when it
-	 * cannot be bound — a struct by value, an unsupported type.
+	 * cannot be bound - a struct by value, an unsupported type.
 	 */
 	private fun valueType(inType: CType, inIsParameter: Boolean, inIsRaw: Boolean = false): String? = when (val vType = inType.resolved()) {
 		is CPrim -> vType.kotlin

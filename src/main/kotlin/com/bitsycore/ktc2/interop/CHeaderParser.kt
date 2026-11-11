@@ -440,7 +440,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 	}
 
 	/**
-	 * Parses a declarator — named or abstract — and returns the function that, given the type
+	 * Parses a declarator - named or abstract - and returns the function that, given the type
 	 * the specifiers name, yields the declared name and its full type.
 	 */
 	private fun declarator(): (CType, Boolean) -> Pair<String?, CType> {

@@ -1,8 +1,8 @@
-# ktc2 — Kotlin semantics on ARC, with opt-in value storage
+# ktc2 - Kotlin semantics on ARC, with opt-in value storage
 
 ktc2 translates Kotlin to C11: "Kotlin semantics, C cost model". Its front end is the real
 Kotlin compiler (K2), so parsing, type inference and overload resolution follow Kotlin's own
-rules. Everything specific to it lives in the **`ktc2.` package** — nothing is added to the
+rules. Everything specific to it lives in the **`ktc2.` package** - nothing is added to the
 language itself.
 
 This document is the design, followed by the plan it was built by and, phase by phase, what
@@ -16,8 +16,8 @@ ktc2 replaces a first transpiler (called v1 below; it is in the history of this 
 to the commit that removed it). v1 made everything a *value* by default: a class was a C
 struct copied on the stack, sharing and the heap were explicit (`Ref<T>`, `.allocWith(Heap)`,
 `freeMem`), and `String` and `Array<T>` were views into the frame that produced them. Because
-lifetimes were manual, the compiler had to refuse every pattern that could dangle — returning
-a string, aliasing an object, a lambda reading a local — and each refusal was a place where
+lifetimes were manual, the compiler had to refuse every pattern that could dangle - returning
+a string, aliasing an object, a lambda reading a local - and each refusal was a place where
 valid Kotlin stopped compiling. The result was a good *C with Kotlin syntax*, but no existing
 Kotlin code compiled with it and none of its code ran on the JVM.
 
@@ -57,7 +57,7 @@ C build). `kotlinc` becomes the oracle for "is this still Kotlin".
 | `kotlinx.cinterop.*` (Kotlin/Native syntax) | not available on the JVM (interop code is the non-portable subset; it stays portable to Kotlin/Native) |
 
 The only documented exceptions are C interop and *timing* of destruction (ARC frees earlier
-than a GC would — only visible through `WeakRef<T>` and deinit hooks).
+than a GC would - only visible through `WeakRef<T>` and deinit hooks).
 
 ---------------------------------------------------------------------------
 ## 4. Type and storage model
@@ -67,14 +67,14 @@ Three categories of type, and five places an object can live.
 
 ### 4.1 Categories
 
-1. **Primitives** — `Int`, `Float`, `Boolean`, `Char`… plain C scalars. `Int?` stays the
+1. **Primitives** - `Int`, `Float`, `Boolean`, `Char`… plain C scalars. `Int?` stays the
    existing `$Opt` tagged struct. Never boxed inside generics (monomorphization).
-2. **Value types** — no identity, freely copied, never ref-counted:
+2. **Value types** - no identity, freely copied, never ref-counted:
    - `@Struct class Vec2(val x: Float, val y: Float)` (all `val`, fields themselves value or
      reference types),
    - `value class`, `@SimpleEnum` enums, `Pair`/`Triple` of values.
    `===` on a value type is a compile error (same as Kotlin value classes).
-3. **Reference types** — everything else: classes, `String`, `Array<T>`/`IntArray`,
+3. **Reference types** - everything else: classes, `String`, `Array<T>`/`IntArray`,
    collections, function values, interfaces, `Any`. Identity, aliasing and mutation behave
    exactly as in Kotlin.
 
@@ -86,12 +86,12 @@ Three categories of type, and five places an object can live.
 | **Stack** | escape analysis proves the reference never outlives the frame | none |
 | **Inline in owner** | slot declared `@Value T` / `@Size(N)`; or `@Struct` type | none |
 | **Arena** | allocated inside an `arena { }` scope | none (bulk freed) |
-| **Heap** | everything else — the *fallback*, not the default path | retain/release |
+| **Heap** | everything else - the *fallback*, not the default path | retain/release |
 
 "Autoboxing" in this model is one precise operation: **a stack/inline object is copied to the
 heap at the point where a reference to it must escape.** For immutable objects that is
 invisible, so it is implicit. For mutable objects it would change aliasing, so it must be
-written `.copy()` (which the JVM also executes as a copy — behavior stays identical).
+written `.copy()` (which the JVM also executes as a copy - behavior stays identical).
 
 ### 4.3 `@Value` and `@Struct`
 
@@ -111,8 +111,8 @@ class Emitter {
   **declaration-site**: every slot of this type is `@Value`. One mechanism, two spellings.
 - A `@Value T` slot can be **read, mutated in place, and passed as a borrowed argument** with
   no copy (`pool[i].x += 1f`, `draw(pool[i])`).
-- Anything that would create a second long-lived name for a **mutable** inline object —
-  `val p = pool[i]`, `list.add(pool[i])`, `pool[i] = other` — needs `.copy()`. This is today's
+- Anything that would create a second long-lived name for a **mutable** inline object -
+  `val p = pool[i]`, `list.add(pool[i])`, `pool[i] = other` - needs `.copy()`. This is today's
   **E071 "no implicit copy" rule, kept on purpose**: it is exactly the condition under which
   ignoring the annotation gives identical behavior on the JVM.
 - For **immutable** types (`@Struct`, all-`val` classes) copies and boxes are implicit.
@@ -130,7 +130,7 @@ class Emitter {
   escape and has a small or constant `n` is stack/alloca allocated.
 - `@Size(N)` on a field or local keeps meaning "inline, fixed": same as today, but it is now a
   storage hint on a normal Kotlin array rather than a different type. Returning one from a
-  function is legal — it boxes (heap copy) if the caller lets it escape, and is written
+  function is legal - it boxes (heap copy) if the caller lets it escape, and is written
   straight into the caller's slot otherwise.
 - Bare C pointers are `CPointer<T>` from `kotlinx.cinterop`: unchecked and unmanaged (§7).
 
@@ -158,7 +158,7 @@ typedef struct {
 - `KTC_RETAIN(p)` / `KTC_RELEASE(p)` are inline macros; only the reaches-zero path is a
   function call (`destroy` then free). Estimated ~150 lines of C added to `ktc_core`.
 - `destroy` is generated per class (release each reference field). Types with no reference
-  fields get `NULL` — release is a bare `free`.
+  fields get `NULL` - release is a bare `free`.
 - When the static type is a final class the release calls its `destroy` directly; the
   `typeInfo` lookup is only used through interfaces, open classes and `Any`.
 - Every reference is a thin pointer, including interface and `Any` references. A virtual or
@@ -168,7 +168,7 @@ typedef struct {
 - Primitives assigned to `Any` are boxed (a small object holding the value), as in Kotlin;
   nullable primitives (`Int?`) are not: they are a two-field value, flag + primitive.
 
-### 5.2 Ownership rules — where the overhead is removed
+### 5.2 Ownership rules - where the overhead is removed
 
 Naive ARC retains on every copy. These rules, all decidable by a local or summary-based
 analysis, remove most of it:
@@ -179,16 +179,16 @@ analysis, remove most of it:
 3. **`val` fields borrow, `var` fields retain.** Reading a `val` field of a live object into
    a local needs no retain (it cannot be overwritten). Reading a `var` field retains unless no
    write or unknown call happens before the local's last use. *Immutability is what makes ARC
-   cheap — the same thing Kotlin style already encourages.*
+   cheap - the same thing Kotlin style already encourages.*
 4. **Last use moves.** If a local's final use is a store, a return, or an escaping argument,
    ownership is transferred instead of retain + release.
-5. **Static, stack, inline and arena objects are never counted** — elided at compile time
+5. **Static, stack, inline and arena objects are never counted** - elided at compile time
    when the storage is statically known, one flag test otherwise.
 6. **Escape analysis promotes to the stack.** Per function, each parameter gets a summary bit
    "escapes" (stored, returned, captured by an escaping closure). The program is whole-program
    compiled, so summaries are a fixpoint over the call graph; an interface method's summary is
    the join over its implementors. `val p = Foo()` passed only to non-escaping parameters is a
-   stack struct — which is what KTC emits today, now automatic and safe.
+   stack struct - which is what KTC emits today, now automatic and safe.
 7. **Fresh returns fill the caller's slot.** A function that returns a newly constructed
    object gets a second entry point taking the destination pointer (the existing fused
    alloc + ctor pattern), so `val v: @Value T = make()` and stack-promoted results never touch
@@ -218,18 +218,18 @@ turned on for the whole integration suite.
 ### 5.4 Threads
 
 Non-atomic counts when the program does not reach the thread API (`kotlin.concurrent.thread`,
-`java.lang.Thread` — known at compile time); atomic counts when it does. Later refinement: a `SHARED` header bit set when an object crosses
+`java.lang.Thread` - known at compile time); atomic counts when it does. Later refinement: a `SHARED` header bit set when an object crosses
 a thread boundary, so only shared objects pay for atomics.
 
 ### 5.5 Deterministic destruction
 
 ARC gives it for free, Kotlin has no equivalent. A class may implement `ktc2.Deinit`
-(`fun deinit()`), called when the count reaches zero — meant for classes owning C resources.
+(`fun deinit()`), called when the count reaches zero - meant for classes owning C resources.
 On the JVM it is not called automatically. `AutoCloseable` + `use { }` remains the portable
 way and replaces `defer`.
 
 ---------------------------------------------------------------------------
-## 6. Avoiding the heap — the toolbox
+## 6. Avoiding the heap - the toolbox
 ---------------------------------------------------------------------------
 
 | Tool | Who decides | Notes |
@@ -246,7 +246,7 @@ way and replaces `defer`.
 **Arena details.** `arena(size) { }` pushes an arena on a thread-local stack that the
 allocator consults; objects are then carved out of blocks of `size` bytes (a larger object
 gets a block of its own, a full block is followed by another). Arena objects carry the
-`ARENA` flag and are still counted — an increment and a decrement are cheap, `malloc` and
+`ARENA` flag and are still counted - an increment and a decrement are cheap, `malloc` and
 `free` are what the arena removes. At a count of zero an arena object releases what it refers
 to and tells its block; a block is freed once the arena has ended *and* none of its objects
 is alive, which normally is the moment the block ends. So an object that outlives its arena
@@ -270,7 +270,7 @@ auditable.
   object is a pointer to each of its ancestors. v1's `InheritDesugar` (copying parent members
   into children, fat values that are copies) has no equivalent: objects are shared references.
 - **Exceptions.** `longjmp` skips the releases of every frame it crosses, so each throw would
-  leak. ktc2 uses **checked propagation** — a may-throw call is followed by a test
+  leak. ktc2 uses **checked propagation** - a may-throw call is followed by a test
   of a thread-local pending-exception slot and a `goto` to the function's cleanup label (the
   model Nim uses with ARC). Whole-program analysis knows which functions can throw, so
   non-throwing call chains pay nothing. It also removes `KTC_TRY_FN` / `optnone`, E132, E133,
@@ -280,7 +280,7 @@ auditable.
   for embedded builds.
 - **C interop: Kotlin/Native's `kotlinx.cinterop`, same syntax.** A `.def` file names the
   headers; ktc2 generates the Kotlin binding declarations from it, and since the output is C
-  the generated functions lower to direct calls with the header `#include`d — no bridge code.
+  the generated functions lower to direct calls with the header `#include`d - no bridge code.
   The API surface is the Kotlin/Native one: `CPointer<T>`, `CValue<T>`, `ByteVar` / `IntVar` /
   `CStructVar`, `memScoped { alloc<T>() }`, `nativeHeap`, `.ptr` / `.pointed` / `.value`,
   `cValue { }`, `.cstr` / `toKString()`, `staticCFunction`, `usePinned` / `refTo` for passing
@@ -293,7 +293,7 @@ auditable.
   No allocator parameters; `clone/cloneWith` and `dispose` go away.
 
 ---------------------------------------------------------------------------
-## 8. Output layout — one `.h` / `.c` pair per class
+## 8. Output layout - one `.h` / `.c` pair per class
 ---------------------------------------------------------------------------
 
 Generated C mirrors what `kotlinc` does with `.class` files:
@@ -350,8 +350,8 @@ What follows from using K2:
   module sources in `kotlin.*` stand in for the jar (`-Xallow-kotlin-package`), so user code
   needs no special imports. The rule is to reuse stdlib files verbatim wherever they are pure
   Kotlin (scope functions, collection and string extensions, ranges, sequences…) and to write
-  only the platform layer the JVM normally provides — the storage of `String`, arrays,
-  `ArrayList`, `HashMap`, `StringBuilder` — following Kotlin/Native's pure-Kotlin
+  only the platform layer the JVM normally provides - the storage of `String`, arrays,
+  `ArrayList`, `HashMap`, `StringBuilder` - following Kotlin/Native's pure-Kotlin
   implementations over a handful of runtime intrinsics. Anything that exists only in ktc2 lives
   in the `ktc2.` package. The importer starts from `main` and translates only what is
   reachable, so the size of the stdlib does not affect a program that uses little of it.
@@ -385,14 +385,14 @@ tools/                              generators of the generated sources, and hel
 
 | # | Phase | Deliverable | Exit test |
 |---|---|---|---|
-| 0 | Skeleton + oracle | module, `ktc2.` package, K2 driver, and the dual-run test (`IntegrationTest`: every program in `integration/` runs as JVM classes and as C, outputs must match) — **done** | `./gradlew :ktc2:test` |
-| 1 | KIR + first C | KIR import from K2 IR; per-class C emitter for primitives, functions, control flow, `@Struct`; `println` and operator intrinsics — **done** (see status below) | arithmetic / control-flow programs match the JVM |
-| 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
-| 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources — **done** | collection, string and lambda programs match the JVM |
-| 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) — **done** (see status) | RC operations per test drop sharply, output unchanged |
-| 5 | Escape analysis | whole-program escape summaries; stack promotion of objects, closures, cells, strings and small arrays; `@Value` / `@Size` inline fields with autobox; `--warn-heap` — **done** (see status; caller-slot returns and inline array elements are left) | heap allocations drop where objects are temporary, output unchanged |
-| 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>` / `@Acyclic`; threads with atomic counts — **done** (see status; index and division failures are still fatal) | exception programs leak-free; thread programs under atomic RC |
-| 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator — **done** (see status); SDL3 binds and runs, v1's wrapper module is not ported | v1's interop tests ported and passing |
+| 0 | Skeleton + oracle | module, `ktc2.` package, K2 driver, and the dual-run test (`IntegrationTest`: every program in `integration/` runs as JVM classes and as C, outputs must match) - **done** | `./gradlew :ktc2:test` |
+| 1 | KIR + first C | KIR import from K2 IR; per-class C emitter for primitives, functions, control flow, `@Struct`; `println` and operator intrinsics - **done** (see status below) | arithmetic / control-flow programs match the JVM |
+| 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit - **done** | class / string / array programs match the JVM, zero leaks |
+| 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources - **done** | collection, string and lambda programs match the JVM |
+| 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) - **done** (see status) | RC operations per test drop sharply, output unchanged |
+| 5 | Escape analysis | whole-program escape summaries; stack promotion of objects, closures, cells, strings and small arrays; `@Value` / `@Size` inline fields with autobox; `--warn-heap` - **done** (see status; caller-slot returns and inline array elements are left) | heap allocations drop where objects are temporary, output unchanged |
+| 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>` / `@Acyclic`; threads with atomic counts - **done** (see status; index and division failures are still fatal) | exception programs leak-free; thread programs under atomic RC |
+| 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator - **done** (see status); SDL3 binds and runs, v1's wrapper module is not ported | v1's interop tests ported and passing |
 
 Phases 1 to 3 are the bulk of the effort; Phase 2 carries the most risk. Phases 4 and 5 are pure optimizations
 over a model that is already correct, so each lands rule by rule with numbers attached.
@@ -484,13 +484,13 @@ How the stdlib is brought in:
   each time). Caching that work is the obvious next optimization.
 
 Not ported yet: the array extension functions (`_Arrays.kt`, 1 MB; a handful are provided
-by hand), `collections/Arrays.kt`, comparators built from lambdas (`compareBy`, `sortedBy` —
+by hand), `collections/Arrays.kt`, comparators built from lambdas (`compareBy`, `sortedBy` -
 SAM conversion), `Random`, `kotlin.math`. In `kotlin.text`, case conversion and the Char
 classification functions cover ASCII and Latin-1 and treat the rest of Unicode
 approximately, and `Regex` is declared but throws. `throw` reports the exception and exits
 (Phase 6 makes it catchable).
 
-Phase 4 — ownership optimization. Three rules were added to the naive scheme, each removing
+Phase 4 - ownership optimization. Three rules were added to the naive scheme, each removing
 counting that cannot be observed:
 - an argument that is a `val` field of a safely held object needs no holding temporary;
 - a local read exactly once, by a store, hands its reference over instead of sharing it
@@ -514,7 +514,7 @@ What remains for later: borrowing a `val` field read into a local, releasing a t
 its last use rather than at scope end, and not counting at all for objects that never
 escape (Phase 5).
 
-Phase 5 — escape analysis and inline storage (`EscapeAnalysis`, before `ArcInsert`;
+Phase 5 - escape analysis and inline storage (`EscapeAnalysis`, before `ArcInsert`;
 `integration/values/`). 17 programs.
 - **Escape summaries.** A reference escapes when it is returned, stored into a field, global
   or array element, or passed to a parameter that escapes; the per-parameter summary is a
@@ -532,7 +532,7 @@ Phase 5 — escape analysis and inline storage (`EscapeAnalysis`, before `ArcIns
   pointer is in scope; assigning the field copies the value in. The same analysis decides
   what happens to such a pointer: if it stays in its block it is used as is; if it has to be
   kept (stored, returned, passed to a function that keeps it) an immutable object is copied to
-  the heap — the autobox — and a mutable object or an array is refused with a message asking
+  the heap - the autobox - and a mutable object or an array is refused with a message asking
   for an explicit `copy()` / `copyOf()`, because a silent copy would behave differently from
   the JVM.
 - **`--warn-heap`** lists every allocation left on the heap with the reason, for example
@@ -549,10 +549,10 @@ a new object directly into the caller's slot, `@Value` on locals; `@Value` on ar
 size on the stack, and the `.copy()` rule for assigning a *mutable* object into an inline
 field from a non-fresh source (the content is copied; on the JVM the two would alias).
 
-Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `Weak.kt`,
+Phase 6 - exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `Weak.kt`,
 `Threads.kt`):
 - **Exceptions by checked propagation** (`ExceptionLowering`, the first back-end pass).
-  `throw` parks the exception in the runtime and leaves the function — to the end of the
+  `throw` parks the exception in the runtime and leaves the function - to the end of the
   enclosing `try`, or by returning a zero value. After each call to a function that may
   throw, the caller tests for a parked exception and leaves the same way. "May throw" is
   computed for the whole program, so call chains that cannot throw carry no test. Leaving is
@@ -577,8 +577,8 @@ Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `W
   taken to hold `D` or any subclass; a cycle needs at least one `var` on the way; an
   inherited field is reported once. The answer is `@Weak`, `WeakRef`, or `@Acyclic` on a
   property that by construction never closes a cycle (the `next` of a plain linked list).
-  Fields typed as an interface, `Any` or a type parameter — which is how collections hold
-  their elements — are not followed, so the lint is silent about cycles through a collection
+  Fields typed as an interface, `Any` or a type parameter - which is how collections hold
+  their elements - are not followed, so the lint is silent about cycles through a collection
   or a captured lambda.
 - **Threads.** `kotlin.concurrent.thread { }` and `java.lang.Thread` (`start`, `join`,
   overriding `run`) run on operating-system threads, and `synchronized` works. A program that
@@ -586,18 +586,18 @@ Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `W
   become atomic, the exception in flight thread-local, and the runtime's own tables locked.
   Every other program keeps plain increments. As on the JVM the process ends when its last
   thread does. As in Swift, a property written by one thread while another reads it needs
-  `synchronized` — unsynchronized access is a data race that can corrupt a count, where the
+  `synchronized` - unsynchronized access is a data race that can corrupt a count, where the
   JVM would only show a stale value.
 
 Not done in Phase 6: atomic counting applies to every object
 of a threaded program (the `SHARED`-bit refinement of §5.4 is open).
 
-Phase 7 — arena and C interop (`integration/values/Arena.kt`, `integration/interop/`):
+Phase 7 - arena and C interop (`integration/values/Arena.kt`, `integration/interop/`):
 - **`arena(size) { }`** as described in §6. In `values/Arena.kt` 1614 of 1626 allocations
   come from arena blocks, with the same output as on the JVM and nothing leaked.
 - **`kotlinx.cinterop`**, written in Kotlin in the platform layer (`Ktc2Cinterop.kt`).
-  Every type that stands for a C address — `CPointer<T>`, `NativePtr`, `CValuesRef<T>`,
-  `StableRef<T>`, and the variables and structs pointed at (`IntVar`, a struct class) — is
+  Every type that stands for a C address - `CPointer<T>`, `NativePtr`, `CValuesRef<T>`,
+  `StableRef<T>`, and the variables and structs pointed at (`IntVar`, a struct class) - is
   one KIR type, a bare `void*`: never an object, never counted, and one shared instantiation
   as a type argument. Available: `memScoped`, `nativeHeap`, `alloc` / `allocArray` /
   `allocPointerTo`, `.ptr` / `.pointed` / `.value`, indexing and `+` on pointers, `sizeOf` /
@@ -638,12 +638,12 @@ value; `staticCFunction` of a lambda that captures; C enums as Kotlin `enum clas
 the `typealias` form); bindings are regenerated on every compilation. Programs using interop
 have no JVM to compare with: their tests compare with a `.expected` file.
 
-After Phase 7 — what the phases above had left open:
+After Phase 7 - what the phases above had left open:
 - **The language's own failures throw.** An array index out of bounds, a string index out of
   range and an integer division by zero raise `ArrayIndexOutOfBoundsException`,
   `StringIndexOutOfBoundsException` and `ArithmeticException` (`objects/Checks.kt`).
-  `ExceptionLowering` puts the test in front of the statement — `if (index is bad) { throw;
-  leave }` — and the operation behind it is emitted unchecked, so the cost is the bounds
+  `ExceptionLowering` puts the test in front of the statement - `if (index is bad) { throw;
+  leave }` - and the operation behind it is emitted unchecked, so the cost is the bounds
   check that was there already. A division by a constant other than zero needs no test. An
   operation on one side of a condition (`i < n && a[i] == x`) cannot be tested ahead: it
   keeps its check in the runtime, which parks the exception and yields a harmless value, and
@@ -656,7 +656,7 @@ After Phase 7 — what the phases above had left open:
   generated per primitive type by `tools/gen_arrays.py`. Sorting is a heap sort for
   primitives and a stable merge sort for objects; `asList` is a view of the array.
 - **Inner classes** (`objects/Inner.kt`). An `inner` class holds its enclosing object in a
-  field, set when an instance is created and read at the start of each member — the
+  field, set when an instance is created and read at the start of each member - the
   mechanism local classes capture with. Its type parameters include those of the classes
   around it. The iterators of the standard library's abstract lists are inner classes.
 - **SAM-converted lambdas**: `Comparator { a, b -> … }` (and so `compareBy`, `sortedBy`,
@@ -674,31 +674,31 @@ After Phase 7 — what the phases above had left open:
   (`interop/Posix.kt`: `printf`, `fopen`, `qsort`, `strtol`, `errno`…). `-copt` and `-lopt`
   pass options to the C compiler and the linker; a directory on the command line stands for
   the `.kt` and `.def` files in it.
-- **The SDL3 module** (`resources/ktc2/modules/sdl3`, package `ktc.sdl3`): the port of v1's wrapper —
+- **The SDL3 module** (`resources/ktc2/modules/sdl3`, package `ktc.sdl3`): the port of v1's wrapper -
   `SDL3.Window`, `SDL3.Renderer`, textures, cursors, shapes, rounded rectangles, triangles,
-  events, keyboard and mouse state, `gameLoop`, the `FPoint` / `FRect` math and 266 constants —
+  events, keyboard and mouse state, `gameLoop`, the `FPoint` / `FRect` math and 266 constants -
   over the generated `sdl3` bindings. Values such as `FRect` are Kotlin data classes; a
   function that hands one to SDL fills a C struct in its own stack frame, so drawing
   allocates nothing. `example/Demo.kt` opens a window, draws for a second and exits cleanly.
   It is not part of the test suite (it needs SDL3 and a display).
 
-Values on the stack, and Kotlin 2.5 — the latest round:
+Values on the stack, and Kotlin 2.5 - the latest round:
 - **Kotlin 2.5.0-RC.** The front end is the 2.5.0-RC compiler and the library sources are
   those of the 2.5.0-RC standard library. Programs may use what that release has, including
   what it still calls experimental (`integration/basic/Kotlin25.kt`): `companion { }` blocks
   and companion extensions (`companion val Vector.UnitX`), collection literals
   (`val xs: List<Int> = [1, 2, 3]`), full value classes and value objects, name-based
   destructuring (`(val y, val x) = point`), context parameters, guards in `when`. A member of
-  a companion block is a function or a variable of the program — no object is involved. The
+  a companion block is a function or a variable of the program - no object is involved. The
   reference build on the JVM is compiled with the same options.
 - **`@Struct` values everywhere** (`values/StructValues.kt`). A struct is a plain C value:
   in a local, a parameter, a field, or an element of a collection (`ArrayList<Point>` stores
   the points themselves). What was missing is now there: `==` and `!=` (through the `equals`
-  the class declares — a data class has one; a struct class without `equals` cannot be
+  the class declares - a data class has one; a struct class without `equals` cannot be
   compared, since on the JVM that would be identity), `hashCode`, `toString`, string
   templates, `copy`, destructuring, secondary constructors and `init` blocks, use as a map
-  key or set element, and type arguments in general. Where Kotlin needs an object — the value
-  seen as `Any` or as an interface it implements, or a nullable `Point?` — the value is put in
+  key or set element, and type arguments in general. Where Kotlin needs an object - the value
+  seen as `Any` or as an interface it implements, or a nullable `Point?` - the value is put in
   its *box*, a small class generated per struct that answers `toString`, `equals`, interface
   calls with the struct's own functions. A box that does not outlive its block is itself a
   stack object (comparing two structs allocates nothing). A member called on a struct value is
@@ -707,7 +707,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **References inside structs** (`values/StructReferences.kt`). A struct may hold a String,
   an object or an array. Such a value owns what it refers to: copying it into a local, a field
   or a box retains each reference (one generated `Entry__retain` per struct), dropping it
-  releases them, exactly where a plain reference would be retained and released — `ArcInsert`
+  releases them, exactly where a plain reference would be retained and released - `ArcInsert`
   treats "a struct that holds references" as it treats a reference. The escape analysis
   follows references into and out of struct values, so an object referred to by a struct that
   escapes is not put on the stack. Inside generic code (the element blocks of collections)
@@ -726,7 +726,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   operations of `Int` and `Long`, `kotlin.random` (the standard library's own XorWow, so a
   seeded generator gives the same numbers as on the JVM), `lazy`, `Delegates`, `Enum.entries`
   (`stdlib/MathAndMore.kt`).
-- **Language**: property delegation — `by lazy`, `by Delegates.observable`, custom
+- **Language**: property delegation - `by lazy`, `by Delegates.observable`, custom
   `getValue` / `setValue`, on class, top-level and local properties (`objects/Delegation.kt`);
   `lateinit`; function references in the form the 2.5 compiler produces; `x is IntArray` on
   an `Any`, by the kind of array.
@@ -734,11 +734,11 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   allocates five objects in its whole run.
 
 - **Threads**: `synchronized(object)` is a recursive monitor per object, kept in a table of
-  the runtime while the object is locked — two threads holding different objects no longer
+  the runtime while the object is locked - two threads holding different objects no longer
   wait for each other. `lazy` computes its value once whichever thread asks first.
 - **Delegates** receive a property object that knows its name (`property.name`); anything
   else asked of it fails, there being no reflection.
-- **Results built in the caller's frame** (`values/InPlace.kt`) — rule 7 of §5.2. A function
+- **Results built in the caller's frame** (`values/InPlace.kt`) - rule 7 of §5.2. A function
   whose result is always the one object it creates, and which lets that object go nowhere
   else, gets a second form, `make__into(slot, …)`, that builds the object in room the caller
   supplies. A call whose result does not leave its block passes a slot of its own stack frame
@@ -747,8 +747,8 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   (`midpoint` → `scaled`). A function that returns one of its arguments, or one of several
   objects, has no such form. If the function throws, the slot is simply left unused.
 - **Unsigned arrays** (`stdlib/UnsignedArrays.kt`): `UByteArray`, `UShortArray`, `UIntArray`
-  and `ULongArray` are the standard library's own classes — value classes over the signed
-  array — compiled from its sources together with their functions (`_UArrays.kt`). Being
+  and `ULongArray` are the standard library's own classes - value classes over the signed
+  array - compiled from its sources together with their functions (`_UArrays.kt`). Being
   value classes over one reference they are structs here: a `UIntArray` is the pointer to its
   `IntArray` and nothing more.
 - **`ktc2.ValueArray<T>`** (`values/ValueArrays.kt`): a fixed-size array that stores its
@@ -757,7 +757,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **A waiting monitor sleeps.** A thread that finds its monitor taken sleeps on a condition
   variable until a monitor is given up, instead of spinning.
 - **`Regex`** (`stdlib/Regexes.kt`, `Ktc2Regex.kt`): a backtracking matcher written in Kotlin
-  with the syntax and behavior of `java.util.regex` for what it covers — classes, anchors,
+  with the syntax and behavior of `java.util.regex` for what it covers - classes, anchors,
   groups (numbered, named, non-capturing), alternation, greedy and lazy quantifiers, back
   references, look-ahead and look-behind, `IGNORE_CASE` and `MULTILINE`, the flags `(?i)`
   `(?m)` `(?s)` at the start of a pattern; `find`, `findAll`, `matchEntire`, `matchAt`,
@@ -769,7 +769,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **Objects and enums are created on first use** (`objects/Initialization.kt`), as Kotlin
   specifies. Each access is preceded by a call to the class's `ensure` function, which runs
   the initializer the first time. Once the whole program is imported, the initializers that
-  only compute and store — nearly all of them — are identified, their classes go back to
+  only compute and store - nearly all of them - are identified, their classes go back to
   being initialized at startup, and the `ensure` calls for them are removed: no cost where
   the difference cannot be seen. An initializer that prints, throws, calls out or reads a
   top-level property keeps the exact Kotlin order (and an exception in it reaches the code
@@ -833,13 +833,13 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   suite. Test builds (`KTC2_LEAK_CHECK`) now overwrite an object before freeing it, so a
   reference that should have been counted shows up as a failure.
 - **Results that are borrowed** (`backend/BorrowedReturns.kt`). A function that only hands out
-  a reference something else keeps — `list[i]`, a getter, `iterator.next()` over such a list,
-  `append` returning its receiver — gets a second form, `name__b`, whose result carries no
+  a reference something else keeps - `list[i]`, a getter, `iterator.next()` over such a list,
+  `append` returning its receiver - gets a second form, `name__b`, whose result carries no
   count. A function qualifies when everything it returns is read from a place reached from
   its parameters, or is the result of a qualifying function called with such arguments, and
   it does not itself write those places; a virtual dispatcher qualifies when every
-  implementation behind it in the program does. When only some do — one list computes its
-  elements, one iterator returns boxed numbers — the dispatcher's form is `name__m`: it takes
+  implementation behind it in the program does. When only some do - one list computes its
+  elements, one iterator returns boxed numbers - the dispatcher's form is `name__m`: it takes
   the address of a variable of the caller, borrows where the implementation allows it, and
   otherwise puts the owned result in that variable as well, which the caller releases with
   the block (a release of nothing on the borrowed path). A function whose result comes from
@@ -941,7 +941,7 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   (`release-3.4.8`); the bindings are made from those headers, and its `module.cmake` builds the
   library from them, statically, unless CMake finds an SDL3 on the system. First build of the
   demo, SDL3 included: one minute here.
-- **The showcase** (`examples/showcase`): one program of three modules — a small library
+- **The showcase** (`examples/showcase`): one program of three modules - a small library
   (`shapes/`), 92 checks in seven groups over the language, the library, errors, values,
   threads and the other module (`core/`, plain Kotlin, so the suite also runs it against the
   JVM as `projects/examples/showcase/core`), and a window with a button per group
@@ -986,7 +986,7 @@ Known gaps: `isDaemon`, thread names and priorities are ignored.
 
 `@Value` on array elements (`Array<@Value Particle>`) is **not** going to be done as planned.
 An annotation does not change the Kotlin type, so such an array could be passed wherever an
-`Array<Particle>` is expected — to any function of the standard library — and code compiled
+`Array<Particle>` is expected - to any function of the standard library - and code compiled
 for an array of references would then read object bytes as pointers. Guarding against it
 would cost a test on every access to every array of references. What the plan wanted from it
 is available another way: collections store structs and value classes in place

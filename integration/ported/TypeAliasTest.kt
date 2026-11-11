@@ -64,7 +64,7 @@ fun testChainedAliases() {
 typealias MaybeInt = Int?
 
 fun testNullableAlias() {
-    // Verify the alias resolves to the same Optional type as `Int?` —
+    // Verify the alias resolves to the same Optional type as `Int?` -
     // assigning null and then a value covers both Optional tags.
     val empty: MaybeInt = null
     val filled: MaybeInt = 42

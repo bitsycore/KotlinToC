@@ -1,7 +1,7 @@
 package StringOpsTest
 
 /*
- * Exercise every public String operation declared in ktc/Strings.kt —
+ * Exercise every public String operation declared in ktc/Strings.kt -
  * both the codegen intrinsics (length, substring, contains, lowercase, …)
  * and the pure-Kotlin extensions (first, take, trim, isBlank, …).
  *
@@ -132,7 +132,7 @@ fun testSubstring() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// MARK: Search — startsWith / endsWith
+// MARK: Search - startsWith / endsWith
 // ════════════════════════════════════════════════════════════════════
 
 fun testStartsEndsWith() {
@@ -147,7 +147,7 @@ fun testStartsEndsWith() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// MARK: Search — contains / indexOf / lastIndexOf (String + Char)
+// MARK: Search - contains / indexOf / lastIndexOf (String + Char)
 // ════════════════════════════════════════════════════════════════════
 
 fun testContainsString() {

@@ -1,5 +1,5 @@
 // A local that names something read from a field, an array or a top-level property must keep
-// it alive when that place is overwritten while the local is still in use — directly, by a
+// it alive when that place is overwritten while the local is still in use - directly, by a
 // function called, by a lambda, or by the toString a print calls.
 
 class Item(val name: String) {
@@ -104,8 +104,8 @@ fun main() {
 	val vChain = Chain(Chain(null, "tail"), "head")
 	println(vChain.cut() + " " + vChain.cut())
 
-	// What a function hands out — an element of a list, the value of a key, a field through a
-	// getter — while the collection or the field changes under it.
+	// What a function hands out - an element of a list, the value of a key, a field through a
+	// getter - while the collection or the field changes under it.
 	val vNames = arrayListOf(Item("n0"), Item("n1"), Item("n2"), Item("n3"))
 	for (vIndex in vNames.indices) {
 		val vName = vNames[vIndex]

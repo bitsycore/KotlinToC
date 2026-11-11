@@ -77,7 +77,7 @@ class Effects(inModule: KModule) {
 
 	/**
 	 * A function without a body here. The runtime's own write nothing a reference is borrowed
-	 * from — except that starting or joining a thread, and entering or leaving a monitor, let
+	 * from - except that starting or joining a thread, and entering or leaving a monitor, let
 	 * another thread's writes through: what was read before may be gone after. Anything else
 	 * (C called by the program) might do anything.
 	 */

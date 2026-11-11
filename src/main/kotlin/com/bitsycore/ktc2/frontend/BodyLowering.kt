@@ -672,7 +672,7 @@ internal class BodyBuilder(
 		is IrFunctionReference -> lowerFunctionReference(inExpression)
 		is IrRichFunctionReference -> lowerRichFunctionReference(inExpression)
 		// The property a delegate is told about (`getValue(thisRef, property)`): there is no
-		// reflection here, so it is passed as null — fine for the delegates that ignore it.
+		// reflection here, so it is passed as null - fine for the delegates that ignore it.
 		is IrRichPropertyReference -> propertyObject(inExpression, (inExpression.reflectionTargetSymbol?.owner as? IrDeclarationWithName)?.name?.asString())
 		is IrPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
 		is IrLocalDelegatedPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
@@ -1692,7 +1692,7 @@ internal class BodyBuilder(
 	}
 
 	/**
-	 * The function a member call lands on — a dispatcher when the member can be overridden —
+	 * The function a member call lands on - a dispatcher when the member can be overridden -
 	 * with the substitution its declaration is read under. [inReceiver] is the closed type of
 	 * the receiver, which picks the instantiation of a generic class.
 	 */

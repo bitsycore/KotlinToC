@@ -11,7 +11,7 @@ import ktc2.internal.weakGet
 // ==================
 
 /**
- * Runs [inBlock] with every object it creates — directly or in the functions it calls —
+ * Runs [inBlock] with every object it creates - directly or in the functions it calls -
  * carved out of blocks of [inSize] bytes that are freed together when the block returns.
  * An object still referred to afterwards (the result, typically) stays valid: it keeps its
  * block alive until it is released itself.

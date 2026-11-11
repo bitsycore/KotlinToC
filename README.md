@@ -1,8 +1,8 @@
-# ktc2 — Kotlin to C
+# ktc2 - Kotlin to C
 
 ktc2 translates Kotlin to C11. The Kotlin is real Kotlin: the front end is the Kotlin compiler
 itself (K2), and a program behaves as it does on the JVM. The C has no garbage collector:
-objects are reference counted, and the compiler keeps them out of the heap where it can — in
+objects are reference counted, and the compiler keeps them out of the heap where it can - in
 the frame, inside their owner, in an arena.
 
 ```kotlin
@@ -99,6 +99,6 @@ macOS are written for and not yet tried; Android is not there yet.
 ./gradlew test
 ```
 
-runs every program under `integration/` twice — as C, compiled with `-Wall -Werror` and
-checked for leaks, and on the JVM — and compares what they print. `DESIGN.md` is the design
+runs every program under `integration/` twice - as C, compiled with `-Wall -Werror` and
+checked for leaks, and on the JVM - and compares what they print. `DESIGN.md` is the design
 and the record of what was built; `CLAUDE.md` is the short map of the code.

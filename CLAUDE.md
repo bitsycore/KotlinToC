@@ -1,4 +1,4 @@
-# ktc2 — Kotlin to C
+# ktc2 - Kotlin to C
 
 Source-to-source transpiler: **Kotlin → C11**, with real Kotlin semantics (the front end is the
 Kotlin K2 compiler) on automatic reference counting, no GC. `DESIGN.md` is the design and the
@@ -29,7 +29,7 @@ record of what was built, phase by phase; read its end for the latest state.
 - Memory: objects are references, counted; `EscapeAnalysis` moves them to the frame, `ArcInsert` leaves out the counting nobody can observe. Cycles are reported at compile time (`@Weak`, `WeakRef`, `@Acyclic`); there is no cycle collector.
 - Exceptions are a pending value tested after each call that can throw; no `setjmp`.
 - Not supported: coroutines (`sequence { }`, `iterator { }`), reflection.
-- Generated sources — `Ktc2Arrays.kt`, `Ktc2Math.kt`, `Ktc2Comparisons.kt`, `Ktc2Unicode.kt` (by `tools/GenUnicode.java`, run with the JDK 21 of the build so the tables match what the tests compare with): change the script in `tools/`, not the file.
+- Generated sources - `Ktc2Arrays.kt`, `Ktc2Math.kt`, `Ktc2Comparisons.kt`, `Ktc2Unicode.kt` (by `tools/GenUnicode.java`, run with the JDK 21 of the build so the tables match what the tests compare with): change the script in `tools/`, not the file.
 
 ## Conventions
 - Kotlin: standard Kotlin conventions, tabs, KDoc on classes and functions; section markers `// ====` + `// MARK: Name` between major groups; concise comments only when non-obvious.

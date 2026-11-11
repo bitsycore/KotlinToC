@@ -10,7 +10,7 @@ import com.bitsycore.ktc2.kir.*
  * place the result came from is not overwritten while it is used.
  *
  * A function qualifies when every value it returns is
- * - read from a place — a field, an array element, a top-level property — reached from its
+ * - read from a place - a field, an array element, a top-level property - reached from its
  *   parameters, or
  * - the result of a qualifying function called with arguments read that way,
  * and the function itself does not write any of those places.

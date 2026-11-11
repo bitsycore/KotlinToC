@@ -1,5 +1,5 @@
 /**
- * ktc2 core runtime — primitive semantics that differ between Kotlin and C.
+ * ktc2 core runtime - primitive semantics that differ between Kotlin and C.
  *
  * Kotlin integer arithmetic wraps, shifts mask their count, and float-to-int
  * conversion saturates; plain C operators are undefined or different in those

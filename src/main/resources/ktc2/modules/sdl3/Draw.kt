@@ -77,7 +77,7 @@ fun SDL3.Renderer.fillRoundedRect(rect: SDL3.FRect, radius: Float) {
 	// Left and right strips (inner band, excluding the corner arcs)
 	piece(rect.x, rect.y + vRadius, vRadius, rect.h - vRadius * 2.0f)
 	piece(rect.x + rect.w - vRadius, rect.y + vRadius, vRadius, rect.h - vRadius * 2.0f)
-	// Corner arcs — scanline per row, all 4 corners in one loop
+	// Corner arcs - scanline per row, all 4 corners in one loop
 	var vRow = 0.0f
 	while (vRow <= vRadius) {
 		val vHalfWidth = squareRoot(vRadius * vRadius - vRow * vRow)
@@ -102,7 +102,7 @@ fun SDL3.Renderer.fillRoundedRect(rect: SDL3.FRect, radius: Float) {
  */
 fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val vRadius = cornerRadius(rect, radius)
-	// Straight edges as point loops — same rasterizer as the corner arcs below.
+	// Straight edges as point loops - same rasterizer as the corner arcs below.
 	var vEdgeX = rect.x + vRadius
 	while (vEdgeX <= rect.x + rect.w - vRadius) {
 		SDL_RenderPoint(handle, vEdgeX, rect.y)
@@ -120,7 +120,7 @@ fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 	val vRight = rect.x + rect.w - vRadius
 	val vTop = rect.y + vRadius
 	val vBottom = rect.y + rect.h - vRadius
-	// Midpoint circle — all 4 corners per step
+	// Midpoint circle - all 4 corners per step
 	var vX = 0.0f
 	var vY = vRadius
 	var vDecision = 1.25f - vRadius
@@ -149,7 +149,7 @@ fun SDL3.Renderer.drawRoundedRect(rect: SDL3.FRect, radius: Float) {
 
 /**
  * Fill a triangle with per-vertex RGBA float colors [0..1].
- * Uses SDL_RenderGeometry — blending must be set before calling if transparency is needed.
+ * Uses SDL_RenderGeometry - blending must be set before calling if transparency is needed.
  */
 fun SDL3.Renderer.fillTriangle(
 	x0: Float, y0: Float, r0: Float, g0: Float, b0: Float, a0: Float,

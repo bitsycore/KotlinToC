@@ -72,8 +72,8 @@ internal fun cHeadersOf(inFile: IrFile?): List<String> {
 private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBounds", "throwDivideByZero")
 
 /**
- * The type parameters a class is instantiated with: its own, then — for an `inner` class,
- * whose members also use them — those of the classes around it. Types of the class list
+ * The type parameters a class is instantiated with: its own, then - for an `inner` class,
+ * whose members also use them - those of the classes around it. Types of the class list
  * their arguments in this order.
  */
 internal fun classParameters(inClass: IrClass): List<IrTypeParameter> =
@@ -191,7 +191,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	/** A closure class and the function type it implements (`FunctionN` with these type arguments). */
 	/**
-	 * A lambda turned into an object. [functionClass] is the interface it stands for — a
+	 * A lambda turned into an object. [functionClass] is the interface it stands for - a
 	 * `FunctionN`, or the `fun interface` it was converted to ([isSam]), whose single abstract
 	 * method is then what [invoke] implements.
 	 */
@@ -315,7 +315,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	/**
 	 * The function a call to [inFunction] should run: when the module has a function with a
-	 * body under the same name and signature, that one — the source always wins over the jar,
+	 * body under the same name and signature, that one - the source always wins over the jar,
 	 * and an `actual` over its `expect`.
 	 */
 	internal fun sourceOf(inFunction: IrSimpleFunction): IrSimpleFunction {
@@ -626,7 +626,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	internal fun structClassOf(inStruct: KStruct): IrClass = mStructClasses.getValue(inStruct)
 
 	/**
-	 * The box of [inStruct]: the object a struct value becomes where Kotlin needs one — as
+	 * The box of [inStruct]: the object a struct value becomes where Kotlin needs one - as
 	 * `Any`, as an interface it implements, or when it may be null. It answers the calls made
 	 * on such an object (`toString`, `equals`, interface methods) with the struct's own
 	 * functions. A struct that is only ever used by its own type never gets one.
@@ -1027,7 +1027,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	them, and gives the top-level properties of a file their values when the program first uses
 	something of that file. Every such use is therefore preceded by a call to an `ensure`
 	function, which runs the initializer the first time. When importing is over, the
-	initializers that only compute and store — which is most of them — are found; for those
+	initializers that only compute and store - which is most of them - are found; for those
 	the calls are taken out again and the initializer runs at startup: nobody can tell when it
 	ran. The calls that stay are made only while the initializer has not finished.
 	*/
@@ -1528,7 +1528,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * True when a dispatcher for type arguments [inDispatcher] can reach an implementation
 	 * instantiated with [inActual]. A reference (`Any?`) argument of the dispatcher also stands
 	 * for a star projection or an unknown type, so it accepts a primitive instantiation too:
-	 * the dispatcher then boxes and unboxes at that boundary. The other way round as well — an
+	 * the dispatcher then boxes and unboxes at that boundary. The other way round as well - an
 	 * implementation written over references (a `Comparator<Comparable<Any>>` used, after a
 	 * cast, to compare Ints) serves a primitive dispatcher, which boxes for it.
 	 */

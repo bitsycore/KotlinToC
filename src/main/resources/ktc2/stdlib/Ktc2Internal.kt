@@ -198,7 +198,7 @@ public fun <E : Enum<E>> enumEntriesOf(values: Array<E>): kotlin.enums.EnumEntri
 
 /**
  * What a delegate is told about the property it serves (`getValue(thisRef, property)`): its
- * name. There is no reflection behind it — everything else a `KProperty` offers fails.
+ * name. There is no reflection behind it - everything else a `KProperty` offers fails.
  */
 public class PropertyReference(override val name: String) : kotlin.reflect.KProperty<Any?> {
 	private fun unavailable(): Nothing = throw UnsupportedOperationException("Reflection is not available: property '$name'")

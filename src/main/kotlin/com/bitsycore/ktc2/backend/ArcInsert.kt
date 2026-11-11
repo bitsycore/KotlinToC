@@ -10,7 +10,7 @@ import com.bitsycore.ktc2.kir.*
  * - A call, an allocation or a string concatenation hands its result to the caller (+1).
  * - Every local of reference type owns what it holds. It is declared null at the start of its
  *   scope and released when the scope is left, whichever way (fall-through, break, continue,
- *   return) — so a jump can never skip an initialization or a release.
+ *   return) - so a jump can never skip an initialization or a release.
  * - Storing into a local, field, global or array element takes a reference (a retain unless
  *   the value is a fresh +1 result) and releases the previous content.
  * - An argument that is not a local is first held by a temporary, so the callee cannot free
@@ -20,8 +20,8 @@ import com.bitsycore.ktc2.kir.*
  * - a `val` field of an object that is itself safely held needs no temporary as an argument;
  * - a local read exactly once, by a store, hands over its reference instead of sharing it;
  * - a returned local is handed to the caller instead of being retained and then released;
- * - a local that is only another name for something held at least as long — a parameter, a
- *   local that is never reassigned, a `val` field of either — borrows instead of owning: no
+ * - a local that is only another name for something held at least as long - a parameter, a
+ *   local that is never reassigned, a `val` field of either - borrows instead of owning: no
  *   retain when it is declared, no release when its scope is left;
  * - the same for what is read from a `var` field, an array element or a top-level property,
  *   when nothing in the rest of the local's block can overwrite that place ([Effects]); and an

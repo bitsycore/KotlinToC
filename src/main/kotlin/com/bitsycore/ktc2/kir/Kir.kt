@@ -1,7 +1,7 @@
 package com.bitsycore.ktc2.kir
 
 /*
-KIR — the ktc2 intermediate representation.
+KIR - the ktc2 intermediate representation.
 
 Typed and statement-oriented. Expressions (KExpr) are pure with respect to evaluation order:
 anything with a side effect (a call, an allocation, an assignment, control flow) is a
@@ -57,7 +57,7 @@ data class KStructType(val struct: KStruct) : KType
 
 /**
  * A counted reference: a C pointer to an object starting with `ktc2_Obj`. Nullability is not
- * part of the type — a nullable reference is the same pointer, possibly NULL.
+ * part of the type - a nullable reference is the same pointer, possibly NULL.
  */
 sealed interface KRefType : KType
 
@@ -293,7 +293,7 @@ class KOptValue(val operand: KExpr) : KExpr {
 	override val type: KType get() = KPrimType((operand.type as KOptType).prim)
 }
 
-/** `condition ? whenTrue : whenFalse` — only built when both arms are pure. */
+/** `condition ? whenTrue : whenFalse` - only built when both arms are pure. */
 class KSelect(val condition: KExpr, val whenTrue: KExpr, val whenFalse: KExpr, override val type: KType) : KExpr
 
 /** Reads a field of a struct value or of the object a class reference points to. */

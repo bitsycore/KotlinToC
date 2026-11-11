@@ -18,7 +18,7 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
   --dump-ir          also write the IR received from the Kotlin compiler"""
 
 /**
- * Entry point of the ktc2 transpiler (Kotlin semantics on ARC — see DESIGN.md).
+ * Entry point of the ktc2 transpiler (Kotlin semantics on ARC - see DESIGN.md).
  * Writes the generated C under `<out>/c` and a `CMakeLists.txt` for it; with `--build`,
  * `--cmake` or `--run` also the program.
  */
