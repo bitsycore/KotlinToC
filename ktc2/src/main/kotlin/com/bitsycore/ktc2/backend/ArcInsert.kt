@@ -39,7 +39,7 @@ class ArcInsert(private val mModule: KModule) {
 		val vCounts = HashMap<KLocal, Int>()
 		fun expr(inExpr: KExpr?) {
 			when (inExpr) {
-				null, is KConst, KUnitValue, is KNull, is KStringLit, is KGlobalRead, is KStaticRead, is KAlloc, is KZero -> {}
+				null, is KConst, KUnitValue, is KNull, is KStringLit, is KGlobalRead, is KStaticRead, is KAlloc, is KZero, is KStackSlot -> {}
 				is KRead -> vCounts.merge(inExpr.local, 1, Int::plus)
 				is KBinary -> { expr(inExpr.left); expr(inExpr.right) }
 				is KRefEquals -> { expr(inExpr.left); expr(inExpr.right) }
@@ -163,7 +163,7 @@ class ArcInsert(private val mModule: KModule) {
 
 		/** True when [inValue] can be passed without holding it: a local, or something that never dies. */
 		private fun isSafeBorrow(inValue: KExpr): Boolean = when (inValue) {
-			is KRead, is KNull, is KStringLit, is KStaticRead -> true
+			is KRead, is KNull, is KStringLit, is KStaticRead, is KStackSlot -> true
 			is KRefCast -> isSafeBorrow(inValue.operand)
 			// A `val` field cannot be overwritten: it lives as long as its object does.
 			is KFieldRead -> inValue.field.isImmutable && isSafeBorrow(inValue.target)

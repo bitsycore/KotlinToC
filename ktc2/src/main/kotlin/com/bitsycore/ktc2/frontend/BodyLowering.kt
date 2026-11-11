@@ -800,7 +800,9 @@ internal class BodyBuilder(
 		}
 		// A type parameter standing for a reference type is `Any?` here: the test always holds.
 		val vIsNull = isNull(inValue)
-		if (vType.makeNotNull().isAny()) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
+		// So is a type parameter nothing here stands for (that of a class around a local object).
+		val vIsUnbound = vType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
+		if (vType.makeNotNull().isAny() || vIsUnbound) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
 		val vTest = KInstanceOf(inValue, typeTargetOf(vType) ?: return fail(inElement, "type test against '${inType.render()}'"))
 		return if (vType.isMarkedNullable()) KSelect(vIsNull, kTrue, vTest, kBoolType) else vTest
 	}
@@ -893,7 +895,8 @@ internal class BodyBuilder(
 
 	private fun lowerBranchResult(inResult: IrExpression, inTarget: KLocal?) {
 		val vValue = lowerRhs(inResult)
-		if (inTarget != null && !inResult.type.isNothing() && vValue !== KUnitValue) {
+		// A branch of type Unit in a `when` whose value is not used (its other branches give something else) has nothing to store.
+		if (inTarget != null && !inResult.type.isNothing() && vValue !== KUnitValue && vValue.type != KUnitType && vValue.type != KNothingType) {
 			mBlock += KSet(inTarget, coerce(vValue, inTarget.type))
 		} else {
 			discard(vValue)

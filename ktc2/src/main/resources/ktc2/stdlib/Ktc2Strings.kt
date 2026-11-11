@@ -17,7 +17,7 @@ library leaves to its platform.
 
 Limits, to be lifted: case conversion and the Char classification functions know ASCII and
 Latin-1 and treat the rest of Unicode approximately (any other letter-range code point is a
-letter, without case); Regex is declared but not implemented.
+letter, without case); Regex is in Ktc2Regex.kt.
 */
 
 // ==================
@@ -479,44 +479,3 @@ public actual fun Short.toString(radix: Int): String = wholeToString(this.toLong
 public actual fun Int.toString(radix: Int): String = wholeToString(this.toLong(), radix)
 
 public actual fun Long.toString(radix: Int): String = wholeToString(this, radix)
-
-// ==================
-// MARK: Regex (declared, not implemented)
-// ==================
-
-public actual enum class RegexOption {
-	IGNORE_CASE,
-	MULTILINE
-}
-
-public actual class MatchGroup(public actual val value: String)
-
-private fun regexUnsupported(): Nothing = throw UnsupportedOperationException("Regex is not supported by ktc2 yet")
-
-public actual class Regex actual constructor(pattern: String) {
-	public actual val pattern: String = pattern
-	public actual val options: Set<RegexOption> get() = regexUnsupported()
-
-	public actual constructor(pattern: String, option: RegexOption) : this(pattern)
-
-	public actual constructor(pattern: String, options: Set<RegexOption>) : this(pattern)
-
-	public actual fun matchEntire(input: CharSequence): MatchResult? = regexUnsupported()
-	public actual infix fun matches(input: CharSequence): Boolean = regexUnsupported()
-	public actual fun matchAt(input: CharSequence, index: Int): MatchResult? = regexUnsupported()
-	public actual fun matchesAt(input: CharSequence, index: Int): Boolean = regexUnsupported()
-	public actual fun containsMatchIn(input: CharSequence): Boolean = regexUnsupported()
-	public actual fun replace(input: CharSequence, replacement: String): String = regexUnsupported()
-	public actual fun replace(input: CharSequence, transform: (MatchResult) -> CharSequence): String = regexUnsupported()
-	public actual fun replaceFirst(input: CharSequence, replacement: String): String = regexUnsupported()
-	public actual fun find(input: CharSequence, startIndex: Int): MatchResult? = regexUnsupported()
-	public actual fun findAll(input: CharSequence, startIndex: Int): Sequence<MatchResult> = regexUnsupported()
-	public actual fun split(input: CharSequence, limit: Int): List<String> = regexUnsupported()
-	public actual fun splitToSequence(input: CharSequence, limit: Int): Sequence<String> = regexUnsupported()
-
-	public actual companion object {
-		public actual fun fromLiteral(literal: String): Regex = regexUnsupported()
-		public actual fun escape(literal: String): String = regexUnsupported()
-		public actual fun escapeReplacement(literal: String): String = regexUnsupported()
-	}
-}

@@ -142,6 +142,12 @@ void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
  */
 ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t offset);
 
+/**
+ * The object a function builds in the room its caller gave it: the room itself, taken as the
+ * one reference the function then returns.
+ */
+#define ktc2_slot_take(slot) ((void*)(slot))
+
 /** Generated in ktc2_main.c. */
 extern const ktc2_TypeInfo ktc2_types[];
 extern const uint32_t ktc2_type_count;

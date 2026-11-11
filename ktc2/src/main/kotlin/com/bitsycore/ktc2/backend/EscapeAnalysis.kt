@@ -19,8 +19,19 @@ private const val kStackArrayLimit = 64
  * so nothing can still refer to the object when that block ends. This covers class instances
  * (closures and cells included), strings built by concatenation, and arrays of a small
  * constant size.
+ *
+ * It also covers the object a function *returns*. A function whose result is always the one
+ * object it allocates, and which lets it go nowhere else, gets a second form that builds the
+ * object in room supplied by the caller (`make__into(slot, …)`). A call whose result stays in
+ * its block then passes a slot of its own stack frame, and the object is never on the heap.
  */
 class EscapeAnalysis(private val mModule: KModule) {
+
+	/** For each function, its in-place form and the class it builds; null when it has none. */
+	private val mInPlace = HashMap<KFunction, Pair<KFunction, KClass>?>()
+
+	/** In-place forms created during promotion, which still have to be promoted themselves. */
+	private val mNewFunctions = ArrayList<KFunction>()
 
 	/** Parameters and locals whose reference may outlive the block that holds them, with the first reason found. */
 	private val mEscaping = HashMap<KLocal, String>()
@@ -66,6 +77,21 @@ class EscapeAnalysis(private val mModule: KModule) {
 			}
 		} while (vChanged)
 		vBodies.forEach { FunctionScan(it).promote() }
+		// The in-place forms are functions like the others, made while the others were promoted.
+		var vIndex = 0
+		while (vIndex < mNewFunctions.size) FunctionScan(mNewFunctions[vIndex++]).promote(inReports = false)
+	}
+
+	/** The in-place form of [inFunction], made on first request; null when the function does not qualify. */
+	private fun inPlaceForm(inFunction: KFunction): Pair<KFunction, KClass>? {
+		if (inFunction in mInPlace) return mInPlace[inFunction]
+		// Not known yet: a call to itself inside the function is left as it is.
+		mInPlace[inFunction] = null
+		if (inFunction.isExternal || inFunction.dispatch != null || inFunction.returnType !is KClassType) return null
+		val vForm = FunctionScan(inFunction).buildInPlaceForm() ?: return null
+		mInPlace[inFunction] = vForm
+		mNewFunctions += vForm.first
+		return vForm
 	}
 
 	/** A parameter of a dispatcher escapes when it does in any implementation (or in the runtime default). */
@@ -113,6 +139,8 @@ class EscapeAnalysis(private val mModule: KModule) {
 		val inline: KFieldRead? = null,
 		/** `@Size` or `@Value` on the local: the program requires the stack, so staying on the heap is an error. */
 		val forcedBy: String? = null,
+		/** A call whose result could be built in this frame, rather than an allocation written here. */
+		val isCall: Boolean = false,
 		val promote: () -> Unit,
 	)
 
@@ -126,8 +154,15 @@ class EscapeAnalysis(private val mModule: KModule) {
 		private val mCandidates = ArrayList<Candidate>()
 		private var mChanged = false
 
+		/** Set while promoting: only then are calls looked at as objects that could be built in place. */
+		private var mIsPromoting = false
+
+		/** Locals that escape some other way than by being returned. */
+		private val mKept = HashSet<KLocal>()
+
 		private fun escape(inValue: KExpr?, inReason: String) {
 			for (vLocal in sourcesOf(inValue)) {
+				if (inReason != "returned") mKept += vLocal
 				if (vLocal !in mEscaping) {
 					mEscaping[vLocal] = inReason
 					mChanged = true
@@ -165,6 +200,13 @@ class EscapeAnalysis(private val mModule: KModule) {
 					mCandidates += Candidate(inLocal, "an array", inValue.origin, vUnfit, forcedBy = inValue.forcedBy) { inValue.onStack = true }
 				}
 				is KRefCast -> candidate(inLocal, inValue.operand)
+				// The result of a function that can build it in place: built in this frame if it stays here.
+				is KCall -> if (mIsPromoting) inPlaceForm(inValue.function)?.let { (vForm, vClass) ->
+					mCandidates += Candidate(inLocal, "a ${vClass.name}", null, null, isCall = true) {
+						inValue.arguments = listOf<KExpr>(KStackSlot(vClass)) + inValue.arguments
+						inValue.function = vForm
+					}
+				}
 				// A pointer into inline storage is a borrow that has to stay in its block, like a stack object.
 				is KFieldRead -> if (inValue.field.isInline) mCandidates += Candidate(inLocal, "an inline value", null, null, inValue) {}
 				else -> {}
@@ -280,8 +322,130 @@ class EscapeAnalysis(private val mModule: KModule) {
 			}
 		}
 
+		// ============
+		//  Results built in place
+
+		private fun returnsIn(inBlock: List<KStmt>, outReturns: MutableList<KReturn>) {
+			for (vStatement in inBlock) {
+				when (vStatement) {
+					is KReturn -> outReturns += vStatement
+					is KIf -> {
+						returnsIn(vStatement.thenBlock, outReturns)
+						returnsIn(vStatement.elseBlock, outReturns)
+					}
+					is KLoop -> {
+						returnsIn(vStatement.body, outReturns)
+						returnsIn(vStatement.latch, outReturns)
+					}
+					else -> {}
+				}
+			}
+		}
+
+		/** What [inInit] is under its casts. */
+		private fun coreOf(inInit: KExpr?): KExpr? {
+			var vCore = inInit
+			while (vCore is KRefCast) vCore = vCore.operand
+			return vCore
+		}
+
+		/** The class of the new object [inInit] yields — an allocation, or a call that can build in place — or null. */
+		private fun builtClass(inInit: KExpr?): KClass? = when (val vCore = coreOf(inInit)) {
+			is KAlloc -> vCore.cls.takeIf { vCore.forcedBy == null }
+			is KCall -> inPlaceForm(vCore.function)?.second
+			else -> null
+		}
+
+		/** The statements of [inBlock] that create a new object, loops excluded (one in a loop could be reached twice). */
+		private fun allocationsIn(inBlock: List<KStmt>, outLets: MutableList<KLet>) {
+			for (vStatement in inBlock) {
+				if (vStatement is KLet) {
+					if (builtClass(vStatement.init) != null) outLets += vStatement
+				} else if (vStatement is KIf) {
+					allocationsIn(vStatement.thenBlock, outLets)
+					allocationsIn(vStatement.elseBlock, outLets)
+				}
+			}
+		}
+
+		/** How many times each local is given a value in [inBlock]. */
+		private fun countAssignments(inBlock: List<KStmt>, outCounts: MutableMap<KLocal, Int>) {
+			for (vStatement in inBlock) {
+				when (vStatement) {
+					is KLet -> if (vStatement.init != null) outCounts.merge(vStatement.local, 1, Int::plus)
+					is KSet -> outCounts.merge(vStatement.local, 1, Int::plus)
+					is KConcat -> outCounts.merge(vStatement.target, 1, Int::plus)
+					is KIf -> {
+						countAssignments(vStatement.thenBlock, outCounts)
+						countAssignments(vStatement.elseBlock, outCounts)
+					}
+					is KLoop -> {
+						// Whatever is assigned in a loop may be assigned again.
+						val vInside = HashMap<KLocal, Int>()
+						countAssignments(vStatement.body, vInside)
+						countAssignments(vStatement.latch, vInside)
+						vInside.keys.forEach { outCounts.merge(it, 2, Int::plus) }
+					}
+					else -> {}
+				}
+			}
+		}
+
+		/** [inBlock] with the statement [inOld] replaced by [inNew]; blocks that do not contain it are shared. */
+		private fun replaced(inBlock: List<KStmt>, inOld: KStmt, inNew: KStmt): List<KStmt> = inBlock.map { vStatement ->
+			when {
+				vStatement === inOld -> inNew
+				vStatement is KIf && (vStatement.thenBlock.anyStatement { it === inOld } || vStatement.elseBlock.anyStatement { it === inOld }) ->
+					KIf(vStatement.condition, replaced(vStatement.thenBlock, inOld, inNew), replaced(vStatement.elseBlock, inOld, inNew))
+				else -> vStatement
+			}
+		}
+
+		/**
+		 * The form of this function that builds its result in room given by the caller, when
+		 * every result it returns is the one object it allocates and that object goes nowhere
+		 * else. Left without a result (an exception) it returns null as before.
+		 */
+		fun buildInPlaceForm(): Pair<KFunction, KClass>? {
+			scan(mFunction.body, null)
+			val vReturns = ArrayList<KReturn>()
+			returnsIn(mFunction.body, vReturns)
+			val vLets = ArrayList<KLet>()
+			allocationsIn(mFunction.body, vLets)
+			// The one new object that reaches a `return`, directly or through locals it is copied to.
+			val vLet = vLets.singleOrNull { vCandidate -> vReturns.any { vReturn -> sourcesOf(vReturn.value).any { it in aliasesOf(vCandidate.local) } } } ?: return null
+			val vAliases = aliasesOf(vLet.local)
+			for (vReturn in vReturns) {
+				val vValue = vReturn.value
+				if (vValue == null || vValue is KZero || vValue is KNull) continue
+				val vSources = sourcesOf(vValue)
+				if (vSources.isEmpty() || !vAliases.containsAll(vSources)) return null
+			}
+			// Each of those locals holds that object and nothing else, and none lets it go elsewhere.
+			val vAssignments = HashMap<KLocal, Int>()
+			countAssignments(mFunction.body, vAssignments)
+			if (vAliases.any { vAssignments[it] != 1 || it in mKept || it in mFunction.params }) return null
+			val vClass = builtClass(vLet.init) ?: return null
+
+			val vSlot = KLocal("ktc2_slot", KClassType(vClass))
+			val vForm = KFunction(mFunction.cName + "__into", mFunction.unit, listOf(vSlot) + mFunction.params, mFunction.returnType)
+			val vCore = coreOf(vLet.init)
+			val vBuilt: KExpr = if (vCore is KCall) {
+				// The object comes from a function that builds in place itself: the room is passed on.
+				val vInner = inPlaceForm(vCore.function)!!.first
+				KCall(vInner, listOf<KExpr>(KRead(vSlot)) + vCore.arguments)
+			} else {
+				KIntrinsic("ktc2_slot_take", listOf(KRead(vSlot)), KClassType(vClass), isPure = false)
+			}
+			fun rewrap(inInit: KExpr): KExpr = if (inInit is KRefCast) KRefCast(rewrap(inInit.operand), inInit.type) else vBuilt
+			vForm.body += replaced(mFunction.body, vLet, KLet(vLet.local, rewrap(vLet.init!!)))
+			mFunction.unit.functions += vForm
+			return vForm to vClass
+		}
+
 		/** Moves to the stack the allocations whose object provably dies with its block; reports the others. */
-		fun promote() {
+		fun promote(inReports: Boolean = true) {
+			mIsPromoting = true
 			scan(mFunction.body, null)
 			directInlineUses(mFunction.body)
 			for (vCandidate in mCandidates) {
@@ -294,6 +458,8 @@ class EscapeAnalysis(private val mModule: KModule) {
 					if (vReason != null) copyOut(vCandidate.inline, mFunction, vReason)
 				} else if (vReason == null) {
 					vCandidate.promote()
+				} else if (vCandidate.isCall || !inReports) {
+					// Nothing to say: the call keeps returning a heap object, as it did.
 				} else if (vCandidate.forcedBy != null) {
 					errors += "${vCandidate.origin ?: mFunction.cName}: ${vCandidate.what} marked ${vCandidate.forcedBy} cannot be kept on the stack: $vReason"
 				} else {

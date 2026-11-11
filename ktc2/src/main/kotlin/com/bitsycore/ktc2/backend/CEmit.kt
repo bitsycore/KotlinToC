@@ -768,6 +768,11 @@ class CEmitter(private val mModule: KModule) {
 					"(" + Regex("\\$(\\d+)").replace(vTemplate) { vMatch -> vArguments[vMatch.groupValues[1].toInt()] } + ")"
 				}
 			}
+			is KStackSlot -> {
+				mState.includes += inExpr.cls.unit
+				val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
+				"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1, ${typeId(inExpr.cls)} } })"
+			}
 			is KAlloc -> {
 				mState.includes += inExpr.cls.unit
 				if (inExpr.onStack) {

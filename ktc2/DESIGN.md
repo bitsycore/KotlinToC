@@ -564,8 +564,8 @@ Effect on heap allocations (before any promotion → now): `objects/Classes` 202
 `stdlib/ScopeFunctions` 14 → 7. Collection-heavy programs change little: their allocations
 are the collections' own storage, which has to live on the heap.
 
-Not done in Phase 5: returning a new object directly into the caller's slot (a returned
-object is always heap-allocated), `@Value` on array elements and locals, arrays of variable
+Not done in Phase 5 (the first two were done later, see the end of this section): returning
+a new object directly into the caller's slot, `@Value` on locals; `@Value` on array elements, arrays of variable
 size on the stack, and the `.copy()` rule for assigning a *mutable* object into an inline
 field from a non-fresh source (the content is copied; on the JVM the two would alias).
 
@@ -760,13 +760,30 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   wait for each other. `lazy` computes its value once whichever thread asks first.
 - **Delegates** receive a property object that knows its name (`property.name`); anything
   else asked of it fails, there being no reflection.
+- **Results built in the caller's frame** (`values/InPlace.kt`) — rule 7 of §5.2. A function
+  whose result is always the one object it creates, and which lets that object go nowhere
+  else, gets a second form, `make__into(slot, …)`, that builds the object in room the caller
+  supplies. A call whose result does not leave its block passes a slot of its own stack frame
+  and uses that form; every other call keeps the ordinary one. "Creates" includes receiving
+  the object from another function that has such a form, so the room is handed down a chain
+  (`midpoint` → `scaled`). A function that returns one of its arguments, or one of several
+  objects, has no such form. If the function throws, the slot is simply left unused.
+- **`Regex`** (`stdlib/Regexes.kt`, `Ktc2Regex.kt`): a backtracking matcher written in Kotlin
+  with the syntax and behavior of `java.util.regex` for what it covers — classes, anchors,
+  groups (numbered, named, non-capturing), alternation, greedy and lazy quantifiers, back
+  references, look-ahead and look-behind, `IGNORE_CASE` and `MULTILINE`, the flags `(?i)`
+  `(?m)` `(?s)` at the start of a pattern; `find`, `findAll`, `matchEntire`, `matchAt`,
+  `replace` (with `$1` / `${name}` or a function), `split`, `escape`. Possessive quantifiers,
+  atomic groups, class intersection and flags in the middle of a pattern are refused when the
+  `Regex` is created. The nodes of a compiled pattern name their loops by number rather than
+  pointing back at them, so a `Regex` is freed like any other object.
 
 Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
 use; a function value whose static type differs in variance from the lambda's own, an
 inline lambda used inside another lambda (`crossinline`), and SAM conversion of a function
-value that is not a lambda written in place are not supported yet. `Regex` and the functions
-of the unsigned array types (`UIntArray.sum()`…) are missing from the library. A monitor
-waits by yielding rather than sleeping. A failed check inside a conditional expression may store a
+value that is not a lambda written in place are not supported yet. The functions of the
+unsigned array types (`UIntArray.sum()`…) are missing from the library. A monitor waits by
+yielding rather than sleeping. A failed check inside a conditional expression may store a
 placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`). Nothing in the ARC pass is
 optimized beyond the three rules above.
 

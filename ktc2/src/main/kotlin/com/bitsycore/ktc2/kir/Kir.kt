@@ -384,8 +384,17 @@ class KAlloc(val cls: KClass) : KExpr {
 }
 
 /** Not pure: only appears as the whole right-hand side of a statement. A reference result is owned by the caller. */
-class KCall(val function: KFunction, val arguments: List<KExpr>) : KExpr {
+class KCall(var function: KFunction, var arguments: List<KExpr>) : KExpr {
 	override val type: KType get() = function.returnType
+}
+
+/**
+ * Room for an instance of [cls] in the stack frame of the enclosing block, zeroed and with
+ * its header set: what a caller hands to a function that builds its result in place. Added by
+ * `EscapeAnalysis`.
+ */
+class KStackSlot(val cls: KClass) : KExpr {
+	override val type: KType get() = KClassType(cls)
 }
 
 /** Added by `ArcInsert`: increments the count of [operand] (null-safe) and yields it. */
