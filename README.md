@@ -1,5 +1,8 @@
 # Kotlin.toC()
 
+Proof of concept
+Rules and internal working will change often until a stable plan is made
+
 Write Kotlin, get C11. No runtime, no GC, no dependencies beyond the C standard library.
 
 KTC is a source-to-source transpiler targeting **embedded, game, and systems** use cases
