@@ -509,3 +509,26 @@ ktc2_String* ktc2_any_toString(ktc2_Obj* object)
 	}
 	return ktc2_sb_finish(&sb);
 }
+
+int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
+{
+	if (a->typeId != b->typeId) ktc2_fail_cast();
+	const ktc2_Box* x = (const ktc2_Box*)a;
+	const ktc2_Box* y = (const ktc2_Box*)b;
+	switch (a->typeId) {
+	case KTC2_TYPE_STRING: return ktc2_str_compare((ktc2_String*)a, (ktc2_String*)b);
+	case KTC2_TYPE_BOX_BOOLEAN: return KTC2_CMP(x->value.boolean_, y->value.boolean_);
+	case KTC2_TYPE_BOX_BYTE: return KTC2_CMP(x->value.byte_, y->value.byte_);
+	case KTC2_TYPE_BOX_SHORT: return KTC2_CMP(x->value.short_, y->value.short_);
+	case KTC2_TYPE_BOX_INT: return KTC2_CMP(x->value.int_, y->value.int_);
+	case KTC2_TYPE_BOX_LONG: return KTC2_CMP(x->value.long_, y->value.long_);
+	case KTC2_TYPE_BOX_CHAR: return KTC2_CMP(x->value.char_, y->value.char_);
+	case KTC2_TYPE_BOX_FLOAT: return KTC2_CMP(x->value.float_, y->value.float_);
+	case KTC2_TYPE_BOX_DOUBLE: return KTC2_CMP(x->value.double_, y->value.double_);
+	case KTC2_TYPE_BOX_UBYTE: return KTC2_CMP(x->value.ubyte_, y->value.ubyte_);
+	case KTC2_TYPE_BOX_USHORT: return KTC2_CMP(x->value.ushort_, y->value.ushort_);
+	case KTC2_TYPE_BOX_UINT: return KTC2_CMP(x->value.uint_, y->value.uint_);
+	case KTC2_TYPE_BOX_ULONG: return KTC2_CMP(x->value.ulong_, y->value.ulong_);
+	default: ktc2_fail_dispatch();
+	}
+}

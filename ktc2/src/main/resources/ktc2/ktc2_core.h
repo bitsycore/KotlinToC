@@ -271,6 +271,8 @@ _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
 ktc2_String* ktc2_any_toString(ktc2_Obj* object);
 bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b);
 int32_t ktc2_any_hashCode(ktc2_Obj* object);
+/** `Comparable.compareTo` for the built-in comparable types: strings and boxed primitives. */
+int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b);
 
 /** Builds a string piece by piece; starts on the stack and moves to the heap when it grows. */
 typedef struct ktc2_Sb {

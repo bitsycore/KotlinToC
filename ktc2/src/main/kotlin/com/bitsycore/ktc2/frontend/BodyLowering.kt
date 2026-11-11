@@ -90,7 +90,20 @@ internal class BodyBuilder(
 	private val mFunction: KFunction,
 	private val mIrFunction: IrFunction?,
 	private val mFile: IrFile,
+	/** What the type parameters in scope stand for in this instantiation. */
+	private var mSubst: Subst,
 ) {
+	private fun kType(inType: IrType): KType? = mImporter.kTypeOf(inType, mSubst)
+
+	private fun closed(inType: IrType): IrType = mImporter.close(inType, mSubst)
+
+	/** Adapts the result of a call or field read to the type the expression has here (a generic member returns `Any?`). */
+	private fun adapt(inValue: KExpr, inExpression: IrExpression): KExpr {
+		val vExpected = kType(inExpression.type)
+		if (vExpected == null || vExpected == KUnitType || vExpected == KNothingType || inValue === KUnitValue) return inValue
+		return coerce(inValue, vExpected)
+	}
+
 	private val mLocals = HashMap<IrValueDeclaration, KLocal>()
 	private val mUsedNames = HashMap<String, Int>()
 	private val mLoops = HashMap<IrLoop, Int>()
@@ -189,7 +202,7 @@ internal class BodyBuilder(
 		val vValues = ArrayList<KExpr>()
 		for (vProperty in vClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
-			val vField = mImporter.fieldFor(vBacking) ?: continue
+			val vField = mImporter.fieldFor(vBacking, null) ?: continue
 			val vInit = vBacking.initializer?.expression
 			vValues += if (vInit == null) fail(vProperty, "property without initializer") else spill(coerce(lowerPure(vInit), vField.type))
 		}
@@ -198,7 +211,8 @@ internal class BodyBuilder(
 
 	/** A property accessor without a body reads or writes the backing field. */
 	private fun buildDefaultAccessor(inAccessor: IrSimpleFunction) {
-		val vField = inAccessor.correspondingPropertySymbol?.owner?.backingField?.let { mImporter.fieldFor(it) }
+		val vSelfClass = (mFunction.params[0].type as? KClassType)?.cls
+		val vField = inAccessor.correspondingPropertySymbol?.owner?.backingField?.let { mImporter.fieldIn(vSelfClass, it) }
 		if (vField == null) {
 			fail(inAccessor, "accessor of a property without a field")
 			return
@@ -264,7 +278,7 @@ internal class BodyBuilder(
 	}
 
 	private fun typeOf(inExpression: IrExpression): KType =
-		mImporter.kTypeOf(inExpression.type) ?: fail(inExpression, "type '${inExpression.type.render()}'").type
+		kType(inExpression.type) ?: fail(inExpression, "type '${inExpression.type.render()}'").type
 
 	private fun primOf(inExpression: KExpr): KPrim? = (inExpression.type as? KPrimType)?.prim
 
@@ -340,7 +354,7 @@ internal class BodyBuilder(
 	private fun lowerStatement(inStatement: IrStatement) {
 		when (inStatement) {
 			is IrVariable -> {
-				val vType = mImporter.kTypeOf(inStatement.type) ?: run {
+				val vType = kType(inStatement.type) ?: run {
 					fail(inStatement, "local of type '${inStatement.type.render()}'")
 					return
 				}
@@ -520,22 +534,21 @@ internal class BodyBuilder(
 	private fun typeTargetOf(inType: IrType): KTypeTarget? {
 		val vBase = inType.makeNotNull()
 		if (vBase.isString()) return KStringTarget
-		(mImporter.kTypeOf(vBase) as? KPrimType)?.let { return KBoxTarget(it.prim) }
+		(kType(vBase) as? KPrimType)?.let { return KBoxTarget(it.prim) }
 		val vClass = vBase.classOrNull?.owner ?: return null
 		if (vClass.isInterface) return KInterfaceTarget(mImporter.interfaceFor(vClass))
-		return mImporter.classFor(vClass)?.let { KClassTarget(it) }
+		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it) }
 	}
 
 	/** `inValue is inType`, including the nullable and `Any` cases. */
 	private fun instanceTest(inElement: IrElement, inValue: KExpr, inType: IrType): KExpr {
 		if (inValue.type !is KRefType) return fail(inElement, "type test on a primitive")
+		// A type parameter standing for a reference type is `Any?` here: the test always holds.
+		val vType = closed(inType)
 		val vIsNull = isNull(inValue)
-		val vTest: KExpr = if (inType.makeNotNull().isAny()) {
-			not(vIsNull)
-		} else {
-			KInstanceOf(inValue, typeTargetOf(inType) ?: return fail(inElement, "type test against '${inType.render()}'"))
-		}
-		return if (inType.isMarkedNullable()) KSelect(vIsNull, kTrue, vTest, kBoolType) else vTest
+		if (vType.makeNotNull().isAny()) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
+		val vTest = KInstanceOf(inValue, typeTargetOf(vType) ?: return fail(inElement, "type test against '${inType.render()}'"))
+		return if (vType.isMarkedNullable()) KSelect(vIsNull, kTrue, vTest, kBoolType) else vTest
 	}
 
 	private fun lowerTypeOperator(inExpression: IrTypeOperatorCall): KExpr = when (inExpression.operator) {
@@ -562,7 +575,9 @@ internal class BodyBuilder(
 				fail(inExpression, "cast to '${inExpression.typeOperand.render()}'")
 			} else {
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
-				mBlock += KIf(not(vTest), listOf(KEval(KIntrinsic("ktc2_fail_cast", emptyList(), KUnitType, isPure = false))), emptyList())
+				if (vTest !== kTrue) {
+					mBlock += KIf(not(vTest), listOf(KEval(KIntrinsic("ktc2_fail_cast", emptyList(), KUnitType, isPure = false))), emptyList())
+				}
 				coerce(vValue, vTo)
 			}
 		}
@@ -661,7 +676,7 @@ internal class BodyBuilder(
 	private fun inlineLambda(inLambda: IrFunctionExpression, inArguments: List<KExpr>, inResultType: KType): KExpr {
 		val vFunction = inLambda.function
 		vFunction.parameters.forEachIndexed { vIndex, vParam ->
-			val vType = mImporter.kTypeOf(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
+			val vType = kType(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
 			val vLocal = KLocal(freshName(vParam.name.asString().trim('<', '>')), vType)
 			mBlock += KLet(vLocal, coerce(inArguments[vIndex], vType))
 			mLocals[vParam] = vLocal
@@ -761,7 +776,7 @@ internal class BodyBuilder(
 		val vCounter = KLocal(freshName("i"), kIntType)
 		mBlock += KLet(vCounter, KConst(0, kIntType))
 		val vId = loopId(inLoop)
-		val vElement = KLocal(freshName(inVariable.name.asString()), mImporter.kTypeOf(inVariable.type) ?: inType.element)
+		val vElement = KLocal(freshName(inVariable.name.asString()), kType(inVariable.type) ?: inType.element)
 		mLocals[inVariable] = vElement
 		val vBody = inBlock {
 			mBlock += KIf(KBinary(KBinaryOp.GE, KRead(vCounter), vLength, KPrim.INT, kBoolType), listOf(KBreak(vId)), emptyList())
@@ -782,7 +797,7 @@ internal class BodyBuilder(
 		val vLoopVariable = vInner?.statements?.firstOrNull() as? IrVariable
 		fun nameOf(inCall: IrCall?) = inCall?.symbol?.owner?.kotlinFqName?.asString()?.substringAfterLast('.')
 		val vSource = (vIterator?.initializer as? IrCall)?.arguments?.firstOrNull()
-		val vSourceType = vSource?.let { mImporter.kTypeOf(it.type) }
+		val vSourceType = vSource?.let { kType(it.type) }
 		if (vSource != null && vSourceType is KArrayType && vLoop != null && vInner != null && vLoopVariable != null) {
 			return lowerArrayFor(vSource, vLoop, vLoopVariable, vInner.statements.drop(1), vSourceType)
 		}
@@ -793,10 +808,10 @@ internal class BodyBuilder(
 			vRange = vRange.arguments[0] as? IrCall
 		}
 		val vKind = nameOf(vRange)
-		val vElement = vLoopVariable?.let { mImporter.kTypeOf(it.type) } as? KPrimType
+		val vElement = vLoopVariable?.let { kType(it.type) } as? KPrimType
 		// `array.indices` is the range 0 until size.
 		val vIndicesOf = vRange?.takeIf { vKind == "<get-indices>" && it.arguments.size == 1 }?.arguments?.get(0)
-			?.takeIf { mImporter.kTypeOf(it.type) is KArrayType }
+			?.takeIf { kType(it.type) is KArrayType }
 		val vIsRange = vRange != null && vRange.arguments.size == 2 && vKind in setOf("until", "rangeUntil", "rangeTo", "downTo")
 		if (vLoop == null || vInner == null || vLoopVariable == null || vRange == null || (!vIsRange && vIndicesOf == null) ||
 			vElement == null || (vElement.prim != KPrim.INT && vElement.prim != KPrim.LONG)
@@ -867,14 +882,16 @@ internal class BodyBuilder(
 		val vConstructor = inCall.symbol.owner
 		val vOwner = vConstructor.parentAsClass
 		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null }?.let { return lowerArrayConstructor(inCall, it) }
-		val vTarget = mImporter.functionFor(vConstructor)
+		val vClassArguments = mImporter.argumentsOf(closed(inCall.type))
+		val vSubst = mImporter.substFor(vConstructor, vClassArguments, emptyList())
+		val vTarget = mImporter.functionFor(vConstructor, vSubst)
 			?: return fail(inCall, "construction of '${vOwner.kotlinFqName}'")
 		if (vTarget.returnType is KStructType) return callFunction(inCall, vTarget, vConstructor, inCall.arguments, null)
-		val vClass = mImporter.classFor(vOwner) ?: return fail(inCall, "construction of '${vOwner.kotlinFqName}'")
-		mImporter.instantiate(vOwner)
+		val vClass = mImporter.classFor(vOwner, vClassArguments) ?: return fail(inCall, "construction of '${vOwner.kotlinFqName}'")
+		mImporter.instantiate(vClass)
 		// Arguments first, as in Kotlin; then allocate and run the constructor on the new object.
 		val vObject = newTemp(KClassType(vClass))
-		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, KRead(vObject))
+		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, KRead(vObject), vSubst)
 		if (vCall !is KCall) return vCall
 		mBlock += KLet(vObject, KAlloc(vClass))
 		mBlock += KEval(vCall)
@@ -894,9 +911,10 @@ internal class BodyBuilder(
 	private fun lowerDelegatingConstructorCall(inCall: IrDelegatingConstructorCall): KExpr {
 		val vConstructor = inCall.symbol.owner
 		if (isAnyClass(vConstructor.parentAsClass)) return KUnitValue
-		val vTarget = mImporter.functionFor(vConstructor)
+		val vSubst = mImporter.substFor(vConstructor, inCall.typeArguments.map { vType -> vType?.let { closed(it) } ?: mImporter.mBuiltIns.anyNType }, emptyList())
+		val vTarget = mImporter.functionFor(vConstructor, vSubst)
 			?: return fail(inCall, "superclass constructor of '${vConstructor.parentAsClass.kotlinFqName}'")
-		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, coerce(selfRead(), vTarget.params[0].type))
+		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, coerce(selfRead(), vTarget.params[0].type), vSubst)
 		if (vCall is KCall) mBlock += KEval(vCall)
 		return KUnitValue
 	}
@@ -908,7 +926,7 @@ internal class BodyBuilder(
 				is IrProperty -> {
 					val vBacking = vDeclaration.backingField ?: continue
 					val vInit = vBacking.initializer?.expression ?: continue
-					val vField = mImporter.fieldFor(vBacking) ?: continue
+					val vField = mImporter.fieldIn((mFunction.params[0].type as? KClassType)?.cls, vBacking) ?: continue
 					mBlock += KFieldSet(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vInit), vField.type))
 				}
 				is IrAnonymousInitializer -> vDeclaration.body.statements.forEach { lowerStatement(it) }
@@ -920,9 +938,9 @@ internal class BodyBuilder(
 
 	private fun lowerGetField(inExpression: IrGetField): KExpr {
 		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(it) }
-		val vField = mImporter.fieldFor(inExpression.symbol.owner) ?: return fail(inExpression, "field access")
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field access")
-		return KFieldRead(fieldTarget(lowerPure(vReceiver), vField), vField)
+		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
+		return adapt(KFieldRead(fieldTarget(lowerPure(vReceiver), vField), vField), inExpression)
 	}
 
 	private fun lowerSetField(inExpression: IrSetField): KExpr {
@@ -931,8 +949,8 @@ internal class BodyBuilder(
 			mBlock += KGlobalSet(vGlobal, coerce(lowerRhs(inExpression.value), vGlobal.type))
 			return KUnitValue
 		}
-		val vField = mImporter.fieldFor(inExpression.symbol.owner) ?: return fail(inExpression, "field assignment")
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field assignment")
+		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field assignment")
 		val vOperands = lowerOperands(listOf(vReceiver, inExpression.value), inLastMayBeImpure = true)
 		mBlock += KFieldSet(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
 		return KUnitValue
@@ -952,9 +970,16 @@ internal class BodyBuilder(
 	 * Builds the call to [inTarget]. [inPrefix], when given, is passed before the arguments
 	 * (the object a constructor initializes).
 	 */
-	private fun callFunction(inCall: IrElement, inTarget: KFunction, inCallee: IrFunction, inArguments: List<IrExpression?>, inPrefix: KExpr?): KExpr {
+	private fun callFunction(
+		inCall: IrElement,
+		inTarget: KFunction,
+		inCallee: IrFunction,
+		inArguments: List<IrExpression?>,
+		inPrefix: KExpr?,
+		inCalleeSubst: Subst = emptyMap(),
+	): KExpr {
 		val vOffset = if (inPrefix != null) 1 else 0
-		if (inArguments.any { it == null }) return callWithDefaults(inCall, inTarget, inCallee, inArguments, inPrefix)
+		if (inArguments.any { it == null }) return callWithDefaults(inCall, inTarget, inCallee, inArguments, inPrefix, inCalleeSubst)
 		val vArguments = lowerOperands(inArguments.map { it!! })
 		if (vArguments.any { it === KUnitValue }) return fail(inCall, "Unit passed as an argument")
 		return KCall(inTarget, listOfNotNull(inPrefix) + vArguments.mapIndexed { vIndex, vValue -> coerce(vValue, inTarget.params[vIndex + vOffset].type) })
@@ -964,7 +989,14 @@ internal class BodyBuilder(
 	 * Omitted arguments take the callee's default expressions, evaluated here after the given
 	 * arguments, with the callee's parameters bound to the values already computed.
 	 */
-	private fun callWithDefaults(inCall: IrElement, inTarget: KFunction, inCallee: IrFunction, inArguments: List<IrExpression?>, inPrefix: KExpr?): KExpr {
+	private fun callWithDefaults(
+		inCall: IrElement,
+		inTarget: KFunction,
+		inCallee: IrFunction,
+		inArguments: List<IrExpression?>,
+		inPrefix: KExpr?,
+		inCalleeSubst: Subst,
+	): KExpr {
 		val vOffset = if (inPrefix != null) 1 else 0
 		val vGiven = lowerOperands(inArguments.filterNotNull())
 		if (vGiven.any { it === KUnitValue }) return fail(inCall, "Unit passed as an argument")
@@ -986,7 +1018,15 @@ internal class BodyBuilder(
 					return@forEachIndexed
 				}
 				val vTemp = newTemp(inTarget.params[vIndex + vOffset].type)
-				mBlock += KLet(vTemp, coerce(lowerRhs(vDefault), vTemp.type))
+				// The default expression belongs to the callee: its types are read under the callee's substitution.
+				val vOuter = mSubst
+				mSubst = inCalleeSubst
+				val vValue = try {
+					lowerRhs(vDefault)
+				} finally {
+					mSubst = vOuter
+				}
+				mBlock += KLet(vTemp, coerce(vValue, vTemp.type))
 				vBound[vIndex] = vTemp
 			}
 			mLocals[inCallee.parameters[vIndex]] = vBound[vIndex]!!
@@ -998,22 +1038,40 @@ internal class BodyBuilder(
 		return KCall(inTarget, listOfNotNull(inPrefix) + vBound.map { KRead(it!!) })
 	}
 
-	/** The function a member call lands on: a dispatcher when the member can be overridden. */
-	private fun memberTarget(inFunction: IrSimpleFunction, inIsSuper: Boolean): KFunction? =
-		if (!inIsSuper && mImporter.isVirtual(inFunction)) mImporter.dispatcherFor(inFunction) else mImporter.functionFor(inFunction)
+	/**
+	 * The function a member call lands on — a dispatcher when the member can be overridden —
+	 * with the substitution its declaration is read under. [inReceiver] is the closed type of
+	 * the receiver, which picks the instantiation of a generic class.
+	 */
+	private fun memberTarget(inFunction: IrSimpleFunction, inIsSuper: Boolean, inReceiver: IrType?, inOwnArguments: List<IrType?>): Pair<KFunction, Subst>? {
+		if (!inIsSuper && mImporter.isVirtual(inFunction)) {
+			val vSubst = mImporter.substFor(inFunction, mImporter.superArguments(inReceiver, inFunction.parentAsClass), inOwnArguments)
+			return mImporter.dispatcherFor(inFunction, vSubst)?.let { it to vSubst }
+		}
+		val (vReal, vSubst) = mImporter.resolveMember(inFunction, inReceiver, inOwnArguments)
+		return mImporter.functionFor(vReal, vSubst)?.let { it to vSubst }
+	}
 
-	/** Calls member [inFunction] on already-lowered arguments (receiver first). */
-	private fun callMember(inElement: IrElement, inFunction: IrSimpleFunction, inArguments: List<KExpr>): KExpr {
-		val vTarget = memberTarget(inFunction, false) ?: return fail(inElement, "call to '${inFunction.kotlinFqName}'")
+	/** Calls member [inFunction] on already-lowered arguments (receiver first, of closed type [inReceiver]). */
+	private fun callMember(inElement: IrElement, inFunction: IrSimpleFunction, inArguments: List<KExpr>, inReceiver: IrType?): KExpr {
+		val vTarget = memberTarget(inFunction, false, inReceiver, emptyList())?.first ?: return fail(inElement, "call to '${inFunction.kotlinFqName}'")
 		return KCall(vTarget, inArguments.mapIndexed { vIndex, vValue -> coerce(vValue, vTarget.params[vIndex].type) })
 	}
 
 	private fun lowerCall(inCall: IrCall): KExpr {
 		val vCallee = inCall.symbol.owner
 		val vOwner = vCallee.parent as? IrClass
-		if (vCallee.fileOrNull == null && !(vOwner != null && isAnyClass(vOwner))) return lowerLibraryCall(inCall)
+		if (vCallee.fileOrNull == null && vOwner != null && vOwner.isInterface) {
+			// A library interface (Comparable…): primitives and strings have direct answers,
+			// everything else is an ordinary interface call.
+			val vReceiverType = inCall.arguments.firstOrNull()?.let { kType(it.type) }
+			if (vReceiverType !is KRefType || vReceiverType == KStringType) return lowerLibraryCall(inCall)
+		} else if (vCallee.fileOrNull == null && !(vOwner != null && isAnyClass(vOwner))) {
+			return lowerLibraryCall(inCall)
+		}
 
 		val vArguments = inCall.arguments
+		val vOwnArguments = inCall.typeArguments.map { vType -> vType?.let { closed(it) } }
 		val vProperty = vCallee.correspondingPropertySymbol?.owner
 		if (vOwner == null) {
 			mImporter.globalGetter(vCallee)?.let { return KGlobalRead(it) }
@@ -1021,27 +1079,29 @@ internal class BodyBuilder(
 				mBlock += KGlobalSet(vGlobal, coerce(lowerRhs(vArguments.last()!!), vGlobal.type))
 				return KUnitValue
 			}
-			val vTarget = mImporter.functionFor(vCallee) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
-			return callFunction(inCall, vTarget, vCallee, vArguments, null)
+			val vSubst = mImporter.substFor(vCallee, emptyList(), vOwnArguments)
+			val vTarget = mImporter.functionFor(vCallee, vSubst) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
+			return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
 		}
 
+		val vReceiver = vArguments.firstOrNull()?.let { closed(it.type) }
 		val vIsSuper = inCall.superQualifierSymbol != null
 		// A default accessor that cannot be overridden is a plain field access.
 		if (vProperty != null && (vIsSuper || !mImporter.isVirtual(vCallee))) {
 			val vReal = if (vCallee.isFakeOverride) vCallee.resolveFakeOverride() ?: vCallee else vCallee
 			val vRealProperty = vReal.correspondingPropertySymbol?.owner
-			val vField = vRealProperty?.backingField?.let { mImporter.fieldFor(it) }
+			val vField = vRealProperty?.backingField?.let { mImporter.fieldFor(it, vReceiver) }
 			if (vField != null && vReal.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR) {
 				if (vReal === vRealProperty.getter) {
-					return KFieldRead(fieldTarget(lowerPure(vArguments[0]!!), vField), vField)
+					return adapt(KFieldRead(fieldTarget(lowerPure(vArguments[0]!!), vField), vField), inCall)
 				}
 				val vOperands = lowerOperands(listOf(vArguments[0]!!, vArguments[1]!!), inLastMayBeImpure = true)
 				mBlock += KFieldSet(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
 				return KUnitValue
 			}
 		}
-		val vTarget = memberTarget(vCallee, vIsSuper) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
-		return callFunction(inCall, vTarget, vCallee, vArguments, null)
+		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vReceiver, vOwnArguments) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
+		return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
 	}
 
 	// ==================
@@ -1079,12 +1139,21 @@ internal class BodyBuilder(
 		if (vParent == "kotlin.internal.ir") {
 			if (vName == "CHECK_NOT_NULL") return lowerNotNull(inCall, vIrArguments[0])
 			if (vName == "EQEQ" || vName == "EQEQEQ" || vName == "ieee754equals") {
-				val vTypes = vIrArguments.map { mImporter.kTypeOf(it.type) }
+				val vTypes = vIrArguments.map { kType(it.type) }
 				if (vTypes.any { it !is KPrimType }) return lowerEquality(inCall, vIrArguments[0], vIrArguments[1], vName == "EQEQEQ")
 			}
 		}
 		if (vParent == "kotlin.String") return lowerStringCall(inCall, vName, vIrArguments)
-		(mImporter.kTypeOf(vIrArguments[0].type) as? KArrayType)?.let { vArrayType ->
+		if (vParent == "kotlin.Comparable" && vName == "compareTo" && vIrArguments.size == 2) {
+			val vSides = lowerOperands(vIrArguments)
+			val vPrim = primOf(vSides[0])
+			return when {
+				vSides[0].type == KStringType -> KIntrinsic("ktc2_str_compare", listOf(vSides[0], coerce(vSides[1], KStringType)), kIntType)
+				vPrim != null -> KBinary(KBinaryOp.CMP, vSides[0], coerce(vSides[1], KPrimType(vPrim)), vPrim, kIntType)
+				else -> fail(inCall, vWhat)
+			}
+		}
+		(kType(vIrArguments[0].type) as? KArrayType)?.let { vArrayType ->
 			if (isArrayClassName(vParent)) return lowerArrayCall(inCall, vName, vIrArguments, vArrayType)
 		}
 		// arrayOf(1, 2), intArrayOf(...): the vararg already is the array.
@@ -1096,7 +1165,7 @@ internal class BodyBuilder(
 			return KArrayNew(lowerPure(vIrArguments[0]), vType)
 		}
 		// String?.plus(Any?) is an extension in package kotlin.
-		if (vParent == "kotlin" && vName == "plus" && vIrArguments.size == 2 && mImporter.kTypeOf(vIrArguments[0].type) == KStringType) {
+		if (vParent == "kotlin" && vName == "plus" && vIrArguments.size == 2 && kType(vIrArguments[0].type) == KStringType) {
 			return concat(lowerParts(vIrArguments))
 		}
 		if (vName == "toString" && vIrArguments.size == 1) {
@@ -1110,7 +1179,7 @@ internal class BodyBuilder(
 		// K2 can leave a smart cast implicit (an Any known to be an Int passed where an Int is
 		// expected), so an operand takes the parameter's type when its own is not primitive.
 		val vOperandTypes = vIrArguments.mapIndexed { vIndex, vArgument ->
-			mImporter.kTypeOf(vArgument.type) as? KPrimType ?: mImporter.kTypeOf(vCallee.parameters[vIndex].type) as? KPrimType
+			kType(vArgument.type) as? KPrimType ?: kType(vCallee.parameters[vIndex].type) as? KPrimType
 		}
 		if (vOperandTypes.any { it == null }) return fail(inCall, vWhat)
 		val vResultType = typeOf(inCall) as? KPrimType ?: return fail(inCall, vWhat)
@@ -1173,7 +1242,7 @@ internal class BodyBuilder(
 		val vKind = vRange.symbol.owner.name.asString()
 		if (vKind !in setOf("rangeTo", "until", "rangeUntil") || vRange.arguments.size != 2) return null
 		val vPieces = listOf(vRange.arguments[0]!!, vRange.arguments[1]!!, inValue)
-		val vPrims = vPieces.map { (mImporter.kTypeOf(it.type) as? KPrimType)?.prim ?: return null }
+		val vPrims = vPieces.map { (kType(it.type) as? KPrimType)?.prim ?: return null }
 		val vCommon = if (vPrims.all { it == KPrim.CHAR }) KPrim.CHAR else promote(promote(vPrims[0], vPrims[1]), vPrims[2])
 		if (vCommon.isFloating) return null
 		val vOperands = lowerOperands(vPieces).map { spill(convert(it, vCommon)) }
@@ -1246,7 +1315,7 @@ internal class BodyBuilder(
 	/** `a == b` on objects: identical, or both non-null and `a.equals(b)`. */
 	private fun objectEquals(inCall: IrCall, inLeftType: IrType, inLeft: KExpr, inRight: KExpr): KExpr {
 		val vEquals = anyMemberOf(inLeftType, "equals", 1) ?: return fail(inCall, "equals on '${inLeftType.render()}'")
-		val vTarget = memberTarget(vEquals, false) ?: return fail(inCall, "equals on '${inLeftType.render()}'")
+		val vTarget = memberTarget(vEquals, false, closed(inLeftType), emptyList())?.first ?: return fail(inCall, "equals on '${inLeftType.render()}'")
 		// A final class that does not override equals compares by identity.
 		if (vTarget.isExternal && vTarget.dispatch == null && inLeft.type is KClassType) return KRefEquals(inLeft, inRight)
 		val vResult = newTemp(kBoolType)
@@ -1283,14 +1352,14 @@ internal class BodyBuilder(
 
 	/** A String for [inValue] (already stable), calling `toString()` on objects; "null" for null. */
 	private fun toStringOf(inElement: IrElement, inValue: KExpr, inType: IrType): KExpr = when (inValue.type) {
-		KStringType -> if (inType.isMarkedNullable()) concat(listOf(KPrintValue(inValue))) else inValue
+		KStringType -> if (closed(inType).isMarkedNullable()) concat(listOf(KPrintValue(inValue))) else inValue
 		is KPrimType, is KOptType -> concat(listOf(KPrintValue(inValue)))
 		is KClassType, KObjType -> {
 			val vFunction = anyMemberOf(inType, "toString", 0)
-			val vCall = vFunction?.let { callMember(inElement, it, listOf(inValue)) }
+			val vCall = vFunction?.let { callMember(inElement, it, listOf(inValue), closed(inType)) }
 			if (vCall !is KCall) {
 				fail(inElement, "toString on '${inType.render()}'")
-			} else if (!inType.isMarkedNullable()) {
+			} else if (!closed(inType).isMarkedNullable()) {
 				spill(vCall)
 			} else {
 				val vResult = newTemp(KStringType)

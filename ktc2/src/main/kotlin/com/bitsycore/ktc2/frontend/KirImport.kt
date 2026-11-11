@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrConst
 import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.fileOrNull
@@ -19,7 +20,11 @@ import org.jetbrains.kotlin.ir.util.kotlinFqName
 import org.jetbrains.kotlin.ir.util.parentAsClass
 import org.jetbrains.kotlin.ir.util.render
 import org.jetbrains.kotlin.ir.util.resolveFakeOverride
+import org.jetbrains.kotlin.ir.util.substitute
 import java.io.File
+
+/** What each type parameter in scope stands for. */
+internal typealias Subst = Map<IrTypeParameterSymbol, IrType>
 
 private val kCKeywords = setOf(
 	"auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern",
@@ -56,9 +61,26 @@ private fun anyMemberName(inFunction: IrSimpleFunction): String? {
 	return inFunction.overriddenSymbols.firstNotNullOfOrNull { anyMemberName(it.owner) }
 }
 
+/** A short name for [inType] in mangled C identifiers. */
+private fun mangle(inType: KType): String = when (inType) {
+	is KPrimType -> inType.prim.name.lowercase().replaceFirstChar { it.uppercase() }
+	is KOptType -> mangle(KPrimType(inType.prim)) + "Opt"
+	is KStructType -> inType.struct.cName
+	KStringType -> "String"
+	is KClassType -> inType.cls.name
+	KObjType -> "Any"
+	is KArrayType -> mangle(inType.element) + "Array"
+	KUnitType -> "Unit"
+	KNothingType -> "Nothing"
+}
+
 /**
  * Translates the K2 module IR into KIR, starting from `main` and importing only what is
  * reachable (functions, classes, the properties of every file that is touched).
+ *
+ * Generic declarations are instantiated per distinct tuple of type arguments. All reference
+ * types count as one (`Any?`): they are all pointers, so `Box<String>` and `Box<User>` share
+ * one instantiation while `Box<Int>` gets its own, unboxed.
  *
  * Unsupported constructs are recorded in [errors] with their source position.
  */
@@ -66,25 +88,35 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	val errors = linkedSetOf<String>()
 
+	/** A generic declaration with the KIR types of its type arguments. */
+	private data class Mono(val declaration: IrDeclaration, val arguments: List<KType>)
+
+	/** The K2 side of an imported class: its declaration and what its type parameters stand for. */
+	internal class ClassInfo(val irClass: IrClass, val subst: Subst, val type: IrSimpleType)
+
 	private val mUnits = ArrayList<KUnit>()
 	private val mFacades = HashMap<IrFile, KUnit>()
 	private val mInterfaceUnits = HashMap<IrClass, KUnit>()
 	private val mDispatchUnit = KUnit("", "KtDispatch")
 	private val mRuntimeUnit = KUnit("", "ktc2_core")
-	private val mFunctions = HashMap<IrFunction, KFunction?>()
+	private val mFunctions = HashMap<Mono, KFunction?>()
 	private val mStructs = HashMap<IrClass, KStruct>()
-	private val mClasses = HashMap<IrClass, KClass?>()
+	private val mClasses = HashMap<Mono, KClass?>()
+	private val mClassInfo = HashMap<KClass, ClassInfo>()
 	private val mClassList = ArrayList<KClass>()
 	private val mInterfaces = HashMap<IrClass, KInterface>()
-	private val mFields = HashMap<IrField, KField>()
+	private val mFields = HashMap<Pair<IrField, KClass?>, KField>()
 	private val mGlobals = HashMap<IrField, KGlobal>()
 	private val mGlobalGetters = HashMap<IrFunction, KGlobal>()
 	private val mGlobalSetters = HashMap<IrFunction, KGlobal>()
 	private val mOverloads = HashMap<String, Int>()
 	private val mPending = ArrayDeque<() -> Unit>()
-	private val mInstantiated = LinkedHashSet<IrClass>()
-	private val mDispatchers = LinkedHashMap<IrSimpleFunction, KFunction>()
-	private val mDispatchDone = HashSet<Pair<IrSimpleFunction, IrClass>>()
+	private val mInstantiated = LinkedHashSet<KClass>()
+
+	private class Dispatcher(val function: IrSimpleFunction, val subst: Subst, val classArguments: List<KType>, val target: KFunction)
+
+	private val mDispatchers = LinkedHashMap<Mono, Dispatcher>()
+	private val mDispatchDone = HashSet<Pair<Mono, KClass>>()
 	private val mRuntime = HashMap<String, KFunction>()
 	private val mObjectStatics = HashMap<IrClass, KStatic>()
 	private val mEnumStatics = HashMap<IrEnumEntry, KStatic>()
@@ -155,43 +187,94 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		"kotlin.FloatArray" to KPrim.FLOAT, "kotlin.DoubleArray" to KPrim.DOUBLE,
 	)
 
+	/** [inType] with the type parameters of [inSubst] replaced. */
+	internal fun close(inType: IrType, inSubst: Subst): IrType = if (inSubst.isEmpty()) inType else inType.substitute(inSubst)
+
+	/** The type arguments of [inType]; a star projection counts as `Any?`. */
+	internal fun argumentsOf(inType: IrType): List<IrType> =
+		(inType as? IrSimpleType)?.arguments?.map { it.typeOrNull ?: mBuiltIns.anyNType } ?: emptyList()
+
 	/** The array type of [inType] (`Array<T>` or a primitive array), or null when it is not an array. */
 	private fun arrayTypeOf(inType: IrType): KArrayType? {
 		val vName = inType.classOrNull?.owner?.kotlinFqName?.asString() ?: return null
 		mPrimArrays[vName]?.let { return KArrayType(KPrimType(it)) }
 		if (vName != "kotlin.Array") return null
-		val vElement = (inType as? IrSimpleType)?.arguments?.firstOrNull()?.typeOrNull ?: return null
+		val vElement = argumentsOf(inType).firstOrNull() ?: return null
 		return kTypeOf(vElement)?.takeIf { it != KUnitType && it != KNothingType }?.let { KArrayType(it) }
 	}
 
-	/** The KIR type of [inType], or null when it is not supported (the caller reports where). */
-	internal fun kTypeOf(inType: IrType): KType? {
-		primOf(inType)?.let { return KPrimType(it) }
-		val vBase = inType.makeNotNull()
-		if (inType.isMarkedNullable()) primOf(vBase)?.let { return KOptType(it) }
+	/**
+	 * The KIR type of [inType] under [inSubst], or null when it is not supported (the caller
+	 * reports where). A type parameter left unbound is treated as `Any?`.
+	 */
+	internal fun kTypeOf(inType: IrType, inSubst: Subst = emptyMap()): KType? {
+		val vType = close(inType, inSubst)
+		primOf(vType)?.let { return KPrimType(it) }
+		val vBase = vType.makeNotNull()
+		if (vType.isMarkedNullable()) primOf(vBase)?.let { return KOptType(it) }
 		return when {
 			vBase.isUnit() -> KUnitType
-			vBase.isNothing() -> if (inType.isMarkedNullable()) KObjType else KNothingType
+			vBase.isNothing() -> if (vType.isMarkedNullable()) KObjType else KNothingType
 			vBase.isString() -> KStringType
 			vBase.isAny() -> KObjType
-			arrayTypeOf(vBase) != null -> arrayTypeOf(vBase)
+			vBase.classifierOrNull is IrTypeParameterSymbol -> KObjType
 			else -> {
+				arrayTypeOf(vBase)?.let { return it }
 				val vClass = vBase.classOrNull?.owner ?: return null
 				when {
 					vClass.kotlinFqName.asString() == "kotlin.Enum" -> KClassType(enumBase())
 					vClass.isInterface -> KObjType
 					isStruct(vClass) -> structFor(vClass)?.let { KStructType(it) }
-					else -> classFor(vClass)?.let { KClassType(it) }
+					else -> classFor(vClass, argumentsOf(vBase))?.let { KClassType(it) }
 				}
 			}
 		}
 	}
+
+	/** A type argument as used to pick an instantiation: every reference type is `Any?`. */
+	private fun canonical(inType: IrType): IrType = if (kTypeOf(inType) is KRefType) mBuiltIns.anyNType else inType
 
 	private fun isStruct(inClass: IrClass): Boolean =
 		inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Struct" }
 
 	private fun nestedName(inClass: IrClass): String =
 		generateSequence(inClass) { it.parent as? IrClass }.toList().reversed().joinToString(".") { it.name.asString() }
+
+	/** [inType] seen as its supertype [inTarget], with that class's type arguments filled in. */
+	private fun findSuperType(inType: IrType, inTarget: IrClass): IrSimpleType? {
+		val vType = inType.makeNotNull() as? IrSimpleType ?: return null
+		val vClass = vType.classOrNull?.owner ?: return null
+		if (vClass == inTarget) return vType
+		val vSubst = vClass.typeParameters.map { it.symbol }.zip(argumentsOf(vType)).toMap()
+		return vClass.superTypes.firstNotNullOfOrNull { findSuperType(close(it, vSubst), inTarget) }
+	}
+
+	/** The type arguments [inTarget] has when a value of [inType] is seen as it (`Any?` when unknown). */
+	internal fun superArguments(inType: IrType?, inTarget: IrClass): List<IrType> =
+		inType?.let { findSuperType(it, inTarget) }?.let { argumentsOf(it) } ?: inTarget.typeParameters.map { mBuiltIns.anyNType }
+
+	/** The substitution for a call to [inFunction]: its class's type arguments, then its own. */
+	internal fun substFor(inFunction: IrFunction, inClassArguments: List<IrType>, inOwnArguments: List<IrType?>): Subst {
+		val vOwner = inFunction.parent as? IrClass
+		val vSubst = HashMap<IrTypeParameterSymbol, IrType>()
+		vOwner?.typeParameters?.forEachIndexed { vIndex, vParam ->
+			vSubst[vParam.symbol] = canonical(inClassArguments.getOrNull(vIndex) ?: mBuiltIns.anyNType)
+		}
+		if (inFunction !is IrConstructor) {
+			inFunction.typeParameters.forEachIndexed { vIndex, vParam ->
+				vSubst[vParam.symbol] = canonical(inOwnArguments.getOrNull(vIndex) ?: mBuiltIns.anyNType)
+			}
+		}
+		return vSubst
+	}
+
+	private fun ownParameters(inFunction: IrFunction): List<IrTypeParameter> =
+		if (inFunction is IrConstructor) emptyList() else inFunction.typeParameters
+
+	private fun monoOf(inFunction: IrFunction, inSubst: Subst): Mono {
+		val vParams = ((inFunction.parent as? IrClass)?.typeParameters ?: emptyList()) + ownParameters(inFunction)
+		return Mono(inFunction, vParams.map { kTypeOf(inSubst[it.symbol] ?: mBuiltIns.anyNType) ?: KObjType })
+	}
 
 	// ==================
 	// MARK: Units
@@ -212,7 +295,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (vStartup.isNotEmpty()) {
 			val vInit = KFunction("${cPrefix(vUnit.pkg)}${vUnit.name}_init", vUnit, emptyList(), KUnitType)
 			vUnit.initializer = vInit
-			mPending += { BodyBuilder(this, vInit, null, inFile).buildGlobalInitializer(vStartup) }
+			mPending += { BodyBuilder(this, vInit, null, inFile, emptyMap()).buildGlobalInitializer(vStartup) }
 		}
 		return vUnit
 	}
@@ -243,43 +326,54 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			}
 			val vField = KField(cIdentifier(vProperty.name.asString()), vType)
 			vStruct.fields += vField
-			mFields[vBacking] = vField
+			mFields[vBacking to null] = vField
 		}
 		return vStruct
 	}
 
-	/** The reference class for [inClass], declared (layout only) on first use. */
-	internal fun classFor(inClass: IrClass): KClass? {
-		if (inClass in mClasses) return mClasses[inClass]
+	/**
+	 * The reference class for [inClass] with [inArguments] for its type parameters, declared
+	 * (layout only) on first use.
+	 */
+	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList()): KClass? {
+		val vArguments = inClass.typeParameters.indices.map { canonical(inArguments.getOrNull(it) ?: mBuiltIns.anyNType) }
+		val vKey = Mono(inClass, vArguments.map { kTypeOf(it) ?: KObjType })
+		if (vKey in mClasses) return mClasses[vKey]
 		val vFile = inClass.fileOrNull
 		if (vFile == null || inClass.isInterface) {
-			mClasses[inClass] = null
+			mClasses[vKey] = null
 			return null
 		}
-		val vSuperIr = inClass.superTypes.mapNotNull { it.classOrNull?.owner }.firstOrNull { !it.isInterface && !isAnyClass(it) }
-		val vSuper = vSuperIr?.let { if (it.kotlinFqName.asString() == "kotlin.Enum") enumBase() else classFor(it) }
+		mClasses[vKey] = null
+		val vSubst = inClass.typeParameters.map { it.symbol }.zip(vArguments).toMap()
+		val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) } == true }
+		val vSuperIr = vSuperType?.classOrNull?.owner
+		val vSuper = vSuperIr?.let {
+			if (it.kotlinFqName.asString() == "kotlin.Enum") enumBase() else classFor(it, argumentsOf(close(vSuperType, vSubst)))
+		}
 		if (vSuperIr != null && vSuper == null) {
 			unsupported(vFile, inClass, "superclass '${vSuperIr.kotlinFqName}'")
-			mClasses[inClass] = null
 			return null
 		}
-		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass))
-		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)), vUnit, vSuper, inClass.name.asString())
+		val vSuffix = if (vKey.arguments.isEmpty()) "" else "__" + vKey.arguments.joinToString("_") { mangle(it) }
+		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
+		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, inClass.name.asString())
 		vUnit.cls = vClass
-		mClasses[inClass] = vClass
+		mClasses[vKey] = vClass
+		mClassInfo[vClass] = ClassInfo(inClass, vSubst, inClass.symbol.typeWith(vArguments))
 		mClassList += vClass
 		mUnits += vUnit
 
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
-			val vType = kTypeOf(vBacking.type)
+			val vType = kTypeOf(vBacking.type, vSubst)
 			if (vType == null || vType == KUnitType || vType == KNothingType) {
 				unsupported(vFile, vProperty, "property of type '${vBacking.type.render()}'")
 				continue
 			}
 			val vField = KField(cIdentifier(vProperty.name.asString()), vType, vClass)
 			vClass.fields += vField
-			mFields[vBacking] = vField
+			mFields[vBacking to vClass] = vField
 		}
 		collectInterfaces(inClass, vClass.interfaces)
 
@@ -287,7 +381,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vInstance = KStatic("${vClass.cName}_instance", vClass, vUnit)
 			vUnit.statics += vInstance
 			mObjectStatics[inClass] = vInstance
-			instantiate(inClass)
+			instantiate(vClass)
 			val vConstructor = inClass.declarations.filterIsInstance<IrConstructor>().firstOrNull()
 			val vInit = vConstructor?.let { functionFor(it) }
 			if (vInit != null) {
@@ -300,10 +394,52 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return vClass
 	}
 
+	internal fun infoOf(inClass: KClass): ClassInfo? = mClassInfo[inClass]
+
 	/** The instance of an `object` declaration. */
 	internal fun objectFor(inClass: IrClass): KStatic? {
 		classFor(inClass)
 		return mObjectStatics[inClass]
+	}
+
+	private fun collectInterfaces(inClass: IrClass, outInterfaces: MutableSet<KInterface>) {
+		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }) {
+			if (vSuper.isInterface) outInterfaces += interfaceFor(vSuper)
+		}
+	}
+
+	internal fun interfaceFor(inClass: IrClass): KInterface {
+		mInterfaces[inClass]?.let { return it }
+		val vInterface = KInterface(inClass.name.asString())
+		mInterfaces[inClass] = vInterface
+		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }.filter { it.isInterface }) {
+			val vParent = interfaceFor(vSuper)
+			vInterface.supers += vParent
+			vInterface.supers += vParent.supers
+		}
+		return vInterface
+	}
+
+	/** Records that the program creates instances of [inClass]: it becomes a dispatch target. */
+	internal fun instantiate(inClass: KClass) {
+		if (mInstantiated.add(inClass)) inClass.isInstantiated = true
+	}
+
+	/** The field behind [inField] in class instance [inClass] (or in its `@Struct` when null). */
+	internal fun fieldIn(inClass: KClass?, inField: IrField): KField? = mFields[inField to inClass]
+
+	/**
+	 * The field behind [inField] for a receiver of type [inReceiver] (already closed): the
+	 * receiver's view of the declaring class picks the instantiation.
+	 */
+	internal fun fieldFor(inField: IrField, inReceiver: IrType?): KField? {
+		val vOwner = inField.parent as? IrClass ?: return null
+		if (isStruct(vOwner)) {
+			structFor(vOwner)
+			return mFields[inField to null]
+		}
+		val vClass = classFor(vOwner, superArguments(inReceiver, vOwner)) ?: return null
+		return mFields[inField to vClass]
 	}
 
 	// ==================
@@ -358,9 +494,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vEntries = inClass.declarations.filterIsInstance<IrEnumEntry>()
 		val vStatics = ArrayList<KStatic>()
 		for (vEntry in vEntries) {
-			val vOwn = vEntry.correspondingClass
-			val vEntryClass = if (vOwn != null) classFor(vOwn) ?: inEnum else inEnum
-			instantiate(vOwn ?: inClass)
+			val vEntryClass = vEntry.correspondingClass?.let { classFor(it) } ?: inEnum
+			instantiate(vEntryClass)
 			val vStatic = KStatic("${inEnum.cName}__${cSuffix(vEntry.name.asString())}", vEntryClass, inEnum.unit)
 			inEnum.unit.statics += vStatic
 			mEnumStatics[vEntry] = vStatic
@@ -369,7 +504,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mEnumEntries[inClass] = vStatics
 		val vStartup = KFunction("${inEnum.cName}_static_init", inEnum.unit, emptyList(), KUnitType)
 		inEnum.unit.initializer = vStartup
-		mPending += { BodyBuilder(this, vStartup, null, inFile).buildEnumInitializer(vEntries, vStatics) }
+		mPending += { BodyBuilder(this, vStartup, null, inFile, emptyMap()).buildEnumInitializer(vEntries, vStatics) }
 	}
 
 	internal fun enumEntryFor(inEntry: IrEnumEntry): KStatic? {
@@ -381,36 +516,6 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	internal fun enumEntriesOf(inClass: IrClass): List<KStatic> {
 		classFor(inClass)
 		return mEnumEntries[inClass] ?: emptyList()
-	}
-
-	private fun collectInterfaces(inClass: IrClass, outInterfaces: MutableSet<KInterface>) {
-		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }) {
-			if (vSuper.isInterface) outInterfaces += interfaceFor(vSuper)
-		}
-	}
-
-	internal fun interfaceFor(inClass: IrClass): KInterface {
-		mInterfaces[inClass]?.let { return it }
-		val vInterface = KInterface(inClass.name.asString())
-		mInterfaces[inClass] = vInterface
-		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }.filter { it.isInterface }) {
-			val vParent = interfaceFor(vSuper)
-			vInterface.supers += vParent
-			vInterface.supers += vParent.supers
-		}
-		return vInterface
-	}
-
-	/** Records that the program creates instances of [inClass]: it becomes a dispatch target. */
-	internal fun instantiate(inClass: IrClass) {
-		if (mInstantiated.add(inClass)) classFor(inClass)?.isInstantiated = true
-	}
-
-	internal fun fieldFor(inField: IrField): KField? {
-		mFields[inField]?.let { return it }
-		val vOwner = inField.parent as? IrClass ?: return null
-		if (isStruct(vOwner)) structFor(vOwner) else classFor(vOwner)
-		return mFields[inField]
 	}
 
 	// ==================
@@ -490,16 +595,12 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	private class Signature(val params: List<KLocal>, val returnType: KType)
 
-	private fun signatureOf(inFunction: IrFunction, inFile: IrFile?): Signature? {
-		if (inFunction.typeParameters.isNotEmpty() && inFunction !is IrConstructor) {
-			unsupported(inFile, inFunction, "generic function '${inFunction.name}'")
-			return null
-		}
+	private fun signatureOf(inFunction: IrFunction, inFile: IrFile?, inSubst: Subst): Signature? {
 		var vOk = true
 		val vNames = HashSet<String>()
 		val vParams = ArrayList<KLocal>()
 		for (vParam in inFunction.parameters) {
-			val vType = kTypeOf(vParam.type)
+			val vType = kTypeOf(vParam.type, inSubst)
 			if (vType == null || vType == KUnitType || vType == KNothingType) {
 				unsupported(inFile, vParam, "parameter type '${vParam.type.render()}'")
 				vOk = false
@@ -509,7 +610,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			while (!vNames.add(vName)) vName += "_"
 			vParams += KLocal(vName, vType)
 		}
-		val vReturn = kTypeOf(inFunction.returnType)
+		val vReturn = kTypeOf(inFunction.returnType, inSubst)
 		if (vReturn == null) {
 			unsupported(inFile, inFunction, "return type '${inFunction.returnType.render()}'")
 			return null
@@ -517,37 +618,56 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return if (vOk) Signature(vParams, vReturn) else null
 	}
 
-	private fun overloadSuffix(inFunction: IrFunction): String {
-		if ((mOverloads[inFunction.kotlinFqName.asString()] ?: 0) <= 1) return ""
-		val vRegular = inFunction.parameters.filter { it.kind == IrParameterKind.Regular }
-		return "__" + vRegular.joinToString("_") { cSuffix(it.type.render().substringAfterLast('.')) }
+	/** Suffix telling apart overloads and the instantiations of a generic function. */
+	private fun nameSuffix(inFunction: IrFunction, inSubst: Subst): String {
+		var vSuffix = ""
+		if ((mOverloads[inFunction.kotlinFqName.asString()] ?: 0) > 1) {
+			val vRegular = inFunction.parameters.filter { it.kind == IrParameterKind.Regular }
+			vSuffix += "__" + vRegular.joinToString("_") { cSuffix(it.type.render().substringAfterLast('.')) }
+		}
+		val vOwn = ownParameters(inFunction)
+		if (vOwn.isNotEmpty()) {
+			vSuffix += "__" + vOwn.joinToString("_") { mangle(kTypeOf(inSubst[it.symbol] ?: mBuiltIns.anyNType) ?: KObjType) }
+		}
+		return vSuffix
 	}
 
-	/** The KIR function for [inFunction], declared on first use with its body queued for import. */
-	internal fun functionFor(inFunction: IrFunction): KFunction? {
-		if (inFunction in mFunctions) return mFunctions[inFunction]
-		if (inFunction is IrSimpleFunction && inFunction.isFakeOverride) {
-			val vReal = inFunction.resolveFakeOverride()
-			return (if (vReal == null || vReal == inFunction) null else functionFor(vReal)).also { mFunctions[inFunction] = it }
-		}
+	/**
+	 * A member as it is actually implemented for a receiver of type [inReceiver]: a fake
+	 * override is followed to the real function, and the substitution covers that function's
+	 * class.
+	 */
+	internal fun resolveMember(inFunction: IrSimpleFunction, inReceiver: IrType?, inOwnArguments: List<IrType?>): Pair<IrSimpleFunction, Subst> {
+		val vReal = if (inFunction.isFakeOverride) inFunction.resolveFakeOverride() ?: inFunction else inFunction
+		return vReal to substFor(vReal, superArguments(inReceiver, vReal.parentAsClass), inOwnArguments)
+	}
+
+	/**
+	 * The KIR function for [inFunction] under [inSubst], declared on first use with its body
+	 * queued for import. [inFunction] must not be a fake override (see [resolveMember]).
+	 */
+	internal fun functionFor(inFunction: IrFunction, inSubst: Subst = emptyMap()): KFunction? {
+		val vKey = monoOf(inFunction, inSubst)
+		if (vKey in mFunctions) return mFunctions[vKey]
 		val vOwner = inFunction.parent as? IrClass
 		if (vOwner != null && isAnyClass(vOwner)) {
-			return anyDefault(inFunction.name.asString()).also { mFunctions[inFunction] = it }
+			return anyDefault(inFunction.name.asString()).also { mFunctions[vKey] = it }
 		}
 		if (vOwner != null && vOwner.kotlinFqName.asString() == "kotlin.Enum") {
-			return enumFunction(inFunction.name.asString()).also { mFunctions[inFunction] = it }
+			return enumFunction(inFunction.name.asString()).also { mFunctions[vKey] = it }
 		}
 		val vFile = inFunction.fileOrNull
 		val vIsDefaultAccessor = inFunction.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
-		if (vFile == null || (inFunction.body == null && !vIsDefaultAccessor && inFunction !is IrConstructor)) {
-			mFunctions[inFunction] = null
-			return null
-		}
-		mFunctions[inFunction] = null
-		val vSignature = signatureOf(inFunction, vFile) ?: return null
+		mFunctions[vKey] = null
+		if (vFile == null || (inFunction.body == null && !vIsDefaultAccessor && inFunction !is IrConstructor)) return null
+		val vSignature = signatureOf(inFunction, vFile, inSubst) ?: return null
 
 		val vStruct = vOwner?.takeIf { isStruct(it) }?.let { structFor(it) }
-		val vClass = if (vOwner != null && vStruct == null && !vOwner.isInterface) classFor(vOwner) else null
+		val vClass = if (vOwner != null && vStruct == null && !vOwner.isInterface) {
+			classFor(vOwner, vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType })
+		} else {
+			null
+		}
 		if (vOwner != null && vStruct == null && vClass == null && !vOwner.isInterface) {
 			unsupported(vFile, vOwner, "class '${vOwner.name}'")
 			return null
@@ -577,10 +697,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vIsConstructor -> KUnitType
 			else -> vSignature.returnType
 		}
-		val vFunction = KFunction(vScope + vBase + overloadSuffix(inFunction), vUnit, vParams, vReturn)
+		val vFunction = KFunction(vScope + vBase + nameSuffix(inFunction, inSubst), vUnit, vParams, vReturn)
 		vUnit.functions += vFunction
-		mFunctions[inFunction] = vFunction
-		mPending += { BodyBuilder(this, vFunction, inFunction, vFile).build() }
+		mFunctions[vKey] = vFunction
+		mPending += { BodyBuilder(this, vFunction, inFunction, vFile, inSubst).build() }
 		return vFunction
 	}
 
@@ -588,26 +708,37 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	// MARK: Virtual dispatch
 	// ==================
 
-	/** The dispatcher called for a virtual call to [inFunction]; its targets are filled in by [resolveDispatch]. */
-	internal fun dispatcherFor(inFunction: IrSimpleFunction): KFunction? {
-		mDispatchers[inFunction]?.let { return it }
+	/**
+	 * The dispatcher called for a virtual call to [inFunction] under [inSubst]; its targets are
+	 * filled in by [resolveDispatch].
+	 */
+	internal fun dispatcherFor(inFunction: IrSimpleFunction, inSubst: Subst = emptyMap()): KFunction? {
+		val vKey = monoOf(inFunction, inSubst)
+		mDispatchers[vKey]?.let { return it.target }
 		val vOwner = inFunction.parentAsClass
 		val vFile = vOwner.fileOrNull
-		val vSignature = signatureOf(inFunction, vFile) ?: return null
-		val vClass = if (vFile != null && !vOwner.isInterface) classFor(vOwner) else null
+		val vSignature = signatureOf(inFunction, vFile, inSubst) ?: return null
+		val vClassArguments = vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType }
+		val vClass = if (vFile != null && !vOwner.isInterface) classFor(vOwner, vClassArguments) else null
 		val vUnit = when {
 			vClass != null -> vClass.unit
 			vFile != null -> interfaceUnitFor(vOwner)
 			else -> mDispatchUnit
 		}
-		val vScope = vClass?.cName ?: (cPrefix(vFile?.packageFqName?.asString() ?: "") + cSuffix(nestedName(vOwner)))
-		val vName = "${vScope}_${cSuffix(inFunction.name.asString())}${overloadSuffix(inFunction)}__v"
-		val vDispatcher = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
-		vDispatcher.dispatch = mutableListOf()
-		vDispatcher.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }
-		vUnit.functions += vDispatcher
-		mDispatchers[inFunction] = vDispatcher
-		return vDispatcher
+		val vScope = vClass?.cName ?: (cPrefix(vFile?.packageFqName?.asString() ?: vOwner.kotlinFqName.parent().asString()) + cSuffix(nestedName(vOwner)))
+		val vGeneric = if (vClass == null && vKey.arguments.isNotEmpty()) "__" + vKey.arguments.joinToString("_") { mangle(it) } else nameSuffix(inFunction, inSubst)
+		val vName = "${vScope}_${cSuffix(inFunction.name.asString())}${vGeneric}__v"
+		val vTarget = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
+		vTarget.dispatch = mutableListOf()
+		vTarget.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }
+		// Comparable<T> on a reference T also receives strings and boxed primitives.
+		val vIsCompare = vOwner.kotlinFqName.asString() == "kotlin.Comparable" && inFunction.name.asString() == "compareTo"
+		if (vIsCompare && vSignature.params.all { it.type == KObjType }) {
+			vTarget.dispatchDefault = runtime("ktc2_any_compareTo", listOf(KObjType, KObjType), KPrimType(KPrim.INT))
+		}
+		vUnit.functions += vTarget
+		mDispatchers[vKey] = Dispatcher(inFunction, inSubst, vClassArguments.map { kTypeOf(it) ?: KObjType }, vTarget)
+		return vTarget
 	}
 
 	private fun membersOf(inClass: IrClass): List<IrSimpleFunction> = inClass.declarations.flatMap { vDeclaration ->
@@ -625,16 +756,22 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	private fun resolveDispatch(): Boolean {
 		var vChanged = false
-		for ((vFunction, vDispatcher) in mDispatchers.entries.toList()) {
+		for ((vKey, vDispatcher) in mDispatchers.entries.toList()) {
+			val vFunction = vDispatcher.function
 			val vOwner = vFunction.parentAsClass
 			for (vConcrete in mInstantiated.toList()) {
-				if (!mDispatchDone.add(vFunction to vConcrete) || !isSubtype(vConcrete, vOwner)) continue
-				val vMember = membersOf(vConcrete).firstOrNull { it == vFunction || overrides(it, vFunction) } ?: continue
-				val vImplementation = if (vMember.isFakeOverride) vMember.resolveFakeOverride() else vMember
-				if (vImplementation == null || isAnyClass(vImplementation.parentAsClass)) continue
-				val vTarget = functionFor(vImplementation) ?: continue
-				val vClass = classFor(vConcrete) ?: continue
-				vDispatcher.dispatch!! += vClass to vTarget
+				if (!mDispatchDone.add(vKey to vConcrete)) continue
+				val vInfo = mClassInfo[vConcrete] ?: continue
+				if (!isSubtype(vInfo.irClass, vOwner)) continue
+				// A generic owner only matches the instantiation the call was made on.
+				val vSeenAs = superArguments(vInfo.type, vOwner).map { kTypeOf(canonical(it)) ?: KObjType }
+				if (vSeenAs != vDispatcher.classArguments) continue
+				val vMember = membersOf(vInfo.irClass).firstOrNull { it == vFunction || overrides(it, vFunction) } ?: continue
+				val vOwnArguments = vFunction.typeParameters.map { vDispatcher.subst[it.symbol] }
+				val (vImplementation, vSubst) = resolveMember(vMember, vInfo.type, vOwnArguments)
+				if (isAnyClass(vImplementation.parentAsClass)) continue
+				val vTarget = functionFor(vImplementation, vSubst) ?: continue
+				vDispatcher.target.dispatch!! += vConcrete to vTarget
 				vChanged = true
 			}
 		}
