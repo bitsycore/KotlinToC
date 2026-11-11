@@ -66,6 +66,8 @@ fun main() {
 		println(geometry_visit(vPolygon.ptr, staticCFunction(::visitPoint), vRef.asCPointer()))
 		vRef.dispose()
 		println("${vTally.visited} ${vTally.total}")
+		// A lambda that uses nothing around it is a C function too.
+		println(geometry_visit(vPolygon.ptr, staticCFunction { inPoint: CPointer<point>?, _: COpaquePointer? -> inPoint!!.pointed.y }, null))
 
 		// A variadic function writing into C memory.
 		val vBuffer = allocArray<ByteVar>(64)
@@ -96,6 +98,14 @@ fun main() {
 		vFirst.place(vPlace.ptr)
 		println("${vPlace.x},${vPlace.y}")
 	}
+
+	// A C function called through its pointer, values passed by address, and a C variable.
+	val vScale = geometry_scaler()!!
+	println(vScale(4.0, 0.5f))
+	println(geometry_sum(cValuesOf(7, 8, 9), 3u))
+	geometry_counter = 5
+	geometry_counter += 2
+	println(geometry_counter)
 
 	// A type known only by name, and a function of the C library itself.
 	val vCanvas = geometry_canvas_new(4, 4)

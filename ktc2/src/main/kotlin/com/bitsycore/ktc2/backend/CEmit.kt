@@ -709,7 +709,12 @@ class CEmitter(private val mModule: KModule) {
 				mState.cHeaders += inExpr.headers
 				inExpr.functions.forEach { mState.includes += it.unit }
 				val vTemplate = inExpr.template
-				if (vTemplate == null) {
+				if (inExpr.name == "ktc2_call_pointer") {
+					// The first argument is a C function pointer, called with the others.
+					val vTypes = inExpr.arguments.drop(1).joinToString(", ") { cType(it.type) }.ifEmpty { "void" }
+					val vPassed = inExpr.arguments.drop(1).joinToString(", ") { bare(expr(it)) }
+					"((${cType(inExpr.type)} (*)($vTypes))${expr(inExpr.arguments[0])})($vPassed)"
+				} else if (vTemplate == null) {
 					"${inExpr.name}(${arguments(inExpr.arguments)})"
 				} else {
 					// C text of the program's own: its `$n` are replaced by the arguments.

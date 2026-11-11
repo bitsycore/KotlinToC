@@ -50,6 +50,9 @@ class CFunctionDecl(val name: String, val type: CFunctionType, val file: String)
 
 class CTypedefDecl(val name: String, val type: CType, val file: String)
 
+/** A variable declared `extern`: storage the library defines. */
+class CVariableDecl(val name: String, val type: CType, val isConst: Boolean, val file: String)
+
 /** An object-like macro: `#define NAME body`. */
 class CMacro(val name: String, val body: String, val file: String)
 
@@ -88,6 +91,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 	val records = ArrayList<CRecord>()
 	val enums = ArrayList<CEnum>()
 	val typedefs = ArrayList<CTypedefDecl>()
+	val variables = ArrayList<CVariableDecl>()
 	val macros = ArrayList<CMacro>()
 
 	private val mTokens = ArrayList<Token>()
@@ -236,7 +240,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 	// ============
 	//  Specifiers
 
-	private class Specifiers(val type: CType, val isTypedef: Boolean, val isConst: Boolean)
+	private class Specifiers(val type: CType, val isTypedef: Boolean, val isConst: Boolean, val isExtern: Boolean)
 
 	private val mStorageWords = setOf(
 		"extern", "static", "inline", "__inline", "__inline__", "_Noreturn", "register", "auto", "__thread", "_Thread_local",
@@ -270,6 +274,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 	private fun specifiers(): Specifiers {
 		var vIsTypedef = false
 		var vIsConst = false
+		var vIsExtern = false
 		var vBase: CType? = null
 		val vWords = ArrayList<String>()
 		while (true) {
@@ -283,7 +288,10 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 					mAt++
 					if (isPunct("(")) skipGroup("(", ")")
 				}
-				vText in mStorageWords -> mAt++
+				vText in mStorageWords -> {
+					if (vText == "extern") vIsExtern = true
+					mAt++
+				}
 				vText == "struct" || vText == "union" -> { mAt++; vBase = record(vText == "union") }
 				vText == "enum" -> { mAt++; vBase = enumeration() }
 				vText == "__typeof__" || vText == "typeof" || vText == "__typeof" || vText == "_Atomic" -> throw Unparsed(vText)
@@ -294,7 +302,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 			}
 		}
 		val vType = vBase ?: if (vWords.isEmpty()) throw Unparsed("no type before '${peek().text}'") else arithmetic(vWords)
-		return Specifiers(vType, vIsTypedef, vIsConst)
+		return Specifiers(vType, vIsTypedef, vIsConst, vIsExtern)
 	}
 
 	private fun arithmetic(inWords: List<String>): CType {
@@ -525,6 +533,9 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 				(vType as? CEnum)?.let { if (it.typedefName == null) it.typedefName = vName }
 			} else if (vType is CFunctionType) {
 				functions += CFunctionDecl(vName, vType, vFile)
+			} else if (vSpecifiers.isExtern) {
+				// For a pointer the `const` in front belongs to what it points at, not to the variable.
+				variables += CVariableDecl(vName, vType, vSpecifiers.isConst && vType !is CPointerTo, vFile)
 			}
 			if (isPunct("{")) {
 				// A definition: the body is of no interest.

@@ -42,6 +42,11 @@ typedef struct canvas canvas_t;
 
 typedef int (*point_visitor)(const struct point* point, void* user_data);
 
+typedef double (*scaler)(double value, float factor);
+
+/* A variable of the library. */
+extern int geometry_counter;
+
 /* The functions are defined in Geometry.def, as a library with inline functions would. */
 
 #endif

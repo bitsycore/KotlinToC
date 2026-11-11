@@ -100,6 +100,14 @@ static inline double geometry_scale(double value, float factor)
 	return value * factor;
 }
 
+static inline scaler geometry_scaler(void)
+{
+	return geometry_scale;
+}
+
+/* One definition for the whole program, whichever files include this. */
+__attribute__((weak)) int geometry_counter = 0;
+
 static inline int geometry_format(char* buffer, size_t size, const char* format, ...)
 {
 	va_list arguments;

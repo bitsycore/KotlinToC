@@ -78,12 +78,19 @@ private val kKotlinKeywords = setOf(
  * - enums as an integer `typealias` with a `const val` per constant;
  * - object-like macros with an integer, floating-point or string value as `const val`.
  *
+ * - variables declared `extern` as properties.
+ *
  * A struct passed or returned by value is a `CValue<T>`.
  *
  * Skipped, with a comment in the generated file: what uses a type Kotlin has no counterpart
  * for (`long double`, `va_list`), or a struct without a name by value.
  */
-class BindingGenerator(private val mDef: DefFile, private val mCompiler: String) {
+class BindingGenerator(
+	private val mDef: DefFile,
+	private val mCompiler: String,
+	/** Kotlin declarations added at the end of the generated file. */
+	private val mExtraKotlin: String = "",
+) {
 
 	private val mOut = StringBuilder()
 	private val mDeclared = HashSet<String>()
@@ -137,8 +144,11 @@ class BindingGenerator(private val mDef: DefFile, private val mCompiler: String)
 		for (vFunction in vParser.functions.filter { isWanted(it.file) }) function(vFunction)
 		// Types the functions mention: bound in full when they are the library's own, by name otherwise.
 		while (mPendingRecords.isNotEmpty()) record(mPendingRecords.removeFirst(), ::isWanted)
+		for (vVariable in vParser.variables.filter { isWanted(it.file) }) variable(vVariable)
+		while (mPendingRecords.isNotEmpty()) record(mPendingRecords.removeFirst(), ::isWanted)
 		for (vMacro in vParser.macros.filter { isWanted(it.file) }) macro(vMacro, vParser)
 
+		mOut.append(mExtraKotlin)
 		val vSource = File(inKotlinDir, mDef.packageName.replace('.', '_') + ".kt")
 		vSource.writeText(mOut.toString())
 		return Bindings(vSource, vCompilerOpts, mDef.linkerOpts)
@@ -369,6 +379,34 @@ class BindingGenerator(private val mDef: DefFile, private val mCompiler: String)
 		} else {
 			mOut.append("public fun ${identifier(vName)}(${vDeclared.joinToString(", ")}): $vResult = cExpr($vPassed)\n")
 		}
+	}
+
+	/** A global variable of the library: a property that reads and writes it where it is. */
+	private fun variable(inVariable: CVariableDecl) {
+		val vName = inVariable.name
+		if (vName.startsWith("_") || vName in mDeclared) return
+		if (vName in mClassOf.values) {
+			// Kotlin has one name space for classes and properties.
+			mOut.append("\n// skipped: $vName (a struct has the same name)\n")
+			return
+		}
+		val vType = inVariable.type.resolved()
+		val vKotlin = identifier(vName)
+		val vDeclaration = when {
+			vType is CRecord -> if (vType.spelling.isEmpty() || vType.fields == null) null else "public val $vKotlin: ${identifier(classFor(vType))} get() = cExpr(\"(void*)&$vName\")\n"
+			vType is CArrayOf -> variableType(vType.element)?.let { "public val $vKotlin: CArrayPointer<$it> get() = cExpr(\"(void*)$vName\")\n" }
+			else -> valueType(inVariable.type, inIsParameter = false)?.let { vValue ->
+				val vRead = if (isPointer(inVariable.type)) "(void*)$vName" else vName
+				if (inVariable.isConst) "public val $vKotlin: $vValue get() = cExpr(\"$vRead\")\n"
+				else "public var $vKotlin: $vValue\n\tget() = cExpr(\"$vRead\")\n\tset(value) {\n\t\tcExpr<Unit>(\"$vName = \$0\", value)\n\t}\n"
+			}
+		}
+		if (vDeclaration == null) {
+			mOut.append("\n// skipped: $vName (a variable of a type that cannot be bound)\n")
+			return
+		}
+		mDeclared += vName
+		mOut.append("\n").append(vDeclaration)
 	}
 
 	private fun macro(inMacro: CMacro, inParser: CHeaderParser) {

@@ -1,0 +1,14 @@
+
+// The parts of the C library that are macros, which the generator cannot see as declarations.
+
+public val stdin: CPointer<FILE>? get() = cExpr("(void*)stdin")
+
+public val stdout: CPointer<FILE>? get() = cExpr("(void*)stdout")
+
+public val stderr: CPointer<FILE>? get() = cExpr("(void*)stderr")
+
+public var errno: Int
+	get() = cExpr("errno")
+	set(value) {
+		cExpr<Unit>("errno = $0", value)
+	}

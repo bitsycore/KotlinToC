@@ -59,8 +59,19 @@ object K2Frontend {
 		val vLibrary = librarySources(inOutDir)
 		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
 		val vDefinitions = inSources.filter { it.extension == "def" }
+		val vCompiler = System.getenv("KTC2_CC") ?: "gcc"
 		val vBindings = try {
-			vDefinitions.map { BindingGenerator(DefFile(it), System.getenv("KTC2_CC") ?: "gcc").generate(File(inOutDir, "interop"), File(inOutDir, "c")) }
+			val vGenerated = vDefinitions.map { BindingGenerator(DefFile(it), vCompiler).generate(File(inOutDir, "interop"), File(inOutDir, "c")) }
+			// `import platform.posix.*` asks for the C library, described by a .def of ktc2's own.
+			val vUsesPosix = (inSources - vDefinitions.toSet()).any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
+			if (vUsesPosix && vDefinitions.none { DefFile(it).packageName == "platform.posix" }) {
+				val vDefinition = File(inOutDir, "interop/posix.def")
+				vDefinition.parentFile.mkdirs()
+				vDefinition.writeText(resourceText("/ktc2/interop/posix.def"))
+				vGenerated + BindingGenerator(DefFile(vDefinition), vCompiler, resourceText("/ktc2/interop/posix.kt.txt")).generate(File(inOutDir, "interop"), File(inOutDir, "c"))
+			} else {
+				vGenerated
+			}
 		} catch (vError: IllegalStateException) {
 			System.err.println("ktc2: error: ${vError.message}")
 			return false
@@ -139,6 +150,9 @@ object K2Frontend {
 		vTemp.renameTo(vFiltered)
 		return vFiltered
 	}
+
+	private fun resourceText(inPath: String): String =
+		K2Frontend::class.java.getResourceAsStream(inPath)?.use { it.readBytes().decodeToString() } ?: throw IllegalStateException("missing resource $inPath")
 
 	/**
 	 * Compiles [inSources] as ordinary Kotlin/JVM into [inOutDir], against the real standard

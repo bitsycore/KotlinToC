@@ -1761,7 +1761,27 @@ internal class BodyBuilder(
 					it.headers = vHeaders
 				}
 			}
+			"cCall" -> {
+				// A call through a C function pointer: the emitter casts it to the C type the arguments and the result give.
+				val vElements = (inCall.arguments.getOrNull(1) as? IrVararg)?.elements ?: emptyList()
+				val vExpressions = listOf(inCall.arguments[0]!!) + vElements.map { it as? IrExpression ?: return fail(inCall, "cCall with a spread argument") }
+				val vArguments = lowerOperands(vExpressions).mapIndexed { vIndex, vValue -> cArgument(vValue, vExpressions[vIndex]) }
+				val vType = kType(inCall.type) ?: return fail(inCall, "cCall of type '${inCall.type.render()}'")
+				return KIntrinsic("ktc2_call_pointer", vArguments, vType, isPure = false)
+			}
 			"cFunction" -> {
+				(inCall.arguments[0] as? IrFunctionExpression)?.let { vLambda ->
+					// A lambda that uses nothing around it is a C function of its own.
+					if (mImporter.captures.freeVariables(vLambda.function).isNotEmpty()) {
+						return fail(inCall, "staticCFunction of a lambda that uses values from around it (C has nowhere to keep them; pass them through a StableRef)")
+					}
+					val vFunction = mImporter.staticFunctionFor(vLambda.function, mFile, mSubst)
+						?: return fail(inCall, "staticCFunction of this lambda")
+					return KIntrinsic("cFunction", emptyList(), KPtrType).also {
+						it.template = "(void*)${vFunction.cName}"
+						it.functions = listOf(vFunction)
+					}
+				}
 				val vReference = inCall.arguments[0] as? IrFunctionReference ?: return fail(inCall, "staticCFunction of something else than a function reference (::name)")
 				val vTarget = vReference.symbol.owner as? IrSimpleFunction
 				if (vTarget == null || vTarget.parent is IrClass || vReference.arguments.any { it != null }) {

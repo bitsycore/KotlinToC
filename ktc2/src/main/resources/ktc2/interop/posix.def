@@ -1,0 +1,3 @@
+# The C library, as Kotlin/Native's platform.posix: generated when a program imports it.
+headers = stdio.h stdlib.h string.h math.h time.h errno.h ctype.h signal.h
+package = platform.posix

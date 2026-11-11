@@ -5,6 +5,7 @@ package kotlinx.cinterop
 
 import kotlinx.cinterop.internal.CType
 import kotlinx.cinterop.internal.cAlignOf
+import kotlinx.cinterop.internal.cCall
 import kotlinx.cinterop.internal.cExpr
 import kotlinx.cinterop.internal.cFunction
 import kotlinx.cinterop.internal.cSizeOf
@@ -587,6 +588,39 @@ public inline fun <reified T : CStructVar> CValue<T>.write(location: NativePtr) 
 }
 
 // ==================
+// MARK: Values for a call
+// ==================
+
+/*
+C values to pass by address — `sum(cValuesOf(1, 2, 3), 3)`. Each is a counted copy of the
+elements, alive for as long as the Kotlin code holds it.
+*/
+
+public fun cValuesOf(vararg elements: Byte): CValue<ByteVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 1)", elements, elements.size)
+
+public fun ByteArray.toCValues(): CValue<ByteVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 1)", this, size)
+
+public fun cValuesOf(vararg elements: Short): CValue<ShortVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 2)", elements, elements.size)
+
+public fun ShortArray.toCValues(): CValue<ShortVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 2)", this, size)
+
+public fun cValuesOf(vararg elements: Int): CValue<IntVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 4)", elements, elements.size)
+
+public fun IntArray.toCValues(): CValue<IntVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 4)", this, size)
+
+public fun cValuesOf(vararg elements: Long): CValue<LongVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 8)", elements, elements.size)
+
+public fun LongArray.toCValues(): CValue<LongVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 8)", this, size)
+
+public fun cValuesOf(vararg elements: Float): CValue<FloatVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 4)", elements, elements.size)
+
+public fun FloatArray.toCValues(): CValue<FloatVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 4)", this, size)
+
+public fun cValuesOf(vararg elements: Double): CValue<DoubleVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 8)", elements, elements.size)
+
+public fun DoubleArray.toCValues(): CValue<DoubleVar> = cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 8)", this, size)
+
+// ==================
 // MARK: Strings
 // ==================
 
@@ -701,7 +735,34 @@ public inline fun <T : Any> CPointer<*>.asStableRef(): StableRef<T> = cExpr("$0"
 // MARK: Functions
 // ==================
 
-/** The C function pointer of a top-level Kotlin function, given as `::name`. */
+/*
+Calling a C function through its pointer. The pointer is cast to the C function type that the
+Kotlin types of the call give — Int is int32_t, a pointer is void* — which is the same call
+for every C type of the same size and kind.
+*/
+
+public inline operator fun <R> CPointer<CFunction<() -> R>>.invoke(): R = cCall(this)
+
+public inline operator fun <P1, R> CPointer<CFunction<(P1) -> R>>.invoke(p1: P1): R = cCall(this, p1)
+
+public inline operator fun <P1, P2, R> CPointer<CFunction<(P1, P2) -> R>>.invoke(p1: P1, p2: P2): R = cCall(this, p1, p2)
+
+public inline operator fun <P1, P2, P3, R> CPointer<CFunction<(P1, P2, P3) -> R>>.invoke(p1: P1, p2: P2, p3: P3): R = cCall(this, p1, p2, p3)
+
+public inline operator fun <P1, P2, P3, P4, R> CPointer<CFunction<(P1, P2, P3, P4) -> R>>.invoke(p1: P1, p2: P2, p3: P3, p4: P4): R = cCall(this, p1, p2, p3, p4)
+
+public inline operator fun <P1, P2, P3, P4, P5, R> CPointer<CFunction<(P1, P2, P3, P4, P5) -> R>>.invoke(p1: P1, p2: P2, p3: P3, p4: P4, p5: P5): R = cCall(this, p1, p2, p3, p4, p5)
+
+public inline operator fun <P1, P2, P3, P4, P5, P6, R> CPointer<CFunction<(P1, P2, P3, P4, P5, P6) -> R>>.invoke(p1: P1, p2: P2, p3: P3, p4: P4, p5: P5, p6: P6): R = cCall(this, p1, p2, p3, p4, p5, p6)
+
+public inline operator fun <P1, P2, P3, P4, P5, P6, P7, R> CPointer<CFunction<(P1, P2, P3, P4, P5, P6, P7) -> R>>.invoke(p1: P1, p2: P2, p3: P3, p4: P4, p5: P5, p6: P6, p7: P7): R = cCall(this, p1, p2, p3, p4, p5, p6, p7)
+
+public inline operator fun <P1, P2, P3, P4, P5, P6, P7, P8, R> CPointer<CFunction<(P1, P2, P3, P4, P5, P6, P7, P8) -> R>>.invoke(p1: P1, p2: P2, p3: P3, p4: P4, p5: P5, p6: P6, p7: P7, p8: P8): R = cCall(this, p1, p2, p3, p4, p5, p6, p7, p8)
+
+/**
+ * The C function pointer of a top-level Kotlin function, given as `::name`, or of a lambda
+ * that uses nothing from around it.
+ */
 public fun <R> staticCFunction(function: () -> R): CPointer<CFunction<() -> R>> = cFunction(function)
 
 public fun <P1, R> staticCFunction(function: (P1) -> R): CPointer<CFunction<(P1) -> R>> = cFunction(function)
@@ -711,3 +772,11 @@ public fun <P1, P2, R> staticCFunction(function: (P1, P2) -> R): CPointer<CFunct
 public fun <P1, P2, P3, R> staticCFunction(function: (P1, P2, P3) -> R): CPointer<CFunction<(P1, P2, P3) -> R>> = cFunction(function)
 
 public fun <P1, P2, P3, P4, R> staticCFunction(function: (P1, P2, P3, P4) -> R): CPointer<CFunction<(P1, P2, P3, P4) -> R>> = cFunction(function)
+
+public fun <P1, P2, P3, P4, P5, R> staticCFunction(function: (P1, P2, P3, P4, P5) -> R): CPointer<CFunction<(P1, P2, P3, P4, P5) -> R>> = cFunction(function)
+
+public fun <P1, P2, P3, P4, P5, P6, R> staticCFunction(function: (P1, P2, P3, P4, P5, P6) -> R): CPointer<CFunction<(P1, P2, P3, P4, P5, P6) -> R>> = cFunction(function)
+
+public fun <P1, P2, P3, P4, P5, P6, P7, R> staticCFunction(function: (P1, P2, P3, P4, P5, P6, P7) -> R): CPointer<CFunction<(P1, P2, P3, P4, P5, P6, P7) -> R>> = cFunction(function)
+
+public fun <P1, P2, P3, P4, P5, P6, P7, P8, R> staticCFunction(function: (P1, P2, P3, P4, P5, P6, P7, P8) -> R): CPointer<CFunction<(P1, P2, P3, P4, P5, P6, P7, P8) -> R>> = cFunction(function)

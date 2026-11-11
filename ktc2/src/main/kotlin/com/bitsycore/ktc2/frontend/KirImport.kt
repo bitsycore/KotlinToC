@@ -223,6 +223,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mClosures += Closure(mBuiltIns.functionN(vParams.size), vArguments, inClass, inInvoke)
 	}
 
+	private var mStaticFunctions = 0
+
+	/** A C function for the lambda [inLambda], which captures nothing: what `staticCFunction { }` points at. */
+	internal fun staticFunctionFor(inLambda: IrSimpleFunction, inFile: IrFile, inSubst: Subst): KFunction? {
+		val vSignature = signatureOf(inLambda, inFile, inSubst) ?: return null
+		val vUnit = facadeFor(inFile)
+		val vFunction = KFunction(uniqueName("${cPrefix(vUnit.pkg)}${vUnit.name}_cfunction${mStaticFunctions++}"), vUnit, vSignature.params, vSignature.returnType)
+		vUnit.functions += vFunction
+		mPending += { BodyBuilder(this, vFunction, inLambda, inFile, inSubst).buildClosure(emptyList(), null) }
+		return vFunction
+	}
+
 	/**
 	 * Registers the closure [inClass] as an implementation of the `fun interface` [inInterface]
 	 * instantiated with [inArguments]: `Comparator { a, b -> … }`.

@@ -33,6 +33,9 @@ public annotation class CVariadic(val name: String)
  */
 public fun <R> cExpr(text: String, vararg arguments: Any?): R = throw NotImplementedError()
 
+/** Calls the C function [function] points at with [arguments]; the C types are those of the arguments and of [R]. */
+public fun <R> cCall(function: Any?, vararg arguments: Any?): R = throw NotImplementedError()
+
 /** `sizeof` of the C type behind [T]. */
 public fun <T> cSizeOf(): Long = throw NotImplementedError()
 
