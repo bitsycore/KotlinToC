@@ -101,8 +101,11 @@ class KStruct(
 	val fields = mutableListOf<KField>()
 }
 
-/** [owner] is the class declaring the field, or null for a `@Struct` field. */
-class KField(val cName: String, val type: KType, val owner: KClass? = null)
+/**
+ * [owner] is the class declaring the field, or null for a `@Struct` field. [isImmutable] is set
+ * for a field that is never reassigned once its object is constructed (a `val`).
+ */
+class KField(val cName: String, val type: KType, val owner: KClass? = null, val isImmutable: Boolean = false)
 
 /**
  * A reference class. Its C struct starts with the superclass struct (or `ktc2_Obj`), so a

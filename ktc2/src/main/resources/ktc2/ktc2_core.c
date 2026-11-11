@@ -66,8 +66,17 @@ static void count_live(uint32_t typeId, int delta)
 #define count_live(typeId, delta) ((void)0)
 #endif
 
+#ifdef KTC2_ARC_STATS
+uint64_t ktc2_stat_retains;
+uint64_t ktc2_stat_releases;
+static uint64_t stat_allocs;
+#endif
+
 void* ktc2_alloc(size_t size, uint32_t typeId)
 {
+#ifdef KTC2_ARC_STATS
+	stat_allocs++;
+#endif
 	ktc2_Obj* object = calloc(1, size);
 	if (!object) fail("java.lang.OutOfMemoryError", NULL);
 	object->rc = 1;
@@ -87,6 +96,9 @@ void ktc2_destroy(ktc2_Obj* object)
 int ktc2_exit(void)
 {
 	fflush(stdout);
+#ifdef KTC2_ARC_STATS
+	fprintf(stderr, "ktc2: arc: allocs=%" PRIu64 " retains=%" PRIu64 " releases=%" PRIu64 "\n", stat_allocs, ktc2_stat_retains, ktc2_stat_releases);
+#endif
 #ifdef KTC2_LEAK_CHECK
 	for (uint32_t id = 0; live_counts && id < ktc2_type_count; id++) {
 		if (live_counts[id] != 0) {

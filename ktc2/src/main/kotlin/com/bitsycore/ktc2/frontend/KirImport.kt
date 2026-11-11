@@ -165,7 +165,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		for ((vName, vType) in inCaptures) {
 			var vUnique = cIdentifier(vName)
 			while (!vNames.add(vUnique)) vUnique += "_"
-			vClass.fields += KField(vUnique, vType, vClass)
+			vClass.fields += KField(vUnique, vType, vClass, isImmutable = true)
 		}
 		mClassList += vClass
 		mUnits += vUnit
@@ -474,7 +474,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				unsupported(vFile, vProperty, "property of type '${vBacking.type.render()}'")
 				continue
 			}
-			val vField = KField(cIdentifier(vProperty.name.asString()), vType, vClass)
+			val vField = KField(cIdentifier(vProperty.name.asString()), vType, vClass, isImmutable = !vProperty.isVar)
 			vClass.fields += vField
 			mFields[vBacking to vClass] = vField
 		}

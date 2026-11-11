@@ -24,7 +24,12 @@ class IntegrationTest {
 	private val mCompiler = System.getenv("KTC2_CC") ?: "gcc"
 
 	@TestFactory
-	fun programs(): List<DynamicTest> =
+	fun programs(): List<DynamicTest> {
+		File("build/integration/arc-stats.txt").delete()
+		return programList()
+	}
+
+	private fun programList(): List<DynamicTest> =
 		File("integration").walkTopDown()
 			.filter { it.isFile && it.extension == "kt" }
 			.sortedBy { it.path }
@@ -47,7 +52,7 @@ class IntegrationTest {
 		val vExpected = run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
 
 		val vExe = File(vOutDir, "program.exe")
-		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
+		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 
 		assertEquals(vExpected, vActual, "C output differs from the JVM for $inSource")
@@ -65,6 +70,10 @@ class IntegrationTest {
 			}
 			if (vProcess.exitValue() != 0) {
 				fail("exit ${vProcess.exitValue()} from ${inCommand.joinToString(" ")}\n${vErrors.readText()}\n$vOutput")
+			}
+			// Reference-count statistics of each program, for comparing optimizations: build/integration/arc-stats.txt
+			vErrors.readLines().firstOrNull { it.startsWith("ktc2: arc:") }?.let { vLine ->
+				File("build/integration/arc-stats.txt").appendText("${File(inCommand.first()).parentFile.name}: ${vLine.removePrefix("ktc2: arc: ")}\n")
 			}
 			val vLeaks = vErrors.readLines().filter { it.startsWith("ktc2: leak") }
 			if (vLeaks.isNotEmpty()) fail("${inCommand.first()} leaked:\n${vLeaks.joinToString("\n")}")

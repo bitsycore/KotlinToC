@@ -405,7 +405,7 @@ ktc2/
 | 1 | KIR + first C | KIR import from K2 IR; per-class C emitter for primitives, functions, control flow, `@Struct`; `println` and operator intrinsics — **done** (see status below) | arithmetic / control-flow programs match the JVM |
 | 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
 | 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources — **done** | collection, string and lambda programs match the JVM |
-| 4 | Ownership optimization | rules 1–5 of §5.2; `--arc-stats` | RC operations per test drop sharply, output unchanged |
+| 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) — **done** (see status) | RC operations per test drop sharply, output unchanged |
 | 5 | Escape analysis | stack promotion, alloca, caller-slot returns, `@Value T`, `@Size` inline, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
 | 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>`; atomic mode | exception programs leak-free; thread programs under atomic RC |
 | 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator; port of the SDL3 module | v1's interop tests ported and passing |
@@ -414,7 +414,8 @@ Phases 1 to 3 are the bulk of the effort; Phase 2 carries the most risk. Phases 
 over a model that is already correct, so each lands rule by rule with numbers attached.
 
 **Status (2026-11-11).** Phases 0–3 are complete: the sixteen programs under `integration/`
-match the JVM, and every C run ends with all objects freed (`-DKTC2_LEAK_CHECK`).
+match the JVM, and every C run ends with all objects freed (`-DKTC2_LEAK_CHECK`). Phase 4 is
+done as well (below).
 
 Phase 1 (`integration/basic/`): all signed, unsigned and floating primitives with Kotlin's
 wrapping / saturating / shift semantics and JVM-identical `Double` / `Float` printing;
@@ -505,13 +506,37 @@ classification functions cover ASCII and Latin-1 and treat the rest of Unicode
 approximately, and `Regex` is declared but throws. `throw` reports the exception and exits
 (Phase 6 makes it catchable).
 
+Phase 4 — ownership optimization. Three rules were added to the naive scheme, each removing
+counting that cannot be observed:
+- an argument that is a `val` field of a safely held object needs no holding temporary;
+- a local read exactly once, by a store, hands its reference over instead of sharing it
+  (the temporaries the importer introduces all qualify); in its own straight-line scope the
+  release of such a local is dropped altogether;
+- a returned local is handed to the caller instead of being retained and then released.
+
+Measured on the test programs (operations executed, before → after):
+
+| Program | Allocations | Retains | Releases |
+|---|---|---|---|
+| objects/Classes | 2025 | 2094 → 1073 | 4135 → 3119 |
+| objects/Strings | 65 | 65 → 14 | 148 → 131 |
+| stdlib/Collections | 832 | 2514 → 1263 | 4150 → 3079 |
+| stdlib/Text | 291 | 1487 → 1113 | 2101 → 1776 |
+| generics/Lambdas | 47 | 98 → 65 | 186 → 153 |
+
+Releases still exceed allocations + retains because a release of a local that is null on
+that path (hoisted declarations, branches not taken) is counted; those cost a null test.
+What remains for later: borrowing a `val` field read into a local, releasing a temporary at
+its last use rather than at scope end, and not counting at all for objects that never
+escape (Phase 5).
+
 Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
 (null `!!`, bad cast, index out of bounds, `/ by zero`, `throw`) print the JVM-style message
 and exit until Phase 6; `object` and enum initializers run at startup rather than on first
 use; reference fields in `@Struct` classes, `Enum.entries`, inner classes, a function value
 whose static type differs in variance from the lambda's own, and an inline lambda used
 inside another lambda (`crossinline`) are not supported yet. Nothing in the ARC pass is
-optimized (Phase 4).
+optimized beyond the three rules above.
 
 **Relation to v1.** v1 integration tests that exercise plain behavior are ported as plain
 Kotlin into `ktc2/integration/` and gain the JVM oracle. Tests of the manual model (`ArenaTest`,

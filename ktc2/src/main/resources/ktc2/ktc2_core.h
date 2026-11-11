@@ -105,10 +105,20 @@ void* ktc2_alloc(size_t size, uint32_t typeId);
 /** Runs the type's destroy and frees the memory. */
 void ktc2_destroy(ktc2_Obj* object);
 
+/* With KTC2_ARC_STATS the runtime counts reference-count operations and reports them at exit. */
+#ifdef KTC2_ARC_STATS
+extern uint64_t ktc2_stat_retains;
+extern uint64_t ktc2_stat_releases;
+#define KTC2_COUNT(counter) ((counter)++)
+#else
+#define KTC2_COUNT(counter) ((void)0)
+#endif
+
 /** Null-safe; returns its argument so it can wrap an expression. */
 static inline void* ktc2_retain(void* pointer)
 {
 	ktc2_Obj* object = pointer;
+	KTC2_COUNT(ktc2_stat_retains);
 	if (object && object->rc != KTC2_IMMORTAL) object->rc++;
 	return pointer;
 }
@@ -117,6 +127,7 @@ static inline void* ktc2_retain(void* pointer)
 static inline void ktc2_release(void* pointer)
 {
 	ktc2_Obj* object = pointer;
+	KTC2_COUNT(ktc2_stat_releases);
 	if (object && object->rc != KTC2_IMMORTAL && --object->rc == 0) ktc2_destroy(object);
 }
 
