@@ -87,6 +87,9 @@ Ktc2Math.kt
 commonMain/kotlin/util/Numbers.kt
 commonMain/kotlin/KotlinH.kt
 commonMain/kotlin/util/Lazy.kt
+commonMain/kotlin/properties/Interfaces.kt
+commonMain/kotlin/properties/ObservableProperty.kt
+commonMain/kotlin/properties/Delegates.kt
 commonMain/kotlin/internal/serializationUtil.kt
 commonMain/kotlin/enums/EnumEntries.kt
 Ktc2Enums.kt

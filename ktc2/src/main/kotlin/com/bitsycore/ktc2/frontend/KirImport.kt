@@ -1013,10 +1013,6 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * @return the global and its initializer when that initializer has to run at startup
 	 */
 	private fun declareProperty(inProperty: IrProperty, inUnit: KUnit, inFile: IrFile, inOwner: IrClass? = null): Pair<KGlobal, IrExpression>? {
-		if (inProperty.isDelegated || inProperty.isLateinit) {
-			unsupported(inFile, inProperty, "delegated or lateinit property")
-			return null
-		}
 		val vBacking = inProperty.backingField ?: return null
 		val vType = kTypeOf(vBacking.type)
 		if (vType == null || vType == KUnitType || vType == KNothingType) {

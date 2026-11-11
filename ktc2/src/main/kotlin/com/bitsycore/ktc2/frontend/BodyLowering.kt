@@ -541,6 +541,13 @@ internal class BodyBuilder(
 				mLocalFunctions[inStatement] = LocalFunction(vInvoke, vHolder)
 			}
 			is IrClass -> declareLocalClass(inStatement)
+			// `val x by delegate`: the delegate is a local, and reading or writing `x` calls a local function.
+			is IrLocalDelegatedProperty -> {
+				inStatement.delegate?.let { lowerStatement(it) }
+				for (vAccessor in listOfNotNull(inStatement.getter, inStatement.setter)) {
+					makeClosure(vAccessor, vAccessor, vAccessor)?.let { (vHolder, vInvoke) -> mLocalFunctions[vAccessor] = LocalFunction(vInvoke, vHolder) }
+				}
+			}
 			else -> fail(inStatement, "local declaration")
 		}
 	}
@@ -618,6 +625,9 @@ internal class BodyBuilder(
 		is IrFunctionExpression -> makeClosure(inExpression, inExpression.function, null)?.let { KRead(it.first) } ?: KUnitValue
 		is IrFunctionReference -> lowerFunctionReference(inExpression)
 		is IrRichFunctionReference -> lowerRichFunctionReference(inExpression)
+		// The property a delegate is told about (`getValue(thisRef, property)`): there is no
+		// reflection here, so it is passed as null — fine for the delegates that ignore it.
+		is IrRichPropertyReference, is IrPropertyReference, is IrLocalDelegatedPropertyReference -> KNull(KObjType)
 		is IrSetValue -> {
 			val vLocal = mLocals[inExpression.symbol.owner]
 			val vCell = mCells[inExpression.symbol.owner]

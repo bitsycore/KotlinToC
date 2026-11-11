@@ -705,12 +705,57 @@ After Phase 7 — what the phases above had left open:
   allocates nothing. `example/Demo.kt` opens a window, draws for a second and exits cleanly.
   It is not part of the test suite (it needs SDL3 and a display).
 
+Values on the stack, and Kotlin 2.5 — the latest round:
+- **Kotlin 2.5.0-RC.** The front end is the 2.5.0-RC compiler and the library sources are
+  those of the 2.5.0-RC standard library. Programs may use what that release has, including
+  what it still calls experimental (`integration/basic/Kotlin25.kt`): `companion { }` blocks
+  and companion extensions (`companion val Vector.UnitX`), collection literals
+  (`val xs: List<Int> = [1, 2, 3]`), full value classes and value objects, name-based
+  destructuring (`(val y, val x) = point`), context parameters, guards in `when`. A member of
+  a companion block is a function or a variable of the program — no object is involved. The
+  reference build on the JVM is compiled with the same options.
+- **`@Struct` values everywhere** (`values/StructValues.kt`). A struct is a plain C value:
+  in a local, a parameter, a field, or an element of a collection (`ArrayList<Point>` stores
+  the points themselves). What was missing is now there: `==` and `!=` (through the `equals`
+  the class declares — a data class has one; a struct class without `equals` cannot be
+  compared, since on the JVM that would be identity), `hashCode`, `toString`, string
+  templates, `copy`, destructuring, secondary constructors and `init` blocks, use as a map
+  key or set element, and type arguments in general. Where Kotlin needs an object — the value
+  seen as `Any` or as an interface it implements, or a nullable `Point?` — the value is put in
+  its *box*, a small class generated per struct that answers `toString`, `equals`, interface
+  calls with the struct's own functions. A box that does not outlive its block is itself a
+  stack object (comparing two structs allocates nothing). A member called on a struct value is
+  called directly, never through its box. `Array<Point>` holds boxes, as `Array<Int>` holds
+  boxed ints; collections hold the values. Fields of a struct are numbers and other structs;
+  references are not allowed in them.
+- **Value classes are structs.** A final `value class` whose properties are numbers or other
+  such values (`value class Complex(val re: Double, val im: Double)`, `@JvmInline value class
+  Meters(val v: Double)`) is treated exactly like a `@Struct` class. Kotlin gives such a class
+  no identity, so nothing observable changes; it simply never touches the heap. One that holds
+  a reference (`Result`) stays an ordinary class.
+- **`@Size(N)` and `@Value` on locals** (`values/StackLocals.kt`). `@Size(2000) val buffer =
+  BooleanArray(2000)` and `val p: @Value Particle = Particle(0f, 0f)` require the array or the
+  object to live in the stack frame, whatever its size. If the program then lets it escape
+  (returns it, stores it, passes it to something that keeps it), compilation fails with the
+  place and the reason, instead of quietly using the heap.
+- **Library**: `kotlin.math` (over `<math.h>`, each call expanded in place), the bit
+  operations of `Int` and `Long`, `kotlin.random` (the standard library's own XorWow, so a
+  seeded generator gives the same numbers as on the JVM), `lazy`, `Delegates`, `Enum.entries`
+  (`stdlib/MathAndMore.kt`).
+- **Language**: property delegation — `by lazy`, `by Delegates.observable`, custom
+  `getValue` / `setValue`, on class, top-level and local properties (`objects/Delegation.kt`);
+  `lateinit`; function references in the form the 2.5 compiler produces; `x is IntArray` on
+  an `Any`, by the kind of array.
+- **SDL3 module**: `FRect`, `Rect`, `FPoint`, `Color` and `FColor` are structs. The demo
+  allocates five objects in its whole run.
+
 Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
-use; reference fields in `@Struct` classes, `Enum.entries`, a function value
+use; reference fields in `@Struct` classes, a function value
 whose static type differs in variance from the lambda's own, an inline lambda used
-inside another lambda (`crossinline`), SAM conversion of a function value that is not a
-lambda written in place, and a type test against an array type (`x is IntArray` on an `Any`)
-are not supported yet. A failed check inside a conditional expression may store a
+inside another lambda (`crossinline`), and SAM conversion of a function value that is not a
+lambda written in place are not supported yet. The property handed to a delegate
+(`getValue(thisRef, property)`) is null: there is no reflection, so a delegate that reads
+`property.name` fails. `lazy` is not synchronized. A failed check inside a conditional expression may store a
 placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`). Nothing in the ARC pass is
 optimized beyond the three rules above.
 
