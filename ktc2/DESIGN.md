@@ -65,7 +65,7 @@ C build). `kotlinc` becomes the oracle for "is this still Kotlin".
 | `ktc2.` declaration | JVM definition (`ktc2/src/main/kotlin/ktc2/`) |
 |---|---|
 | `@Value`, `@Struct`, `@Size(N)`, `@Weak`, `@Acyclic`, `@Tls`, `@Namespace`, `@SimpleEnum` | no-op annotations |
-| `arena(size) { ... }` | `inline fun <R> arena(size: Int, block: () -> R): R = block()` |
+| `arena(size) { ... }` | `inline fun <R> arena(inSize: Int, inBlock: () -> R): R = inBlock()` |
 | `WeakRef<T>` | wrapper over `java.lang.ref.WeakReference` |
 | `Deinit` | plain interface |
 | `kotlinx.cinterop.*` (Kotlin/Native syntax) | not available on the JVM (interop code is the non-portable subset; it stays portable to Kotlin/Native) |
@@ -264,13 +264,17 @@ way and replaces `defer`.
 | `arena(size) { }` | programmer | every allocation in the dynamic scope bumps the arena; freed at block exit |
 | Monomorphization | compiler | `List<Int>`, `Map<Int, Vec2>` store elements inline, never boxed |
 
-**Arena details.** `arena { }` pushes an allocator on a thread-local stack that `KTC_ALLOC`
-consults. Arena objects carry the `ARENA` flag: retain/release are no-ops. Objects whose type
-has a `destroy` are linked into a per-arena list so references they hold to *outside* heap
-objects are released at exit; plain-data objects pay nothing. A reference to an arena object
-stored somewhere that outlives the block is a bug the compiler cannot always see: the block's
-*result* is autoboxed out, and debug builds verify at exit that no arena object is still
-referenced. `--warn-heap` lists every allocation site that stayed on the heap, with the
+**Arena details.** `arena(size) { }` pushes an arena on a thread-local stack that the
+allocator consults; objects are then carved out of blocks of `size` bytes (a larger object
+gets a block of its own, a full block is followed by another). Arena objects carry the
+`ARENA` flag and are still counted — an increment and a decrement are cheap, `malloc` and
+`free` are what the arena removes. At a count of zero an arena object releases what it refers
+to and tells its block; a block is freed once the arena has ended *and* none of its objects
+is alive, which normally is the moment the block ends. So an object that outlives its arena
+(the block's result, something stored in an outer list) is not a bug and needs no copy: it
+keeps its block alive until it is released. The price is one word in front of each arena
+object, naming its block. This replaces the earlier plan (uncounted arena objects, result
+copied out, a debug check for escapes), which could not be made safe. `--warn-heap` lists every allocation site that stayed on the heap, with the
 reason ("escapes via return", "stored in field `x`"), so heap use is always visible and
 auditable.
 
@@ -409,7 +413,7 @@ ktc2/
 | 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) — **done** (see status) | RC operations per test drop sharply, output unchanged |
 | 5 | Escape analysis | whole-program escape summaries; stack promotion of objects, closures, cells, strings and small arrays; `@Value` / `@Size` inline fields with autobox; `--warn-heap` — **done** (see status; caller-slot returns and inline array elements are left) | heap allocations drop where objects are temporary, output unchanged |
 | 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>` / `@Acyclic`; threads with atomic counts — **done** (see status; index and division failures are still fatal) | exception programs leak-free; thread programs under atomic RC |
-| 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator; port of the SDL3 module | v1's interop tests ported and passing |
+| 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator — **done** (see status); SDL3 binds and runs, v1's wrapper module is not ported | v1's interop tests ported and passing |
 
 Phases 1 to 3 are the bulk of the effort; Phase 2 carries the most risk. Phases 4 and 5 are pure optimizations
 over a model that is already correct, so each lands rule by rule with numbers attached.
@@ -612,6 +616,48 @@ rather than a monitor per object, and waits by yielding; an uncaught exception i
 ends the program instead of only that thread; `isDaemon`, thread names and priorities are
 ignored; lazy initialization is not synchronized; atomic counting applies to every object
 of a threaded program (the `SHARED`-bit refinement of §5.4 is open).
+
+Phase 7 — arena and C interop (`integration/values/Arena.kt`, `integration/interop/`):
+- **`arena(size) { }`** as described in §6. In `values/Arena.kt` 1614 of 1626 allocations
+  come from arena blocks, with the same output as on the JVM and nothing leaked.
+- **`kotlinx.cinterop`**, written in Kotlin in the platform layer (`Ktc2Cinterop.kt`).
+  Every type that stands for a C address — `CPointer<T>`, `NativePtr`, `CValuesRef<T>`,
+  `StableRef<T>`, and the variables and structs pointed at (`IntVar`, a struct class) — is
+  one KIR type, a bare `void*`: never an object, never counted, and one shared instantiation
+  as a type argument. Available: `memScoped`, `nativeHeap`, `alloc` / `allocArray` /
+  `allocPointerTo`, `.ptr` / `.pointed` / `.value`, indexing and `+` on pointers, `sizeOf` /
+  `alignOf`, `reinterpret`, `toLong` / `toCPointer`, `String.cstr`, `toKString`, `refTo` and
+  `usePinned` / `addressOf` on primitive arrays, `StableRef`, and `staticCFunction(::topLevel)`.
+- **What interop is built from.** Three functions of `kotlinx.cinterop.internal` are
+  replaced by C text: `cExpr<R>("C with $0 $1", a, b)`, `cSizeOf<T>()` / `cAlignOf<T>()`
+  (from the `@CType("struct point")` of `T`'s class), and the address of a generated function.
+  The library and the generated bindings are ordinary Kotlin over these, so `p.pointed.x = 3`
+  ends up as `((struct point*)p)->x = 3` and a bound function as the C call itself. A file
+  of bindings names its headers with `@file:CHeaders`; only the C files that contain its
+  text include them, so a library's macros do not reach the rest of the program.
+- **Bindings from `.def` files** (`interop/CHeaderParser.kt`, `interop/Bindings.kt`).
+  `ktc2 main.kt lib.def` preprocesses the headers with the C compiler (`-E -dD`), reads their
+  declarations with a C declaration parser of its own, and writes `<out>/interop/<package>.kt`,
+  compiled with the program. Keys understood: `headers`, `headerFilter`, `package`,
+  `compilerOpts`, `linkerOpts` (also with `.mingw` / `.linux` / `.osx`), and the C section
+  after `---`. Functions take `String?` for `const char*` and `CValuesRef<T>?` for other
+  pointers, and return `CPointer<T>?`; variadic functions take `vararg` and each call passes
+  its extra arguments as they are; structs and unions are classes with a property per field
+  (nested structs and arrays in place); a type known only by name is opaque; enums are an
+  integer `typealias` plus `const val`s; object-like macros with a number or string value
+  are `const val`s. The compiler and linker options go to `ktc2_build.txt` (`cflag=`, `ldflag=`).
+- **SDL3.** A three-line `.def` over the real SDL3 headers yields 1234 functions (15 skipped);
+  a program that initializes SDL, opens a window, polls events and fills an `SDL_FRect`
+  compiles with `-Wall -Werror`, links and runs. This is the raw C API; the Kotlin wrapper
+  module of v1 (`ktc.sdl3`: Window, Renderer…) is not ported.
+
+Not done in Phase 7: structs passed or returned by value (`CValue<T>`, `cValue { }`,
+`useContents`, `readValue`) and `cValuesOf` — functions using them are skipped with a comment
+in the generated file; calling through a C function pointer from Kotlin (`invoke`);
+`staticCFunction` of a lambda; global C variables; C enums as Kotlin `enum class` (always
+the `typealias` form); `platform.posix` (a `.def` naming the libc headers gives the same
+functions); bindings are regenerated on every compilation. Programs using interop have no
+JVM to compare with: their tests compare with a `.expected` file.
 
 Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
 use; reference fields in `@Struct` classes, `Enum.entries`, inner classes, a function value

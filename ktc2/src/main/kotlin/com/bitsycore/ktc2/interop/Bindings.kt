@@ -107,9 +107,11 @@ class BindingGenerator(private val mDef: DefFile, private val mCompiler: String)
 		})
 		// Headers next to the .def file are found without an option of their own.
 		val vCompilerOpts = mDef.compilerOpts + "-I${mDef.file.absoluteFile.parentFile.invariantSeparatorsPath}"
-		val vPredefined = run(listOf(mCompiler, "-dM", "-E", "-x", "c", "-") + vCompilerOpts, "")
+		// The headers are read as the C the program is compiled as, unless the .def says otherwise.
+		val vDialect = if (mDef.compilerOpts.any { it.startsWith("-std=") }) emptyList() else listOf("-std=gnu11")
+		val vPredefined = run(listOf(mCompiler, "-dM", "-E", "-x", "c", "-") + vDialect + vCompilerOpts, "")
 		val vLongSize = Regex("#define __SIZEOF_LONG__ (\\d+)").find(vPredefined)?.groupValues?.get(1)?.toInt() ?: 8
-		val vPreprocessed = run(listOf(mCompiler, "-E", "-dD") + vCompilerOpts + vStub.absolutePath, null)
+		val vPreprocessed = run(listOf(mCompiler, "-E", "-dD", "-x", "c") + vDialect + vCompilerOpts + vStub.absolutePath, null)
 		val vParser = CHeaderParser(vPreprocessed, vLongSize).parse()
 
 		val vStubPath = vStub.absoluteFile.invariantSeparatorsPath

@@ -244,7 +244,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 		"__fastcall", "__ptr32", "__ptr64", "__unaligned", "__w64", "__signed", "__forceinline", "_Nonnull", "_Nullable", "_Null_unspecified",
 	)
 	private val mTypeWords = setOf(
-		"void", "char", "short", "int", "long", "float", "double", "signed", "unsigned", "_Bool", "__int8", "__int16", "__int32",
+		"void", "char", "short", "int", "long", "float", "double", "signed", "unsigned", "_Bool", "bool", "__int8", "__int16", "__int32",
 		"__int64", "__int128", "__signed__", "_Complex", "__complex__", "_Float16", "_Float32", "_Float64", "_Float128", "__float128",
 	)
 
@@ -304,7 +304,7 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 		return when {
 			inWords.any { it == "_Complex" || it == "__complex__" || it == "__int128" || it.startsWith("_Float") || it == "__float128" } -> CUnsupported(inWords.joinToString(" "))
 			"void" in inWords -> CVoid
-			"_Bool" in inWords -> CPrim("Boolean", "BooleanVar")
+			"_Bool" in inWords || "bool" in inWords -> CPrim("Boolean", "BooleanVar")
 			"char" in inWords || "__int8" in inWords -> integer("Byte")
 			"short" in inWords || "__int16" in inWords -> integer("Short")
 			"float" in inWords -> CPrim("Float", "FloatVar")
