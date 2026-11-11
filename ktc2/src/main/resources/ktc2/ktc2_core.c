@@ -107,14 +107,113 @@ uint64_t ktc2_stat_releases;
 static uint64_t stat_allocs;
 #endif
 
+/*
+ * An arena is a list of blocks objects are carved out of. Arena objects are counted like any
+ * other, so nothing about them is unsafe: at a count of zero an object gives up what it
+ * refers to, and tells its block instead of calling free. A block is freed when the arena has
+ * ended and no object of it is still alive — normally the moment the arena ends.
+ */
+typedef struct ArenaBlock {
+	struct ArenaBlock* next;
+	size_t used;
+	size_t size;
+	uint32_t holds;   /* live objects of the block, plus one for the arena while it is open */
+} ArenaBlock;
+
+typedef struct Arena {
+	struct Arena* outer;
+	ArenaBlock* blocks;
+	size_t blockSize;
+} Arena;
+
+/** Rounded so that what follows a block header or an object's back pointer stays aligned. */
+#define ARENA_ALIGN(size) (((size) + 15u) & ~(size_t)15u)
+#define ARENA_PREFIX ARENA_ALIGN(sizeof(ArenaBlock*))
+
+/** The innermost arena open on this thread, or NULL. */
+static KTC2_TLS Arena* arena_top;
+
+#ifdef KTC2_ARC_STATS
+static uint64_t stat_arena_allocs;
+#endif
+
+static void arena_block_drop(ArenaBlock* block)
+{
+#ifdef KTC2_THREADS
+	if (__atomic_sub_fetch(&block->holds, 1, __ATOMIC_ACQ_REL) == 0) free(block);
+#else
+	if (--block->holds == 0) free(block);
+#endif
+}
+
+static ktc2_Obj* arena_alloc(Arena* arena, size_t size)
+{
+	size_t need = ARENA_PREFIX + ARENA_ALIGN(size);
+	ArenaBlock* block = arena->blocks;
+	if (!block || block->size - block->used < need) {
+		size_t blockSize = arena->blockSize > need ? arena->blockSize : need;
+		block = malloc(ARENA_ALIGN(sizeof *block) + blockSize);
+		if (!block) fail("java.lang.OutOfMemoryError", NULL);
+		block->next = arena->blocks;
+		block->used = 0;
+		block->size = blockSize;
+		block->holds = 1;
+		arena->blocks = block;
+	}
+	char* slot = (char*)block + ARENA_ALIGN(sizeof *block) + block->used;
+	block->used += need;
+#ifdef KTC2_THREADS
+	__atomic_fetch_add(&block->holds, 1, __ATOMIC_RELAXED);
+#else
+	block->holds++;
+#endif
+	/* The object remembers its block in the word before it. */
+	*(ArenaBlock**)slot = block;
+	ktc2_Obj* object = (ktc2_Obj*)(slot + ARENA_PREFIX);
+	memset(object, 0, size);
+	return object;
+}
+
+int64_t ktc2_arenaEnter(int32_t size)
+{
+	Arena* arena = malloc(sizeof *arena);
+	if (!arena) fail("java.lang.OutOfMemoryError", NULL);
+	arena->outer = arena_top;
+	arena->blocks = NULL;
+	arena->blockSize = size > 256 ? (size_t)size : 256;
+	arena_top = arena;
+	return (int64_t)(intptr_t)arena;
+}
+
+void ktc2_arenaLeave(int64_t handle)
+{
+	Arena* arena = (Arena*)(intptr_t)handle;
+	arena_top = arena->outer;
+	for (ArenaBlock* block = arena->blocks; block;) {
+		ArenaBlock* next = block->next;
+		arena_block_drop(block);
+		block = next;
+	}
+	free(arena);
+}
+
 void* ktc2_alloc(size_t size, uint32_t typeId)
 {
 #ifdef KTC2_ARC_STATS
 	KTC2_STAT_INC(stat_allocs);
 #endif
-	ktc2_Obj* object = calloc(1, size);
-	if (!object) fail("java.lang.OutOfMemoryError", NULL);
-	object->rc = 1;
+	ktc2_Obj* object;
+	if (arena_top) {
+#ifdef KTC2_ARC_STATS
+		KTC2_STAT_INC(stat_arena_allocs);
+#endif
+		object = arena_alloc(arena_top, size);
+		object->rc = KTC2_ARENA | 1;
+	} else {
+		object = calloc(1, size);
+		if (!object) fail("java.lang.OutOfMemoryError", NULL);
+		object->rc = 1;
+	}
 	object->typeId = typeId;
 	count_live(typeId, 1);
 	return object;
@@ -130,6 +229,10 @@ void ktc2_destroy(ktc2_Obj* object)
 	/* A stack object only gives up what it refers to; its memory belongs to a frame. */
 	if (object->rc & KTC2_STACK) return;
 	count_live(object->typeId, -1);
+	if (object->rc & KTC2_ARENA) {
+		arena_block_drop(*(ArenaBlock**)((char*)object - ARENA_PREFIX));
+		return;
+	}
 	free(object);
 }
 
@@ -141,7 +244,7 @@ int ktc2_exit(void)
 	threads_wait();
 	fflush(stdout);
 #ifdef KTC2_ARC_STATS
-	fprintf(stderr, "ktc2: arc: allocs=%" PRIu64 " retains=%" PRIu64 " releases=%" PRIu64 "\n", stat_allocs, ktc2_stat_retains, ktc2_stat_releases);
+	fprintf(stderr, "ktc2: arc: allocs=%" PRIu64 " retains=%" PRIu64 " releases=%" PRIu64 " arena=%" PRIu64 "\n", stat_allocs, ktc2_stat_retains, ktc2_stat_releases, stat_arena_allocs);
 #endif
 #ifdef KTC2_LEAK_CHECK
 	for (uint32_t id = 0; live_counts && id < ktc2_type_count; id++) {

@@ -32,9 +32,10 @@ annotation class Struct
 annotation class Size(val inN: Int)
 
 /**
- * Runs [inBlock] with every allocation served by a bump arena of [inSize] bytes that is
- * released when the block returns. The block result is copied out of the arena.
- * On the JVM this only runs the block.
+ * Runs [inBlock] with every object it creates — directly or in the functions it calls —
+ * carved out of blocks of [inSize] bytes that are freed together when the block returns.
+ * An object still referred to afterwards (the result, typically) stays valid: it keeps its
+ * block alive until it is released itself. On the JVM this only runs the block.
  */
 @Suppress("UNUSED_PARAMETER")
 inline fun <R> arena(inSize: Int, inBlock: () -> R): R = inBlock()

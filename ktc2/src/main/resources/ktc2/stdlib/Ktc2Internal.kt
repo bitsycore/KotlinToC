@@ -84,6 +84,11 @@ public external fun monitorEnter(lock: Any)
 
 public external fun monitorExit(lock: Any)
 
+/** Opens an arena with blocks of [size] bytes on this thread; returns the handle [arenaLeave] takes. */
+public external fun arenaEnter(size: Int): Long
+
+public external fun arenaLeave(arena: Long)
+
 // ==================
 // MARK: Library functions provided here
 // ==================

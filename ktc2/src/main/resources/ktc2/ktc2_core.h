@@ -57,8 +57,11 @@ typedef struct ktc2_Obj {
 /** Flag in `rc` of an object that has a weak cell: destroying it clears the cell. */
 #define KTC2_WEAK UINT32_C(0x40000000)
 
+/** Flag in `rc` of an object allocated in an `arena { }` block: its memory belongs to the arena. */
+#define KTC2_ARENA UINT32_C(0x20000000)
+
 /** The bits of `rc` that count references. */
-#define KTC2_COUNT_MASK UINT32_C(0x3FFFFFFF)
+#define KTC2_COUNT_MASK UINT32_C(0x1FFFFFFF)
 
 /** Per-type data. `destroy` releases the references an instance holds; NULL when it holds none. */
 typedef struct ktc2_TypeInfo {
@@ -177,6 +180,23 @@ static inline void ktc2_release(void* pointer)
 
 /** Called at the end of main: reports objects still alive when built with KTC2_LEAK_CHECK. Returns the exit code. */
 int ktc2_exit(void);
+
+/* ================== */
+/* MARK: Arena        */
+/* ================== */
+
+/**
+ * Starts an arena on this thread: until the matching [ktc2_arenaLeave], objects are carved
+ * out of blocks of [size] bytes instead of being allocated one by one. Arenas nest.
+ * Returns the handle to leave with.
+ */
+int64_t ktc2_arenaEnter(int32_t size);
+
+/**
+ * Ends the arena. Its blocks are freed at once, except a block that still holds an object
+ * referred to from outside: that block lives until the last such object is released.
+ */
+void ktc2_arenaLeave(int64_t arena);
 
 /* ================== */
 /* MARK: Concurrency  */
