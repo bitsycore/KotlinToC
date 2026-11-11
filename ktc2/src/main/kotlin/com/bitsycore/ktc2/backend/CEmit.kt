@@ -267,14 +267,23 @@ class CEmitter(private val mModule: KModule) {
 		fun dispatcher(inFunction: KFunction) {
 			val vSelf = inFunction.params[0].cName
 			val vIsVoid = inFunction.returnType == KUnitType
+			// The dispatcher and an implementation can differ in representation: a pointer cast
+			// between reference types, and boxing where one side is erased and the other is not.
+			fun adapt(inText: String, inFrom: KType, inTo: KType): String = when {
+				inFrom == inTo -> inText
+				inFrom is KRefType && inTo is KPrimType -> "ktc2_unbox_${inTo.prim.name.lowercase()}((ktc2_Obj*)$inText)"
+				inFrom is KRefType && inTo is KOptType -> "ktc2_unbox_opt_${inTo.prim.name.lowercase()}((ktc2_Obj*)$inText)"
+				inFrom is KPrimType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_${inFrom.prim.name.lowercase()}($inText)"
+				inFrom is KOptType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_opt_${inFrom.prim.name.lowercase()}($inText)"
+				else -> "(${cType(inTo)})$inText"
+			}
 			fun call(inTarget: KFunction): String {
 				mState.includes += inTarget.unit
-				val vArguments = inFunction.params.zip(inTarget.params).joinToString(", ") { (vFrom, vTo) ->
-					if (vFrom.type == vTo.type) vFrom.cName else "(${cType(vTo.type)})${vFrom.cName}"
-				}
+				val vArguments = inFunction.params.zip(inTarget.params).joinToString(", ") { (vFrom, vTo) -> adapt(vFrom.cName, vFrom.type, vTo.type) }
 				val vCall = "${inTarget.cName}($vArguments)"
 				if (vIsVoid) return "$vCall; return;"
-				return if (inTarget.returnType == inFunction.returnType) "return $vCall;" else "return (${cType(inFunction.returnType)})$vCall;"
+				if (inTarget.returnType == KUnitType || inTarget.returnType == KNothingType) return "$vCall; return NULL;"
+				return "return ${adapt(vCall, inTarget.returnType, inFunction.returnType)};"
 			}
 			line(1, "switch (((ktc2_Obj*)$vSelf)->typeId) {")
 			for ((vClass, vTarget) in inFunction.dispatch!!) {

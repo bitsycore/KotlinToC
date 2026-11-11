@@ -172,7 +172,8 @@ typedef struct ktc2_Box {
 	} value;
 } ktc2_Box;
 
-/* ktc2_box_<kind>(v) returns a new box; ktc2_unbox_<kind>(o) fails unless o is a box of that kind. */
+/* ktc2_box_<kind>(v) returns a new box; ktc2_unbox_<kind>(o) fails unless o is a box of that kind.
+   The _opt_ variants convert between a nullable primitive and a box-or-NULL. */
 #define KTC2_BOX(kind, type, id) \
 	static inline ktc2_Obj* ktc2_box_##kind(type v) \
 	{ \
@@ -185,6 +186,14 @@ typedef struct ktc2_Box {
 		if (!object) ktc2_fail_null(); \
 		if (object->typeId != id) ktc2_fail_cast(); \
 		return ((ktc2_Box*)object)->value.kind##_; \
+	} \
+	static inline ktc2_Obj* ktc2_box_opt_##kind(ktc2_Opt_##type v) \
+	{ \
+		return v.has ? ktc2_box_##kind(v.v) : NULL; \
+	} \
+	static inline ktc2_Opt_##type ktc2_unbox_opt_##kind(ktc2_Obj* object) \
+	{ \
+		return object ? (ktc2_Opt_##type){ true, ktc2_unbox_##kind(object) } : (ktc2_Opt_##type){ false }; \
 	}
 
 KTC2_BOX(boolean, bool, KTC2_TYPE_BOX_BOOLEAN)
@@ -263,6 +272,9 @@ uint16_t ktc2_str_get(const ktc2_String* s, int32_t index);
 bool ktc2_str_equals(const ktc2_String* a, const ktc2_String* b);
 int32_t ktc2_str_compare(const ktc2_String* a, const ktc2_String* b);
 int32_t ktc2_str_hashCode(const ktc2_String* s);
+
+/** A new string from [length] UTF-16 code units of a CharArray, starting at [start]. */
+ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length);
 
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);

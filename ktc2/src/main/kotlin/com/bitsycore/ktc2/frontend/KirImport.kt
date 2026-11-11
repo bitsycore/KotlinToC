@@ -725,6 +725,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vFile = inFunction.fileOrNull
 		val vIsDefaultAccessor = inFunction.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR
 		mFunctions[vKey] = null
+		if (inFunction.isExternal && vOwner == null) {
+			// An `external` function is implemented by the C runtime under the name ktc2_<name>.
+			val vExternal = signatureOf(inFunction, vFile, inSubst) ?: return null
+			return runtime("ktc2_${inFunction.name.asString()}", vExternal.params.map { it.type }, vExternal.returnType).also { mFunctions[vKey] = it }
+		}
 		if (vFile == null || (inFunction.body == null && !vIsDefaultAccessor && inFunction !is IrConstructor)) return null
 		val vSignature = signatureOf(inFunction, vFile, inSubst) ?: return null
 
@@ -835,7 +840,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vOwner = vFunction.parentAsClass
 			if (vFunction.name.asString() == "invoke") {
 				for (vClosure in mClosures.toList()) {
-					if (vClosure.functionClass != vOwner || vClosure.arguments != vDispatcher.classArguments) continue
+					if (vClosure.functionClass != vOwner || !accepts(vDispatcher.classArguments, vClosure.arguments)) continue
 					if (!mDispatchDone.add(vKey to vClosure.cls)) continue
 					vDispatcher.target.dispatch!! += vClosure.cls to vClosure.invoke
 					vChanged = true
@@ -845,9 +850,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				if (!mDispatchDone.add(vKey to vConcrete)) continue
 				val vInfo = mClassInfo[vConcrete] ?: continue
 				if (!isSubtype(vInfo.irClass, vOwner)) continue
-				// A generic owner only matches the instantiation the call was made on.
+				// A generic owner matches the instantiation the call was made on.
 				val vSeenAs = superArguments(vInfo.type, vOwner).map { kTypeOf(canonical(it)) ?: KObjType }
-				if (vSeenAs != vDispatcher.classArguments) continue
+				if (!accepts(vDispatcher.classArguments, vSeenAs)) continue
 				val vMember = membersOf(vInfo.irClass).firstOrNull { it == vFunction || overrides(it, vFunction) } ?: continue
 				val vOwnArguments = vFunction.typeParameters.map { vDispatcher.subst[it.symbol] }
 				val (vImplementation, vSubst) = resolveMember(vMember, vInfo.type, vOwnArguments)
@@ -859,6 +864,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		return vChanged
 	}
+
+	/**
+	 * True when a dispatcher for type arguments [inDispatcher] can reach an implementation
+	 * instantiated with [inActual]. A reference (`Any?`) argument of the dispatcher also stands
+	 * for a star projection or an unknown type, so it accepts a primitive instantiation too:
+	 * the dispatcher then boxes and unboxes at that boundary.
+	 */
+	private fun accepts(inDispatcher: List<KType>, inActual: List<KType>): Boolean =
+		inDispatcher.size == inActual.size && inDispatcher.indices.all { inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType }
 
 	/** True when a call to [inFunction] must go through a dispatcher. */
 	internal fun isVirtual(inFunction: IrSimpleFunction): Boolean {

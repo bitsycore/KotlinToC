@@ -28,3 +28,25 @@ public class ArrayIterator<T>(private val array: Array<out T>) : Iterator<T> {
 }
 
 public fun <T> arrayIterator(array: Array<out T>): Iterator<T> = ArrayIterator(array)
+
+/**
+ * A String holding [length] UTF-16 code units of [chars] starting at [start].
+ * Implemented by the C runtime (`ktc2_stringOfChars`), like every `external` function here.
+ */
+public external fun stringOfChars(chars: CharArray, start: Int, length: Int): String
+
+// ==================
+// MARK: Library functions provided here
+// ==================
+
+/*
+A library function that has no Kotlin body ktc2 can read (it is implemented on the JVM side)
+is redirected to the function here named after it, dots replaced by underscores.
+*/
+
+/** `Array<out T>.asList()` */
+public fun <T> kotlin_collections_asList(array: Array<out T>): List<T> {
+	val vList = ArrayList<T>(array.size)
+	for (vElement in array) vList.add(vElement)
+	return vList
+}

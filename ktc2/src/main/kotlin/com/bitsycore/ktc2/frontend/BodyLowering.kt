@@ -1173,6 +1173,9 @@ internal class BodyBuilder(
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, "newArray of '${inCall.type.render()}'")
 			return KArrayNew(lowerPure(inCall.arguments[0]!!), vType)
 		}
+		if (vOwner == null && (vCallee.name.asString() == "println" || vCallee.name.asString() == "print") && vCallee.parent.kotlinFqName.asString() == "kotlin.io") {
+			return lowerLibraryCall(inCall)
+		}
 		mLocalFunctions[vCallee]?.let { return adapt(callFunction(inCall, it.invoke, vCallee, inCall.arguments, KRead(it.holder), mSubst), inCall) }
 		if (vOwner != null && vCallee.name.asString() == "invoke" && isFunctionType(vOwner.symbol.typeWith())) {
 			// Calling a lambda bound to an inline parameter expands it; any other function value is an interface call.
@@ -1410,12 +1413,25 @@ internal class BodyBuilder(
 	// MARK: Library intrinsics
 	// ==================
 
+	/**
+	 * A library function without a Kotlin body can be provided by the platform layer: a function
+	 * of `ktc2.internal` named after it, with dots as underscores (`kotlin_collections_asList`).
+	 */
+	private fun redirectToPlatform(inCall: IrCall): KExpr? {
+		val vCallee = inCall.symbol.owner
+		val vFunction = mImporter.internalFunction(vCallee.kotlinFqName.asString().replace('.', '_')) ?: return null
+		val vSubst = mImporter.substFor(vFunction, emptyList(), inCall.typeArguments.map { vType -> vType?.let { closed(it) } })
+		val vTarget = mImporter.functionFor(vFunction, vSubst) ?: return null
+		return adapt(callFunction(inCall, vTarget, vFunction, inCall.arguments, null, vSubst), inCall)
+	}
+
 	private fun lowerLibraryCall(inCall: IrCall): KExpr {
 		val vCallee = inCall.symbol.owner
 		val vName = vCallee.name.asString()
 		val vParent = vCallee.parent.kotlinFqName.asString()
 		val vArguments = inCall.arguments
 		val vWhat = "call to '$vParent.$vName'"
+		redirectToPlatform(inCall)?.let { return it }
 
 		if (vParent == "kotlin.io" && (vName == "println" || vName == "print")) {
 			val vPieces = when (val vArgument = vArguments.firstOrNull()) {

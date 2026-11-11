@@ -555,3 +555,29 @@ _Noreturn void ktc2_fail_throw(const ktc2_String* exception, const ktc2_String* 
 	fprintf(stderr, "Exception in thread \"main\" %s%s%s\n", exception->bytes, message ? ": " : "", message ? message->bytes : "");
 	exit(1);
 }
+
+ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length)
+{
+	const uint16_t* units = (const uint16_t*)(chars + 1);
+	if (start < 0 || length < 0 || start + length > chars->length) ktc2_fail_index(start + length, chars->length);
+	ktc2_Sb sb;
+	ktc2_sb_init(&sb);
+	for (int32_t i = start; i < start + length; i++) {
+		uint16_t unit = units[i];
+		/* A surrogate pair is one code point: four UTF-8 bytes, two units of Kotlin length. */
+		if (unit >= 0xD800 && unit <= 0xDBFF && i + 1 < start + length && units[i + 1] >= 0xDC00 && units[i + 1] <= 0xDFFF) {
+			uint32_t point = 0x10000 + (((uint32_t)unit - 0xD800) << 10) + (units[i + 1] - 0xDC00);
+			char text[4] = {
+				(char)(0xF0 | (point >> 18)),
+				(char)(0x80 | ((point >> 12) & 0x3F)),
+				(char)(0x80 | ((point >> 6) & 0x3F)),
+				(char)(0x80 | (point & 0x3F)),
+			};
+			ktc2_sb_text(&sb, text, 4, 2);
+			i++;
+		} else {
+			ktc2_sb_char(&sb, unit);
+		}
+	}
+	return ktc2_sb_finish(&sb);
+}
