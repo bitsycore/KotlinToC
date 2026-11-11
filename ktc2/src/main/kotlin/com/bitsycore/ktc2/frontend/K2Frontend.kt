@@ -12,6 +12,8 @@ import org.jetbrains.kotlin.config.CompilerConfiguration
 import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
 import com.bitsycore.ktc2.backend.CycleLint
+import com.bitsycore.ktc2.interop.BindingGenerator
+import com.bitsycore.ktc2.interop.DefFile
 import com.bitsycore.ktc2.backend.EscapeAnalysis
 import com.bitsycore.ktc2.backend.ExceptionLowering
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
@@ -24,6 +26,8 @@ import java.io.File
 private const val kOutDirProperty = "ktc2.outDir"
 private const val kDumpIrProperty = "ktc2.dumpIr"
 private const val kErrorCountProperty = "ktc2.errorCount"
+private const val kCompilerOptsProperty = "ktc2.compilerOpts"
+private const val kLinkerOptsProperty = "ktc2.linkerOpts"
 
 /** Name of the file, in the output directory, that lists what a compilation produced. */
 const val kManifestName = "ktc2_build.txt"
@@ -53,8 +57,19 @@ object K2Frontend {
 		System.setProperty(kDumpIrProperty, inDumpIr.toString())
 		System.setProperty(kErrorCountProperty, "0")
 		val vLibrary = librarySources(inOutDir)
+		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
+		val vDefinitions = inSources.filter { it.extension == "def" }
+		val vBindings = try {
+			vDefinitions.map { BindingGenerator(DefFile(it), System.getenv("KTC2_CC") ?: "gcc").generate(File(inOutDir, "interop"), File(inOutDir, "c")) }
+		} catch (vError: IllegalStateException) {
+			System.err.println("ktc2: error: ${vError.message}")
+			return false
+		}
+		System.setProperty(kCompilerOptsProperty, vBindings.flatMap { it.compilerOpts }.distinct().joinToString("\n"))
+		System.setProperty(kLinkerOptsProperty, vBindings.flatMap { it.linkerOpts }.distinct().joinToString("\n"))
 		val vArgs = buildList {
-			inSources.forEach { add(it.path) }
+			(inSources - vDefinitions.toSet()).forEach { add(it.path) }
+			vBindings.forEach { add(it.source.path) }
 			vLibrary.forEach { add(it.path) }
 			if (vLibrary.isNotEmpty()) {
 				// The flags the standard library itself is built with.
@@ -245,6 +260,9 @@ class Ktc2Extension : IrGenerationExtension {
 		File(vOutDir, kManifestName).writeText(buildString {
 			appendLine("jvmMain=" + if (vPackage.isEmpty()) vFacade else "$vPackage.$vFacade")
 			vSources.forEach { appendLine("c=$it") }
+			// What the C libraries bound with .def files ask of the C compiler and the linker.
+			System.getProperty(kCompilerOptsProperty, "").lines().filter { it.isNotEmpty() }.forEach { appendLine("cflag=$it") }
+			System.getProperty(kLinkerOptsProperty, "").lines().filter { it.isNotEmpty() }.forEach { appendLine("ldflag=$it") }
 		})
 	}
 }

@@ -1439,6 +1439,9 @@ internal class BodyBuilder(
 		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "kotlinx.cinterop.internal") {
 			lowerInteropIntrinsic(inCall, vCallee.name.asString())?.let { return it }
 		}
+		vCallee.annotations.firstOrNull { it.type.classFqName?.asString() == "kotlinx.cinterop.internal.CVariadic" }?.let { vAnnotation ->
+			return lowerVariadicCall(inCall, vCallee, (vAnnotation.arguments.firstOrNull() as? IrConst)?.value as? String ?: "")
+		}
 		if (vOwner == null && vCallee.kotlinFqName.asString() == "kotlinx.cinterop.staticCFunction") {
 			lowerInteropIntrinsic(inCall, "cFunction")?.let { return it }
 		}
@@ -1690,6 +1693,29 @@ internal class BodyBuilder(
 		return vSpelling to cHeadersOf(vClass.fileOrNull)
 	}
 
+	/** A String handed to C: its bytes, or NULL for null when [inExpression] may be null. */
+	private fun cArgument(inValue: KExpr, inExpression: IrExpression): KExpr {
+		if (inValue.type != KStringType) return inValue
+		return KIntrinsic(if (inExpression.type.isMarkedNullable()) "ktc2_str_cptr" else "ktc2_str_bytes", listOf(inValue), KPtrType)
+	}
+
+	/**
+	 * A call to a C function taking `...` (`printf`). [inText] is the C call with `$n` for the
+	 * declared parameters and `$*` where the extra arguments of this call go, each passed as it is.
+	 */
+	private fun lowerVariadicCall(inCall: IrCall, inCallee: IrSimpleFunction, inText: String): KExpr {
+		val vFixed = inCall.arguments.dropLast(1).map { it ?: return fail(inCall, "call to '${inCallee.name}' with a default argument") }
+		val vExtra = ((inCall.arguments.lastOrNull() as? IrVararg)?.elements ?: emptyList())
+			.map { it as? IrExpression ?: return fail(inCall, "call to '${inCallee.name}' with a spread argument") }
+		val vExpressions = vFixed + vExtra
+		val vArguments = lowerOperands(vExpressions).mapIndexed { vIndex, vValue -> cArgument(vValue, vExpressions[vIndex]) }
+		val vType = kType(inCall.type) ?: return fail(inCall, "result of '${inCallee.name}'")
+		return KIntrinsic(inCallee.name.asString(), vArguments, vType, isPure = false).also {
+			it.template = inText.replace("$*", vExtra.indices.joinToString("") { vIndex -> ", $${vFixed.size + vIndex}" })
+			it.headers = cHeadersOf(inCallee.fileOrNull)
+		}
+	}
+
 	/**
 	 * The functions of `kotlinx.cinterop.internal` that the interop library and generated
 	 * bindings are written with; null when [inName] is an ordinary function of that package.
@@ -1705,10 +1731,7 @@ internal class BodyBuilder(
 				val vTemplate = (inCall.arguments[0] as? IrConst)?.value as? String ?: return fail(inCall, "cExpr with a text that is not a string literal")
 				val vElements = (inCall.arguments.getOrNull(1) as? IrVararg)?.elements ?: emptyList()
 				val vExpressions = vElements.map { it as? IrExpression ?: return fail(inCall, "cExpr with a spread argument") }
-				val vArguments = lowerOperands(vExpressions).mapIndexed { vIndex, vValue ->
-					val vAccessor = if (vExpressions[vIndex].type.isMarkedNullable()) "ktc2_str_cptr" else "ktc2_str_bytes"
-					if (vValue.type == KStringType) KIntrinsic(vAccessor, listOf(vValue), KPtrType) else vValue
-				}
+				val vArguments = lowerOperands(vExpressions).mapIndexed { vIndex, vValue -> cArgument(vValue, vExpressions[vIndex]) }
 				val vType = kType(inCall.type) ?: return fail(inCall, "cExpr of type '${inCall.type.render()}'")
 				return KIntrinsic("cExpr", vArguments, vType, isPure = false).also {
 					it.template = vTemplate

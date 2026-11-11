@@ -38,12 +38,16 @@ class IntegrationTest {
 
 	private fun check(inSource: File) {
 		val vOutDir = File("build/integration/${inSource.nameWithoutExtension}").apply { deleteRecursively() }
-		assertTrue(K2Frontend.compile(listOf(inSource), vOutDir, inDumpIr = true), "ktc2 failed on $inSource")
+		// `<name>.def` next to the program describes a C library it uses.
+		val vDefinition = File(inSource.parentFile, inSource.nameWithoutExtension + ".def")
+		assertTrue(K2Frontend.compile(listOf(inSource) + listOfNotNull(vDefinition.takeIf { it.isFile }), vOutDir, inDumpIr = true), "ktc2 failed on $inSource")
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
 		val vJvmMain = vManifest.first { it.startsWith("jvmMain=") }.substringAfter('=')
 		val vCDir = File(vOutDir, "c")
 		val vCSources = vManifest.filter { it.startsWith("c=") }.map { it.substringAfter('=') }
+		val vCompilerOpts = vManifest.filter { it.startsWith("cflag=") }.map { it.substringAfter('=') }
+		val vLinkerOpts = vManifest.filter { it.startsWith("ldflag=") }.map { it.substringAfter('=') }
 
 		// A program using C interop cannot run on the JVM: its output is compared with `<name>.expected`.
 		val vExpectedFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".expected")
@@ -58,7 +62,7 @@ class IntegrationTest {
 		}
 
 		val vExe = File(vOutDir, "program.exe")
-		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-pthread", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
+		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-pthread", "-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + "-lm" + vLinkerOpts, vCDir)
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 
 		assertEquals(vExpected, vActual, "C output differs from the JVM for $inSource")

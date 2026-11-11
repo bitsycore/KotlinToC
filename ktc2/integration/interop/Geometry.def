@@ -1,0 +1,93 @@
+headers = geometry.h stdlib.h
+headerFilter = geometry.h
+package = geometry
+---
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct canvas {
+	int width;
+	int height;
+	int plotted;
+};
+
+static inline int geometry_area(const rect_t* rect)
+{
+	return rect->size.x * rect->size.y;
+}
+
+static inline void geometry_move(struct point* point, int dx, int dy)
+{
+	point->x += dx;
+	point->y += dy;
+}
+
+static inline int64_t geometry_sum(const int32_t* values, size_t count)
+{
+	int64_t total = 0;
+	for (size_t i = 0; i < count; i++) total += values[i];
+	return total;
+}
+
+static inline const char* geometry_kind_name(shape_kind kind)
+{
+	switch (kind) {
+	case SHAPE_POINT: return "point";
+	case SHAPE_SEGMENT: return "segment";
+	case SHAPE_POLYGON: return "polygon";
+	default: return "unknown";
+	}
+}
+
+static inline size_t geometry_label_length(const char* label)
+{
+	return label ? strlen(label) : 0;
+}
+
+static inline int geometry_visit(const polygon_t* polygon, point_visitor visitor, void* user_data)
+{
+	int total = 0;
+	for (size_t i = 0; i < polygon->count; i++) total += visitor(&polygon->points[i], user_data);
+	return total;
+}
+
+static inline canvas_t* geometry_canvas_new(int width, int height)
+{
+	canvas_t* canvas = calloc(1, sizeof *canvas);
+	canvas->width = width;
+	canvas->height = height;
+	return canvas;
+}
+
+static inline int geometry_canvas_plot(canvas_t* canvas, int x, int y)
+{
+	if (x < 0 || y < 0 || x >= canvas->width || y >= canvas->height) return 0;
+	canvas->plotted++;
+	return 1;
+}
+
+static inline int geometry_canvas_count(const canvas_t* canvas)
+{
+	return canvas->plotted;
+}
+
+static inline void geometry_canvas_free(canvas_t* canvas)
+{
+	free(canvas);
+}
+
+static inline double geometry_scale(double value, float factor)
+{
+	return value * factor;
+}
+
+static inline int geometry_format(char* buffer, size_t size, const char* format, ...)
+{
+	va_list arguments;
+	va_start(arguments, format);
+	int written = vsnprintf(buffer, size, format, arguments);
+	va_end(arguments);
+	return written;
+}

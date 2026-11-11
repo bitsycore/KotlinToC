@@ -1,0 +1,23 @@
+geometry v3, up to 16 points, epsilon 0.001
+2
+0 1 10 -1
+polygon
+unknown
+42
+4,-3 flags=5
+true
+true
+6
+0
+46
+43
+3
+0.5
+6
+3 60
+answer=42 (1.50) x5000000000 [28]
+2
+2
+3.0
+42
+done
