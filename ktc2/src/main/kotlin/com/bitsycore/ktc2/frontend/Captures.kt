@@ -86,7 +86,12 @@ internal class CaptureAnalysis {
 			}
 
 			override fun visitCall(expression: IrCall) {
-				vInlined += inlinedArguments(expression)
+				// A lambda given to a `crossinline` parameter may end up inside a closure of the
+				// inline function: the variables it changes need a cell as if it were one itself.
+				val vCallee = expression.symbol.owner
+				vInlined += inlinedArguments(expression).filter { vLambda ->
+					!vCallee.parameters[expression.arguments.indexOf(vLambda)].isCrossinline
+				}
 				super.visitCall(expression)
 			}
 

@@ -610,9 +610,7 @@ Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `W
   `synchronized` — unsynchronized access is a data race that can corrupt a count, where the
   JVM would only show a stale value.
 
-Not done in Phase 6: an uncaught exception in a thread
-ends the program instead of only that thread; `isDaemon`, thread names and priorities are
-ignored; atomic counting applies to every object
+Not done in Phase 6: atomic counting applies to every object
 of a threaded program (the `SHARED`-bit refinement of §5.4 is open).
 
 Phase 7 — arena and C interop (`integration/values/Arena.kt`, `integration/interop/`):
@@ -789,10 +787,23 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   `Regex` is created. The nodes of a compiled pattern name their loops by number rather than
   pointing back at them, so a `Regex` is freed like any other object.
 
-Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
-use; a function value whose static type differs in variance from the lambda's own, an
-inline lambda used inside another lambda (`crossinline`), and SAM conversion of a function
-value that is not a lambda written in place are not supported yet.
+- **Objects and enums are created on first use** (`objects/Initialization.kt`), as Kotlin
+  specifies. Each access is preceded by a call to the class's `ensure` function, which runs
+  the initializer the first time. Once the whole program is imported, the initializers that
+  only compute and store — nearly all of them — are identified, their classes go back to
+  being initialized at startup, and the `ensure` calls for them are removed: no cost where
+  the difference cannot be seen. An initializer that prints, throws, calls out or reads a
+  top-level property keeps the exact Kotlin order (and an exception in it reaches the code
+  that touched the object). Top-level properties themselves are still initialized at startup,
+  file by file.
+- **A function value converted to a `fun interface`** (`Comparator(compare)`, `Shaper(f)`)
+  becomes an object whose one method calls the function.
+- **Variables changed by a `crossinline` lambda** live in a shared cell when that lambda ends
+  up inside a closure of the inline function; before, the closure changed a copy.
+- **An uncaught exception in a thread** is reported on stderr and ends that thread only.
+
+Known gaps: initialization on first use is not synchronized between threads; `isDaemon`,
+thread names and priorities are ignored.
 
 `@Value` on array elements (`Array<@Value Particle>`) is **not** going to be done as planned.
 An annotation does not change the Kotlin type, so such an array could be passed wherever an

@@ -324,6 +324,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			} while (resolveDispatch() || mPending.isNotEmpty())
 		}
 
+		settleInitialization()
 		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
 		return KModule(mUnits, vEntry, mClassList).also {
 			it.usesThreads = kThreadStart in mRuntime
@@ -667,6 +668,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				val vStartup = KFunction("${vClass.cName}_static_init", vUnit, emptyList(), KUnitType)
 				vStartup.body += KEval(KCall(vInit, listOf(KStaticRead(vInstance))))
 				vUnit.initializer = vStartup
+				declareEnsure(vClass, vUnit, vStartup)
 			}
 		}
 		if (inClass.kind == ClassKind.ENUM_CLASS) declareEnumEntries(inClass, vClass, vFile)
@@ -969,7 +971,103 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mEnumEntries[inClass] = vStatics
 		val vStartup = KFunction("${inEnum.cName}_static_init", inEnum.unit, emptyList(), KUnitType)
 		inEnum.unit.initializer = vStartup
+		declareEnsure(inEnum, inEnum.unit, vStartup)
 		mPending += { BodyBuilder(this, vStartup, null, inFile, emptyMap()).buildEnumInitializer(vEntries, vStatics) }
+	}
+
+	// ==================
+	// MARK: Initialization on first use
+	// ==================
+
+	/*
+	Kotlin creates an `object`, and the entries of an enum class, when the program first touches
+	them. Every access is therefore preceded by a call to the class's `ensure` function, which
+	runs the initializer the first time. When importing is over, the initializers that only
+	store values — which is most of them — are found, and for those classes the calls are taken
+	out again and the initializer runs at startup: nobody can tell when it ran.
+	*/
+
+	private class Ensure(val function: KFunction, val flag: KGlobal, val unit: KUnit, val initializer: KFunction)
+
+	private val mEnsures = LinkedHashMap<KClass, Ensure>()
+
+	private fun declareEnsure(inClass: KClass, inUnit: KUnit, inInitializer: KFunction) {
+		val vBoolean = KPrimType(KPrim.BOOLEAN)
+		val vFlag = KGlobal("${inClass.cName}_ready", vBoolean, inUnit)
+		inUnit.globals += vFlag
+		val vFunction = KFunction("${inClass.cName}_ensure", inUnit, emptyList(), KUnitType)
+		// The flag is set first: an initializer that comes back to its own object finds it as far as it got.
+		vFunction.body += KIf(
+			KUnary(KUnaryOp.NOT, KGlobalRead(vFlag), vBoolean),
+			listOf(KGlobalSet(vFlag, KConst(true, vBoolean)), KEval(KCall(inInitializer, emptyList()))),
+			emptyList(),
+		)
+		inUnit.functions += vFunction
+		mEnsures[inClass] = Ensure(vFunction, vFlag, inUnit, inInitializer)
+	}
+
+	/** The function to call before using the object or an entry of the enum class [inClass]; null when there is nothing to initialize. */
+	internal fun ensureFor(inClass: IrClass): KFunction? = classFor(inClass)?.let { mEnsures[it]?.function }
+
+	/** True when running [inFunction] earlier than Kotlin would cannot be observed: it only computes and stores. */
+	private fun isUnobservable(inFunction: KFunction, inKnown: MutableMap<KFunction, Boolean>): Boolean {
+		inKnown[inFunction]?.let { return it }
+		// A function that leads back to itself is taken to be observable.
+		inKnown[inFunction] = false
+		if (inFunction.isExternal || inFunction.dispatch != null) return false
+		val vEnsured = mEnsures.values.firstOrNull { it.function === inFunction }
+		val vHolds = if (vEnsured != null) {
+			isUnobservable(vEnsured.initializer, inKnown)
+		} else {
+			!inFunction.body.anyStatement { vStatement ->
+				vStatement is KPrint || vStatement is KThrow || vStatement is KTryRegion || vStatement is KGlobalSet ||
+					vStatement.ownExpressions().any { vRoot ->
+						vRoot.anyNode { vNode ->
+							vNode is KGlobalRead || vNode.isRuntimeCheck() ||
+								(vNode is KCall && !isUnobservable(vNode.function, inKnown)) ||
+								(vNode is KIntrinsic && !vNode.isPure && !vNode.name.startsWith("ktc2_box_"))
+						}
+					}
+			}
+		}
+		inKnown[inFunction] = vHolds
+		return vHolds
+	}
+
+	private fun withoutCalls(inBlock: List<KStmt>, inFunctions: Set<KFunction>): List<KStmt> = inBlock.mapNotNull { vStatement ->
+		when {
+			vStatement is KEval && (vStatement.expr as? KCall)?.function in inFunctions -> null
+			vStatement is KIf -> KIf(vStatement.condition, withoutCalls(vStatement.thenBlock, inFunctions), withoutCalls(vStatement.elseBlock, inFunctions))
+			vStatement is KLoop -> KLoop(vStatement.id, withoutCalls(vStatement.body, inFunctions), withoutCalls(vStatement.latch, inFunctions))
+			vStatement is KTryRegion -> KTryRegion(vStatement.id, withoutCalls(vStatement.body, inFunctions))
+			else -> vStatement
+		}
+	}
+
+	/** Decides, once everything is imported, which objects and enums are initialized at startup and which on first use. */
+	private fun settleInitialization() {
+		val vKnown = HashMap<KFunction, Boolean>()
+		val vEager = HashSet<KFunction>()
+		for (vEnsure in mEnsures.values) {
+			if (isUnobservable(vEnsure.initializer, vKnown)) {
+				vEager += vEnsure.function
+				vEnsure.unit.functions -= vEnsure.function
+				vEnsure.unit.globals -= vEnsure.flag
+			} else if (vEnsure.unit.initializer === vEnsure.initializer) {
+				// Initialized on first use: not at startup. The initializer stays, as a function the `ensure` calls.
+				vEnsure.unit.initializer = null
+				vEnsure.unit.functions += vEnsure.initializer
+			}
+		}
+		if (vEager.isEmpty()) return
+		for (vUnit in mUnits) {
+			for (vFunction in vUnit.functions + listOfNotNull(vUnit.initializer)) {
+				if (vFunction.isExternal || vFunction.dispatch != null) continue
+				val vBody = withoutCalls(vFunction.body, vEager)
+				vFunction.body.clear()
+				vFunction.body += vBody
+			}
+		}
 	}
 
 	internal fun enumEntryFor(inEntry: IrEnumEntry): KStatic? {

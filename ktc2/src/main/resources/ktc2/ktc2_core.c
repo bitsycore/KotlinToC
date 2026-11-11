@@ -1142,7 +1142,16 @@ static uint32_t threads_running;
 static void thread_body(ktc2_Obj* thread)
 {
 	ktc2_internal_threadEntry(thread);
-	if (ktc2_has_pending()) ktc2_uncaught();
+	if (ktc2_has_pending()) {
+		/* As on the JVM, an exception nobody caught ends this thread only: it is reported and the program goes on. */
+		ktc2_Throwable* exception = (ktc2_Throwable*)ktc2_take_pending();
+		static uint32_t reported;
+		uint32_t number = __atomic_fetch_add(&reported, 1, __ATOMIC_RELAXED);
+		fflush(stdout);
+		fprintf(stderr, "Exception in thread \"Thread-%" PRIu32 "\" %s%s%s\n", number, ktc2_types[exception->header.typeId].name,
+			exception->message ? ": " : "", exception->message ? exception->message->bytes : "");
+		ktc2_release(exception);
+	}
 	ktc2_release(thread);
 	__atomic_fetch_sub(&threads_running, 1, __ATOMIC_RELEASE);
 }

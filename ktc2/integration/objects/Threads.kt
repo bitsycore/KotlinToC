@@ -79,6 +79,11 @@ fun main() {
 
 	// A thread nobody joins still finishes before the program ends.
 	thread { vCounter.add(1) }
+	// An exception nobody catches ends its thread, not the program.
+	val vFailing = thread { throw IllegalStateException("worker failed") }
+	vFailing.join()
+	println("still running")
+
 	// Recursive locking, and nested locks on different objects.
 	val vOuter = Counter()
 	val vInner = Counter()

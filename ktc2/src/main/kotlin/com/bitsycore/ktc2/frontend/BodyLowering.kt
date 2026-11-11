@@ -168,6 +168,7 @@ internal class BodyBuilder(
 	/** `values()` and `valueOf()` of an enum class. */
 	private fun buildEnumSynthetic(inFunction: IrFunction, inKind: IrSyntheticBodyKind) {
 		val vEntries = mImporter.enumEntriesOf(inFunction.parentAsClass)
+		ensureInitialized(inFunction.parentAsClass)
 		val vBaseType = KClassType(mImporter.enumBase())
 		when (inKind) {
 			IrSyntheticBodyKind.ENUM_VALUES -> {
@@ -713,7 +714,10 @@ internal class BodyBuilder(
 		}
 		is IrTry -> lowerTry(inExpression)
 		is IrGetObjectValue -> lowerObject(inExpression)
-		is IrGetEnumValue -> mImporter.enumEntryFor(inExpression.symbol.owner)?.let { coerce(KStaticRead(it), typeOf(inExpression)) }
+		is IrGetEnumValue -> mImporter.enumEntryFor(inExpression.symbol.owner)?.let {
+			ensureInitialized(inExpression.symbol.owner.parentAsClass)
+			coerce(KStaticRead(it), typeOf(inExpression))
+		}
 			?: fail(inExpression, "enum entry '${inExpression.symbol.owner.name}'")
 		is IrEnumConstructorCall -> lowerEnumConstructorCall(inExpression)
 		else -> fail(inExpression, inExpression::class.simpleName?.removeSuffix("Impl") ?: "expression")
@@ -732,9 +736,15 @@ internal class BodyBuilder(
 		return KConst(vValue, vType)
 	}
 
+	/** An `object` or an enum class is created when it is first used: here, if not before. */
+	private fun ensureInitialized(inClass: IrClass) {
+		mImporter.ensureFor(inClass)?.let { mBlock += KEval(KCall(it, emptyList())) }
+	}
+
 	private fun lowerObject(inExpression: IrGetObjectValue): KExpr {
 		if (isUnitObject(inExpression)) return KUnitValue
 		val vInstance = mImporter.objectFor(inExpression.symbol.owner) ?: return fail(inExpression, "object '${inExpression.symbol.owner.name}'")
+		ensureInitialized(inExpression.symbol.owner)
 		return KStaticRead(vInstance)
 	}
 
@@ -857,7 +867,7 @@ internal class BodyBuilder(
 			// `Comparator { a, b -> … }`: the lambda's object implements the interface itself.
 			val vLambda = inExpression.argument as? IrFunctionExpression
 			if (vLambda == null) {
-				fail(inExpression, "conversion of a function value to '${inExpression.typeOperand.render()}' (only a lambda written in place)")
+				wrapFunctionValue(inExpression)
 			} else {
 				makeClosure(inExpression, vLambda.function, null, inExpression.typeOperand)?.let { coerce(KRead(it.first), typeOf(inExpression)) } ?: KUnitValue
 			}
@@ -1831,6 +1841,42 @@ internal class BodyBuilder(
 	}
 
 	/** `::function`, `value::method`: a closure object forwarding to the function, holding the bound receiver if any. */
+	/**
+	 * `Comparator(compare)` where `compare` is a function value: an object implementing the
+	 * interface, whose one method calls the function it holds.
+	 */
+	private fun wrapFunctionValue(inConversion: IrTypeOperatorCall): KExpr {
+		val vWhat = "conversion of a function value to '${inConversion.typeOperand.render()}'"
+		val vType = closed(inConversion.typeOperand)
+		val vInterface = vType.classOrNull?.owner ?: return fail(inConversion, vWhat)
+		val vMethod = vInterface.declarations.filterIsInstance<IrSimpleFunction>().singleOrNull { it.modality == org.jetbrains.kotlin.descriptors.Modality.ABSTRACT }
+			?: return fail(inConversion, vWhat)
+		val vSubst = classParameters(vInterface).map { it.symbol }.zip(mImporter.argumentsOf(vType)).toMap()
+		val vParameters = vMethod.parameters.filter { it.kind == IrParameterKind.Regular }.map { mImporter.close(it.type, vSubst) }
+		val vReturn = mImporter.close(vMethod.returnType, vSubst)
+		val vParamTypes = vParameters.map { kType(it) ?: return fail(inConversion, vWhat) }
+		val vReturnType = kType(vReturn) ?: return fail(inConversion, vWhat)
+		// The function is called as any function value is: through `invoke` of its FunctionN.
+		val vInvokeOwner = mImporter.mBuiltIns.functionN(vParameters.size)
+		val vInvoke = vInvokeOwner.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "invoke" }
+			?: return fail(inConversion, vWhat)
+		val vDispatcher = mImporter.dispatcherFor(vInvoke, mImporter.substFor(vInvoke, vParameters + vReturn, emptyList()))
+			?: return fail(inConversion, vWhat)
+		val vFunction = spill(coerce(lowerPure(inConversion.argument), KObjType))
+
+		val vClass = mImporter.newClosureClass(mFile, listOf("function" to KObjType))
+		val vParams = listOf(KLocal("self", KClassType(vClass))) + vParamTypes.mapIndexed { vIndex, vParamType -> KLocal("p$vIndex", vParamType) }
+		val vCall = KFunction("${vClass.cName}_invoke", vClass.unit, vParams, vReturnType)
+		vClass.unit.functions += vCall
+		mImporter.registerSam(vClass, vCall, vInterface, mImporter.argumentsOf(vType))
+		BodyBuilder(mImporter, vCall, null, mFile, mSubst).buildReferenceInvoke(vDispatcher, vClass.fields)
+
+		val vObject = newTemp(KClassType(vClass))
+		mBlock += KLet(vObject, KAlloc(vClass))
+		mBlock += KFieldSet(KRead(vObject), vClass.fields[0], vFunction)
+		return coerce(KRead(vObject), typeOf(inConversion))
+	}
+
 	/**
 	 * `::f`, `x::f`, `Type::f` as the compiler hands them over since Kotlin 2.4: an `invoke`
 	 * function that calls the target, whose first parameters take the bound values. It is
