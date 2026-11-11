@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
 import org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar
 import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.CompilerConfiguration
+import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
@@ -112,13 +113,14 @@ class Ktc2Extension : IrGenerationExtension {
 			File(vOutDir, "ir.kt.txt").writeText(moduleFragment.dumpKotlinLike())
 		}
 
-		val vImporter = KirImporter()
+		val vImporter = KirImporter(pluginContext.irBuiltIns)
 		val vModule = vImporter.import(moduleFragment)
 		if (vModule.entry == null) vImporter.errors += "no 'fun main()' found"
 		vImporter.errors.forEach { System.err.println("ktc2: error: $it") }
 		System.setProperty(kErrorCountProperty, vImporter.errors.size.toString())
 		if (vImporter.errors.isNotEmpty()) return
 
+		ArcInsert(vModule).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && it.name.asString() == "main" } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"

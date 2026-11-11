@@ -10,7 +10,149 @@
 
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+
+/* ================== */
+/* MARK: Objects      */
+/* ================== */
+
+/** Prefix of every reference object. */
+typedef struct ktc2_Obj {
+	uint32_t rc;      /* reference count, or KTC2_IMMORTAL for static objects */
+	uint32_t typeId;  /* index into ktc2_types[] */
+} ktc2_Obj;
+
+#define KTC2_IMMORTAL UINT32_MAX
+
+/** Per-type data. `destroy` releases the references an instance holds; NULL when it holds none. */
+typedef struct ktc2_TypeInfo {
+	const char* name;
+	void (*destroy)(ktc2_Obj* object);
+} ktc2_TypeInfo;
+
+enum {
+	KTC2_TYPE_NONE = 0,
+	KTC2_TYPE_STRING = 1,
+	KTC2_TYPE_FIRST_USER = 8
+};
+
+#define KTC2_BUILTIN_TYPES [KTC2_TYPE_STRING] = { "String", NULL }
+
+/** Generated in ktc2_main.c. */
+extern const ktc2_TypeInfo ktc2_types[];
+extern const uint32_t ktc2_type_count;
+
+/** A zeroed object of [size] bytes with a count of 1. */
+void* ktc2_alloc(size_t size, uint32_t typeId);
+
+/** Runs the type's destroy and frees the memory. */
+void ktc2_destroy(ktc2_Obj* object);
+
+/** Null-safe; returns its argument so it can wrap an expression. */
+static inline void* ktc2_retain(void* pointer)
+{
+	ktc2_Obj* object = pointer;
+	if (object && object->rc != KTC2_IMMORTAL) object->rc++;
+	return pointer;
+}
+
+/** Null-safe; destroys the object when the last reference goes. */
+static inline void ktc2_release(void* pointer)
+{
+	ktc2_Obj* object = pointer;
+	if (object && object->rc != KTC2_IMMORTAL && --object->rc == 0) ktc2_destroy(object);
+}
+
+/**
+ * Stores an owned reference into a slot and releases what the slot held. The new value is
+ * evaluated first: computing it may itself change the slot.
+ */
+#define KTC2_ASSIGN(slot, value) 	do { 		void* ktc2_new = (value); 		void* ktc2_old = (slot); 		(slot) = ktc2_new; 		ktc2_release(ktc2_old); 	} while (0)
+
+/** Called at the end of main: reports objects still alive when built with KTC2_LEAK_CHECK. Returns the exit code. */
+int ktc2_exit(void);
+
+_Noreturn void ktc2_fail_null(void);
+_Noreturn void ktc2_fail_cast(void);
+_Noreturn void ktc2_fail_dispatch(void);
+
+/* Nullable primitives: a presence flag and the value. */
+#define KTC2_OPT(type) typedef struct { bool has; type v; } ktc2_Opt_##type
+KTC2_OPT(bool);
+KTC2_OPT(int8_t);
+KTC2_OPT(int16_t);
+KTC2_OPT(int32_t);
+KTC2_OPT(int64_t);
+KTC2_OPT(uint8_t);
+KTC2_OPT(uint16_t);
+KTC2_OPT(uint32_t);
+KTC2_OPT(uint64_t);
+KTC2_OPT(float);
+KTC2_OPT(double);
+
+/* ================== */
+/* MARK: Strings      */
+/* ================== */
+
+/**
+ * An immutable string: UTF-8 bytes, NUL-terminated. `length` is the Kotlin length (UTF-16
+ * code units); when it equals `size` the string is ASCII and indexing is direct.
+ */
+typedef struct ktc2_String {
+	ktc2_Obj header;
+	int32_t size;
+	int32_t length;
+	char bytes[];
+} ktc2_String;
+
+/** Defines a static, immortal string object. */
+#define KTC2_STRING_LIT(name, size, length, text) 	static const struct { ktc2_Obj header; int32_t size_; int32_t length_; char bytes[sizeof(text)]; } name = 		{ { KTC2_IMMORTAL, KTC2_TYPE_STRING }, size, length, text }
+
+#define KTC2_STR(name) ((ktc2_String*)&name)
+
+static inline int32_t ktc2_str_length(const ktc2_String* s) { return s->length; }
+
+/** `s[index]`: the UTF-16 code unit at [index]. */
+uint16_t ktc2_str_get(const ktc2_String* s, int32_t index);
+/** Null-safe content equality. */
+bool ktc2_str_equals(const ktc2_String* a, const ktc2_String* b);
+int32_t ktc2_str_compare(const ktc2_String* a, const ktc2_String* b);
+int32_t ktc2_str_hashCode(const ktc2_String* s);
+
+/** Defaults of kotlin.Any, also correct for strings. `toString` returns an owned reference. */
+ktc2_String* ktc2_any_toString(ktc2_Obj* object);
+bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b);
+int32_t ktc2_any_hashCode(ktc2_Obj* object);
+
+/** Builds a string piece by piece; starts on the stack and moves to the heap when it grows. */
+typedef struct ktc2_Sb {
+	char* data;
+	int32_t size;
+	int32_t capacity;
+	int32_t length;
+	char local[104];
+} ktc2_Sb;
+
+void ktc2_sb_init(ktc2_Sb* sb);
+/** Appends UTF-8 bytes whose Kotlin length is [length]. */
+void ktc2_sb_text(ktc2_Sb* sb, const char* text, int32_t size, int32_t length);
+/** Appends a string, or "null". */
+void ktc2_sb_string(ktc2_Sb* sb, const ktc2_String* s);
+void ktc2_sb_bool(ktc2_Sb* sb, bool v);
+void ktc2_sb_int(ktc2_Sb* sb, int32_t v);
+void ktc2_sb_long(ktc2_Sb* sb, int64_t v);
+void ktc2_sb_uint(ktc2_Sb* sb, uint32_t v);
+void ktc2_sb_ulong(ktc2_Sb* sb, uint64_t v);
+void ktc2_sb_char(ktc2_Sb* sb, uint16_t v);
+void ktc2_sb_float(ktc2_Sb* sb, float v);
+void ktc2_sb_double(ktc2_Sb* sb, double v);
+/** Returns the built string (owned by the caller) and releases the builder. */
+ktc2_String* ktc2_sb_finish(ktc2_Sb* sb);
+
+/* ================== */
+/* MARK: Primitives   */
+/* ================== */
 
 /** Three-way comparison, the result of Kotlin's `compareTo`. */
 #define KTC2_CMP(a, b) (((a) > (b)) - ((a) < (b)))
@@ -168,7 +310,9 @@ static inline uint64_t ktc2_d2ul(double v)
 }
 
 /* Output, formatted exactly as Kotlin's print / println. */
-void ktc2_print_str(const char* text);
+void ktc2_print_text(const char* text, int32_t size, int32_t length);
+/** Prints a string, or "null". */
+void ktc2_print_string(const ktc2_String* s);
 void ktc2_print_bool(bool v);
 void ktc2_print_int(int32_t v);
 void ktc2_print_long(int64_t v);

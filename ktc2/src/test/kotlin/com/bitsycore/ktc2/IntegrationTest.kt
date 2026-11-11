@@ -44,7 +44,7 @@ class IntegrationTest {
 		val vExpected = run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
 
 		val vExe = File(vOutDir, "program.exe")
-		run(listOf(mCompiler, "-std=c11", "-O1", "-Wall", "-Werror", "-Wno-unused-variable", "-Wno-unused-but-set-variable", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
+		run(listOf(mCompiler, "-std=c11", "-O1", "-DKTC2_LEAK_CHECK", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable", "-I", ".", "-o", vExe.absolutePath) + vCSources + "-lm", vCDir)
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 
 		assertEquals(vExpected, vActual, "C output differs from the JVM for $inSource")
@@ -63,6 +63,8 @@ class IntegrationTest {
 			if (vProcess.exitValue() != 0) {
 				fail("exit ${vProcess.exitValue()} from ${inCommand.joinToString(" ")}\n${vErrors.readText()}\n$vOutput")
 			}
+			val vLeaks = vErrors.readLines().filter { it.startsWith("ktc2: leak") }
+			if (vLeaks.isNotEmpty()) fail("${inCommand.first()} leaked:\n${vLeaks.joinToString("\n")}")
 			return vOutput.replace("\r\n", "\n")
 		} finally {
 			vErrors.delete()

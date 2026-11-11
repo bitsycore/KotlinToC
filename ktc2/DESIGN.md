@@ -357,10 +357,16 @@ K2 (parse, resolve, typecheck, FIR→IR)
 
 What follows from using K2:
 
-- **Std library as source in `kotlin.*`.** K2 gives library functions as signatures without
-  bodies. ktc2 ships Kotlin sources declared in the real packages (`kotlin.collections`, …)
-  that shadow the jar (`-Xallow-kotlin-package`), so user code needs no special imports. Only
-  what programs use has to exist; the Apache-2 Kotlin stdlib sources can be adapted.
+- **Std library: the real one, as source.** K2 gives library functions as signatures without
+  bodies, so ktc2 compiles the Kotlin stdlib *sources* (Apache-2) together with the program;
+  module sources in `kotlin.*` stand in for the jar (`-Xallow-kotlin-package`), so user code
+  needs no special imports. The rule is to reuse stdlib files verbatim wherever they are pure
+  Kotlin (scope functions, collection and string extensions, ranges, sequences…) and to write
+  only the platform layer the JVM normally provides — the storage of `String`, arrays,
+  `ArrayList`, `HashMap`, `StringBuilder` — following Kotlin/Native's pure-Kotlin
+  implementations over a handful of runtime intrinsics. Anything that exists only in ktc2 lives
+  in the `ktc2.` package. The importer starts from `main` and translates only what is
+  reachable, so the size of the stdlib does not affect a program that uses little of it.
 - **Intrinsics.** Primitive operators, `Array` / `String` members and `kotlin.internal.ir.*`
   comparisons map directly to C in the emitter.
 - **C interop needs declarations.** K2 rejects unresolved names, so C functions and types are
@@ -440,6 +446,8 @@ Decided 2026-11-11:
 | Arrays | One pointer to `{ header, len, data[] }`. Inline `@Size(N)` fields carry the same prefix so they pass as ordinary arrays; exact C layouts go through C struct bindings (§4.4). |
 | C interop | Kotlin/Native `kotlinx.cinterop` syntax and `.def` files, bindings generated (§7). |
 | Strings | Stored as UTF-8, NUL-terminated (`.cstr` is free). `length` and `s[i]` keep Kotlin's UTF-16 meaning: constant time when the string is all ASCII (a header flag), a scan otherwise. `Char` is 16-bit. |
+| Std library | Real Kotlin stdlib sources compiled with the program and tree-shaken; own code only for the platform layer; ktc2-only APIs in `ktc2.` (§9). |
+| Dispatch | Thin pointers; virtual and interface calls go through a generated `switch` on the object's type id (whole-program), not vtables or fat pointers. |
 | Cycles | Compile-time lint + `@Weak` / `WeakRef<T>` only. No cycle collector (§5.3, layer 3 is not planned). |
 
 No decision is open at the moment.
