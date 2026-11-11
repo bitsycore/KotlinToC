@@ -250,7 +250,7 @@ internal class BodyBuilder(
 		for (vBinding in mBindings) {
 			val vLocal = KLocal(freshName("captured"), vBinding.field.type)
 			mTemps += vLocal
-			mBlock += KLet(vLocal, KFieldRead(KRead(mFunction.params[0]), vBinding.field))
+			mBlock += KLet(vLocal, KFieldRead(fieldTarget(KRead(mFunction.params[0]), vBinding.field), vBinding.field))
 			when (val vDeclaration = vBinding.declaration) {
 				is IrValueDeclaration -> {
 					mLocals[vDeclaration] = vLocal
@@ -753,6 +753,15 @@ internal class BodyBuilder(
 				KSelect(instanceTest(inExpression, vValue, inExpression.typeOperand), coerce(vValue, vTo), KNull(vTo), vTo)
 			}
 		}
+		IrTypeOperator.SAM_CONVERSION -> {
+			// `Comparator { a, b -> … }`: the lambda's object implements the interface itself.
+			val vLambda = inExpression.argument as? IrFunctionExpression
+			if (vLambda == null) {
+				fail(inExpression, "conversion of a function value to '${inExpression.typeOperand.render()}' (only a lambda written in place)")
+			} else {
+				makeClosure(inExpression, vLambda.function, null, inExpression.typeOperand)?.let { coerce(KRead(it.first), typeOf(inExpression)) } ?: KUnitValue
+			}
+		}
 		else -> fail(inExpression, "type operator ${inExpression.operator}")
 	}
 
@@ -1243,12 +1252,14 @@ internal class BodyBuilder(
 		if (vCall !is KCall) return vCall
 		mBlock += KLet(vObject, KAlloc(vClass).also { it.origin = originOf(inCall) })
 		// A local class instance carries the outer values it uses; they are set before its constructor runs.
+		// An inner class instance carries the object it was created on: the receiver of the constructor call.
+		val vOuterThis = if (vOwner.isInner) vOwner.parentAsClass.thisReceiver else null
 		for (vBinding in mImporter.localBindingsOf(vClass)) {
-			val vSource = mLocals[vBinding.declaration as IrValueDeclaration]
+			val vSource = if (vBinding.declaration === vOuterThis) vCall.arguments.getOrNull(1) else mLocals[vBinding.declaration as IrValueDeclaration]?.let { KRead(it) }
 			if (vSource == null) {
 				fail(inCall, "creating a local class instance where '${(vBinding.declaration as IrValueDeclaration).name}' is not in scope")
 			} else {
-				mBlock += KFieldSet(KRead(vObject), vBinding.field, KRead(vSource))
+				mBlock += KFieldSet(fieldTarget(KRead(vObject), vBinding.field), vBinding.field, coerce(vSource, vBinding.field.type))
 			}
 		}
 		mBlock += KEval(vCall)
@@ -1537,7 +1548,7 @@ internal class BodyBuilder(
 	/** The substitution for an expanded call: the actual type arguments, not shared between reference types. */
 	private fun exactSubst(inFunction: IrFunction, inClassArguments: List<IrType>, inOwnArguments: List<IrType?>): Subst {
 		val vSubst = HashMap<org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol, IrType>()
-		(inFunction.parent as? IrClass)?.typeParameters?.forEachIndexed { vIndex, vParam ->
+		(inFunction.parent as? IrClass)?.let { classParameters(it) }?.forEachIndexed { vIndex, vParam ->
 			vSubst[vParam.symbol] = inClassArguments.getOrNull(vIndex) ?: mImporter.mBuiltIns.anyNType
 		}
 		inFunction.typeParameters.forEachIndexed { vIndex, vParam ->
@@ -1609,7 +1620,7 @@ internal class BodyBuilder(
 	 * @param inSelf the function itself when it is a local function that may call itself
 	 * @return the local holding the new object, and its `invoke`
 	 */
-	private fun makeClosure(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?): Pair<KLocal, KFunction>? {
+	private fun makeClosure(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?, inSam: IrType? = null): Pair<KLocal, KFunction>? {
 		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
 
 		val vSet = CaptureSet()
@@ -1643,7 +1654,8 @@ internal class BodyBuilder(
 		val vClass = mImporter.newClosureClass(mFile, vCaptures.map { it.name to it.source.type })
 		val vInvoke = KFunction("${vClass.cName}_invoke", vClass.unit, listOf(KLocal("self", KClassType(vClass))) + vParams, vReturn)
 		vClass.unit.functions += vInvoke
-		mImporter.registerClosure(vClass, vInvoke)
+		val vSamClass = inSam?.classOrNull?.owner
+		if (vSamClass != null) mImporter.registerSam(vClass, vInvoke, vSamClass, mImporter.argumentsOf(closed(inSam))) else mImporter.registerClosure(vClass, vInvoke)
 		val vBindings = vCaptures.mapIndexed { vIndex, vCapture -> Binding(vCapture.declaration, vClass.fields[vIndex], vCapture.cell, vCapture.invoke) }
 		val vSubst = mSubst
 		mImporter.later { BodyBuilder(mImporter, vInvoke, inFunction, mFile, vSubst).buildClosure(vBindings, inSelf, vLambdas) }
@@ -1966,6 +1978,8 @@ internal class BodyBuilder(
 			vLeftType is KOptType || vRightType is KOptType -> optEquals(inCall, spill(vLeft), spill(vRight))
 			vLeft is KNull && vRight is KNull -> kTrue
 			// A primitive compared with an Any: box it and compare as objects.
+			// `===` between a primitive and an object: a boxed number is never that object.
+			inIdentity && (vLeftType is KRefType) != (vRightType is KRefType) && vLeft !is KNull && vRight !is KNull -> kFalse
 			vLeftType == KObjType && vRightType is KPrimType -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
 			vRightType == KObjType && vLeftType is KPrimType -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
 			// C addresses compare by value.

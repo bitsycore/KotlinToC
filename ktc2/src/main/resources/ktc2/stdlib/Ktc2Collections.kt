@@ -263,12 +263,6 @@ public actual fun <T> listOf(element: T): List<T> {
 	return vList
 }
 
-public fun <T> Array<out T>.asList(): List<T> {
-	val vList = ArrayList<T>(size)
-	for (vElement in this) vList.add(vElement)
-	return vList
-}
-
 @kotlin.internal.InlineOnly
 internal actual inline fun <T> Array<out T>.asArrayList(): ArrayList<T> = ArrayList(this.asList())
 

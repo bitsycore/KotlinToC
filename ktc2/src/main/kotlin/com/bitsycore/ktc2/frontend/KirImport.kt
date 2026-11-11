@@ -71,6 +71,14 @@ internal fun cHeadersOf(inFile: IrFile?): List<String> {
 /** The functions of `ktc2.internal` that throw for the language's own checks. */
 private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBounds", "throwDivideByZero")
 
+/**
+ * The type parameters a class is instantiated with: its own, then — for an `inner` class,
+ * whose members also use them — those of the classes around it. Types of the class list
+ * their arguments in this order.
+ */
+internal fun classParameters(inClass: IrClass): List<IrTypeParameter> =
+	inClass.typeParameters + if (inClass.isInner) classParameters(inClass.parentAsClass) else emptyList()
+
 internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Any"
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
@@ -154,7 +162,12 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private val mEnumFunctions = HashMap<String, KFunction?>()
 
 	/** A closure class and the function type it implements (`FunctionN` with these type arguments). */
-	private class Closure(val functionClass: IrClass, val arguments: List<KType>, val cls: KClass, val invoke: KFunction)
+	/**
+	 * A lambda turned into an object. [functionClass] is the interface it stands for — a
+	 * `FunctionN`, or the `fun interface` it was converted to ([isSam]), whose single abstract
+	 * method is then what [invoke] implements.
+	 */
+	private class Closure(val functionClass: IrClass, val arguments: List<KType>, val cls: KClass, val invoke: KFunction, val isSam: Boolean = false)
 
 	private val mClosures = ArrayList<Closure>()
 	private val mCells = HashMap<KType, Pair<KClass, KField>>()
@@ -208,6 +221,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vParams = inInvoke.params.drop(1)
 		val vArguments = vParams.map { shared(it.type) } + shared(inInvoke.returnType)
 		mClosures += Closure(mBuiltIns.functionN(vParams.size), vArguments, inClass, inInvoke)
+	}
+
+	/**
+	 * Registers the closure [inClass] as an implementation of the `fun interface` [inInterface]
+	 * instantiated with [inArguments]: `Comparator { a, b -> … }`.
+	 */
+	internal fun registerSam(inClass: KClass, inInvoke: KFunction, inInterface: IrClass, inArguments: List<IrType>) {
+		inClass.interfaces += interfaceFor(inInterface)
+		mClosures += Closure(inInterface, inArguments.map { kTypeOf(canonical(it)) ?: KObjType }, inClass, inInvoke, isSam = true)
 	}
 
 	// ==================
@@ -402,19 +424,19 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vType = inType.makeNotNull() as? IrSimpleType ?: return null
 		val vClass = vType.classOrNull?.owner ?: return null
 		if (vClass == inTarget) return vType
-		val vSubst = vClass.typeParameters.map { it.symbol }.zip(argumentsOf(vType)).toMap()
+		val vSubst = classParameters(vClass).map { it.symbol }.zip(argumentsOf(vType)).toMap()
 		return vClass.superTypes.firstNotNullOfOrNull { findSuperType(close(it, vSubst), inTarget) }
 	}
 
 	/** The type arguments [inTarget] has when a value of [inType] is seen as it (`Any?` when unknown). */
 	internal fun superArguments(inType: IrType?, inTarget: IrClass): List<IrType> =
-		inType?.let { findSuperType(it, inTarget) }?.let { argumentsOf(it) } ?: inTarget.typeParameters.map { mBuiltIns.anyNType }
+		inType?.let { findSuperType(it, inTarget) }?.let { argumentsOf(it) } ?: classParameters(inTarget).map { mBuiltIns.anyNType }
 
 	/** The substitution for a call to [inFunction]: its class's type arguments, then its own. */
 	internal fun substFor(inFunction: IrFunction, inClassArguments: List<IrType>, inOwnArguments: List<IrType?>): Subst {
 		val vOwner = inFunction.parent as? IrClass
 		val vSubst = HashMap<IrTypeParameterSymbol, IrType>()
-		vOwner?.typeParameters?.forEachIndexed { vIndex, vParam ->
+		vOwner?.let { classParameters(it) }?.forEachIndexed { vIndex, vParam ->
 			vSubst[vParam.symbol] = canonical(inClassArguments.getOrNull(vIndex) ?: mBuiltIns.anyNType)
 		}
 		if (inFunction !is IrConstructor) {
@@ -429,11 +451,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (inFunction is IrConstructor) emptyList() else inFunction.typeParameters
 
 	private fun monoOf(inFunction: IrFunction, inSubst: Subst, inOwner: KClass? = null): Mono {
-		val vParams = ((inFunction.parent as? IrClass)?.typeParameters ?: emptyList()) + ownParameters(inFunction)
+		val vParams = ((inFunction.parent as? IrClass)?.let { classParameters(it) } ?: emptyList()) + ownParameters(inFunction)
 		val vArguments = vParams.map { kTypeOf(inSubst[it.symbol] ?: mBuiltIns.anyNType) ?: KObjType }
 		// A local class is declared anew each time its declaration is lowered (once per expansion
 		// of an inline function): its members belong to that particular class.
-		val vLocal = inOwner?.takeIf { it in mLocalCaptures } ?: (inFunction.parent as? IrClass)?.let { mLatestLocalClass[it] }
+		val vLocal = inOwner?.takeIf { it in mLocalCaptures && it !in mInnerClasses } ?: (inFunction.parent as? IrClass)?.let { mLatestLocalClass[it] }
 		return Mono(inFunction, if (vLocal == null) vArguments else vArguments + KClassType(vLocal))
 	}
 
@@ -498,7 +520,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList(), inFresh: Boolean = false): KClass? {
 		if (isThrowableClass(inClass)) return throwableBase()
-		val vArguments = inClass.typeParameters.indices.map { canonical(inArguments.getOrNull(it) ?: mBuiltIns.anyNType) }
+		val vArguments = classParameters(inClass).indices.map { canonical(inArguments.getOrNull(it) ?: mBuiltIns.anyNType) }
 		val vKey = Mono(inClass, vArguments.map { kTypeOf(it) ?: KObjType })
 		if (vKey in mClasses && !inFresh) return mClasses[vKey]
 		val vFile = inClass.fileOrNull
@@ -507,7 +529,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			return null
 		}
 		mClasses[vKey] = null
-		val vSubst = inClass.typeParameters.map { it.symbol }.zip(vArguments).toMap()
+		val vSubst = classParameters(inClass).map { it.symbol }.zip(vArguments).toMap()
 		val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) } == true }
 		val vSuperIr = vSuperType?.classOrNull?.owner
 		val vSuper = vSuperIr?.let {
@@ -544,6 +566,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			mFields[vBacking to vClass] = vField
 		}
 		collectInterfaces(inClass, vClass.interfaces)
+		if (inClass.isInner) declareOuter(inClass, vClass, vSubst, vFile)
 
 		if (inClass.isObject) {
 			val vInstance = KStatic("${vClass.cName}_instance", vClass, vUnit)
@@ -644,6 +667,36 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		mLocalCaptures[vClass] = LocalCaptures(vBindings, inLambdas)
 		return vBindings.map { it.field }
+	}
+
+	/** The classes declared `inner`: their one capture is the object around them. */
+	private val mInnerClasses = HashSet<KClass>()
+
+	/**
+	 * Gives the `inner` class [inClass] its reference to the enclosing object. It is held like
+	 * the capture of a local class: a field set when an instance is created, read at the start
+	 * of each member. A subclass that is an inner class of the same outer class uses the field
+	 * it inherits.
+	 */
+	private fun declareOuter(inIrClass: IrClass, inClass: KClass, inSubst: Subst, inFile: IrFile) {
+		val vOuterThis = inIrClass.parentAsClass.thisReceiver ?: return
+		mInnerClasses += inClass
+		val vInherited = generateSequence(inClass.superClass) { it.superClass }
+			.firstNotNullOfOrNull { vAncestor -> mLocalCaptures[vAncestor]?.bindings?.firstOrNull { it.declaration === vOuterThis } }
+		if (vInherited != null) {
+			mLocalCaptures[inClass] = LocalCaptures(listOf(vInherited), emptyMap())
+			return
+		}
+		val vType = kTypeOf(vOuterThis.type, inSubst)
+		if (vType == null) {
+			unsupported(inFile, inIrClass, "inner class '${inIrClass.name}'")
+			return
+		}
+		var vName = "outer"
+		while (inClass.fields.any { it.cName == vName }) vName += "_"
+		val vField = KField(vName, vType, inClass, isImmutable = true)
+		inClass.fields += vField
+		mLocalCaptures[inClass] = LocalCaptures(listOf(BodyBuilder.Binding(vOuterThis, vField, null, null)), emptyMap())
 	}
 
 	internal fun localBindingsOf(inClass: KClass): List<BodyBuilder.Binding> = mLocalCaptures[inClass]?.bindings ?: emptyList()
@@ -931,7 +984,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				vOk = false
 				continue
 			}
-			var vName = if (vParam.kind == IrParameterKind.Regular) cIdentifier(vParam.name.asString()) else "self"
+			// The receiver of an inner class's constructor is the enclosing object, not the new one.
+			var vName = if (vParam.kind == IrParameterKind.Regular) cIdentifier(vParam.name.asString()) else if (inFunction is IrConstructor) "outer" else "self"
 			while (!vNames.add(vName)) vName += "_"
 			vParams += KLocal(vName, vType)
 		}
@@ -1028,7 +1082,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		// A member of a C interop class takes the address as `self`; there is no object behind it.
 		val vIsPointer = vOwner != null && isPointerClass(vOwner)
 		val vClass = if (vOwner != null && vStruct == null && !vOwner.isInterface && !vIsPointer) {
-			inOwnerClass ?: classFor(vOwner, vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType })
+			inOwnerClass ?: classFor(vOwner, classParameters(vOwner).map { inSubst[it.symbol] ?: mBuiltIns.anyNType })
 		} else {
 			null
 		}
@@ -1085,7 +1139,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vOwner = inFunction.parentAsClass
 		val vFile = vOwner.fileOrNull
 		val vSignature = signatureOf(inFunction, vFile, inSubst) ?: return null
-		val vClassArguments = vOwner.typeParameters.map { inSubst[it.symbol] ?: mBuiltIns.anyNType }
+		val vClassArguments = classParameters(vOwner).map { inSubst[it.symbol] ?: mBuiltIns.anyNType }
 		val vClass = if (vFile != null && !vOwner.isInterface) classFor(vOwner, vClassArguments) else null
 		val vUnit = when {
 			vClass != null -> vClass.unit
@@ -1137,8 +1191,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		for ((vKey, vDispatcher) in mDispatchers.entries.toList()) {
 			val vFunction = vDispatcher.function
 			val vOwner = vFunction.parentAsClass
-			if (vFunction.name.asString() == "invoke") {
+			val vIsInvoke = vFunction.name.asString() == "invoke"
+			if (vIsInvoke || vFunction.modality == Modality.ABSTRACT) {
 				for (vClosure in mClosures.toList()) {
+					// A converted lambda implements the one abstract method of its interface.
+					if (vClosure.isSam && vFunction.modality != Modality.ABSTRACT) continue
 					if (vClosure.functionClass != vOwner || !accepts(vDispatcher.classArguments, vClosure.arguments)) continue
 					if (!mDispatchDone.add(vKey to vClosure.cls)) continue
 					vDispatcher.target.dispatch!! += vClosure.cls to vClosure.invoke
@@ -1175,10 +1232,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * True when a dispatcher for type arguments [inDispatcher] can reach an implementation
 	 * instantiated with [inActual]. A reference (`Any?`) argument of the dispatcher also stands
 	 * for a star projection or an unknown type, so it accepts a primitive instantiation too:
-	 * the dispatcher then boxes and unboxes at that boundary.
+	 * the dispatcher then boxes and unboxes at that boundary. The other way round as well — an
+	 * implementation written over references (a `Comparator<Comparable<Any>>` used, after a
+	 * cast, to compare Ints) serves a primitive dispatcher, which boxes for it.
 	 */
 	private fun accepts(inDispatcher: List<KType>, inActual: List<KType>): Boolean =
-		inDispatcher.size == inActual.size && inDispatcher.indices.all { inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType }
+		inDispatcher.size == inActual.size && inDispatcher.indices.all {
+			inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType || inActual[it] == KObjType
+		}
 
 	/** True when a call to [inFunction] must go through a dispatcher. */
 	internal fun isVirtual(inFunction: IrSimpleFunction): Boolean {

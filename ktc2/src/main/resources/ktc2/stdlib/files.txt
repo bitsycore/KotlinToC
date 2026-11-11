@@ -69,10 +69,11 @@ commonMain/kotlin/ranges/Ranges.kt
 commonMain/kotlin/ExceptionsH.kt
 commonMain/kotlin/Comparator.kt
 commonMain/kotlin/comparisons/Comparisons.kt
-Ktc2CommonArrays.kt
+commonMain/generated/_Arrays.kt
 Ktc2Internal.kt
 Ktc2Exceptions.kt
 Ktc2Collections.kt
+Ktc2Arrays.kt
 Ktc2HashMap.kt
 Ktc2Text.kt
 Ktc2Strings.kt

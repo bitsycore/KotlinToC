@@ -62,6 +62,13 @@ public external fun stringUtf8(string: String): ByteArray
 /** A String from the UTF-8 bytes [startIndex, endIndex) of [bytes]. */
 public external fun stringOfUtf8(bytes: ByteArray, startIndex: Int, endIndex: Int): String
 
+/**
+ * What kind of array [value] is: 0 when it is not one (or is an array of unsigned or nullable
+ * values), 1 for an `Array<T>`, 2 to 9 for BooleanArray, ByteArray, ShortArray, IntArray,
+ * LongArray, CharArray, FloatArray, DoubleArray.
+ */
+public external fun arrayKind(value: Any?): Int
+
 /** The weak cell of [target]: refers to it without keeping it alive. Null for null. */
 public external fun weakCell(target: Any?): Any?
 

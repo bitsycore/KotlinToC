@@ -370,20 +370,44 @@ class CEmitter(private val mModule: KModule) {
 				inFrom is KPrimType && inTo is KOptType -> "((${cType(inTo)}){ true, $inText })"
 				else -> "(${cType(inTo)})$inText"
 			}
+			fun isUnboxed(inType: KType): Boolean = inType is KPrimType || inType is KOptType || inType == KPtrType
 			fun call(inTarget: KFunction): String {
 				mState.includes += inTarget.unit
-				val vArguments = inFunction.params.zip(inTarget.params).joinToString(", ") { (vFrom, vTo) -> adapt(vFrom.cName, vFrom.type, vTo.type) }
+				// A value boxed for the implementation is a temporary of the dispatcher: released after the call.
+				val vBefore = StringBuilder()
+				val vAfter = StringBuilder()
+				var vBoxes = 0
+				val vArguments = inFunction.params.zip(inTarget.params).joinToString(", ") { (vFrom, vTo) ->
+					val vText = adapt(vFrom.cName, vFrom.type, vTo.type)
+					if (isUnboxed(vFrom.type) && vTo.type is KRefType) {
+						val vBox = "boxed${vBoxes++}"
+						vBefore.append("${cType(vTo.type)} $vBox = $vText; ")
+						vAfter.append("ktc2_release($vBox); ")
+						vBox
+					} else {
+						vText
+					}
+				}
 				val vCall = "${inTarget.cName}($vArguments)"
-				if (vIsVoid) return "$vCall; return;"
-				if (inTarget.returnType == KUnitType || inTarget.returnType == KNothingType) return "$vCall; return NULL;"
-				return "return ${adapt(vCall, inTarget.returnType, inFunction.returnType)};"
+				if (vIsVoid) return "{ $vBefore$vCall; ${vAfter}return; }"
+				if (inTarget.returnType == KUnitType || inTarget.returnType == KNothingType) return "{ $vBefore$vCall; ${vAfter}return NULL; }"
+				if (inTarget.returnType is KRefType && isUnboxed(inFunction.returnType)) {
+					// The implementation returns a box it owns: its content is taken out and the box released.
+					// (NULL is what it returns when it left with an exception.)
+					val vContent = adapt("result", inTarget.returnType, inFunction.returnType)
+					val vValue = if (inFunction.returnType is KPrimType) "result ? $vContent : 0" else vContent
+					return "{ $vBefore${cType(inTarget.returnType)} result = $vCall; $vAfter${cType(inFunction.returnType)} value = $vValue; ktc2_release(result); return value; }"
+				}
+				val vResult = adapt(vCall, inTarget.returnType, inFunction.returnType)
+				if (vAfter.isEmpty()) return "return $vResult;"
+				return "{ $vBefore${cType(inFunction.returnType)} result = $vResult; ${vAfter}return result; }"
 			}
 			line(1, "switch (((ktc2_Obj*)$vSelf)->typeId) {")
 			for ((vClass, vTarget) in inFunction.dispatch!!) {
 				mState.includes += vClass.unit
 				line(1, "case ${typeId(vClass)}: ${call(vTarget)}")
 			}
-			line(1, "default: ${inFunction.dispatchDefault?.let { call(it) } ?: "ktc2_fail_dispatch();"}")
+			line(1, "default: ${inFunction.dispatchDefault?.let { call(it) } ?: "ktc2_fail_dispatch_of(\"${inFunction.cName}\", ${vSelf} ? ((ktc2_Obj*)${vSelf})->typeId : 0);"}")
 			line(1, "}")
 		}
 

@@ -47,6 +47,13 @@ _Noreturn void ktc2_fail_dispatch(void)
 	fail("java.lang.AbstractMethodError", NULL);
 }
 
+_Noreturn void ktc2_fail_dispatch_of(const char* function, uint32_t typeId)
+{
+	char text[256];
+	snprintf(text, sizeof text, "%s on %s", function, typeId == 0 ? "null" : typeId < ktc2_type_count ? ktc2_types[typeId].name : "?");
+	fail(typeId == 0 ? "java.lang.NullPointerException" : "java.lang.AbstractMethodError", text);
+}
+
 _Noreturn void ktc2_fail_when(void)
 {
 	fail("kotlin.NoWhenBranchMatchedException", NULL);
@@ -287,6 +294,14 @@ KTC2_FAILS void ktc2_fail_index(int32_t index, int32_t length)
 #else
 	fail_range(index, length);
 #endif
+}
+
+int32_t ktc2_arrayKind(ktc2_Obj* object)
+{
+	if (!object) return 0;
+	if (object->typeId == KTC2_TYPE_ARRAY_REF) return 1;
+	if (object->typeId >= KTC2_TYPE_ARRAY_BOOLEAN && object->typeId <= KTC2_TYPE_ARRAY_DOUBLE) return 2 + (int32_t)(object->typeId - KTC2_TYPE_ARRAY_BOOLEAN);
+	return 0;
 }
 
 ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)

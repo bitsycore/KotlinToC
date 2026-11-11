@@ -308,6 +308,9 @@ _Noreturn void ktc2_fail_null(void);
 _Noreturn void ktc2_fail_cast(void);
 _Noreturn void ktc2_fail_dispatch(void);
 
+/** A virtual call reached an object whose class has no implementation of [function]. */
+_Noreturn void ktc2_fail_dispatch_of(const char* function, uint32_t typeId);
+
 /* Nullable primitives: a presence flag and the value. */
 #define KTC2_OPT(type) typedef struct { bool has; type v; } ktc2_Opt_##type
 KTC2_OPT(bool);
@@ -401,6 +404,9 @@ typedef struct ktc2_Array {
 	int32_t length;
 	int32_t elementSize;
 } ktc2_Array;
+
+/** The kind of array [object] is, as `ktc2.internal.arrayKind` documents; 0 for anything else. */
+int32_t ktc2_arrayKind(ktc2_Obj* object);
 
 /** A zeroed array; fails on a negative length. */
 ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId);
