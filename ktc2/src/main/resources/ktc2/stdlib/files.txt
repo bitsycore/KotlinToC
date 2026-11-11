@@ -87,6 +87,7 @@ Ktc2Arrays.kt
 Ktc2HashMap.kt
 Ktc2Text.kt
 Ktc2Strings.kt
+Ktc2Unicode.kt
 commonMain/kotlin/text/regex/MatchResult.kt
 commonMain/kotlin/text/regex/RegexExtensions.kt
 Ktc2Regex.kt

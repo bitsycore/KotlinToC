@@ -7,14 +7,20 @@ kotlin.text.Regex for ktc2: a backtracking matcher written in Kotlin, with the s
 behavior of java.util.regex for what it covers:
 
   literals and escapes (\t \n \r \f \e \0 \xHH \uHHHH, \Q…\E), `.`, character classes with
-  ranges, negation and nested classes, \d \w \s \D \W \S, \p{…} for the common classes,
-  anchors ^ $ \A \z \Z \b \B, capturing, named and non-capturing groups, alternation,
-  greedy and lazy quantifiers (* + ? {n} {n,} {n,m}), back references (\1, \k<name>),
-  look-ahead and look-behind, and the inline flags (?i) (?m) (?s) at the start of the pattern.
+  ranges, negation, nested classes and intersection (&&), \d \w \s \D \W \S, \p{…} for the
+  general categories of Unicode, the POSIX classes, the java… classes and the binary
+  properties, anchors ^ $ \A \z \Z \b \B, capturing, named, non-capturing and atomic groups,
+  alternation, greedy, lazy and possessive quantifiers (* + ? {n} {n,} {n,m}), back
+  references (\1, \k<name>), look-ahead and look-behind, and the flags i m s x u d, for the
+  whole pattern, from a place on ((?i)), or for a group ((?i:…)).
 
-Not covered: possessive quantifiers and atomic groups, class intersection (&&), flags in the
-middle of a pattern, Unicode properties beyond letters and digits. A pattern using them is
-refused with an IllegalArgumentException when the Regex is created.
+As in Java, (?i) alone knows the case of ASCII letters only; RegexOption.IGNORE_CASE and (?iu)
+know the case of every letter. \p{…} also names scripts (\p{IsGreek}, \p{script=Latin}) and
+blocks (\p{InArrows}, \p{block=BasicLatin}), by their full names. The flag d is known.
+
+Not covered: the flag U, which makes \w, \d, \s and \b follow Unicode, and the four-letter
+codes of scripts (\p{sc=Latn}). A pattern using them is refused with an
+IllegalArgumentException when the Regex is created.
 */
 
 // ==================
@@ -37,24 +43,102 @@ public actual operator fun MatchGroupCollection.get(name: String): MatchGroup? {
 // MARK: Character sets
 // ==================
 
+// The classes a pattern can name. The ones of ASCII:
 private const val kClassDigit = 1
 private const val kClassWord = 2
 private const val kClassSpace = 3
-private const val kClassLetter = 4
-private const val kClassUpper = 5
-private const val kClassLower = 6
-private const val kClassAlnum = 7
-private const val kClassPunct = 8
+private const val kClassLower = 10
+private const val kClassUpper = 11
+private const val kClassAlpha = 12
+private const val kClassAlnum = 14
+private const val kClassPunct = 15
+private const val kClassGraph = 16
+private const val kClassPrint = 17
+private const val kClassBlank = 18
+private const val kClassControl = 19
+private const val kClassHexDigit = 20
+private const val kClassAscii = 22
+
+// The ones that ask the functions of Char:
+private const val kJavaLowerCase = 30
+private const val kJavaUpperCase = 31
+private const val kJavaWhitespace = 32
+private const val kJavaLetter = 33
+private const val kJavaDigit = 34
+private const val kJavaLetterOrDigit = 35
+private const val kJavaDefined = 37
+private const val kJavaTitleCase = 38
+private const val kUnicodeAlphabetic = 40
+private const val kUnicodeWhiteSpace = 44
+
+/** A general category of Unicode: this plus the ordinal of its CharCategory. */
+private const val kClassCategory = 100
+
+/** The categories whose code starts with a letter (`L`, `N`…): this plus the letter. */
+private const val kClassCategoryGroup = 200
+
+/** `LC`: a letter that has a case. */
+private const val kClassCasedLetter = 400
+
+/** A script: this plus its place among the names of scripts. A block: the same with its own base. */
+private const val kClassScript = 1000
+private const val kClassBlock = 2000
+
+/** The first letter of the code of each CharCategory, in the order of the entries. */
+private const val kCategoryGroups = "CLLLLLMMMNNNZZZCCCCPPPPPSSSSPP"
+
+private fun isAsciiLetter(inChar: Char): Boolean = inChar in 'a'..'z' || inChar in 'A'..'Z'
+
+private fun isAsciiPunctuation(inChar: Char): Boolean = inChar in '!'..'/' || inChar in ':'..'@' || inChar in '['..'`' || inChar in '{'..'~'
 
 private fun inNamedClass(inKind: Int, inChar: Char): Boolean = when (inKind) {
 	kClassDigit -> inChar in '0'..'9'
-	kClassWord -> inChar in 'a'..'z' || inChar in 'A'..'Z' || inChar in '0'..'9' || inChar == '_'
+	kClassWord -> isAsciiLetter(inChar) || inChar in '0'..'9' || inChar == '_'
 	kClassSpace -> inChar == ' ' || inChar == '\t' || inChar == '\n' || inChar == '\r' || inChar == '\u000B' || inChar == '\u000C'
-	kClassLetter -> inChar.isLetter()
-	kClassUpper -> inChar.isUpperCase()
-	kClassLower -> inChar.isLowerCase()
-	kClassAlnum -> inChar.isLetterOrDigit()
-	else -> inChar in '!'..'/' || inChar in ':'..'@' || inChar in '['..'`' || inChar in '{'..'~'
+	kClassLower -> inChar in 'a'..'z'
+	kClassUpper -> inChar in 'A'..'Z'
+	kClassAlpha -> isAsciiLetter(inChar)
+	kClassAlnum -> isAsciiLetter(inChar) || inChar in '0'..'9'
+	kClassPunct -> isAsciiPunctuation(inChar)
+	kClassGraph -> isAsciiLetter(inChar) || inChar in '0'..'9' || isAsciiPunctuation(inChar)
+	kClassPrint -> inChar in ' '..'~'
+	kClassBlank -> inChar == ' ' || inChar == '\t'
+	kClassControl -> inChar.code < 0x20 || inChar.code == 0x7F
+	kClassHexDigit -> inChar in '0'..'9' || inChar in 'a'..'f' || inChar in 'A'..'F'
+	kClassAscii -> inChar.code < 0x80
+	kJavaLowerCase -> inChar.isLowerCase()
+	kJavaUpperCase -> inChar.isUpperCase()
+	// Character.isWhitespace leaves out the spaces that do not break a line.
+	kJavaWhitespace -> inChar.isWhitespace() && inChar != '\u00A0' && inChar != '\u2007' && inChar != '\u202F'
+	kJavaLetter -> inChar.isLetter()
+	kJavaDigit -> inChar.isDigit()
+	kJavaLetterOrDigit -> inChar.isLetterOrDigit()
+	kJavaDefined -> inChar.isDefined()
+	kJavaTitleCase -> inChar.isTitleCase()
+	// Letters and letter numbers; the few marks Unicode also calls alphabetic are not known here.
+	kUnicodeAlphabetic -> inChar.isLetter() || unicodeCategory(inChar) == 10
+	kUnicodeWhiteSpace -> inChar.isWhitespace() || inChar == '\u0085'
+	kClassCasedLetter -> unicodeCategory(inChar) in 1..3
+	else -> if (inKind >= kClassBlock) {
+		unicodeBlock(inChar) == inKind - kClassBlock
+	} else if (inKind >= kClassScript) {
+		unicodeScript(inChar) == inKind - kClassScript
+	} else {
+		val vCategory = unicodeCategory(inChar)
+		if (inKind >= kClassCategoryGroup) kCategoryGroups[vCategory].code == inKind - kClassCategoryGroup else vCategory == inKind - kClassCategory
+	}
+}
+
+// How letters are compared: as they are, without the case of ASCII letters, without the case of any letter.
+private const val kCaseExact = 0
+private const val kCaseAscii = 1
+private const val kCaseUnicode = 2
+
+private fun sameChar(inLeft: Char, inRight: Char, inCase: Int): Boolean {
+	if (inLeft == inRight) return true
+	if (inCase == kCaseExact) return false
+	if (inCase == kCaseAscii) return isAsciiLetter(inLeft) && isAsciiLetter(inRight) && (inLeft.code or 0x20) == (inRight.code or 0x20)
+	return inLeft.lowercaseChar() == inRight.lowercaseChar() || inLeft.uppercaseChar() == inRight.uppercaseChar()
 }
 
 /** What a `[…]`, a `\d` or a `.` accepts: ranges, named classes and nested sets, possibly negated. */
@@ -65,22 +149,33 @@ private class CharSet(val negated: Boolean) {
 	val negatedKinds = ArrayList<Int>()
 	val nested = ArrayList<CharSet>()
 
+	/** What comes after `&&`: a character has to be in each of these as well. */
+	val intersected = ArrayList<CharSet>()
+
 	fun addRange(inFrom: Char, inTo: Char) {
 		rangeStarts.add(inFrom)
 		rangeEnds.add(inTo)
 	}
 
-	private fun holds(inChar: Char): Boolean {
+	private fun holdsItself(inChar: Char): Boolean {
 		for (vIndex in 0 until rangeStarts.size) if (inChar >= rangeStarts[vIndex] && inChar <= rangeEnds[vIndex]) return true
-		for (vKind in kinds) if (inNamedClass(vKind, inChar)) return true
-		for (vKind in negatedKinds) if (!inNamedClass(vKind, inChar)) return true
-		for (vSet in nested) if (vSet.accepts(inChar, false)) return true
+		// By index: this runs for every character tried, and a `for` over a list makes an iterator each time.
+		for (vIndex in 0 until kinds.size) if (inNamedClass(kinds[vIndex], inChar)) return true
+		for (vIndex in 0 until negatedKinds.size) if (!inNamedClass(negatedKinds[vIndex], inChar)) return true
+		for (vIndex in 0 until nested.size) if (nested[vIndex].accepts(inChar, kCaseExact)) return true
 		return false
 	}
 
-	fun accepts(inChar: Char, inIgnoreCase: Boolean): Boolean {
+	private fun holds(inChar: Char): Boolean {
+		if (!holdsItself(inChar)) return false
+		for (vIndex in 0 until intersected.size) if (!intersected[vIndex].accepts(inChar, kCaseExact)) return false
+		return true
+	}
+
+	fun accepts(inChar: Char, inCase: Int): Boolean {
 		var vHolds = holds(inChar)
-		if (!vHolds && inIgnoreCase) vHolds = holds(inChar.lowercaseChar()) || holds(inChar.uppercaseChar())
+		if (!vHolds && inCase == kCaseAscii && isAsciiLetter(inChar)) vHolds = holds((inChar.code xor 0x20).toChar())
+		if (!vHolds && inCase == kCaseUnicode) vHolds = holds(inChar.lowercaseChar()) || holds(inChar.uppercaseChar())
 		return vHolds != negated
 	}
 }
@@ -91,12 +186,12 @@ private class CharSet(val negated: Boolean) {
 
 private abstract class Piece
 
-private class Literal(val char: Char) : Piece()
+private class Literal(val char: Char, val case: Int) : Piece()
 
-private class SetPiece(val set: CharSet) : Piece()
+private class SetPiece(val set: CharSet, val case: Int) : Piece()
 
-/** `.`: anything but a line terminator, or anything at all with (?s). */
-private class Dot(val matchesLines: Boolean) : Piece()
+/** `.`: anything but a line terminator, or anything at all with (?s). With (?d) only `\n` ends a line. */
+private class Dot(val matchesLines: Boolean, val unixLines: Boolean) : Piece()
 
 private class Chain(val items: List<Piece>) : Piece()
 
@@ -107,24 +202,34 @@ private class Group(val index: Int, val body: Piece) : Piece()
 
 private class Repeat(val body: Piece, val min: Int, val max: Int, val greedy: Boolean) : Piece()
 
-private class BackReference(val group: Int) : Piece()
+private class BackReference(val group: Int, val case: Int) : Piece()
+
+/** `(?>…)`, and what a possessive quantifier makes of its loop: once matched, it is not gone back into. */
+private class Atomic(val body: Piece) : Piece()
 
 private class Look(val body: Piece, val ahead: Boolean, val negated: Boolean) : Piece()
 
-/** `^` `$` `\A` `\z` `\Z` `\b` `\B`, named by the character that writes them. */
-private class Anchor(val kind: Char) : Piece()
+/** `^` `$` `\A` `\z` `\Z` `\b` `\B`, named by the character that writes them; [multiline] is the flag where it stands. */
+private class Anchor(val kind: Char, val multiline: Boolean, val unixLines: Boolean) : Piece()
 
 // ==================
 // MARK: Parser
 // ==================
 
-private class Parser(private val mPattern: String) {
+private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMultiline: Boolean) {
 	private var mAt = 0
 	var groupCount = 0
 	val groupNames = HashMap<String, Int>()
-	var ignoreCase = false
-	var multiline = false
-	var dotAll = false
+
+	// The flags where the parser stands: a group ends what was set inside it.
+	private var mIgnoreCase = inIgnoreCase
+	private var mUnicodeCase = inIgnoreCase
+	private var mMultiline = inMultiline
+	private var mDotAll = false
+	private var mComments = false
+	private var mUnixLines = false
+
+	private fun case(): Int = if (!mIgnoreCase) kCaseExact else if (mUnicodeCase) kCaseUnicode else kCaseAscii
 
 	private fun fail(inWhat: String): Nothing = throw IllegalArgumentException("$inWhat near index $mAt\n$mPattern")
 
@@ -143,24 +248,57 @@ private class Parser(private val mPattern: String) {
 	private fun looksAt(inText: String): Boolean = mPattern.startsWith(inText, mAt)
 
 	fun parse(): Piece {
-		// Flags that apply to the whole pattern.
-		while (looksAt("(?") && mAt + 2 < mPattern.length && mPattern[mAt + 2] in "imsx" ) {
-			var vEnd = mAt + 2
-			while (vEnd < mPattern.length && mPattern[vEnd] in "imsx") vEnd++
-			if (vEnd >= mPattern.length || mPattern[vEnd] != ')') break
-			for (vIndex in mAt + 2 until vEnd) {
-				when (mPattern[vIndex]) {
-					'i' -> ignoreCase = true
-					'm' -> multiline = true
-					's' -> dotAll = true
-					else -> fail("Unsupported flag '${mPattern[vIndex]}'")
-				}
-			}
-			mAt = vEnd + 1
-		}
 		val vPiece = alternatives()
 		if (more()) fail(if (peek() == ')') "Unmatched closing ')'" else "Unexpected character '${peek()}'")
 		return vPiece
+	}
+
+	/** What [inBody] parses, with the flags as they were before it put back afterwards. */
+	private inline fun scoped(inBody: () -> Piece): Piece {
+		val vIgnoreCase = mIgnoreCase
+		val vUnicodeCase = mUnicodeCase
+		val vMultiline = mMultiline
+		val vDotAll = mDotAll
+		val vComments = mComments
+		val vUnixLines = mUnixLines
+		val vPiece = inBody()
+		mUnixLines = vUnixLines
+		mIgnoreCase = vIgnoreCase
+		mUnicodeCase = vUnicodeCase
+		mMultiline = vMultiline
+		mDotAll = vDotAll
+		mComments = vComments
+		return vPiece
+	}
+
+	/** Reads the flags of `(?imsxu-imsxu` and sets them. */
+	private fun flags() {
+		var vIsOn = true
+		while (more() && peek() != ')' && peek() != ':') {
+			when (val vFlag = mPattern[mAt++]) {
+				'-' -> vIsOn = false
+				'i' -> mIgnoreCase = vIsOn
+				'u' -> mUnicodeCase = vIsOn
+				'm' -> mMultiline = vIsOn
+				's' -> mDotAll = vIsOn
+				'x' -> mComments = vIsOn
+				'd' -> mUnixLines = vIsOn
+				else -> fail("Unknown inline modifier '$vFlag'")
+			}
+		}
+	}
+
+	/** With the flag x: white space and what follows a `#` to the end of the line are not part of the pattern. */
+	private fun skipComments() {
+		while (mComments && more()) {
+			if (peek() == '#') {
+				while (more() && peek() != '\n') mAt++
+			} else if (peek() == ' ' || peek() == '\t' || peek() == '\n' || peek() == '\r' || peek() == '\u000C') {
+				mAt++
+			} else {
+				return
+			}
+		}
 	}
 
 	private fun alternatives(): Piece {
@@ -172,11 +310,13 @@ private class Parser(private val mPattern: String) {
 
 	private fun sequence(): Piece {
 		val vItems = ArrayList<Piece>()
-		while (more() && peek() != '|' && peek() != ')') {
+		while (true) {
+			skipComments()
+			if (!more() || peek() == '|' || peek() == ')') break
 			if (looksAt("\\Q")) {
 				mAt += 2
 				val vEnd = mPattern.indexOf("\\E", mAt).let { if (it < 0) mPattern.length else it }
-				for (vIndex in mAt until vEnd) vItems.add(Literal(mPattern[vIndex]))
+				for (vIndex in mAt until vEnd) vItems.add(Literal(mPattern[vIndex], case()))
 				mAt = if (vEnd + 2 <= mPattern.length) vEnd + 2 else mPattern.length
 				continue
 			}
@@ -193,6 +333,7 @@ private class Parser(private val mPattern: String) {
 	}
 
 	private fun quantified(inAtom: Piece): Piece {
+		skipComments()
 		if (!more()) return inAtom
 		var vMin = 0
 		var vMax = Int.MAX_VALUE
@@ -218,8 +359,11 @@ private class Parser(private val mPattern: String) {
 		}
 		if (inAtom is Anchor || inAtom is Look) fail("Dangling meta character")
 		var vGreedy = true
-		if (eat('?')) vGreedy = false else if (more() && peek() == '+') fail("Possessive quantifiers are not supported")
-		val vRepeat = Repeat(inAtom, vMin, vMax, vGreedy)
+		var vPossessive = false
+		if (eat('?')) vGreedy = false else if (eat('+')) vPossessive = true
+		val vLoop = Repeat(inAtom, vMin, vMax, vGreedy)
+		// Possessive: what the loop took is kept, whatever follows.
+		val vRepeat: Piece = if (vPossessive) Atomic(vLoop) else vLoop
 		// `a**` and the like are errors in Java too.
 		if (more() && (peek() == '*' || peek() == '+' || peek() == '?')) fail("Dangling meta character '${peek()}'")
 		return vRepeat
@@ -229,33 +373,41 @@ private class Parser(private val mPattern: String) {
 		val vChar = mPattern[mAt++]
 		when (vChar) {
 			'(' -> return group()
-			'[' -> return SetPiece(charClass())
-			'.' -> return Dot(dotAll)
-			'^', '$' -> return Anchor(vChar)
+			'[' -> return SetPiece(charClass(), case())
+			'.' -> return Dot(mDotAll, mUnixLines)
+			'^', '$' -> return Anchor(vChar, mMultiline, mUnixLines)
 			'*', '+', '?' -> fail("Dangling meta character '$vChar'")
 			'\\' -> return escape()
-			else -> return Literal(vChar)
+			else -> return Literal(vChar, case())
 		}
 	}
 
 	private fun group(): Piece {
 		if (!eat('?')) {
 			val vIndex = ++groupCount
-			val vBody = alternatives()
+			val vBody = scoped { alternatives() }
 			if (!eat(')')) fail("Unclosed group")
 			return Group(vIndex, vBody)
 		}
 		if (!more()) fail("Unclosed group")
+		if (peek() in "imsxud-U") {
+			// Flags: for what follows up to the end of the group they are written in, or for a group of their own.
+			val vBefore = scopedFlags()
+			if (vBefore != null) return vBefore
+			if (!eat(')')) fail("Unclosed group")
+			return Chain(emptyList())
+		}
 		val vKind = mPattern[mAt++]
 		val vPiece: Piece = when (vKind) {
-			':' -> Group(0, alternatives())
-			'=' -> Look(alternatives(), true, false)
-			'!' -> Look(alternatives(), true, true)
+			':' -> Group(0, scoped { alternatives() })
+			'=' -> Look(scoped { alternatives() }, true, false)
+			'!' -> Look(scoped { alternatives() }, true, true)
+			'>' -> Atomic(scoped { alternatives() })
 			'<' -> {
 				if (eat('=')) {
-					Look(alternatives(), false, false)
+					Look(scoped { alternatives() }, false, false)
 				} else if (eat('!')) {
-					Look(alternatives(), false, true)
+					Look(scoped { alternatives() }, false, true)
 				} else {
 					val vStart = mAt
 					while (more() && peek() != '>') mAt++
@@ -264,14 +416,35 @@ private class Parser(private val mPattern: String) {
 					if (groupNames.containsKey(vName)) fail("Named capturing group <$vName> is already defined")
 					val vIndex = ++groupCount
 					groupNames[vName] = vIndex
-					Group(vIndex, alternatives())
+					Group(vIndex, scoped { alternatives() })
 				}
 			}
-			'>' -> fail("Atomic groups are not supported")
 			else -> fail("Unknown inline modifier")
 		}
 		if (!eat(')')) fail("Unclosed group")
 		return vPiece
+	}
+
+	/**
+	 * After `(?` and before flags. `(?i:…)` is a group with those flags, returned; for `(?i)` the
+	 * flags are set where the parser stands and null is returned, the `)` not yet read.
+	 */
+	private fun scopedFlags(): Piece? {
+		val vStart = mAt
+		while (more() && peek() != ')' && peek() != ':') mAt++
+		val vIsGroup = more() && peek() == ':'
+		mAt = vStart
+		if (!vIsGroup) {
+			flags()
+			return null
+		}
+		val vBody = scoped {
+			flags()
+			mAt++
+			alternatives()
+		}
+		if (!eat(')')) fail("Unclosed group")
+		return Group(0, vBody)
 	}
 
 	private fun hex(inDigits: Int): Char {
@@ -279,6 +452,73 @@ private class Parser(private val mPattern: String) {
 		val vValue = mPattern.substring(mAt, mAt + inDigits).toIntOrNull(16) ?: fail("Illegal hexadecimal escape sequence")
 		mAt += inDigits
 		return vValue.toChar()
+	}
+
+	/** The class a `\p{…}` names; null when it is not one known here. */
+	private fun classNamed(inName: String): Int? {
+		when (inName) {
+			"Lower" -> return kClassLower
+			"Upper" -> return kClassUpper
+			"ASCII" -> return kClassAscii
+			"Alpha" -> return kClassAlpha
+			"Digit" -> return kClassDigit
+			"Alnum" -> return kClassAlnum
+			"Punct" -> return kClassPunct
+			"Graph" -> return kClassGraph
+			"Print" -> return kClassPrint
+			"Blank" -> return kClassBlank
+			"Cntrl" -> return kClassControl
+			"XDigit" -> return kClassHexDigit
+			"Space" -> return kClassSpace
+			"javaLowerCase" -> return kJavaLowerCase
+			"javaUpperCase" -> return kJavaUpperCase
+			"javaTitleCase" -> return kJavaTitleCase
+			"javaWhitespace" -> return kJavaWhitespace
+			"javaLetter" -> return kJavaLetter
+			"javaDigit" -> return kJavaDigit
+			"javaLetterOrDigit" -> return kJavaLetterOrDigit
+			"javaAlphabetic" -> return kUnicodeAlphabetic
+			"javaDefined" -> return kJavaDefined
+		}
+		var vName = inName
+		var vIsScript = false
+		val vEquals = vName.indexOf('=')
+		if (vEquals >= 0) {
+			val vKey = vName.substring(0, vEquals).lowercase()
+			vName = vName.substring(vEquals + 1)
+			when (vKey) {
+				"general_category", "gc" -> {}
+				"script", "sc" -> return unicodeScriptNamed(vName).takeIf { it >= 0 }?.let { kClassScript + it }
+				"block", "blk" -> return unicodeBlockNamed(vName).takeIf { it >= 0 }?.let { kClassBlock + it }
+				else -> return null
+			}
+		} else if (vName.startsWith("In")) {
+			return unicodeBlockNamed(vName.substring(2)).takeIf { it >= 0 }?.let { kClassBlock + it }
+		} else if (vName.startsWith("Is") || vName.startsWith("is")) {
+			vIsScript = true
+			vName = vName.substring(2)
+			// A property that is true or false of a character.
+			when (vName.lowercase().replace("_", "")) {
+				"alphabetic" -> return kUnicodeAlphabetic
+				"letter" -> return kJavaLetter
+				"uppercase" -> return kJavaUpperCase
+				"lowercase" -> return kJavaLowerCase
+				"titlecase" -> return kJavaTitleCase
+				"whitespace" -> return kUnicodeWhiteSpace
+				"digit" -> return kJavaDigit
+				"punctuation" -> return kClassCategoryGroup + 'P'.code
+				"control" -> return kClassCategory + CharCategory.CONTROL.ordinal
+				"assigned" -> return kJavaDefined
+			}
+		}
+		// A general category by its code: one letter for a group of them, two for one.
+		if (vName == "LC") return kClassCasedLetter
+		if (vName.length == 1 && vName[0] in "LMNPSZC") return kClassCategoryGroup + vName[0].code
+		if (vName.length == 2) {
+			for (vCategory in CharCategory.entries) if (vCategory.code == vName) return kClassCategory + vCategory.ordinal
+		}
+		// `IsLatin`: a script.
+		return if (vIsScript) unicodeScriptNamed(vName).takeIf { it >= 0 }?.let { kClassScript + it } else null
 	}
 
 	/** The named class after `\p` or `\P`, added to [outSet]. */
@@ -293,16 +533,7 @@ private class Parser(private val mPattern: String) {
 			if (!more()) fail("Illegal character family")
 			vName = mPattern[mAt++].toString()
 		}
-		val vKind = when (vName.removePrefix("Is").removePrefix("is")) {
-			"L", "Alpha", "Alphabetic", "Letter" -> kClassLetter
-			"Lu", "Upper", "Uppercase" -> kClassUpper
-			"Ll", "Lower", "Lowercase" -> kClassLower
-			"N", "Nd", "Digit" -> kClassDigit
-			"Alnum" -> kClassAlnum
-			"Punct", "P" -> kClassPunct
-			"Space", "White_Space", "Z" -> kClassSpace
-			else -> fail("Unknown character property name {$vName}")
-		}
+		val vKind = classNamed(vName) ?: fail("Unknown character property name {$vName}")
 		if (inNegated) outSet.negatedKinds.add(vKind) else outSet.kinds.add(vKind)
 	}
 
@@ -354,44 +585,58 @@ private class Parser(private val mPattern: String) {
 		if (!more()) fail("Unexpected internal error")
 		val vChar = mPattern[mAt++]
 		val vSet = CharSet(false)
-		if (classEscape(vChar, vSet)) return SetPiece(vSet)
+		if (classEscape(vChar, vSet)) return SetPiece(vSet, case())
 		when (vChar) {
-			'b', 'B', 'A', 'z', 'Z' -> return Anchor(vChar)
+			'b', 'B', 'A', 'z', 'Z' -> return Anchor(vChar, mMultiline, mUnixLines)
 			'k' -> {
 				if (!eat('<')) fail("\\k is not followed by '<' for named capturing group")
 				val vStart = mAt
 				while (more() && peek() != '>') mAt++
 				val vName = mPattern.substring(vStart, mAt)
 				if (!eat('>')) fail("Named capturing group is missing trailing '>'")
-				return BackReference(groupNames[vName] ?: fail("Named capturing group <$vName> does not exist"))
+				return BackReference(groupNames[vName] ?: fail("Named capturing group <$vName> does not exist"), case())
 			}
 		}
 		if (vChar in '1'..'9') {
 			// As many digits as still name an existing group.
 			var vGroup = vChar - '0'
 			while (more() && peek() in '0'..'9' && vGroup * 10 + (peek() - '0') <= groupCount) vGroup = vGroup * 10 + (mPattern[mAt++] - '0')
-			return BackReference(vGroup)
+			return BackReference(vGroup, case())
 		}
-		return Literal(literalEscape(vChar))
+		return Literal(literalEscape(vChar), case())
 	}
 
 	private fun charClass(): CharSet {
 		val vSet = CharSet(eat('^'))
-		var vFirst = true
+		classBody(vSet, true)
+		return vSet
+	}
+
+	/** Reads the items of a class into [outSet], up to and with its `]`. After `&&` comes another set the characters have to be in too. */
+	private fun classBody(outSet: CharSet, inIsStart: Boolean) {
+		var vFirst = inIsStart
 		while (true) {
 			if (!more()) fail("Unclosed character class")
 			var vChar = mPattern[mAt++]
+			// With the flag x, white space is not part of a class either.
+			if (mComments && (vChar == ' ' || vChar == '\t' || vChar == '\n' || vChar == '\r')) continue
 			if (vChar == ']' && !vFirst) break
 			vFirst = false
 			if (vChar == '[') {
-				vSet.nested.add(charClass())
+				outSet.nested.add(charClass())
 				continue
 			}
-			if (vChar == '&' && more() && peek() == '&') fail("Character class intersection is not supported")
+			if (vChar == '&' && more() && peek() == '&') {
+				mAt++
+				val vOther = CharSet(false)
+				classBody(vOther, false)
+				outSet.intersected.add(vOther)
+				return
+			}
 			if (vChar == '\\') {
 				if (!more()) fail("Unclosed character class")
 				val vEscaped = mPattern[mAt++]
-				if (classEscape(vEscaped, vSet)) continue
+				if (classEscape(vEscaped, outSet)) continue
 				vChar = literalEscape(vEscaped)
 			}
 			// A range, unless the '-' is the last thing in the class.
@@ -404,12 +649,11 @@ private class Parser(private val mPattern: String) {
 					vEnd = literalEscape(mPattern[mAt++])
 				}
 				if (vEnd < vChar) fail("Illegal character range")
-				vSet.addRange(vChar, vEnd)
+				outSet.addRange(vChar, vEnd)
 			} else {
-				vSet.addRange(vChar, vChar)
+				outSet.addRange(vChar, vChar)
 			}
 		}
-		return vSet
 	}
 }
 
@@ -417,14 +661,17 @@ private class Parser(private val mPattern: String) {
 // MARK: Matcher
 // ==================
 
+/** The counters of a pattern without loops: none, the same for every search. */
+private val kNoLoops = IntArray(0)
+
 /** The state of one attempt to match. */
-private class Matching(val input: CharArray, inGroupCount: Int, val loops: List<Loop>, val ignoreCase: Boolean, val multiline: Boolean) {
+private class Matching(val input: CharArray, inGroupCount: Int, val loops: List<Loop>) {
 	/** Start and end of each group, -1 while it has not taken part. Group 0 is the whole match. */
 	val groups = IntArray((inGroupCount + 1) * 2)
 
 	/** For each loop: how many times it has gone round, and where the current round started. */
-	val counts = IntArray(loops.size)
-	val starts = IntArray(loops.size)
+	val counts = if (loops.isEmpty()) kNoLoops else IntArray(loops.size)
+	val starts = if (loops.isEmpty()) kNoLoops else IntArray(loops.size)
 
 	/** When not negative, the match has to end exactly here (matchEntire, look-behind). */
 	var requiredEnd = -1
@@ -432,9 +679,6 @@ private class Matching(val input: CharArray, inGroupCount: Int, val loops: List<
 	fun reset() {
 		for (vIndex in 0 until groups.size) groups[vIndex] = -1
 	}
-
-	fun same(inLeft: Char, inRight: Char): Boolean =
-		inLeft == inRight || (ignoreCase && (inLeft.lowercaseChar() == inRight.lowercaseChar() || inLeft.uppercaseChar() == inRight.uppercaseChar()))
 }
 
 /**
@@ -454,31 +698,34 @@ private class Accept : Node() {
 		if (inState.requiredEnd >= 0 && inAt != inState.requiredEnd) -1 else inAt
 }
 
-private class CharNode(val char: Char) : Node() {
+private class CharNode(val char: Char, val case: Int) : Node() {
 	override fun match(inState: Matching, inAt: Int): Int =
-		if (inAt < inState.input.size && inState.same(inState.input[inAt], char)) rest(inState, inAt + 1) else -1
+		if (inAt < inState.input.size && sameChar(inState.input[inAt], char, case)) rest(inState, inAt + 1) else -1
 }
 
-private fun isLineEnd(inChar: Char): Boolean =
-	inChar == '\n' || inChar == '\r' || inChar == '\u0085' || inChar == '\u2028' || inChar == '\u2029'
+private fun isLineEnd(inChar: Char, inUnixLines: Boolean): Boolean =
+	inChar == '\n' || (!inUnixLines && (inChar == '\r' || inChar == '\u0085' || inChar == '\u2028' || inChar == '\u2029'))
 
-private class SetNode(val set: CharSet?, val matchesLines: Boolean) : Node() {
-	fun accepts(inState: Matching, inChar: Char): Boolean =
-		if (set != null) set.accepts(inChar, inState.ignoreCase) else matchesLines || !isLineEnd(inChar)
+private class SetNode(val set: CharSet?, val matchesLines: Boolean, val case: Int, val unixLines: Boolean) : Node() {
+	fun accepts(inChar: Char): Boolean =
+		if (set != null) set.accepts(inChar, case) else matchesLines || !isLineEnd(inChar, unixLines)
 
 	override fun match(inState: Matching, inAt: Int): Int =
-		if (inAt < inState.input.size && accepts(inState, inState.input[inAt])) rest(inState, inAt + 1) else -1
+		if (inAt < inState.input.size && accepts(inState.input[inAt])) rest(inState, inAt + 1) else -1
 }
 
-private fun isWordChar(inChar: Char): Boolean = inChar.isLetterOrDigit() || inChar == '_'
+/** What `\\b` takes for part of a word: what `\\w` accepts. */
+private fun isWordChar(inChar: Char): Boolean = inNamedClass(kClassWord, inChar)
 
-private class AnchorNode(val kind: Char) : Node() {
+private class AnchorNode(val kind: Char, val multiline: Boolean, val unixLines: Boolean) : Node() {
+	private fun isLineEnd(inChar: Char): Boolean = isLineEnd(inChar, unixLines)
+
 	override fun match(inState: Matching, inAt: Int): Int {
 		val vInput = inState.input
 		val vLength = vInput.size
 		val vHolds = when (kind) {
-			'^' -> inAt == 0 || (inState.multiline && isLineEnd(vInput[inAt - 1]) && inAt < vLength && !(vInput[inAt - 1] == '\r' && vInput[inAt] == '\n'))
-			'$' -> if (inState.multiline) {
+			'^' -> inAt == 0 || (multiline && isLineEnd(vInput[inAt - 1]) && inAt < vLength && !(vInput[inAt - 1] == '\r' && vInput[inAt] == '\n'))
+			'$' -> if (multiline) {
 				inAt == vLength || (isLineEnd(vInput[inAt]) && !(vInput[inAt] == '\n' && inAt > 0 && vInput[inAt - 1] == '\r'))
 			} else {
 				inAt == vLength || (inAt == vLength - 1 && isLineEnd(vInput[inAt])) || (inAt == vLength - 2 && vInput[inAt] == '\r' && vInput[inAt + 1] == '\n')
@@ -509,15 +756,15 @@ private class GroupMark(val slot: Int) : Node() {
 
 private class BranchNode(val options: List<Node>) : Node() {
 	override fun match(inState: Matching, inAt: Int): Int {
-		for (vOption in options) {
-			val vEnd = vOption.match(inState, inAt)
+		for (vIndex in 0 until options.size) {
+			val vEnd = options[vIndex].match(inState, inAt)
 			if (vEnd >= 0) return vEnd
 		}
 		return -1
 	}
 }
 
-private class BackReferenceNode(val group: Int) : Node() {
+private class BackReferenceNode(val group: Int, val case: Int) : Node() {
 	override fun match(inState: Matching, inAt: Int): Int {
 		val vStart = inState.groups[group * 2]
 		val vEnd = inState.groups[group * 2 + 1]
@@ -525,7 +772,7 @@ private class BackReferenceNode(val group: Int) : Node() {
 		if (vStart < 0 || vEnd < 0) return -1
 		val vLength = vEnd - vStart
 		if (inAt + vLength > inState.input.size) return -1
-		for (vIndex in 0 until vLength) if (!inState.same(inState.input[vStart + vIndex], inState.input[inAt + vIndex])) return -1
+		for (vIndex in 0 until vLength) if (!sameChar(inState.input[vStart + vIndex], inState.input[inAt + vIndex], case)) return -1
 		return rest(inState, inAt + vLength)
 	}
 }
@@ -535,7 +782,7 @@ private class SimpleLoop(val item: Node, val min: Int, val max: Int, val greedy:
 	private fun accepts(inState: Matching, inAt: Int): Boolean {
 		if (inAt >= inState.input.size) return false
 		val vChar = inState.input[inAt]
-		return if (item is CharNode) inState.same(vChar, item.char) else (item as SetNode).accepts(inState, vChar)
+		return if (item is CharNode) sameChar(vChar, item.char, item.case) else (item as SetNode).accepts(vChar)
 	}
 
 	override fun match(inState: Matching, inAt: Int): Int {
@@ -646,6 +893,22 @@ private class LookNode(val body: Node, val ahead: Boolean, val negated: Boolean)
 	}
 }
 
+/** `(?>…)`: the body is matched on its own, the first way it can; what follows cannot make it try another. */
+private class AtomicNode(val body: Node) : Node() {
+	override fun match(inState: Matching, inAt: Int): Int {
+		val vRequired = inState.requiredEnd
+		// What the body sets in the groups is undone if what follows fails.
+		val vGroups = if (inState.groups.size > 2) inState.groups.copyOf() else null
+		inState.requiredEnd = -1
+		val vBodyEnd = body.match(inState, inAt)
+		inState.requiredEnd = vRequired
+		if (vBodyEnd < 0) return -1
+		val vEnd = rest(inState, vBodyEnd)
+		if (vEnd < 0 && vGroups != null) vGroups.copyInto(inState.groups)
+		return vEnd
+	}
+}
+
 /** Turns the parsed pattern into linked nodes. */
 private class Compiler {
 	/** The loops of the pattern, each at the index that is its id. */
@@ -654,11 +917,12 @@ private class Compiler {
 	/** The nodes for [inPiece], continuing with [inNext]. */
 	fun compile(inPiece: Piece, inNext: Node): Node {
 		when (inPiece) {
-			is Literal -> return CharNode(inPiece.char).also { it.next = inNext }
-			is SetPiece -> return SetNode(inPiece.set, false).also { it.next = inNext }
-			is Dot -> return SetNode(null, inPiece.matchesLines).also { it.next = inNext }
-			is Anchor -> return AnchorNode(inPiece.kind).also { it.next = inNext }
-			is BackReference -> return BackReferenceNode(inPiece.group).also { it.next = inNext }
+			is Literal -> return CharNode(inPiece.char, inPiece.case).also { it.next = inNext }
+			is SetPiece -> return SetNode(inPiece.set, false, inPiece.case, false).also { it.next = inNext }
+			is Dot -> return SetNode(null, inPiece.matchesLines, kCaseExact, inPiece.unixLines).also { it.next = inNext }
+			is Anchor -> return AnchorNode(inPiece.kind, inPiece.multiline, inPiece.unixLines).also { it.next = inNext }
+			is BackReference -> return BackReferenceNode(inPiece.group, inPiece.case).also { it.next = inNext }
+			is Atomic -> return AtomicNode(compile(inPiece.body, Accept())).also { it.next = inNext }
 			is Chain -> {
 				var vNext = inNext
 				for (vIndex in inPiece.items.size - 1 downTo 0) vNext = compile(inPiece.items[vIndex], vNext)
@@ -724,7 +988,7 @@ private class GroupCollection(private val mMatch: MatchData) : AbstractCollectio
 }
 
 /** One match: the positions of the groups in the text. */
-private class MatchData(val regex: Regex, val text: String, val bounds: IntArray, val groupCount: Int) : MatchResult {
+private class MatchData(val regex: Regex, val text: String, val chars: CharArray, val bounds: IntArray, val groupCount: Int) : MatchResult {
 	override val range: IntRange get() = IntRange(bounds[0], bounds[1] - 1)
 
 	override val value: String get() = text.substring(bounds[0], bounds[1])
@@ -744,7 +1008,8 @@ private class MatchData(val regex: Regex, val text: String, val bounds: IntArray
 
 	override fun next(): MatchResult? {
 		val vFrom = bounds[1] + if (bounds[1] == bounds[0]) 1 else 0
-		return if (vFrom <= text.length) regex.search(text, vFrom, false, false) else null
+		// The search goes on in the characters this match was found in: they are not copied again.
+		return if (vFrom <= text.length) regex.search(text, vFrom, false, false, chars) else null
 	}
 }
 
@@ -760,19 +1025,15 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 	private val mGroupCount: Int
 	private val mLoops: List<Loop>
 	private val mGroupNames: HashMap<String, Int>
-	private val mIgnoreCase: Boolean
-	private val mMultiline: Boolean
 
 	init {
-		val vParser = Parser(pattern)
+		val vParser = Parser(pattern, options.contains(RegexOption.IGNORE_CASE), options.contains(RegexOption.MULTILINE))
 		val vPiece = vParser.parse()
 		val vCompiler = Compiler()
 		mRoot = vCompiler.compile(vPiece, Accept())
 		mGroupCount = vParser.groupCount
 		mLoops = vCompiler.loops
 		mGroupNames = vParser.groupNames
-		mIgnoreCase = vParser.ignoreCase || options.contains(RegexOption.IGNORE_CASE)
-		mMultiline = vParser.multiline || options.contains(RegexOption.MULTILINE)
 	}
 
 	public actual constructor(pattern: String) : this(pattern, emptySet())
@@ -783,10 +1044,11 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 
 	/**
 	 * The first match starting at [inFrom] or, unless [inAnchored], later; with [inEntire] it
-	 * has to reach the end of the text.
+	 * has to reach the end of the text. [inChars] is the text as characters when the caller has it.
 	 */
-	internal fun search(inText: String, inFrom: Int, inAnchored: Boolean, inEntire: Boolean): MatchResult? {
-		val vState = Matching(inText.toCharArray(), mGroupCount, mLoops, mIgnoreCase, mMultiline)
+	internal fun search(inText: String, inFrom: Int, inAnchored: Boolean, inEntire: Boolean, inChars: CharArray? = null): MatchResult? {
+		val vChars = inChars ?: inText.toCharArray()
+		val vState = Matching(vChars, mGroupCount, mLoops)
 		if (inEntire) vState.requiredEnd = inText.length
 		var vStart = inFrom
 		while (vStart <= inText.length) {
@@ -795,7 +1057,7 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 			if (vEnd >= 0) {
 				vState.groups[0] = vStart
 				vState.groups[1] = vEnd
-				return MatchData(this, inText, vState.groups, mGroupCount)
+				return MatchData(this, inText, vChars, vState.groups, mGroupCount)
 			}
 			if (inAnchored) break
 			vStart++

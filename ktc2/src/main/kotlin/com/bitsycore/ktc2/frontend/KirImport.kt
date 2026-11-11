@@ -277,6 +277,31 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	/** A function of `ktc2.internal`, which library calls without a Kotlin body are redirected to. */
 	internal fun internalFunction(inName: String): IrSimpleFunction? = mInternal[inName]
 
+	/** The classes of the platform layer's `ktc2.internal` package, by name. */
+	private val mInternalClasses = HashMap<String, IrClass>()
+
+	/** The object standing for each property a delegate is told about, by the name of the property. */
+	private val mPropertyObjects = HashMap<String, KStatic>()
+
+	/**
+	 * The object a delegate receives as its `property` for a property called [inName]: one for
+	 * the whole program, which exists from the start, instead of a new one at each access.
+	 */
+	internal fun propertyObjectFor(inName: String): KStatic? {
+		mPropertyObjects[inName]?.let { return it }
+		val vClass = mInternalClasses["PropertyReference"]?.let { classFor(it) } ?: return null
+		val vField = vClass.fields.firstOrNull { it.cName == "name" } ?: return null
+		instantiate(vClass)
+		val vUnit = vClass.unit
+		val vStatic = KStatic(uniqueName("${vClass.cName}_of_${cSuffix(inName)}"), vClass, vUnit)
+		vUnit.statics += vStatic
+		// Its name is put in when the program starts.
+		val vStartup = vUnit.initializer ?: KFunction("${vClass.cName}_names_init", vUnit, emptyList(), KUnitType).also { vUnit.initializer = it }
+		vStartup.body += KFieldSet(KStaticRead(vStatic), vField, KStringLit(inName))
+		mPropertyObjects[inName] = vStatic
+		return vStatic
+	}
+
 	/** Top-level functions that have a body in the module, by qualified name and parameter types. */
 	private val mSourceFunctions = HashMap<String, IrSimpleFunction>()
 
@@ -307,6 +332,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			?.symbol?.defaultType
 		for (vFile in inModule.files.filter { it.packageFqName.asString() == "ktc2.internal" }) {
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().forEach { mInternal[it.name.asString()] = it }
+			vFile.declarations.filterIsInstance<IrClass>().forEach { mInternalClasses[it.name.asString()] = it }
 		}
 		val vMain = inModule.files.filter { !it.packageFqName.asString().startsWith("kotlin") }.firstNotNullOfOrNull { vFile ->
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { isEntryPoint(it) }

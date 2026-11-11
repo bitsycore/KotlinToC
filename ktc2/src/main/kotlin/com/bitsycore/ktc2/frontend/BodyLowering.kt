@@ -2021,6 +2021,7 @@ internal class BodyBuilder(
 	 * knows the name and nothing else, there being no reflection.
 	 */
 	private fun propertyObject(inElement: IrElement, inName: String?): KExpr {
+		mImporter.propertyObjectFor(inName ?: "<unknown>")?.let { return coerce(KStaticRead(it), KObjType) }
 		val vFactory = mImporter.internalFunction("propertyReference")?.let { mImporter.functionFor(it) }
 			?: return fail(inElement, "property reference")
 		return spill(KCall(vFactory, listOf(KStringLit(inName ?: "<unknown>"))))

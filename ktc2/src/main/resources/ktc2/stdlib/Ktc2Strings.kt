@@ -15,9 +15,9 @@ import ktc2.internal.stringUtf8
 ktc2 platform layer for kotlin.text: the String and Char functions the common standard
 library leaves to its platform.
 
-Limits, to be lifted: case conversion and the Char classification functions know ASCII and
-Latin-1 and treat the rest of Unicode approximately (any other letter-range code point is a
-letter, without case); Regex is in Ktc2Regex.kt.
+Classification and case of characters follow Unicode for everything a Char can hold, from the
+tables of Ktc2Unicode.kt, with a short way for ASCII. Characters beyond U+FFFF, which a string
+holds as two Chars, are left as they are by the case functions. Regex is in Ktc2Regex.kt.
 */
 
 // ==================
@@ -30,74 +30,83 @@ public actual fun Char.isLowSurrogate(): Boolean = this >= '\uDC00' && this <= '
 
 public actual fun Char.lowercaseChar(): Char {
 	val vCode = code
-	if (vCode >= 'A'.code && vCode <= 'Z'.code) return (vCode + 32).toChar()
-	if (vCode >= 0xC0 && vCode <= 0xDE && vCode != 0xD7) return (vCode + 32).toChar()
-	return this
+	if (vCode < 0x80) return if (vCode >= 'A'.code && vCode <= 'Z'.code) (vCode + 32).toChar() else this
+	return unicodeToLowerCase(this)
 }
 
 public actual fun Char.uppercaseChar(): Char {
 	val vCode = code
-	if (vCode >= 'a'.code && vCode <= 'z'.code) return (vCode - 32).toChar()
-	if (vCode >= 0xE0 && vCode <= 0xFE && vCode != 0xF7) return (vCode - 32).toChar()
-	return this
+	if (vCode < 0x80) return if (vCode >= 'a'.code && vCode <= 'z'.code) (vCode - 32).toChar() else this
+	return unicodeToUpperCase(this)
 }
 
 public actual fun Char.toLowerCase(): Char = lowercaseChar()
 
 public actual fun Char.toUpperCase(): Char = uppercaseChar()
 
-public actual fun Char.lowercase(): String = lowercaseChar().toString()
+/** The lowercase form as a string: one character, except for `İ`, which gives an `i` and a dot above. */
+public actual fun Char.lowercase(): String = if (this == '\u0130') "i\u0307" else lowercaseChar().toString()
 
-public actual fun Char.uppercase(): String = uppercaseChar().toString()
+/** The uppercase form as a string, which for some characters is several (`ß` gives `SS`). */
+public actual fun Char.uppercase(): String = unicodeUpperCaseString(this) ?: uppercaseChar().toString()
 
-public actual fun Char.titlecaseChar(): Char = uppercaseChar()
+public actual fun Char.titlecaseChar(): Char {
+	val vCode = code
+	if (vCode < 0x80) return if (vCode >= 'a'.code && vCode <= 'z'.code) (vCode - 32).toChar() else this
+	return unicodeToTitleCase(this)
+}
 
-public actual fun Char.isDigit(): Boolean = this >= '0' && this <= '9'
+public actual fun Char.isDigit(): Boolean {
+	if (code < 0x80) return this >= '0' && this <= '9'
+	return unicodeCategory(this) == kDecimalDigit
+}
 
 public actual fun Char.isUpperCase(): Boolean {
 	val vCode = code
-	return (vCode >= 'A'.code && vCode <= 'Z'.code) || (vCode >= 0xC0 && vCode <= 0xDE && vCode != 0xD7)
+	if (vCode < 0x80) return vCode >= 'A'.code && vCode <= 'Z'.code
+	return unicodeIsUpperCase(this)
 }
 
 public actual fun Char.isLowerCase(): Boolean {
 	val vCode = code
-	return (vCode >= 'a'.code && vCode <= 'z'.code) || (vCode >= 0xDF && vCode <= 0xFF && vCode != 0xF7)
+	if (vCode < 0x80) return vCode >= 'a'.code && vCode <= 'z'.code
+	return unicodeIsLowerCase(this)
 }
 
-public actual fun Char.isTitleCase(): Boolean = false
+public actual fun Char.isTitleCase(): Boolean = code >= 0x80 && unicodeCategory(this) == kTitlecaseLetter
 
 public actual fun Char.isLetter(): Boolean {
 	val vCode = code
 	if (vCode < 0x80) return (vCode >= 'A'.code && vCode <= 'Z'.code) || (vCode >= 'a'.code && vCode <= 'z'.code)
-	if (vCode < 0xC0) return vCode == 0xAA || vCode == 0xB5 || vCode == 0xBA
-	if (vCode < 0x100) return vCode != 0xD7 && vCode != 0xF7
-	// Beyond Latin-1: everything outside the punctuation, symbol and surrogate blocks.
-	return !(vCode >= 0x2000 && vCode <= 0x2BFF) && !(vCode >= 0x3000 && vCode <= 0x303F) && !(vCode >= 0xD800 && vCode <= 0xF8FF) && vCode < 0xFE00
+	val vCategory = unicodeCategory(this)
+	return vCategory >= kUppercaseLetter && vCategory <= kOtherLetter
 }
 
 public actual fun Char.isLetterOrDigit(): Boolean = isLetter() || isDigit()
 
-public actual fun Char.isDefined(): Boolean = !(this >= '\uD800' && this <= '\uDFFF')
+public actual fun Char.isDefined(): Boolean = code < 0x80 || unicodeCategory(this) != kUnassigned
 
 public actual fun Char.isISOControl(): Boolean = code <= 0x1F || (code >= 0x7F && code <= 0x9F)
 
 public actual fun Char.isWhitespace(): Boolean {
 	val vCode = code
-	return (vCode >= 0x09 && vCode <= 0x0D) || (vCode >= 0x1C && vCode <= 0x20) || vCode == 0xA0 || vCode == 0x1680 ||
-		(vCode >= 0x2000 && vCode <= 0x200A) || vCode == 0x2028 || vCode == 0x2029 || vCode == 0x202F || vCode == 0x205F || vCode == 0x3000
+	if (vCode < 0x80) return (vCode >= 0x09 && vCode <= 0x0D) || (vCode >= 0x1C && vCode <= 0x20)
+	return unicodeIsWhitespace(this)
 }
 
-public actual val Char.category: CharCategory
-	get() = when {
-		isUpperCase() -> CharCategory.UPPERCASE_LETTER
-		isLowerCase() -> CharCategory.LOWERCASE_LETTER
-		isLetter() -> CharCategory.OTHER_LETTER
-		isDigit() -> CharCategory.DECIMAL_DIGIT_NUMBER
-		this == ' ' -> CharCategory.SPACE_SEPARATOR
-		isISOControl() -> CharCategory.CONTROL
-		isHighSurrogate() || isLowSurrogate() -> CharCategory.SURROGATE
-		else -> CharCategory.OTHER_SYMBOL
-	}
+public actual val Char.category: CharCategory get() = CharCategory.entries[unicodeCategory(this)]
+
+// Ordinals of CharCategory, which is what the tables hold.
+private const val kUnassigned = 0
+private const val kUppercaseLetter = 1
+private const val kTitlecaseLetter = 3
+private const val kOtherLetter = 5
+private const val kNonSpacingMark = 6
+private const val kEnclosingMark = 7
+private const val kDecimalDigit = 9
+private const val kFormat = 16
+private const val kModifierLetter = 4
+private const val kModifierSymbol = 26
 
 public actual enum class CharCategory(public actual val code: String) {
 	UNASSIGNED("Cn"),
@@ -188,14 +197,47 @@ public actual fun CharSequence.repeat(n: Int): String {
 
 public actual fun String.uppercase(): String {
 	val vBuilder = StringBuilder(length)
-	for (vIndex in 0 until length) vBuilder.append(this[vIndex].uppercaseChar())
+	for (vIndex in 0 until length) {
+		val vChar = this[vIndex]
+		// ASCII, by far the most of what is converted, has no form of several characters.
+		val vSeveral = if (vChar.code < 0x80) null else unicodeUpperCaseString(vChar)
+		if (vSeveral != null) vBuilder.append(vSeveral) else vBuilder.append(vChar.uppercaseChar())
+	}
 	return vBuilder.toString()
 }
 
 public actual fun String.lowercase(): String {
 	val vBuilder = StringBuilder(length)
-	for (vIndex in 0 until length) vBuilder.append(this[vIndex].lowercaseChar())
+	for (vIndex in 0 until length) {
+		val vChar = this[vIndex]
+		when {
+			vChar == '\u0130' -> vBuilder.append("i\u0307")
+			// A capital sigma that ends a word is written with the final form of the letter.
+			vChar == '\u03A3' && isFinalSigma(this, vIndex) -> vBuilder.append('\u03C2')
+			else -> vBuilder.append(vChar.lowercaseChar())
+		}
+	}
 	return vBuilder.toString()
+}
+
+private fun isCased(inChar: Char): Boolean = inChar.isUpperCase() || inChar.isLowerCase() || inChar.isTitleCase()
+
+/** True for what does not count when looking for the letters around a sigma: marks, format characters, some punctuation. */
+private fun isCaseIgnorable(inChar: Char): Boolean {
+	if (inChar == '\'' || inChar == '.' || inChar == ':' || inChar == '^' || inChar == '`' || inChar == '\u00B7' || inChar == '\u2019') return true
+	if (inChar.code < 0x80) return false
+	val vCategory = unicodeCategory(inChar)
+	return vCategory == kNonSpacingMark || vCategory == kEnclosingMark || vCategory == kFormat || vCategory == kModifierLetter || vCategory == kModifierSymbol
+}
+
+/** True when the sigma at [inIndex] of [inText] comes after a letter and no letter comes after it. */
+private fun isFinalSigma(inText: String, inIndex: Int): Boolean {
+	var vBefore = inIndex - 1
+	while (vBefore >= 0 && isCaseIgnorable(inText[vBefore])) vBefore--
+	if (vBefore < 0 || !isCased(inText[vBefore])) return false
+	var vAfter = inIndex + 1
+	while (vAfter < inText.length && isCaseIgnorable(inText[vAfter])) vAfter++
+	return vAfter >= inText.length || !isCased(inText[vAfter])
 }
 
 public actual fun String.toUpperCase(): String = uppercase()
@@ -392,7 +434,11 @@ internal actual fun digitOf(char: Char, radix: Int): Int {
 		vCode >= '0'.code && vCode <= '9'.code -> vCode - '0'.code
 		vCode >= 'a'.code && vCode <= 'z'.code -> vCode - 'a'.code + 10
 		vCode >= 'A'.code && vCode <= 'Z'.code -> vCode - 'A'.code + 10
-		else -> -1
+		vCode < 0x80 -> -1
+		// The letters of full width count as the plain ones do; the digits of every script as digits.
+		vCode >= 0xFF21 && vCode <= 0xFF3A -> vCode - 0xFF21 + 10
+		vCode >= 0xFF41 && vCode <= 0xFF5A -> vCode - 0xFF41 + 10
+		else -> unicodeDigit(char)
 	}
 	return if (vDigit >= radix) -1 else vDigit
 }

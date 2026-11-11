@@ -1,0 +1,165 @@
+
+// ==================
+// MARK: Decoding
+// ==================
+
+/** The number written as four hexadecimal digits at [inAt] of [inText]. */
+private fun hexAt(inText: String, inAt: Int): Int {
+	var vValue = 0
+	for (vIndex in inAt until inAt + 4) {
+		val vDigit = inText[vIndex].code
+		vValue = vValue * 16 + if (vDigit <= '9'.code) vDigit - '0'.code else vDigit - 'A'.code + 10
+	}
+	return vValue
+}
+
+/** The numbers of [inText], four digits each. */
+private fun decoded(inText: String): CharArray = CharArray(inText.length / 4) { hexAt(inText, it * 4).toChar() }
+
+/** The numbers at the even places of [inPairs] (`inOffset` 0) or at the odd ones (1). */
+private fun half(inPairs: CharArray, inOffset: Int): CharArray = CharArray(inPairs.size / 2) { inPairs[it * 2 + inOffset] }
+
+private val gCategoryStarts: CharArray = CharArray(kCategoryRuns.length / 5) { hexAt(kCategoryRuns, it * 5).toChar() }
+private val gCategories: ByteArray = ByteArray(kCategoryRuns.length / 5) { (kCategoryRuns[it * 5 + 4].code - 'a'.code).toByte() }
+private val gUpperCaseRanges: CharArray = decoded(kUpperCaseRanges)
+private val gLowerCaseRanges: CharArray = decoded(kLowerCaseRanges)
+private val gWhitespaceRanges: CharArray = decoded(kWhitespaceRanges)
+private val gToUpperPairs: CharArray = decoded(kToUpperCase)
+private val gToLowerPairs: CharArray = decoded(kToLowerCase)
+private val gToTitlePairs: CharArray = decoded(kToTitleCase)
+private val gUpperFrom: CharArray = half(gToUpperPairs, 0)
+private val gUpperTo: CharArray = half(gToUpperPairs, 1)
+private val gLowerFrom: CharArray = half(gToLowerPairs, 0)
+private val gLowerTo: CharArray = half(gToLowerPairs, 1)
+private val gTitleFrom: CharArray = half(gToTitlePairs, 0)
+private val gTitleTo: CharArray = half(gToTitlePairs, 1)
+private val gDigitZeros: CharArray = decoded(kDigitZeros)
+
+// ==================
+// MARK: Lookups
+// ==================
+
+/** The place in the sorted [inSorted] of the last element not above [inChar]; -1 when all are above. */
+private fun floorIndex(inSorted: CharArray, inChar: Char): Int {
+	var vLow = 0
+	var vHigh = inSorted.size - 1
+	while (vLow <= vHigh) {
+		val vMiddle = (vLow + vHigh) ushr 1
+		if (inSorted[vMiddle] <= inChar) vLow = vMiddle + 1 else vHigh = vMiddle - 1
+	}
+	return vHigh
+}
+
+/** True when [inChar] is in one of [inRanges], which holds the first and the last character of each. */
+private fun inRanges(inRanges: CharArray, inChar: Char): Boolean {
+	val vAt = floorIndex(inRanges, inChar)
+	// An even place is the start of a range; an odd one its end, which is in only when it is the character itself.
+	return vAt >= 0 && (vAt % 2 == 0 || inRanges[vAt] == inChar)
+}
+
+/** What [inFrom] maps [inChar] to in [inTo]; the character itself when it is not there. */
+private fun mapped(inFrom: CharArray, inTo: CharArray, inChar: Char): Char {
+	val vAt = floorIndex(inFrom, inChar)
+	return if (vAt >= 0 && inFrom[vAt] == inChar) inTo[vAt] else inChar
+}
+
+/** The ordinal of the CharCategory of [inChar]. */
+internal fun unicodeCategory(inChar: Char): Int = gCategories[floorIndex(gCategoryStarts, inChar)].toInt()
+
+internal fun unicodeIsUpperCase(inChar: Char): Boolean = inRanges(gUpperCaseRanges, inChar)
+
+internal fun unicodeIsLowerCase(inChar: Char): Boolean = inRanges(gLowerCaseRanges, inChar)
+
+internal fun unicodeIsWhitespace(inChar: Char): Boolean = inRanges(gWhitespaceRanges, inChar)
+
+internal fun unicodeToUpperCase(inChar: Char): Char = mapped(gUpperFrom, gUpperTo, inChar)
+
+internal fun unicodeToLowerCase(inChar: Char): Char = mapped(gLowerFrom, gLowerTo, inChar)
+
+/** The titlecase form: the uppercase one except for the few characters that have their own. */
+internal fun unicodeToTitleCase(inChar: Char): Char {
+	val vAt = floorIndex(gTitleFrom, inChar)
+	return if (vAt >= 0 && gTitleFrom[vAt] == inChar) gTitleTo[vAt] else unicodeToUpperCase(inChar)
+}
+
+/**
+ * The uppercase form of [inChar] in a string when it is not its single-character mapping
+ * (`ß` gives `SS`); null for every other character.
+ */
+internal fun unicodeUpperCaseString(inChar: Char): String? {
+	if (inChar.code < 0xB5) return null
+	var vAt = 0
+	while (vAt < kUpperCaseStrings.length) {
+		val vCount = kUpperCaseStrings[vAt + 4].code - '0'.code
+		val vCode = hexAt(kUpperCaseStrings, vAt)
+		if (vCode == inChar.code) {
+			val vText = StringBuilder(vCount)
+			for (vIndex in 0 until vCount) vText.append(hexAt(kUpperCaseStrings, vAt + 5 + vIndex * 4).toChar())
+			return vText.toString()
+		}
+		// The table is in the order of the characters.
+		if (vCode > inChar.code) return null
+		vAt += 5 + vCount * 4
+	}
+	return null
+}
+
+/** The value of [inChar] as a decimal digit of any script; -1 when it is not one. */
+internal fun unicodeDigit(inChar: Char): Int {
+	val vAt = floorIndex(gDigitZeros, inChar)
+	if (vAt < 0) return -1
+	val vValue = inChar.code - gDigitZeros[vAt].code
+	return if (vValue <= 9) vValue else -1
+}
+
+// ==================
+// MARK: Scripts and blocks
+// ==================
+
+/** The number written as two hexadecimal digits at [inAt] of [inText]. */
+private fun hexByteAt(inText: String, inAt: Int): Int {
+	var vValue = 0
+	for (vIndex in inAt until inAt + 2) {
+		val vDigit = inText[vIndex].code
+		vValue = vValue * 16 + if (vDigit <= '9'.code) vDigit - '0'.code else vDigit - 'A'.code + 10
+	}
+	return vValue
+}
+
+private val gScriptStarts: CharArray = CharArray(kScriptRuns.length / 6) { hexAt(kScriptRuns, it * 6).toChar() }
+private val gScripts: IntArray = IntArray(kScriptRuns.length / 6) { hexByteAt(kScriptRuns, it * 6 + 4) }
+private val gBlockStarts: CharArray = CharArray(kBlockRuns.length / 6) { hexAt(kBlockRuns, it * 6).toChar() }
+private val gBlocks: IntArray = IntArray(kBlockRuns.length / 6) { hexByteAt(kBlockRuns, it * 6 + 4) }
+
+/** The place of the script of [inChar] among the names of scripts. */
+internal fun unicodeScript(inChar: Char): Int = gScripts[floorIndex(gScriptStarts, inChar)]
+
+/** The place of the block of [inChar] among the names of blocks; 255 when it is in none. */
+internal fun unicodeBlock(inChar: Char): Int = gBlocks[floorIndex(gBlockStarts, inChar)]
+
+/** [inName] in capitals and without what separates its words, which is how names are compared. */
+private fun plainName(inName: String): String {
+	val vText = StringBuilder(inName.length)
+	for (vChar in inName) if (vChar != ' ' && vChar != '_' && vChar != '-') vText.append(vChar.uppercaseChar())
+	return vText.toString()
+}
+
+/** The place of [inName] in [inNames], a list of names each followed by a comma; -1 when it is not there. */
+private fun placeOfName(inNames: String, inName: String): Int {
+	val vWanted = plainName(inName)
+	var vStart = 0
+	var vPlace = 0
+	while (vStart < inNames.length) {
+		val vEnd = inNames.indexOf(',', vStart)
+		if (plainName(inNames.substring(vStart, vEnd)) == vWanted) return vPlace
+		vStart = vEnd + 1
+		vPlace++
+	}
+	return -1
+}
+
+/** The place of the script called [inName] (`Latin`, `OLD_ITALIC`), or -1. */
+internal fun unicodeScriptNamed(inName: String): Int = placeOfName(kScriptNames, inName)
+
+/** The place of the block called [inName] (`Greek`, `BasicLatin`, `Basic Latin`), or -1. */
+internal fun unicodeBlockNamed(inName: String): Int = placeOfName(kBlockNames, inName)

@@ -926,6 +926,27 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   to C. C calls a small function of its own shape, written into the file that takes the
   address, which copies each struct argument into a `CValue` for the call and the returned
   `CValue` out into a struct (zeroes if the Kotlin function left with an exception).
+- **Unicode for `Char` and `String`** (`stdlib/Unicode.kt`). Classification (`isLetter`,
+  `isDigit`, `isUpperCase`, `category`…), the case of characters and of strings, and digits of
+  every script follow Unicode for all a `Char` can hold, with a short way for ASCII.
+  `String.uppercase` knows the forms of several characters (`ß` gives `SS`) and
+  `lowercase` the final sigma. The tables (`Ktc2Unicode.kt`, 68 KB of text decoded on first
+  use) are written by `tools/GenUnicode.java` from the JDK the tests compare with, so both
+  answer alike: the test agrees with the JVM on the category and the case of all 65,536
+  characters. Characters beyond U+FFFF, held as two `Char`s, are left as they are by the
+  case functions.
+- **Regex, the rest of the syntax** (`stdlib/RegexExtras.kt`): atomic groups and possessive
+  quantifiers, class intersection (`&&`), the flags `i m s x u d` from a place on or for a
+  group, and `\p{…}` for the general categories, the POSIX and `java…` classes, the binary
+  properties, scripts and blocks. As in Java, `(?i)` alone knows the case of ASCII letters
+  only, while `RegexOption.IGNORE_CASE` knows every letter's; `\b` and `\w` are about ASCII.
+  Still refused: the flag `U`, and the four-letter codes of scripts.
+- **Regex and delegates allocate less.** A search no longer copies the text for each match
+  (`findAll`, `replace` and `split` were quadratic in the length of the text), and the
+  matcher's inner loops go by index: a `for` over a list made an iterator for every
+  character tried. Finding 4,000 matches and replacing 2,000 in one text went from 123,700
+  allocations to 14,100. The object a delegate receives as its `property` is one static
+  object per property name, in place of a new one at each access.
 - **Compile time.** The Kotlin compiler was going on to produce JVM classes of the program
   and of the library sources after the translation to C; it is now left with nothing to
   produce. With the JVM settings of the launcher (quick JIT tier, parallel collector) a small
