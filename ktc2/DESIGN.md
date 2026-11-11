@@ -833,9 +833,6 @@ Values on the stack, and Kotlin 2.5 — the latest round:
   back to the object, as before. One recursive lock serves all initializers
   (`ktc2_initEnter` / `ktc2_initExit`); it is taken only until the object is marked done, and
   not at all in a program without threads.
-- **The clock** (`objects/Sleep.kt`): `Thread.sleep`, `System.currentTimeMillis`,
-  `System.nanoTime`, and with them `measureTimeMillis` / `measureNanoTime` from the library
-  sources. `nanoTime` follows the clock of the day; it is not a monotonic counter.
 - **Counting that cannot be observed is left out** (`objects/Borrowing.kt`). A local that is
   only another name for something held at least as long borrows it: no retain when it is
   declared, no release when its block ends. That is the case for a copy of a parameter or of
@@ -881,12 +878,23 @@ Values on the stack, and Kotlin 2.5 — the latest round:
 - **No JDK.** As in Kotlin/Native, a program has nothing of `java.*` or `javax.*`. The Kotlin
   compiler ktc2 runs is the JVM one and cannot be told so (it needs the JDK for the built-in
   types), so `JavaUseCheck` looks for such uses in the files of the program and reports each
-  with its line. What is left under `java.lang` is ktc2's own platform layer, compiled from
-  source: `Thread` (behind `kotlin.concurrent.thread` and `synchronized`), `Thread.sleep`,
-  `System.currentTimeMillis` / `nanoTime`. They are still accepted, and are to move to an API
-  that does not carry the name of the JDK. Files are not part of ktc2's library: they are to
-  come from kotlinx.io or okio through a ktc2 compatibility layer, as other kotlinx libraries
-  later. Until then a program reads files through `platform.posix`.
+  with its line. `java.lang` in the platform layer now holds only the exceptions the runtime
+  throws under their JVM names. Files are not part of ktc2's library: they are to come from
+  kotlinx.io or okio through a ktc2 compatibility layer, as other kotlinx libraries later.
+  Until then a program reads files through `platform.posix`.
+- **`ktc2.concurrent`** (`objects/Threads.kt` and the other thread tests): `Thread`,
+  `thread { }`, `synchronized(lock) { }` and `sleep(milliseconds)`. Kotlin has these on the
+  JVM only, under the names of the JDK, so they are ktc2's, with a JVM side
+  (`src/main/kotlin/ktc2/concurrent`) for running a program on the JVM. `kotlin.concurrent.thread`
+  does not exist for a program; `kotlin.synchronized` is kept for the library's own code, and a
+  program that uses it is told to use the other one.
+- **`kotlin.time`** (`stdlib/Time.kt`), from the library sources: `Duration`, `DurationUnit`,
+  `TimeSource.Monotonic`, `measureTime`, `measureTimedValue`; and `kotlin.system`'s
+  `measureTimeMillis` / `measureNanoTime`. The clock behind them is the clock of the day, not
+  a monotonic counter. `Clock` and `Instant` are not included yet. The accessors of top-level
+  properties in the jar are now matched to their source, as functions were
+  (`Long.sign` was not found before). The JVM the tests compare with runs with an English
+  locale: it wrote `150,25m` on a machine set to French.
 - **Top-level properties get their values on first use of their file**
   (`objects/TopLevelInitialization.kt`), in the order Kotlin gives: touching a property or
   calling a top-level function of the file runs the file's initializer first, and that

@@ -1,7 +1,9 @@
 // An object used for the first time by several threads at once is initialized once, and no
 // thread sees it before its initializer has finished.
 
-import kotlin.concurrent.thread
+import ktc2.concurrent.Thread
+import ktc2.concurrent.sleep
+import ktc2.concurrent.thread
 
 var gCreated = 0
 
@@ -16,7 +18,7 @@ object Registry {
 			total += vIndex % 7
 			if (vIndex % 4000 == 0) names.add("entry" + names.size)
 		}
-		Thread.sleep(20)
+		sleep(20)
 		names.add("last")
 	}
 }

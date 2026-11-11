@@ -1,18 +1,19 @@
-// Thread.sleep and the clock in a program that starts no thread.
+// Sleeping and timing a block, in a program that starts no thread.
 
+import ktc2.concurrent.sleep
 import kotlin.system.measureNanoTime
 import kotlin.system.measureTimeMillis
 
 fun main() {
-	val vBefore = System.currentTimeMillis()
-	Thread.sleep(30)
-	Thread.sleep(0)
-	val vElapsed = System.currentTimeMillis() - vBefore
+	val vElapsed = measureTimeMillis {
+		sleep(30)
+		sleep(0)
+	}
 	println(vElapsed >= 25)
-	println(measureTimeMillis { Thread.sleep(10) } >= 8)
-	println(measureNanoTime { Thread.sleep(10) } >= 8_000_000L)
+	println(measureTimeMillis { sleep(10) } >= 8)
+	println(measureNanoTime { sleep(10) } >= 8_000_000L)
 	try {
-		Thread.sleep(-1)
+		sleep(-1)
 	} catch (vError: IllegalArgumentException) {
 		println(vError.message)
 	}

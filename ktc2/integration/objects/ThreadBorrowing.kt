@@ -1,7 +1,9 @@
 // A reference read from a field must stay alive when another thread replaces the field:
 // read before the thread starts, or read under the lock the other thread also takes.
 
-import kotlin.concurrent.thread
+
+import ktc2.concurrent.synchronized
+import ktc2.concurrent.thread
 
 class Note(val text: String)
 

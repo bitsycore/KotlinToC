@@ -296,7 +296,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	fun import(inModule: IrModuleFragment): KModule {
 		for (vFile in inModule.files) countOverloads(vFile.declarations)
 		for (vFile in inModule.files) {
-			for (vFunction in vFile.declarations.filterIsInstance<IrSimpleFunction>()) {
+			// Top-level functions, and the accessors of top-level properties (`val Long.sign get() = …`).
+			val vAccessors = vFile.declarations.filterIsInstance<IrProperty>().flatMap { listOfNotNull(it.getter, it.setter) }
+			for (vFunction in vFile.declarations.filterIsInstance<IrSimpleFunction>() + vAccessors) {
 				if (vFunction.body != null || vFunction.isExternal) mSourceFunctions[sourceKey(vFunction)] = vFunction
 			}
 		}

@@ -64,7 +64,7 @@ class IntegrationTest {
 			assertTrue(K2Frontend.compileJvm(listOf(inSource), vJvmDir), "kotlinc failed on $inSource")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
 			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
-			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-cp", vClasspath, vJvmMain), File("."))
+			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File("."))
 		}
 
 		val vExe = File(vOutDir, "program.exe")

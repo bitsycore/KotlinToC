@@ -1,6 +1,8 @@
 // Every part of a string template, or of a chain of +, is evaluated before the first toString
 // runs; and Any() makes an object.
 
+import ktc2.concurrent.synchronized
+
 class Counter {
 	var count = 0
 }

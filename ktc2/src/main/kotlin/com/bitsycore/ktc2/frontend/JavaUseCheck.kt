@@ -30,6 +30,9 @@ class JavaUseCheck(private val mLibraryFiles: Set<String>) {
 
 	val errors = ArrayList<String>()
 
+	/** Functions of the Kotlin library that exist on the JVM only, with what a program uses instead. */
+	private val kJvmOnly = mapOf("kotlin.synchronized" to "ktc2.concurrent.synchronized")
+
 	fun check(inFiles: List<IrFile>) {
 		for (vFile in inFiles) {
 			if (File(vFile.fileEntry.name).absoluteFile.invariantSeparatorsPath in mLibraryFiles) continue
@@ -46,6 +49,16 @@ class JavaUseCheck(private val mLibraryFiles: Set<String>) {
 
 		override fun visitMemberAccess(expression: IrMemberAccessExpression<*>) {
 			(expression.symbol.owner as? IrDeclaration)?.let { report(expression, it) }
+			// What Kotlin has on the JVM only, and the library keeps for its own use.
+			val vCalled = (expression.symbol.owner as? IrFunction)?.kotlinFqName?.asString()
+			kJvmOnly[vCalled]?.let { vInstead ->
+				if (expression.startOffset >= 0) {
+					val vLine = mFile.fileEntry.getLineNumber(expression.startOffset) + 1
+					if (mReported.add("$vLine $vCalled")) {
+						errors += "${File(mFile.fileEntry.name).name}:$vLine: '$vCalled' exists on the JVM only: use '$vInstead'"
+					}
+				}
+			}
 			super.visitMemberAccess(expression)
 		}
 

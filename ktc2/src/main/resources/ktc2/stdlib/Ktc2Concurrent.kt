@@ -1,19 +1,79 @@
-@file:Suppress("UNUSED_PARAMETER")
+package ktc2.concurrent
 
-package kotlin.concurrent
+import ktc2.internal.monitorEnter
+import ktc2.internal.monitorExit
+import ktc2.internal.threadJoin
+import ktc2.internal.threadSleep
+import ktc2.internal.threadStart
+
+/*
+The C side of `ktc2.concurrent`: threads of the operating system, a monitor per object, and
+sleeping. Kotlin itself has these only on the JVM, under the names of the JDK.
+*/
+
+// ==================
+// MARK: Thread
+// ==================
 
 /**
- * Creates a thread that runs [block], started at once unless [start] is false.
- * [isDaemon], [name] and [priority] are accepted and ignored.
+ * A thread of the operating system that runs [run] once started. Objects reachable from
+ * several threads are counted atomically; a property written by one thread while another
+ * uses it still needs [synchronized].
  */
-public fun thread(
-	start: Boolean = true,
-	isDaemon: Boolean = false,
-	name: String? = null,
-	priority: Int = -1,
-	block: () -> Unit,
-): Thread {
+public open class Thread() {
+
+	private var mBlock: (() -> Unit)? = null
+	private var mHandle: Long = 0L
+	private var mStarted: Boolean = false
+
+	public constructor(block: () -> Unit) : this() {
+		mBlock = block
+	}
+
+	/** What the thread does: the block it was built with, unless overridden. */
+	public open fun run() {
+		mBlock?.invoke()
+	}
+
+	public fun start() {
+		if (mStarted) throw IllegalStateException("Thread already started")
+		mStarted = true
+		mHandle = threadStart(this)
+	}
+
+	/** Waits for the thread to end; returns at once when it was not started or already joined. */
+	public fun join() {
+		val vHandle = mHandle
+		if (vHandle != 0L) {
+			mHandle = 0L
+			threadJoin(vHandle)
+		}
+	}
+}
+
+/** Creates a thread that runs [block], started at once unless [start] is false. */
+public fun thread(start: Boolean = true, block: () -> Unit): Thread {
 	val vThread = Thread(block)
 	if (start) vThread.start()
 	return vThread
+}
+
+// ==================
+// MARK: Monitors and sleeping
+// ==================
+
+/** Runs [block] while holding the monitor of [lock]; a thread may take a monitor it already holds. */
+public inline fun <R> synchronized(lock: Any, block: () -> R): R {
+	monitorEnter(lock)
+	try {
+		return block()
+	} finally {
+		monitorExit(lock)
+	}
+}
+
+/** Suspends the calling thread for [milliseconds]. */
+public fun sleep(milliseconds: Long) {
+	if (milliseconds < 0L) throw IllegalArgumentException("timeout value is negative")
+	threadSleep(milliseconds)
 }

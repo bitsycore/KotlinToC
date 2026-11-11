@@ -1,6 +1,9 @@
 package objects
 
-import kotlin.concurrent.thread
+import ktc2.concurrent.Thread
+import ktc2.concurrent.synchronized
+import ktc2.concurrent.thread
+
 
 /** Immutable data read by every worker: its count is touched from all threads at once. */
 class Sample(val id: Int, val label: String)

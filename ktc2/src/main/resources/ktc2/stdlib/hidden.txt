@@ -17,3 +17,12 @@ kotlin/NoWhenBranchMatchedException.class
 kotlin/UninitializedPropertyAccessException.class
 kotlin/StandardKt__SynchronizedKt.class
 kotlin/concurrent/ThreadsKt.class
+kotlin/system/TimingKt.class
+kotlin/time/DurationUnit.class
+kotlin/time/DurationUnitKt.class
+kotlin/time/DurationUnitKt__DurationUnitJvmKt.class
+kotlin/time/DurationUnitKt__DurationUnitKt.class
+kotlin/time/DurationJvmKt.class
+kotlin/time/MonotonicTimeSource.class
+kotlin/time/MonoTimeSourceKt.class
+kotlin/time/LongSaturatedMathKt.class
