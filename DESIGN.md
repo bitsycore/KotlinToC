@@ -947,6 +947,9 @@ Values on the stack, and Kotlin 2.5 - the latest round:
   JVM as `projects/examples/showcase/core`), and a window with a button per group
   (`src/`, SDL3). `--headless` prints, `--auto` clicks every button by itself and
   `--shot file.bmp` saves what the window shows, which is how it is checked without a screen.
+  A click adds everything the group did to a log - each check and what the program gave for
+  it - which the wheel, the arrows, Page Up and Down, Home and End and a bar move through;
+  `--headless --log` prints the same.
   Writing it found three gaps, now closed: `Number` as a type, a cast of a nullable number to
   its type in generic library code (`Map.getValue`), and library functions that have one path
   through coroutines (`chunked`, `windowed`): those now compile, and fail only if that path is
