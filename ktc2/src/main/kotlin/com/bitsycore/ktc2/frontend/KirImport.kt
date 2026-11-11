@@ -475,6 +475,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				continue
 			}
 			val vField = KField(cIdentifier(vProperty.name.asString()), vType, vClass, isImmutable = !vProperty.isVar)
+			inlineSizeOf(vProperty, vBacking, vType, vClass, vFile)?.let { vField.inlineSize = it }
 			vClass.fields += vField
 			mFields[vBacking to vClass] = vField
 		}
@@ -495,6 +496,35 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		if (inClass.kind == ClassKind.ENUM_CLASS) declareEnumEntries(inClass, vClass, vFile)
 		return vClass
+	}
+
+	/**
+	 * The inline storage a property asks for with `@Value` (0) or `@Size(N)` (N), on its type or
+	 * on the property itself; null for an ordinary field.
+	 */
+	private fun inlineSizeOf(inProperty: IrProperty, inBacking: IrField, inType: KType, inOwner: KClass, inFile: IrFile): Int? {
+		val vAnnotations = inBacking.type.annotations + inProperty.annotations + inBacking.annotations
+		fun find(inName: String) = vAnnotations.firstOrNull { it.type.classFqName?.asString() == inName }
+		val vSize = find("ktc2.Size")
+		if (vSize != null) {
+			val vCount = (vSize.arguments.firstOrNull() as? IrConst)?.value as? Int
+			if (inType !is KArrayType || vCount == null || vCount < 1 || inBacking.type.isMarkedNullable()) {
+				unsupported(inFile, inProperty, "@Size on '${inProperty.name}' (it needs a non-null array type and a positive constant)")
+				return null
+			}
+			return vCount
+		}
+		if (find("ktc2.Value") != null) {
+			val vClass = (inType as? KClassType)?.cls
+			val vIr = inBacking.type.classOrNull?.owner
+			if (vClass == null || vIr == null || vIr.modality != Modality.FINAL || vClass === inOwner || inBacking.type.isMarkedNullable()) {
+				unsupported(inFile, inProperty, "@Value on '${inProperty.name}' (it needs a non-null final class other than its owner)")
+				return null
+			}
+			vClass.isUsedInline = true
+			return 0
+		}
+		return null
 	}
 
 	internal fun infoOf(inClass: KClass): ClassInfo? = mClassInfo[inClass]

@@ -239,8 +239,9 @@ class ArcInsert(private val mModule: KModule) {
 					outStatements += KGlobalSet(inStatement.global, stored(inStatement.value, inStatement.global.type, outStatements), vIsRef)
 				}
 				is KFieldSet -> {
-					val vIsRef = isRef(inStatement.field.type)
-					outStatements += KFieldSet(inStatement.target, inStatement.field, stored(inStatement.value, inStatement.field.type, outStatements), vIsRef)
+					// An inline field is assigned by copying content, not by taking a reference.
+					val vIsRef = isRef(inStatement.field.type) && !inStatement.field.isInline
+					outStatements += KFieldSet(inStatement.target, inStatement.field, stored(inStatement.value, if (vIsRef) inStatement.field.type else KUnitType, outStatements), vIsRef)
 				}
 				is KIndexSet -> {
 					val vIsRef = isRef(inStatement.value.type)

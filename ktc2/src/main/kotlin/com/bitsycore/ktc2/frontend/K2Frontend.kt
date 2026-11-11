@@ -222,6 +222,11 @@ class Ktc2Extension : IrGenerationExtension {
 		val vEscapes = EscapeAnalysis(vModule)
 		vEscapes.run()
 		if (System.getProperty("ktc2.warnHeap") == "true") vEscapes.heapReport.forEach { System.err.println("ktc2: heap: $it") }
+		if (vEscapes.errors.isNotEmpty()) {
+			vEscapes.errors.forEach { System.err.println("ktc2: error: $it") }
+			System.setProperty(kErrorCountProperty, vEscapes.errors.size.toString())
+			return
+		}
 		ArcInsert(vModule).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && it.name.asString() == "main" && it.parameters.isEmpty() } }

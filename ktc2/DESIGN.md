@@ -406,7 +406,7 @@ ktc2/
 | 2 | Naive ARC | `ktc2_core` header + type table + retain/release at every copy and scope exit; classes, `String`, arrays, interfaces, inheritance, objects, enums, data classes, boxing as references; leak report at exit — **done** | class / string / array programs match the JVM, zero leaks |
 | 3 | Generics, closures, std library | generics by monomorphization, inline functions, closures, object expressions; `kotlin.collections`, `kotlin.text`, ranges and sequences compiled from the Kotlin stdlib's own sources — **done** | collection, string and lambda programs match the JVM |
 | 4 | Ownership optimization | rules 1–5 of §5.2 in `ArcInsert`; reference-count statistics (`-DKTC2_ARC_STATS`, collected per test in `build/integration/arc-stats.txt`) — **done** (see status) | RC operations per test drop sharply, output unchanged |
-| 5 | Escape analysis | whole-program escape summaries and stack promotion of class instances, closures and cells — **done**; still to do: stack buffers for non-escaping strings and arrays, caller-slot returns, `@Value` / `@Size` inline storage, autobox, `--warn-heap` | heap allocations on v1's test programs back to v1's level |
+| 5 | Escape analysis | whole-program escape summaries; stack promotion of objects, closures, cells, strings and small arrays; `@Value` / `@Size` inline fields with autobox; `--warn-heap` — **done** (see status; caller-slot returns and inline array elements are left) | heap allocations drop where objects are temporary, output unchanged |
 | 6 | Exceptions + cycles + threads | checked propagation; cycle lint, `@Weak` / `WeakRef<T>`; atomic mode | exception programs leak-free; thread programs under atomic RC |
 | 7 | Arena + C interop | `arena { }`; `kotlinx.cinterop` API + `.def` binding generator; port of the SDL3 module | v1's interop tests ported and passing |
 
@@ -530,18 +530,39 @@ What remains for later: borrowing a `val` field read into a local, releasing a t
 its last use rather than at scope end, and not counting at all for objects that never
 escape (Phase 5).
 
-Phase 5 so far — escape analysis (`EscapeAnalysis`, before `ArcInsert`). A reference escapes
-when it is returned, stored into a field, global or array element, or passed to a parameter
-that escapes; the per-parameter summary is a fixpoint over the whole program (a dispatcher's
-is the union of its targets', a runtime function is assumed to keep its arguments). An
-allocation whose object and every copy of its reference stay inside the block of the
-allocation is emitted as a C compound literal in that block. Such an object carries a flag
-in its count: reaching zero releases what it refers to but frees nothing. This applies to
-class instances, closure objects and captured-variable cells alike.
+Phase 5 — escape analysis and inline storage (`EscapeAnalysis`, before `ArcInsert`;
+`integration/values/`). 17 programs.
+- **Escape summaries.** A reference escapes when it is returned, stored into a field, global
+  or array element, or passed to a parameter that escapes; the per-parameter summary is a
+  fixpoint over the whole program (a dispatcher's is the union of its targets', a runtime
+  function is assumed to keep its arguments).
+- **Stack promotion.** An allocation whose object, and every copy of its reference, stays
+  inside the block of the allocation lives in that block: a class instance, closure or cell
+  as a C compound literal, an array of a small constant size likewise, a concatenated string
+  in a 128-byte buffer of the block (falling back to the heap when it does not fit). Such an
+  object carries a flag in its count: reaching zero releases what it refers to and frees
+  nothing.
+- **`@Value` and `@Size(N)` fields.** The object or array is embedded in its owner's struct
+  (`values_Vec2 position;`, `struct { ktc2_Array header; int32_t data[4]; } history;`).
+  Reading the field yields a pointer into the owner, which is kept alive for as long as that
+  pointer is in scope; assigning the field copies the value in. The same analysis decides
+  what happens to such a pointer: if it stays in its block it is used as is; if it has to be
+  kept (stored, returned, passed to a function that keeps it) an immutable object is copied to
+  the heap — the autobox — and a mutable object or an array is refused with a message asking
+  for an explicit `copy()` / `copyOf()`, because a silent copy would behave differently from
+  the JVM.
+- **`--warn-heap`** lists every allocation left on the heap with the reason, for example
+  `Classes.kt:52: a Node is allocated on the heap: returned`.
 
-Effect on heap allocations: `objects/Classes` 2025 → 1020 (the temporaries of a loop),
-`generics/Lambdas` 47 → 36, `generics/Generics` 73 → 60. Programs dominated by strings and
-arrays barely change yet: those are not promoted so far.
+Effect on heap allocations (before any promotion → now): `objects/Classes` 2025 → 1020,
+`objects/Strings` 65 → 45, `objects/Arrays` 42 → 28, `generics/Lambdas` 47 → 30,
+`stdlib/ScopeFunctions` 14 → 7. Collection-heavy programs change little: their allocations
+are the collections' own storage, which has to live on the heap.
+
+Not done in Phase 5: returning a new object directly into the caller's slot (a returned
+object is always heap-allocated), `@Value` on array elements and locals, arrays of variable
+size on the stack, and the `.copy()` rule for assigning a *mutable* object into an inline
+field from a non-fresh source (the content is copied; on the JVM the two would alias).
 
 Known gaps, deliberately left for later phases: failures that Kotlin reports as exceptions
 (null `!!`, bad cast, index out of bounds, `/ by zero`, `throw`) print the JVM-style message

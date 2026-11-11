@@ -136,6 +136,27 @@ ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)
 	return array;
 }
 
+void ktc2_array_assign(ktc2_Array* slot, int32_t length, uint32_t typeId, size_t elementSize, const ktc2_Array* source)
+{
+	if (slot == source) return;
+	if (source->length != length) {
+		char text[96];
+		snprintf(text, sizeof text, "an array of %" PRId32 " elements assigned to inline storage of %" PRId32, source->length, length);
+		fail("java.lang.IllegalArgumentException", text);
+	}
+	void** incoming = (void**)(source + 1);
+	void** current = (void**)(slot + 1);
+	if (typeId == KTC2_TYPE_ARRAY_REF) {
+		for (int32_t i = 0; i < length; i++) ktc2_retain(incoming[i]);
+		for (int32_t i = 0; i < slot->length; i++) ktc2_release(current[i]);
+	}
+	memcpy(current, incoming, (size_t)length * elementSize);
+	slot->header.rc = KTC2_IMMORTAL;
+	slot->header.typeId = typeId;
+	slot->length = length;
+	slot->elementSize = (int32_t)elementSize;
+}
+
 void ktc2_array_destroy(ktc2_Obj* object)
 {
 	ktc2_Array* array = (ktc2_Array*)object;

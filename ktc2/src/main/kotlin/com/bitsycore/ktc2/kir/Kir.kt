@@ -105,7 +105,15 @@ class KStruct(
  * [owner] is the class declaring the field, or null for a `@Struct` field. [isImmutable] is set
  * for a field that is never reassigned once its object is constructed (a `val`).
  */
-class KField(val cName: String, val type: KType, val owner: KClass? = null, val isImmutable: Boolean = false)
+class KField(val cName: String, val type: KType, val owner: KClass? = null, val isImmutable: Boolean = false) {
+	/**
+	 * Inline storage: the object (`@Value`, [inlineSize] = 0) or the array of that many elements
+	 * (`@Size(N)`) is embedded in the owner instead of being referred to. -1 for an ordinary field.
+	 */
+	var inlineSize: Int = -1
+
+	val isInline: Boolean get() = inlineSize >= 0
+}
 
 /**
  * A reference class. Its C struct starts with the superclass struct (or `ktc2_Obj`), so a
@@ -123,6 +131,9 @@ class KClass(
 
 	/** Set when the program constructs this class; only such classes get a type id. */
 	var isInstantiated = false
+
+	/** Set when a `@Value` field holds this class inline: it then gets copy and assign helpers. */
+	var isUsedInline = false
 
 	fun isSubclassOf(inOther: KClass): Boolean = this === inOther || superClass?.isSubclassOf(inOther) == true
 
@@ -238,6 +249,13 @@ class KSelect(val condition: KExpr, val whenTrue: KExpr, val whenFalse: KExpr, o
 
 /** Reads a field of a struct value or of the object a class reference points to. */
 class KFieldRead(val target: KExpr, val field: KField) : KExpr {
+	/**
+	 * For an inline field the read yields a pointer into the owner, valid while the owner lives.
+	 * `EscapeAnalysis` sets this when that reference is kept beyond its block: the value is then
+	 * copied to the heap (the "autobox" of an inline value).
+	 */
+	var needsCopy: Boolean = false
+
 	override val type: KType get() = this.field.type
 }
 
@@ -315,6 +333,7 @@ fun KExpr.isImpure(): Boolean = when (this) {
 	is KCall, is KAlloc, is KArrayNew -> true
 	is KIntrinsic -> !isPure
 	is KRefCast -> operand.isImpure()
+	is KFieldRead -> needsCopy
 	else -> false
 }
 

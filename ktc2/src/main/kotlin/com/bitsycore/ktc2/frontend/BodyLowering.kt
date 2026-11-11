@@ -1037,6 +1037,25 @@ internal class BodyBuilder(
 
 	private fun selfRead(): KExpr = KRead(mFunction.params[0])
 
+	/**
+	 * Reads [inField] of [inTarget]. An inline field yields a pointer into its owner: the owner
+	 * is held by a local for as long as that pointer is in scope, and the pointer gets a local
+	 * of its own so the escape analysis can see where it goes.
+	 */
+	private fun readField(inTarget: KExpr, inField: KField): KExpr {
+		if (!inField.isInline) return KFieldRead(inTarget, inField)
+		val vOwner = newTemp(inTarget.type)
+		mBlock += KLet(vOwner, inTarget)
+		val vInside = newTemp(inField.type)
+		mBlock += KLet(vInside, KFieldRead(KRead(vOwner), inField))
+		return KRead(vInside)
+	}
+
+	/** Writes [inField] of [inTarget]; an inline field takes a copy of the value's content. */
+	private fun writeField(inTarget: KExpr, inField: KField, inValue: KExpr) {
+		mBlock += KFieldSet(inTarget, inField, if (inField.isInline) spill(inValue) else inValue)
+	}
+
 	/** The receiver of a field access, seen as the class that declares the field. */
 	private fun fieldTarget(inReceiver: KExpr, inField: KField): KExpr =
 		inField.owner?.let { coerce(inReceiver, KClassType(it)) } ?: inReceiver
@@ -1108,7 +1127,7 @@ internal class BodyBuilder(
 					val vBacking = vDeclaration.backingField ?: continue
 					val vInit = vBacking.initializer?.expression ?: continue
 					val vField = mImporter.fieldIn((mFunction.params[0].type as? KClassType)?.cls, vBacking) ?: continue
-					mBlock += KFieldSet(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vInit), vField.type))
+					writeField(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vInit), vField.type))
 				}
 				is IrAnonymousInitializer -> vDeclaration.body.statements.forEach { lowerStatement(it) }
 				else -> {}
@@ -1121,7 +1140,7 @@ internal class BodyBuilder(
 		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(it) }
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field access")
 		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
-		return adapt(KFieldRead(fieldTarget(lowerPure(vReceiver), vField), vField), inExpression)
+		return adapt(readField(fieldTarget(lowerPure(vReceiver), vField), vField), inExpression)
 	}
 
 	private fun lowerSetField(inExpression: IrSetField): KExpr {
@@ -1133,7 +1152,7 @@ internal class BodyBuilder(
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field assignment")
 		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field assignment")
 		val vOperands = lowerOperands(listOf(vReceiver, inExpression.value), inLastMayBeImpure = true)
-		mBlock += KFieldSet(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
+		writeField(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
 		return KUnitValue
 	}
 
@@ -1298,10 +1317,10 @@ internal class BodyBuilder(
 			val vField = vRealProperty?.backingField?.let { mImporter.fieldFor(it, vReceiver) }
 			if (vField != null && vReal.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR) {
 				if (vReal === vRealProperty.getter) {
-					return adapt(KFieldRead(fieldTarget(lowerPure(vArguments[0]!!), vField), vField), inCall)
+					return adapt(readField(fieldTarget(lowerPure(vArguments[0]!!), vField), vField), inCall)
 				}
 				val vOperands = lowerOperands(listOf(vArguments[0]!!, vArguments[1]!!), inLastMayBeImpure = true)
-				mBlock += KFieldSet(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
+				writeField(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
 				return KUnitValue
 			}
 		}

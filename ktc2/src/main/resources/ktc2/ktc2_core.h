@@ -255,6 +255,12 @@ static inline int32_t ktc2_array_index(const ktc2_Array* array, int32_t index)
 	return index;
 }
 
+/**
+ * Fills the inline array [slot] (room for [length] elements) with a copy of [source], which
+ * must have exactly that many elements.
+ */
+void ktc2_array_assign(ktc2_Array* slot, int32_t length, uint32_t typeId, size_t elementSize, const ktc2_Array* source);
+
 /** The bounds-checked element, as an lvalue. */
 #define KTC2_ARRAY_AT(array, type, index) (((type*)((array) + 1))[ktc2_array_index((array), (index))])
 

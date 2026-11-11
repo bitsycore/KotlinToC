@@ -107,7 +107,26 @@ class CEmitter(private val mModule: KModule) {
 	private fun allFunctions(inUnit: KUnit): List<KFunction> = inUnit.functions + listOfNotNull(inUnit.initializer)
 
 	/** Reference fields of [inClass] itself (not inherited). */
-	private fun refFields(inClass: KClass): List<KField> = inClass.fields.filter { it.type is KRefType }
+	private fun refFields(inClass: KClass): List<KField> = inClass.fields.filter { it.type is KRefType && !it.isInline }
+
+	/** The C declaration of a field: a pointer, a value, or inline storage. */
+	private fun fieldDeclaration(inField: KField): String {
+		val vType = inField.type
+		return when {
+			inField.inlineSize == 0 -> "${(vType as KClassType).cls.cName} ${inField.cName}"
+			inField.inlineSize > 0 -> "struct { ktc2_Array header; ${cType((vType as KArrayType).element)} data[${inField.inlineSize}]; } ${inField.cName}"
+			else -> "${cType(vType)} ${inField.cName}"
+		}
+	}
+
+	private fun headerPath(inClass: KClass): String =
+		generateSequence(inClass) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
+
+	private fun arrayId(inElement: KType): String = when (inElement) {
+		is KPrimType -> "KTC2_TYPE_ARRAY_${inElement.prim.name}"
+		is KRefType -> "KTC2_TYPE_ARRAY_REF"
+		else -> "KTC2_TYPE_ARRAY_VALUE"
+	}
 
 	private fun header(inUnit: KUnit): String = buildString {
 		val vGuard = "KTC2_" + inUnit.path.uppercase().map { if (it.isLetterOrDigit()) it else '_' }.joinToString("") + "_H"
@@ -126,6 +145,8 @@ class CEmitter(private val mModule: KModule) {
 		val vIncludes = LinkedHashSet<KUnit>()
 		vTypes.forEach { vType -> unitOf(vType)?.let(vIncludes::add) }
 		inUnit.cls?.superClass?.let { vIncludes += it.unit }
+		// An object stored inline needs its full definition here.
+		inUnit.cls?.fields?.filter { it.inlineSize == 0 }?.forEach { vIncludes += (it.type as KClassType).cls.unit }
 		vIncludes.filter { it !== inUnit }.forEach { append("#include \"${it.path}.h\"\n") }
 		append("\n")
 		val vForward = LinkedHashSet<KClass>()
@@ -144,10 +165,18 @@ class CEmitter(private val mModule: KModule) {
 		inUnit.cls?.let { vClass ->
 			append("struct ${vClass.cName} {\n")
 			append(vClass.superClass?.let { "\t${it.cName} _super;\n" } ?: "\tktc2_Obj _header;\n")
-			vClass.fields.forEach { append("\t${cType(it.type)} ${it.cName};\n") }
+			vClass.fields.forEach { append("\t${fieldDeclaration(it)};\n") }
 			append("};\n\n")
 			append("/** Releases the references held by the fields of an instance. */\n")
 			append("void ${vClass.cName}__destroy(ktc2_Obj* object);\n")
+			append("/** Takes a reference on everything the fields of an instance refer to (after a bitwise copy). */\n")
+			append("void ${vClass.cName}__retain_fields(${vClass.cName}* self);\n")
+			if (vClass.isUsedInline) {
+				append("/** A heap copy of an instance (the boxed form of an inline value). */\n")
+				append("${vClass.cName}* ${vClass.cName}__clone(const ${vClass.cName}* source);\n")
+				append("/** Replaces the content of an inline slot by a copy of [source]. */\n")
+				append("void ${vClass.cName}__assign(${vClass.cName}* slot, const ${vClass.cName}* source);\n")
+			}
 		}
 		inUnit.statics.forEach { append("extern ${it.cls.cName} ${it.cName};\n") }
 		inUnit.globals.forEach { append("extern ${cType(it.type)} ${it.cName};\n") }
@@ -170,12 +199,49 @@ class CEmitter(private val mModule: KModule) {
 			val vOwn = refFields(vClass)
 			if (vOwn.isNotEmpty()) vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n")
 			vOwn.forEach { vBodies.append("\tktc2_release(self->${it.cName});\n") }
+			val vInline = vClass.fields.filter { it.isInline }
+			if (vInline.isNotEmpty() && vOwn.isEmpty()) vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n")
+			for (vField in vInline) {
+				val vType = vField.type
+				if (vType is KClassType) {
+					vState.includes += vType.cls.unit
+					vBodies.append("\t${vType.cls.cName}__destroy((ktc2_Obj*)&self->${vField.cName});\n")
+				} else if ((vType as KArrayType).element is KRefType) {
+					vBodies.append("\tif (self->${vField.cName}.header.length) ktc2_array_destroy((ktc2_Obj*)&self->${vField.cName});\n")
+				}
+			}
 			vClass.superClass?.let {
 				vState.includes += it.unit
 				vBodies.append("\t${it.cName}__destroy(object);\n")
 			}
 			if (vOwn.isEmpty() && vClass.superClass == null) vBodies.append("\t(void)object;\n")
 			vBodies.append("}\n")
+		}
+		inUnit.cls?.let { vClass ->
+			val vName = vClass.cName
+			vBodies.append("\nvoid ${vName}__retain_fields($vName* self)\n{\n")
+			refFields(vClass).forEach { vBodies.append("\tktc2_retain(self->${it.cName});\n") }
+			for (vField in vClass.fields.filter { it.isInline }) {
+				val vType = vField.type
+				if (vType is KClassType) {
+					vBodies.append("\t${vType.cls.cName}__retain_fields(&self->${vField.cName});\n")
+				} else if ((vType as KArrayType).element is KRefType) {
+					vBodies.append("\tfor (int32_t i = 0; i < self->${vField.cName}.header.length; i++) ktc2_retain(self->${vField.cName}.data[i]);\n")
+				}
+			}
+			vClass.superClass?.let { vBodies.append("\t${it.cName}__retain_fields(&self->_super);\n") }
+			vBodies.append("\t(void)self;\n}\n")
+			if (vClass.isUsedInline) {
+				val vHeader = "(ktc2_Obj){ KTC2_IMMORTAL, ${typeId(vClass)} }"
+				vBodies.append("\n$vName* ${vName}__clone(const $vName* source)\n{\n")
+				vBodies.append("\t$vName* copy = ktc2_alloc(sizeof($vName), ${typeId(vClass)});\n")
+				vBodies.append("\tktc2_Obj header = *(ktc2_Obj*)copy;\n\t*copy = *source;\n\t*(ktc2_Obj*)copy = header;\n")
+				vBodies.append("\t${vName}__retain_fields(copy);\n\treturn copy;\n}\n")
+				vBodies.append("\nvoid ${vName}__assign($vName* slot, const $vName* source)\n{\n")
+				vBodies.append("\tif (slot == source) return;\n")
+				vBodies.append("\t$vName previous = *slot;\n\t*slot = *source;\n\t*(ktc2_Obj*)slot = $vHeader;\n")
+				vBodies.append("\t${vName}__retain_fields(slot);\n\t${vName}__destroy((ktc2_Obj*)&previous);\n}\n")
+			}
 		}
 		if (inUnit.globals.isNotEmpty()) vBodies.append("\n")
 		for (vGlobal in inUnit.globals) {
@@ -309,7 +375,22 @@ class CEmitter(private val mModule: KModule) {
 					mState.includes += inStatement.global.unit
 					store(inStatement.global.cName, inStatement.value, inStatement.releasesOld, inDepth)
 				}
-				is KFieldSet -> store(field(inStatement.target, inStatement.field), inStatement.value, inStatement.releasesOld, inDepth)
+				is KFieldSet -> {
+					val vField = inStatement.field
+					val vSlot = field(inStatement.target, vField)
+					val vType = vField.type
+					when {
+						vField.inlineSize == 0 -> {
+							mState.includes += (vType as KClassType).cls.unit
+							line(inDepth, "${vType.cls.cName}__assign(&$vSlot, ${bare(expr(inStatement.value))});")
+						}
+						vField.inlineSize > 0 -> {
+							val vElement = (vType as KArrayType).element
+							line(inDepth, "ktc2_array_assign((ktc2_Array*)&$vSlot, ${vField.inlineSize}, ${arrayId(vElement)}, sizeof(${cType(vElement)}), ${bare(expr(inStatement.value))});")
+						}
+						else -> store(vSlot, inStatement.value, inStatement.releasesOld, inDepth)
+					}
+				}
 				is KIndexSet -> store(element(inStatement.array, inStatement.index, inStatement.value.type), inStatement.value, inStatement.releasesOld, inDepth)
 				is KEval -> line(inDepth, "${bare(expr(inStatement.expr))};")
 				is KRelease -> line(inDepth, "ktc2_release(${bare(expr(inStatement.operand))});")
@@ -533,7 +614,18 @@ class CEmitter(private val mModule: KModule) {
 				(inExpr.whenTrue as? KConst)?.value == true -> "(${expr(inExpr.condition)} || ${expr(inExpr.whenFalse)})"
 				else -> "(${expr(inExpr.condition)} ? ${expr(inExpr.whenTrue)} : ${expr(inExpr.whenFalse)})"
 			}
-			is KFieldRead -> field(inExpr.target, inExpr.field)
+			is KFieldRead -> {
+				val vSlot = field(inExpr.target, inExpr.field)
+				val vType = inExpr.field.type
+				when {
+					inExpr.field.inlineSize == 0 -> {
+						mState.includes += (vType as KClassType).cls.unit
+						if (inExpr.needsCopy) "${vType.cls.cName}__clone(&$vSlot)" else "(&$vSlot)"
+					}
+					inExpr.field.inlineSize > 0 -> "((ktc2_Array*)&$vSlot)"
+					else -> vSlot
+				}
+			}
 			is KStructNew -> {
 				mState.includes += inExpr.struct.unit
 				val vFields = inExpr.struct.fields.zip(inExpr.values).joinToString(", ") { (vField, vValue) -> ".${vField.cName} = ${bare(expr(vValue))}" }
