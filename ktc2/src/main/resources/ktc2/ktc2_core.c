@@ -239,6 +239,13 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 
 static void weak_drop(ktc2_Obj* target);
 
+ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t offset)
+{
+	ktc2_Obj* object = ktc2_alloc(offset + size, typeId);
+	memcpy((char*)object + offset, data, size);
+	return object;
+}
+
 void ktc2_destroy(ktc2_Obj* object)
 {
 	if (object->rc & KTC2_WEAK) weak_drop(object);

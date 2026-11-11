@@ -102,7 +102,16 @@ class EscapeAnalysis(private val mModule: KModule) {
 	private fun sourcesOf(inValue: KExpr?): Set<KLocal> = HashSet<KLocal>().also { sources(inValue, it) }
 
 	/** A heap allocation that could move to the stack. */
-	private class Candidate(val local: KLocal, val what: String, val origin: String?, val unfit: String?, val inline: KFieldRead? = null, val promote: () -> Unit)
+	private class Candidate(
+		val local: KLocal,
+		val what: String,
+		val origin: String?,
+		val unfit: String?,
+		val inline: KFieldRead? = null,
+		/** `@Size` or `@Value` on the local: the program requires the stack, so staying on the heap is an error. */
+		val forcedBy: String? = null,
+		val promote: () -> Unit,
+	)
 
 	private inner class FunctionScan(private val mFunction: KFunction) {
 		/** For each local, the locals its reference is copied to. */
@@ -141,11 +150,16 @@ class EscapeAnalysis(private val mModule: KModule) {
 
 		private fun candidate(inLocal: KLocal, inValue: KExpr?) {
 			when (inValue) {
-				is KAlloc -> mCandidates += Candidate(inLocal, "a ${inValue.cls.name}", inValue.origin, null) { inValue.onStack = true }
+				is KAlloc -> mCandidates += Candidate(inLocal, "a ${inValue.cls.name}", inValue.origin, null, forcedBy = inValue.forcedBy) { inValue.onStack = true }
 				is KArrayNew -> {
 					val vLength = (inValue.length as? KConst)?.value as? Int
-					val vUnfit = if (vLength == null) "its size is not a constant" else if (vLength > kStackArrayLimit) "it has more than $kStackArrayLimit elements" else null
-					mCandidates += Candidate(inLocal, "an array", inValue.origin, vUnfit) { inValue.onStack = true }
+					// The size limit is the compiler's caution; an array the program asked for is taken as it is.
+					val vUnfit = when {
+						vLength == null -> "its size is not a constant"
+						vLength > kStackArrayLimit && inValue.forcedBy == null -> "it has more than $kStackArrayLimit elements"
+						else -> null
+					}
+					mCandidates += Candidate(inLocal, "an array", inValue.origin, vUnfit, forcedBy = inValue.forcedBy) { inValue.onStack = true }
 				}
 				is KRefCast -> candidate(inLocal, inValue.operand)
 				// A pointer into inline storage is a borrow that has to stay in its block, like a stack object.
@@ -277,6 +291,8 @@ class EscapeAnalysis(private val mModule: KModule) {
 					if (vReason != null) copyOut(vCandidate.inline, mFunction, vReason)
 				} else if (vReason == null) {
 					vCandidate.promote()
+				} else if (vCandidate.forcedBy != null) {
+					errors += "${vCandidate.origin ?: mFunction.cName}: ${vCandidate.what} marked ${vCandidate.forcedBy} cannot be kept on the stack: $vReason"
 				} else {
 					heapReport += "${vCandidate.origin ?: mFunction.cName}: ${vCandidate.what} is allocated on the heap: $vReason"
 				}

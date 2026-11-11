@@ -136,6 +136,12 @@ void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
 	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL }, \
 	[KTC2_TYPE_WEAK_CELL] = { "ktc2.WeakRef cell", ktc2_weak_cell_destroy }
 
+/**
+ * A new object of [typeId] holding a copy of the [size] bytes at [data], [offset] bytes into
+ * the object: a `@Struct` value put in its box.
+ */
+ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t offset);
+
 /** Generated in ktc2_main.c. */
 extern const ktc2_TypeInfo ktc2_types[];
 extern const uint32_t ktc2_type_count;

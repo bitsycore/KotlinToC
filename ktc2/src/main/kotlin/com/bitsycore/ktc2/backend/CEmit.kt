@@ -359,6 +359,16 @@ class CEmitter(private val mModule: KModule) {
 			// between reference types, and boxing where one side is erased and the other is not.
 			fun adapt(inText: String, inFrom: KType, inTo: KType): String = when {
 				inFrom == inTo -> inText
+				inFrom is KRefType && inTo is KStructType -> {
+					val vBox = inTo.struct.box!!
+					mState.includes += vBox.unit
+					"((${vBox.cName}*)$inText)->value"
+				}
+				inFrom is KStructType && inTo is KRefType -> {
+					val vBox = inFrom.struct.box!!
+					mState.includes += vBox.unit
+					"(${cType(inTo)})ktc2_box_value((${cType(inFrom)}[1]){ $inText }, sizeof(${cType(inFrom)}), ${typeId(vBox)}, offsetof(${vBox.cName}, value))"
+				}
 				inFrom is KRefType && inTo == KPtrType -> "ktc2_unbox_ptr((ktc2_Obj*)$inText)"
 				inFrom == KPtrType && inTo is KRefType -> "(${cType(inTo)})ktc2_box_ptr($inText)"
 				inFrom is KRefType && inTo is KPrimType -> "ktc2_unbox_${inTo.prim.name.lowercase()}((ktc2_Obj*)$inText)"
@@ -370,7 +380,7 @@ class CEmitter(private val mModule: KModule) {
 				inFrom is KPrimType && inTo is KOptType -> "((${cType(inTo)}){ true, $inText })"
 				else -> "(${cType(inTo)})$inText"
 			}
-			fun isUnboxed(inType: KType): Boolean = inType is KPrimType || inType is KOptType || inType == KPtrType
+			fun isUnboxed(inType: KType): Boolean = inType is KPrimType || inType is KOptType || inType == KPtrType || inType is KStructType
 			fun call(inTarget: KFunction): String {
 				mState.includes += inTarget.unit
 				// A value boxed for the implementation is a temporary of the dispatcher: released after the call.
@@ -395,7 +405,11 @@ class CEmitter(private val mModule: KModule) {
 					// The implementation returns a box it owns: its content is taken out and the box released.
 					// (NULL is what it returns when it left with an exception.)
 					val vContent = adapt("result", inTarget.returnType, inFunction.returnType)
-					val vValue = if (inFunction.returnType is KPrimType) "result ? $vContent : 0" else vContent
+					val vValue = when (inFunction.returnType) {
+						is KPrimType -> "result ? $vContent : 0"
+						is KStructType -> "result ? $vContent : (${cType(inFunction.returnType)}){ 0 }"
+						else -> vContent
+					}
 					return "{ $vBefore${cType(inTarget.returnType)} result = $vCall; $vAfter${cType(inFunction.returnType)} value = $vValue; ktc2_release(result); return value; }"
 				}
 				val vResult = adapt(vCall, inTarget.returnType, inFunction.returnType)

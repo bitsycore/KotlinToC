@@ -397,6 +397,24 @@ internal class BodyBuilder(
 		if (vFrom == inTo || inValue === KUnitValue) return inValue
 		return when {
 			inTo is KRefType && vFrom is KRefType -> if (inValue is KNull) KNull(inTo) else KRefCast(inValue, inTo)
+			// A struct where an object is needed (Any, an interface, a nullable): it is put in its box.
+			vFrom is KStructType && inTo is KRefType -> {
+				val vBox = mImporter.boxFor(vFrom.struct)
+				mImporter.instantiate(vBox)
+				val vObject = newTemp(KClassType(vBox))
+				mBlock += KLet(vObject, KAlloc(vBox))
+				mBlock += KFieldSet(KRead(vObject), vBox.fields[0], if (inValue.isImpure()) spill(inValue) else inValue)
+				coerce(KRead(vObject), inTo)
+			}
+			// And back: the value in the box.
+			inTo is KStructType && vFrom is KRefType -> {
+				val vBox = mImporter.boxFor(inTo.struct)
+				val vObject = if (inValue.isImpure()) spill(inValue) else inValue
+				KFieldRead(if (vFrom == KClassType(vBox)) vObject else KRefCast(vObject, KClassType(vBox)), vBox.fields[0])
+			}
+			// A struct seen as another value type only happens in a branch that is never taken
+			// (`if (element is Char)` in generic code): anything of the right type will do.
+			(vFrom is KStructType || inTo is KStructType) && vFrom !is KRefType && inTo !is KRefType && inTo != KUnitType && inTo != KNothingType -> KZero(inTo)
 			inTo == KPtrType && inValue is KNull -> KNull(KPtrType)
 			// An address held as Any (an element of a List<CPointer<…>>) is boxed like a Long.
 			inTo is KRefType && vFrom == KPtrType -> coerce(spill(KIntrinsic("ktc2_box_ptr", listOf(if (inValue.isImpure()) spill(inValue) else inValue), KObjType, isPure = false)), inTo)
@@ -454,6 +472,7 @@ internal class BodyBuilder(
 					return
 				}
 				val vInit = inStatement.initializer?.let { coerce(lowerRhs(it), vType) }
+				forceOnStack(inStatement, vInit)
 				if (inStatement in mCellVariables && vType != KUnitType && vType != KNothingType) {
 					// Shared with a closure: the value lives in a cell both sides point to.
 					val (vCellClass, vValueField) = mImporter.cellFor(vType)
@@ -682,6 +701,8 @@ internal class BodyBuilder(
 		(kType(vBase) as? KPrimType)?.let { return KBoxTarget(it.prim) }
 		val vClass = vBase.classOrNull?.owner ?: return null
 		if (vClass.isInterface) return KInterfaceTarget(mImporter.interfaceFor(vClass))
+		// An object holding a struct is its box.
+		(kType(vBase) as? KStructType)?.let { return KClassTarget(mImporter.boxFor(it.struct).also { vBox -> mImporter.instantiate(vBox) }) }
 		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it) }
 	}
 
@@ -696,6 +717,11 @@ internal class BodyBuilder(
 			val vHolds = kType(vType.makeNotNull()) == vPrim || vTargetName == "kotlin.Any" || vTargetName == "kotlin.Comparable" ||
 				(vTargetName == "kotlin.Number" && vIsNumber)
 			return if (vHolds) kTrue else kFalse
+		}
+		// The class of a struct value is known exactly: the answer is a constant.
+		(inValue.type as? KStructType)?.let { vStructType ->
+			val vTarget = vType.classOrNull?.owner ?: return kFalse
+			return if (isSubtype(mImporter.structClassOf(vStructType.struct), vTarget)) kTrue else kFalse
 		}
 		if (inValue.type !is KRefType) return fail(inElement, "type test on a value of type '${inType.render()}'")
 		// A String is a CharSequence and a Comparable.
@@ -727,12 +753,19 @@ internal class BodyBuilder(
 		IrTypeOperator.INSTANCEOF -> instanceTest(inExpression, spill(lowerPure(inExpression.argument)), inExpression.typeOperand)
 		IrTypeOperator.NOT_INSTANCEOF -> not(instanceTest(inExpression, spill(lowerPure(inExpression.argument)), inExpression.typeOperand))
 		IrTypeOperator.CAST -> {
-			val vValue = spill(lowerPure(inExpression.argument))
 			val vTo = typeOf(inExpression)
+			// A struct cast to anything but its own type is cast as the object it would be.
+			val vValue = spill(lowerPure(inExpression.argument)).let { if (it.type is KStructType && it.type != vTo && vTo !is KRefType) spill(coerce(it, KObjType)) else it }
 			if (vValue.type == vTo && vTo !is KRefType) {
 				vValue
 			} else if (vValue.type == KObjType && (vTo is KPrimType || vTo is KOptType)) {
 				// Unboxing checks the kind of box itself.
+				coerce(vValue, vTo)
+			} else if (vValue.type is KStructType && vTo is KRefType) {
+				coerce(vValue, vTo)
+			} else if (vValue.type is KRefType && vTo is KStructType) {
+				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
+				if (vTest !== kTrue) mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
 				coerce(vValue, vTo)
 			} else if (vValue.type !is KRefType || vTo !is KRefType) {
 				fail(inExpression, "cast to '${inExpression.typeOperand.render()}'")
@@ -745,7 +778,7 @@ internal class BodyBuilder(
 			}
 		}
 		IrTypeOperator.SAFE_CAST -> {
-			val vValue = spill(lowerPure(inExpression.argument))
+			val vValue = spill(lowerPure(inExpression.argument)).let { if (it.type is KStructType) spill(coerce(it, KObjType)) else it }
 			val vTo = typeOf(inExpression)
 			if (vValue.type !is KRefType || vTo !is KRefType) {
 				fail(inExpression, "safe cast to '${inExpression.typeOperand.render()}'")
@@ -1266,6 +1299,41 @@ internal class BodyBuilder(
 		return KRead(vObject)
 	}
 
+	/**
+	 * `@Size(N) val buffer = ByteArray(N)` and `val p: @Value Vec2 = Vec2(…)`: the program
+	 * requires the array or object to live in the stack frame. The allocation that initializes
+	 * the local is marked; `EscapeAnalysis` then refuses the program if it cannot comply.
+	 */
+	private fun forceOnStack(inVariable: IrVariable, inInit: KExpr?) {
+		val vAnnotations = inVariable.annotations + inVariable.type.annotations
+		val vSize = vAnnotations.firstOrNull { it.type.classFqName?.asString() == "ktc2.Size" }
+		val vValue = vAnnotations.firstOrNull { it.type.classFqName?.asString() == "ktc2.Value" }
+		if (vSize == null && vValue == null) return
+		val vName = if (vSize != null) "@Size" else "@Value"
+		var vSource = inInit
+		while (vSource is KRefCast) vSource = vSource.operand
+		val vTemp = (vSource as? KRead)?.local
+		var vAllocation = (mBlock.lastOrNull { it is KLet && it.local === vTemp } as? KLet)?.init
+		while (vAllocation is KRefCast) vAllocation = vAllocation.operand
+		when {
+			vSize != null && vAllocation is KArrayNew -> {
+				val vCount = (vSize.arguments.firstOrNull() as? IrConst)?.value as? Int
+				val vLength = (vAllocation.length as? KConst)?.value as? Int
+				if (vCount == null || vLength != vCount) {
+					fail(inVariable, "@Size($vCount) on '${inVariable.name}', whose array is not created with that constant size")
+				} else {
+					vAllocation.forcedBy = vName
+				}
+			}
+			vValue != null && vAllocation is KAlloc -> vAllocation.forcedBy = vName
+			// Written on the local itself it is a requirement. On the type alone it may only have come
+			// along with a value read from an inline field, which is already where it should be.
+			inVariable.annotations.any { it === vSize || it === vValue } ->
+				fail(inVariable, "$vName on '${inVariable.name}' (the local has to be initialized with a new ${if (vSize != null) "array" else "object"})")
+			else -> {}
+		}
+	}
+
 	/** A class declared inside a function (or an object expression): its captures become fields. */
 	private fun declareLocalClass(inClass: IrClass) {
 		val vSet = CaptureSet()
@@ -1424,6 +1492,14 @@ internal class BodyBuilder(
 	 * the receiver, which picks the instantiation of a generic class.
 	 */
 	private fun memberTarget(inFunction: IrSimpleFunction, inIsSuper: Boolean, inReceiver: IrType?, inOwnArguments: List<IrType?>): Pair<KFunction, Subst>? {
+		// The class of a struct value is known exactly: its implementation is called directly, the value never boxed.
+		if (inReceiver != null && kType(inReceiver) is KStructType) {
+			val vImplementation = inReceiver.classOrNull?.owner?.let { mImporter.implementationIn(it, inFunction) }
+			if (vImplementation != null) {
+				val (vReal, vSubst) = mImporter.resolveMember(vImplementation, inReceiver, inOwnArguments)
+				if (!isAnyClass(vReal.parentAsClass)) mImporter.functionFor(vReal, vSubst)?.let { return it to vSubst }
+			}
+		}
 		if (!inIsSuper && mImporter.isVirtual(inFunction)) {
 			val vSubst = mImporter.substFor(inFunction, mImporter.superArguments(inReceiver, inFunction.parentAsClass), inOwnArguments)
 			return mImporter.dispatcherFor(inFunction, vSubst)?.let { it to vSubst }
@@ -1471,7 +1547,7 @@ internal class BodyBuilder(
 			// A library interface (Comparable…): primitives and strings have direct answers,
 			// everything else is an ordinary interface call.
 			val vReceiverType = inCall.arguments.firstOrNull()?.let { kType(it.type) }
-			if (vReceiverType !is KRefType || vReceiverType == KStringType) return lowerLibraryCall(inCall)
+			if ((vReceiverType !is KRefType && vReceiverType !is KStructType) || vReceiverType == KStringType) return lowerLibraryCall(inCall)
 		} else if (vCallee.fileOrNull == null && !(vOwner != null && (isAnyClass(vOwner) || isThrowableClass(vOwner)))) {
 			return lowerLibraryCall(inCall)
 		}
@@ -2002,6 +2078,13 @@ internal class BodyBuilder(
 			inIdentity && (vLeftType is KRefType) != (vRightType is KRefType) && vLeft !is KNull && vRight !is KNull -> kFalse
 			vLeftType == KObjType && vRightType is KPrimType -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
 			vRightType == KObjType && vLeftType is KPrimType -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
+			// Structs compare with their own equals; they have no identity and are never null.
+			vLeftType is KStructType || vRightType is KStructType -> when {
+				vLeft is KNull || vRight is KNull -> kFalse
+				inIdentity -> fail(inCall, "'===' on a @Struct value, which has no identity")
+				vLeftType is KStructType -> structEquals(inCall, inLeft.type, spill(vLeft), vRight)
+				else -> structEquals(inCall, inRight.type, spill(vRight), vLeft)
+			}
 			// C addresses compare by value.
 			vLeftType == KPtrType && vRight is KNull -> isNull(vLeft)
 			vRightType == KPtrType && vLeft is KNull -> isNull(vRight)
@@ -2048,6 +2131,17 @@ internal class BodyBuilder(
 		return KRead(vResult)
 	}
 
+	/** `inStruct == inOther` through the `equals` the struct's class declares. */
+	private fun structEquals(inCall: IrCall, inStructType: IrType, inStruct: KExpr, inOther: KExpr): KExpr {
+		// In generic code the type is a type parameter standing for the struct.
+		val vEquals = anyMemberOf(closed(inStructType), "equals", 1)
+		if (vEquals == null || isAnyClass(vEquals.parentAsClass)) {
+			return fail(inCall, "'==' on the @Struct class '${inStructType.render()}', which declares no equals (a data class does)")
+		}
+		val vTarget = memberTarget(vEquals, false, closed(inStructType), emptyList())?.first ?: return fail(inCall, "equals on '${inStructType.render()}'")
+		return KCall(vTarget, listOf(coerce(inStruct, vTarget.params[0].type), coerce(inOther, vTarget.params[1].type)))
+	}
+
 	/** The member of `kotlin.Any` named [inName] as seen by the class of [inType] (its override, if any). */
 	private fun anyMemberOf(inType: IrType, inName: String, inRegularParams: Int): IrSimpleFunction? {
 		fun find(inClass: IrClass) = inClass.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { vFunction ->
@@ -2072,6 +2166,12 @@ internal class BodyBuilder(
 	private fun toStringOf(inElement: IrElement, inValue: KExpr, inType: IrType): KExpr = when (inValue.type) {
 		KStringType -> if (closed(inType).isMarkedNullable()) concat(listOf(KPrintValue(inValue))) else inValue
 		is KPrimType, is KOptType -> concat(listOf(KPrintValue(inValue)))
+		is KStructType -> {
+			val vFunction = anyMemberOf(closed(inType), "toString", 0)
+			val vCall = vFunction?.takeIf { !isAnyClass(it.parentAsClass) }?.let { callMember(inElement, it, listOf(inValue), closed(inType)) }
+			// Without a toString of its own it is described as any object is.
+			if (vCall is KCall) spill(vCall) else toStringOf(inElement, spill(coerce(inValue, KObjType)), mImporter.mBuiltIns.anyType)
+		}
 		is KClassType, KObjType -> {
 			val vFunction = anyMemberOf(inType, "toString", 0)
 			val vCall = vFunction?.let { callMember(inElement, it, listOf(inValue), closed(inType)) }
@@ -2104,7 +2204,7 @@ internal class BodyBuilder(
 			}
 			val vMark = mBlock.size
 			var vValue = lowerPure(vPiece)
-			if (vValue.type is KClassType || vValue.type == KObjType) vValue = toStringOf(vPiece, spill(vValue), vPiece.type)
+			if (vValue.type is KClassType || vValue.type == KObjType || vValue.type is KStructType) vValue = toStringOf(vPiece, spill(vValue), vPiece.type)
 			if (vValue === KUnitValue) {
 				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
 				continue

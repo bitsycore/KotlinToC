@@ -115,6 +115,12 @@ class KStruct(
 	val unit: KUnit,
 ) {
 	val fields = mutableListOf<KField>()
+
+	/**
+	 * The class a value of this struct is wrapped in where an object is required: seen as
+	 * `Any` or an interface, or nullable. One field, `value`. Null until the program needs it.
+	 */
+	var box: KClass? = null
 }
 
 /**
@@ -343,6 +349,9 @@ class KIntrinsic(val name: String, val arguments: List<KExpr>, override val type
 class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr {
 	var onStack: Boolean = false
 
+	/** The annotation (`@Size`) by which the program requires this array to be on the stack; null when it is the compiler's choice. */
+	var forcedBy: String? = null
+
 	/** Source position ("File.kt:12"), for the heap report. */
 	var origin: String? = null
 }
@@ -354,6 +363,9 @@ class KArrayNew(val length: KExpr, override val type: KArrayType) : KExpr {
  */
 class KAlloc(val cls: KClass) : KExpr {
 	var onStack: Boolean = false
+
+	/** The annotation (`@Value`) by which the program requires this object to be on the stack; null when it is the compiler's choice. */
+	var forcedBy: String? = null
 
 	/** Source position ("File.kt:12"), for the heap report. */
 	var origin: String? = null

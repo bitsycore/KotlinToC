@@ -373,7 +373,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return when (vName) {
 			// As in Kotlin, Array<Int> holds boxed values (IntArray is the unboxed one): code may
 			// cast freely between Array<T> and Array<Comparable<T>>.
-			"kotlin.Array" -> KArrayType(if (vElement is KPrimType || vElement is KOptType) KObjType else vElement)
+			"kotlin.Array" -> KArrayType(if (vElement is KPrimType || vElement is KOptType || vElement is KStructType) KObjType else vElement)
 			// The platform layer's storage block keeps its elements as they are, unboxed.
 			"ktc2.internal.Storage" -> KArrayType(vElement)
 			else -> null
@@ -404,7 +404,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 					isPointerClass(vClass) -> KPtrType
 					vClass.kotlinFqName.asString() == "kotlin.Enum" -> KClassType(enumBase())
 					vClass.isInterface -> KObjType
-					isStruct(vClass) -> structFor(vClass)?.let { KStructType(it) }
+					// A struct that may be null is held in its box: null needs a pointer.
+					isStruct(vClass) -> structFor(vClass)?.let { if (vType.isMarkedNullable()) KClassType(boxFor(it)) else KStructType(it) }
 					else -> classFor(vClass, argumentsOf(vBase))?.let { KClassType(it) }
 				}
 			}
@@ -510,6 +511,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vStruct = KStruct(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)), vUnit)
 		vUnit.struct = vStruct
 		mStructs[inClass] = vStruct
+		mStructClasses[vStruct] = inClass
 		mUnits += vUnit
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
@@ -524,6 +526,32 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			mFields[vBacking to null] = vField
 		}
 		return vStruct
+	}
+
+	private val mStructClasses = HashMap<KStruct, IrClass>()
+
+	/** The `@Struct` class [inStruct] was declared as. */
+	internal fun structClassOf(inStruct: KStruct): IrClass = mStructClasses.getValue(inStruct)
+
+	/**
+	 * The box of [inStruct]: the object a struct value becomes where Kotlin needs one — as
+	 * `Any`, as an interface it implements, or when it may be null. It answers the calls made
+	 * on such an object (`toString`, `equals`, interface methods) with the struct's own
+	 * functions. A struct that is only ever used by its own type never gets one.
+	 */
+	internal fun boxFor(inStruct: KStruct): KClass {
+		inStruct.box?.let { return it }
+		val vIrClass = mStructClasses.getValue(inStruct)
+		val vUnit = KUnit(inStruct.unit.pkg, inStruct.unit.name + ".Box")
+		val vClass = KClass(inStruct.cName + "_Box", vUnit, null, jvmNameOf(vIrClass))
+		vUnit.cls = vClass
+		inStruct.box = vClass
+		vClass.fields += KField("value", KStructType(inStruct), vClass, isImmutable = true)
+		collectInterfaces(vIrClass, vClass.interfaces)
+		mClassInfo[vClass] = ClassInfo(vIrClass, emptyMap(), vIrClass.symbol.typeWith())
+		mClassList += vClass
+		mUnits += vUnit
+		return vClass
 	}
 
 	/**
@@ -1055,6 +1083,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * override is followed to the real function, and the substitution covers that function's
 	 * class.
 	 */
+	/** The member of [inClass] that is [inFunction] or overrides it, if the class declares or inherits one. */
+	internal fun implementationIn(inClass: IrClass, inFunction: IrSimpleFunction): IrSimpleFunction? =
+		membersOf(inClass).firstOrNull { it == inFunction || overrides(it, inFunction) }
+
 	internal fun resolveMember(inFunction: IrSimpleFunction, inReceiver: IrType?, inOwnArguments: List<IrType?>): Pair<IrSimpleFunction, Subst> {
 		val vReal = if (inFunction.isFakeOverride) inFunction.resolveFakeOverride() ?: inFunction else inFunction
 		return vReal to substFor(vReal, superArguments(inReceiver, vReal.parentAsClass), inOwnArguments)
@@ -1233,6 +1265,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				}
 				val vOwnerClass = vConcrete.takeIf { it in mLocalCaptures && vImplementation.parent == vInfo.irClass }
 				val vTarget = functionFor(vImplementation, vSubst, vOwnerClass) ?: continue
+				// A struct returned through the dispatcher comes back as an object: in its box.
+				(vTarget.returnType as? KStructType)?.let { instantiate(boxFor(it.struct)) }
 				vDispatcher.target.dispatch!! += vConcrete to vTarget
 				vChanged = true
 			}
