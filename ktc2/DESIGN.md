@@ -609,9 +609,7 @@ Phase 6 — exceptions, cycles, threads (`integration/objects/Exceptions.kt`, `W
   `synchronized` — unsynchronized access is a data race that can corrupt a count, where the
   JVM would only show a stale value.
 
-Not done in Phase 6: an array index out of bounds, an integer division by zero and a string
-index out of range are still fatal instead of throwing; `Result` / `runCatching` (value
-classes) are not supported; `synchronized` is one recursive lock for the whole program
+Not done in Phase 6: `synchronized` is one recursive lock for the whole program
 rather than a monitor per object, and waits by yielding; an uncaught exception in a thread
 ends the program instead of only that thread; `isDaemon`, thread names and priorities are
 ignored; lazy initialization is not synchronized; atomic counting applies to every object
@@ -658,17 +656,62 @@ Phase 7 — arena and C interop (`integration/values/Arena.kt`, `integration/int
   compiles with `-Wall -Werror`, links and runs. This is the raw C API; the Kotlin wrapper
   module of v1 (`ktc.sdl3`: Window, Renderer…) is not ported.
 
-Not done in Phase 7: `cValuesOf`; a Kotlin callback (`staticCFunction`) that takes or returns
-a struct by value; calling through a C function pointer from Kotlin (`invoke`);
-`staticCFunction` of a lambda; global C variables; C enums as Kotlin `enum class` (always
-the `typealias` form); `platform.posix` (a `.def` naming the libc headers gives the same
-functions); bindings are regenerated on every compilation. Programs using interop have no
-JVM to compare with: their tests compare with a `.expected` file.
+Not done in Phase 7: a Kotlin callback (`staticCFunction`) that takes or returns a struct by
+value; `staticCFunction` of a lambda that captures; C enums as Kotlin `enum class` (always
+the `typealias` form); bindings are regenerated on every compilation. Programs using interop
+have no JVM to compare with: their tests compare with a `.expected` file.
+
+After Phase 7 — what the phases above had left open:
+- **The language's own failures throw.** An array index out of bounds, a string index out of
+  range and an integer division by zero raise `ArrayIndexOutOfBoundsException`,
+  `StringIndexOutOfBoundsException` and `ArithmeticException` (`objects/Checks.kt`).
+  `ExceptionLowering` puts the test in front of the statement — `if (index is bad) { throw;
+  leave }` — and the operation behind it is emitted unchecked, so the cost is the bounds
+  check that was there already. A division by a constant other than zero needs no test. An
+  operation on one side of a condition (`i < n && a[i] == x`) cannot be tested ahead: it
+  keeps its check in the runtime, which parks the exception and yields a harmless value, and
+  the statement is followed by the usual test. `--checks=abort` restores the old behavior
+  (the program ends), with no test and no "may throw" on the functions involved.
+- **Array functions from the standard library's own `_Arrays.kt`** (`stdlib/ArrayFunctions.kt`):
+  `map`, `filter`, `sum`, `joinToString`, `sorted`, `toList`… on `Array<T>` and the primitive
+  arrays. The 150 functions it leaves to its platform (`copyOf`, `fill`, `sort`, `plus`,
+  `contentEquals`, `asList`…) are in `Ktc2Arrays.kt`, written once for `Array<T>` and
+  generated per primitive type by `tools/gen_arrays.py`. Sorting is a heap sort for
+  primitives and a stable merge sort for objects; `asList` is a view of the array.
+- **Inner classes** (`objects/Inner.kt`). An `inner` class holds its enclosing object in a
+  field, set when an instance is created and read at the start of each member — the
+  mechanism local classes capture with. Its type parameters include those of the classes
+  around it. The iterators of the standard library's abstract lists are inner classes.
+- **SAM-converted lambdas**: `Comparator { a, b -> … }` (and so `compareBy`, `sortedBy`,
+  `sortedWith`). The lambda's object implements the interface itself.
+- **A reference implementation behind a primitive dispatcher.** A `Comparator<Comparable<Any>>`
+  used, after a cast, to compare Ints is reached by the `Comparator<Int>` dispatcher, which
+  boxes the arguments for it and releases the boxes after the call.
+- **`Result`, `runCatching` and value classes** (`objects/Results.kt`): `kotlin/util/Result.kt`
+  is compiled from the standard library's source; a `value class` is an ordinary class.
+- **Interop**: calling through a C function pointer (`pointer(args)`), `staticCFunction` of a
+  lambda that uses nothing around it, `cValuesOf(…)` / `toCValues()`, variables declared
+  `extern` as properties, and object-like macros valued through the preprocessor (so
+  `SDL_WINDOW_RESIZABLE`, defined as `SDL_UINT64_C(0x20)`, is a `const val`).
+  **`platform.posix`** is generated from a `.def` of ktc2's own when a program imports it
+  (`interop/Posix.kt`: `printf`, `fopen`, `qsort`, `strtol`, `errno`…). `-copt` and `-lopt`
+  pass options to the C compiler and the linker; a directory on the command line stands for
+  the `.kt` and `.def` files in it.
+- **The SDL3 module** (`ktc2/modules/sdl3`, package `ktc.sdl3`): the port of v1's wrapper —
+  `SDL3.Window`, `SDL3.Renderer`, textures, cursors, shapes, rounded rectangles, triangles,
+  events, keyboard and mouse state, `gameLoop`, the `FPoint` / `FRect` math and 266 constants —
+  over the generated `sdl3` bindings. Values such as `FRect` are Kotlin data classes; a
+  function that hands one to SDL fills a C struct in its own stack frame, so drawing
+  allocates nothing. `example/Demo.kt` opens a window, draws for a second and exits cleanly.
+  It is not part of the test suite (it needs SDL3 and a display).
 
 Known gaps, deliberately left for later phases: `object` and enum initializers run at startup rather than on first
-use; reference fields in `@Struct` classes, `Enum.entries`, inner classes, a function value
-whose static type differs in variance from the lambda's own, and an inline lambda used
-inside another lambda (`crossinline`) are not supported yet. Nothing in the ARC pass is
+use; reference fields in `@Struct` classes, `Enum.entries`, a function value
+whose static type differs in variance from the lambda's own, an inline lambda used
+inside another lambda (`crossinline`), SAM conversion of a function value that is not a
+lambda written in place, and a type test against an array type (`x is IntArray` on an `Any`)
+are not supported yet. A failed check inside a conditional expression may store a
+placeholder value before the exception is noticed (`obj.f = if (c) a[i] else 0`). Nothing in the ARC pass is
 optimized beyond the three rules above.
 
 **Relation to v1.** v1 integration tests that exercise plain behavior are ported as plain
