@@ -1,7 +1,7 @@
 @file:OptIn(ExperimentalForeignApi::class)
 
 import kotlinx.cinterop.ExperimentalForeignApi
-import ktc.sdl3.*
+import ktc2.sdl3.*
 
 /** Opens a window, draws moving shapes for a second, and reports what happened. */
 fun main() {

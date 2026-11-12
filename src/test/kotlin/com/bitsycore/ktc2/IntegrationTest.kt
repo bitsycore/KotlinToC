@@ -83,7 +83,32 @@ class IntegrationTest {
 		}
 		// A program using C interop cannot run on the JVM: its output is compared with `<name>.expected`.
 		val vExpectedFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".expected")
+		// `<name>.warnings` holds a part of each warning ktc2 has to give for the program.
+		val vWarnings = File(inSource.parentFile, inSource.nameWithoutExtension + ".warnings")
+		mWarnings = if (vWarnings.isFile) vWarnings.readLines().map { it.trim() }.filter { it.isNotEmpty() } else emptyList()
 		verify(inSource.path, listOf(inSource) + listOfNotNull(vDefinition.takeIf { it.isFile }), vOutDir, vExpectedFile.takeIf { it.isFile })
+	}
+
+	/** What ktc2 has to say while it accepts the program being checked. */
+	private var mWarnings: List<String> = emptyList()
+
+	/** Translates [inSources] and checks that ktc2 said each of [mWarnings] meanwhile. */
+	private fun translate(inSources: List<File>, inOutDir: File): Boolean {
+		if (mWarnings.isEmpty()) return K2Frontend.compile(inSources, inOutDir, inDumpIr = true)
+		val vSaved = System.err
+		val vCaptured = java.io.ByteArrayOutputStream()
+		val vAccepted: Boolean
+		System.setErr(java.io.PrintStream(vCaptured, true, "UTF-8"))
+		try {
+			vAccepted = K2Frontend.compile(inSources, inOutDir, inDumpIr = true)
+		} finally {
+			System.setErr(vSaved)
+		}
+		val vSaid = vCaptured.toString("UTF-8")
+		vSaved.print(vSaid)
+		for (vMessage in mWarnings) assertTrue(vMessage in vSaid, "ktc2 did not warn '$vMessage':\n$vSaid")
+		mWarnings = emptyList()
+		return vAccepted
 	}
 
 	/** Checks that ktc2 refuses [inSource], and says each of [inExpected] (a part of one of its messages) when it does. */
@@ -108,7 +133,7 @@ class IntegrationTest {
 	 */
 	private fun verify(inName: String, inSources: List<File>, inOutDir: File, inExpected: File?) {
 		val vOutDir = inOutDir
-		assertTrue(K2Frontend.compile(inSources, vOutDir, inDumpIr = true), "ktc2 failed on $inName")
+		assertTrue(translate(inSources, vOutDir), "ktc2 failed on $inName")
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
 		val vJvmMain = vManifest.first { it.startsWith("jvmMain=") }.substringAfter('=')

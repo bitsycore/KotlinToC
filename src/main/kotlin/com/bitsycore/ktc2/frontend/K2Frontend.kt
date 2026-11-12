@@ -313,6 +313,7 @@ class Ktc2Extension : IrGenerationExtension {
 		vImporter.errors.forEach { System.err.println("ktc2: error: $it") }
 		System.setProperty(kErrorCountProperty, vImporter.errors.size.toString())
 		if (vImporter.errors.isNotEmpty()) return
+		vImporter.warnings.forEach { System.err.println("ktc2: warning: $it") }
 
 		// With `--dump-ir`, KIR is written after the importer and after each pass (`kir/`): the code of
 		// the program itself, or with KTC2_DUMP_KIR=<text> the functions whose C name contains the

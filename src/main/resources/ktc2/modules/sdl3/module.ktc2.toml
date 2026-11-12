@@ -1,4 +1,4 @@
-# SDL3 for ktc2: the C API as package `sdl3`, and the Kotlin API of package `ktc.sdl3` on top.
+# SDL3 for ktc2: the C API as package `sdl3`, and the Kotlin API of package `ktc2.sdl3` on top.
 #
 # The sources of SDL3 are fetched from GitHub the first time (into ~/.ktc2/cache): the bindings
 # are made from their headers, and CMake builds the library from them unless it finds an SDL3

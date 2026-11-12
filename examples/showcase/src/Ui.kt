@@ -3,7 +3,7 @@
 package showcase.app
 
 import kotlinx.cinterop.ExperimentalForeignApi
-import ktc.sdl3.*
+import ktc2.sdl3.*
 import showcase.core.Group
 import showcase.core.Outcome
 import showcase.core.kFailedMark

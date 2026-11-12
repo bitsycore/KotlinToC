@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalForeignApi::class)
 
-package ktc.sdl3
+package ktc2.sdl3
 
 import kotlinx.cinterop.*
 import kotlinx.cinterop.internal.cExpr

@@ -160,6 +160,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	val errors = linkedSetOf<String>()
 
+	/** What the program most likely did not mean, though it compiles. */
+	val warnings = linkedSetOf<String>()
+
 	/** A generic declaration with the KIR types of its type arguments. */
 	private data class Mono(val declaration: IrDeclaration, val arguments: List<KType>)
 
@@ -399,8 +402,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	private fun settleDeinit() {
 		val vDeinits = mDeinitDispatcher?.dispatch?.toMap() ?: emptyMap()
+		val vChecked = HashSet<IrClass>()
 		for (vClass in mInstantiated.toList()) {
 			val vDeinit = vDeinits[vClass]
+			if (vDeinit != null) mClassInfo[vClass]?.irClass?.let { checkSuperDeinit(it, vChecked) }
 			val vCleaners = generateSequence(vClass) { it.superClass }.flatMap { it.cleaners }.toList()
 			if (vDeinit == null && vCleaners.isEmpty()) continue
 			val vIrClass = mClassInfo[vClass]?.irClass
@@ -428,6 +433,39 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			}
 			vClass.unit.functions += vEnds
 			vClass.deinit = vEnds
+		}
+	}
+
+	/**
+	 * Warns of each `deinit` of [inClass] and its superclasses that overrides the `deinit` of a
+	 * superclass without calling it. As for any `override`, the one of the superclass then does
+	 * not run: what it releases stays, which is seldom what was meant.
+	 */
+	private fun checkSuperDeinit(inClass: IrClass, inChecked: MutableSet<IrClass>) {
+		var vClass: IrClass? = inClass
+		while (vClass != null && inChecked.add(vClass)) {
+			val vSuper = vClass.superTypes.firstNotNullOfOrNull { vType -> vType.classOrNull?.owner?.takeIf { !it.isInterface } }
+			val vOwn = vClass.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "deinit" && !it.isFakeOverride && it.overriddenSymbols.isNotEmpty() }
+			// The `deinit` it would inherit: one written in a class above, not the declaration of the interface.
+			val vInherited = vSuper?.declarations?.filterIsInstance<IrSimpleFunction>()?.firstOrNull { it.name.asString() == "deinit" && it.overriddenSymbols.isNotEmpty() }
+				?.let { if (it.isFakeOverride) it.resolveFakeOverride() else it }
+				?.takeIf { it.body != null && !it.parentAsClass.isInterface }
+			if (vOwn != null && vInherited != null) {
+				var vCallsSuper = false
+				vOwn.body?.acceptChildrenVoid(object : IrVisitorVoid() {
+					override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
+
+					override fun visitCall(expression: IrCall) {
+						if (expression.superQualifierSymbol != null && expression.symbol.owner.name.asString() == "deinit") vCallsSuper = true
+						super.visitCall(expression)
+					}
+				})
+				if (!vCallsSuper) {
+					val vAbove = vInherited.parentAsClass.name.asString()
+					warnings += "'${vClass.name.asString()}.deinit' overrides the deinit of '$vAbove' without calling super.deinit(): what '$vAbove' gives up there is kept"
+				}
+			}
+			vClass = vSuper
 		}
 	}
 
