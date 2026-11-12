@@ -39,7 +39,8 @@ kotlin {
 }
 
 val unpackStdlibSources by tasks.registering(Sync::class) {
-	from({ stdlibSources.map { zipTree(it) } })
+	description = "Unpack the Kotlin standard library sources (Apache-2) into the build directory, so that they can be bundled with user programs."
+    from({ stdlibSources.map { zipTree(it) } })
 	into(layout.buildDirectory.dir("stdlib-src"))
 }
 
