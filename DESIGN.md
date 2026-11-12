@@ -331,6 +331,10 @@ The library is the real one, compiled from source with every program:
   takes the source (`sourceOf`). A call to a jar function with no source at all is reported
   as "not supported yet: call to ...".
 
+The platform layer's `ArrayList` reads and writes its storage without testing the index
+(`Storage.at`, `Storage.put`): it has compared the index with its length, and its storage
+only ever grows. Its `add` therefore cannot throw, and a caller does not test for it.
+
 Where the JVM would use an intrinsic, the platform layer asks the runtime: searching and
 comparing strings that are all ASCII works on their bytes (`indexOf`, `contains`, `split`,
 `startsWith`, `replace`), and indexing a string that is not ASCII starts from where the

@@ -60,6 +60,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - **Try another compiler**: `tools/try_cmake.sh <group/Name>` for MSVC; `KTC2_CC=clang tools/try.sh <group/Name>` for clang.
 
 ## Things that cost time before
+- A change that makes a library function unable to throw changes the shape of its callers (no test after the call), and a pass that only knew the old shape then quietly stops applying: the counts of `tools/bench.py --compare` show it at once (retains of Collections went from 8.7 M to 38.7 M once). Compare the counts, not only the times, after any change to the library or to `ExceptionLowering`.
 - A function and the forms made of it (`name__into`, `__b`, `__m`, `__o`) share their statements: a pass that rewrites a statement in place rewrites it in each of them. What it adds to one body (a declaration) has to be added to the others (`declareRooms` in `EscapeAnalysis` is the example).
 - The installed `ktc2` hands its command to a process that stays (`Daemon.kt`). It is replaced after `./gradlew installDist` and when a `KTC2_*` variable or `PATH` changes, so it never runs old code; if something still looks stale, `ktc2 --stop-daemon`, and `~/.ktc2/daemon.log` holds what that process printed for itself.
 - Shell heredocs mangle backslashes, `$` and tabs in Kotlin and C text. For an edit with any of those, write a small Python script to a file (with exact-match replacements that assert they matched once), run it, delete it.

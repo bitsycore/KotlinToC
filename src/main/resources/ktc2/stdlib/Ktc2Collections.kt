@@ -19,6 +19,10 @@ leaves to its platform (`expect`), and the collection classes the JVM takes from
  */
 public actual class ArrayList<E> actual constructor(initialCapacity: Int) : MutableList<E>, RandomAccess {
 
+	/*
+	The elements. It is only ever replaced by a larger one, and every index used on it was below
+	`length` at some time: `at` and `put`, which do not test the index, are enough.
+	*/
 	private var array: Storage<E> = Storage(if (initialCapacity > 0) initialCapacity else 10)
 	private var length: Int = 0
 
@@ -29,7 +33,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	internal var changes: Int = 0
 
 	/** The element at [index], for the iterator, which has compared the index with the size already. */
-	internal fun held(index: Int): E = array[index]
+	internal fun held(index: Int): E = array.at(index)
 
 	public actual constructor() : this(10)
 
@@ -42,7 +46,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	actual override fun isEmpty(): Boolean = length == 0
 
 	private fun checkIndex(index: Int) {
-		if (index < 0 || index >= length) throw IndexOutOfBoundsException("Index: $index, Size: $length")
+		if (index < 0 || index >= length) throw IndexOutOfBoundsException("Index $index out of bounds for length $length")
 	}
 
 	private fun checkPosition(index: Int) {
@@ -55,7 +59,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		var vCapacity = array.size * 2
 		if (vCapacity < minCapacity) vCapacity = minCapacity
 		val vBigger = Storage<E>(vCapacity)
-		for (vIndex in 0 until length) vBigger[vIndex] = array[vIndex]
+		for (vIndex in 0 until length) vBigger.put(vIndex, array.at(vIndex))
 		array = vBigger
 	}
 
@@ -65,20 +69,20 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	actual override operator fun get(index: Int): E {
 		checkIndex(index)
-		return array[index]
+		return array.at(index)
 	}
 
 	actual override operator fun set(index: Int, element: E): E {
 		checkIndex(index)
-		val vOld = array[index]
-		array[index] = element
+		val vOld = array.at(index)
+		array.put(index, element)
 		return vOld
 	}
 
 	actual override fun add(element: E): Boolean {
 		ensureCapacity(length + 1)
 		changes++
-		array[length] = element
+		array.put(length, element)
 		length++
 		return true
 	}
@@ -88,10 +92,10 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		ensureCapacity(length + 1)
 		var vIndex = length
 		while (vIndex > index) {
-			array[vIndex] = array[vIndex - 1]
+			array.put(vIndex, array.at(vIndex - 1))
 			vIndex--
 		}
-		array[index] = element
+		array.put(index, element)
 		length++
 		changes++
 	}
@@ -114,8 +118,8 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	actual override fun removeAt(index: Int): E {
 		checkIndex(index)
-		val vOld = array[index]
-		for (vIndex in index until length - 1) array[vIndex] = array[vIndex + 1]
+		val vOld = array.at(index)
+		for (vIndex in index until length - 1) array.put(vIndex, array.at(vIndex + 1))
 		length--
 		array.drop(length)
 		changes++
@@ -133,9 +137,9 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	private fun filterInPlace(elements: Collection<E>, keep: Boolean): Boolean {
 		var vKept = 0
 		for (vIndex in 0 until length) {
-			val vElement = array[vIndex]
+			val vElement = array.at(vIndex)
 			if (elements.contains(vElement) == keep) {
-				array[vKept] = vElement
+				array.put(vKept, vElement)
 				vKept++
 			}
 		}
@@ -167,7 +171,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	actual override fun indexOf(element: E): Int {
 		for (vIndex in 0 until length) {
-			if (array[vIndex] == element) return vIndex
+			if (array.at(vIndex) == element) return vIndex
 		}
 		return -1
 	}
@@ -175,7 +179,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	actual override fun lastIndexOf(element: E): Int {
 		var vIndex = length - 1
 		while (vIndex >= 0) {
-			if (array[vIndex] == element) return vIndex
+			if (array.at(vIndex) == element) return vIndex
 			vIndex--
 		}
 		return -1
@@ -195,7 +199,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 			throw IndexOutOfBoundsException("fromIndex: $fromIndex, toIndex: $toIndex, size: $length")
 		}
 		val vResult = ArrayList<E>(toIndex - fromIndex)
-		for (vIndex in fromIndex until toIndex) vResult.add(array[vIndex])
+		for (vIndex in fromIndex until toIndex) vResult.add(array.at(vIndex))
 		return vResult
 	}
 
@@ -203,7 +207,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		var vText = "["
 		for (vIndex in 0 until length) {
 			if (vIndex > 0) vText += ", "
-			vText += array[vIndex]
+			vText += array.at(vIndex)
 		}
 		return vText + "]"
 	}
@@ -213,7 +217,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		if (other !is List<*>) return false
 		if (other.size != length) return false
 		for (vIndex in 0 until length) {
-			if (array[vIndex] != other[vIndex]) return false
+			if (array.at(vIndex) != other[vIndex]) return false
 		}
 		return true
 	}
@@ -221,7 +225,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	override fun hashCode(): Int {
 		var vHash = 1
 		for (vIndex in 0 until length) {
-			val vElement: Any? = array[vIndex]
+			val vElement: Any? = array.at(vIndex)
 			vHash = 31 * vHash + (vElement?.hashCode() ?: 0)
 		}
 		return vHash

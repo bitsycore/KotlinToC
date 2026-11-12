@@ -1356,6 +1356,16 @@ internal class BodyBuilder(
 			mBlock += KIndexSet(vOperands[0], vOperands[1], coerce(vOperands[2], inType.element))
 			KUnitValue
 		}
+		// `Storage.at` and `Storage.put`: the platform layer has made sure of the index.
+		"at" -> {
+			val vOperands = lowerOperands(inArguments)
+			adapt(KIndexRead(vOperands[0], vOperands[1], inType.element).also { it.isChecked = true }, inCall)
+		}
+		"put" -> {
+			val vOperands = lowerOperands(inArguments, inLastMayBeImpure = true)
+			mBlock += KIndexSet(vOperands[0], vOperands[1], coerce(vOperands[2], inType.element)).also { it.isChecked = true }
+			KUnitValue
+		}
 		// `Storage.drop(index)`: the slot gives up the reference it holds; numbers are left as they are.
 		"drop" -> {
 			val vOperands = lowerOperands(inArguments)
@@ -1804,6 +1814,17 @@ internal class BodyBuilder(
 		}
 		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "kotlinx.cinterop.internal") {
 			lowerInteropIntrinsic(inCall, vCallee.name.asString())?.let { return it }
+		}
+		// `listOf(a, b, c)` is `elements.asList()` unless there is no element, which the call shows: the
+		// list is then of one class for the passes that follow the classes of values.
+		if (vOwner == null && vCallee.name.asString() == "listOf" && vCallee.kotlinFqName.asString() == "kotlin.collections.listOf") {
+			val vElements = (inCall.arguments.singleOrNull() as? IrVararg)?.elements
+			if (vElements != null && vElements.isNotEmpty() && vElements.none { it is IrSpreadElement }) {
+				val vFunction = mImporter.internalFunction("kotlin_collections_asList")
+				val vSubst = vFunction?.let { mImporter.substFor(it, emptyList(), inCall.typeArguments.map { vType -> vType?.let { closed(it) } }) }
+				val vTarget = if (vFunction == null || vSubst == null) null else mImporter.functionFor(vFunction, vSubst)
+				if (vFunction != null && vSubst != null && vTarget != null) return adapt(callFunction(inCall, vTarget, vFunction, inCall.arguments, null, vSubst), inCall)
+			}
 		}
 		vCallee.annotations.firstOrNull { it.type.classFqName?.asString() == "kotlinx.cinterop.internal.CVariadic" }?.let { vAnnotation ->
 			return lowerVariadicCall(inCall, vCallee, (vAnnotation.arguments.firstOrNull() as? IrConst)?.value as? String ?: "")

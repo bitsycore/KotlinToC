@@ -105,6 +105,11 @@ built in the caller's frame. `Ordinary` is the benchmark of ordinary code, added
 | Strings | 0.262 s | 0.260 s | 1.20 M, unchanged | 2.7 M |
 | Threads | 0.716 s | 0.707 s | 5.54 M, unchanged | 6.2 M |
 
+At the end of that day on the same machine, after the rooms, the copies, the unchecked
+storage of `ArrayList`, the borrowed returned calls and `listOf`: Collections 0.384 s,
+Dispatch 0.424 s, Numeric 0.241 s, Objects 0.226 s, Ordinary 0.425 s (8.56 M allocations),
+Strings 0.256 s, Threads 0.661 s. Retains are what the table says.
+
 The times hardly move: an allocation from the pool costs about as much as clearing a slot
 of the frame. What is left in `Ordinary`, by what makes it (counted from the program):
 - 4.0 M: `place = place + step`, a new object assigned to a variable of an enclosing block
@@ -218,7 +223,10 @@ write to an array of references.
 |---|---|---|
 | [x] Call the implementation directly when only one class implements the method, or the type is known at the call (`Devirtualize`: the class is followed from the allocation through locals, parameters, fields and results) | Dispatch -17 %, -48 % with LTO; 375 calls in the showcase | medium |
 | [x] A function called with objects of several classes for one parameter is copied for the calls that pass a known class (`Devirtualize.copyFor`, `KirCopy.kt`): `total(values: List<Int>)` given an `ArrayList` goes to `total__c0`, where the iterator and its `hasNext` and `next` are direct calls. At most 4 copies of a function of at most 80 statements, three rounds. `integration/objects/Copies.kt`, `KTC2_SKIP=copies` | the `for` over a list parameter in `Ordinary`: 87 ms -> 60 ms with LTO (half its calls pass an `ArrayList`); Ordinary -7 % with LTO, -3 % without; programs under 1 % larger | medium |
-| [ ] `listOf(a, b, c)` is of no known class: it returns the list of an array or the empty list, by the number of elements, which the call shows. Following the result of a function per call (or copying `listOf` for the count) would let the copies above apply to literal lists | the other half of that loop | low to medium |
+| [x] `listOf(a, b, c)` is of a known class: with at least one element and no spread the call is lowered as `elements.asList()`, which is what `listOf` does then (`lowerCall` in `BodyLowering.kt`) | with the two lines below: Collections -18 %, Ordinary -17 %, Dispatch -12 % | low |
+| [x] `ArrayList` does not test the index of its own storage: `Storage.at` and `Storage.put` (`Ktc2Internal.kt`) are `get` and `set` without the test, for the platform layer where it has made sure of the index. The storage of an `ArrayList` never shrinks and every index was below its length. So `add` cannot throw, and no caller tests for an exception after it | part of the above | low |
+| [x] A function that returns the result of a call directly (`fun first() = at(0)`) can have its result borrowed: `ExceptionLowering` gives every returned call a local, the shape it already gave the ones that can throw and the only one `BorrowedReturns` looked at. Found when `next()` of the list iterator lost its borrowed form (retains of Collections: 8.7 M -> 38.7 M until fixed). `integration/objects/ReturnedCalls.kt` | correctness of the counts; Objects and Threads -8 % | low |
+| [ ] `HashMap` still tests every index (four per probe): its storage is replaced by a smaller one in `clear()`, and the `equals` of a key runs the program's code in the middle of a probe. It would need the arrays read once into locals per probe, and a probe that starts over when `changes` moved | Collections | medium |
 | [ ] Follow the other arguments through dispatchers too, and the element class of a collection (`List<Shape>` that only holds circles) | medium | medium |
 | [ ] Stop sharing the code of a local class between the instantiations of the generic class around it (the importer reads an `X<Int>` through the type `X<Any>`): `Devirtualize` has to distrust static types wherever it sees this, and so will every later pass that reasons about classes | removes a trap more than it gains speed | medium, in the importer |
 | [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
@@ -334,13 +342,12 @@ Open:
 1. Run the suite on macOS again (the work on Windows of 2026-11-12 was not run there), and
    on Linux for the first time. Then a CI job per system with an AddressSanitizer run.
 2. Where the time of `Ordinary` is, now that allocation is not it (measured by timing its
-   parts, with LTO, after the copies of part 4): the library's operators on lists (`filter`,
-   `zip`, `sumOf`: 107 ms of 320), a local `ArrayList` that is filled and gone over (75 ms:
-   its array, `add`, the test after each call), a `for` over a `List` parameter (60 ms, of
-   which the calls with a literal list are still dispatched), text (`split`, a template:
-   50 ms). So: what `add` and the iterator of `ArrayList` cost per element when everything
-   is direct (the `modCount` test, the pending-exception test after `add`), the class of
-   `listOf(...)` (4), then templates built in place (6).
+   parts, with LTO): the library's operators on lists (`filter`, `zip`, `sumOf`: about 100 ms
+   of 290), a local `ArrayList` that is filled and gone over (55 ms), a `for` over a `List`
+   parameter (under 60 ms), text (`split`, a template: 50 ms). What is left per element of a
+   list: the `modCount` test and the test for an exception after `next()` (it can throw two),
+   which an index loop written by the importer for a list known to be an `ArrayList` would
+   fold into one test per round. Then `HashMap` (4), and templates built in place (6).
 3. More shapes for `RangeChecks` (5).
 4. `name` and `ordinal` of a `@SimpleEnum` without the object; the SDL3 constants as such
    enums (8).

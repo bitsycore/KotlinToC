@@ -29,6 +29,13 @@ public class Storage<T>(size: Int) {
 	public operator fun set(index: Int, value: T) {
 	}
 
+	/** `get` without the test of [index], for code that has made sure of it. */
+	public fun at(index: Int): T = throw UnsupportedOperationException()
+
+	/** `set` without the test of [index], for code that has made sure of it. */
+	public fun put(index: Int, value: T) {
+	}
+
 	/**
 	 * Empties the slot at [index], for a collection that no longer has an element there: a
 	 * reference is given up, so the object does not outlive its removal. Nothing for numbers.

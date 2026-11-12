@@ -188,7 +188,16 @@ class ExceptionLowering(private val mModule: KModule) {
 				is KLoop -> vOut += KLoop(vStatement.id, rewrite(vStatement.body, inRegions, inFunction), rewrite(vStatement.latch, inRegions, inFunction))
 				is KReturn -> {
 					if (!vParks && !callThrows(vStatement.value)) {
-						vOut += vStatement
+						val vValue = vStatement.value
+						if (vValue != null && vValue.type is KRefType && callOf(vValue) != null) {
+							// The same shape as for a call that can throw: the passes after this one look for
+							// the result of a call in a local (to borrow it, to build it in the caller's frame).
+							val vResult = KLocal("ktc2_x${mNextTemp++}", vValue.type)
+							vOut += KLet(vResult, vValue)
+							vOut += KReturn(KRead(vResult))
+						} else {
+							vOut += vStatement
+						}
 					} else if (vStatement.value!!.type == KUnitType || vStatement.value.type == KNothingType) {
 						vOut += KEval(vStatement.value)
 						vOut += KIf(pending(), vLeave, emptyList())
