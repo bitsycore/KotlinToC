@@ -213,7 +213,8 @@ class KirDump(private val mModule: KModule) {
 		is KIndexRead -> "${operand(inExpr.array)}[${expr(inExpr.index)}${if (inExpr.isChecked) " in range" else ""}]"
 		is KArrayNew -> "new ${type(inExpr.type)}(${expr(inExpr.length)})${if (inExpr.onStack) " on the stack" else ""}"
 		is KAlloc -> "new ${inExpr.cls.cName}${if (inExpr.onStack) " on the stack" else ""}"
-		is KStackSlot -> "slot " + inExpr.alternatives.ifEmpty { listOf(inExpr.cls) }.joinToString(" | ") { it.cName }
+		is KStackSlot -> inExpr.rooms?.let { "free one of ${it.first.cName}, ${it.second.cName} as ${inExpr.cls.cName}" }
+			?: ("slot " + inExpr.alternatives.ifEmpty { listOf(inExpr.cls) }.joinToString(" | ") { it.cName })
 		is KRetain -> "retain(${expr(inExpr.operand)})"
 		is KCall -> "${inExpr.function.cName}(${inExpr.arguments.joinToString(", ") { expr(it) }})"
 		is KIntrinsic -> {

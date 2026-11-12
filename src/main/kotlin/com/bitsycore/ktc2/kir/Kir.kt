@@ -463,8 +463,13 @@ class KCall(var function: KFunction, var arguments: List<KExpr>) : KExpr {
  * With [alternatives], room for an instance of any of those classes, as a plain pointer: what
  * is handed to a dispatcher (`KFunction.slotClasses`), which sets the header for the class the
  * implementation it calls builds.
+ *
+ * With [rooms], two locals that each hold such a pointer to room for a [cls]: the one of the
+ * two that holds no object in use, cleared and with its header set, or null when both do (the
+ * function it is handed to then makes a heap object). For a variable that is given a new
+ * object while the old one is still read.
  */
-class KStackSlot(val cls: KClass, val alternatives: List<KClass> = emptyList()) : KExpr {
+class KStackSlot(val cls: KClass, val alternatives: List<KClass> = emptyList(), val rooms: Pair<KLocal, KLocal>? = null) : KExpr {
 	override val type: KType get() = if (alternatives.isEmpty()) KClassType(cls) else KPtrType
 }
 

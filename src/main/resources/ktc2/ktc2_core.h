@@ -270,11 +270,37 @@ void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
  */
 ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t offset);
 
+void* ktc2_alloc(size_t size, uint32_t typeId);
+
 /**
  * The object a function builds in the room its caller gave it: the room itself, taken as the
- * one reference the function then returns.
+ * one reference the function then returns. A caller that had no room free passes NULL, and
+ * the object is one of the heap.
  */
-#define ktc2_slot_take(slot) ((void*)(slot))
+static inline void* ktc2_slot_take(void* slot, size_t size, uint32_t typeId)
+{
+	return slot ? slot : ktc2_alloc(size, typeId);
+}
+
+/**
+ * For a variable that is given a new object again and again (`place = place + step`): the one
+ * of the two rooms [a] and [b] of the frame ([size] bytes each) that holds no object in use,
+ * cleared and marked as an object of [typeId]. The object the variable holds is in the other
+ * one while the new one is built. NULL when both are in use (something else still refers to
+ * an older object).
+ */
+static inline void* ktc2_slot_reuse(void* a, void* b, size_t size, uint32_t typeId)
+{
+	ktc2_Obj* slot = a;
+	if (slot->rc & KTC2_COUNT_MASK) {
+		slot = b;
+		if (slot->rc & KTC2_COUNT_MASK) return NULL;
+	}
+	memset(slot, 0, size);
+	slot->rc = KTC2_STACK | 1;
+	slot->typeId = typeId;
+	return slot;
+}
 
 /** Generated in ktc2_main.c. */
 extern const ktc2_TypeInfo ktc2_types[];

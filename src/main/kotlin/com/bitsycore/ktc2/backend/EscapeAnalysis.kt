@@ -2,6 +2,9 @@ package com.bitsycore.ktc2.backend
 
 import com.bitsycore.ktc2.kir.*
 
+/** `KTC2_SKIP=rooms`: a variable given a new object by a call again and again gets it from the heap. */
+private val kSkipsRooms = "rooms" in (System.getenv("KTC2_SKIP") ?: "").split(",")
+
 /** `KTC2_SKIP=slots`: results that come through a dispatcher are not built in the caller's frame. */
 private val kSkipsDispatcherSlots = "slots" in (System.getenv("KTC2_SKIP") ?: "").split(",")
 
@@ -34,6 +37,11 @@ private const val kStackArrayLimit = 64
  * A dispatcher has such a form when an implementation behind it has: the caller's slot is
  * then room for any of the classes they build, and the implementations without the form go
  * on returning an object of the heap.
+ *
+ * And the object a call gives to a variable that already holds one (`place = place + step` in
+ * a loop), which is read while the new one is built: the frame has two rooms for it, and the
+ * call builds in the one that holds no object in use (`KStackSlot.rooms`). When something
+ * else still holds an older object both are taken, and that one object comes from the heap.
  */
 class EscapeAnalysis(private val mModule: KModule) {
 
@@ -42,6 +50,9 @@ class EscapeAnalysis(private val mModule: KModule) {
 
 	/** For each dispatcher, its in-place form and the classes its implementations build there; null when it has none. */
 	private val mDispatcherInPlace = HashMap<KFunction, Pair<KFunction, List<KClass>>?>()
+
+	/** How many pairs of rooms were made so far: each gets a name of its own. */
+	private var mRooms = 0
 
 	/** In-place forms created during promotion, which still have to be promoted themselves. */
 	private val mNewFunctions = ArrayList<KFunction>()
@@ -439,6 +450,43 @@ class EscapeAnalysis(private val mModule: KModule) {
 			}
 		}
 
+		/**
+		 * [inLocal], declared before, is given the result of the call [inValue]: built in one of
+		 * two rooms of this frame when the function can build in place and nothing [inLocal] ever
+		 * holds outlives the block [inLocal] is declared in.
+		 */
+		private fun reassignment(inLocal: KLocal, inValue: KExpr?) {
+			val vCall = coreOf(inValue) as? KCall ?: return
+			// Already done, in the function this one is the in-place form of: the two share the
+			// statement, and each needs the rooms.
+			(vCall.arguments.firstOrNull() as? KStackSlot)?.let { vSlot ->
+				vSlot.rooms?.let { mRoomsUsed += vSlot.cls to it }
+				return
+			}
+			if (inLocal !in mBlockOf) return
+			val (vForm, vClass) = inPlaceForm(vCall.function) ?: return
+			mCandidates += Candidate(inLocal, "a ${vClass.name}", null, null, isCall = true) {
+				val vRooms = KLocal("ktc2_room${mRooms}_0", KPtrType) to KLocal("ktc2_room${mRooms}_1", KPtrType)
+				mRooms++
+				declareRooms(vClass, vRooms)
+				vCall.arguments = listOf<KExpr>(KStackSlot(vClass, rooms = vRooms)) + vCall.arguments
+				vCall.function = vForm
+			}
+		}
+
+		/** The rooms the calls of this function use, as found by the scan: see [reassignment]. */
+		private val mRoomsUsed = ArrayList<Pair<KClass, Pair<KLocal, KLocal>>>()
+
+		/**
+		 * Declares [inRooms], each room for a [inClass], unless this function has them. They are
+		 * the function's, not the block's: an object in one is given up when the block of its
+		 * variable ends, and the room is free when the block is entered again.
+		 */
+		private fun declareRooms(inClass: KClass, inRooms: Pair<KLocal, KLocal>) {
+			if (mFunction.body.any { it is KLet && it.local === inRooms.first }) return
+			for (vRoom in inRooms.toList()) mFunction.body.add(0, KLet(vRoom, KStackSlot(inClass, listOf(inClass))))
+		}
+
 		private fun scan(inBlock: List<KStmt>, inParentBlock: List<KStmt>?) {
 			mParent[inBlock] = inParentBlock
 			for (vStatement in inBlock) {
@@ -448,7 +496,10 @@ class EscapeAnalysis(private val mModule: KModule) {
 						flow(vStatement.local, vStatement.init)
 						candidate(vStatement.local, vStatement.init)
 					}
-					is KSet -> flow(vStatement.local, vStatement.value)
+					is KSet -> {
+						flow(vStatement.local, vStatement.value)
+						if (mIsPromoting && !kSkipsRooms) reassignment(vStatement.local, vStatement.value)
+					}
 					is KGlobalSet -> {
 						escape(vStatement.value, "stored in a top-level property")
 						call(vStatement.value)
@@ -751,6 +802,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 		fun promote(inReports: Boolean = true) {
 			mIsPromoting = true
 			scanAll()
+			mRoomsUsed.forEach { (vClass, vRooms) -> declareRooms(vClass, vRooms) }
 			directInlineUses(mFunction.body)
 			for (vCandidate in mCandidates) {
 				val vBlock = mBlockOf[vCandidate.local] ?: continue

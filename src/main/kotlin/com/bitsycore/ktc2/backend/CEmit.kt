@@ -845,6 +845,11 @@ class CEmitter(private val mModule: KModule) {
 					val vTypes = inExpr.arguments.drop(1).joinToString(", ") { cType(it.type) }.ifEmpty { "void" }
 					val vPassed = inExpr.arguments.drop(1).joinToString(", ") { bare(expr(it)) }
 					"((${cType(inExpr.type)} (*)($vTypes))${expr(inExpr.arguments[0])})($vPassed)"
+				} else if (inExpr.name == "ktc2_slot_take") {
+					// The room the caller gave, or a heap object when it had none.
+					val vClass = (inExpr.type as KClassType).cls
+					mState.includes += vClass.unit
+					"ktc2_slot_take(${arguments(inExpr.arguments)}, sizeof(${vClass.cName}), ${typeId(vClass)})"
 				} else if (vTemplate == null) {
 					"${inExpr.name}(${arguments(inExpr.arguments)})"
 				} else {
@@ -853,7 +858,10 @@ class CEmitter(private val mModule: KModule) {
 					"(" + Regex("\\$(\\d+)").replace(vTemplate) { vMatch -> vArguments[vMatch.groupValues[1].toInt()] } + ")"
 				}
 			}
-			is KStackSlot -> if (inExpr.alternatives.isNotEmpty()) {
+			is KStackSlot -> if (inExpr.rooms != null) {
+				mState.includes += inExpr.cls.unit
+				"((${inExpr.cls.cName}*)ktc2_slot_reuse(${inExpr.rooms.first.cName}, ${inExpr.rooms.second.cName}, sizeof(${inExpr.cls.cName}), ${typeId(inExpr.cls)}))"
+			} else if (inExpr.alternatives.isNotEmpty()) {
 				// Room for the largest of the classes; the dispatcher it is handed to clears and marks it.
 				inExpr.alternatives.forEach { mState.includes += it.unit }
 				val vMembers = inExpr.alternatives.withIndex().joinToString(" ") { (vIndex, vClass) -> "${vClass.cName} m$vIndex;" }
