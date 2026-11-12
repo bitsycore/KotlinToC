@@ -223,6 +223,108 @@ void ktc2_arenaLeave(int64_t handle)
 	free(arena);
 }
 
+/* ================== */
+/* MARK: Small objects */
+/* ================== */
+
+/*
+ * Most objects are small, of a class, and do not live long. Those of a type with one size
+ * (ktc2_TypeInfo.size) of at most POOL_MAX bytes do not go through malloc and free each time:
+ * a freed one is put on a list of its size, kept per thread, and the next object of that size
+ * takes it from there; a list that is empty is served from a large piece of memory cut up as
+ * needed. Taking and giving back are a few instructions and need no lock. The memory is not
+ * returned to the system before the program ends; what a thread leaves when it ends goes to
+ * lists the other threads take from.
+ *
+ * KTC2_NO_POOL turns this off: every object is then a block of malloc's, which is what a tool
+ * that watches the heap (AddressSanitizer) wants to see.
+ */
+#define POOL_STEP 16
+#define POOL_MAX 128
+#define POOL_SIZES (POOL_MAX / POOL_STEP)
+#define POOL_PIECE (64 * 1024)
+
+typedef struct PoolBlock {
+	struct PoolBlock* next;
+} PoolBlock;
+
+static KTC2_TLS PoolBlock* pool_free[POOL_SIZES];
+static KTC2_TLS char* pool_room;
+static KTC2_TLS size_t pool_left;
+
+#ifdef KTC2_THREADS
+/** The free blocks of the threads that have ended, by size: guarded by the runtime's lock. */
+static PoolBlock* pool_orphans[POOL_SIZES];
+#endif
+
+/** The size the blocks of [typeId] have in the pool, or 0 when its objects come from malloc. */
+static inline size_t pool_size(uint32_t typeId)
+{
+#ifdef KTC2_NO_POOL
+	(void)typeId;
+	return 0;
+#else
+	uint32_t size = ktc2_types[typeId].size;
+	return size <= POOL_MAX ? size : 0;
+#endif
+}
+
+/** A block for an object of [size] bytes (1..POOL_MAX), not zeroed. */
+static void* pool_take(size_t size)
+{
+	size_t index = (size - 1) / POOL_STEP;
+	PoolBlock* block = pool_free[index];
+#ifdef KTC2_THREADS
+	if (!block && pool_orphans[index]) {
+		runtime_enter();
+		block = pool_orphans[index];
+		pool_orphans[index] = NULL;
+		runtime_leave();
+	}
+#endif
+	if (block) {
+		pool_free[index] = block->next;
+		return block;
+	}
+	size_t rounded = (index + 1) * POOL_STEP;
+	if (pool_left < rounded) {
+		/* What is left of the last piece is too small for this size: it is given up. */
+		pool_room = malloc(POOL_PIECE);
+		if (!pool_room) fail("java.lang.OutOfMemoryError", NULL);
+		pool_left = POOL_PIECE;
+	}
+	void* taken = pool_room;
+	pool_room += rounded;
+	pool_left -= rounded;
+	return taken;
+}
+
+static void pool_give(void* memory, size_t size)
+{
+	size_t index = (size - 1) / POOL_STEP;
+	PoolBlock* block = memory;
+	block->next = pool_free[index];
+	pool_free[index] = block;
+}
+
+#ifdef KTC2_THREADS
+/** Hands the free blocks of the thread that is ending to the others. */
+static void pool_leave(void)
+{
+	runtime_enter();
+	for (size_t index = 0; index < POOL_SIZES; index++) {
+		PoolBlock* block = pool_free[index];
+		if (!block) continue;
+		PoolBlock* last = block;
+		while (last->next) last = last->next;
+		last->next = pool_orphans[index];
+		pool_orphans[index] = block;
+		pool_free[index] = NULL;
+	}
+	runtime_leave();
+}
+#endif
+
 void* ktc2_alloc(size_t size, uint32_t typeId)
 {
 #ifdef KTC2_ARC_STATS
@@ -236,8 +338,16 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 		object = arena_alloc(arena_top, size);
 		object->rc = KTC2_ARENA | 1;
 	} else {
-		object = calloc(1, size);
-		if (!object) fail("java.lang.OutOfMemoryError", NULL);
+		size_t pooled = pool_size(typeId);
+		if (pooled) {
+			/* Where the object goes back to is decided by its type alone: it must be of the size of its type. */
+			if (size > pooled) fail("java.lang.InternalError", "an object larger than its type");
+			object = pool_take(pooled);
+			memset(object, 0, pooled);
+		} else {
+			object = calloc(1, size);
+			if (!object) fail("java.lang.OutOfMemoryError", NULL);
+		}
 		object->rc = 1;
 	}
 	object->typeId = typeId;
@@ -246,6 +356,19 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 }
 
 static void weak_drop(ktc2_Obj* target);
+
+/* The boxes of the small values: static, immortal, written here once. */
+#define BOX_1(kind, id, value) { { KTC2_IMMORTAL, id }, { .kind##_ = (value) } }
+#define BOX_4(kind, id, value) BOX_1(kind, id, value), BOX_1(kind, id, (value) + 1), BOX_1(kind, id, (value) + 2), BOX_1(kind, id, (value) + 3)
+#define BOX_16(kind, id, value) BOX_4(kind, id, value), BOX_4(kind, id, (value) + 4), BOX_4(kind, id, (value) + 8), BOX_4(kind, id, (value) + 12)
+#define BOX_64(kind, id, value) BOX_16(kind, id, value), BOX_16(kind, id, (value) + 16), BOX_16(kind, id, (value) + 32), BOX_16(kind, id, (value) + 48)
+#define BOX_128(kind, id, value) BOX_64(kind, id, value), BOX_64(kind, id, (value) + 64)
+#define BOX_256(kind, id, value) BOX_128(kind, id, value), BOX_128(kind, id, (value) + 128)
+
+ktc2_Box ktc2_box_cache_boolean[2] = { BOX_1(boolean, KTC2_TYPE_BOX_BOOLEAN, false), BOX_1(boolean, KTC2_TYPE_BOX_BOOLEAN, true) };
+ktc2_Box ktc2_box_cache_int[KTC2_BOX_CACHE_SIZE] = { BOX_256(int, KTC2_TYPE_BOX_INT, KTC2_BOX_CACHE_LOW) };
+ktc2_Box ktc2_box_cache_long[KTC2_BOX_CACHE_SIZE] = { BOX_256(long, KTC2_TYPE_BOX_LONG, KTC2_BOX_CACHE_LOW) };
+ktc2_Box ktc2_box_cache_char[KTC2_BOX_CACHE_SIZE / 2] = { BOX_128(char, KTC2_TYPE_BOX_CHAR, 0) };
 
 ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t offset)
 {
@@ -258,20 +381,81 @@ ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t 
  * With KTC2_LEAK_CHECK a freed object is first filled with 0xDD, so that code which still
  * uses it (a reference that was not counted) reads nonsense and fails instead of appearing to work.
  */
-#if defined(KTC2_LEAK_CHECK) && (defined(_WIN32) || defined(__GLIBC__))
+#ifdef KTC2_LEAK_CHECK
+#if defined(_WIN32)
 #include <malloc.h>
-#ifdef _WIN32
-#define poison(object) memset((object), 0xDD, _msize(object))
+#define block_size(object) _msize(object)
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
+#define block_size(object) malloc_size(object)
+#elif defined(__GLIBC__)
+#include <malloc.h>
+#define block_size(object) malloc_usable_size(object)
 #else
-#define poison(object) memset((object), 0xDD, malloc_usable_size(object))
+#define block_size(object) sizeof(ktc2_Obj)
 #endif
+
+/*
+ * The memory is not given back at once either: the allocator would write into it or hand it
+ * out again, and the fill would be gone. The last freed objects wait here, still filled, so
+ * that a retain or a release of one of them is recognized (ktc2_fail_freed).
+ */
+#define RETIRED_COUNT 4096
+#define RETIRED_MAX_SIZE 65536
+
+/** A freed object that waits: [pooled] is its size in the pool, 0 when it is a block of malloc's. */
+typedef struct {
+	void* memory;
+	size_t pooled;
+} Retired;
+
+static Retired retired[RETIRED_COUNT];
+static uint32_t retired_at;
+
+static void retire(ktc2_Obj* object)
+{
+	size_t pooled = pool_size(object->typeId);
+	size_t size = pooled ? pooled : block_size(object);
+	memset(object, 0xDD, size);
+	if (size > RETIRED_MAX_SIZE) {
+		free(object);
+		return;
+	}
+	runtime_enter();
+	Retired oldest = retired[retired_at];
+	retired[retired_at] = (Retired){ object, pooled };
+	retired_at = (retired_at + 1) % RETIRED_COUNT;
+	runtime_leave();
+	if (oldest.pooled) pool_give(oldest.memory, oldest.pooled); else free(oldest.memory);
+}
+
+void ktc2_fail_freed(void)
+{
+	fflush(stdout);
+	fprintf(stderr, "ktc2: use of a freed object: a reference was not counted\n");
+	abort();
+}
 #else
-#define poison(object) ((void)0)
+static inline void retire(ktc2_Obj* object)
+{
+	size_t pooled = pool_size(object->typeId);
+	if (pooled) pool_give(object, pooled); else free(object);
+}
 #endif
+
+/*
+ * Counts the strings with characters beyond ASCII that were destroyed. A position remembered
+ * in such a string (see `place_in`) is only good while this has not moved: the memory of a
+ * string that is gone may hold another one by now.
+ */
+static uint32_t strings_gone;
 
 void ktc2_destroy(ktc2_Obj* object)
 {
 	if (object->rc & KTC2_WEAK) weak_drop(object);
+	if (object->typeId == KTC2_TYPE_STRING && ((ktc2_String*)object)->size != ((ktc2_String*)object)->length) {
+		(void)ktc2_atomic_add(&strings_gone, 1);
+	}
 	void (*destroy)(ktc2_Obj*) = ktc2_types[object->typeId].destroy;
 	if (destroy) destroy(object);
 	/* A stack object only gives up what it refers to; its memory belongs to a frame. */
@@ -281,8 +465,7 @@ void ktc2_destroy(ktc2_Obj* object)
 		arena_block_drop(*(ArenaBlock**)((char*)object - ARENA_PREFIX));
 		return;
 	}
-	poison(object);
-	free(object);
+	retire(object);
 }
 
 static void threads_wait(void);
@@ -432,6 +615,36 @@ static uint16_t cursor_next(UnitCursor* cursor)
 	return (uint16_t)(0xD800 | (c >> 10));
 }
 
+/*
+ * In a string that is not all ASCII, the place of a character is found by walking the bytes.
+ * A loop over the characters asks for 0, 1, 2...: where the last walk ended is remembered, per
+ * thread, and the next one starts there when it is for the same string and not further back.
+ */
+typedef struct {
+	const ktc2_String* string;
+	uint32_t gone;   /* strings_gone when this was noted */
+	int32_t unit;    /* index of a UTF-16 unit that starts a code point */
+	int32_t offset;  /* the byte where that code point starts */
+} Place;
+
+static KTC2_TLS Place last_place;
+
+/** Where to start walking [s] to reach unit [index]: the remembered place when it serves, else the beginning. */
+static const char* place_in(const ktc2_String* s, int32_t index, int32_t* unit)
+{
+	if (last_place.string == s && last_place.unit <= index && last_place.gone == ktc2_atomic_load(&strings_gone)) {
+		*unit = last_place.unit;
+		return s->bytes + last_place.offset;
+	}
+	*unit = 0;
+	return s->bytes;
+}
+
+static void place_note(const ktc2_String* s, int32_t unit, const char* at)
+{
+	last_place = (Place){ s, ktc2_atomic_load(&strings_gone), unit, (int32_t)(at - s->bytes) };
+}
+
 uint16_t ktc2_str_get(const ktc2_String* s, int32_t index)
 {
 	if (index < 0 || index >= s->length) {
@@ -444,10 +657,20 @@ uint16_t ktc2_str_get(const ktc2_String* s, int32_t index)
 		exit(1);
 	}
 	if (s->size == s->length) return (unsigned char)s->bytes[index];
-	UnitCursor cursor = cursor_of(s);
-	uint16_t unit = 0;
-	for (int32_t i = 0; i <= index; i++) unit = cursor_next(&cursor);
-	return unit;
+	int32_t unit;
+	const char* at = place_in(s, index, &unit);
+	for (;;) {
+		const char* start = at;
+		uint32_t point = next_code_point(&at);
+		int32_t width = point >= 0x10000 ? 2 : 1;
+		if (index < unit + width) {
+			place_note(s, unit, start);
+			if (width == 1) return (uint16_t)point;
+			point -= 0x10000;
+			return index == unit ? (uint16_t)(0xD800 | (point >> 10)) : (uint16_t)(0xDC00 | (point & 0x3FF));
+		}
+		unit += width;
+	}
 }
 
 bool ktc2_str_equals(const ktc2_String* a, const ktc2_String* b)
@@ -851,14 +1074,67 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 /** The byte offset of UTF-16 unit [index] in a non-ASCII string (at a code point boundary). */
 static int32_t byte_offset_of_unit(const ktc2_String* s, int32_t index)
 {
-	const char* at = s->bytes;
 	const char* end = s->bytes + s->size;
-	int32_t unit = 0;
+	int32_t unit;
+	const char* at = place_in(s, index, &unit);
 	while (at < end && unit < index) {
 		uint32_t point = next_code_point(&at);
 		unit += point >= 0x10000 ? 2 : 1;
 	}
+	if (unit == index) place_note(s, unit, at);
 	return (int32_t)(at - s->bytes);
+}
+
+int32_t ktc2_stringFind(ktc2_String* s, ktc2_String* other, int32_t from, bool backwards)
+{
+	if (s->size != s->length) return -2;
+	int32_t length = s->length;
+	int32_t count = other->length;
+	/* Text that is all ASCII holds no string that is not; the empty string is ASCII. */
+	if (other->size != other->length) return -1;
+	int32_t last = length - count;
+	if (backwards) {
+		for (int32_t index = last < from ? last : from; index >= 0; index--) {
+			if (memcmp(s->bytes + index, other->bytes, (size_t)count) == 0) return index;
+		}
+		return -1;
+	}
+	int32_t index = from < 0 ? 0 : from;
+	/* The empty string is found wherever the search starts, and at the end when it starts beyond it. */
+	if (count == 0) return index <= length ? index : length;
+	/* Compared in place: where the first character is frequent, a library call per candidate costs more than it saves. */
+	const char* text = s->bytes;
+	const char* wanted = other->bytes;
+	for (; index <= last; index++) {
+		if (text[index] != wanted[0]) continue;
+		int32_t same = 1;
+		while (same < count && text[index + same] == wanted[same]) same++;
+		if (same == count) return index;
+	}
+	return -1;
+}
+
+int32_t ktc2_stringFindChar(ktc2_String* s, uint16_t c, int32_t from, bool backwards)
+{
+	if (s->size != s->length) return -2;
+	if (c >= 0x80) return -1;
+	int32_t length = s->length;
+	if (backwards) {
+		for (int32_t index = from >= length ? length - 1 : from; index >= 0; index--) {
+			if ((unsigned char)s->bytes[index] == c) return index;
+		}
+		return -1;
+	}
+	int32_t index = from < 0 ? 0 : from;
+	if (index >= length) return -1;
+	const char* found = memchr(s->bytes + index, (int)c, (size_t)(length - index));
+	return found ? (int32_t)(found - s->bytes) : -1;
+}
+
+int32_t ktc2_stringRegionEquals(ktc2_String* s, int32_t offset, ktc2_String* other, int32_t otherOffset, int32_t length)
+{
+	if (s->size != s->length || other->size != other->length) return -2;
+	return memcmp(s->bytes + offset, other->bytes + otherOffset, (size_t)length) == 0;
 }
 
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
@@ -1234,6 +1510,7 @@ static void thread_body(ktc2_Obj* thread)
 		ktc2_release(exception);
 	}
 	ktc2_release(thread);
+	pool_leave();
 	ktc2_atomic_sub(&threads_running, 1);
 }
 

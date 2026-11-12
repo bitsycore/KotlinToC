@@ -9,7 +9,8 @@ version = "0.1-SNAPSHOT"
 application {
 	mainClass.set("com.bitsycore.ktc2.MainKt")
 	// A compilation is one short run: the quick JIT tier and a heap that does not have to grow make it a quarter faster.
-	applicationDefaultJvmArgs = listOf("-XX:TieredStopAtLevel=1", "-XX:+UseParallelGC", "-Xms512m")
+	// With the quick tier alone the JVM reserves a small code cache, which the Kotlin compiler can fill: it is given room.
+	applicationDefaultJvmArgs = listOf("-XX:TieredStopAtLevel=1", "-XX:ReservedCodeCacheSize=256m", "-XX:+UseParallelGC", "-Xms512m")
 }
 
 tasks.named<JavaExec>("run") {

@@ -282,6 +282,12 @@ fun writeCMake(inOutDir: File, inExecutable: String, inProject: Project?) {
 		append("target_include_directories($inExecutable PRIVATE c)\n")
 		append("# With KTC2_DEBUG the program reports the objects it leaves behind when it ends.\n")
 		append("if(KTC2_DEBUG)\n\ttarget_compile_definitions($inExecutable PRIVATE KTC2_LEAK_CHECK)\nendif()\n")
+		append("# Kotlin rounds after every floating-point operation: none is fused with the next.\n")
+		append("if(NOT MSVC)\n\ttarget_compile_options($inExecutable PRIVATE -ffp-contract=off)\nendif()\n")
+		append("# A release build is optimized as one program where the compiler can: -DKTC2_LTO=OFF to do without.\n")
+		append("option(KTC2_LTO \"Optimize the release build as a whole program\" ON)\n")
+		append("if(KTC2_LTO AND NOT KTC2_DEBUG)\n\tinclude(CheckIPOSupported)\n\tcheck_ipo_supported(RESULT KTC2_HAS_LTO OUTPUT KTC2_LTO_OUTPUT LANGUAGES C)\n")
+		append("\tif(KTC2_HAS_LTO)\n\t\tset_property(TARGET $inExecutable PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)\n\tendif()\nendif()\n")
 		val vCompilerOpts = manifestValues(inOutDir, "cflag")
 		if (vCompilerOpts.isNotEmpty()) append("target_compile_options($inExecutable PRIVATE ${vCompilerOpts.joinToString(" ") { quoted(it) }})\n")
 		if (manifestValues(inOutDir, "threads").isNotEmpty()) {
@@ -305,18 +311,32 @@ fun writeCMake(inOutDir: File, inExecutable: String, inProject: Project?) {
  * Compiles the C written under `<inOutDir>/c` into a program, with the C compiler ([cCompiler])
  * and the options the build manifest lists.
  *
- * @param inIsDebug no optimization, debug information, and the leak report at exit
+ * @param inIsDebug no optimization, debug information, and the leak report at exit; otherwise optimized, as a whole program where the compiler can
  * @return the program, or null after reporting the failure
  */
 fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vProgram = File(inOutDir, if (kIsWindows) "$inName.exe" else inName)
-	val vMode = if (inIsDebug) listOf("-O0", "-g", "-DKTC2_LEAK_CHECK") else listOf("-O2")
+	val vCompiler = cCompiler()
+	// A release build is optimized as one program, so that small functions are inlined across the
+	// files of their classes. `KTC2_LTO=0` turns that off, `KTC2_LTO=1` forces it; by default it is
+	// used except with clang on Windows, where it needs a linker that may not be installed.
+	val vWholeProgram = when (System.getenv("KTC2_LTO")) {
+		"0" -> false
+		"1" -> true
+		else -> !kIsWindows || "gcc" in File(vCompiler).name
+	}
+	// Floating-point operations are never fused (see ktc2_core.h): Kotlin rounds after each one.
+	val vMode = listOf("-ffp-contract=off") + when {
+		inIsDebug -> listOf("-O0", "-g", "-DKTC2_LEAK_CHECK")
+		vWholeProgram -> listOf("-O2", "-flto")
+		else -> listOf("-O2")
+	}
 	// On Windows the runtime uses the system's own threads and the math functions are in the C
 	// library every program links: naming a thread or a math library there only breaks the
 	// compilers that have none (clang with the MSVC libraries).
 	val vThreads = if (!kIsWindows && manifestValues(inOutDir, "threads").isNotEmpty()) listOf("-pthread") else emptyList()
 	val vMath = if (kIsWindows) emptyList() else listOf("-lm")
-	val vCommand = listOf(cCompiler(), "-std=c11") + vMode + vThreads + listOf("-I", ".", "-o", vProgram.absolutePath) +
+	val vCommand = listOf(vCompiler, "-std=c11") + vMode + vThreads + listOf("-I", ".", "-o", vProgram.absolutePath) +
 		manifestValues(inOutDir, "cflag") + manifestValues(inOutDir, "c") + vMath + manifestValues(inOutDir, "ldflag")
 	val vProcess = ProcessBuilder(vCommand).directory(File(inOutDir, "c")).inheritIO().start()
 	if (vProcess.waitFor() != 0) {

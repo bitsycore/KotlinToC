@@ -272,6 +272,12 @@ public actual fun CharSequence.regionMatches(thisOffset: Int, other: CharSequenc
 
 public actual fun String.regionMatches(thisOffset: Int, other: String, otherOffset: Int, length: Int, ignoreCase: Boolean): Boolean {
 	if (otherOffset < 0 || thisOffset < 0 || thisOffset > this.length - length || otherOffset > other.length - length) return false
+	if (length <= 0) return true
+	if (!ignoreCase) {
+		// Bytes compared at once when both strings are ASCII.
+		val vSame = ktc2.internal.stringRegionEquals(this, thisOffset, other, otherOffset, length)
+		if (vSame != -2) return vSame == 1
+	}
 	for (vIndex in 0 until length) {
 		if (!sameChar(this[thisOffset + vIndex], other[otherOffset + vIndex], ignoreCase)) return false
 	}
@@ -323,6 +329,8 @@ public actual fun CharSequence?.contentEquals(other: CharSequence?, ignoreCase: 
 }
 
 internal actual fun String.nativeIndexOf(ch: Char, fromIndex: Int): Int {
+	val vFound = ktc2.internal.stringFindChar(this, ch, fromIndex, false)
+	if (vFound != -2) return vFound
 	var vIndex = if (fromIndex < 0) 0 else fromIndex
 	while (vIndex < length) {
 		if (this[vIndex] == ch) return vIndex
@@ -332,6 +340,8 @@ internal actual fun String.nativeIndexOf(ch: Char, fromIndex: Int): Int {
 }
 
 internal actual fun String.nativeLastIndexOf(ch: Char, fromIndex: Int): Int {
+	val vFound = ktc2.internal.stringFindChar(this, ch, fromIndex, true)
+	if (vFound != -2) return vFound
 	var vIndex = if (fromIndex >= length) length - 1 else fromIndex
 	while (vIndex >= 0) {
 		if (this[vIndex] == ch) return vIndex
@@ -341,7 +351,11 @@ internal actual fun String.nativeLastIndexOf(ch: Char, fromIndex: Int): Int {
 }
 
 internal actual fun String.nativeIndexOf(str: String, fromIndex: Int): Int {
+	val vFound = ktc2.internal.stringFind(this, str, fromIndex, false)
+	if (vFound != -2) return vFound
 	var vIndex = if (fromIndex < 0) 0 else fromIndex
+	// The empty string is found wherever the search starts, and at the end when it starts beyond it.
+	if (str.isEmpty()) return if (vIndex <= length) vIndex else length
 	while (vIndex + str.length <= length) {
 		if (regionMatches(vIndex, str, 0, str.length, false)) return vIndex
 		vIndex++
@@ -350,6 +364,8 @@ internal actual fun String.nativeIndexOf(str: String, fromIndex: Int): Int {
 }
 
 internal actual fun String.nativeLastIndexOf(str: String, fromIndex: Int): Int {
+	val vFound = ktc2.internal.stringFind(this, str, fromIndex, true)
+	if (vFound != -2) return vFound
 	var vIndex = length - str.length
 	if (vIndex > fromIndex) vIndex = fromIndex
 	while (vIndex >= 0) {

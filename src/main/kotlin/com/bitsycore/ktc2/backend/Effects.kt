@@ -76,6 +76,22 @@ class Effects(inModule: KModule) {
 	}
 
 	/**
+	 * What [inStatement] may write before its own store takes place: for an assignment, what
+	 * computing the value does. Anything else is taken whole.
+	 */
+	fun beforeStore(inStatement: KStmt): Summary {
+		when (inStatement) {
+			is KLet, is KSet, is KGlobalSet, is KFieldSet, is KIndexSet, is KEval, is KReturn -> {}
+			else -> return of(listOf(inStatement))
+		}
+		val vSummary = Summary()
+		val vCallees = HashSet<KFunction>()
+		scanExpressions(inStatement, vSummary, vCallees)
+		vCallees.forEach { vSummary.add(of(it)) }
+		return vSummary
+	}
+
+	/**
 	 * A function without a body here. The runtime's own write nothing a reference is borrowed
 	 * from - except that starting or joining a thread, and entering or leaving a monitor, let
 	 * another thread's writes through: what was read before may be gone after. Anything else
@@ -110,21 +126,26 @@ class Effects(inModule: KModule) {
 				is KConcat -> if (vStatement.parts.any { isObject(it) }) outSummary.all = true
 				else -> {}
 			}
-			for (vRoot in vStatement.ownExpressions()) {
-				vRoot.anyNode { vNode ->
-					when (vNode) {
-						is KCall -> outCallees += vNode.function
-						is KIntrinsic -> when {
-							// C written by the program, or a call through a C pointer: it may call back into anything.
-							vNode.template != null || vNode.functions.isNotEmpty() || vNode.name == "ktc2_call_pointer" -> outSummary.all = true
-							!vNode.isPure && kHarmless.none { vNode.name.startsWith(it) } -> outSummary.elements = true
-						}
-						else -> {}
-					}
-					false
-				}
-			}
+			scanExpressions(vStatement, outSummary, outCallees)
 			false
+		}
+	}
+
+	/** What the expressions of [inStatement] itself call and do. */
+	private fun scanExpressions(inStatement: KStmt, outSummary: Summary, outCallees: MutableSet<KFunction>) {
+		for (vRoot in inStatement.ownExpressions()) {
+			vRoot.anyNode { vNode ->
+				when (vNode) {
+					is KCall -> outCallees += vNode.function
+					is KIntrinsic -> when {
+						// C written by the program, or a call through a C pointer: it may call back into anything.
+						vNode.template != null || vNode.functions.isNotEmpty() || vNode.name == "ktc2_call_pointer" -> outSummary.all = true
+						!vNode.isPure && kHarmless.none { vNode.name.startsWith(it) } -> outSummary.elements = true
+					}
+					else -> {}
+				}
+				false
+			}
 		}
 	}
 

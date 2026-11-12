@@ -7,10 +7,12 @@ vName=$1
 shift
 vOut=build/try
 rm -rf "$vOut"
-./gradlew run -q --args="$(pwd -W)/integration/$vName.kt -o $(pwd -W)/$vOut $*" 2>&1 | grep -v "^$" | grep -v "^\*\|^>\|FAILURE\|BUILD" | cut -c1-260 | head -40
+# Gradle wants a Windows path on Windows; `pwd -W` exists in Git Bash only.
+vHere=$(pwd -W 2>/dev/null || pwd)
+./gradlew run -q --args="$vHere/integration/$vName.kt -o $vHere/$vOut $*" 2>&1 | grep -v "^$" | grep -v "^\*\|^>\|FAILURE\|BUILD" | cut -c1-260 | head -40
 [ -f "$vOut/ktc2_build.txt" ] || exit 1
 # On Windows the runtime needs neither a thread nor a math library, and clang there has none.
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) vLibs="" ;; *) vLibs="-pthread -lm" ;; esac
-(cd "$vOut/c" && ${KTC2_CC:-gcc} -std=c11 -O1 -DKTC2_LEAK_CHECK -DKTC2_ARC_STATS -Wall -Werror -Wno-unused-variable -Wno-unused-but-set-variable -I . $(grep "^cflag=" ../ktc2_build.txt | cut -d= -f2-) -o ../program.exe $(grep "^c=" ../ktc2_build.txt | cut -d= -f2-) $vLibs $(grep "^ldflag=" ../ktc2_build.txt | cut -d= -f2-) 2>&1 | head -30)
+(cd "$vOut/c" && ${KTC2_CC:-gcc} -std=c11 -O1 -ffp-contract=off -DKTC2_LEAK_CHECK -DKTC2_ARC_STATS -Wall -Werror -Wno-unused-variable -Wno-unused-but-set-variable -I . $(grep "^cflag=" ../ktc2_build.txt | cut -d= -f2-) -o ../program.exe $(grep "^c=" ../ktc2_build.txt | cut -d= -f2-) $vLibs $(grep "^ldflag=" ../ktc2_build.txt | cut -d= -f2-) 2>&1 | head -30)
 "$vOut/program.exe"
 echo "exit $?"

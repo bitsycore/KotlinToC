@@ -87,7 +87,8 @@ class EscapeAnalysis(private val mModule: KModule) {
 		if (inFunction in mInPlace) return mInPlace[inFunction]
 		// Not known yet: a call to itself inside the function is left as it is.
 		mInPlace[inFunction] = null
-		if (inFunction.isExternal || inFunction.dispatch != null || inFunction.returnType !is KClassType) return null
+		// The result may be declared as an interface (`iterator()`): what counts is that the one object returned is built here.
+		if (inFunction.isExternal || inFunction.dispatch != null || (inFunction.returnType !is KClassType && inFunction.returnType != KObjType)) return null
 		val vForm = FunctionScan(inFunction).buildInPlaceForm() ?: return null
 		mInPlace[inFunction] = vForm
 		mNewFunctions += vForm.first

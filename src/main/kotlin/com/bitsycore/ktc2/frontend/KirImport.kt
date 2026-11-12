@@ -676,6 +676,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (inClass.parent !is IrClass && inClass.parent !is IrFile) vSuffix += "__local${mClassList.size}"
 		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
 		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, jvmNameOf(inClass))
+		vClass.family = inClass
 		vUnit.cls = vClass
 		mClasses[vKey] = vClass
 		mClassInfo[vClass] = ClassInfo(inClass, vSubst, inClass.symbol.typeWith(vArguments))

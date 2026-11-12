@@ -102,7 +102,8 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
 ## Compilers and systems
 
 The generated C is C11. On Windows the whole test suite runs with gcc, and the showcase's
-tests also pass with clang and with MSVC. Linux and macOS are written for and not yet tried;
+tests also pass with clang and with MSVC. On macOS (ARM64) the whole suite runs with Apple
+clang, and the showcase with SDL3. Linux is written for and not yet tried;
 Android is not there yet.
 
 ## Working on ktc2

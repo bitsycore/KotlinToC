@@ -80,7 +80,7 @@ class CEmitter(private val mModule: KModule) {
 		vUnits.distinct().forEach { append("#include \"${it.path}.h\"\n") }
 
 		append("\nconst ktc2_TypeInfo ktc2_types[] = {\n\tKTC2_BUILTIN_TYPES,\n")
-		mConcrete.forEach { append("\t[${typeId(it)}] = { ${cString(it.name)}, ${it.cName}__destroy },\n") }
+		mConcrete.forEach { append("\t[${typeId(it)}] = { ${cString(it.name)}, ${it.cName}__destroy, sizeof(${it.cName}) },\n") }
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 
 		val vTakesArguments = inEntry.params.isNotEmpty()

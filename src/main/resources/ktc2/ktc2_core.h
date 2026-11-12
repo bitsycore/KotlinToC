@@ -16,6 +16,18 @@
 /* Generated for each program: defines KTC2_THREADS when the program starts threads. */
 #include "ktc2_config.h"
 
+/*
+ * Kotlin rounds after every operation. A C compiler may compute `a * b + c` in one step with
+ * one rounding where the processor can (ARM64, and x86 with FMA), which changes the last digit:
+ * every file that includes this header asks it not to. The builds ktc2 drives also pass
+ * `-ffp-contract=off`: gcc has no pragma for it.
+ */
+#if defined(__clang__)
+#pragma STDC FP_CONTRACT OFF
+#elif defined(_MSC_VER)
+#pragma fp_contract(off)
+#endif
+
 /* ================== */
 /* MARK: Compilers    */
 /* ================== */
@@ -156,10 +168,15 @@ typedef struct ktc2_Obj {
 /** The bits of `rc` that count references. */
 #define KTC2_COUNT_MASK UINT32_C(0x1FFFFFFF)
 
-/** Per-type data. `destroy` releases the references an instance holds; NULL when it holds none. */
+/**
+ * Per-type data. `destroy` releases the references an instance holds; NULL when it holds none.
+ * `size` is the size of an instance when every instance has the same one (a class, a box), and
+ * 0 for strings and arrays: the runtime keeps the small objects of one size in lists of their own.
+ */
 typedef struct ktc2_TypeInfo {
 	const char* name;
 	void (*destroy)(ktc2_Obj* object);
+	uint32_t size;
 } ktc2_TypeInfo;
 
 enum {
@@ -215,18 +232,18 @@ void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
 	[KTC2_TYPE_ARRAY_ULONG] = { "ULongArray", NULL }, \
 	[KTC2_TYPE_ARRAY_REF] = { "Array", ktc2_array_destroy }, \
 	[KTC2_TYPE_ARRAY_VALUE] = { "Array", NULL }, \
-	[KTC2_TYPE_BOX_BOOLEAN] = { "Boolean", NULL }, \
-	[KTC2_TYPE_BOX_BYTE] = { "Byte", NULL }, \
-	[KTC2_TYPE_BOX_SHORT] = { "Short", NULL }, \
-	[KTC2_TYPE_BOX_INT] = { "Int", NULL }, \
-	[KTC2_TYPE_BOX_LONG] = { "Long", NULL }, \
-	[KTC2_TYPE_BOX_CHAR] = { "Char", NULL }, \
-	[KTC2_TYPE_BOX_FLOAT] = { "Float", NULL }, \
-	[KTC2_TYPE_BOX_DOUBLE] = { "Double", NULL }, \
-	[KTC2_TYPE_BOX_UBYTE] = { "UByte", NULL }, \
-	[KTC2_TYPE_BOX_USHORT] = { "UShort", NULL }, \
-	[KTC2_TYPE_BOX_UINT] = { "UInt", NULL }, \
-	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL }, \
+	[KTC2_TYPE_BOX_BOOLEAN] = { "Boolean", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_BYTE] = { "Byte", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_SHORT] = { "Short", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_INT] = { "Int", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_LONG] = { "Long", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_CHAR] = { "Char", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_FLOAT] = { "Float", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_DOUBLE] = { "Double", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_UBYTE] = { "UByte", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_USHORT] = { "UShort", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_UINT] = { "UInt", NULL, sizeof(ktc2_Box) }, \
+	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL, sizeof(ktc2_Box) }, \
 	[KTC2_TYPE_WEAK_CELL] = { "ktc2.WeakRef cell", ktc2_weak_cell_destroy }
 
 /**
@@ -260,12 +277,21 @@ extern uint64_t ktc2_stat_releases;
 #define KTC2_COUNT(counter) ((void)0)
 #endif
 
+/* With KTC2_LEAK_CHECK a freed object is filled with 0xDD: counting a reference to one is reported. */
+#ifdef KTC2_LEAK_CHECK
+void ktc2_fail_freed(void);
+#define KTC2_CHECK_LIVE(object) ((object)->typeId == UINT32_C(0xDDDDDDDD) ? ktc2_fail_freed() : (void)0)
+#else
+#define KTC2_CHECK_LIVE(object) ((void)0)
+#endif
+
 /** Null-safe; returns its argument so it can wrap an expression. */
 static inline void* ktc2_retain(void* pointer)
 {
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_retains);
 	if (object) {
+		KTC2_CHECK_LIVE(object);
 		uint32_t count = KTC2_RC_LOAD(object);
 		if (count != KTC2_IMMORTAL) KTC2_RC_INC(object, count);
 	}
@@ -278,6 +304,7 @@ static inline void ktc2_release(void* pointer)
 	ktc2_Obj* object = pointer;
 	KTC2_COUNT(ktc2_stat_releases);
 	if (object) {
+		KTC2_CHECK_LIVE(object);
 		uint32_t count = KTC2_RC_LOAD(object);
 		if (count != KTC2_IMMORTAL && (KTC2_RC_DEC(object, count) & KTC2_COUNT_MASK) == 0) ktc2_destroy(object);
 	}
@@ -485,11 +512,47 @@ typedef struct ktc2_Box {
 	} value;
 } ktc2_Box;
 
-/* ktc2_box_<kind>(v) returns a new box; ktc2_unbox_<kind>(o) fails unless o is a box of that kind.
+/*
+ * The boxes of the small values exist once, for the whole run of the program, as on the JVM
+ * (`Integer.valueOf` and `Long.valueOf` keep -128..127, `Character.valueOf` 0..127, and there
+ * are two Booleans): boxing one
+ * of them allocates nothing and counting it costs nothing.
+ */
+#define KTC2_BOX_CACHE_LOW (-128)
+#define KTC2_BOX_CACHE_SIZE 256
+extern ktc2_Box ktc2_box_cache_boolean[2];
+extern ktc2_Box ktc2_box_cache_int[KTC2_BOX_CACHE_SIZE];
+extern ktc2_Box ktc2_box_cache_long[KTC2_BOX_CACHE_SIZE];
+extern ktc2_Box ktc2_box_cache_char[KTC2_BOX_CACHE_SIZE / 2];
+
+/** The box kept for [v], or NULL when a new one has to be made. One per kind: `ktc2_box_cached_<kind>`. */
+#define KTC2_BOX_CACHED_NONE(kind, type) \
+	static inline ktc2_Obj* ktc2_box_cached_##kind(type v) { (void)v; return NULL; }
+#define KTC2_BOX_CACHED_SIGNED(kind, type) \
+	static inline ktc2_Obj* ktc2_box_cached_##kind(type v) \
+	{ \
+		return v >= KTC2_BOX_CACHE_LOW && v < KTC2_BOX_CACHE_LOW + KTC2_BOX_CACHE_SIZE ? &ktc2_box_cache_##kind[v - KTC2_BOX_CACHE_LOW].header : NULL; \
+	}
+static inline ktc2_Obj* ktc2_box_cached_boolean(bool v) { return &ktc2_box_cache_boolean[v ? 1 : 0].header; }
+static inline ktc2_Obj* ktc2_box_cached_char(uint16_t v) { return v < KTC2_BOX_CACHE_SIZE / 2 ? &ktc2_box_cache_char[v].header : NULL; }
+KTC2_BOX_CACHED_NONE(byte, int8_t)
+KTC2_BOX_CACHED_NONE(short, int16_t)
+KTC2_BOX_CACHED_SIGNED(int, int32_t)
+KTC2_BOX_CACHED_SIGNED(long, int64_t)
+KTC2_BOX_CACHED_NONE(float, float)
+KTC2_BOX_CACHED_NONE(double, double)
+KTC2_BOX_CACHED_NONE(ubyte, uint8_t)
+KTC2_BOX_CACHED_NONE(ushort, uint16_t)
+KTC2_BOX_CACHED_NONE(uint, uint32_t)
+KTC2_BOX_CACHED_NONE(ulong, uint64_t)
+
+/* ktc2_box_<kind>(v) returns a box the caller owns; ktc2_unbox_<kind>(o) fails unless o is a box of that kind.
    The _opt_ variants convert between a nullable primitive and a box-or-NULL. */
 #define KTC2_BOX(kind, type, id) \
 	static inline ktc2_Obj* ktc2_box_##kind(type v) \
 	{ \
+		ktc2_Obj* kept = ktc2_box_cached_##kind(v); \
+		if (kept) return kept; \
 		ktc2_Box* box = ktc2_alloc(sizeof(ktc2_Box), id); \
 		box->value.kind##_ = v; \
 		return &box->header; \
@@ -649,6 +712,14 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 
 /** The UTF-16 code units [start, end) of a string, as a new string. */
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end);
+
+/*
+ * Searching and comparing text that is all ASCII, where a character is a byte: the index, -1
+ * for "not found", and -2 when a string is not ASCII and the Kotlin code has to do it.
+ */
+int32_t ktc2_stringFind(ktc2_String* s, ktc2_String* other, int32_t from, bool backwards);
+int32_t ktc2_stringFindChar(ktc2_String* s, uint16_t c, int32_t from, bool backwards);
+int32_t ktc2_stringRegionEquals(ktc2_String* s, int32_t offset, ktc2_String* other, int32_t otherOffset, int32_t length);
 /** Parses as Double.parseDouble into the first element of a DoubleArray; false when not a number. */
 bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result);
 /** The next line of stdin as a ByteArray, without its line end; NULL at the end of the input. */

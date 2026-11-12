@@ -177,6 +177,15 @@ class KClass(
 	/** Set when a `@Value` field holds this class inline: it then gets copy and assign helpers. */
 	var isUsedInline = false
 
+	/**
+	 * What the instantiations of one generic class have in common: the same value for all of
+	 * them, null for a class that stands alone. Code written for one instantiation is sometimes
+	 * handed an object of another (a local class inside a generic class is shared by all of them,
+	 * and reaches the outer object through the type of the first): a pass may only conclude from
+	 * the static type of a reference what holds for the whole family.
+	 */
+	var family: Any? = null
+
 	fun isSubclassOf(inOther: KClass): Boolean = this === inOther || superClass?.isSubclassOf(inOther) == true
 
 	fun implements(inInterface: KInterface): Boolean =

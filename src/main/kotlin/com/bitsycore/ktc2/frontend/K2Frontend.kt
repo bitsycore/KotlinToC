@@ -14,8 +14,10 @@ import com.bitsycore.ktc2.backend.CEmitter
 import com.bitsycore.ktc2.backend.CycleLint
 import com.bitsycore.ktc2.interop.BindingGenerator
 import com.bitsycore.ktc2.interop.DefFile
+import com.bitsycore.ktc2.backend.Devirtualize
 import com.bitsycore.ktc2.backend.EscapeAnalysis
 import com.bitsycore.ktc2.backend.ExceptionLowering
+import com.bitsycore.ktc2.backend.RangeChecks
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.util.dump
@@ -311,6 +313,13 @@ class Ktc2Extension : IrGenerationExtension {
 		if (System.getProperty("ktc2.warnCycles") != "false") {
 			CycleLint(vModule).also { it.run() }.warnings.forEach { System.err.println("ktc2: warning: $it") }
 		}
+		// KTC2_SKIP names optimizations to leave out (devirtualize, ranges, handover, brief), to find which one a wrong program comes from.
+		val vSkipped = (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }.toSet()
+		val vDirect = Devirtualize(vModule).also { if ("devirtualize" !in vSkipped) it.run() }
+		val vRanges = RangeChecks(vModule).also { if ("ranges" !in vSkipped) it.run() }
+		if (System.getenv("KTC2_DEBUG_PASSES") != null) {
+			System.err.println("ktc2: passes: ${vDirect.resolved} dispatched calls made direct, ${vRanges.proven} array accesses proven in range")
+		}
 		ExceptionLowering(vModule).run()
 		val vEscapes = EscapeAnalysis(vModule)
 		vEscapes.run()
@@ -320,7 +329,7 @@ class Ktc2Extension : IrGenerationExtension {
 			System.setProperty(kErrorCountProperty, vEscapes.errors.size.toString())
 			return
 		}
-		ArcInsert(vModule).run()
+		ArcInsert(vModule, mHandsOverAtLastUse = "handover" !in vSkipped, mBorrowsBriefly = "brief" !in vSkipped).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && isEntryPoint(it) } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"

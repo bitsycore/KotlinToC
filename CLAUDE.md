@@ -11,24 +11,25 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 
 ## What you need
 - A JDK to start Gradle. Gradle then fetches JDK 21 (the toolchain), the Kotlin compiler `2.5.0-RC` and the stdlib sources: the first build needs the network and takes a few minutes.
-- gcc on the path (mingw on Windows): the tests build with it. `KTC2_CC` names another compiler, but the tests' options are gcc's.
+- gcc on the path (mingw on Windows; on macOS `gcc` is Apple clang, which takes the same options): the tests build with it. `KTC2_CC` names another compiler, but the tests' options are gcc's.
 - For anything that depends on the `sdl3` module: git, CMake, and a generator CMake can use.
 - Python 3 for `tools/*.py`; Git Bash on Windows for `tools/*.sh`.
-- There is no CI. The gate is the suite, run locally; so far only on Windows.
+- There is no CI. The gate is the suite, run locally: on Windows (gcc) and on macOS (Apple clang, ARM64). Linux has not been tried.
 
 ## Build / Run / Test
 - Build the tool: `./gradlew installDist` -> `build/install/ktc2/bin/ktc2`. Do it again after a change before using the installed tool or `tools/try_cmake.sh`.
 - Translate, build, run: `ktc2 <module dir | file.kt | lib.def>... [-o dir] [--build | --cmake | --run [-- args]] [--debug] [-copt x] [-lopt x] [--checks=abort] [--warn-heap] [--no-warn-cycles] [--dump-ir]`
-- Tests: `./gradlew test --rerun` runs every `integration/**/*.kt` as C (gcc, `-O1 -Wall -Werror`, leak check) and on the JVM, and compares the output. About 9 minutes, one program after another. Without `--rerun` Gradle may answer "up to date" and run nothing.
+- Tests: `./gradlew test --rerun` runs every `integration/**/*.kt` as C (gcc, `-O1 -Wall -Werror`, leak check) and on the JVM, and compares the output. About 9 minutes on Windows, 5 on a Mac, one program after another. Without `--rerun` Gradle may answer "up to date" and run nothing.
   - `KTC2_TEST_FILTER=<path part>` runs a subset in under a minute (`objects/`, `stdlib/Regex`, `projects/`).
   - `python tools/failures.py` summarizes the failures of the last run.
   - `tools/try.sh <group/Name>` builds and runs one program as the tests do, through Gradle, so it always uses the current sources. `tools/try_cmake.sh <group/Name> [cmake args]` builds it through CMake (with no arguments on Windows: MSVC).
   - A test with a `<Name>.expected` is compared with that file instead of the JVM (C interop); `<Name>.def` is its C library; `<Name>.in` its standard input.
   - `examples/showcase/core` is run by the suite as a program of several modules: its name is `projects/examples/showcase/core`, its build directory `build/integration/project-core`.
-- `KTC2_CC` names the C compiler (default: the first of gcc, clang, cc on the path); `KTC2_CMAKE_ARGS` adds CMake arguments; `KTC2_TIMING=1` prints where compile time goes; `KTC2_DEBUG_BORROW=1` explains reference-count decisions.
+- `KTC2_CC` names the C compiler (default: the first of gcc, clang, cc on the path); `KTC2_CMAKE_ARGS` adds CMake arguments; `KTC2_LTO=0` builds a release without link-time optimization; `KTC2_TIMING=1` prints where compile time goes; `KTC2_DEBUG_BORROW=1` explains reference-count decisions; `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses were proven in range; `KTC2_SKIP=devirtualize,ranges,handover,brief` leaves optimizations out.
+- Benchmarks: `python tools/bench.py [name] [--compare saved.txt] [--copt -flto]` builds `benchmarks/*.kt` with the installed tool and prints time, allocations, retains, releases and size (`build/bench/results.txt`).
 
 ## Architecture (`src/main/kotlin/com/bitsycore/ktc2/`)
-- Pipeline: Kotlin K2 compiler (embeddable, pinned in `build.gradle.kts`) with the `Ktc2Extension` IR plugin (`frontend/K2Frontend.kt`) -> `JavaUseCheck` -> `KirImporter` + `BodyBuilder` (`frontend/KirImport.kt`, `BodyLowering.kt`, with `Captures.kt`: IR -> KIR, monomorphizing from `main`) -> `CycleLint` -> `ExceptionLowering` -> `EscapeAnalysis` -> `ArcInsert` (with `Effects`, `BorrowedReturns`) -> `CEmitter` (`backend/`).
+- Pipeline: Kotlin K2 compiler (embeddable, pinned in `build.gradle.kts`) with the `Ktc2Extension` IR plugin (`frontend/K2Frontend.kt`) -> `JavaUseCheck` -> `KirImporter` + `BodyBuilder` (`frontend/KirImport.kt`, `BodyLowering.kt`, with `Captures.kt`: IR -> KIR, monomorphizing from `main`) -> `CycleLint` -> `Devirtualize` -> `RangeChecks` -> `ExceptionLowering` -> `EscapeAnalysis` -> `ArcInsert` (with `Effects`, `BorrowedReturns`) -> `CEmitter` (`backend/`).
 - KIR, the intermediate form, is `kir/Kir.kt`. The C runtime is `src/main/resources/ktc2/ktc2_core.{h,c}`; everything specific to one C compiler is in one block at the top of the header.
 - The standard library is the real Kotlin stdlib sources (listed in `resources/ktc2/stdlib/files.txt`, fetched by Gradle) plus a platform layer, the `Ktc2*.kt` files next to that list. `hidden.txt` lists the classes of the stdlib jar hidden from the compilation.
 - C interop (`interop/`): `.def` files -> generated bindings over `kotlinx.cinterop`; `platform.posix` is generated on demand.
@@ -49,7 +50,9 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - **Add a library function**: if the Kotlin stdlib has it in common code, add its file to `stdlib/files.txt`; if it is an `expect`, write the `actual` in the matching `Ktc2*.kt`. If the program then fails to compile with an ambiguous call or a JVM type inside library code, the jar's JVM version is competing: hide its class in `hidden.txt`. A function that needs the runtime is an `external fun` in `ktc2.internal` (`Ktc2Internal.kt`), implemented as `ktc2_<name>` in `ktc2_core.c` and declared in `ktc2_core.h`.
 - **Add something to the `ktc2.` package**: it is declared twice, with the same signatures: for the JVM in `src/main/kotlin/ktc2/`, for C in the platform layer (`stdlib/Ktc2Lifetime.kt`, `Ktc2Concurrent.kt`). Annotations are recognized by name in the importer (`frontend/KirImport.kt`).
 - **Regenerate a generated source** (from the repository root; change the script, not the file): `python tools/gen_arrays.py` (`Ktc2Arrays.kt`), `python tools/gen_math.py` (`Ktc2Math.kt`), `python tools/gen_comparisons.py` (`Ktc2Comparisons.kt`), and `<JDK 21>/bin/java tools/GenUnicode.java` (`Ktc2Unicode.kt`; it appends `tools/unicode_lookup.kt.txt`, the hand-written lookup code, and must be run with the JDK the tests compare with so the tables agree).
-- **Change reference counting or escape analysis**: copy `build/integration/arc-stats.txt` first and compare after with `tools/arc_compare.py` (after a filtered run the file holds only the subset). A wrong answer is a use of freed memory: run the whole suite, and add the case to `integration/objects/Borrowing.kt` or `ThreadBorrowing.kt`.
+- **Change reference counting or escape analysis**: copy `build/integration/arc-stats.txt` first and compare after with `tools/arc_compare.py` (after a filtered run the file holds only the subset). A wrong answer is a use of freed memory: run the whole suite, and add the case to `integration/objects/Borrowing.kt`, `LastUse.kt` or `ThreadBorrowing.kt`. Test builds report a retain or release of a freed object; for what that misses, build the C of `build/integration/<Name>/c` with `-fsanitize=address -g -DKTC2_NO_POOL` (the command is the one of `tools/try.sh` plus those options; without `KTC2_NO_POOL` small objects come from the runtime's own lists, which AddressSanitizer does not watch) and run it.
+- **Find which optimization breaks a program**: `KTC2_SKIP=<name>` with the installed tool, one name at a time. `Devirtualize` wrongly sure of a class shows as a crash or a wrong method inside library code (see "Where a small mistake costs most" in `DESIGN.md`).
+- **Measure a change to speed**: `python tools/bench.py --save before.txt` first, then `--compare before.txt`; `KTC2_TOOL` names an installed tool of another state of the sources.
 - **Try another compiler**: `tools/try_cmake.sh <group/Name>` for MSVC; `KTC2_CC=clang tools/try.sh <group/Name>` for clang.
 
 ## Things that cost time before
@@ -60,6 +63,10 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - Example `build/` directories hold CMake caches with absolute paths: delete them after moving anything.
 - CMake's default generator on Windows is Visual Studio, that is MSVC. For gcc or clang pass a generator in `KTC2_CMAKE_ARGS` (`-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>`) and set `KTC2_CC`. The first build of a program that uses `sdl3` fetches and compiles SDL3: about a minute.
 - A compile error inside library sources that makes no sense: see "Where a small mistake costs most" in `DESIGN.md` (the cached jar, `hidden.txt`).
+- A use of freed memory can pass on one system and crash on another: the double release found on macOS had always passed on Windows. Trust AddressSanitizer over a green run.
+- Apple's SDK declares the C library in private headers (`_stdio.h` behind `stdio.h`): `Bindings.kt` adds them to the headers a `.def` asks for.
+- Do not run the benchmarks or the installed tool while the suite runs: the machine is busy enough to make times meaningless.
+- The last digit of `exp`, `ln`, `pow` differs between C libraries and from the JVM: a test must not print it.
 
 ## Conventions
 These are what the code uses; follow the code where another instruction differs.

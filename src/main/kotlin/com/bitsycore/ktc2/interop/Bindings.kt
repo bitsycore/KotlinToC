@@ -55,6 +55,13 @@ class DefFile(val file: File) {
 // MARK: Generator
 // ==================
 
+/** The headers of Apple's SDK that hold what a header of the C library declares, besides `_<name>`. */
+private val kApplePrivateHeaders = mapOf(
+	"stdlib.h" to listOf("_malloc.h", "_abort.h"),
+	"stdio.h" to listOf("_printf.h", "_ctermid.h"),
+	"string.h" to listOf("_strings.h"),
+)
+
 /** What a `.def` file turned into. */
 class Bindings(
 	/** The generated Kotlin source, to compile with the program. */
@@ -137,7 +144,13 @@ class BindingGenerator(
 		val vParser = CHeaderParser(vPreprocessed, vLongSize).parse()
 
 		val vStubPath = vStub.absoluteFile.invariantSeparatorsPath
-		val vFilters = (mDef.headers + mDef.headerFilter).map { vGlob ->
+		// Apple's SDK declares the C library in private headers the public ones include: `_stdio.h` behind
+		// `stdio.h`, and a few more. Asking for the public header asks for those.
+		val vPrivate = mDef.headers.flatMap { vHeader ->
+			val vName = vHeader.substringAfterLast('/')
+			listOf("_$vName") + (kApplePrivateHeaders[vName] ?: emptyList())
+		}
+		val vFilters = (mDef.headers + mDef.headerFilter + vPrivate).map { vGlob ->
 			val vPattern = Regex.escape(vGlob.replace('\\', '/')).replace("**", "\u0001").replace("*", "\\E[^/]*\\Q").replace("\u0001", "\\E.*\\Q")
 			Regex("(^|.*/)$vPattern$")
 		}

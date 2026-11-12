@@ -56,6 +56,23 @@ public external fun stringSubstring(string: String, startIndex: Int, endIndex: I
 /** Parses [string] as `Double.parseDouble` does into `result[0]`; false when it is not a number. */
 public external fun stringToDouble(string: String, result: DoubleArray): Boolean
 
+/**
+ * Where [other] is found in [string] at or after [fromIndex], or with [isBackwards] at or
+ * before it: the index, -1 when it is not there, -2 when the runtime leaves the search to
+ * Kotlin code (it only searches text that is all ASCII, where a character is a byte).
+ */
+public external fun stringFind(string: String, other: String, fromIndex: Int, isBackwards: Boolean): Int
+
+/** The same for one character. */
+public external fun stringFindChar(string: String, char: Char, fromIndex: Int, isBackwards: Boolean): Int
+
+/**
+ * Whether [length] characters of [string] from [offset] are those of [other] from
+ * [otherOffset]: 1 or 0, or -2 when the runtime leaves the comparison to Kotlin code (one of
+ * the strings is not all ASCII). The offsets are inside the strings.
+ */
+public external fun stringRegionEquals(string: String, offset: Int, other: String, otherOffset: Int, length: Int): Int
+
 /** The UTF-8 bytes of [string]. */
 public external fun stringUtf8(string: String): ByteArray
 

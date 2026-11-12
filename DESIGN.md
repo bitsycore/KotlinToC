@@ -30,6 +30,8 @@ sources + library sources + generated bindings
   -> JavaUseCheck            no java.* in the program                    frontend/JavaUseCheck.kt
   -> KirImporter/BodyBuilder IR -> KIR, from main, monomorphizing        frontend/KirImport.kt, BodyLowering.kt
   -> CycleLint               warns about classes that can form cycles    backend/CycleLint.kt
+  -> Devirtualize            dispatched calls -> direct calls            backend/Devirtualize.kt
+  -> RangeChecks             array accesses proven in range              backend/RangeChecks.kt
   -> ExceptionLowering       throw/try -> pending value + tests          backend/ExceptionLowering.kt
   -> EscapeAnalysis          objects to the frame, results in place      backend/EscapeAnalysis.kt
   -> ArcInsert               retain/release, minus what is unobservable  backend/ArcInsert.kt (+ Effects, BorrowedReturns)
@@ -75,7 +77,7 @@ when the string is all ASCII, a scan otherwise.
 
 | Place | When |
 |---|---|
-| static | string literals, `object`s, enum entries |
+| static | string literals, `object`s, enum entries, the boxes of small numbers (-128..127 as `Int` or `Long`, characters below 128, the two Booleans, as the JVM keeps them) |
 | the frame | escape analysis shows it does not leave its block: objects, arrays of constant size up to 64 elements, arrays of run-time size up to 256 bytes, strings built from templates up to 128 bytes |
 | inside its owner | a `@Value` or `@Size(n)` field; a `@Struct` anywhere |
 | the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller |
@@ -83,6 +85,11 @@ when the string is all ASCII, a scan otherwise.
 | the heap | everything else |
 
 `--warn-heap` lists every allocation left on the heap, with the reason.
+
+On the heap, an object of a class or a box of at most 128 bytes does not go through `malloc`
+and `free`: the runtime keeps freed blocks in lists by size, per thread, and the next object
+of that size takes one. Strings, arrays and larger objects are `malloc`'s. `-DKTC2_NO_POOL`
+makes every object a block of `malloc`'s again.
 
 ---------------------------------------------------------------------------
 ## 4. The `ktc2.` package
@@ -116,7 +123,9 @@ The rules `ArcInsert` applies:
 
 What is left out because nobody can observe it:
 
-- A local read exactly once, by a store or a return, hands its count over.
+- A local read exactly once, by a store or a return, hands its count over. So does a local
+  read several times at the last of its reads (`t = T(); t.init(); x.f = t`), when no loop
+  lies between its declaration and that read and nothing has borrowed from it.
 - A local that is another name for something held at least as long (a parameter, a local
   never reassigned, a `val` field of either) borrows: no retain, no release.
 - The same for what is read from a `var` field, an array element or a top-level property,
@@ -125,6 +134,10 @@ What is left out because nobody can observe it:
   class, elements of reference arrays as one, each top-level property). C written by the
   program may write anything; so may starting or joining a thread and entering or leaving a
   monitor, since another thread's writes come through there.
+- When something later in the block does overwrite the place, the local may still borrow up
+  to its last use, if nothing before that overwrites it: in `x.f = g(x.f)` the old value is
+  only needed until `g` returns, and the store comes after. Nothing may in turn borrow from
+  such a local.
 - A function that only hands out what something else keeps (`list[i]`, a getter,
   `iterator.next()`) has a second form whose result is not counted: `name__b`, or `name__m`
   for a dispatcher where only some implementations qualify. The `__m` form takes one more
@@ -152,13 +165,22 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
 - **Virtual and interface calls** go through a generated dispatcher: a `switch` on the type id
   that calls the implementation of that class directly. Only classes the program creates
   appear in it. `is` and `as` are tests of the same id. There are no vtables.
+- **A dispatched call becomes a direct one** (`Devirtualize`) where the program shows its
+  target: one class implements the method, or the class of the receiver is known. The class
+  of a value is followed through the whole program, from the allocation through locals,
+  parameters, fields, top-level properties and results: a property declared `List<T>` that
+  only ever receives an `ArrayList` is known to hold one. The passes after it then see an
+  ordinary call: it may not throw, its result may be built in the caller's frame, and it can
+  be inlined. This is what keeps the iterator of a `for` over a list in the frame.
 - **Exceptions** are checked propagation: `throw` parks the exception in a thread-local slot
   and the function leaves; after a call that can throw, the caller tests the slot and leaves
   in turn, releasing what it holds. A `try` is a `KTryRegion` in KIR, which `ExceptionLowering`
   turns into a loop that runs once: leaving it is a `break`. There is no `setjmp`.
 - **The checks of the language** (array and string index, integer division by zero, null
   assertion, casts) throw the Kotlin exceptions. `--checks=abort` makes index and division
-  failures end the program instead.
+  failures end the program instead. An array access in the loop of `for (x in array)`,
+  `for (i in array.indices)`, `for (i in 0 until array.size)` or `Array(n) { }` is known to be
+  in range and carries no check (`RangeChecks`).
 - **An assignment whose right-hand side fails** leaves its target as it was.
 - **Objects, enum classes and the top-level properties of a file** are initialized on first
   use, as Kotlin says. When an initializer only computes and stores, it runs at startup
@@ -185,6 +207,11 @@ The library is the real one, compiled from source with every program:
   still resolves to a function of the jar that also has a source in the module, the importer
   takes the source (`sourceOf`). A call to a jar function with no source at all is reported
   as "not supported yet: call to ...".
+
+Where the JVM would use an intrinsic, the platform layer asks the runtime: searching and
+comparing strings that are all ASCII works on their bytes (`indexOf`, `contains`, `split`,
+`startsWith`, `replace`), and indexing a string that is not ASCII starts from where the
+last index of that string was found, so a loop over its characters is linear.
 
 What is there: collections and sequences (not `sequence { }`; a library function that uses
 it on one of its paths, like `chunked` on something that is not a list, compiles and fails
@@ -254,6 +281,13 @@ files        = ["Api.kt", "lib.def"]      # only in a module shipped with ktc2: 
   module with a CMake file, builds through CMake (`KTC2_CMAKE_ARGS` adds arguments). A
   module's CMake file sees the program as `${KTC2_TARGET}` and a fetched repository as
   `${KTC2_FETCH_<NAME>}`.
+- A release build is optimized as a whole program (`-flto`, or CMake's interprocedural
+  optimization where the compiler has it): a class is one C file, and its small functions are
+  only inlined into the others this way. `KTC2_LTO=0`, or `-DKTC2_LTO=OFF` for CMake, turns it
+  off; with clang on Windows it is off unless `KTC2_LTO=1`, since it needs lld there.
+- Every build passes `-ffp-contract=off` and the runtime header asks the same with a pragma:
+  Kotlin rounds after each floating-point operation, and a C compiler would otherwise fuse a
+  product and a sum into one where the processor can (ARM64).
 
 ---------------------------------------------------------------------------
 ## 10. The C that comes out
@@ -267,7 +301,8 @@ one block at the top of `ktc2_core.h` (atomics, bit counts, `alloca`).
 | gcc on Windows (mingw) | the whole suite, on every change |
 | clang on Windows (MSVC ABI) | the showcase's tests |
 | MSVC through CMake | the showcase's tests, threads included; one harmless warning (C4116) per array kept in the frame |
-| gcc, clang on Linux and macOS | written for, never compiled |
+| Apple clang on macOS (ARM64) | the whole suite; the showcase with SDL3 through CMake |
+| gcc, clang on Linux | written for, never compiled |
 | Android NDK | not there: no console, no `main`; see `PLAN.md` |
 
 ---------------------------------------------------------------------------
@@ -281,6 +316,10 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
 - `<Name>.expected` replaces the JVM for programs that use C (`integration/interop/`);
   `<Name>.def` is the C library of the test; `<Name>.in` its standard input.
 - `examples/showcase/core` is run the same way as a program of several modules.
+- Test builds (`KTC2_LEAK_CHECK`) fill a freed object with `0xDD` and keep the last few
+  thousand of them aside: a retain or a release of one ends the program with "use of a freed
+  object", on every system. AddressSanitizer (`-fsanitize=address -DKTC2_NO_POOL` on the C of
+  `build/integration/<Name>/c`) finds the reads the fill does not.
 - `integration/ported/` are the plain-Kotlin tests of the first transpiler.
 - There are no unit tests of the passes: everything is tested through whole programs.
 
@@ -289,7 +328,11 @@ not in the suite (it fetches and builds SDL3). `--headless` runs its tests with 
 `--auto` opens the window and clicks by itself, which with `SDL_VIDEODRIVER=dummy` needs no
 screen, and `--shot file.bmp` saves what it drew.
 
-There is no CI: the only gate is running the suite, on Windows.
+`benchmarks/` holds six programs (objects, collections, strings, numbers, dispatch,
+threads) that `python tools/bench.py` builds at `-O2` and times, with their counts of
+allocations, retains and releases; `--compare` shows the change against a saved table.
+
+There is no CI: the only gate is running the suite, on Windows and on macOS.
 
 ---------------------------------------------------------------------------
 ## 12. Known differences and gaps
@@ -309,6 +352,10 @@ Kotlin, but not done:
 - files (to come from kotlinx.io or okio, through a ktc2 compatibility layer).
 
 Known to differ from the JVM:
+- the last digit of `exp`, `ln`, `pow`, `sin` and the like is the C library's, which is not
+  everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library);
+- `ConcurrentModificationException` is never thrown: a list changed while it is iterated
+  goes on with what it holds;
 - the clock behind `kotlin.time` and `measureTimeMillis` is the clock of the day, not a
   monotonic counter: setting the system clock during a measurement shows in the result;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
@@ -368,7 +415,8 @@ nearly every function; this is the map.
 | `KThrow`, `KTryRegion` | from the importer until `ExceptionLowering`, which removes them |
 | `KAlloc.onStack`, `KArrayNew.onStack`, `KConcat.onStack`, `KStackSlot`, calls to `name__into` | set or added by `EscapeAnalysis` |
 | `KRetain`, `KRelease`, `releasesOld` on stores, calls to `name__b` / `name__m` | added by `ArcInsert`; before it no counting exists |
-| `KIndexRead.isChecked`, `KIndexSet.isChecked` | set by `ExceptionLowering` when it put the test in front of the statement |
+| `KIndexRead.isChecked`, `KIndexSet.isChecked` | set by `RangeChecks` when the index is proven in range, and by `ExceptionLowering` when it put the test in front of the statement |
+| calls to a dispatcher | fewer after `Devirtualize`, which replaces the ones it can resolve by `KCall`s to the implementation (under a `KRefCast` when the types of the two differ) |
 
 There is no dump of KIR. What a pass produced is read in the generated C, which follows KIR
 closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.kt.txt`).
@@ -377,8 +425,16 @@ closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.k
 
 - `ArcInsert`, `Effects`, `BorrowedReturns`, `EscapeAnalysis`: a wrong "this can be borrowed"
   or "this stays in the frame" is a use of freed memory. Test builds overwrite freed objects
-  to make that fail; the cases known to be delicate are in `integration/objects/Borrowing.kt`
-  and `ThreadBorrowing.kt`.
+  to make that fail; the cases known to be delicate are in `integration/objects/Borrowing.kt`,
+  `LastUse.kt` and `ThreadBorrowing.kt`.
+- `Devirtualize`: a wrong "this receiver is of class C" calls the method of another class on
+  the object. The static type of a reference is not always its class: the importer shares the
+  code of a local class between the instantiations of the generic class around it, so that
+  code reads an `X<Int>` through the type `X<Any>` (`KClass.family` names what the
+  instantiations have in common; the pass looks for the casts that give this away and then
+  trusts only what it followed from the allocation). `KTC2_SKIP=devirtualize` (also `ranges`,
+  `handover`, `brief`, separated by commas) leaves an optimization out, to find which one a
+  wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - `hidden.txt` and `files.txt`: a class hidden too much or too little shows as an unresolved
   or an ambiguous call inside library sources, far from the cause.
 - The copy of the stdlib jar without the hidden classes is cached in the system's temporary
