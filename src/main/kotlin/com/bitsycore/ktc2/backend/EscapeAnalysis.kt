@@ -2,6 +2,9 @@ package com.bitsycore.ktc2.backend
 
 import com.bitsycore.ktc2.kir.*
 
+/** `KTC2_SKIP=slots`: results that come through a dispatcher are not built in the caller's frame. */
+private val kSkipsDispatcherSlots = "slots" in (System.getenv("KTC2_SKIP") ?: "").split(",")
+
 /** Largest array (in elements) that is placed on the stack. */
 private const val kStackArrayLimit = 64
 
@@ -28,11 +31,17 @@ private const val kStackArrayLimit = 64
  * object it allocates, and which lets it go nowhere else, gets a second form that builds the
  * object in room supplied by the caller (`make__into(slot, …)`). A call whose result stays in
  * its block then passes a slot of its own stack frame, and the object is never on the heap.
+ * A dispatcher has such a form when an implementation behind it has: the caller's slot is
+ * then room for any of the classes they build, and the implementations without the form go
+ * on returning an object of the heap.
  */
 class EscapeAnalysis(private val mModule: KModule) {
 
 	/** For each function, its in-place form and the class it builds; null when it has none. */
 	private val mInPlace = HashMap<KFunction, Pair<KFunction, KClass>?>()
+
+	/** For each dispatcher, its in-place form and the classes its implementations build there; null when it has none. */
+	private val mDispatcherInPlace = HashMap<KFunction, Pair<KFunction, List<KClass>>?>()
 
 	/** In-place forms created during promotion, which still have to be promoted themselves. */
 	private val mNewFunctions = ArrayList<KFunction>()
@@ -142,16 +151,50 @@ class EscapeAnalysis(private val mModule: KModule) {
 		return vForm
 	}
 
-	/** A parameter of a dispatcher escapes when it does in any implementation (or in the runtime default). */
+	/**
+	 * The in-place form of the dispatcher [inFunction], made on first request: the one that hands
+	 * room of the caller's to the implementations that have an in-place form themselves. Null
+	 * when none has. Which implementation runs is not known to the caller, so the room is for
+	 * the largest of the classes they build.
+	 */
+	private fun dispatcherInPlaceForm(inFunction: KFunction): Pair<KFunction, List<KClass>>? {
+		if (inFunction in mDispatcherInPlace) return mDispatcherInPlace[inFunction]
+		mDispatcherInPlace[inFunction] = null
+		val vDispatch = inFunction.dispatch ?: return null
+		if (inFunction.dispatchDefault != null || (inFunction.returnType !is KClassType && inFunction.returnType != KObjType)) return null
+		val vBuilt = LinkedHashMap<KFunction, KClass>()
+		val vTargets = vDispatch.mapTo(ArrayList()) { (vClass, vTarget) ->
+			val vForm = inPlaceForm(vTarget)
+			if (vForm != null) vBuilt[vForm.first] = vForm.second
+			vClass to (vForm?.first ?: vTarget)
+		}
+		if (vBuilt.isEmpty()) return null
+		val vForm = KFunction(inFunction.cName + "__into", inFunction.unit, inFunction.params + KLocal("ktc2_slot", KPtrType), inFunction.returnType)
+		vForm.dispatch = vTargets
+		vForm.slotClasses = vBuilt
+		inFunction.unit.functions += vForm
+		return (vForm to vBuilt.values.distinct()).also { mDispatcherInPlace[inFunction] = it }
+	}
+
+	/**
+	 * A parameter of a dispatcher escapes when it does in any implementation (or in the runtime
+	 * default). Otherwise it is held as the implementations hold it: by the object of another
+	 * argument, or by the result.
+	 */
 	private fun summarizeDispatcher(inFunction: KFunction): Boolean {
 		var vChanged = false
 		inFunction.params.forEachIndexed { vIndex, vParam ->
-			// An implementation that stores it into the object of another parameter keeps it, as far as a dispatcher can tell.
-			val vEscapes = inFunction.dispatchDefault != null ||
-				inFunction.dispatch!!.any { (_, vTarget) -> vTarget.params.getOrNull(vIndex)?.let { it in mEscaping || it in mParamHeld || it in mResultHeld } != false }
-			if (vEscapes && vParam !in mEscaping) {
-				mEscaping[vParam] = "kept by an implementation"
-				vChanged = true
+			val vTargets = inFunction.dispatch!!.map { it.second.params.getOrNull(vIndex) }
+			if (inFunction.dispatchDefault != null || vTargets.any { it == null || it in mEscaping }) {
+				if (vParam !in mEscaping) {
+					mEscaping[vParam] = "kept by an implementation"
+					vChanged = true
+				}
+			} else {
+				for (vTarget in vTargets) {
+					mParamHeld[vTarget]?.let { if (mParamHeld.getOrPut(vParam) { HashSet() }.addAll(it)) vChanged = true }
+					mResultHeld[vTarget]?.let { if (mResultHeld.getOrPut(vParam) { HashSet() }.addAll(it)) vChanged = true }
+				}
 			}
 		}
 		return vChanged
@@ -372,10 +415,22 @@ class EscapeAnalysis(private val mModule: KModule) {
 				}
 				is KRefCast -> candidate(inLocal, inValue.operand)
 				// The result of a function that can build it in place: built in this frame if it stays here.
-				is KCall -> if (mIsPromoting) inPlaceForm(inValue.function)?.let { (vForm, vClass) ->
-					mCandidates += Candidate(inLocal, "a ${vClass.name}", null, null, isCall = true) {
-						inValue.arguments = listOf<KExpr>(KStackSlot(vClass)) + inValue.arguments
-						inValue.function = vForm
+				is KCall -> if (mIsPromoting) {
+					val vInPlace = inPlaceForm(inValue.function)
+					if (vInPlace != null) {
+						val (vForm, vClass) = vInPlace
+						mCandidates += Candidate(inLocal, "a ${vClass.name}", null, null, isCall = true) {
+							inValue.arguments = listOf<KExpr>(KStackSlot(vClass)) + inValue.arguments
+							inValue.function = vForm
+						}
+					} else if (!kSkipsDispatcherSlots) {
+						// Through a dispatcher: room for whatever the implementation that runs builds.
+						dispatcherInPlaceForm(inValue.function)?.let { (vForm, vClasses) ->
+							mCandidates += Candidate(inLocal, "an object", null, null, isCall = true) {
+								inValue.arguments = inValue.arguments + KStackSlot(vClasses.first(), vClasses)
+								inValue.function = vForm
+							}
+						}
 					}
 				}
 				// A pointer into inline storage is a borrow that has to stay in its block, like a stack object.

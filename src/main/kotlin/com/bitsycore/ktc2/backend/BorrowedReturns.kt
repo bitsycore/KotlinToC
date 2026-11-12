@@ -69,7 +69,8 @@ class BorrowedReturns(inModule: KModule, private val mEffects: Effects) {
 
 	init {
 		val vCandidates = inModule.units.flatMap { it.functions }
-			.filter { it.returnType is KRefType && !it.isExternal && (it.dispatch != null || it.body.isNotEmpty()) }
+			// A dispatcher that builds its result in the caller's frame hands out an object of the caller's own.
+			.filter { it.returnType is KRefType && !it.isExternal && it.slotClasses == null && (it.dispatch != null || it.body.isNotEmpty()) }
 		// Every candidate is first taken to qualify, with nothing known about its places; then each is
 		// looked at again and again, losing standing or gaining places, until nothing changes.
 		for (vFunction in vCandidates) mInfos[vFunction] = Info(Place(), false, emptyMap(), vFunction.dispatch?.toList() ?: emptyList())

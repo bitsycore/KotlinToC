@@ -240,6 +240,14 @@ class KFunction(
 	 * the variable of the caller that is to release it.
 	 */
 	var keepsDefault = false
+
+	/**
+	 * Set by `EscapeAnalysis` on the form of a dispatcher that builds its result in room given
+	 * by the caller, which is its last parameter: for each implementation in [dispatch] that is
+	 * itself such a form (the room is then its first parameter), the class it builds there. The
+	 * other implementations are called as they are and return an object of the heap.
+	 */
+	var slotClasses: Map<KFunction, KClass>? = null
 }
 
 class KLocal(val cName: String, val type: KType) {
@@ -451,9 +459,13 @@ class KCall(var function: KFunction, var arguments: List<KExpr>) : KExpr {
  * Room for an instance of [cls] in the stack frame of the enclosing block, zeroed and with
  * its header set: what a caller hands to a function that builds its result in place. Added by
  * `EscapeAnalysis`.
+ *
+ * With [alternatives], room for an instance of any of those classes, as a plain pointer: what
+ * is handed to a dispatcher (`KFunction.slotClasses`), which sets the header for the class the
+ * implementation it calls builds.
  */
-class KStackSlot(val cls: KClass) : KExpr {
-	override val type: KType get() = KClassType(cls)
+class KStackSlot(val cls: KClass, val alternatives: List<KClass> = emptyList()) : KExpr {
+	override val type: KType get() = if (alternatives.isEmpty()) KClassType(cls) else KPtrType
 }
 
 /** Added by `ArcInsert`: increments the count of [operand] (null-safe) and yields it. */

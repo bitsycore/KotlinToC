@@ -19,23 +19,23 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master`. The suite passes on macOS (Apple clang, ARM64): 103
-programs, and AddressSanitizer (`tools/asan.sh`) is clean on the ones it was run on (the
-showcase, and the tests of counting and of the frame: `Borrowing`, `LastUse`, `Walking`,
-`OwnedParameters`, `HeldInFrame`, `Deinit`, `Cleaners`, `Collections`, `ConcurrentModification`,
-`StringRanges`).
+**State.** Everything is on `master`. The suite passes on macOS (Apple clang, ARM64) and on
+Windows (mingw gcc 15, x64): 104 programs. AddressSanitizer (`tools/asan.sh`) is clean on the
+ones it was run on, on both systems (the showcase, and the tests of counting and of the
+frame: `Borrowing`, `LastUse`, `Walking`, `OwnedParameters`, `HeldInFrame`, `Deinit`,
+`Cleaners`, `Collections`, `ConcurrentModification`, `DispatchedResults`, `Generics`).
 
-**Not run anywhere else.** Windows was last run before the work of 2026-11-12, Linux never.
-Run the suite there before anything else. What was written for those systems without being
-run:
-- `ktc2_ticksNanos` (`ktc2_core.c`): the `QueryPerformanceCounter` branch, and on Linux a
-  hand-written prototype of `clock_gettime`, which strict C11 hides;
-- `ktc2_frame_address`, `KTC2_ALWAYS_INLINE`, `ktc2_seldom` (top of `ktc2_core.h`): the MSVC
-  branch;
-- `ktc2_destroy` puts objects aside by how far the stack has grown, and takes the stack to
-  grow downwards;
-- `ktc2_TypeInfo` has a fourth field (`deinit`), and small strings and arrays come from the
-  pool: nothing specific to a system, but new since the last run there.
+**Windows, 2026-11-12.** What the Mac session wrote without running it works there: the
+suite with gcc; ten programs through CMake with MSVC 19.51 (`Walking`, `Deinit`, `Cleaners`,
+`HeldInFrame`, `LastUse`, `OwnedParameters`, `Time`, `ConcurrentModification`,
+`ThreadBorrowing`, `StringSearch`) and three with clang 23, all printing what gcc's build
+prints. That covers the `QueryPerformanceCounter` clock, the MSVC branch of
+`ktc2_frame_address` / `KTC2_ALWAYS_INLINE` / `ktc2_seldom`, and the destruction of a long
+list. The work of that day after the pull (results through a dispatcher) has in turn not
+been run on macOS (its test, `DispatchedResults`, passes with gcc and with MSVC).
+
+**Not run anywhere.** Linux: the POSIX half of the runtime is the one macOS uses, except the
+hand-written prototype of `clock_gettime` in `ktc2_ticksNanos`, which strict C11 hides there.
 
 **Waiting for a decision of the owner** (do not build these unasked):
 - the enum that is a number (part 8): whether, and under what name;
@@ -64,7 +64,8 @@ that way, and are worth knowing:
 ---------------------------------------------------------------------------
 
 `python tools/bench.py`, Apple clang on an ARM64 Mac, best of five runs. "Before" is commit
-`2a16110`, built `-O2`; "now" is the same build; "now, LTO" is what `--build` does by default.
+`2a16110`, built `-O2`; "now" is the same build (at commit `4773f24`); "now, LTO" is what
+`--build` does by default.
 
 | | Before | Now | Now, LTO | Allocations | Retains |
 |---|---|---|---|---|---|
@@ -82,11 +83,33 @@ objects no longer go through `malloc`. Not making them at all is what part 2 sti
 Over the test programs allocations went from 320,970 to 303,664. Numeric has nothing left
 for these passes: it is the C compiler's.
 
+On Windows (gcc 15, x64, `-O2`, no LTO), before and after results through a dispatcher were
+built in the caller's frame. `Ordinary` is the benchmark of ordinary code, added that day.
+
+| | Before | After | Allocations | Retains |
+|---|---|---|---|---|
+| Collections | 0.460 s | 0.446 s | 4.50 M, unchanged | 8.7 M |
+| Dispatch | 0.482 s | 0.467 s | 6.50 M -> 1,014 | 5.0 M |
+| Numeric | 0.246 s | 0.241 s | 44 | 0 |
+| Objects | 0.235 s | 0.234 s | 26.0 M, unchanged | 16.0 M |
+| Ordinary | 0.514 s | 0.509 s | 13.78 M -> 12.56 M | 5.5 M |
+| Strings | 0.262 s | 0.260 s | 1.20 M, unchanged | 2.7 M |
+| Threads | 0.716 s | 0.707 s | 5.54 M, unchanged | 6.2 M |
+
+The times hardly move: an allocation from the pool costs about as much as clearing a slot
+of the frame. What is left in `Ordinary`, by what makes it (counted from the program):
+- 4.0 M: `place = place + step`, a new object assigned to a variable of an enclosing block
+  on every turn of a loop (part 2, "a variable that is given a new object in a loop");
+- 4.0 M: the `Pair`s of `zip`, kept in a list: nothing to gain;
+- 2.0 M: the array inside a local `ArrayList` that is itself in the frame (part 2);
+- about 2.5 M: the strings and lists of `split` and of a template.
+
 ---------------------------------------------------------------------------
 ## 0. Before the optimizations
 ---------------------------------------------------------------------------
 
-- [x] **Benchmarks.** `benchmarks/*.kt` and `tools/bench.py` (see "Measuring"). Not there: a
+- [x] **Benchmarks.** `benchmarks/*.kt` and `tools/bench.py` (see "Measuring"); `Ordinary.kt`
+  is the one whose objects mostly stay in their function. Not there: a
   comparison with the JVM and with Kotlin/Native on the same programs, and with the first
   transpiler (in the git history before commit `0d1da61`).
 - [~] **Linux and macOS.** macOS is done: the whole suite and the SDL3 showcase pass with Apple
@@ -94,7 +117,8 @@ for these passes: it is the C compiler's.
   in private headers), `-ffp-contract=off` (ARM64 fuses a product and a sum), two test lines
   that printed the last digit of `exp` and `log`, the tool's JVM running out of code cache,
   and a double release that Windows had been hiding (below). Linux is still untried, and
-  there is still no CI: a job per system would keep both true.
+  there is still no CI: a job per system would keep both true. Windows was run again after
+  the macOS work (see "Where the work stands").
 - [x] **A use of freed memory is reported on every system.** A local that handed its
   reference over and was assigned again later was released twice; the fill of freed objects
   made that pass on Windows. Test builds now keep freed objects aside, filled, and end the
@@ -138,7 +162,10 @@ sources (`KTC2_TIMING=1`).
 | | Gain | Effort |
 |---|---|---|
 | [~] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known (`Devirtualize`) the iterator is now in the frame and `hasNext` / `next` are direct calls, which LTO inlines. Left: writing the index loop in the importer, which also needs the `modCount` test of part 8 | medium now: one inlined call per element | medium |
-| [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). Left: a parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there): needs a copy of the function per class, or the iterator built in a slot the dispatcher is handed | high where it applies | medium |
+| [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). A parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there) is covered by the next line | high where it applies | medium |
+| [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`integration/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
+| [ ] A variable that is given a new object on every turn of a loop (`place = place + step`): the result of a call assigned to a variable of an enclosing block is never built in the frame. Two slots used in turn would do: the new object is built while the old one is still read | 4 M of the 12.6 M allocations of `Ordinary` | medium |
+| [ ] The array inside an `ArrayList` (or `StringBuilder`, `HashMap`) that is itself in the frame: the constructor stores it into `this`, which was passed in. Needs room in the caller for a first small array, as `ktc2_array_local` has for arrays | 2 M of `Ordinary`; every local list | medium to high |
 | [ ] An object that never leaves its function becomes plain locals | medium | medium |
 | [x] Closures in the frame when the lambda does not outlive the call it is passed to. The closure was there already; what it captured was not, because storing into a field counted as leaving. An object or the cell of a `var` stored into an object that stays in the frame now stays too, unless some read of that field lets it out | every capturing lambda that is only called: no allocation left | medium |
 | [x] Destroying a long structure does not use a frame of the C stack per object: past 96 KB of stack the object is put aside and destroyed later. A list of a million cells crashed before | correctness | low |
@@ -216,7 +243,7 @@ write to an array of references.
 
 | | Gain | Effort |
 |---|---|---|
-| [x] Link-time optimization by default for `--build` without `--debug`, and through CMake where the compiler has it (`KTC2_LTO=0`, `-DKTC2_LTO=OFF`). Not with clang on Windows, which needs lld: to be tried there | 10 to 48 % faster, 30 to 45 % smaller | low |
+| [x] Link-time optimization by default for `--build` without `--debug`, and through CMake where the compiler has it (`KTC2_LTO=0`, `-DKTC2_LTO=OFF`). With clang on Windows it needs LLVM's linker: used when `lld-link` is on the path (`-fuse-ld=lld`), Objects 0.27 s -> 0.21 s there | 10 to 48 % faster, 30 to 45 % smaller | low |
 | [ ] One C file per package, not per class | faster C builds, inlining without LTO | low to medium |
 | [ ] One implementation for instantiations that compile to the same code | smaller programs | medium |
 
@@ -283,13 +310,12 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. Windows and Linux (0): run the suite, see "Where the work stands". Then a CI job per
-   system with an AddressSanitizer run.
-2. A benchmark of ordinary code. The six there are do not show what the frame work of
-   2026-11-12 bought (their objects all get out): something that builds local lists, small
-   holders and lambdas, so that the next changes of part 2 can be measured.
-3. Iterators for parameters that receive several classes, and the index loop over lists (2).
-4. More shapes for `RangeChecks` (5), templates built in place (6).
+1. Run the suite on macOS again (the work on Windows of 2026-11-12 was not run there), and
+   on Linux for the first time. Then a CI job per system with an AddressSanitizer run.
+2. What `Ordinary` still allocates (2): the variable given a new object in a loop, then the
+   array inside a local list.
+3. The index loop over lists (2), more shapes for `RangeChecks` (5).
+4. Templates built in place (6): `Ordinary` and `Strings` both show them.
 5. The compiler kept running (1): the biggest change to how ktc2 feels.
 6. The decisions listed in "Where the work stands".
 
@@ -303,7 +329,7 @@ Open:
   of the program; the table goes to `build/bench/results.txt`. `--compare` shows the change
   against a table saved before; `KTC2_TOOL` names an installed tool of another state of the
   sources, to measure both on the same day. Do not run it while the suite runs.
-- `KTC2_SKIP=devirtualize,ranges,handover,brief` leaves optimizations out, one or several, to
+- `KTC2_SKIP=devirtualize,ranges,handover,brief,walk,owned,slots` leaves optimizations out, one or several, to
   measure what each gives or to find which one a wrong program comes from;
   `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses
   were proven in range.

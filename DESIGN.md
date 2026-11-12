@@ -80,7 +80,7 @@ when the string is all ASCII, a scan otherwise.
 | static | string literals, `object`s, enum entries, the boxes of small numbers (-128..127 as `Int` or `Long`, characters below 128, the two Booleans, as the JVM keeps them) |
 | the frame | escape analysis shows it does not leave its block: objects, arrays of constant size up to 64 elements, arrays of run-time size up to 256 bytes, strings built from templates up to 128 bytes |
 | inside its owner | a `@Value` or `@Size(n)` field; a `@Struct` anywhere |
-| the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller |
+| the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller. A dispatcher has one too when an implementation behind it has: the caller's slot is then room for the largest of the classes they build (a `union`), and the dispatcher marks it for the implementation it calls (`KFunction.slotClasses`); the implementations without such a form return a heap object as before. This is what keeps the iterator of `for (x in list)` in the frame when `list` is a parameter that receives several classes |
 | an arena | allocated inside `arena(size) { }` |
 | the heap | everything else |
 
@@ -100,7 +100,9 @@ does with the variables its lambda uses, so a lambda that is only called, not ke
 allocation for itself, for the objects it uses or for the cells of the `var`s it writes. The
 condition is that no read of that field anywhere in the program lets the value out (returns
 it, stores it, hands it to something that keeps it): `EscapeAnalysis` keeps the set of such
-"leaky" fields, by name within a family of generic instantiations.
+"leaky" fields, by name within a family of generic instantiations. Through a dispatcher an
+argument is held as the implementations hold it, and leaves if it does in any of them: a
+local list handed to a function that takes a `List` and goes over it stays in the frame.
 
 Destroying an object releases what it holds, which may destroy that in turn. So that a long
 list does not need a frame of the C stack per cell, `ktc2_destroy` looks at how far the stack
@@ -391,7 +393,7 @@ files        = ["Api.kt", "lib.def"]      # only in a module shipped with ktc2: 
 - A release build is optimized as a whole program (`-flto`, or CMake's interprocedural
   optimization where the compiler has it): a class is one C file, and its small functions are
   only inlined into the others this way. `KTC2_LTO=0`, or `-DKTC2_LTO=OFF` for CMake, turns it
-  off; with clang on Windows it is off unless `KTC2_LTO=1`, since it needs lld there.
+  off; with clang on Windows it needs LLVM's linker, and is used when `lld-link` is on the path.
 - Every build passes `-ffp-contract=off` and the runtime header asks the same with a pragma:
   Kotlin rounds after each floating-point operation, and a C compiler would otherwise fuse a
   product and a sum into one where the processor can (ARM64).
@@ -545,7 +547,7 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   instantiations have in common; the pass looks for the casts that give this away and then
   trusts only what it followed from the allocation). The same knowledge answers `is` and the
   test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
-  `ranges`, `handover`, `brief`, `walk`, `owned`, separated by commas) leaves an optimization out, to find which one a
+  `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - A function of the C runtime that can leave with an exception has to be named in
   `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the

@@ -458,7 +458,18 @@ class CEmitter(private val mModule: KModule) {
 				val vBefore = StringBuilder()
 				val vAfter = StringBuilder()
 				var vBoxes = 0
-				val vArguments = inFunction.params.zip(inTarget.params).joinToString(", ") { (vFrom, vTo) ->
+				// An implementation that builds its result in the room the caller gave (the last parameter
+				// here, the first one there): the room is cleared and marked as an object of its class.
+				val vBuilt = inFunction.slotClasses?.get(inTarget)
+				val vOwnParams = if (inFunction.slotClasses != null) inFunction.params.dropLast(1) else inFunction.params
+				var vRoom = ""
+				if (vBuilt != null) {
+					mState.includes += vBuilt.unit
+					val vSlot = inFunction.params.last().cName
+					vBefore.append("memset($vSlot, 0, sizeof(${vBuilt.cName})); *(ktc2_Obj*)$vSlot = (ktc2_Obj){ KTC2_STACK | 1, ${typeId(vBuilt)} }; ")
+					vRoom = "(${vBuilt.cName}*)$vSlot, "
+				}
+				val vArguments = vRoom + vOwnParams.zip(if (vBuilt != null) inTarget.params.drop(1) else inTarget.params).joinToString(", ") { (vFrom, vTo) ->
 					// The box made for the call owns what the struct refers to, until it is released after the call.
 					val vGiven = if (vFrom.type.isCounted() && vFrom.type is KStructType && vTo.type is KRefType) retainText(vFrom.type, vFrom.cName) else vFrom.cName
 					val vText = adapt(vGiven, vFrom.type, vTo.type)
@@ -488,7 +499,7 @@ class CEmitter(private val mModule: KModule) {
 					return "{ $vBefore${cType(inTarget.returnType)} result = $vCall; $vAfter${cType(inFunction.returnType)} value = $vValue; ktc2_release(result); return value; }"
 				}
 				val vResult = adapt(vCall, inTarget.returnType, inFunction.returnType)
-				if (vAfter.isEmpty()) return "return $vResult;"
+				if (vBefore.isEmpty() && vAfter.isEmpty()) return "return $vResult;"
 				return "{ $vBefore${cType(inFunction.returnType)} result = $vResult; ${vAfter}return result; }"
 			}
 			line(1, "switch (((ktc2_Obj*)$vSelf)->typeId) {")
@@ -842,7 +853,12 @@ class CEmitter(private val mModule: KModule) {
 					"(" + Regex("\\$(\\d+)").replace(vTemplate) { vMatch -> vArguments[vMatch.groupValues[1].toInt()] } + ")"
 				}
 			}
-			is KStackSlot -> {
+			is KStackSlot -> if (inExpr.alternatives.isNotEmpty()) {
+				// Room for the largest of the classes; the dispatcher it is handed to clears and marks it.
+				inExpr.alternatives.forEach { mState.includes += it.unit }
+				val vMembers = inExpr.alternatives.withIndex().joinToString(" ") { (vIndex, vClass) -> "${vClass.cName} m$vIndex;" }
+				"((void*)&(union { $vMembers }){ 0 })"
+			} else {
 				mState.includes += inExpr.cls.unit
 				val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
 				"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1, ${typeId(inExpr.cls)} } })"

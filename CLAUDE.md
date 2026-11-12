@@ -24,12 +24,12 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
   - `KTC2_TEST_FILTER=<path part>` runs a subset in under a minute (`objects/`, `stdlib/Regex`, `projects/`).
   - `KTC2_TEST_VERBOSE=1` prints a line for each program as it passes, to follow a run in a terminal.
   - `python tools/failures.py` summarizes the failures of the last run.
-  - `tools/asan.sh build/integration/<Name>` (or `build/try`) builds the generated C of one program with AddressSanitizer and without the pool, and runs it.
+  - `tools/asan.sh build/integration/<Name>` (or `build/try`) builds the generated C of one program with AddressSanitizer and without the pool, and runs it. On Windows it uses clang (mingw's gcc has no sanitizer).
   - `tools/try.sh <group/Name>` builds and runs one program as the tests do, through Gradle, so it always uses the current sources. `tools/try_cmake.sh <group/Name> [cmake args]` builds it through CMake (with no arguments on Windows: MSVC).
   - A test with a `<Name>.expected` is compared with that file instead of the JVM (C interop); `<Name>.def` is its C library; `<Name>.in` its standard input.
   - A test with a `<Name>.errors` must be refused by ktc2, with a message containing each line of that file (`integration/errors/`).
   - `examples/showcase/core` is run by the suite as a program of several modules: its name is `projects/examples/showcase/core`, its build directory `build/integration/project-core`.
-- `KTC2_CC` names the C compiler (default: the first of gcc, clang, cc on the path); `KTC2_CMAKE_ARGS` adds CMake arguments; `KTC2_LTO=0` builds a release without link-time optimization; `KTC2_TIMING=1` prints where compile time goes; `KTC2_DEBUG_BORROW=1` explains reference-count decisions; `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses were proven in range; `KTC2_SKIP=devirtualize,ranges,handover,brief,walk,owned` leaves optimizations out.
+- `KTC2_CC` names the C compiler (default: the first of gcc, clang, cc on the path); `KTC2_CMAKE_ARGS` adds CMake arguments; `KTC2_LTO=0` builds a release without link-time optimization; `KTC2_TIMING=1` prints where compile time goes; `KTC2_DEBUG_BORROW=1` explains reference-count decisions; `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses were proven in range; `KTC2_SKIP=devirtualize,ranges,handover,brief,walk,owned,slots` leaves optimizations out.
 - Benchmarks: `python tools/bench.py [name] [--compare saved.txt] [--copt -flto]` builds `benchmarks/*.kt` with the installed tool and prints time, allocations, retains, releases and size (`build/bench/results.txt`).
 
 ## Architecture (`src/main/kotlin/com/bitsycore/ktc2/`)
