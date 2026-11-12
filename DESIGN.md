@@ -48,8 +48,15 @@ sources + library sources + generated bindings
   `ArrayList<Any>` serves every list of objects, `ArrayList<Int>` holds ints unboxed. A
   `@Struct` without references gets its own instantiation and is stored in place; one that
   holds references is kept in a box inside generic code and shares the `Any?` instantiation.
-- Compile time is the front end reading the library sources: about 11 s for a small program.
-  `KTC2_TIMING=1` prints the split.
+- Compile time is the front end reading the library sources: about 13 s for a small program
+  in a process of its own (`KTC2_TIMING=1` prints the split). `ktc2` therefore keeps a process
+  running between commands (`Daemon.kt`), in which the same compilation takes under 4 s: the
+  command hands its arguments and its directory over a port of the machine itself and prints
+  what comes back. The process is replaced when ktc2's own files, the Java machine or an
+  environment variable ktc2 reads (`KTC2_*`, `PATH`) differ from what it was started with,
+  and ends after 30 minutes without a command. `KTC2_DAEMON=0` runs each command in its own
+  process; `ktc2 --stop-daemon` ends the one that stays. A program started by `--run` is
+  started by the command, not by that process: it needs the command's terminal.
 
 ---------------------------------------------------------------------------
 ## 3. Types and where values live
@@ -80,7 +87,7 @@ when the string is all ASCII, a scan otherwise.
 | static | string literals, `object`s, enum entries, the boxes of small numbers (-128..127 as `Int` or `Long`, characters below 128, the two Booleans, as the JVM keeps them) |
 | the frame | escape analysis shows it does not leave its block: objects, arrays of constant size up to 64 elements, arrays of run-time size up to 256 bytes, strings built from templates up to 128 bytes |
 | inside its owner | a `@Value` or `@Size(n)` field; a `@Struct` anywhere |
-| the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller. A dispatcher has one too when an implementation behind it has: the caller's slot is then room for the largest of the classes they build (a `union`), and the dispatcher marks it for the implementation it calls (`KFunction.slotClasses`); the implementations without such a form return a heap object as before. This is what keeps the iterator of `for (x in list)` in the frame when `list` is a parameter that receives several classes |
+| the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller. A variable that is given such a result again and again while it still holds the one before (`place = place + step`) has two rooms in the frame of its function, and each call builds in the one that holds no object in use (`ktc2_slot_reuse`: the count in the header says so); with both in use the function is handed no room and makes a heap object. A dispatcher has one too when an implementation behind it has: the caller's slot is then room for the largest of the classes they build (a `union`), and the dispatcher marks it for the implementation it calls (`KFunction.slotClasses`); the implementations without such a form return a heap object as before. This is what keeps the iterator of `for (x in list)` in the frame when `list` is a parameter that receives several classes |
 | an arena | allocated inside `arena(size) { }` |
 | the heap | everything else |
 
@@ -122,6 +129,7 @@ makes every object a block of `malloc`'s again.
 | | |
 |---|---|
 | `@Struct` on a class | held by value everywhere. Boxed when used as `Any`, an interface or nullable. May hold references. |
+| `@SimpleEnum` on an enum class | its values are numbers: a C `enum` (`typedef enum { Key_A = 4, ... } Key;`). The number of an entry is its ordinal, or what it gives for the `Int` parameter of the constructor marked `@EnumValue`. `==` and `when` compare numbers; the `val`s of the constructor are looked up from the number (the arguments have to be constants); `values()`, `valueOf()` and member functions work on numbers. Where Kotlin needs an object (`Key?`, `List<Key>`, `Any`, `Enum<*>`, `entries`) the value is replaced by an object kept for its entry, an ordinary `Enum` with its name and ordinal: one per entry for the whole run, so identity holds and nothing is allocated. `name`, `ordinal`, `toString()` and `compareTo` go through that object. Refused at compile time: an entry with a body, a property with a value of its own, an `init` block, an argument that is not a constant, two entries with the same number. On the JVM it is the enum it is declared as. In KIR it is a `KStruct` with one field and `enumEntries` set, which the emitter writes as the `enum`. |
 | `@Value` on a type | a field with it holds the object in place. A local with it must stay in the frame: it is an error if the object could outlive the block. |
 | `@Size(n)` on an array | a field with it holds the `n` elements in place; a local with it must stay in the frame. |
 | `ValueArray<T>` | an array whose elements are in place. Exists because `Array<@Value T>` cannot be made safe: the annotation does not change the Kotlin type. |
@@ -213,7 +221,8 @@ before its fields are released, wherever the object lives (heap, frame, arena). 
   switches `deinit` off, before it releases those.
 
 Not as in Swift: `deinit` is an ordinary overridable function, so a subclass that overrides
-it calls `super.deinit()` itself, and nothing stops a program from calling `deinit()` (it then
+it calls `super.deinit()` itself (ktc2 warns when an override of a superclass's `deinit` does
+not), and nothing stops a program from calling `deinit()` (it then
 runs again at the end). A `@Struct`, a value class or a class held in place by `@Value` cannot
 implement it: those are copied, and a copy has no last reference (an error from the importer).
 `Deinit` does not extend `AutoCloseable`: `close()` may be called by anyone, more than once,
@@ -547,7 +556,7 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   instantiations have in common; the pass looks for the casts that give this away and then
   trusts only what it followed from the allocation). The same knowledge answers `is` and the
   test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
-  `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, separated by commas) leaves an optimization out, to find which one a
+  `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - A function of the C runtime that can leave with an exception has to be named in
   `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the

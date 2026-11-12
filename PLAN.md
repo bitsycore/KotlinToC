@@ -37,13 +37,22 @@ been run on macOS (its test, `DispatchedResults`, passes with gcc and with MSVC)
 **Not run anywhere.** Linux: the POSIX half of the runtime is the one macOS uses, except the
 hand-written prototype of `clock_gettime` in `ktc2_ticksNanos`, which strict C11 hides there.
 
+**Decided by the owner on 2026-11-12, and done:**
+- the enum that is a number is `@SimpleEnum`, a real C `enum`, with `@EnumValue` on the
+  constructor parameter that gives the numbers, and an object per entry where Kotlin needs
+  one (`Key?`, `List<Key>`, `Any`); what cannot be a number is a compile error (part 8);
+- `deinit` stays an ordinary `override` that calls `super.deinit()`, the Kotlin way; ktc2
+  warns when an override does not (part 0);
+- the package of the SDL3 module is `ktc2.sdl3` (part 8).
+
 **Waiting for a decision of the owner** (do not build these unasked):
-- the enum that is a number (part 8): whether, and under what name;
-- whether `deinit` runs through the superclasses by itself, as in Swift, or stays an ordinary
-  `override` that calls `super.deinit()` (part 0);
-- the new name of the package of the SDL3 module (part 8);
 - any addition to the `ktc2.` package: propose it here first. The model is `ktc2.concurrent`
   and `createCleaner`: one API that is plain Kotlin on the JVM and the native thing in C.
+
+**Not run on macOS yet**, all of 2026-11-12 on Windows (the whole suite with gcc, the two new tests also with MSVC): the rooms of a
+variable given a new object in a loop, `@SimpleEnum`, and the compiler process that stays
+(`Daemon.kt`: it starts a process and talks to it over a local port; the paths of its state
+file and the way the process is detached are the parts that depend on the system).
 
 **How the work went, and should go on.** One item at a time: a program under `integration/`
 that shows it, the change, the whole suite, `tools/asan.sh` on the programs it touches,
@@ -135,8 +144,10 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
     (the entry handed out reads the map's storage). Looked at and left: the entry would need a
     copy of its key and value, two retains and releases for every entry of every
     `for ((k, v) in map)`, to cover a rare case.
-  - [ ] `deinit` chained through the superclasses by the compiler, as Swift does, instead of
-    `super.deinit()` written by hand: only if wanted, it is not what `override` means. Effort: low.
+  - [x] `deinit` through the superclasses: decided against chaining by the compiler. It is
+    an `override`, which calls `super.deinit()` itself; ktc2 warns when one that overrides the
+    `deinit` of a superclass does not (`checkSuperDeinit` in `KirImport.kt`,
+    `integration/values/DeinitSuper.kt` with its `.warnings` file).
   - [ ] a variable could give up its object after its last use, as Swift does in optimized
     builds, instead of at the end of its block: frees earlier, but a guard object
     (`val lock = Guard()`) would then end at once. Not planned unless asked for.
@@ -145,12 +156,12 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
 ## 1. Compile time
 ---------------------------------------------------------------------------
 
-A small program takes about 11 s, nearly all of it the Kotlin front end reading the library
-sources (`KTC2_TIMING=1`).
+A small program takes about 13 s in a process of its own, nearly all of it the Kotlin front
+end reading the library sources (`KTC2_TIMING=1`), and 3.6 s through the process that stays.
 
 | | Gain | Effort |
 |---|---|---|
-| [ ] A compiler process kept running between compilations | 11 s -> probably 2-3 s | medium |
+| [x] A compiler process kept running between compilations (`Daemon.kt`): `ktc2` starts it on first use and hands it each command; it ends after 30 minutes without one, and is replaced when ktc2 or an environment variable it reads changed. `KTC2_DAEMON=0` does without, `ktc2 --stop-daemon` ends it | 12.9 s -> 3.6 s on Windows | medium |
 | [ ] Cache the front end's result for the library sources | large if the Kotlin compiler allows it; unknown | high |
 | [ ] Hand the compiler only the library files a program can reach | 1-2 s; tried once for the unsigned arrays and dropped as fragile | medium |
 | [x] Do not rewrite C files whose content did not change, so the C build is incremental (`CEmitter.write` already did) | faster rebuilds through CMake | low |
@@ -164,7 +175,7 @@ sources (`KTC2_TIMING=1`).
 | [~] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known (`Devirtualize`) the iterator is now in the frame and `hasNext` / `next` are direct calls, which LTO inlines. Left: writing the index loop in the importer, which also needs the `modCount` test of part 8 | medium now: one inlined call per element | medium |
 | [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). A parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there) is covered by the next line | high where it applies | medium |
 | [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`integration/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
-| [ ] A variable that is given a new object on every turn of a loop (`place = place + step`): the result of a call assigned to a variable of an enclosing block is never built in the frame. Two slots used in turn would do: the new object is built while the old one is still read | 4 M of the 12.6 M allocations of `Ordinary` | medium |
+| [x] A variable that is given a new object on every turn of a loop (`place = place + step`): the function has two rooms for it, and the call builds in the one that holds no object in use (`KStackSlot.rooms`, `ktc2_slot_reuse`); when something else still holds an older object, that one comes from the heap. `integration/objects/Reassigned.kt`, `KTC2_SKIP=rooms` | Ordinary: 12.56 M allocations -> 8.56 M; the time does not move | medium |
 | [ ] The array inside an `ArrayList` (or `StringBuilder`, `HashMap`) that is itself in the frame: the constructor stores it into `this`, which was passed in. Needs room in the caller for a first small array, as `ktc2_array_local` has for arrays | 2 M of `Ordinary`; every local list | medium to high |
 | [ ] An object that never leaves its function becomes plain locals | medium | medium |
 | [x] Closures in the frame when the lambda does not outlive the call it is passed to. The closure was there already; what it captured was not, because storing into a field counted as leaving. An object or the cell of a `var` stored into an object that stays in the frame now stays too, unless some read of that field lets it out | every capturing lambda that is only called: no allocation left | medium |
@@ -269,14 +280,21 @@ Open:
 - [ ] **The last digit of `exp`, `ln`, `pow`, `sin`.** It is the C library's. To print what
   the JVM prints on every system, the runtime would carry fdlibm's versions (what
   `StrictMath` is); a few hundred lines of C. Until then DESIGN.md lists it as a difference.
-- [ ] **An enum that is a number.** Proposed, to be decided: `@ktc2.Flat enum class Key(val
-  code: Int)` (the name is open) whose values are their ordinal in C, with no objects: `when`
-  is a `switch`, `name` and the properties come from constant tables, and a value is boxed
-  only where it is seen as `Any` or `Enum<T>`. On the JVM it is a plain enum, so it follows
-  the second rule. With a `code` taken from a C constant it would replace the
-  `object { const val ... }` namespaces of the SDL3 module by types the compiler checks.
-  For flags that are or-ed together, a `value class` over the number with the constants in
-  its companion does the same today and costs nothing.
+- [x] **An enum that is a number: `@SimpleEnum`** (`DESIGN.md`, section 4;
+  `integration/values/SimpleEnums.kt`, `integration/errors/SimpleEnumState.kt`). A C `enum`;
+  `@EnumValue` on an `Int` parameter of the constructor gives the numbers. Left:
+  - [ ] `name`, `ordinal`, `toString()` and `compareTo` of a value go through the object kept
+    for its entry (a chain of compares, then a field): right, not as cheap as a table. A
+    lookup of their own, as the constructor's properties have, is a few lines in the call
+    lowering.
+  - [ ] the SDL3 module's `object { const val ... }` namespaces (scancodes, event types) as
+    `@SimpleEnum` classes with the C constants as `@EnumValue`, so the compiler checks them.
+    A value given to a C function still has to be converted by hand (`.code`): the bindings
+    could accept the enum where C declares the `enum`.
+  - [ ] flags that are or-ed together are not an enum: a `value class` over the number with
+    the constants in its companion does that today and costs nothing.
+- [x] **A failing `valueOf` throws** `IllegalArgumentException("No enum constant ...")`, for
+  every enum: it ended the program before.
 - [ ] **Coroutines.** `sequence { }` and `iterator { }` first: they are what the library
   itself uses (`chunked` and `windowed` on things that are not lists fail at run time today).
 - [ ] **Android.** The C should compile with the NDK's clang. Missing: `println` to the log
@@ -294,9 +312,10 @@ Open:
   git repository). The Kotlin compiler ktc2 runs is the JVM one and cannot read klibs, and
   published klibs are built against Kotlin/Native's own library, so this means either a
   format of ktc2's own or moving the front end; not small.
-- [ ] **The package of the SDL3 module's Kotlin API is `ktc.sdl3`**, a name left from the
-  first transpiler. Rename it (to what is the question: `ktc2.` is kept for what changes
-  storage only), with the two examples that import it.
+- [x] **The package of the SDL3 module's Kotlin API is `ktc2.sdl3`** (it was `ktc.sdl3`, a
+  name left from the first transpiler).
+- [x] **A test of a warning.** A program with a `<Name>.warnings` file has to be accepted
+  with a message that contains each line of that file.
 - [x] **A dump of KIR**, after the importer and after each pass: `--dump-ir` writes
   `kir/0-import.txt` to `kir/4-arcinsert.txt` (`KirDump`), the same functions in the same
   order, so `diff` of two of them shows what a pass did.
@@ -312,12 +331,17 @@ Open:
 
 1. Run the suite on macOS again (the work on Windows of 2026-11-12 was not run there), and
    on Linux for the first time. Then a CI job per system with an AddressSanitizer run.
-2. What `Ordinary` still allocates (2): the variable given a new object in a loop, then the
-   array inside a local list.
-3. The index loop over lists (2), more shapes for `RangeChecks` (5).
-4. Templates built in place (6): `Ordinary` and `Strings` both show them.
-5. The compiler kept running (1): the biggest change to how ktc2 feels.
-6. The decisions listed in "Where the work stands".
+2. Where the time of `Ordinary` is, now that allocation is not it (measured by timing its
+   parts, with LTO): the library's operators on lists (`filter`, `zip`, `sumOf`: a third),
+   a `for` over a `List` parameter (two dispatched calls per element: a quarter), a local
+   `ArrayList` (its array, `add`, the checks after each call: a fifth), text (`split`, a
+   template: a sixth). So: the index loop over lists and direct calls where a parameter only
+   ever receives one class per call site (4), then templates built in place (6).
+3. More shapes for `RangeChecks` (5).
+4. `name` and `ordinal` of a `@SimpleEnum` without the object; the SDL3 constants as such
+   enums (8).
+5. The array inside a local list (2): 2 M allocations of `Ordinary`, but removing 4 M others
+   did not change its time; measure before building it.
 
 ---------------------------------------------------------------------------
 ## Measuring
@@ -329,7 +353,7 @@ Open:
   of the program; the table goes to `build/bench/results.txt`. `--compare` shows the change
   against a table saved before; `KTC2_TOOL` names an installed tool of another state of the
   sources, to measure both on the same day. Do not run it while the suite runs.
-- `KTC2_SKIP=devirtualize,ranges,handover,brief,walk,owned,slots` leaves optimizations out, one or several, to
+- `KTC2_SKIP=devirtualize,ranges,handover,brief,walk,owned,slots,rooms` leaves optimizations out, one or several, to
   measure what each gives or to find which one a wrong program comes from;
   `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses
   were proven in range.

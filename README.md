@@ -42,6 +42,7 @@ also runs there.
 | | |
 |---|---|
 | `@Struct` | a class held by value, like a number |
+| `@SimpleEnum`, `@EnumValue` | an enum that is a C `enum`: its values are numbers, the ones you give |
 | `@Value`, `@Size(n)` | an object or an array stored inside its owner, or kept in the frame |
 | `ValueArray<T>` | an array that holds its elements in place |
 | `arena(size) { }` | what a block allocates is given back in one go |
@@ -99,7 +100,12 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
   --warn-heap        list every allocation left on the heap, with the reason
   --no-warn-cycles   do not report classes that can form reference cycles
   --dump-ir          also write the IR received from the Kotlin compiler, and ktc2's own after each pass (kir/)
+  --stop-daemon      end the compiler process ktc2 keeps running between commands
 ```
+
+The first command starts a compiler process that stays for the next ones, which makes them
+three to four times faster (about 4 s for a small program instead of 13). It ends by itself
+after half an hour without a command; `KTC2_DAEMON=0` does without it.
 
 ## Compilers and systems
 
