@@ -525,7 +525,12 @@ nearly every function; this is the map.
 | calls to a dispatcher | fewer after `Devirtualize`, which replaces the ones it can resolve by `KCall`s to the implementation (under a `KRefCast` when the types of the two differ) |
 
 There is no dump of KIR. What a pass produced is read in the generated C, which follows KIR
-closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.kt.txt`).
+closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.kt.txt`) and KIR as text
+after the importer and after each pass (`kir/0-import.txt`, `1-devirtualize.txt`,
+`2-exceptionlowering.txt`, `3-escapeanalysis.txt`, `4-arcinsert.txt`): the functions of the
+program itself, or with `KTC2_DUMP_KIR=<text>` those whose C name contains the text (`all`
+for the library's too). `diff` of two stages shows what the pass between them did: a retain
+added, a store that now gives up what was there (`<-`), an object put on the stack.
 
 **Where a small mistake costs most**
 

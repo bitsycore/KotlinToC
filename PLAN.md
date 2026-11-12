@@ -270,8 +270,9 @@ Open:
 - [ ] **The package of the SDL3 module's Kotlin API is `ktc.sdl3`**, a name left from the
   first transpiler. Rename it (to what is the question: `ktc2.` is kept for what changes
   storage only), with the two examples that import it.
-- [ ] **A dump of KIR**, before and after each pass: today a pass's result is only visible in
-  the generated C.
+- [x] **A dump of KIR**, after the importer and after each pass: `--dump-ir` writes
+  `kir/0-import.txt` to `kir/4-arcinsert.txt` (`KirDump`), the same functions in the same
+  order, so `diff` of two of them shows what a pass did.
 - [x] **A test that must fail to compile.** A program with a `<Name>.errors` file next to it
   has to be refused, with a message that contains each line of that file
   (`integration/errors/`). Two so far: a use of `java.*`, and `Deinit` on a `@Struct`. The
@@ -284,15 +285,13 @@ Open:
 
 1. Windows and Linux (0): run the suite, see "Where the work stands". Then a CI job per
    system with an AddressSanitizer run.
-2. A dump of KIR before and after each pass (8): every pass was debugged through the
-   generated C so far; small, and it pays for itself at the next wrong count.
-3. A benchmark of ordinary code. The six there are do not show what the frame work of
+2. A benchmark of ordinary code. The six there are do not show what the frame work of
    2026-11-12 bought (their objects all get out): something that builds local lists, small
    holders and lambdas, so that the next changes of part 2 can be measured.
-4. Iterators for parameters that receive several classes, and the index loop over lists (2).
-5. More shapes for `RangeChecks` (5), templates built in place (6).
-6. The compiler kept running (1): the biggest change to how ktc2 feels.
-7. The decisions listed in "Where the work stands".
+3. Iterators for parameters that receive several classes, and the index loop over lists (2).
+4. More shapes for `RangeChecks` (5), templates built in place (6).
+5. The compiler kept running (1): the biggest change to how ktc2 feels.
+6. The decisions listed in "Where the work stands".
 
 ---------------------------------------------------------------------------
 ## Measuring

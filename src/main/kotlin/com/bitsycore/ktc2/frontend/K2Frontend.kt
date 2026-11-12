@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.config.CompilerConfiguration
 import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
 import com.bitsycore.ktc2.backend.CycleLint
+import com.bitsycore.ktc2.kir.KirDump
 import com.bitsycore.ktc2.interop.BindingGenerator
 import com.bitsycore.ktc2.interop.DefFile
 import com.bitsycore.ktc2.backend.Devirtualize
@@ -27,6 +28,9 @@ import java.io.File
 // The compiler loads the registrar in its own classloader, so options travel as system properties.
 private const val kOutDirProperty = "ktc2.outDir"
 private const val kDumpIrProperty = "ktc2.dumpIr"
+
+/** The packages whose code is the library's, not the program's: left out of a dump of KIR unless asked for. */
+private val kLibraryPackages = listOf("kotlin", "kotlinx", "ktc2", "java", "platform")
 private const val kErrorCountProperty = "ktc2.errorCount"
 
 /** The experimental language features programs may use; given to both the C and the JVM reference compilation. */
@@ -310,6 +314,24 @@ class Ktc2Extension : IrGenerationExtension {
 		System.setProperty(kErrorCountProperty, vImporter.errors.size.toString())
 		if (vImporter.errors.isNotEmpty()) return
 
+		// With `--dump-ir`, KIR is written after the importer and after each pass (`kir/`): the code of
+		// the program itself, or with KTC2_DUMP_KIR=<text> the functions whose C name contains the
+		// text (`all`: every function, the library's too).
+		val vDumpFilter = System.getenv("KTC2_DUMP_KIR")
+		val vDumpsKir = System.getProperty(kDumpIrProperty) == "true" || vDumpFilter != null
+		var vStage = 0
+		fun dumpKir(inStage: String) {
+			if (!vDumpsKir) return
+			val vFile = File(vOutDir, "kir/${vStage++}-${inStage.takeWhile { it.isLetter() }.lowercase()}.txt")
+			KirDump(vModule).write(vFile, inStage) { vFunction ->
+				when (vDumpFilter) {
+					null -> kLibraryPackages.none { vFunction.unit.pkg == it || vFunction.unit.pkg.startsWith("$it.") }
+					"all" -> true
+					else -> vDumpFilter in vFunction.cName
+				}
+			}
+		}
+		dumpKir("Import: as the importer wrote it")
 		if (System.getProperty("ktc2.warnCycles") != "false") {
 			CycleLint(vModule).also { it.run() }.warnings.forEach { System.err.println("ktc2: warning: $it") }
 		}
@@ -320,9 +342,12 @@ class Ktc2Extension : IrGenerationExtension {
 		if (System.getenv("KTC2_DEBUG_PASSES") != null) {
 			System.err.println("ktc2: passes: ${vDirect.resolved} dispatched calls made direct, ${vDirect.answered} type tests answered, ${vRanges.proven} array accesses proven in range")
 		}
+		dumpKir("Devirtualize and RangeChecks: calls made direct, type tests answered, accesses proven in range")
 		ExceptionLowering(vModule).run()
+		dumpKir("ExceptionLowering: throw and try as a parked exception and tests")
 		val vEscapes = EscapeAnalysis(vModule)
 		vEscapes.run()
+		dumpKir("EscapeAnalysis: objects on the stack, results built in place")
 		if (System.getProperty("ktc2.warnHeap") == "true") vEscapes.heapReport.forEach { System.err.println("ktc2: heap: $it") }
 		if (vEscapes.errors.isNotEmpty()) {
 			vEscapes.errors.forEach { System.err.println("ktc2: error: $it") }
@@ -330,6 +355,7 @@ class Ktc2Extension : IrGenerationExtension {
 			return
 		}
 		ArcInsert(vModule, mHandsOverAtLastUse = "handover" !in vSkipped, mBorrowsBriefly = "brief" !in vSkipped, mWalks = "walk" !in vSkipped, mOwnsParameters = "owned" !in vSkipped).run()
+		dumpKir("ArcInsert: retains and releases, as the C is written from")
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && isEntryPoint(it) } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"

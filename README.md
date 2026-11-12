@@ -98,7 +98,7 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
   --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
   --warn-heap        list every allocation left on the heap, with the reason
   --no-warn-cycles   do not report classes that can form reference cycles
-  --dump-ir          also write the IR received from the Kotlin compiler
+  --dump-ir          also write the IR received from the Kotlin compiler, and ktc2's own after each pass (kir/)
 ```
 
 ## Compilers and systems
