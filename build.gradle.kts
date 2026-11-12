@@ -64,6 +64,24 @@ tasks.test {
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// The integration programs and the bundled runtime are inputs of the oracle test.
 	inputs.dir("integration")
+	// The programs are shared between several processes (see IntegrationTest): KTC2_TEST_FORKS says how many,
+	// at most 12; by default half the processors. Each has a Java machine and a Kotlin compiler of its own.
+	val vForks = (System.getenv("KTC2_TEST_FORKS")?.toIntOrNull() ?: (Runtime.getRuntime().availableProcessors() / 2)).coerceIn(1, 12)
+	maxParallelForks = vForks
+	systemProperty("ktc2.testShards", vForks.toString())
+	maxHeapSize = "1g"
+	// Several compilers at once: each keeps to a few threads of its own, or they get in each other's way.
+	jvmArgs((System.getenv("KTC2_TEST_JVM") ?: "-XX:+UseParallelGC -XX:ParallelGCThreads=2 -XX:CICompilerCount=2 -Xms1g").split(" ").filter { it.isNotEmpty() })
+	// What each process wrote, put together: the counts (tools/arc_compare.py) and the times of each step.
+	val vResults = layout.buildDirectory.dir("integration").get().asFile
+	doLast {
+		for (vName in listOf("arc-stats", "times")) {
+			val vParts = (0 until 12).map { File(vResults, "$vName.$it.txt") }.filter { it.isFile }
+			val vLines = vParts.flatMap { it.readLines() }.filter { it.isNotBlank() }.sorted()
+			File(vResults, "$vName.txt").writeText(vLines.joinToString("\n", postfix = "\n"))
+			vParts.forEach { it.delete() }
+		}
+	}
 	// KTC2_TEST_VERBOSE=1 prints a line for each program as it passes, to follow a run in a terminal.
 	val vEvents = if (System.getenv("KTC2_TEST_VERBOSE") != null) arrayOf("passed", "failed", "skipped") else arrayOf("failed")
 	testLogging { events(*vEvents); showStandardStreams = true; exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }

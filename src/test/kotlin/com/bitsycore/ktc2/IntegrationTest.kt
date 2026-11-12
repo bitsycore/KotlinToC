@@ -13,13 +13,57 @@ import kotlin.test.fail
 private const val kTimeoutSeconds = 60L
 
 /**
+ * How many processes share the programs of a run: Gradle starts one per class below, each
+ * with its own Java machine and Kotlin compiler (`ktc2.testShards`, set in `build.gradle.kts`;
+ * 1 when the class is run by itself, from an IDE say, and then it takes every program).
+ */
+private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1).coerceIn(1, 12)
+
+/**
+ * Whether each program gets the dumps of its IR and KIR next to its C (`ir.txt`, `kir/`): 25 MB
+ * a program, so not in a run of the whole suite. A run of a part of it (`KTC2_TEST_FILTER`)
+ * has them, since that is how a failure is looked at; `KTC2_TEST_DUMP=1` or `=0` says so directly.
+ */
+private val kDumps = System.getenv("KTC2_TEST_DUMP")?.let { it != "0" } ?: (System.getenv("KTC2_TEST_FILTER") != null)
+
+/** How many C compilers work on one program at once (`KTC2_TEST_JOBS`; 1: one compiler for all its files). */
+private val kCompileJobs = (System.getenv("KTC2_TEST_JOBS")?.toIntOrNull() ?: 4).coerceIn(1, 16)
+
+/** The parts of the suite: see [IntegrationPart]. Twelve is the most Gradle is asked for. */
+class IntegrationTest : IntegrationPart(0)
+class IntegrationTest1 : IntegrationPart(1)
+class IntegrationTest2 : IntegrationPart(2)
+class IntegrationTest3 : IntegrationPart(3)
+class IntegrationTest4 : IntegrationPart(4)
+class IntegrationTest5 : IntegrationPart(5)
+class IntegrationTest6 : IntegrationPart(6)
+class IntegrationTest7 : IntegrationPart(7)
+class IntegrationTest8 : IntegrationPart(8)
+class IntegrationTest9 : IntegrationPart(9)
+class IntegrationTest10 : IntegrationPart(10)
+class IntegrationTest11 : IntegrationPart(11)
+
+/**
  * Dual-run oracle: every program under `integration/` is compiled by ktc2 to C and, separately,
  * as ordinary Kotlin/JVM against the real standard library; both are executed and must print
  * the same text.
  *
  * The C compiler is `gcc`, or the `KTC2_CC` environment variable.
+ *
+ * The programs are independent, and most of the time of one is the Kotlin front end, which
+ * works on one program at a time in a process. So the suite is cut in parts, one per class
+ * (`IntegrationTest`, `IntegrationTest1`…), which Gradle runs in as many processes: part
+ * [mShard] takes every program whose place in the sorted list is [mShard] modulo the number
+ * of parts. Each part writes its counts and times to files of its own, which the Gradle task
+ * puts together when all are done.
  */
-class IntegrationTest {
+abstract class IntegrationPart(private val mShard: Int) {
+
+	/** One line per program of the last run: how long each step took. */
+	private val kTimesFile = "build/integration/times.$mShard.txt"
+
+	/** The counts of allocations and of reference counting of each program of this part. */
+	private val kStatsFile = "build/integration/arc-stats.$mShard.txt"
 
 	private val mCompiler = System.getenv("KTC2_CC") ?: "gcc"
 
@@ -28,8 +72,10 @@ class IntegrationTest {
 
 	@TestFactory
 	fun programs(): List<DynamicTest> {
-		File("build/integration/arc-stats.txt").delete()
-		return programList()
+		File(kStatsFile).delete()
+		File(kTimesFile).delete()
+		if (mShard >= kShards) return emptyList()
+		return programList().filterIndexed { vIndex, _ -> vIndex % kShards == mShard }
 	}
 
 	private fun programList(): List<DynamicTest> =
@@ -94,13 +140,13 @@ class IntegrationTest {
 
 	/** Translates [inSources] and checks that ktc2 said each of [mWarnings] meanwhile. */
 	private fun translate(inSources: List<File>, inOutDir: File): Boolean {
-		if (mWarnings.isEmpty()) return K2Frontend.compile(inSources, inOutDir, inDumpIr = true)
+		if (mWarnings.isEmpty()) return K2Frontend.compile(inSources, inOutDir, inDumpIr = kDumps)
 		val vSaved = System.err
 		val vCaptured = java.io.ByteArrayOutputStream()
 		val vAccepted: Boolean
 		System.setErr(java.io.PrintStream(vCaptured, true, "UTF-8"))
 		try {
-			vAccepted = K2Frontend.compile(inSources, inOutDir, inDumpIr = true)
+			vAccepted = K2Frontend.compile(inSources, inOutDir, inDumpIr = kDumps)
 		} finally {
 			System.setErr(vSaved)
 		}
@@ -133,7 +179,16 @@ class IntegrationTest {
 	 */
 	private fun verify(inName: String, inSources: List<File>, inOutDir: File, inExpected: File?) {
 		val vOutDir = inOutDir
+		// Where the time of this program goes: build/integration/times.txt, in milliseconds.
+		val vTimes = ArrayList<String>()
+		var vSince = System.nanoTime()
+		fun lap(inWhat: String) {
+			val vNow = System.nanoTime()
+			vTimes += "$inWhat=${(vNow - vSince) / 1000000}"
+			vSince = vNow
+		}
 		assertTrue(translate(inSources, vOutDir), "ktc2 failed on $inName")
+		lap("translate")
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
 		val vJvmMain = vManifest.first { it.startsWith("jvmMain=") }.substringAfter('=')
@@ -147,14 +202,47 @@ class IntegrationTest {
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
 			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" }, vJvmDir), "kotlinc failed on $inName")
+			lap("jvmCompile")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
 			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
-			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File("."))
+			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File(".")).also { lap("jvmRun") }
 		}
 
 		val vExe = File(vOutDir, "program.exe")
-		run(listOf(mCompiler, "-std=c11", "-O1", "-ffp-contract=off", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror","-Wno-unused-variable", "-Wno-unused-but-set-variable") + kSystemLibraries.take(1) + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
+		val vOptions = listOf(mCompiler, "-std=c11", "-O1", "-ffp-contract=off", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror", "-Wno-unused-variable", "-Wno-unused-but-set-variable") + kSystemLibraries.take(1)
+		if (kCompileJobs <= 1) {
+			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
+		} else {
+			// The C files in a few groups, each compiled by a process of its own into a directory of its own
+			// (two files of the same name in different packages go to different groups), then linked.
+			val vGroups = List(kCompileJobs) { ArrayList<String>() }
+			vCSources.forEachIndexed { vIndex, vSource ->
+				val vName = File(vSource).name
+				val vGroup = (0 until kCompileJobs).map { vGroups[(vIndex + it) % kCompileJobs] }.firstOrNull { vOthers -> vOthers.none { File(it).name == vName } }
+					?: fail("more than $kCompileJobs C files are called $vName")
+				vGroup += vSource
+			}
+			val vFailures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+			val vWorkers = vGroups.withIndex().filter { it.value.isNotEmpty() }.map { (vIndex, vFiles) ->
+				val vObjects = File(vOutDir, "obj/$vIndex").apply { mkdirs() }
+				Thread {
+					try {
+						run(vOptions + listOf("-c", "-I", vCDir.absolutePath) + vCompilerOpts + vFiles.map { File(vCDir, it).absolutePath }, vObjects)
+					} catch (vError: Throwable) {
+						vFailures += vError
+					}
+				}.also { it.start() }
+			}
+			vWorkers.forEach { it.join() }
+			vFailures.firstOrNull()?.let { throw it }
+			// Named from the directory of the program: a command line has a longest length.
+			val vObjectFiles = File(vOutDir, "obj").walkTopDown().filter { it.isFile && it.extension == "o" }.map { it.relativeTo(vOutDir).invariantSeparatorsPath }.sorted().toList()
+			run(vOptions + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir)
+		}
+		lap("cCompile")
 		val vActual = run(listOf(vExe.absolutePath), File("."))
+		lap("cRun")
+		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")
 
 		assertEquals(vExpected, vActual, "C output differs from the JVM for $inName")
 	}
@@ -180,7 +268,7 @@ class IntegrationTest {
 			}
 			// Reference-count statistics of each program, for comparing optimizations: build/integration/arc-stats.txt
 			vErrors.readLines().firstOrNull { it.startsWith("ktc2: arc:") }?.let { vLine ->
-				File("build/integration/arc-stats.txt").appendText("${File(inCommand.first()).parentFile.name}: ${vLine.removePrefix("ktc2: arc: ")}\n")
+				File(kStatsFile).appendText("${File(inCommand.first()).parentFile.name}: ${vLine.removePrefix("ktc2: arc: ")}\n")
 			}
 			val vLeaks = vErrors.readLines().filter { it.startsWith("ktc2: leak") }
 			if (vLeaks.isNotEmpty()) fail("${inCommand.first()} leaked:\n${vLeaks.joinToString("\n")}")
