@@ -290,6 +290,11 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   only ever receives an `ArrayList` is known to hold one. The passes after it then see an
   ordinary call: it may not throw, its result may be built in the caller's frame, and it can
   be inlined. This is what keeps the iterator of a `for` over a list in the frame.
+  A parameter that receives several classes says nothing by itself, so a small function is
+  copied for the calls that pass an object of a known class (`name__c0`, at most four): in
+  the copy the parameter is of that class and the calls on it are direct. `total(values:
+  List<Int>)` called with an `ArrayList` and with other lists has one copy for the
+  `ArrayList` and stays as it is for the rest.
 - **Exceptions** are checked propagation: `throw` parks the exception in a thread-local slot
   and the function leaves; after a call that can throw, the caller tests the slot and leaves
   in turn, releasing what it holds. A `try` is a `KTryRegion` in KIR, which `ExceptionLowering`
@@ -556,7 +561,7 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   instantiations have in common; the pass looks for the casts that give this away and then
   trusts only what it followed from the allocation). The same knowledge answers `is` and the
   test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
-  `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
+  `copies`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - A function of the C runtime that can leave with an exception has to be named in
   `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the

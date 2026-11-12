@@ -5,6 +5,16 @@ import com.bitsycore.ktc2.kir.*
 /** What a place holds when it was given objects of more than one class, or by code that cannot be seen. */
 private val kAnything = Any()
 
+/** `KTC2_SKIP=copies`: no function is copied for the classes it is called with. */
+private val kSkipsCopies = "copies" in (System.getenv("KTC2_SKIP") ?: "").split(",").map { it.trim() }
+
+/** A function with more statements than this is not copied. */
+private const val kCopyStatements = 80
+
+/** How many copies one function can have, and how many times the program is looked over for calls to copy for. */
+private const val kCopiesPerFunction = 4
+private const val kCopyRounds = 3
+
 /**
  * Replaces calls through a dispatcher by calls to the implementation, where the program shows
  * which one it is. Runs first, on KIR as the importer left it: the passes after it then see an
@@ -29,6 +39,15 @@ private val kAnything = Any()
  * one instantiation through the type of another. Where the program does this (a cast between
  * two classes neither of which is above the other), the classes of the two families are taken
  * for one another: their fields are followed by name, and a static type stands for the family.
+ *
+ * A parameter that receives objects of several classes says nothing: `total(values: List<Int>)`
+ * called with an `ArrayList` here and another list there. Such a function is *copied* for a
+ * call that passes an object of a known class where the function calls something on it or
+ * passes it on: the call goes to the copy, in which the parameter is of that class, and the
+ * calls on it are direct there (the `for` over the list: its iterator, `hasNext`, `next`).
+ * The function itself stays for the other calls. A small function only, a few copies of each,
+ * and the program is looked over a few times, since a copy may call the next function with a
+ * class that is now known.
  */
 class Devirtualize(private val mModule: KModule) {
 
@@ -80,10 +99,115 @@ class Devirtualize(private val mModule: KModule) {
 	/** Calls that were made direct. Filled by [run]. */
 	var resolved = 0
 
+	/** Copies of functions that were made. Filled by [run]. */
+	var copied = 0
+
 	fun run() {
-		val vFunctions = mModule.units.flatMap { it.functions + listOfNotNull(it.initializer) }
-		val vBodies = vFunctions.filter { !it.isExternal && it.dispatch == null }
-		findMixed(vFunctions)
+		var vRound = 0
+		while (true) {
+			val vFunctions = mModule.units.flatMap { it.functions + listOfNotNull(it.initializer) }
+			val vBodies = vFunctions.filter { !it.isExternal && it.dispatch == null }
+			if (vRound == 0) findMixed(vFunctions)
+			follow(vFunctions, vBodies)
+			if (kSkipsCopies || vRound++ >= kCopyRounds || !copyForClasses(vBodies)) {
+				for (vFunction in vBodies) {
+					answerTests(vFunction)
+					val vBody = rewrite(vFunction.body)
+					vFunction.body.clear()
+					vFunction.body += vBody
+				}
+				return
+			}
+		}
+	}
+
+	// ==================
+	// MARK: Copies
+	// ==================
+
+	/** The copy of a function for the classes of some of its parameters (null: as it is). */
+	private val mCopies = HashMap<Pair<KFunction, List<KClass?>>, KFunction>()
+	private val mCopyCounts = HashMap<KFunction, Int>()
+	private val mWorthKnowing = HashMap<KFunction, Set<Int>>()
+
+	/** The parameters of [inFunction] whose class decides something there: a call on it through a dispatcher, or one it is passed on to. */
+	private fun worthKnowing(inFunction: KFunction): Set<Int> = mWorthKnowing.getOrPut(inFunction) {
+		val vFound = HashSet<Int>()
+		var vStatements = 0
+		fun paramOf(inValue: KExpr): Int = when (inValue) {
+			is KRefCast -> paramOf(inValue.operand)
+			is KRead -> inFunction.params.indexOf(inValue.local)
+			else -> -1
+		}
+		inFunction.body.anyStatement { vStatement ->
+			vStatements++
+			for (vRoot in vStatement.ownExpressions()) {
+				vRoot.anyNode { vNode ->
+					if (vNode is KCall && !vNode.function.isExternal) {
+						val vOnes = if (vNode.function.dispatch != null) vNode.arguments.take(1) else vNode.arguments
+						vOnes.forEach { vArgument -> paramOf(vArgument).let { if (it >= 0) vFound += it } }
+					}
+					false
+				}
+			}
+			false
+		}
+		if (vStatements > kCopyStatements) emptySet() else vFound
+	}
+
+	/**
+	 * Points the calls that pass an object of a known class to a parameter of which nothing is
+	 * known at a copy of the function for that class.
+	 *
+	 * @return true when a call was changed: what is known has to be worked out again
+	 */
+	private fun copyForClasses(inBodies: List<KFunction>): Boolean {
+		var vChanged = false
+		for (vCaller in inBodies) {
+			vCaller.body.anyStatement { vStatement ->
+				for (vRoot in vStatement.ownExpressions()) {
+					vRoot.anyNode { vNode ->
+						if (vNode is KCall && copyFor(vNode)) vChanged = true
+						false
+					}
+				}
+				false
+			}
+		}
+		return vChanged
+	}
+
+	private fun copyFor(inCall: KCall): Boolean {
+		val vFunction = inCall.function
+		if (vFunction.dispatch != null || vFunction.isExternal || vFunction.body.isEmpty()) return false
+		val vWorth = worthKnowing(vFunction)
+		if (vWorth.isEmpty()) return false
+		val vClasses = vFunction.params.mapIndexed { vIndex, vParam ->
+			if (vIndex !in vWorth || vParam.type !is KRefType || mLocals[vParam] !== kAnything) null else classOf(inCall.arguments[vIndex]) as? KClass
+		}
+		if (vClasses.all { it == null }) return false
+		val vKey = vFunction to vClasses
+		var vCopy = mCopies[vKey]
+		if (vCopy == null) {
+			val vCount = mCopyCounts[vFunction] ?: 0
+			if (vCount >= kCopiesPerFunction) return false
+			mCopyCounts[vFunction] = vCount + 1
+			vCopy = vFunction.copyAs("${vFunction.cName}__c$vCount")
+			vFunction.unit.functions += vCopy
+			mCopies[vKey] = vCopy
+			copied++
+		}
+		inCall.function = vCopy
+		return true
+	}
+
+	/** Works out what every place holds, from nothing: the fixpoint described above. */
+	private fun follow(vFunctions: List<KFunction>, vBodies: List<KFunction>) {
+		mLocals.clear()
+		mFields.clear()
+		mGlobals.clear()
+		mReturns.clear()
+		mOnly.clear()
 		openFunctions(vFunctions).forEach { vFunction -> vFunction.params.forEach { mLocals[it] = kAnything } }
 		// A dispatcher hands an implementation a receiver of the class it is listed for, and arguments nobody followed.
 		for (vDispatcher in vFunctions) {
@@ -97,12 +221,6 @@ class Devirtualize(private val mModule: KModule) {
 			mChanged = false
 			for (vFunction in vBodies) scan(vFunction)
 		} while (mChanged)
-		for (vFunction in vBodies) {
-			answerTests(vFunction)
-			val vBody = rewrite(vFunction.body)
-			vFunction.body.clear()
-			vFunction.body += vBody
-		}
 	}
 
 	/** `is` tests answered. Filled by [run]. */

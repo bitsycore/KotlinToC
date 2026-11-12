@@ -217,6 +217,8 @@ write to an array of references.
 | | Gain | Effort |
 |---|---|---|
 | [x] Call the implementation directly when only one class implements the method, or the type is known at the call (`Devirtualize`: the class is followed from the allocation through locals, parameters, fields and results) | Dispatch -17 %, -48 % with LTO; 375 calls in the showcase | medium |
+| [x] A function called with objects of several classes for one parameter is copied for the calls that pass a known class (`Devirtualize.copyFor`, `KirCopy.kt`): `total(values: List<Int>)` given an `ArrayList` goes to `total__c0`, where the iterator and its `hasNext` and `next` are direct calls. At most 4 copies of a function of at most 80 statements, three rounds. `integration/objects/Copies.kt`, `KTC2_SKIP=copies` | the `for` over a list parameter in `Ordinary`: 87 ms -> 60 ms with LTO (half its calls pass an `ArrayList`); Ordinary -7 % with LTO, -3 % without; programs under 1 % larger | medium |
+| [ ] `listOf(a, b, c)` is of no known class: it returns the list of an array or the empty list, by the number of elements, which the call shows. Following the result of a function per call (or copying `listOf` for the count) would let the copies above apply to literal lists | the other half of that loop | low to medium |
 | [ ] Follow the other arguments through dispatchers too, and the element class of a collection (`List<Shape>` that only holds circles) | medium | medium |
 | [ ] Stop sharing the code of a local class between the instantiations of the generic class around it (the importer reads an `X<Int>` through the type `X<Any>`): `Devirtualize` has to distrust static types wherever it sees this, and so will every later pass that reasons about classes | removes a trap more than it gains speed | medium, in the importer |
 | [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
@@ -332,11 +334,13 @@ Open:
 1. Run the suite on macOS again (the work on Windows of 2026-11-12 was not run there), and
    on Linux for the first time. Then a CI job per system with an AddressSanitizer run.
 2. Where the time of `Ordinary` is, now that allocation is not it (measured by timing its
-   parts, with LTO): the library's operators on lists (`filter`, `zip`, `sumOf`: a third),
-   a `for` over a `List` parameter (two dispatched calls per element: a quarter), a local
-   `ArrayList` (its array, `add`, the checks after each call: a fifth), text (`split`, a
-   template: a sixth). So: the index loop over lists and direct calls where a parameter only
-   ever receives one class per call site (4), then templates built in place (6).
+   parts, with LTO, after the copies of part 4): the library's operators on lists (`filter`,
+   `zip`, `sumOf`: 107 ms of 320), a local `ArrayList` that is filled and gone over (75 ms:
+   its array, `add`, the test after each call), a `for` over a `List` parameter (60 ms, of
+   which the calls with a literal list are still dispatched), text (`split`, a template:
+   50 ms). So: what `add` and the iterator of `ArrayList` cost per element when everything
+   is direct (the `modCount` test, the pending-exception test after `add`), the class of
+   `listOf(...)` (4), then templates built in place (6).
 3. More shapes for `RangeChecks` (5).
 4. `name` and `ordinal` of a `@SimpleEnum` without the object; the SDL3 constants as such
    enums (8).
@@ -353,7 +357,7 @@ Open:
   of the program; the table goes to `build/bench/results.txt`. `--compare` shows the change
   against a table saved before; `KTC2_TOOL` names an installed tool of another state of the
   sources, to measure both on the same day. Do not run it while the suite runs.
-- `KTC2_SKIP=devirtualize,ranges,handover,brief,walk,owned,slots,rooms` leaves optimizations out, one or several, to
+- `KTC2_SKIP=devirtualize,copies,ranges,handover,brief,walk,owned,slots,rooms` leaves optimizations out, one or several, to
   measure what each gives or to find which one a wrong program comes from;
   `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses
   were proven in range.
