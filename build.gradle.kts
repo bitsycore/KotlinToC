@@ -16,6 +16,8 @@ application {
 tasks.named<JavaExec>("run") {
 	dependsOn("unpackStdlibSources")
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
+	// Each run through Gradle is its own process: no compiler process is left behind.
+	environment("KTC2_DAEMON", "0")
 }
 
 repositories {

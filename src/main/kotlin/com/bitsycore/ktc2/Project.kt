@@ -342,8 +342,13 @@ fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vMath = if (kIsWindows) emptyList() else listOf("-lm")
 	val vCommand = listOf(vCompiler, "-std=c11") + vMode + vThreads + listOf("-I", ".", "-o", vProgram.absolutePath) +
 		manifestValues(inOutDir, "cflag") + manifestValues(inOutDir, "c") + vMath + manifestValues(inOutDir, "ldflag")
-	val vProcess = ProcessBuilder(vCommand).directory(File(inOutDir, "c")).inheritIO().start()
-	if (vProcess.waitFor() != 0) {
+	val vStatus = try {
+		runTool(vCommand, File(inOutDir, "c"))
+	} catch (vError: java.io.IOException) {
+		System.err.println("ktc2: error: the C compiler could not be run: ${vError.message}")
+		return null
+	}
+	if (vStatus != 0) {
 		System.err.println("ktc2: error: the C compiler failed: ${vCommand.take(8).joinToString(" ")} …")
 		return null
 	}
@@ -366,7 +371,7 @@ fun buildWithCMake(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 		(System.getenv("KTC2_CC")?.let { listOf("-DCMAKE_C_COMPILER=$it") } ?: emptyList()) + vExtra
 	fun run(inCommand: List<String>): Boolean {
 		val vExit = try {
-			ProcessBuilder(inCommand).inheritIO().start().waitFor()
+			runTool(inCommand, null)
 		} catch (vError: java.io.IOException) {
 			System.err.println("ktc2: error: cmake could not be run: ${vError.message}")
 			return false
