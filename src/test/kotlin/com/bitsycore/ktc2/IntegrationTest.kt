@@ -29,17 +29,22 @@ private val kDumps = System.getenv("KTC2_TEST_DUMP")?.let { it != "0" } ?: (Syst
 /** How many C compilers work on one program at once (`KTC2_TEST_JOBS`; 1: one compiler for all its files). */
 private val kCompileJobs = (System.getenv("KTC2_TEST_JOBS")?.toIntOrNull() ?: 4).coerceIn(1, 16)
 
-/** The parts of the suite: see [IntegrationPart]. Twelve is the most Gradle is asked for. */
+/*
+The parts of the suite: see [IntegrationPart]. Twelve is the most Gradle is asked for. Gradle
+deals the classes out to its processes in the order of their names: with these names the
+first ones, which are the ones that have programs when there are fewer processes than
+classes, go to different processes.
+*/
 class IntegrationTest : IntegrationPart(0)
-class IntegrationTest1 : IntegrationPart(1)
-class IntegrationTest2 : IntegrationPart(2)
-class IntegrationTest3 : IntegrationPart(3)
-class IntegrationTest4 : IntegrationPart(4)
-class IntegrationTest5 : IntegrationPart(5)
-class IntegrationTest6 : IntegrationPart(6)
-class IntegrationTest7 : IntegrationPart(7)
-class IntegrationTest8 : IntegrationPart(8)
-class IntegrationTest9 : IntegrationPart(9)
+class IntegrationTest01 : IntegrationPart(1)
+class IntegrationTest02 : IntegrationPart(2)
+class IntegrationTest03 : IntegrationPart(3)
+class IntegrationTest04 : IntegrationPart(4)
+class IntegrationTest05 : IntegrationPart(5)
+class IntegrationTest06 : IntegrationPart(6)
+class IntegrationTest07 : IntegrationPart(7)
+class IntegrationTest08 : IntegrationPart(8)
+class IntegrationTest09 : IntegrationPart(9)
 class IntegrationTest10 : IntegrationPart(10)
 class IntegrationTest11 : IntegrationPart(11)
 
@@ -52,7 +57,7 @@ class IntegrationTest11 : IntegrationPart(11)
  *
  * The programs are independent, and most of the time of one is the Kotlin front end, which
  * works on one program at a time in a process. So the suite is cut in parts, one per class
- * (`IntegrationTest`, `IntegrationTest1`…), which Gradle runs in as many processes: part
+ * (`IntegrationTest`, `IntegrationTest01`…), which Gradle runs in as many processes: part
  * [mShard] takes every program whose place in the sorted list is [mShard] modulo the number
  * of parts. Each part writes its counts and times to files of its own, which the Gradle task
  * puts together when all are done.

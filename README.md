@@ -104,7 +104,7 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
 ```
 
 The first command starts a compiler process that stays for the next ones, which makes them
-three to four times faster (about 4 s for a small program instead of 13). It ends by itself
+more than ten times faster (about 1 s for a small program instead of 13). It ends by itself
 after half an hour without a command; `KTC2_DAEMON=0` does without it.
 
 ## Compilers and systems

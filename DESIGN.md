@@ -50,7 +50,11 @@ sources + library sources + generated bindings
   holds references is kept in a box inside generic code and shares the `Any?` instantiation.
 - Compile time is the front end reading the library sources: about 13 s for a small program
   in a process of its own (`KTC2_TIMING=1` prints the split). `ktc2` therefore keeps a process
-  running between commands (`Daemon.kt`), in which the same compilation takes under 4 s: the
+  running between commands (`Daemon.kt`), in which the same compilation takes about half a
+  second, because that process also keeps the front end's work on the library
+  (`PhasedCompiler.kt`: the library is resolved once; each program is resolved as one more
+  part of the compilation on top of it, and the whole is converted to IR again, which is
+  fast). The
   command hands its arguments and its directory over a port of the machine itself and prints
   what comes back. The process is replaced when ktc2's own files, the Java machine or an
   environment variable ktc2 reads (`KTC2_*`, `PATH`) differ from what it was started with,

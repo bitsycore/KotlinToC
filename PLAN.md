@@ -162,23 +162,31 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
 ---------------------------------------------------------------------------
 
 A small program takes about 13 s in a process of its own, nearly all of it the Kotlin front
-end reading the library sources (`KTC2_TIMING=1`), and 3.6 s through the process that stays.
+end reading the library sources (`KTC2_TIMING=1`). Through the process that stays it took
+3.6 s, and takes about 1 s since that process keeps the front end's work on the library
+(0.45 s inside the process, the rest is starting the command).
 
 The suite, on a 16-core Windows machine: about 10 minutes with one program after another,
 2 min 40 s now. Of a program's time 64 % was translating it (4.1 s in a warm process) and
 32 % compiling its C (2.1 s); running it is nothing. What was done: the programs are shared
-between processes (Gradle forks, one test class each: 8 gave 3 min 17 s), the C files of a
+between processes (Gradle forks, one test class each, dealt out in the order of the class names: 8 gave 3 min 17 s), the C files of a
 program are compiled by four compilers at once (2 min 52 s), and 12 processes instead of 8
 (2 min 41 s). The dumps are no longer written in a run of the whole suite (they turned out
 not to cost time, only 2.7 GB of disk). What limits it now: eight Kotlin compilers at once
 each take twice as long as one alone, with the machine half idle (memory, not processors),
-and each process pays for a first compilation. So the next gain is in the translation
-itself, the first line below.
+and each process pays for a first compilation. The next gain was in the translation itself,
+the first line below: with the library kept, the whole suite takes 71 s with 8 processes
+(74 s with 6, 90 s with 4, 81 s with 12). What is left of a program's time is then, in
+about equal parts, the one analysis of the library per process (12 s, more when several
+start together) and the C compiler.
 
 | | Gain | Effort |
 |---|---|---|
 | [x] A compiler process kept running between compilations (`Daemon.kt`): `ktc2` starts it on first use and hands it each command; it ends after 30 minutes without one, and is replaced when ktc2 or an environment variable it reads changed. `KTC2_DAEMON=0` does without, `ktc2 --stop-daemon` ends it | 12.9 s -> 3.6 s on Windows | medium |
-| [ ] Cache the front end's result for the library sources: the 3.5 s of every compilation are the front end resolving and lowering some 250 library files again. Ways, none tried: keep the library's resolved session in the process and compile only the program against it (the compiler's command-line pipeline has no such entry; the Analysis API does it for the IDE); or compile the library once to a jar with its IR serialized (`-Xserialize-ir`) and read function bodies from there on demand | 4 s -> under 1 s per program, in the suite and in the process that stays | high |
+| [x] The front end's work on the library is kept in the process (`frontend/PhasedCompiler.kt`): the compiler is run phase by phase; the library is resolved once, and a program is one more part on top of it (a source session that depends on the library's, as one source set of a multiplatform module on another), the only one resolved each time. The conversion to IR is done for the whole each time (0.4 s), told not to empty what it converted. In the process `ktc2` keeps running and in the suite; `KTC2_KEEP_LIBRARY=0` goes back to one whole compilation per program | 3.1 s -> 0.45 s per program in a warm process; the suite 2 min 41 s -> 71 s | high |
+| [ ] The same across processes: the 12 s of a first compilation are the library resolved from nothing. The compiler has no form of its resolved tree that can be written and read back; the nearest is the library compiled once to a jar with its IR serialized (`-Xserialize-ir`) and function bodies read from there on demand, which would also need the importer to accept IR that is loaded lazily | 12 s -> perhaps 2 s for a first compilation | high, unknown |
+| [ ] Keep the library's IR too, not only its analysis: the 0.4 s left per program are mostly the conversion of the library to IR again. The importer does not change the IR it reads, but the conversion registers every declaration in tables that would have to be shared between programs | 0.45 s -> perhaps 0.15 s | medium to high |
+| [ ] The C of a test program: 1 to 2 s, as much as the translation now. One C file that includes all the others would be several times faster (the headers are read once), but the files have `static` names in common (`lit_0`); the emitter would have to number them per program | the suite: perhaps 71 s -> 50 s | medium |
 | [x] The suite in several processes, and the C of a program by several compilers (`IntegrationTest.kt`, `build.gradle.kts`: `KTC2_TEST_FORKS`, `KTC2_TEST_JOBS`) | 10 min -> 2 min 40 s | low |
 | [ ] Hand the compiler only the library files a program can reach | 1-2 s; tried once for the unsigned arrays and dropped as fragile | medium |
 | [x] Do not rewrite C files whose content did not change, so the C build is incremental (`CEmitter.write` already did) | faster rebuilds through CMake | low |

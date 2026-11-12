@@ -71,7 +71,9 @@ object K2Frontend {
 		System.setProperty(kOutDirProperty, inOutDir.absolutePath)
 		System.setProperty(kDumpIrProperty, inDumpIr.toString())
 		System.setProperty(kErrorCountProperty, "0")
-		val vLibrary = librarySources(inOutDir)
+		// With the library kept between compilations, its sources are in a place of this process, not of this program.
+		val vKeepsLibrary = keepsLibrary()
+		val vLibrary = librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
 		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
 		val vDefinitions = inSources.filter { it.extension == "def" }
 		val vCompiler = com.bitsycore.ktc2.cCompiler()
@@ -99,9 +101,9 @@ object K2Frontend {
 		System.setProperty(kLinkerOptsProperty, vBindings.flatMap { it.linkerOpts }.distinct().joinToString("\n"))
 		// The files that are not the program's: the library sources and the generated bindings.
 		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.invariantSeparatorsPath })
+		val vProgram = (inSources - vDefinitions.toSet()) + vBindings.map { it.source }
 		val vArgs = buildList {
-			(inSources - vDefinitions.toSet()).forEach { add(it.path) }
-			vBindings.forEach { add(it.source.path) }
+			if (!vKeepsLibrary) vProgram.forEach { add(it.path) }
 			vLibrary.forEach { add(it.path) }
 			if (vLibrary.isNotEmpty()) {
 				// The flags the standard library itself is built with.
@@ -122,16 +124,60 @@ object K2Frontend {
 			// blocks and companion extensions, collection literals (`[1, 2, 3]`), full value classes.
 			// The standard library's own sources use the first two.
 			addAll(kLanguageOptions)
-			add("-d"); add(File(inOutDir, "jvm-unused").path)
+			add("-d"); add(File(if (vKeepsLibrary) kLibraryDir else inOutDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
-			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
+			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, if (vKeepsLibrary) keptCopy(codeSourceOf(ktc2.Struct::class.java)) else codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
 			add("-Xplugin=${pluginClasspath()}")
+			// KTC2_TIMING: also the compiler's own account of its phases.
+			if (System.getenv("KTC2_TIMING") != null && !vKeepsLibrary) add("-Xdump-perf=" + File(inOutDir, "perf.log").path)
 		}
 		val vStart = System.nanoTime()
 		System.setProperty(kStartProperty, vStart.toString())
-		val vExit = K2JVMCompiler().exec(System.err, *vArgs.toTypedArray())
+		val vExit = when {
+			vKeepsLibrary -> {
+				// The library is the same while its files and the options are.
+				val vKey = vArgs.joinToString(";") + vLibrary.joinToString("") { ";${it.length()} ${it.lastModified()}" }
+				PhasedCompiler.compileOnLibrary(vArgs, vKey, vProgram)
+			}
+			else -> K2JVMCompiler().exec(System.err, *vArgs.toTypedArray())
+		}
 		reportTime("total", vStart)
 		return vExit == ExitCode.OK && System.getProperty(kErrorCountProperty) == "0"
+	}
+
+	/**
+	 * Whether this process keeps the front end's work on the library from one compilation to the
+	 * next (`PhasedCompiler.compileOnLibrary`): when it is one that compiles again and again - the
+	 * process `ktc2` keeps running, or the test suite, which says so with `ktc2.keepLibrary` - and
+	 * `KTC2_KEEP_LIBRARY=0` does not forbid it. A process that compiles once has nothing to keep.
+	 */
+	private fun keepsLibrary(): Boolean = when (System.getenv("KTC2_KEEP_LIBRARY")) {
+		"0" -> false
+		"1" -> true
+		else -> com.bitsycore.ktc2.gIsDaemon || System.getProperty("ktc2.keepLibrary") == "true"
+	}
+
+	/** Where the library sources of this process are, when its analysis is kept between compilations. */
+	private val kLibraryDir: File by lazy {
+		File(System.getProperty("java.io.tmpdir"), "ktc2/library-${ProcessHandle.current().pid()}").also { vDirectory ->
+			Runtime.getRuntime().addShutdownHook(Thread { vDirectory.deleteRecursively() })
+		}
+	}
+
+	/**
+	 * [inPath] itself when it is a directory, or a copy of that jar in [kLibraryDir]: the compiler
+	 * keeps the jars of a compilation mapped while its analysis is kept, and a mapped file cannot be
+	 * replaced on Windows - ktc2's own jar could not be installed again while a process holds it.
+	 */
+	private fun keptCopy(inPath: String): String {
+		val vFile = File(inPath)
+		if (!vFile.isFile) return inPath
+		val vCopy = File(kLibraryDir, "classpath/${vFile.name}")
+		if (!vCopy.isFile || vCopy.length() != vFile.length() || vCopy.lastModified() < vFile.lastModified()) {
+			vCopy.parentFile.mkdirs()
+			vFile.copyTo(vCopy, overwrite = true)
+		}
+		return vCopy.path
 	}
 
 	/** With `KTC2_TIMING` set, prints how long the step [inWhat] took since [inSince] (a `System.nanoTime()`). */

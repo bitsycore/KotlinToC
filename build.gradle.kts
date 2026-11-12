@@ -65,10 +65,12 @@ tasks.test {
 	// The integration programs and the bundled runtime are inputs of the oracle test.
 	inputs.dir("integration")
 	// The programs are shared between several processes (see IntegrationTest): KTC2_TEST_FORKS says how many,
-	// at most 12; by default half the processors. Each has a Java machine and a Kotlin compiler of its own.
-	val vForks = (System.getenv("KTC2_TEST_FORKS")?.toIntOrNull() ?: (Runtime.getRuntime().availableProcessors() / 2)).coerceIn(1, 12)
+	// at most 12; by default half the processors but no more than 8, past which they only get in each other's way. Each has a Java machine and a Kotlin compiler of its own.
+	val vForks = (System.getenv("KTC2_TEST_FORKS")?.toIntOrNull() ?: (Runtime.getRuntime().availableProcessors() / 2).coerceAtMost(8)).coerceIn(1, 12)
 	maxParallelForks = vForks
 	systemProperty("ktc2.testShards", vForks.toString())
+	// Each process analyses the library once, for all its programs (KTC2_KEEP_LIBRARY=0: once per program).
+	systemProperty("ktc2.keepLibrary", "true")
 	maxHeapSize = "1g"
 	// Several compilers at once: each keeps to a few threads of its own, or they get in each other's way.
 	jvmArgs((System.getenv("KTC2_TEST_JVM") ?: "-XX:+UseParallelGC -XX:ParallelGCThreads=2 -XX:CICompilerCount=2 -Xms1g").split(" ").filter { it.isNotEmpty() })
