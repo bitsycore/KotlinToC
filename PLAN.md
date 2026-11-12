@@ -13,46 +13,71 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-12)
+## Where the work stands (2026-11-13)
 ---------------------------------------------------------------------------
 
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master`. The suite passes on macOS (Apple clang, ARM64) and on
-Windows (mingw gcc 15, x64): 104 programs. AddressSanitizer (`tools/asan.sh`) is clean on the
-ones it was run on, on both systems (the showcase, and the tests of counting and of the
-frame: `Borrowing`, `LastUse`, `Walking`, `OwnedParameters`, `HeldInFrame`, `Deinit`,
-`Cleaners`, `Collections`, `ConcurrentModification`, `DispatchedResults`, `Generics`).
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 111
+tests (108 programs compared with the JVM or an `.expected` file, 2 that must be refused, the
+showcase as a program of several modules) and passes on Windows (mingw gcc 15, x64) in about
+70 seconds. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
+showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `Walking`,
+`OwnedParameters`, `HeldInFrame`, `Deinit`, `Cleaners`, `Collections`,
+`ConcurrentModification`, `DispatchedResults`, `Reassigned`, `Copies`, `ReturnedCalls`,
+`SimpleEnums`, `Generics`).
 
-**Windows, 2026-11-12.** What the Mac session wrote without running it works there: the
-suite with gcc; ten programs through CMake with MSVC 19.51 (`Walking`, `Deinit`, `Cleaners`,
-`HeldInFrame`, `LastUse`, `OwnedParameters`, `Time`, `ConcurrentModification`,
-`ThreadBorrowing`, `StringSearch`) and three with clang 23, all printing what gcc's build
-prints. That covers the `QueryPerformanceCounter` clock, the MSVC branch of
-`ktc2_frame_address` / `KTC2_ALWAYS_INLINE` / `ktc2_seldom`, and the destruction of a long
-list. The work of that day after the pull (results through a dispatcher) has in turn not
-been run on macOS (its test, `DispatchedResults`, passes with gcc and with MSVC).
+**The first thing to do: run the suite on macOS.** The last commit that ran there is
+`4773f24`. Everything after it was written and run on Windows only (`git log 4773f24..`):
+- results through a dispatcher and a reassigned variable built in the frame, functions
+  copied per class, the unchecked storage of `ArrayList`, borrowed returned calls, `listOf`;
+- `@SimpleEnum`, `@EnumValue`, `enumOf`, and the SDL3 module's constants as such enums;
+- the warning for a `deinit` without `super.deinit()`, the package `ktc2.sdl3`;
+- the compiler process that stays (`Daemon.kt`: it starts a process and talks to it over a
+  local port; where its state file is and how the process is detached depend on the system);
+- the suite in several processes, each keeping the front end's work on the library
+  (`PhasedCompiler.kt`).
+If the suite misbehaves there, `KTC2_TEST_FORKS=1 KTC2_TEST_JOBS=1 KTC2_KEEP_LIBRARY=0` is
+the suite as it ran on macOS before: start from that, then turn the three back on one by
+one. `ktc2` itself: `KTC2_DAEMON=0` is the command as it was.
+
+**Other compilers.** On Windows the new runtime code and the tests of the new passes were
+also built through CMake with MSVC 19.51 and print what gcc's build prints (`Walking`,
+`Deinit`, `Cleaners`, `HeldInFrame`, `LastUse`, `OwnedParameters`, `Time`,
+`ConcurrentModification`, `ThreadBorrowing`, `StringSearch`, `DispatchedResults`,
+`Reassigned`, `Copies`, `ReturnedCalls`, `SimpleEnums`, `Collections`, `Borrowing`), and
+the showcase with SDL3 passes its automatic run with gcc and with MSVC. Three programs were
+built with clang 23. The whole suite has only ever run with gcc and Apple clang.
 
 **Not run anywhere.** Linux: the POSIX half of the runtime is the one macOS uses, except the
 hand-written prototype of `clock_gettime` in `ktc2_ticksNanos`, which strict C11 hides there.
+Not exercised by any test: an input event that really comes from SDL through `event.kind`,
+`key.code` or `button.pressed`; `examples/sdl3-demo` was translated, not built.
 
-**Decided by the owner on 2026-11-12, and done:**
+**Decided by the owner, and done:**
 - the enum that is a number is `@SimpleEnum`, a real C `enum`, with `@EnumValue` on the
   constructor parameter that gives the numbers, and an object per entry where Kotlin needs
   one (`Key?`, `List<Key>`, `Any`); what cannot be a number is a compile error (part 8);
 - `deinit` stays an ordinary `override` that calls `super.deinit()`, the Kotlin way; ktc2
   warns when an override does not (part 0);
-- the package of the SDL3 module is `ktc2.sdl3` (part 8).
+- the package of the SDL3 module is `ktc2.sdl3` (part 8);
+- nothing of `java.*` for programs; files and the like through kotlinx.io or okio (part 8).
 
-**Waiting for a decision of the owner** (do not build these unasked):
-- any addition to the `ktc2.` package: propose it here first. The model is `ktc2.concurrent`
-  and `createCleaner`: one API that is plain Kotlin on the JVM and the native thing in C.
+**Waiting for a decision of the owner:**
+- `ktc2.enumOf<T>(number) { it.code }` was added to the `ktc2.` package without being
+  proposed first, because the SDL3 events could not be typed without a way from a number to
+  an entry. Its name and shape are the owner's to confirm or change (part 8);
+- any other addition to the `ktc2.` package: propose it here first, do not build it
+  unasked. The model is `ktc2.concurrent` and `createCleaner`: one API that is plain Kotlin
+  on the JVM and the native thing in C.
 
-**Not run on macOS yet**, all of 2026-11-12 on Windows (the whole suite with gcc, the two new tests also with MSVC): the rooms of a
-variable given a new object in a loop, `@SimpleEnum`, and the compiler process that stays
-(`Daemon.kt`: it starts a process and talks to it over a local port; the paths of its state
-file and the way the process is detached are the parts that depend on the system).
+**How the owner works.** They follow a run of the suite in a terminal (`./gradlew test
+--rerun`, a line per program with `KTC2_TEST_VERBOSE=1`). Never two runs of the suite at
+once: they share `build/integration`. A targeted run (`KTC2_TEST_FILTER`) after each change
+and the whole suite after two or three is what they asked for, the whole suite before a
+commit that touches a pass. They push to `master` directly, from two machines (Windows, and a
+Mac Studio): pull first.
 
 **How the work went, and should go on.** One item at a time: a program under `integration/`
 that shows it, the change, the whole suite, `tools/asan.sh` on the programs it touches,
@@ -371,8 +396,9 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. Run the suite on macOS again (the work on Windows of 2026-11-12 was not run there), and
-   on Linux for the first time. Then a CI job per system with an AddressSanitizer run.
+1. Run the suite on macOS again (see "Where the work stands": nothing since `4773f24` ran
+   there), and on Linux for the first time. Then a CI job per system with an
+   AddressSanitizer run.
 2. Where the time of `Ordinary` is, now that allocation is not it (measured by timing its
    parts, with LTO): the library's operators on lists (`filter`, `zip`, `sumOf`: about 100 ms
    of 290), a local `ArrayList` that is filled and gone over (55 ms), a `for` over a `List`

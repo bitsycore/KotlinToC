@@ -498,6 +498,20 @@ Most fixes of a difference from Kotlin land in the importer, which is also the l
 (`BodyLowering.kt` and `KirImport.kt` are four tenths of the code). Its sources have KDoc on
 nearly every function; this is the map.
 
+**The driver**, around the passes:
+
+- `Main.kt` reads the command; `Project.kt` reads module files, fetches what they name, and
+  builds the C (directly or through the `CMakeLists.txt` it writes).
+- `Daemon.kt` is the process `ktc2` keeps running: the command sends its arguments to it and
+  prints what comes back. `Main.runCommand` is what either of them runs.
+- `frontend/K2Frontend.kt` prepares a compilation (the library sources, the bindings, the
+  options) and starts the Kotlin compiler: as one call (`K2JVMCompiler.exec`) in a process
+  that compiles once, or through `frontend/PhasedCompiler.kt` in one that compiles again and
+  again, which runs the compiler's phases itself so that the library is resolved only once.
+  Either way the compiler calls `Ktc2Extension.generate` with the IR of the library and the
+  program together, and everything below starts there.
+- `kir/Kir.kt` is KIR; `KirDump.kt` writes it as text, `KirCopy.kt` copies a function.
+
 **`KirImporter`** (`frontend/KirImport.kt`) owns everything that exists once per program:
 
 - `classFor`, `structFor`, `functionFor`, `globalFor` turn an IR declaration, with its type
@@ -518,6 +532,10 @@ nearly every function; this is the map.
   `settleInitialization`.
 - `unsupported` records an error with its file and line. Errors do not stop the import: all
   of them are printed, and the count goes back to the driver through a system property.
+  `warnings` are printed and stop nothing.
+- A `@SimpleEnum` class is a `KStruct` with one field and `enumEntries` (`declareSimpleEnum`);
+  the object that stands for a value where one is needed is made by `simpleEnumBox`, the
+  lookup of a constructor property by `simpleEnumProperty`.
 
 **`BodyBuilder`** (`frontend/BodyLowering.kt`) builds the KIR of one function body:
 
@@ -543,13 +561,15 @@ nearly every function; this is the map.
 | Node | Exists |
 |---|---|
 | `KThrow`, `KTryRegion` | from the importer until `ExceptionLowering`, which removes them |
-| `KAlloc.onStack`, `KArrayNew.onStack`, `KConcat.onStack`, `KStackSlot`, calls to `name__into` | set or added by `EscapeAnalysis` |
+| `KAlloc.onStack`, `KArrayNew.onStack`, `KConcat.onStack`, `KStackSlot`, calls to `name__into` (a dispatcher's has `KFunction.slotClasses`), the locals `ktc2_roomN_0/1` | set or added by `EscapeAnalysis` |
 | `KRetain`, `KRelease`, `releasesOld` on stores, calls to `name__b` / `name__m` | added by `ArcInsert`; before it no counting exists |
 | `KIndexRead.isChecked`, `KIndexSet.isChecked` | set by `RangeChecks` when the index is proven in range, and by `ExceptionLowering` when it put the test in front of the statement |
 | calls to a dispatcher | fewer after `Devirtualize`, which replaces the ones it can resolve by `KCall`s to the implementation (under a `KRefCast` when the types of the two differ) |
+| functions `name__cN` | copies made by `Devirtualize` for the classes a function is called with; ordinary functions for every pass after it |
+| a returned call | always through a local after `ExceptionLowering` (`let x = f(); return x`), whether or not it can throw: `BorrowedReturns` and `EscapeAnalysis` look for the result of a call there |
 
-There is no dump of KIR. What a pass produced is read in the generated C, which follows KIR
-closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.kt.txt`) and KIR as text
+What a pass produced can be read in the generated C, which follows KIR closely, and in the
+dumps: `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.kt.txt`) and KIR as text
 after the importer and after each pass (`kir/0-import.txt`, `1-devirtualize.txt`,
 `2-exceptionlowering.txt`, `3-escapeanalysis.txt`, `4-arcinsert.txt`): the functions of the
 program itself, or with `KTC2_DUMP_KIR=<text>` those whose C name contains the text (`all`
@@ -561,7 +581,15 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
 - `ArcInsert`, `Effects`, `BorrowedReturns`, `EscapeAnalysis`: a wrong "this can be borrowed"
   or "this stays in the frame" is a use of freed memory. Test builds overwrite freed objects
   to make that fail; the cases known to be delicate are in `integration/objects/Borrowing.kt`,
-  `LastUse.kt` and `ThreadBorrowing.kt`.
+  `LastUse.kt`, `ThreadBorrowing.kt`, `DispatchedResults.kt`, `Reassigned.kt` and
+  `ReturnedCalls.kt`. After any change there, compare the counts of the benchmarks and of
+  the suite as well as the output: a pass that silently stops applying shows only there.
+- `Storage.at` and `Storage.put` in the platform layer do not test the index: they are for
+  code that has made sure of it and whose storage cannot shrink meanwhile (`ArrayList`).
+  Used anywhere else they are memory errors that only AddressSanitizer reports.
+- `PhasedCompiler.kt` calls the Kotlin compiler's internals. A program compiled on the kept
+  library that differs from the same program compiled alone points there first
+  (`KTC2_KEEP_LIBRARY=0` to compare).
 - `Devirtualize`: a wrong "this receiver is of class C" calls the method of another class on
   the object. The static type of a reference is not always its class: the importer shares the
   code of a local class between the instantiations of the generic class around it, so that
