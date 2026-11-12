@@ -418,8 +418,11 @@ int64_t ktc2_threadStart(ktc2_Obj* thread);
 /** Waits for the thread behind [handle] to end and gives the handle up. */
 void ktc2_threadJoin(int64_t handle);
 
-/** The time of day in nanoseconds since 1970 (`System.currentTimeMillis`, `System.nanoTime`). */
+/** The time of day in nanoseconds since 1970 (`System.currentTimeMillis`). */
 int64_t ktc2_timeNanos(void);
+
+/** A counter that only goes forward, in nanoseconds (`System.nanoTime`, `kotlin.time`): setting the clock does not move it. */
+int64_t ktc2_ticksNanos(void);
 
 /** `a / b` for a `b` that is written as zero in the program: infinity or NaN, as Kotlin has it. */
 double ktc2_divide_by_zero(double a, double b);

@@ -92,7 +92,10 @@ an object the same function made, which stays in the frame itself; nor does hand
 function that only stores it into the object of another argument (a constructor, a setter:
 `Keeper(Item())` held by a local allocates neither), which is recorded per parameter
 (`mParamHeld`). Inside that function the object it stores into was passed in and outlives the
-call, so what it creates and stores there is not put in its own frame. That is what a closure
+call, so what it creates and stores there is not put in its own frame. The same goes for a
+function that stores an argument into the new object it returns (`iterator()` keeps the list
+it goes over): the argument is held by the local that receives the result (`mResultHeld`), so
+a list that is filled and gone over with `for` never leaves the frame. That is what a closure
 does with the variables its lambda uses, so a lambda that is only called, not kept, costs no
 allocation for itself, for the objects it uses or for the cells of the `var`s it writes. The
 condition is that no read of that field anywhere in the program lets the value out (returns
@@ -457,14 +460,10 @@ Kotlin, but not done:
 Known to differ from the JVM:
 - the last digit of `exp`, `ln`, `pow`, `sin` and the like is the C library's, which is not
   everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library);
-- `ConcurrentModificationException` is never thrown: a list changed while it is iterated
-  goes on with what it holds;
 - a `HashMap` entry removed through an iterator stays in the map's storage until the map is
   rebuilt or cleared (the `Map.Entry` handed out still reads it, as on the JVM): the key and
   value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
   and every removal from an `ArrayList`, let go at once;
-- the clock behind `kotlin.time` and `measureTimeMillis` is the clock of the day, not a
-  monotonic counter: setting the system clock during a measurement shows in the result;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
 
 ---------------------------------------------------------------------------
@@ -543,6 +542,9 @@ closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.k
   test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
   `ranges`, `handover`, `brief`, `walk`, `owned`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
+- A function of the C runtime that can leave with an exception has to be named in
+  `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the
+  exception shows up later, somewhere else. There are three today.
 - `hidden.txt` and `files.txt`: a class hidden too much or too little shows as an unresolved
   or an ambiguous call inside library sources, far from the cause.
 - The copy of the stdlib jar without the hidden classes is cached in the system's temporary

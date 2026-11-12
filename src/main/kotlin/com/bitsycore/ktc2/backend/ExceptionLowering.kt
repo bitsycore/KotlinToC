@@ -53,7 +53,7 @@ class ExceptionLowering(private val mModule: KModule) {
 	}
 
 	/** True when [inFunction] can leave with a parked exception. */
-	fun mayThrow(inFunction: KFunction): Boolean = inFunction in mMayThrow
+	fun mayThrow(inFunction: KFunction): Boolean = inFunction in mMayThrow || (mChecksThrow && inFunction.raisesInRuntime())
 
 	private fun callOf(inValue: KExpr?): KCall? = when (inValue) {
 		is KCall -> inValue
@@ -61,7 +61,7 @@ class ExceptionLowering(private val mModule: KModule) {
 		else -> null
 	}
 
-	private fun callThrows(inValue: KExpr?): Boolean = callOf(inValue)?.function?.let { it in mMayThrow } == true
+	private fun callThrows(inValue: KExpr?): Boolean = callOf(inValue)?.function?.let { mayThrow(it) } == true
 
 	/** The expression of [inStatement] that may be a call, if it has one. */
 	private fun valueOf(inStatement: KStmt): KExpr? = when (inStatement) {

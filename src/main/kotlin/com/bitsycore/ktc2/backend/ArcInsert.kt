@@ -829,7 +829,17 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 			}
 			// In the borrowed form of a function, the calls its result comes from were checked when it qualified.
 			if (mBorrowedForm?.callLocals?.get(inLocal) !== vCall.function) {
-				val vRest = mEffects.of(mRest)
+				var vRest = mEffects.of(mRest)
+				// Overwritten later in the block, but not before the local is used for the last time: the
+				// result can be borrowed that long, as a value read from the place itself can.
+				var vIsBrief = false
+				if (vInfo.place.isWrittenBy(vRest) && mBorrowsBriefly && !vInfo.isMixed) {
+					val vWhileUsed = writtenWhileUsed(inLocal)
+					if (!vInfo.place.isWrittenBy(vWhileUsed)) {
+						vRest = vWhileUsed
+						vIsBrief = true
+					}
+				}
 				if (vInfo.place.isWrittenBy(vRest)) {
 					if (System.getenv("KTC2_DEBUG_BORROW") != null) {
 						System.err.println("ktc2: borrow: result of ${vCall.function.cName} in ${inLocal.cName}: the rest of the block writes all=${vRest.all} elements=${vRest.elements && vInfo.place.elements} fields=${vInfo.place.fields.filter { vRest.writesField(it) }.map { it.cName }}")
@@ -841,7 +851,8 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 					if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: an argument may not stay")
 					return null
 				}
-				if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: borrowed")
+				if (vIsBrief) mBriefly += inLocal
+				if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: borrowed${if (vIsBrief) " up to its last use" else ""}")
 			}
 			// A mixed result may be an object of its own: it then also goes into a variable that owns it,
 			// this function's (declared empty, released with the block) or, in a `__m` form, the caller's.

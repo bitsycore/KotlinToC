@@ -26,6 +26,7 @@ static _Noreturn void fail(const char* exception, const char* message)
 /* `ktc2.internal`, generated with the program: each throws the exception Kotlin specifies. */
 void ktc2_internal_throwIndexOutOfBounds(int32_t index, int32_t size);
 void ktc2_internal_throwStringIndexOutOfBounds(int32_t index, int32_t length);
+void ktc2_internal_throwSubstringRange(int32_t begin, int32_t end, int32_t length);
 void ktc2_internal_throwDivideByZero(void);
 #endif
 
@@ -1258,6 +1259,10 @@ int32_t ktc2_stringRegionEquals(ktc2_String* s, int32_t offset, ktc2_String* oth
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
 {
 	if (start < 0 || end > s->length || start > end) {
+#ifdef KTC2_CHECKS_THROW
+		ktc2_internal_throwSubstringRange(start, end, s->length);
+		return NULL;
+#endif
 		fflush(stdout);
 		fprintf(stderr, "Exception in thread \"main\" java.lang.StringIndexOutOfBoundsException: begin %" PRId32 ", end %" PRId32 ", length %" PRId32 "\n", start, end, s->length);
 		exit(1);
@@ -1715,6 +1720,33 @@ int64_t ktc2_timeNanos(void)
 	return (int64_t)now.tv_sec * INT64_C(1000000000) + now.tv_nsec;
 #else
 	return (int64_t)time(NULL) * INT64_C(1000000000);
+#endif
+}
+
+/* Strict C11 hides the POSIX clock on Linux: it is there all the same, and CLOCK_MONOTONIC is 1. */
+#if !defined(_WIN32) && !defined(CLOCK_MONOTONIC) && defined(__linux__)
+int clock_gettime(int clock, struct timespec* now);
+#define KTC2_CLOCK_MONOTONIC 1
+#elif defined(CLOCK_MONOTONIC)
+#define KTC2_CLOCK_MONOTONIC CLOCK_MONOTONIC
+#endif
+
+/* A counter that only goes forward, in nanoseconds from some moment: what durations are measured with. */
+int64_t ktc2_ticksNanos(void)
+{
+#if defined(_WIN32)
+	LARGE_INTEGER count;
+	LARGE_INTEGER rate;
+	QueryPerformanceCounter(&count);
+	QueryPerformanceFrequency(&rate);
+	/* Whole seconds and the rest apart: the product of the two would not fit. */
+	return (int64_t)(count.QuadPart / rate.QuadPart) * INT64_C(1000000000) + (int64_t)(count.QuadPart % rate.QuadPart) * INT64_C(1000000000) / rate.QuadPart;
+#elif defined(KTC2_CLOCK_MONOTONIC)
+	struct timespec now;
+	clock_gettime(KTC2_CLOCK_MONOTONIC, &now);
+	return (int64_t)now.tv_sec * INT64_C(1000000000) + now.tv_nsec;
+#else
+	return ktc2_timeNanos();
 #endif
 }
 

@@ -3,7 +3,7 @@
 package kotlin.time
 
 import kotlin.time.TimeSource.Monotonic.ValueTimeMark
-import ktc2.internal.timeNanos
+import ktc2.internal.ticksNanos
 
 /*
 What the standard library's kotlin.time leaves to its platform: the units of a duration and
@@ -100,9 +100,9 @@ internal actual typealias ValueTimeMarkReading = Long
  * use: setting that clock while the program runs moves it.
  */
 internal actual object MonotonicTimeSource : TimeSource.WithComparableMarks {
-	private val mZero: Long = timeNanos()
+	private val mZero: Long = ticksNanos()
 
-	private fun read(): Long = timeNanos() - mZero
+	private fun read(): Long = ticksNanos() - mZero
 
 	override fun toString(): String = "TimeSource(System.nanoTime())"
 

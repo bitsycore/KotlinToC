@@ -13,6 +13,53 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
+## Where the work stands (2026-11-12)
+---------------------------------------------------------------------------
+
+For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
+works; this is what those do not say.
+
+**State.** Everything is on `master`. The suite passes on macOS (Apple clang, ARM64): 103
+programs, and AddressSanitizer (`tools/asan.sh`) is clean on the ones it was run on (the
+showcase, and the tests of counting and of the frame: `Borrowing`, `LastUse`, `Walking`,
+`OwnedParameters`, `HeldInFrame`, `Deinit`, `Cleaners`, `Collections`, `ConcurrentModification`,
+`StringRanges`).
+
+**Not run anywhere else.** Windows was last run before the work of 2026-11-12, Linux never.
+Run the suite there before anything else. What was written for those systems without being
+run:
+- `ktc2_ticksNanos` (`ktc2_core.c`): the `QueryPerformanceCounter` branch, and on Linux a
+  hand-written prototype of `clock_gettime`, which strict C11 hides;
+- `ktc2_frame_address`, `KTC2_ALWAYS_INLINE`, `ktc2_seldom` (top of `ktc2_core.h`): the MSVC
+  branch;
+- `ktc2_destroy` puts objects aside by how far the stack has grown, and takes the stack to
+  grow downwards;
+- `ktc2_TypeInfo` has a fourth field (`deinit`), and small strings and arrays come from the
+  pool: nothing specific to a system, but new since the last run there.
+
+**Waiting for a decision of the owner** (do not build these unasked):
+- the enum that is a number (part 8): whether, and under what name;
+- whether `deinit` runs through the superclasses by itself, as in Swift, or stays an ordinary
+  `override` that calls `super.deinit()` (part 0);
+- the new name of the package of the SDL3 module (part 8);
+- any addition to the `ktc2.` package: propose it here first. The model is `ktc2.concurrent`
+  and `createCleaner`: one API that is plain Kotlin on the JVM and the native thing in C.
+
+**How the work went, and should go on.** One item at a time: a program under `integration/`
+that shows it, the change, the whole suite, `tools/asan.sh` on the programs it touches,
+`tools/bench.py --compare`, the documents, a commit. Every optimization of counting or of the
+frame got a test that also holds the cases where it must *not* apply (the value that gets out,
+the place that is overwritten): those are what caught the mistakes. Three were made and found
+that way, and are worth knowing:
+- an object created inside a constructor and stored into `this` was put in the constructor's
+  own frame: held by an object that was passed in means it outlives the call;
+- letting a `var` borrow from a temporary kept `var x = T(); x = null` alive to the end of the
+  block;
+- borrowing in `node = node.next` when the walk starts from a variable at its last use made
+  the benchmark slower: the list was then given up whole at the end. A count removed is not
+  always time saved: measure.
+
+---------------------------------------------------------------------------
 ## Where the benchmarks stand
 ---------------------------------------------------------------------------
 
@@ -21,12 +68,12 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 
 | | Before | Now | Now, LTO | Allocations | Retains |
 |---|---|---|---|---|---|
-| Collections | 0.527 s | 0.344 s | 0.258 s | 4.50 M, unchanged | 11.9 M -> 8.8 M |
-| Dispatch | 0.508 s | 0.371 s | 0.205 s | 6.52 M -> 6.50 M | 5.0 M, unchanged |
-| Numeric | 0.279 s | 0.278 s | 0.268 s | 44 | 0 |
-| Objects | 0.473 s | 0.194 s | 0.146 s | 26.0 M, unchanged | 58.0 M -> 32.0 M |
-| Strings | 1.207 s | 0.319 s | 0.275 s | 1.20 M, unchanged | 3.9 M, unchanged |
-| Threads | 0.352 s | 0.263 s | 0.136 s | 5.54 M, unchanged | 17.0 M -> 11.7 M |
+| Collections | 0.527 s | 0.290 s | 0.275 s | 4.50 M, unchanged | 11.9 M -> 8.7 M |
+| Dispatch | 0.508 s | 0.365 s | 0.211 s | 6.52 M -> 6.50 M | 5.0 M, unchanged |
+| Numeric | 0.279 s | 0.264 s | 0.271 s | 44 | 0 |
+| Objects | 0.473 s | 0.193 s | 0.155 s | 26.0 M, unchanged | 58.0 M -> 16.0 M |
+| Strings | 1.207 s | 0.298 s | 0.260 s | 1.20 M, unchanged | 3.9 M -> 2.7 M |
+| Threads | 0.352 s | 0.189 s | 0.129 s | 5.54 M, unchanged | 17.0 M -> 6.2 M |
 
 Programs are also 30 to 45 % smaller with LTO. What these numbers say about what is left:
 the number of allocations did not move in the benchmarks (the iterators that left the heap
@@ -98,6 +145,7 @@ sources (`KTC2_TIMING=1`).
 | [ ] Small strings inside the header, no block of their own | medium for string-heavy code | medium |
 | [x] A size-class allocator in the runtime for small objects: those of a class or a box, up to 128 bytes, come from per-thread lists of freed blocks of their size (`KTC2_NO_POOL` turns it off) | Objects 0.39 s -> 0.19 s; 10 to 15 % elsewhere | low to medium |
 | [x] The same for small strings and arrays, whose size is not that of their type: the size is found in the object when it is freed (`pool_size_of`) | Strings -4 % | low |
+| [x] A list that is only filled and gone over with `for` stays in the frame: `iterator()` stores the list in the iterator it returns, which is "held by the result" and no longer an escape. The caller follows the local that receives the result | common in ordinary code | low |
 | [x] What a constructor or a setter keeps stays in the frame with the object that keeps it (`Keeper(Item())` as a local: neither is allocated). A parameter stored into a field of the object of another parameter is "held" by it, not escaped; the caller decides by where its own object goes | every object built around others | medium |
 | [~] Reuse the storage of an object freed just before one of the same class is made. The pool does this already: its lists are last in, first out, so the block just freed is the next one handed out. Left: skipping the pool altogether when the compiler can see the pair, which saves a few instructions | low now | medium |
 | [x] A cache of boxes for small integers: -128..127 as `Int` and `Long`, characters below 128, the Booleans, static and immortal as on the JVM | low to medium | low |
@@ -121,7 +169,7 @@ write to an array of references.
 | [ ] A "shared" bit per object, so counts are atomic only for objects another thread can reach | high for threaded programs | high; a mistake is a data race. Needs a transitive mark when an object is shared and a barrier on stores into shared objects |
 | [x] Merge a retain with a later release of the same object: a local hands its reference over at its last read (`t = T(); init(t); x.f = t`), not only when it is read once | Objects: retains -45 % | medium |
 | [x] Borrow up to the last use when the place is overwritten after it (`x.f = g(x.f)`) | part of the same -45 % | medium |
-| [ ] The same last-use rule for the result of a borrowed call (`BorrowedReturns`): today it needs the whole rest of the block to leave the place alone | low to medium | low |
+| [x] The same last-use rule for the result of a borrowed call (`BorrowedReturns`): when the place is written later in the block but not before the local's last use, the result is borrowed that long. Not for the `__m` form, whose result may be the caller's own | low to medium | low |
 | [x] A `var` local that walks a structure (`node = node.next`) borrows when nothing in the rest of the block writes the fields it follows. Not when it starts from a local at its last use (the walk then consumes the structure, which measured faster than giving it up whole: Objects 0.20 s against 0.25 s) | one retain and release less per step | medium |
 
 ---------------------------------------------------------------------------
@@ -136,7 +184,7 @@ write to an array of references.
 | [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
 | [ ] Small generated functions as `static inline` in the headers | medium: inlining across files needs LTO today | low |
 | [ ] Instantiate generic classes for hot reference types too, not only for numbers | medium: no casts, more direct calls | high, more code |
-| [ ] Dispatcher cases ordered by how often each class is created | low | low |
+| [x] Dispatcher cases ordered by how often each class is created: not needed. A dispatcher is a `switch` on the type id, which the C compiler turns into a table or a search of its own; the order of the cases changes nothing | none | - |
 
 ---------------------------------------------------------------------------
 ## 5. Exceptions and checks
@@ -145,7 +193,7 @@ write to an array of references.
 | | Gain | Effort |
 |---|---|---|
 | [x] A whole-program "cannot throw" answer per function, so calls to such functions are not followed by a test (`ExceptionLowering.mMayThrow` was there; direct calls and proven array accesses now make more functions qualify) | medium to high | medium |
-| [ ] The same answer for the runtime's functions and for dispatchers' defaults, one by one: a call to an `external` function that can park an exception is trusted not to today | correctness more than speed: check each | low |
+| [x] The same answer for the runtime's functions and for dispatchers' defaults. Checked one by one: three could leave with an exception and were trusted not to (`ktc2_cs_get`, `ktc2_cs_subSequence`, `ktc2_stringSubstring`), so a bad index on a `String` seen as a `CharSequence` was not caught, and `substring` with a bad range ended the program. They are listed in `kRaisingRuntime` (`Kir.kt`); the others end the program on purpose (`AbstractMethodError`, a cast that cannot happen) | correctness | low |
 | [ ] The failure in the return value, not in a thread-local slot | medium in threaded programs | high: changes how every function is called |
 | [~] No bounds check in a loop whose index is known to be in range (`RangeChecks`): the loops over an array, its `indices`, `0 until size` and `Array(n) { }`. With clang at `-O2` the time does not change (it removed those tests itself); the code is smaller and such functions no longer count as throwing. Left: `while (i < a.size)`, `i + 1` under `i < size - 1`, a `downTo` loop, `list[i]` under `i < list.size`, strings | medium for array code | medium |
 | [x] An array store is tested once: `ArcInsert` dropped the "already tested" mark, so every store was tested by the generated code and again by the runtime | small, everywhere | low |
@@ -187,9 +235,10 @@ Decided, not started:
 
 Open:
 
-- [ ] **`ConcurrentModificationException`.** Never thrown: `ArrayList` and `HashMap` have no
-  modification count, so a list changed while it is iterated goes on. A difference from the
-  JVM, found while testing the iterators. One compare per `next()`.
+- [x] **`ConcurrentModificationException`.** `ArrayList` and `HashMap` (and what is built on
+  it: `LinkedHashMap`, the sets) count their changes, and their iterators fail as on the JVM,
+  the cases the JVM does not notice included, and `sort()` counts as a change. One compare per
+  `next()`. Left: the lists built on `AbstractMutableList` do not check.
 - [ ] **The last digit of `exp`, `ln`, `pow`, `sin`.** It is the C library's. To print what
   the JVM prints on every system, the runtime would carry fdlibm's versions (what
   `StrictMath` is); a few hundred lines of C. Until then DESIGN.md lists it as a difference.
@@ -210,7 +259,9 @@ Open:
   `cl /E` it would need neither.
 - [ ] **Paths and arguments on Windows** are taken as bytes: right for ASCII only. Use the
   wide-character functions.
-- [ ] **A monotonic clock** behind `kotlin.time`.
+- [x] **A monotonic clock** behind `kotlin.time` and `measureTimeMillis`
+  (`ktc2_ticksNanos`: `QueryPerformanceCounter`, `clock_gettime(CLOCK_MONOTONIC)`). The
+  Windows and Linux branches are written and not yet run.
 - [ ] `Clock` and `Instant`; the `U` flag of `Regex`; case of characters beyond U+FFFF.
 - [ ] **A `.klib`-like way to ship a module.** Today a module is its sources (a directory or a
   git repository). The Kotlin compiler ktc2 runs is the JVM one and cannot read klibs, and
@@ -221,24 +272,27 @@ Open:
   storage only), with the two examples that import it.
 - [ ] **A dump of KIR**, before and after each pass: today a pass's result is only visible in
   the generated C.
-- [ ] **A test that must fail to compile.** The harness cannot assert an error, so
-  `JavaUseCheck` and the other refusals are only checked by hand.
+- [x] **A test that must fail to compile.** A program with a `<Name>.errors` file next to it
+  has to be refused, with a message that contains each line of that file
+  (`integration/errors/`). Two so far: a use of `java.*`, and `Deinit` on a `@Struct`. The
+  other refusals (inline storage that would need a copy, `@Value` that cannot stay in the
+  frame) still want one each.
 
 ---------------------------------------------------------------------------
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. Objects that never leave their function as plain locals, and closures in the frame (2):
-   the number of allocations is what did not move.
-2. Owned parameters for constructors and setters (3): an argument stored by the callee and
-   released by the caller is a retain and a release that cancel. To be counted first
-   (`tools/retain_profile.sh`) on Objects and Collections.
-3. Iterators for parameters that receive several classes, and the index loop over lists (2).
-4. Linux, and a CI job per system with an AddressSanitizer run (0).
-5. `ConcurrentModificationException` (8): the one known place where a program that runs
-   differs from the JVM in what it does.
+1. Windows and Linux (0): run the suite, see "Where the work stands". Then a CI job per
+   system with an AddressSanitizer run.
+2. A dump of KIR before and after each pass (8): every pass was debugged through the
+   generated C so far; small, and it pays for itself at the next wrong count.
+3. A benchmark of ordinary code. The six there are do not show what the frame work of
+   2026-11-12 bought (their objects all get out): something that builds local lists, small
+   holders and lambdas, so that the next changes of part 2 can be measured.
+4. Iterators for parameters that receive several classes, and the index loop over lists (2).
+5. More shapes for `RangeChecks` (5), templates built in place (6).
 6. The compiler kept running (1): the biggest change to how ktc2 feels.
-7. Decide the enum that is a number (8).
+7. The decisions listed in "Where the work stands".
 
 ---------------------------------------------------------------------------
 ## Measuring

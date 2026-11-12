@@ -31,6 +31,9 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	private var used: Int = 0
 	private var live: Int = 0
 
+	/** How many times a key was added or removed, as `modCount` on the JVM: see [HashMapCursor]. */
+	internal var changes: Int = 0
+
 	public actual constructor() : this(8)
 
 	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(initialCapacity)
@@ -129,6 +132,7 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		link(used)
 		used++
 		live++
+		changes++
 		return null
 	}
 
@@ -156,6 +160,7 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		table = IntArray(tableSizeFor(8))
 		used = 0
 		live = 0
+		changes++
 	}
 
 	actual override val keys: MutableSet<K> get() = HashMapKeys(this)
@@ -184,6 +189,7 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	internal fun removeEntry(index: Int) {
 		liveArray[index] = false
 		live--
+		changes++
 	}
 
 	override fun toString(): String {
@@ -224,27 +230,40 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	}
 }
 
-/** Walks the live entries of a map; [next] yields the entry index. */
+/**
+ * Walks the live entries of a map; [next] yields the entry index. As on the JVM the entry
+ * after the one handed out is found at once, so `hasNext` answers from what the map held
+ * then, and `next` fails with `ConcurrentModificationException` when a key was added or
+ * removed otherwise than through this cursor.
+ */
 private class HashMapCursor<K, V>(private val map: HashMap<K, V>) {
-	private var index = 0
+	private var coming = liveFrom(0)
 	private var last = -1
+	private var expected = map.changes
 
-	fun hasNext(): Boolean {
-		while (index < map.entryLimit() && !map.isLiveEntry(index)) index++
-		return index < map.entryLimit()
+	/** The index of the first live entry at or after [from], or -1. */
+	private fun liveFrom(from: Int): Int {
+		var vIndex = from
+		while (vIndex < map.entryLimit() && !map.isLiveEntry(vIndex)) vIndex++
+		return if (vIndex < map.entryLimit()) vIndex else -1
 	}
 
+	fun hasNext(): Boolean = coming >= 0
+
 	fun next(): Int {
-		if (!hasNext()) throw NoSuchElementException()
-		last = index
-		index++
+		if (map.changes != expected) throw ConcurrentModificationException()
+		if (coming < 0) throw NoSuchElementException()
+		last = coming
+		coming = liveFrom(coming + 1)
 		return last
 	}
 
 	fun remove() {
 		if (last < 0) throw IllegalStateException()
+		if (map.changes != expected) throw ConcurrentModificationException()
 		map.removeEntry(last)
 		last = -1
+		expected = map.changes
 	}
 }
 

@@ -2603,6 +2603,9 @@ internal class BodyBuilder(
 			inName == "compareTo" -> KIntrinsic("ktc2_str_compare", vOperands, kIntType)
 			inName == "hashCode" -> KIntrinsic("ktc2_str_hashCode", vOperands, kIntType)
 			inName == "toString" -> vOperands[0]
+			// `subSequence` of a string is `substring`: the runtime function behind it.
+			inName == "subSequence" -> mImporter.internalFunction("stringSubstring")?.let { mImporter.functionFor(it) }
+				?.let { adapt(KCall(it, vOperands), inCall) } ?: fail(inCall, "call to 'kotlin.String.subSequence'")
 			inName == "equals" && vOperands[1].type == KStringType -> KIntrinsic("ktc2_str_equals", vOperands, kBoolType)
 			inName == "equals" -> KCall(
 				mImporter.runtime("ktc2_any_equals", listOf(KObjType, KObjType), kBoolType),

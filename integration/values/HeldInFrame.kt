@@ -186,6 +186,50 @@ fun keepers(): Int {
 	return vTotal
 }
 
+// ==================
+// MARK: Kept by what a function returns
+// ==================
+
+var gIterator: Iterator<Item>? = null
+
+fun iterated(): Int {
+	val vItems = ArrayList<Item>()
+	for (vIndex in 0 until 4) vItems.add(Item("item $vIndex"))
+	var vTotal = 0
+	for (vItem in vItems) vTotal += vItem.name.length
+	return vTotal
+}
+
+fun iteratorOut(): Iterator<Item> {
+	val vItems = ArrayList<Item>()
+	vItems.add(Item("behind a returned iterator"))
+	return vItems.iterator()
+}
+
+fun iteratorKept() {
+	val vItems = ArrayList<Item>()
+	vItems.add(Item("behind a kept iterator"))
+	gIterator = vItems.iterator()
+}
+
+fun iteratorOutlives(): String {
+	var vLater: Iterator<Item>? = null
+	if (gKept.size >= 0) {
+		val vItems = ArrayList<Item>()
+		vItems.add(Item("behind an iterator of an outer block"))
+		vLater = vItems.iterator()
+	}
+	return vLater?.next()?.name ?: "none"
+}
+
+fun elementOut(): Item? {
+	val vItems = ArrayList<Item>()
+	vItems.add(Item("an element that gets out"))
+	var vFound: Item? = null
+	for (vItem in vItems) vFound = vItem
+	return vFound
+}
+
 fun lambdaKept(): () -> String {
 	val vItem = Item("in a lambda that is returned")
 	return { vItem.name }
@@ -213,4 +257,10 @@ fun main() {
 	println(spareOfKeeper()?.name)
 	println("${announced()} ${gLast?.name}")
 	println(keepers())
+	println(iterated())
+	println(iteratorOut().next().name)
+	iteratorKept()
+	println(gIterator?.next()?.name)
+	println(iteratorOutlives())
+	println(elementOut()?.name)
 }

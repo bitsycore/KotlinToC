@@ -62,5 +62,7 @@ tasks.test {
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// The integration programs and the bundled runtime are inputs of the oracle test.
 	inputs.dir("integration")
-	testLogging { events("failed"); showStandardStreams = true; exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+	// KTC2_TEST_VERBOSE=1 prints a line for each program as it passes, to follow a run in a terminal.
+	val vEvents = if (System.getenv("KTC2_TEST_VERBOSE") != null) arrayOf("passed", "failed", "skipped") else arrayOf("failed")
+	testLogging { events(*vEvents); showStandardStreams = true; exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }

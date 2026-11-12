@@ -499,6 +499,16 @@ fun KExpr.anyNode(inTest: (KExpr) -> Boolean): Boolean = inTest(this) || childre
  * True for an operation Kotlin defines to fail with an exception: indexing an array or a
  * string, and an integer division whose divisor is not a constant other than zero.
  */
+/**
+ * The functions of the C runtime that can leave with an exception parked, like the checks
+ * below: a call to one is followed by the test, and the program then needs the functions
+ * that throw.
+ */
+private val kRaisingRuntime = setOf("ktc2_cs_get", "ktc2_cs_subSequence", "ktc2_stringSubstring")
+
+/** True for one of those functions, and for a dispatcher that falls back on one (a `String` seen as a `CharSequence`). */
+fun KFunction.raisesInRuntime(): Boolean = (isExternal && cName in kRaisingRuntime) || dispatchDefault?.cName in kRaisingRuntime
+
 fun KExpr.isRuntimeCheck(): Boolean = when (this) {
 	is KIndexRead -> !isChecked
 	is KBinary -> (op == KBinaryOp.DIV || op == KBinaryOp.REM) && !operandType.isFloating &&

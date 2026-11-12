@@ -114,6 +114,9 @@ public external fun readLineBytes(): ByteArray?
 /** The time of day, in nanoseconds since 1970. */
 public external fun timeNanos(): Long
 
+/** A counter that only goes forward, in nanoseconds from some moment: for measuring durations. */
+public external fun ticksNanos(): Long
+
 /** What `Any()` creates. */
 private class PlainObject
 
@@ -213,6 +216,10 @@ public fun throwIndexOutOfBounds(index: Int, size: Int): Nothing =
 /** A string index outside the string. */
 public fun throwStringIndexOutOfBounds(index: Int, length: Int): Nothing =
 	throw StringIndexOutOfBoundsException("Index $index out of bounds for length $length")
+
+/** A range that is not inside the string, given to `substring` or `subSequence`. */
+public fun throwSubstringRange(begin: Int, end: Int, length: Int): Nothing =
+	throw StringIndexOutOfBoundsException("Range [$begin, $end) out of bounds for length $length")
 
 /** An integer division or remainder by zero. */
 public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")

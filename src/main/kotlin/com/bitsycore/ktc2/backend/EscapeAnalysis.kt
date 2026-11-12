@@ -56,6 +56,13 @@ class EscapeAnalysis(private val mModule: KModule) {
 	private val mParamHeld = HashMap<KLocal, MutableSet<Pair<Int, Any>>>()
 
 	/**
+	 * For a parameter that a function stores into the new object it returns (`iterator()` keeping
+	 * the list it goes over): the fields, by [fieldKey]. What a caller passes then lives as long
+	 * as what it does with the result, and no longer.
+	 */
+	private val mResultHeld = HashMap<KLocal, MutableSet<Any>>()
+
+	/**
 	 * What a field is known by: itself, or its name in its family of generic instantiations,
 	 * whose code may read an object of one instantiation through the field of another.
 	 */
@@ -141,7 +148,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 		inFunction.params.forEachIndexed { vIndex, vParam ->
 			// An implementation that stores it into the object of another parameter keeps it, as far as a dispatcher can tell.
 			val vEscapes = inFunction.dispatchDefault != null ||
-				inFunction.dispatch!!.any { (_, vTarget) -> vTarget.params.getOrNull(vIndex)?.let { it in mEscaping || it in mParamHeld } != false }
+				inFunction.dispatch!!.any { (_, vTarget) -> vTarget.params.getOrNull(vIndex)?.let { it in mEscaping || it in mParamHeld || it in mResultHeld } != false }
 			if (vEscapes && vParam !in mEscaping) {
 				mEscaping[vParam] = "kept by an implementation"
 				vChanged = true
@@ -210,6 +217,9 @@ class EscapeAnalysis(private val mModule: KModule) {
 
 		/** For each local, where it is stored into the object of a parameter of this function: see [mParamHeld]. */
 		private val mParamHolds = HashMap<KLocal, MutableSet<Pair<Int, Any>>>()
+
+		/** For each local, the fields through which the new object this function returns holds it: see [mResultHeld]. */
+		private val mResultHolds = HashMap<KLocal, MutableSet<Any>>()
 
 		/** What was stored into a field of an object made here, and what is read from fields into locals, by [fieldKey]. */
 		private val mStored = ArrayList<Pair<Any, KLocal>>()
@@ -304,9 +314,10 @@ class EscapeAnalysis(private val mModule: KModule) {
 			}
 		}
 
-		private fun call(inValue: KExpr?) {
+		/** Looks at what the call [inValue] does with its arguments; [inTarget] is the local that receives its result, if one does. */
+		private fun call(inValue: KExpr?, inTarget: KLocal? = null) {
 			when (inValue) {
-				is KRefCast -> call(inValue.operand)
+				is KRefCast -> call(inValue.operand, inTarget)
 				is KCall -> inValue.arguments.forEachIndexed { vIndex, vArgument ->
 					val vFunction = inValue.function
 					if (parameterEscapes(vFunction, vIndex)) {
@@ -315,6 +326,19 @@ class EscapeAnalysis(private val mModule: KModule) {
 						// Stored by the function into the object of another argument: held by that one.
 						mParamHeld[vFunction.params[vIndex]]?.toList()?.forEach { (vHolder, vField) ->
 							hold(vArgument, inValue.arguments.getOrNull(vHolder), vField, "passed to ${vFunction.cName}, which keeps it")
+						}
+						// Stored by the function into the new object it returns: held by the local that gets it, when
+						// that local holds nothing else. Returned or dropped, the result is out of sight.
+						mResultHeld[vFunction.params[vIndex]]?.toList()?.forEach { vField ->
+							if (vField in mLeaky || inTarget == null || mDefinitions[inTarget]?.size != 1) {
+								escape(vArgument, "passed to ${vFunction.cName}, whose result keeps it")
+							} else {
+								leak(vArgument)
+								for (vSource in sourcesOf(vArgument)) {
+									mHeldBy.getOrPut(vSource) { HashSet() } += inTarget
+									mStored += vField to vSource
+								}
+							}
 						}
 					}
 				}
@@ -328,7 +352,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 			val vFields = ArrayList<KField>()
 			fieldReads(inValue, vFields)
 			vFields.forEach { mRead += fieldKey(it) to inTarget }
-			call(inValue)
+			call(inValue, inTarget)
 		}
 
 		private fun candidate(inLocal: KLocal, inValue: KExpr?) {
@@ -420,20 +444,58 @@ class EscapeAnalysis(private val mModule: KModule) {
 		 */
 		fun markEscapes(): Boolean {
 			scanAll()
-			// A reference copied into a local that escapes escapes too; so does one held by an object that escapes.
+			// The locals whose object goes somewhere else than back to the caller: kept, copied into one
+			// that is, or held by one that is.
+			val vKept = HashSet(mKept)
 			do {
 				var vGrew = false
 				for (vEdges in listOf(mFlows, mHeldBy)) {
-					for ((vSource, vTargets) in vEdges) {
-						val vVia = vTargets.firstOrNull { it in mEscaping }
-						if (vSource !in mEscaping && vVia != null) {
+					for ((vSource, vTargets) in vEdges) if (vSource !in vKept && vTargets.any { it in vKept }) {
+						vKept += vSource
+						vGrew = true
+					}
+				}
+			} while (vGrew)
+			// A reference copied into a local that escapes escapes too; so does one held by an object that
+			// escapes - unless that object only goes back to the caller: what it holds is then held by
+			// the result, which the caller follows.
+			do {
+				var vGrew = false
+				for ((vSource, vTargets) in mFlows) {
+					val vVia = vTargets.firstOrNull { it in mEscaping }
+					if (vSource !in mEscaping && vVia != null) {
+						mEscaping[vSource] = mEscaping.getValue(vVia)
+						vGrew = true
+						mChanged = true
+					}
+					for (vTarget in vTargets) {
+						val vHolds = mResultHolds[vTarget] ?: continue
+						if (mResultHolds.getOrPut(vSource) { HashSet() }.addAll(vHolds)) vGrew = true
+					}
+				}
+				for ((vSource, vTargets) in mHeldBy) {
+					val vVia = vTargets.firstOrNull { it in mEscaping && it in vKept }
+					if (vVia != null) {
+						if (vSource !in mEscaping) {
 							mEscaping[vSource] = mEscaping.getValue(vVia)
 							vGrew = true
 							mChanged = true
 						}
+						continue
+					}
+					for (vTarget in vTargets) {
+						// Returned and nothing else, or itself held by what is returned.
+						if (vTarget !in mEscaping && vTarget !in mResultHolds) continue
+						val vFields = mStored.filter { it.second === vSource }.mapTo(HashSet()) { it.first }
+						mResultHolds[vTarget]?.let { vFields.addAll(it) }
+						if (mResultHolds.getOrPut(vSource) { HashSet() }.addAll(vFields)) vGrew = true
 					}
 				}
 			} while (vGrew)
+			for (vParam in mFunction.params) {
+				val vHolds = mResultHolds[vParam] ?: continue
+				if (vParam !in mEscaping && mResultHeld.getOrPut(vParam) { HashSet() }.addAll(vHolds)) mChanged = true
+			}
 			// A field read into a local that escapes is leaky.
 			for ((vField, vReader) in mRead) if (vReader in mEscaping && mLeaky.add(vField)) mChanged = true
 			// What is stored into the object of a parameter: so is whatever is copied into it, or held by it.

@@ -76,7 +76,7 @@ internal fun cHeadersOf(inFile: IrFile?): List<String> {
 }
 
 /** The functions of `ktc2.internal` that throw for the language's own checks. */
-private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBounds", "throwDivideByZero")
+private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBounds", "throwSubstringRange", "throwDivideByZero")
 
 /**
  * The type parameters a class is instantiated with: its own, then - for an `inner` class,
@@ -370,7 +370,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vThrowers = HashMap<String, KFunction>()
 		val vHasChecks = mUnits.any { vUnit ->
 			vUnit.functions.any { vFunction ->
-				vFunction.body.anyStatement { vStatement -> vStatement is KIndexSet || vStatement.ownExpressions().any { vRoot -> vRoot.anyNode { it.isRuntimeCheck() } } }
+				vFunction.body.anyStatement { vStatement ->
+					vStatement is KIndexSet || vStatement.ownExpressions().any { vRoot -> vRoot.anyNode { it.isRuntimeCheck() || (it is KCall && it.function.raisesInRuntime()) } }
+				}
 			}
 		}
 		if (vHasChecks && System.getProperty("ktc2.checks") != "abort") {

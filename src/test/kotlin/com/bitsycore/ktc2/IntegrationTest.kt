@@ -75,9 +75,31 @@ class IntegrationTest {
 		val vOutDir = File("build/integration/${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		// `<name>.def` next to the program describes a C library it uses.
 		val vDefinition = File(inSource.parentFile, inSource.nameWithoutExtension + ".def")
+		// A program that must be refused: `<name>.errors` holds a part of each error it has to get.
+		val vErrors = File(inSource.parentFile, inSource.nameWithoutExtension + ".errors")
+		if (vErrors.isFile) {
+			refused(inSource, vOutDir, vErrors.readLines().map { it.trim() }.filter { it.isNotEmpty() })
+			return
+		}
 		// A program using C interop cannot run on the JVM: its output is compared with `<name>.expected`.
 		val vExpectedFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".expected")
 		verify(inSource.path, listOf(inSource) + listOfNotNull(vDefinition.takeIf { it.isFile }), vOutDir, vExpectedFile.takeIf { it.isFile })
+	}
+
+	/** Checks that ktc2 refuses [inSource], and says each of [inExpected] (a part of one of its messages) when it does. */
+	private fun refused(inSource: File, inOutDir: File, inExpected: List<String>) {
+		val vSaved = System.err
+		val vCaptured = java.io.ByteArrayOutputStream()
+		val vAccepted: Boolean
+		System.setErr(java.io.PrintStream(vCaptured, true, "UTF-8"))
+		try {
+			vAccepted = K2Frontend.compile(listOf(inSource), inOutDir, inDumpIr = false)
+		} finally {
+			System.setErr(vSaved)
+		}
+		val vSaid = vCaptured.toString("UTF-8")
+		assertTrue(!vAccepted, "ktc2 accepted ${inSource.path}, which it has to refuse")
+		for (vMessage in inExpected) assertTrue(vMessage in vSaid, "ktc2 refused ${inSource.path} without saying '$vMessage':\n$vSaid")
 	}
 
 	/**

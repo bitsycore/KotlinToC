@@ -22,6 +22,15 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	private var array: Storage<E> = Storage(if (initialCapacity > 0) initialCapacity else 10)
 	private var length: Int = 0
 
+	/**
+	 * How many times the list changed size or storage, as `modCount` on the JVM: an iterator
+	 * that finds another number than when it started throws `ConcurrentModificationException`.
+	 */
+	internal var changes: Int = 0
+
+	/** The element at [index], for the iterator, which has compared the index with the size already. */
+	internal fun held(index: Int): E = array[index]
+
 	public actual constructor() : this(10)
 
 	public actual constructor(elements: Collection<E>) : this(elements.size) {
@@ -42,6 +51,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	public actual fun ensureCapacity(minCapacity: Int) {
 		if (minCapacity <= array.size) return
+		changes++
 		var vCapacity = array.size * 2
 		if (vCapacity < minCapacity) vCapacity = minCapacity
 		val vBigger = Storage<E>(vCapacity)
@@ -50,6 +60,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	}
 
 	public actual fun trimToSize() {
+		changes++
 	}
 
 	actual override operator fun get(index: Int): E {
@@ -66,6 +77,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	actual override fun add(element: E): Boolean {
 		ensureCapacity(length + 1)
+		changes++
 		array[length] = element
 		length++
 		return true
@@ -81,6 +93,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		}
 		array[index] = element
 		length++
+		changes++
 	}
 
 	actual override fun addAll(elements: Collection<E>): Boolean {
@@ -105,6 +118,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		for (vIndex in index until length - 1) array[vIndex] = array[vIndex + 1]
 		length--
 		array.drop(length)
+		changes++
 		return vOld
 	}
 
@@ -128,6 +142,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		val vChanged = vKept != length
 		for (vIndex in vKept until length) array.drop(vIndex)
 		length = vKept
+		if (vChanged) changes++
 		return vChanged
 	}
 
@@ -138,6 +153,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	actual override fun clear() {
 		for (vIndex in 0 until length) array.drop(vIndex)
 		length = 0
+		changes++
 	}
 
 	actual override fun contains(element: E): Boolean = indexOf(element) >= 0
@@ -165,13 +181,13 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		return -1
 	}
 
-	actual override fun iterator(): MutableIterator<E> = ArrayListIterator(this, 0)
+	actual override fun iterator(): MutableIterator<E> = ArrayListCursor(this, 0)
 
-	actual override fun listIterator(): MutableListIterator<E> = ArrayListIterator(this, 0)
+	actual override fun listIterator(): MutableListIterator<E> = ArrayListCursor(this, 0)
 
 	actual override fun listIterator(index: Int): MutableListIterator<E> {
 		checkPosition(index)
-		return ArrayListIterator(this, index)
+		return ArrayListCursor(this, index)
 	}
 
 	actual override fun subList(fromIndex: Int, toIndex: Int): MutableList<E> {
@@ -212,6 +228,69 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	}
 }
 
+/**
+ * The iterator of an [ArrayList]. As on the JVM it fails with `ConcurrentModificationException`
+ * when the list was changed otherwise than through it, and tests that before anything else;
+ * `hasNext` does not test, and compares with the size as the JVM does (so removing the last
+ * but one element inside a `for` ends the loop without an exception, there as here).
+ */
+private class ArrayListCursor<E>(private val list: ArrayList<E>, private var index: Int) : MutableListIterator<E> {
+	private var last = -1
+	private var expected = list.changes
+
+	private fun check() {
+		if (list.changes != expected) throw ConcurrentModificationException()
+	}
+
+	override fun hasNext(): Boolean = index != list.size
+
+	override fun next(): E {
+		check()
+		if (index >= list.size) throw NoSuchElementException()
+		last = index
+		index++
+		return list.held(last)
+	}
+
+	override fun hasPrevious(): Boolean = index != 0
+
+	override fun previous(): E {
+		check()
+		if (index <= 0) throw NoSuchElementException()
+		index--
+		last = index
+		return list.held(last)
+	}
+
+	override fun nextIndex(): Int = index
+
+	override fun previousIndex(): Int = index - 1
+
+	override fun remove() {
+		if (last < 0) throw IllegalStateException()
+		check()
+		list.removeAt(last)
+		index = last
+		last = -1
+		expected = list.changes
+	}
+
+	override fun set(element: E) {
+		if (last < 0) throw IllegalStateException()
+		check()
+		list[last] = element
+	}
+
+	override fun add(element: E) {
+		check()
+		list.add(index, element)
+		index++
+		last = -1
+		expected = list.changes
+	}
+}
+
+/** The iterator of the other lists of this file, by index. */
 private class ArrayListIterator<E>(private val list: MutableList<E>, private var index: Int) : MutableListIterator<E> {
 	private var last = -1
 
@@ -388,11 +467,14 @@ private fun <T> mergeSort(list: MutableList<T>, comparator: Comparator<in T>) {
 }
 
 public actual fun <T : Comparable<T>> MutableList<T>.sort() {
-	mergeSort(this, NaturalOrder<T>())
+	sortWith(NaturalOrder<T>())
 }
 
 public actual fun <T> MutableList<T>.sortWith(comparator: Comparator<in T>) {
+	// As on the JVM a list of one element is left alone, and sorting counts as a change for the iterators.
+	if (size <= 1) return
 	mergeSort(this, comparator)
+	if (this is ArrayList<T>) changes++
 }
 
 public actual fun <T, K> Grouping<T, K>.eachCount(): Map<K, Int> {
