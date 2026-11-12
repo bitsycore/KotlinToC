@@ -39,6 +39,21 @@
  */
 #include <string.h>
 
+/*
+ * An address inside the frame of the function that asks (how deep the stack is), a function
+ * that is always expanded where it is called, and a condition that is seldom true.
+ */
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#define ktc2_frame_address() ((char*)_AddressOfReturnAddress())
+#define KTC2_ALWAYS_INLINE static __forceinline
+#define ktc2_seldom(condition) (condition)
+#else
+#define ktc2_frame_address() ((char*)__builtin_frame_address(0))
+#define KTC2_ALWAYS_INLINE static inline __attribute__((always_inline))
+#define ktc2_seldom(condition) __builtin_expect(!!(condition), 0)
+#endif
+
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
 #include <malloc.h>
@@ -172,11 +187,14 @@ typedef struct ktc2_Obj {
  * Per-type data. `destroy` releases the references an instance holds; NULL when it holds none.
  * `size` is the size of an instance when every instance has the same one (a class, a box), and
  * 0 for strings and arrays: the runtime keeps the small objects of one size in lists of their own.
+ * `deinit` is the `deinit()` of a class that implements `ktc2.Deinit`, NULL for any other:
+ * it runs once, when the last reference to an instance goes, before `destroy`.
  */
 typedef struct ktc2_TypeInfo {
 	const char* name;
 	void (*destroy)(ktc2_Obj* object);
 	uint32_t size;
+	void (*deinit)(ktc2_Obj* object);
 } ktc2_TypeInfo;
 
 enum {
@@ -265,8 +283,15 @@ extern const uint32_t ktc2_type_count;
 /** A zeroed object of [size] bytes with a count of 1. */
 void* ktc2_alloc(size_t size, uint32_t typeId);
 
-/** Runs the type's destroy and frees the memory. */
+/** Runs the type's `deinit` and destroy, and frees the memory. */
 void ktc2_destroy(ktc2_Obj* object);
+
+/**
+ * Called by `main` when the program is over, before it gives up what its top-level properties
+ * and objects hold: waits for the threads still running, which may read those, and from then
+ * on no `deinit` runs (what is alive when the program ends is not deinitialized).
+ */
+void ktc2_ending(void);
 
 /* With KTC2_ARC_STATS the runtime counts reference-count operations and reports them at exit. */
 #ifdef KTC2_ARC_STATS

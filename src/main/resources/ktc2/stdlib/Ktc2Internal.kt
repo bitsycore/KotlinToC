@@ -19,7 +19,7 @@ public fun <T> newArray(size: Int): Array<T> = arrayOfNulls<Any?>(size) as Array
  * A fixed-size block of [size] values of type [T], stored as they are: a `Storage<Int>` is a
  * block of ints, where an `Array<Int>` holds boxed values as Kotlin requires.
  *
- * ktc2 lowers the type and its three members directly; the bodies here are never used.
+ * ktc2 lowers the type and its members directly; the bodies here are never used.
  */
 public class Storage<T>(size: Int) {
 	public val size: Int = size
@@ -27,6 +27,13 @@ public class Storage<T>(size: Int) {
 	public operator fun get(index: Int): T = throw UnsupportedOperationException()
 
 	public operator fun set(index: Int, value: T) {
+	}
+
+	/**
+	 * Empties the slot at [index], for a collection that no longer has an element there: a
+	 * reference is given up, so the object does not outlive its removal. Nothing for numbers.
+	 */
+	public fun drop(index: Int) {
 	}
 }
 

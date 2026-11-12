@@ -10,7 +10,11 @@ private const val kStackArrayLimit = 64
  * allocation to use the stack. Runs before `ArcInsert`.
  *
  * A reference *escapes* when it is returned, stored into a field, a global or an array
- * element, or passed to a parameter that escapes. Whether a parameter escapes is a summary
+ * element, or passed to a parameter that escapes. One store into a field is not an escape:
+ * into an object this function made and that does not escape itself (a closure taking what
+ * its lambda uses, mostly). The object stored then lives as long as that holder may, as if
+ * the holder were one more local it is copied to - provided nothing that reads the field
+ * anywhere in the program lets the value escape (a field that does is *leaky*). Whether a parameter escapes is a summary
  * computed for every function to a fixpoint over the whole program; a dispatcher's summary is
  * the union of its targets', and a runtime function is assumed to keep what it is given.
  *
@@ -35,6 +39,42 @@ class EscapeAnalysis(private val mModule: KModule) {
 
 	/** Parameters and locals whose reference may outlive the block that holds them, with the first reason found. */
 	private val mEscaping = HashMap<KLocal, String>()
+
+	/**
+	 * The fields some read of which lets the value escape, by [fieldKey]: what is stored in one
+	 * may go anywhere.
+	 */
+	private val mLeaky = HashSet<Any>()
+
+	/**
+	 * For a parameter that a function stores into a field of the object another of its
+	 * parameters refers to (a constructor keeping what it is given, a setter): the index of that
+	 * other parameter and the field, by [fieldKey]. What a caller passes then goes where the
+	 * object it passes for the other parameter goes, and no further - as long as the field is
+	 * not leaky.
+	 */
+	private val mParamHeld = HashMap<KLocal, MutableSet<Pair<Int, Any>>>()
+
+	/**
+	 * What a field is known by: itself, or its name in its family of generic instantiations,
+	 * whose code may read an object of one instantiation through the field of another.
+	 */
+	private fun fieldKey(inField: KField): Any = inField.owner?.family?.let { it to inField.cName } ?: inField
+
+	/** The fields of objects whose content [inValue] is: read directly, under casts and choices. */
+	private fun fieldReads(inValue: KExpr?, outFields: MutableList<KField>) {
+		when (inValue) {
+			is KRefCast -> fieldReads(inValue.operand, outFields)
+			is KRetain -> fieldReads(inValue.operand, outFields)
+			is KSelect -> {
+				fieldReads(inValue.whenTrue, outFields)
+				fieldReads(inValue.whenFalse, outFields)
+			}
+			is KStructNew -> inValue.values.forEach { fieldReads(it, outFields) }
+			is KFieldRead -> if (inValue.target.type is KStructType) fieldReads(inValue.target, outFields) else if (inValue.type.isCounted()) outFields += inValue.field
+			else -> {}
+		}
+	}
 
 	/** One line per allocation left on the heap: where, what, and why. Filled by [run]. */
 	val heapReport = ArrayList<String>()
@@ -99,8 +139,9 @@ class EscapeAnalysis(private val mModule: KModule) {
 	private fun summarizeDispatcher(inFunction: KFunction): Boolean {
 		var vChanged = false
 		inFunction.params.forEachIndexed { vIndex, vParam ->
+			// An implementation that stores it into the object of another parameter keeps it, as far as a dispatcher can tell.
 			val vEscapes = inFunction.dispatchDefault != null ||
-				inFunction.dispatch!!.any { (_, vTarget) -> vTarget.params.getOrNull(vIndex)?.let { it in mEscaping } != false }
+				inFunction.dispatch!!.any { (_, vTarget) -> vTarget.params.getOrNull(vIndex)?.let { it in mEscaping || it in mParamHeld } != false }
 			if (vEscapes && vParam !in mEscaping) {
 				mEscaping[vParam] = "kept by an implementation"
 				vChanged = true
@@ -161,7 +202,99 @@ class EscapeAnalysis(private val mModule: KModule) {
 		/** Locals that escape some other way than by being returned. */
 		private val mKept = HashSet<KLocal>()
 
+		/** Every value each local is given. */
+		private val mDefinitions = HashMap<KLocal, ArrayList<KExpr?>>()
+
+		/** For each local, the locals whose object (made here) holds its reference in a field. */
+		private val mHeldBy = HashMap<KLocal, MutableSet<KLocal>>()
+
+		/** For each local, where it is stored into the object of a parameter of this function: see [mParamHeld]. */
+		private val mParamHolds = HashMap<KLocal, MutableSet<Pair<Int, Any>>>()
+
+		/** What was stored into a field of an object made here, and what is read from fields into locals, by [fieldKey]. */
+		private val mStored = ArrayList<Pair<Any, KLocal>>()
+		private val mRead = ArrayList<Pair<Any, KLocal>>()
+
+		private fun definitions(inBlock: List<KStmt>) {
+			for (vStatement in inBlock) {
+				when (vStatement) {
+					is KLet -> mDefinitions.getOrPut(vStatement.local) { ArrayList() } += vStatement.init
+					is KSet -> mDefinitions.getOrPut(vStatement.local) { ArrayList() } += vStatement.value
+					is KConcat -> mDefinitions.getOrPut(vStatement.target) { ArrayList() } += null
+					is KIf -> {
+						definitions(vStatement.thenBlock)
+						definitions(vStatement.elseBlock)
+					}
+					is KLoop -> {
+						definitions(vStatement.body)
+						definitions(vStatement.latch)
+					}
+					else -> {}
+				}
+			}
+		}
+
+		/**
+		 * The one object [inLocal] only ever holds, when it is known where that comes from: the
+		 * local it was allocated into here, or a parameter of this function (itself, or what the
+		 * local is a copy of). Null when it may hold anything else.
+		 */
+		private fun rootOf(inLocal: KLocal): KLocal? {
+			var vLocal = inLocal
+			repeat(16) {
+				if (vLocal in mFunction.params) return vLocal.takeIf { it !in mDefinitions }
+				val vValue = mDefinitions[vLocal]?.singleOrNull() ?: return null
+				when (val vCore = coreOf(vValue)) {
+					is KAlloc -> return vLocal
+					is KRead -> vLocal = vCore.local
+					else -> return null
+				}
+			}
+			return null
+		}
+
+		/**
+		 * [inValue] is stored into field [inField] (by [fieldKey]) of the object [inHolder] refers
+		 * to. Into an object made here, or the object of a parameter, it is held by that object;
+		 * anywhere else, or in a leaky field, it escapes for [inReason].
+		 */
+		private fun hold(inValue: KExpr?, inHolder: KExpr?, inField: Any, inReason: String) {
+			val vRoot = if (inField in mLeaky) null else (coreOf(inHolder) as? KRead)?.local?.let { rootOf(it) }
+			if (vRoot == null) {
+				escape(inValue, inReason)
+				return
+			}
+			// Held by that object: it goes where the object goes, and no further.
+			leak(inValue)
+			val vParam = mFunction.params.indexOf(vRoot)
+			for (vSource in sourcesOf(inValue)) {
+				if (vParam >= 0) {
+					mParamHolds.getOrPut(vSource) { HashSet() } += vParam to inField
+				} else {
+					mHeldBy.getOrPut(vSource) { HashSet() } += vRoot
+					mStored += inField to vSource
+				}
+			}
+		}
+
+		/** The fields [inValue] is read from are leaky: the value goes where it cannot be followed. */
+		private fun leak(inValue: KExpr?) {
+			val vFields = ArrayList<KField>()
+			fieldReads(inValue, vFields)
+			for (vField in vFields) if (mLeaky.add(fieldKey(vField))) mChanged = true
+		}
+
+		/** Scans the whole function, then lets what was stored into a field flow to the locals that read that field here. */
+		private fun scanAll() {
+			definitions(mFunction.body)
+			scan(mFunction.body, null)
+			for ((vField, vSource) in mStored) {
+				for ((vOther, vReader) in mRead) if (vOther == vField) mFlows.getOrPut(vSource) { HashSet() } += vReader
+			}
+		}
+
 		private fun escape(inValue: KExpr?, inReason: String) {
+			leak(inValue)
 			for (vLocal in sourcesOf(inValue)) {
 				if (inReason != "returned") mKept += vLocal
 				if (vLocal !in mEscaping) {
@@ -175,7 +308,15 @@ class EscapeAnalysis(private val mModule: KModule) {
 			when (inValue) {
 				is KRefCast -> call(inValue.operand)
 				is KCall -> inValue.arguments.forEachIndexed { vIndex, vArgument ->
-					if (parameterEscapes(inValue.function, vIndex)) escape(vArgument, "passed to ${inValue.function.cName}, which keeps it")
+					val vFunction = inValue.function
+					if (parameterEscapes(vFunction, vIndex)) {
+						escape(vArgument, "passed to ${vFunction.cName}, which keeps it")
+					} else {
+						// Stored by the function into the object of another argument: held by that one.
+						mParamHeld[vFunction.params[vIndex]]?.toList()?.forEach { (vHolder, vField) ->
+							hold(vArgument, inValue.arguments.getOrNull(vHolder), vField, "passed to ${vFunction.cName}, which keeps it")
+						}
+					}
 				}
 				is KIntrinsic -> if (!inValue.isPure) inValue.arguments.forEach { escape(it, "passed to ${inValue.name}") }
 				else -> {}
@@ -184,6 +325,9 @@ class EscapeAnalysis(private val mModule: KModule) {
 
 		private fun flow(inTarget: KLocal, inValue: KExpr?) {
 			for (vSource in sourcesOf(inValue)) mFlows.getOrPut(vSource) { HashSet() } += inTarget
+			val vFields = ArrayList<KField>()
+			fieldReads(inValue, vFields)
+			vFields.forEach { mRead += fieldKey(it) to inTarget }
 			call(inValue)
 		}
 
@@ -232,7 +376,14 @@ class EscapeAnalysis(private val mModule: KModule) {
 					}
 					is KFieldSet -> {
 						// An inline field copies the content of the value: the reference goes nowhere.
-						if (!vStatement.field.isInline) escape(vStatement.value, "stored in field '${vStatement.field.cName}'")
+						if (!vStatement.field.isInline) {
+							val vReason = "stored in field '${vStatement.field.cName}'"
+							if (vStatement.field.weakType != null || vStatement.target.type !is KClassType) {
+								escape(vStatement.value, vReason)
+							} else {
+								hold(vStatement.value, vStatement.target, fieldKey(vStatement.field), vReason)
+							}
+						}
 						call(vStatement.value)
 					}
 					is KIndexSet -> {
@@ -268,20 +419,53 @@ class EscapeAnalysis(private val mModule: KModule) {
 		 * @return true when a parameter or local was newly marked
 		 */
 		fun markEscapes(): Boolean {
-			scan(mFunction.body, null)
-			// A reference copied into a local that escapes escapes too.
+			scanAll()
+			// A reference copied into a local that escapes escapes too; so does one held by an object that escapes.
 			do {
 				var vGrew = false
-				for ((vSource, vTargets) in mFlows) {
-					val vVia = vTargets.firstOrNull { it in mEscaping }
-					if (vSource !in mEscaping && vVia != null) {
-						mEscaping[vSource] = mEscaping.getValue(vVia)
-						vGrew = true
-						mChanged = true
+				for (vEdges in listOf(mFlows, mHeldBy)) {
+					for ((vSource, vTargets) in vEdges) {
+						val vVia = vTargets.firstOrNull { it in mEscaping }
+						if (vSource !in mEscaping && vVia != null) {
+							mEscaping[vSource] = mEscaping.getValue(vVia)
+							vGrew = true
+							mChanged = true
+						}
 					}
 				}
 			} while (vGrew)
+			// A field read into a local that escapes is leaky.
+			for ((vField, vReader) in mRead) if (vReader in mEscaping && mLeaky.add(vField)) mChanged = true
+			// What is stored into the object of a parameter: so is whatever is copied into it, or held by it.
+			do {
+				var vGrew = false
+				for (vEdges in listOf(mFlows, mHeldBy)) {
+					for ((vSource, vTargets) in vEdges) {
+						for (vTarget in vTargets) {
+							val vHolds = mParamHolds[vTarget] ?: continue
+							if (mParamHolds.getOrPut(vSource) { HashSet() }.addAll(vHolds)) vGrew = true
+						}
+					}
+				}
+			} while (vGrew)
+			for (vParam in mFunction.params) {
+				val vHolds = mParamHolds[vParam] ?: continue
+				if (vParam !in mEscaping && mParamHeld.getOrPut(vParam) { HashSet() }.addAll(vHolds)) mChanged = true
+			}
 			return mChanged
+		}
+
+		/** Every local the object first held by [inLocal] may be referred to through: its copies, the objects that hold it, and theirs. */
+		private fun reachOf(inLocal: KLocal): Set<KLocal> {
+			val vSeen = LinkedHashSet<KLocal>()
+			val vPending = ArrayDeque(listOf(inLocal))
+			while (vPending.isNotEmpty()) {
+				val vNext = vPending.removeFirst()
+				if (!vSeen.add(vNext)) continue
+				mFlows[vNext]?.let { vPending += it }
+				mHeldBy[vNext]?.let { vPending += it }
+			}
+			return vSeen
 		}
 
 		private fun isInside(inBlock: List<KStmt>?, inAncestor: List<KStmt>): Boolean {
@@ -410,7 +594,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 		 * else. Left without a result (an exception) it returns null as before.
 		 */
 		fun buildInPlaceForm(): Pair<KFunction, KClass>? {
-			scan(mFunction.body, null)
+			scanAll()
 			val vReturns = ArrayList<KReturn>()
 			returnsIn(mFunction.body, vReturns)
 			val vLets = ArrayList<KLet>()
@@ -449,13 +633,15 @@ class EscapeAnalysis(private val mModule: KModule) {
 		/** Moves to the stack the allocations whose object provably dies with its block; reports the others. */
 		fun promote(inReports: Boolean = true) {
 			mIsPromoting = true
-			scan(mFunction.body, null)
+			scanAll()
 			directInlineUses(mFunction.body)
 			for (vCandidate in mCandidates) {
 				val vBlock = mBlockOf[vCandidate.local] ?: continue
-				val vAliases = aliasesOf(vCandidate.local)
+				val vAliases = reachOf(vCandidate.local)
 				val vReason = vCandidate.unfit
 					?: vAliases.firstNotNullOfOrNull { mEscaping[it] }
+					// Held by an object the caller passed: that one outlives this frame.
+					?: (if (vAliases.any { it in mParamHolds }) "stored in an object that was passed in" else null)
 					?: if (vAliases.any { !isInside(mBlockOf[it], vBlock) }) "kept in a variable of an enclosing block" else null
 				if (vCandidate.inline != null) {
 					if (vReason != null) copyOut(vCandidate.inline, mFunction, vReason)

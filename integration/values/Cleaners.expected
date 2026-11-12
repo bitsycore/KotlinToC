@@ -1,0 +1,25 @@
+made wrapped
+close 7
+descriptor gone
+unbox text
+unbox 3.5
+holding 2
+deinit sub
+clean sub.first
+clean sub.second
+clean sub.base
+clean heir.base
+end of folded
+dispose wrapped
+after folded
+local cleaner made: true
+clearing
+dispose listed
+end of kept
+dispose shared
+dispose local
+after kept
+throwing with unwound
+dispose unwound
+caught boom
+alive at the end: top-level

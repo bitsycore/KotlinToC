@@ -186,6 +186,22 @@ class KClass(
 	 */
 	var family: Any? = null
 
+	/**
+	 * What the runtime calls when the last reference to an instance goes, before the fields are
+	 * given up: the `deinit` of a class that implements `ktc2.Deinit`, or a function the importer
+	 * wrote that calls it and then the cleaners of the class ([cleaners]). Null for a class that
+	 * has neither.
+	 */
+	var deinit: KFunction? = null
+
+	/**
+	 * The properties declared as `private val x = createCleaner(resource) { … }` that were
+	 * folded into the class: each field holds the resource (the property the program keeps it
+	 * in, or else a field in the place of the cleaner), and the function is the cleanup action,
+	 * to be called with it when the object ends. No `Cleaner` object exists.
+	 */
+	val cleaners = mutableListOf<Pair<KField, KFunction>>()
+
 	fun isSubclassOf(inOther: KClass): Boolean = this === inOther || superClass?.isSubclassOf(inOther) == true
 
 	fun implements(inInterface: KInterface): Boolean =
@@ -226,7 +242,14 @@ class KFunction(
 	var keepsDefault = false
 }
 
-class KLocal(val cName: String, val type: KType)
+class KLocal(val cName: String, val type: KType) {
+	/**
+	 * Set for a local the importer made to hold a value between two statements (the object
+	 * built for an argument, for example): no variable of the program. What it holds is given
+	 * up after its last use, where a variable keeps its object to the end of its block.
+	 */
+	var isTemporary: Boolean = false
+}
 
 /** A top-level property with storage. [constInit] is set when the initializer is a literal. */
 class KGlobal(val cName: String, val type: KType, val unit: KUnit) {
@@ -340,6 +363,12 @@ class KBoxTarget(val prim: KPrim) : KTypeTarget
 /** `operand is target`; false for null. */
 class KInstanceOf(val operand: KExpr, val target: KTypeTarget) : KExpr {
 	override val type: KType get() = KPrimType(KPrim.BOOLEAN)
+
+	/**
+	 * Set by `Devirtualize` when the class of the operand leaves no question: true when every
+	 * object it can be passes the test (what is left is `operand != null`), false when none does.
+	 */
+	var answer: Boolean? = null
 }
 
 /** The zero value of [type]: what a function returns when it leaves with an exception. */

@@ -80,7 +80,10 @@ class CEmitter(private val mModule: KModule) {
 		vUnits.distinct().forEach { append("#include \"${it.path}.h\"\n") }
 
 		append("\nconst ktc2_TypeInfo ktc2_types[] = {\n\tKTC2_BUILTIN_TYPES,\n")
-		mConcrete.forEach { append("\t[${typeId(it)}] = { ${cString(it.name)}, ${it.cName}__destroy, sizeof(${it.cName}) },\n") }
+		mConcrete.forEach { vClass ->
+			val vDeinit = if (vClass.deinit != null) "${vClass.cName}__deinit" else "NULL"
+			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit },\n")
+		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 
 		val vTakesArguments = inEntry.params.isNotEmpty()
@@ -94,6 +97,8 @@ class CEmitter(private val mModule: KModule) {
 		} else {
 			append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
 		}
+		// What the top-level properties and the objects still hold is given up without `deinit`.
+		append("\tktc2_ending();\n")
 		vGlobals.asReversed().forEach { append("\t${releaseText(it.type, it.cName)};\n") }
 		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
 		append("\treturn ktc2_exit();\n}\n")
@@ -207,6 +212,10 @@ class CEmitter(private val mModule: KModule) {
 			append("void ${vClass.cName}__destroy(ktc2_Obj* object);\n")
 			append("/** Takes a reference on everything the fields of an instance refer to (after a bitwise copy). */\n")
 			append("void ${vClass.cName}__retain_fields(${vClass.cName}* self);\n")
+			if (vClass.deinit != null) {
+				append("/** Calls `deinit` of an instance nothing refers to any more. */\n")
+				append("void ${vClass.cName}__deinit(ktc2_Obj* object);\n")
+			}
 			if (vClass.isUsedInline) {
 				append("/** A heap copy of an instance (the boxed form of an inline value). */\n")
 				append("${vClass.cName}* ${vClass.cName}__clone(const ${vClass.cName}* source);\n")
@@ -252,6 +261,11 @@ class CEmitter(private val mModule: KModule) {
 			}
 			if (vOwn.isEmpty() && vClass.superClass == null) vBodies.append("\t(void)object;\n")
 			vBodies.append("}\n")
+			vClass.deinit?.let { vDeinit ->
+				vState.includes += vDeinit.unit
+				vBodies.append("\nvoid ${vClass.cName}__deinit(ktc2_Obj* object)\n{\n")
+				vBodies.append("\t${vDeinit.cName}((${cType(vDeinit.params[0].type)})object);\n}\n")
+			}
 		}
 		inUnit.cls?.let { vClass ->
 			val vName = vClass.cName
@@ -787,7 +801,12 @@ class CEmitter(private val mModule: KModule) {
 				need(inExpr.type)
 				"((${cType(inExpr.type)})${expr(inExpr.operand)})"
 			}
-			is KInstanceOf -> typeTest(inExpr)
+			is KInstanceOf -> when (inExpr.answer) {
+				// An `object` is never null, and the C compiler says so when asked.
+				true -> if (generateSequence(inExpr.operand) { (it as? KRefCast)?.operand }.last() is KStaticRead) "true" else "(${expr(inExpr.operand)} != NULL)"
+				false -> "false"
+				null -> typeTest(inExpr)
+			}
 			is KIndexRead -> element(inExpr.array, inExpr.index, inExpr.type, inExpr.isChecked)
 			is KArrayNew -> {
 				need(inExpr.type.element)

@@ -8,7 +8,14 @@ import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.ir.IrBuiltIns
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.declarations.*
+import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
+import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrConst
+import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
+import org.jetbrains.kotlin.ir.expressions.IrGetField
+import org.jetbrains.kotlin.ir.expressions.IrGetValue
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
+import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.expressions.IrVararg
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
@@ -178,6 +185,12 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private val mPending = ArrayDeque<() -> Unit>()
 	private val mInstantiated = LinkedHashSet<KClass>()
 
+	/** `ktc2.Deinit.deinit`, when the program is compiled with the `ktc2.` package. */
+	private var mDeinit: IrSimpleFunction? = null
+
+	/** The dispatcher of [mDeinit], made when the program creates an object that implements `Deinit`. */
+	private var mDeinitDispatcher: KFunction? = null
+
 	private class Dispatcher(val function: IrSimpleFunction, val subst: Subst, val classArguments: List<KType>, val target: KFunction)
 
 	private val mDispatchers = LinkedHashMap<Mono, Dispatcher>()
@@ -343,6 +356,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { isEntryPoint(it) }
 		}
 		val vEntry = vMain?.let { functionFor(it) }
+		mDeinit = inModule.files.filter { it.packageFqName.asString() == "ktc2" }
+			.firstNotNullOfOrNull { vFile -> vFile.declarations.filterIsInstance<IrClass>().firstOrNull { it.name.asString() == "Deinit" } }
+			?.declarations?.filterIsInstance<IrSimpleFunction>()?.firstOrNull { it.name.asString() == "deinit" }
 
 		// Reachability fixpoint: bodies reach new functions and classes, new classes add
 		// implementations to the virtual calls already seen.
@@ -364,12 +380,135 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			} while (resolveDispatch() || mPending.isNotEmpty())
 		}
 
+		settleDeinit()
 		settleInitialization()
 		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
 		return KModule(mUnits, vEntry, mClassList).also {
 			it.usesThreads = kThreadStart in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
 		}
+	}
+
+	/**
+	 * Gives each class the program creates what the runtime calls when an instance ends
+	 * ([KClass.deinit]): the `deinit` the dispatcher of `Deinit.deinit` found for it, or, for a
+	 * class with folded cleaners (its own or a superclass's), a function that calls that
+	 * `deinit` and then each cleanup action with its resource, the most derived class first.
+	 */
+	private fun settleDeinit() {
+		val vDeinits = mDeinitDispatcher?.dispatch?.toMap() ?: emptyMap()
+		for (vClass in mInstantiated.toList()) {
+			val vDeinit = vDeinits[vClass]
+			val vCleaners = generateSequence(vClass) { it.superClass }.flatMap { it.cleaners }.toList()
+			if (vDeinit == null && vCleaners.isEmpty()) continue
+			val vIrClass = mClassInfo[vClass]?.irClass
+			val vName = vIrClass?.name?.asString() ?: vClass.name
+			val vWhat = if (vDeinit != null) "implements ktc2.Deinit" else "has a cleaner"
+			// A value is copied, and a copy has no last reference of its own.
+			if (vIrClass != null && isStruct(vIrClass)) {
+				errors += "'$vName' $vWhat: a @Struct or value class cannot, it is copied"
+				continue
+			}
+			if (vClass.isUsedInline) {
+				errors += "'$vName' $vWhat: it cannot be held in place by a @Value field, which copies it"
+				continue
+			}
+			if (vCleaners.isEmpty()) {
+				vClass.deinit = vDeinit
+				continue
+			}
+			val vSelf = KLocal("self", KClassType(vClass))
+			fun selfAs(inType: KType): KExpr = if (inType == vSelf.type) KRead(vSelf) else KRefCast(KRead(vSelf), inType)
+			val vEnds = KFunction(uniqueName("${vClass.cName}__ends"), vClass.unit, listOf(vSelf), KUnitType)
+			vDeinit?.let { vEnds.body += KEval(KCall(it, listOf(selfAs(it.params[0].type)))) }
+			for ((vField, vAction) in vCleaners) {
+				vEnds.body += KEval(KCall(vAction, listOf(KFieldRead(selfAs(KClassType(vField.owner!!)), vField))))
+			}
+			vClass.unit.functions += vEnds
+			vClass.deinit = vEnds
+		}
+	}
+
+	// ==================
+	// MARK: Cleaners
+	// ==================
+
+	/** A property `private val x = createCleaner(resource) { … }` that needs no `Cleaner` object: see [foldedCleaner]. */
+	internal class FoldedCleaner(val resource: IrExpression, val action: IrSimpleFunction, val resourceType: IrType)
+
+	private val mFoldedCleaners = HashMap<IrField, FoldedCleaner?>()
+
+	/** The fields that hold the resource of a folded cleaner. */
+	private val mCleanerFields = HashMap<KField, FoldedCleaner>()
+
+	/**
+	 * The backing field of the property of [inClass] that [inResource] reads from `this`, when
+	 * it is just that: a `val` with a field and no accessor of its own. Null for anything else.
+	 */
+	private fun resourceProperty(inResource: IrExpression, inClass: IrClass): IrField? {
+		fun isThis(inReceiver: IrExpression?): Boolean = inReceiver is IrGetValue && inReceiver.symbol == inClass.thisReceiver?.symbol
+		val vBacking = when (inResource) {
+			is IrGetField -> inResource.symbol.owner.takeIf { isThis(inResource.receiver) }
+			is IrCall -> {
+				val vGetter = inResource.symbol.owner
+				val vProperty = vGetter.correspondingPropertySymbol?.owner
+				vProperty?.backingField?.takeIf {
+					vProperty.getter == vGetter && vGetter.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR && isThis(inResource.dispatchReceiver)
+				}
+			}
+			else -> null
+		} ?: return null
+		val vProperty = vBacking.correspondingPropertySymbol?.owner ?: return null
+		return vBacking.takeIf { !vProperty.isVar && !vProperty.isDelegated && vProperty.parent == inClass }
+	}
+
+	/** What the folded cleaner behind [inField] was declared with; null for any other field. */
+	internal fun cleanerOf(inField: KField): FoldedCleaner? = mCleanerFields[inField]
+
+	/**
+	 * `createCleaner` returns an object that runs an action with a resource when it ends. Kept
+	 * in a property nobody reads, that object only exists to end with its owner: the owner then
+	 * holds the resource in the property instead, and runs the action itself when it ends. The
+	 * program cannot tell, and the `Cleaner` and the lambda object are never made.
+	 *
+	 * This is the case for a `private val` (nothing outside the class can read it) that nothing
+	 * in the class reads either, initialized by `createCleaner` with a lambda that uses nothing
+	 * from around it (as Kotlin/Native requires). Any other use of `createCleaner` makes the
+	 * object.
+	 */
+	private fun foldedCleaner(inProperty: IrProperty, inBacking: IrField, inClass: IrClass): FoldedCleaner? {
+		if (inBacking in mFoldedCleaners) return mFoldedCleaners[inBacking]
+		mFoldedCleaners[inBacking] = null
+		if (inProperty.isVar || inProperty.isDelegated || inProperty.visibility != DescriptorVisibilities.PRIVATE) return null
+		val vCall = inBacking.initializer?.expression as? IrCall ?: return null
+		if (vCall.symbol.owner.kotlinFqName.asString() != "ktc2.createCleaner") return null
+		val vResource = vCall.arguments.getOrNull(0) ?: return null
+		val vAction = (vCall.arguments.getOrNull(1) as? IrFunctionExpression)?.function ?: return null
+		val vType = vCall.typeArguments.getOrNull(0) ?: return null
+		if (captures.freeVariables(vAction).isNotEmpty()) return null
+		var vIsRead = false
+		inClass.acceptChildrenVoid(object : IrVisitorVoid() {
+			override fun visitElement(element: IrElement) {
+				if (!vIsRead) element.acceptChildrenVoid(this)
+			}
+
+			// The property's own accessor reads the field: it is not a use.
+			override fun visitProperty(declaration: IrProperty) {
+				if (declaration !== inProperty) super.visitProperty(declaration)
+			}
+
+			override fun visitGetField(expression: IrGetField) {
+				if (expression.symbol == inBacking.symbol) vIsRead = true
+				super.visitGetField(expression)
+			}
+
+			override fun visitCall(expression: IrCall) {
+				if (expression.symbol == inProperty.getter?.symbol) vIsRead = true
+				super.visitCall(expression)
+			}
+		})
+		if (vIsRead) return null
+		return FoldedCleaner(vResource, vAction, vType).also { mFoldedCleaners[inBacking] = it }
 	}
 
 	private fun countOverloads(inDeclarations: List<IrDeclaration>) {
@@ -685,6 +824,25 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
+			// A cleaner nobody reads is not kept: the property holds its resource, and the class runs the action.
+			val vFolded = if (vFile != null) foldedCleaner(vProperty, vBacking, inClass) else null
+			val vResourceType = vFolded?.let { kTypeOf(it.resourceType, vSubst) }?.takeIf { it != KUnitType && it != KNothingType }
+			if (vFolded != null && vResourceType != null) {
+				// The resource is a `val` of this class, declared before: that property is where the action
+				// finds it, and the cleaner takes no room at all. Anything else is kept in a field of its own.
+				val vKept = resourceProperty(vFolded.resource, inClass)?.let { mFields[it to vClass] }
+					?.takeIf { it.isImmutable && it.type == vResourceType && it.weakType == null && !it.isInline && it !in mCleanerFields }
+				val vField = vKept ?: KField(cIdentifier(vProperty.name.asString()), vResourceType, vClass, isImmutable = true).also {
+					vClass.fields += it
+					mFields[vBacking to vClass] = it
+					mCleanerFields[it] = vFolded
+				}
+				val vAction = KFunction(uniqueName("${vClass.cName}_${cIdentifier(vProperty.name.asString())}__clean"), vUnit, listOf(KLocal("resource", vResourceType)), KUnitType)
+				vUnit.functions += vAction
+				vClass.cleaners += vField to vAction
+				later { BodyBuilder(this, vAction, vFolded.action, vFile!!, vSubst).buildClosure(emptyList(), null) }
+				continue
+			}
 			val vType = kTypeOf(vBacking.type, vSubst)
 			if (vType == null || vType == KUnitType || vType == KNothingType) {
 				unsupported(vFile, vProperty, "property of type '${vBacking.type.render()}'")
@@ -1102,6 +1260,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				vStatement.ownExpressions().any { vRoot ->
 					vRoot.anyNode { vNode ->
 						(vNode is KGlobalRead && vNode.global.unit !== inOwnUnit) || vNode.isRuntimeCheck() ||
+							// An object with a `deinit` that is given up here runs the program's code.
+							(vNode is KAlloc && vNode.cls.deinit != null) ||
 							(vNode is KCall && !isUnobservable(vNode.function, inKnown)) ||
 							(vNode is KIntrinsic && !vNode.isPure && !vNode.name.startsWith("ktc2_box_"))
 					}
@@ -1167,6 +1327,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				vStatement.ownExpressions().any { vRoot ->
 					vRoot.anyNode { vNode ->
 						(vNode is KGlobalRead && vNode.global.unit !== inEnsure.ownUnit) || vNode.isRuntimeCheck() ||
+							(vNode is KAlloc && vNode.cls.deinit != null) ||
 							(vNode is KCall && !isUnobservable(vNode.function, inKnown)) ||
 							(vNode is KIntrinsic && !vNode.isPure && !vNode.name.startsWith("ktc2_box_"))
 					}
@@ -1483,6 +1644,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	private fun resolveDispatch(): Boolean {
 		var vChanged = false
+		// The runtime calls `deinit` of every object that has one: it is looked up like a call the program makes.
+		val vDeinit = mDeinit
+		if (vDeinit != null && mDeinitDispatcher == null && mInstantiated.any { vClass -> mClassInfo[vClass]?.let { isSubtype(it.irClass, vDeinit.parentAsClass) } == true }) {
+			mDeinitDispatcher = dispatcherFor(vDeinit)
+		}
 		for ((vKey, vDispatcher) in mDispatchers.entries.toList()) {
 			val vFunction = vDispatcher.function
 			val vOwner = vFunction.parentAsClass

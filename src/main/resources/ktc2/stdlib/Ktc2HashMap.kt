@@ -137,6 +137,10 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		if (vIndex < 0) return null
 		val vOld = valueArray[vIndex]
 		removeEntry(vIndex)
+		// The map no longer holds them. (After a removal through an iterator the entry handed out
+		// still reads its key and value, as on the JVM: that hole is emptied by the next rebuild.)
+		keyArray.drop(vIndex)
+		valueArray.drop(vIndex)
 		return vOld
 	}
 

@@ -318,7 +318,7 @@ class Ktc2Extension : IrGenerationExtension {
 		val vDirect = Devirtualize(vModule).also { if ("devirtualize" !in vSkipped) it.run() }
 		val vRanges = RangeChecks(vModule).also { if ("ranges" !in vSkipped) it.run() }
 		if (System.getenv("KTC2_DEBUG_PASSES") != null) {
-			System.err.println("ktc2: passes: ${vDirect.resolved} dispatched calls made direct, ${vRanges.proven} array accesses proven in range")
+			System.err.println("ktc2: passes: ${vDirect.resolved} dispatched calls made direct, ${vDirect.answered} type tests answered, ${vRanges.proven} array accesses proven in range")
 		}
 		ExceptionLowering(vModule).run()
 		val vEscapes = EscapeAnalysis(vModule)
@@ -329,7 +329,7 @@ class Ktc2Extension : IrGenerationExtension {
 			System.setProperty(kErrorCountProperty, vEscapes.errors.size.toString())
 			return
 		}
-		ArcInsert(vModule, mHandsOverAtLastUse = "handover" !in vSkipped, mBorrowsBriefly = "brief" !in vSkipped).run()
+		ArcInsert(vModule, mHandsOverAtLastUse = "handover" !in vSkipped, mBorrowsBriefly = "brief" !in vSkipped, mWalks = "walk" !in vSkipped, mOwnsParameters = "owned" !in vSkipped).run()
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && isEntryPoint(it) } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"

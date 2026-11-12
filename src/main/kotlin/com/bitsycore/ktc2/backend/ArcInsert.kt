@@ -37,11 +37,91 @@ class ArcInsert(
 	private val mHandsOverAtLastUse: Boolean = true,
 	/** A local may borrow up to its last use when the place it reads from is overwritten after that. */
 	private val mBorrowsBriefly: Boolean = true,
+	/** A `var` local that goes down a structure (`node = node.next`) may do so without counting. */
+	private val mWalks: Boolean = true,
+	/** A function that stores a parameter may take the caller's reference to it instead of one of its own. */
+	private val mOwnsParameters: Boolean = true,
 ) {
+
+	// ==================
+	// MARK: Owned parameters
+	// ==================
+
+	/** For each function, the indices of the parameters its owned form takes over: see [ownable]. */
+	private val mOwnable = HashMap<KFunction, Set<Int>>()
+
+	/** The bodies of the functions of [mOwnable] as they are before this pass, and the forms made so far. */
+	private val mOwnableBodies = HashMap<KFunction, List<KStmt>>()
+	private val mOwnedForms = HashMap<KFunction, KFunction>()
+	private val mOwnedPending = ArrayList<KFunction>()
+
+	/**
+	 * The parameters of [inFunction] it would be worth owning: a reference that one statement
+	 * of the body, not inside a branch or a loop, stores as it is (`this.next = next`), with no
+	 * read of the parameter after it. By the general rule the function takes a count for the
+	 * store and the caller, done with the object, gives one up right after the call. The owned
+	 * form `name__o` is the same function with these parameters owned like locals: the store
+	 * takes their reference over, and any way out before it gives it up. A caller that is at
+	 * its last use of what it passes calls that form and keeps nothing.
+	 */
+	private fun ownable(inFunction: KFunction, inBody: List<KStmt>): Set<Int> {
+		val vReassigned = reassigned(inBody)
+		val vResult = HashSet<Int>()
+		fun local(inValue: KExpr?): KLocal? = when (inValue) {
+			is KRead -> inValue.local
+			is KRefCast -> local(inValue.operand)
+			else -> null
+		}
+		fun reads(inStatement: KStmt, inLocal: KLocal): Boolean = listOf(inStatement).anyStatement { vInner ->
+			vInner.ownExpressions().any { vRoot -> vRoot.anyNode { it is KRead && it.local === inLocal } }
+		}
+		inFunction.params.forEachIndexed { vIndex, vParam ->
+			if (vParam.type !is KRefType || vParam in vReassigned) return@forEachIndexed
+			val vStore = inBody.indexOfLast { vStatement ->
+				val vStored = when (vStatement) {
+					is KFieldSet -> vStatement.value.takeIf { !vStatement.field.isInline && vStatement.field.weakType == null }
+					is KGlobalSet -> vStatement.value
+					is KIndexSet -> vStatement.value
+					else -> null
+				}
+				local(vStored) === vParam
+			}
+			if (vStore < 0) return@forEachIndexed
+			// The store reads the parameter once, and nothing after it does.
+			val vCount = inBody[vStore].ownExpressions().sumOf { vRoot ->
+				var vReads = 0
+				vRoot.anyNode { if (it is KRead && it.local === vParam) vReads++; false }
+				vReads
+			}
+			if (vCount == 1 && inBody.drop(vStore + 1).none { reads(it, vParam) }) vResult += vIndex
+		}
+		return vResult
+	}
+
+	/** The owned form of [inFunction], made on first request; its body is built at the end of [run]. */
+	private fun ownedForm(inFunction: KFunction): KFunction = mOwnedForms.getOrPut(inFunction) {
+		KFunction(inFunction.cName + "__o", inFunction.unit, inFunction.params, inFunction.returnType).also {
+			inFunction.unit.functions += it
+			mOwnedPending += inFunction
+		}
+	}
 
 	fun run() {
 		val vEffects = Effects(mModule)
 		val vReturns = BorrowedReturns(mModule, vEffects)
+		if (mOwnsParameters) {
+			for (vUnit in mModule.units) {
+				for (vFunction in vUnit.functions) {
+					if (vFunction.isExternal || vFunction.dispatch != null || vFunction.body.isEmpty()) continue
+					val vBody = vFunction.body.toList()
+					val vOwned = ownable(vFunction, vBody)
+					if (vOwned.isNotEmpty()) {
+						mOwnable[vFunction] = vOwned
+						mOwnableBodies[vFunction] = vBody
+					}
+				}
+			}
+		}
 		// The borrowed form of a function is built from its body as it is before this pass.
 		val vOriginals = HashMap<KFunction, List<KStmt>>()
 		for (vUnit in mModule.units) {
@@ -49,13 +129,14 @@ class ArcInsert(
 				if (vFunction.isExternal || vFunction.dispatch != null) continue
 				val vOriginal = vFunction.body.toList()
 				if (vReturns.of(vFunction) != null) vOriginals[vFunction] = vOriginal
-				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null, null).block(vOriginal, Scope(null))
+				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), passedOnly(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null, null, emptySet()).block(vOriginal, Scope(null))
 				vFunction.body.clear()
 				vFunction.body += vBody
 			}
 		}
 		// The borrowed forms that were asked for; building one may ask for others.
-		while (vReturns.pending.isNotEmpty()) {
+		do {
+			while (vReturns.pending.isNotEmpty()) {
 			val vPending = vReturns.pending.removeLast()
 			val vFunction = vPending.function
 			val vInfo = vReturns.of(vFunction)!!
@@ -71,11 +152,29 @@ class ArcInsert(
 				}
 			} else {
 				val vOriginal = vOriginals.getValue(vFunction)
-				vPending.form.body += FunctionPass(readCounts(vOriginal), reassigned(vOriginal), vFunction.params.toSet(), vEffects, vReturns, vInfo, vPending.keep)
+				vPending.form.body += FunctionPass(readCounts(vOriginal), reassigned(vOriginal), passedOnly(vOriginal), vFunction.params.toSet(), vEffects, vReturns, vInfo, vPending.keep, emptySet())
 					.block(vOriginal, Scope(null))
 			}
+			// Either kind of form may ask for forms of the other kind.
+			if (vReturns.pending.isEmpty()) buildOwnedForms(vEffects, vReturns)
 		}
+		buildOwnedForms(vEffects, vReturns)
+	} while (vReturns.pending.isNotEmpty())
+}
+
+/** Gives the owned forms that were asked for their bodies: the function's own, with the parameters taken over owned by its outermost block. */
+private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
+	while (mOwnedPending.isNotEmpty()) {
+		val vFunction = mOwnedPending.removeLast()
+		val vOriginal = mOwnableBodies.getValue(vFunction)
+		val vOwned = mOwnable.getValue(vFunction).map { vFunction.params[it] }
+		val vScope = Scope(null)
+		vScope.owned += vOwned
+		mOwnedForms.getValue(vFunction).body += FunctionPass(
+			readCounts(vOriginal), reassigned(vOriginal), passedOnly(vOriginal), vFunction.params.toSet() - vOwned.toSet(), inEffects, inReturns, null, null, vOwned.toSet(),
+		).block(vOriginal, vScope)
 	}
+}
 
 	/** The locals of [inBody] that are given a value somewhere else than in their declaration. */
 	private fun reassigned(inBody: List<KStmt>): Set<KLocal> {
@@ -93,6 +192,38 @@ class ArcInsert(
 		}
 		block(inBody)
 		return vResult
+	}
+
+	/**
+	 * The temporaries of [inBody] that are only ever passed to functions: every read is an
+	 * argument of a call. Nothing in the function then refers to such an object, or into it,
+	 * except for the length of a call.
+	 */
+	private fun passedOnly(inBody: List<KStmt>): Set<KLocal> {
+		val vPassed = HashSet<KLocal>()
+		val vOther = HashSet<KLocal>()
+		fun passed(inArgument: KExpr): KLocal? = when (inArgument) {
+			is KRead -> inArgument.local.takeIf { it.isTemporary }
+			is KRefCast -> passed(inArgument.operand)
+			else -> null
+		}
+		fun call(inRoot: KExpr): KCall? = when (inRoot) {
+			is KCall -> inRoot
+			is KRefCast -> call(inRoot.operand)
+			else -> null
+		}
+		inBody.anyStatement { vStatement ->
+			for (vRoot in vStatement.ownExpressions()) {
+				val vCall = call(vRoot)
+				val vDirect = vCall?.arguments?.mapNotNull { passed(it) } ?: emptyList()
+				vPassed += vDirect
+				// Every other read: also inside an argument that is more than the local itself.
+				val vRest = if (vCall == null) listOf(vRoot) else vCall.arguments.filter { passed(it) == null }
+				vRest.forEach { vExpr -> vExpr.anyNode { if (it is KRead && it.local.isTemporary) vOther += it.local; false } }
+			}
+			false
+		}
+		return vPassed - vOther
 	}
 
 	/** How many times each local is read in [inBody]. */
@@ -150,6 +281,9 @@ class ArcInsert(
 	private class Scope(val loopId: Int?) {
 		val owned = ArrayList<KLocal>()
 
+		/** True for a loop that may run its body more than once; a `try` block is a loop that runs once. */
+		var repeats = false
+
 		/** Locals of this scope that handed their reference over: nothing left to release from here on. */
 		val spent = HashSet<KLocal>()
 	}
@@ -157,6 +291,8 @@ class ArcInsert(
 	private inner class FunctionPass(
 		private val mReadCounts: Map<KLocal, Int>,
 		private val mReassigned: Set<KLocal>,
+		/** Temporaries that are only passed to functions: see [passedOnly]. */
+		private val mPassedOnly: Set<KLocal>,
 		private val mParams: Set<KLocal>,
 		private val mEffects: Effects,
 		private val mReturns: BorrowedReturns,
@@ -164,7 +300,12 @@ class ArcInsert(
 		private val mBorrowedForm: BorrowedReturns.Info?,
 		/** In a `__m` form: the parameter holding the address of the caller's variable for an owned result. */
 		private val mKeep: KLocal?,
+		/** In an owned form: the parameters the function owns, as it owns its locals. */
+		private val mOwnedParams: Set<KLocal>,
 	) {
+		/** The statement being translated. */
+		private var mCurrent: KStmt? = null
+
 		/** The statements that run after the one being translated, in its block (for a loop: to the end of the iteration). */
 		private var mRest: List<KStmt> = emptyList()
 
@@ -174,6 +315,9 @@ class ArcInsert(
 		/** For each enclosing scope, the statements that run in it after the one being translated. */
 		private val mRests = ArrayList<List<KStmt>>()
 
+		/** The enclosing loops that may run their body again, innermost last. */
+		private val mLoops = ArrayList<KLoop>()
+
 		/** Locals that borrow what they hold: they neither retain nor release it. */
 		private val mBorrowed = HashSet<KLocal>()
 
@@ -182,6 +326,22 @@ class ArcInsert(
 		 * overwrites the place they read from. Nothing may depend on them for longer than that.
 		 */
 		private val mBriefly = HashSet<KLocal>()
+
+		/**
+		 * Borrowing locals whose object is kept alive by a place that can be overwritten (a `var`
+		 * field, an array element, a top-level property), directly or through another such local:
+		 * the borrow holds because nothing was found to write there.
+		 */
+		private val mPlaceBorrowers = HashSet<KLocal>()
+
+		/** True when what [inValue] reads is kept alive by a place that can be overwritten: see [mPlaceBorrowers]. */
+		private fun hangsOnPlace(inValue: KExpr): Boolean = when (inValue) {
+			is KRefCast -> hangsOnPlace(inValue.operand)
+			is KFieldRead -> !inValue.field.isImmutable || hangsOnPlace(inValue.target)
+			is KIndexRead, is KGlobalRead -> true
+			is KRead -> inValue.local in mPlaceBorrowers
+			else -> false
+		}
 
 		/** Owning locals something borrows from: they keep their reference to the end of their scope. */
 		private val mLentOut = HashSet<KLocal>()
@@ -258,6 +418,57 @@ class ArcInsert(
 		}
 		private var mNextTemp = 0
 
+		/**
+		 * `var` locals that walk a structure without counting: see [canWalk]. Assigning to one
+		 * neither takes a reference nor gives one up.
+		 */
+		private val mWalkers = HashSet<KLocal>()
+
+		/**
+		 * True when the owning or borrowing local [inLocal] holds one object for the rest of the
+		 * block being translated: it is steady ([isSteady]), or it is a `var` that nothing in the
+		 * rest of the block assigns. It is then recorded as lent out.
+		 */
+		private fun holdsForRest(inLocal: KLocal): Boolean {
+			// Not a temporary: it holds an object only to pass it on, and would now keep it to the end
+			// of the block (`var x = T(); x = null` gives the object up at the assignment).
+			if (inLocal in mBriefly || inLocal in mWalkers || inLocal.isTemporary) return false
+			if (isSteady(inLocal)) return true
+			if (mScopes.none { inLocal in it.owned && inLocal !in it.spent }) return false
+			// Read here for the last time: it hands its reference over instead, and what walks from it
+			// then gives up each object as it leaves it, which is cheaper than giving up the whole
+			// structure at the end.
+			if (canHandOver(inLocal)) return false
+			val vIsAssigned = mRest.anyStatement { (it is KSet && it.local === inLocal) || (it is KConcat && it.target === inLocal) }
+			if (vIsAssigned) return false
+			mLentOut += inLocal
+			return true
+		}
+
+		/**
+		 * True when the `var` local [inLocal], declared with [inFirst], can go from object to object
+		 * without counting (`node = node.next` down a list): every value it is given is null, or is
+		 * read - through fields and array elements only - from the local itself or from something
+		 * that holds its object for the rest of the block, and nothing in the rest of the block
+		 * writes a field or an element it follows. Each object it reaches then hangs on the one
+		 * before, back to one that is held: none can go while the local is in use.
+		 */
+		private fun canWalk(inLocal: KLocal, inFirst: KExpr): Boolean {
+			val vValues = arrayListOf(inFirst)
+			val vIsOdd = mRest.anyStatement { vStatement ->
+				if (vStatement is KSet && vStatement.local === inLocal) vValues += vStatement.value
+				vStatement is KConcat && vStatement.target === inLocal
+			}
+			if (vIsOdd || vValues.size < 2) return false
+			val vRest = mRest
+			val vWritten = lazy { mEffects.of(vRest) }
+			return vValues.all { vValue ->
+				!vValue.isImpure() && stays(vValue, vWritten) { vBase ->
+					vBase is KNull || vBase is KStaticRead || vBase is KStringLit || (vBase is KRead && (vBase.local === inLocal || holdsForRest(vBase.local)))
+				}
+			}
+		}
+
 		/** Locals whose reference was handed over by the statement being built: they are cleared after it. */
 		private val mHandedOver = ArrayList<KLocal>()
 
@@ -274,6 +485,9 @@ class ArcInsert(
 		private fun canHandOver(inLocal: KLocal): Boolean {
 			val vIndex = mScopes.indexOfLast { inLocal in it.owned }
 			if (vIndex < 0) return false
+			// Given another value before anything reads it again (`head = Node(head)`): what it holds
+			// now is not needed here any more, loop or not. It is cleared, so the assignment finds nothing.
+			if (mHandsOverAtLastUse && inLocal !in mLentOut && isOverwrittenNext(inLocal)) return true
 			if (!(vIndex + 1 until mScopes.size).all { mScopes[it].loopId == null }) return false
 			if (mReadCounts[inLocal] == 1) return true
 			// Read elsewhere too, but this is the last time (`t = alloc; init(t); x.f = t`): nothing
@@ -281,6 +495,28 @@ class ArcInsert(
 			// and nothing borrowed from it.
 			if (!mHandsOverAtLastUse || inLocal in mLentOut) return false
 			return (vIndex until mScopes.size).none { reads(mRests[it], inLocal) }
+		}
+
+		/**
+		 * True when the next thing that happens to [inLocal] after the statement being translated,
+		 * in its block, is an assignment that does not read it, with no way out of the block in
+		 * between.
+		 */
+		private fun isOverwrittenNext(inLocal: KLocal): Boolean {
+			if (inLocal !in mReassigned) return false
+			for (vStatement in mRest) {
+				if (vStatement is KSet && vStatement.local === inLocal) return !reads(listOf(vStatement), inLocal)
+				if (reads(listOf(vStatement), inLocal)) return false
+				if (listOf(vStatement).anyStatement { it is KBreak || it is KContinue }) return false
+			}
+			return false
+		}
+
+		/** How many times the statement being translated reads [inLocal]. */
+		private fun readsNow(inLocal: KLocal): Int {
+			var vCount = 0
+			mCurrent?.ownExpressions()?.forEach { vRoot -> vRoot.anyNode { if (it is KRead && it.local === inLocal) vCount++; false } }
+			return vCount
 		}
 
 		// ==================
@@ -303,8 +539,11 @@ class ArcInsert(
 
 		private fun loop(inLoop: KLoop): KLoop {
 			val vScope = Scope(inLoop.id)
+			vScope.repeats = inLoop.latch.isNotEmpty() || (inLoop.body.lastOrNull() as? KBreak)?.loopId != inLoop.id ||
+				inLoop.body.anyStatement { it is KContinue && it.loopId == inLoop.id }
 			mScopes += vScope
 			mRests += emptyList<KStmt>()
+			if (vScope.repeats) mLoops += inLoop
 			val vBody = ArrayList<KStmt>()
 			val vLatch = ArrayList<KStmt>()
 			inLoop.body.forEachIndexed { vIndex, vStatement ->
@@ -319,22 +558,37 @@ class ArcInsert(
 			}
 			mScopes.removeLast()
 			mRests.removeLast()
+			if (vScope.repeats) mLoops.removeLast()
 			// The latch runs at the end of every iteration, also after `continue`: that is where
 			// the iteration's locals are released.
 			return KLoop(inLoop.id, declarations(vScope) + vBody, vLatch + releases(vScope))
 		}
 
-		private fun declarations(inScope: Scope): List<KStmt> = inScope.owned.map { KLet(it, KNull(it.type)) }
+		private fun declarations(inScope: Scope): List<KStmt> = inScope.owned.filter { it !in mOwnedParams }.map { KLet(it, KNull(it.type)) }
 
 		private fun releases(inScope: Scope): List<KStmt> =
-			inScope.owned.asReversed().filter { it !in inScope.spent }.map { KRelease(KRead(it)) }
+			inScope.owned.asReversed().filter { it !in inScope.spent && isSet(it) }.map { KRelease(KRead(it)) }
+
+		/** Owning locals that a statement translated so far gives a value: the others still hold the null they are declared with. */
+		private val mAssigned = HashSet<KLocal>()
+
+		/**
+		 * False when [inLocal] is known to hold nothing at the point being translated, so that a way
+		 * out of its block here (the `return` after a call that failed, mostly) has nothing to
+		 * release: no statement before this one assigns it. Inside a loop that comes round again a
+		 * statement further down may have run already, so everything counts as set there.
+		 */
+		private fun isSet(inLocal: KLocal): Boolean = mLoops.isNotEmpty() || inLocal in mAssigned || inLocal in mOwnedParams
 
 		private fun endsWithJump(inStatements: List<KStmt>): Boolean = when (inStatements.lastOrNull()) {
 			is KReturn, is KBreak, is KContinue -> true
 			else -> false
 		}
 
-		private fun own(inType: KType): KLocal = KLocal("ktc2_t${mNextTemp++}", inType).also { mScopes.last().owned += it }
+		private fun own(inType: KType): KLocal = KLocal("ktc2_t${mNextTemp++}", inType).also {
+			mScopes.last().owned += it
+			mAssigned += it
+		}
 
 		// ==================
 		// MARK: Values
@@ -366,16 +620,29 @@ class ArcInsert(
 		/** Holds the reference arguments of a call that are not plain locals in temporaries. */
 		private fun protectArguments(inValue: KExpr, outStatements: MutableList<KStmt>): KExpr = when (inValue) {
 			is KRefCast -> KRefCast(protectArguments(inValue.operand, outStatements), inValue.type)
-			is KCall -> KCall(inValue.function, inValue.arguments.map { vArgument ->
-				// Read from a place the function called cannot overwrite: it stays there, and alive, for the call.
-				if (!isRef(vArgument.type) || isSafeBorrow(vArgument) || stays(vArgument, lazy { mEffects.of(inValue.function) }, ::isSafeBorrow)) {
-					vArgument
-				} else {
-					val vHolder = own(vArgument.type)
-					outStatements += KSet(vHolder, KRetain(vArgument))
-					KRead(vHolder)
+			is KCall -> {
+				// The parameters the function would take over, when this is the last use of what one of them is passed.
+				val vOwned = mOwnable[inValue.function] ?: emptySet()
+				val vGiven = vOwned.filter { vIndex ->
+					val vLocal = localOf(inValue.arguments[vIndex])
+					vLocal != null && readsNow(vLocal) == 1 && vLocal !in mHandedOver && canHandOver(vLocal)
 				}
-			})
+				val vFunction = if (vGiven.isEmpty()) inValue.function else ownedForm(inValue.function)
+				KCall(vFunction, inValue.arguments.mapIndexed { vIndex, vArgument ->
+					when {
+						// The owned form takes a reference for each of its owned parameters: the caller's own, or a new one.
+						vGiven.isNotEmpty() && vIndex in vGiven -> vArgument.also { mHandedOver += localOf(it)!! }
+						vGiven.isNotEmpty() && vIndex in vOwned -> KRetain(vArgument)
+						// Read from a place the function called cannot overwrite: it stays there, and alive, for the call.
+						!isRef(vArgument.type) || isSafeBorrow(vArgument) || stays(vArgument, lazy { mEffects.of(inValue.function) }, ::isSafeBorrow) -> vArgument
+						else -> {
+							val vHolder = own(vArgument.type)
+							outStatements += KSet(vHolder, KRetain(vArgument))
+							KRead(vHolder)
+						}
+					}
+				})
+			}
 			else -> inValue
 		}
 
@@ -390,6 +657,7 @@ class ArcInsert(
 		// ==================
 
 		private fun statement(inStatement: KStmt, outStatements: MutableList<KStmt>) {
+			mCurrent = inStatement
 			translate(inStatement, outStatements)
 			// A local that handed its reference over no longer holds it. In its own, straight-line
 			// scope every later exit simply skips it; elsewhere (a branch, or a loop whose `continue`
@@ -399,7 +667,45 @@ class ArcInsert(
 			for (vLocal in mHandedOver) {
 				if (vScope.loopId == null && vLocal in vScope.owned && vLocal !in mReassigned) vScope.spent += vLocal else outStatements += KSet(vLocal, KNull(vLocal.type))
 			}
+			endTemporaries(inStatement, outStatements)
 			mHandedOver.clear()
+		}
+
+		/**
+		 * Gives up the temporaries [inStatement] used for the last time: the object built for an
+		 * argument ends with the call, not with the block, so one that a list took and let go again
+		 * is gone by then. Only for a temporary of this block that was just passed to functions, that
+		 * nothing borrows from and that still holds its reference.
+		 *
+		 * Giving up an object that may have a `deinit` runs the program's code at a point [Effects]
+		 * does not know of (it counts on the end of the block): it waits for the end of the block
+		 * when a local that borrows from a place that code could overwrite is still used after this
+		 * statement, or is used in a loop around it, which may come back to that use.
+		 */
+		private fun endTemporaries(inStatement: KStmt, outStatements: MutableList<KStmt>) {
+			if (inStatement is KIf || inStatement is KLoop || inStatement is KReturn) return
+			val vScope = mScopes.last()
+			val vUsed = LinkedHashSet<KLocal>()
+			for (vRoot in inStatement.ownExpressions()) {
+				vRoot.anyNode { if (it is KRead && it.local in mPassedOnly) vUsed += it.local; false }
+			}
+			// A temporary nothing reads holds a result nobody takes.
+			(inStatement as? KLet)?.local?.takeIf { it.isTemporary && mReadCounts[it] == null }?.let { vUsed += it }
+			for (vLocal in vUsed) {
+				if (vLocal !in vScope.owned || vLocal in vScope.spent || vLocal in mHandedOver || vLocal in mReassigned || vLocal in mLentOut) continue
+				if (reads(mRest, vLocal)) continue
+				if (mEffects.mayDeinit(vLocal.type) && mPlaceBorrowers.any { vBorrower ->
+						mRests.any { reads(it, vBorrower) } || mLoops.any { reads(it.body, vBorrower) || reads(it.latch, vBorrower) }
+					}
+				) continue
+				if (vScope.loopId == null) {
+					outStatements += KRelease(KRead(vLocal))
+					vScope.spent += vLocal
+				} else {
+					// A `continue` may have jumped past this point: the release at the end of the round finds nothing.
+					outStatements += KSet(vLocal, KNull(vLocal.type), true)
+				}
+			}
 		}
 
 		private fun translate(inStatement: KStmt, outStatements: MutableList<KStmt>) {
@@ -411,12 +717,21 @@ class ArcInsert(
 						(canBorrow(vGiven) || (!vGiven.isImpure() && canBorrowBriefly(vLocal, vGiven)))
 					) {
 						mBorrowed += vLocal
+						if (hangsOnPlace(vGiven)) mPlaceBorrowers += vLocal
+						outStatements += inStatement
+						return
+					}
+					if (vGiven != null && vLocal.type is KRefType && vLocal in mReassigned && mWalks && canWalk(vLocal, vGiven)) {
+						mBorrowed += vLocal
+						mWalkers += vLocal
+						mPlaceBorrowers += vLocal
 						outStatements += inStatement
 						return
 					}
 					if (vGiven != null && vLocal.type is KRefType && vLocal !in mReassigned) {
 						borrowedCall(vLocal, vGiven)?.let {
 							mBorrowed += vLocal
+							mPlaceBorrowers += vLocal
 							outStatements += KLet(vLocal, it)
 							return
 						}
@@ -424,14 +739,23 @@ class ArcInsert(
 					val vInit = vGiven?.let { stored(it, vLocal.type, outStatements) }
 					if (isRef(vLocal.type)) {
 						mScopes.last().owned += vLocal
-						if (vInit != null) outStatements += KSet(vLocal, vInit)
+						if (vInit != null) {
+							outStatements += KSet(vLocal, vInit)
+							mAssigned += vLocal
+						}
 					} else {
 						outStatements += KLet(vLocal, vInit)
 					}
 				}
 				is KSet -> {
+					if (inStatement.local in mWalkers) {
+						// A walking local only looks: nothing is taken, nothing given up.
+						outStatements += KSet(inStatement.local, inStatement.value)
+						return
+					}
 					val vIsRef = isRef(inStatement.local.type)
 					outStatements += KSet(inStatement.local, stored(inStatement.value, inStatement.local.type, outStatements), vIsRef)
+					mAssigned += inStatement.local
 				}
 				is KGlobalSet -> {
 					val vIsRef = isRef(inStatement.global.type)
@@ -450,14 +774,18 @@ class ArcInsert(
 				is KEval -> {
 					val vValue = protectArguments(inStatement.expr, outStatements)
 					if (isRef(vValue.type) && vValue.isImpure()) {
-						// A discarded +1 result still has to be released.
-						outStatements += KSet(own(vValue.type), vValue)
+						// A +1 result nobody takes is given up at once: an object removed from a list and
+						// not used dies there, not at the end of the block.
+						val vResult = KLocal("ktc2_t${mNextTemp++}", vValue.type)
+						outStatements += KLet(vResult, vValue)
+						outStatements += KRelease(KRead(vResult))
 					} else {
 						outStatements += KEval(vValue)
 					}
 				}
 				is KConcat -> {
 					mScopes.last().owned += inStatement.target
+					mAssigned += inStatement.target
 					outStatements += inStatement
 				}
 				is KIf -> outStatements += KIf(inStatement.condition, block(inStatement.thenBlock, Scope(null)), block(inStatement.elseBlock, Scope(null)))
@@ -547,7 +875,7 @@ class ArcInsert(
 			val vReturned = inReturn.value?.let { localOf(it) }?.takeIf { vLocal -> isRef(vLocal.type) && mScopes.any { vLocal in it.owned } }
 			if (vReturned != null) {
 				for (vScope in mScopes.asReversed()) {
-					outStatements += vScope.owned.asReversed().filter { it !== vReturned && it !in vScope.spent }.map { KRelease(KRead(it)) }
+					outStatements += vScope.owned.asReversed().filter { it !== vReturned && it !in vScope.spent && isSet(it) }.map { KRelease(KRead(it)) }
 				}
 				outStatements += inReturn
 				return

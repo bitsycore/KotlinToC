@@ -62,6 +62,38 @@ private class ValueArrayIterator<T>(private val mArray: ValueArray<T>) : Iterato
 }
 
 /**
+ * Implemented by classes that own something else than memory. [deinit] runs once, when the
+ * last reference to the object goes and before its properties are given up. The C side of
+ * `ktc2.Deinit`: the runtime makes the call.
+ */
+public interface Deinit {
+	public fun deinit()
+}
+
+/**
+ * What [createCleaner] returns: the cleanup action runs when this object ends. The C side of
+ * `ktc2.Cleaner`.
+ */
+public interface Cleaner
+
+/** A [Cleaner] that is kept as an object: it runs its action when the last reference to it goes. */
+private class ResourceCleaner<T>(private val mResource: T, private val mAction: (T) -> Unit) : Cleaner, Deinit {
+	override fun deinit() {
+		mAction(mResource)
+	}
+}
+
+/**
+ * A [Cleaner] that runs [cleanupAction] with [resource] when it ends. The C side of
+ * `ktc2.createCleaner`: the action runs at once when the last reference to the cleaner goes.
+ * Declared as `private val cleaner = createCleaner(resource) { … }` in a class, with a lambda
+ * that uses nothing from around it, no object is made at all: the class runs the action with
+ * the resource when an instance ends, and holds the resource in that property unless it is
+ * already a `val` of the class.
+ */
+public fun <T> createCleaner(resource: T, cleanupAction: (resource: T) -> Unit): Cleaner = ResourceCleaner(resource, cleanupAction)
+
+/**
  * Non-owning reference usable as a value. The C side of `ktc2.WeakRef`: it holds the weak
  * cell of its target instead of a `java.lang.ref.WeakReference`.
  */

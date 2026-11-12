@@ -269,6 +269,29 @@ static inline size_t pool_size(uint32_t typeId)
 #endif
 }
 
+/**
+ * The size in the pool of the block of [object], or 0 when it is a block of malloc's. A string
+ * or an array is as large as it says itself; it is in the pool when that is small enough.
+ */
+static inline size_t pool_size_of(const ktc2_Obj* object)
+{
+#ifdef KTC2_NO_POOL
+	(void)object;
+	return 0;
+#else
+	size_t size;
+	if (object->typeId == KTC2_TYPE_STRING) {
+		size = sizeof(ktc2_String) + (size_t)((const ktc2_String*)object)->size + 1;
+	} else if (object->typeId <= KTC2_TYPE_ARRAY_VALUE) {
+		const ktc2_Array* array = (const ktc2_Array*)object;
+		size = sizeof(ktc2_Array) + (size_t)(array->length > 0 ? array->length : 1) * (size_t)array->elementSize;
+	} else {
+		size = ktc2_types[object->typeId].size;
+	}
+	return size <= POOL_MAX ? size : 0;
+#endif
+}
+
 /** A block for an object of [size] bytes (1..POOL_MAX), not zeroed. */
 static void* pool_take(size_t size)
 {
@@ -339,6 +362,10 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 		object->rc = KTC2_ARENA | 1;
 	} else {
 		size_t pooled = pool_size(typeId);
+#ifndef KTC2_NO_POOL
+		/* A small string or array: its size is found again in the object when it is freed (pool_size_of). */
+		if (typeId <= KTC2_TYPE_ARRAY_VALUE && size <= POOL_MAX) pooled = size;
+#endif
 		if (pooled) {
 			/* Where the object goes back to is decided by its type alone: it must be of the size of its type. */
 			if (size > pooled) fail("java.lang.InternalError", "an object larger than its type");
@@ -414,7 +441,7 @@ static uint32_t retired_at;
 
 static void retire(ktc2_Obj* object)
 {
-	size_t pooled = pool_size(object->typeId);
+	size_t pooled = pool_size_of(object);
 	size_t size = pooled ? pooled : block_size(object);
 	memset(object, 0xDD, size);
 	if (size > RETIRED_MAX_SIZE) {
@@ -438,7 +465,7 @@ void ktc2_fail_freed(void)
 #else
 static inline void retire(ktc2_Obj* object)
 {
-	size_t pooled = pool_size(object->typeId);
+	size_t pooled = pool_size_of(object);
 	if (pooled) pool_give(object, pooled); else free(object);
 }
 #endif
@@ -450,9 +477,97 @@ static inline void retire(ktc2_Obj* object)
  */
 static uint32_t strings_gone;
 
+static void threads_wait(void);
+
+/** Set when the program is over: see ktc2_ending. */
+static int ending;
+
+void ktc2_ending(void)
+{
+	threads_wait();
+	ending = 1;
+}
+
+/**
+ * Calls the `deinit` of [object], whose count has reached zero. The object is whole while it
+ * runs and counts as held once, so the code may take references to it and give them back. One
+ * that is still there afterwards would refer to an object that is gone: that ends the program,
+ * and so does an exception, which has nowhere to go. An exception already in flight (the
+ * object is given up on the way out of a function that threw) is set aside for the call.
+ */
+static void deinit_run(ktc2_Obj* object, void (*deinit)(ktc2_Obj*))
+{
+	uint32_t count = KTC2_RC_LOAD(object);
+	KTC2_RC_INC(object, count);
+	ktc2_Obj* pending = ktc2_pending;
+	ktc2_pending = NULL;
+	deinit(object);
+	if (ktc2_pending) ktc2_uncaught();
+	ktc2_pending = pending;
+	count = KTC2_RC_LOAD(object);
+	if ((KTC2_RC_DEC(object, count) & KTC2_COUNT_MASK) != 0) {
+		fflush(stdout);
+		fprintf(stderr, "ktc2: an object of type %s is still referred to after its deinit\n", ktc2_types[object->typeId].name);
+		abort();
+	}
+}
+
+/*
+ * Destroying an object releases what it refers to, which destroys that in turn: a list of a
+ * million cells would need a million frames of the C stack. Once the stack has grown by
+ * DESTROY_STACK bytes since the shallowest destruction seen on this thread, an object is put
+ * aside instead, and destroyed by the first destruction that gets back below that. An object
+ * in a frame is never put aside: its memory does not wait.
+ */
+#define DESTROY_STACK (96 * 1024)
+
+/** The address of a local of the shallowest ktc2_destroy so far (the stack grows downwards). */
+static KTC2_TLS char* destroy_base;
+static KTC2_TLS ktc2_Obj** destroy_later;
+static KTC2_TLS size_t destroy_later_count;
+static KTC2_TLS size_t destroy_later_room;
+
+KTC2_ALWAYS_INLINE void destroy_now(ktc2_Obj* object);
+
+/** Puts [object] aside: the stack is deep. */
+static void destroy_put_aside(ktc2_Obj* object)
+{
+	if (destroy_later_count == destroy_later_room) {
+		destroy_later_room = destroy_later_room ? destroy_later_room * 2 : 64;
+		destroy_later = realloc(destroy_later, destroy_later_room * sizeof *destroy_later);
+		if (!destroy_later) abort();
+	}
+	destroy_later[destroy_later_count++] = object;
+}
+
+/** Destroys what was put aside, and what that puts aside in turn. */
+static void destroy_rest(void);
+
 void ktc2_destroy(ktc2_Obj* object)
 {
+	char* here = ktc2_frame_address();
+	char* base = destroy_base;
+	if (ktc2_seldom(here > base)) {
+		destroy_base = here;
+	} else if (ktc2_seldom((size_t)(base - here) > DESTROY_STACK) && !(object->rc & KTC2_STACK)) {
+		destroy_put_aside(object);
+		return;
+	}
+	destroy_now(object);
+	if (ktc2_seldom(destroy_later_count != 0)) destroy_rest();
+}
+
+KTC2_ALWAYS_INLINE void destroy_now(ktc2_Obj* object)
+{
+	/* A weak reference reads null from the moment the count is zero, also inside `deinit`. */
 	if (object->rc & KTC2_WEAK) weak_drop(object);
+	void (*deinit)(ktc2_Obj*) = ktc2_types[object->typeId].deinit;
+	if (deinit && !ending) {
+		KTC2_RC_AND(object, ~KTC2_WEAK);
+		deinit_run(object, deinit);
+		/* A weak reference made by `deinit` itself. */
+		if (object->rc & KTC2_WEAK) weak_drop(object);
+	}
 	if (object->typeId == KTC2_TYPE_STRING && ((ktc2_String*)object)->size != ((ktc2_String*)object)->length) {
 		(void)ktc2_atomic_add(&strings_gone, 1);
 	}
@@ -468,7 +583,10 @@ void ktc2_destroy(ktc2_Obj* object)
 	retire(object);
 }
 
-static void threads_wait(void);
+static void destroy_rest(void)
+{
+	while (destroy_later_count != 0) destroy_now(destroy_later[--destroy_later_count]);
+}
 
 int ktc2_exit(void)
 {
@@ -1511,6 +1629,9 @@ static void thread_body(ktc2_Obj* thread)
 	}
 	ktc2_release(thread);
 	pool_leave();
+	free(destroy_later);
+	destroy_later = NULL;
+	destroy_later_room = 0;
 	ktc2_atomic_sub(&threads_running, 1);
 }
 

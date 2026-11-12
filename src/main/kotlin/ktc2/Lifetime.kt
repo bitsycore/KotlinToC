@@ -35,10 +35,67 @@ class WeakRef<T : Any>(inTarget: T) {
 }
 
 /**
- * Implemented by classes that own a non-memory resource. [deinit] runs when the last
- * reference is dropped. On the JVM it is never called automatically; prefer
- * `AutoCloseable` + `use { }` in portable code.
+ * Implemented by classes that own something else than memory (a handle of a C library, a
+ * registration to undo). In C, [deinit] runs once, when the last reference to the object goes
+ * and before its properties are given up, as `deinit` does in Swift:
+ *
+ * - a variable holds its object to the end of its block unless it handed it on; an object
+ *   that no variable holds (an argument built in place, a result nobody takes) ends with its
+ *   statement;
+ * - the object must not be referred to any longer when `deinit` returns, and no exception may
+ *   leave it: either ends the program;
+ * - a weak reference to the object already reads `null` inside `deinit`;
+ * - what is still alive when the program ends is not deinitialized.
+ *
+ * A subclass that overrides `deinit` calls `super.deinit()` itself. A `@Struct`, a value class
+ * and a class held in place by `@Value` cannot implement this: they are copied.
+ *
+ * On the JVM nothing calls `deinit`: there is no last reference to wait for. Code that must
+ * release something on both implements `AutoCloseable` as well, is used with `use { }`, and has
+ * `deinit` call a `close()` that may be called twice.
  */
 interface Deinit {
 	fun deinit()
+}
+
+/**
+ * What [createCleaner] returns. It has no members: it is kept, usually in a private property
+ * of the object that owns the resource, so that it ends when that object does.
+ */
+sealed interface Cleaner
+
+private class RegisteredCleaner : Cleaner
+
+/** The JVM's cleaner, which runs the actions on a thread of its own once the collector finds a [Cleaner] unreachable. */
+private val kJvmCleaner: java.lang.ref.Cleaner by lazy { java.lang.ref.Cleaner.create() }
+
+/**
+ * A [Cleaner] that runs [cleanupAction] with [resource] after it has become unreachable: the
+ * way to release something that is not memory which works everywhere. It has the signature and
+ * the rules of Kotlin/Native's `kotlin.native.ref.createCleaner`:
+ *
+ * ```
+ * class Wrapper {
+ *     private val resource = Resource()
+ *     private val cleaner = createCleaner(resource) { it.dispose() }
+ * }
+ * ```
+ *
+ * - [cleanupAction] must not use anything from around it (not `this`, not a local): only the
+ *   resource it is handed. A resource or an action that refers to the object holding the
+ *   cleaner keeps both alive for ever, and the action never runs;
+ * - when it runs differs: in C at once, when the last reference to the cleaner goes, on the
+ *   thread that gave it up; on the JVM some time after, on another thread, when the collector
+ *   gets to it, and possibly never;
+ * - a cleaner that is still alive when the program ends does not run.
+ *
+ * In C a cleaner declared as above costs nothing, not even a field: the class runs the action
+ * with its `resource` property when an instance ends, as if it had a [Deinit.deinit]. (With a
+ * resource that is not a `val` of the class, the property of the cleaner holds it.) Where the
+ * whole object is needed at that moment, and C is the only target, use [Deinit].
+ */
+fun <T> createCleaner(resource: T, cleanupAction: (resource: T) -> Unit): Cleaner {
+	val vCleaner = RegisteredCleaner()
+	kJvmCleaner.register(vCleaner) { cleanupAction(resource) }
+	return vCleaner
 }

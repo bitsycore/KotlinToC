@@ -98,9 +98,41 @@ class Devirtualize(private val mModule: KModule) {
 			for (vFunction in vBodies) scan(vFunction)
 		} while (mChanged)
 		for (vFunction in vBodies) {
+			answerTests(vFunction)
 			val vBody = rewrite(vFunction.body)
 			vFunction.body.clear()
 			vFunction.body += vBody
+		}
+	}
+
+	/** `is` tests answered. Filled by [run]. */
+	var answered = 0
+
+	/**
+	 * Answers the `is` tests (and with them the tests of `as`) on a value whose exact class is
+	 * known: an object of that class passes or it does not, whatever the test would find.
+	 */
+	private fun answerTests(inFunction: KFunction) {
+		inFunction.body.anyStatement { vStatement ->
+			for (vRoot in vStatement.ownExpressions()) {
+				vRoot.anyNode { vNode ->
+					if (vNode is KInstanceOf) {
+						val vClass = classOf(vNode.operand) as? KClass
+						val vPasses = when (val vTarget = vNode.target) {
+							is KClassTarget -> vClass?.isSubclassOf(vTarget.cls)
+							is KInterfaceTarget -> vClass?.implements(vTarget.iface)
+							// A string or a boxed number is no object of a class of the program.
+							KStringTarget, is KBoxTarget -> if (vClass != null) false else null
+						}
+						if (vPasses != null) {
+							vNode.answer = vPasses
+							answered++
+						}
+					}
+					false
+				}
+			}
+			false
 		}
 	}
 
@@ -113,6 +145,8 @@ class Devirtualize(private val mModule: KModule) {
 		val vOpen = HashSet<KFunction>()
 		mModule.entry?.let { vOpen += it }
 		vOpen += mModule.throwers.values
+		// The runtime calls these when an object ends.
+		vOpen += mModule.classes.mapNotNull { it.deinit }
 		for (vFunction in inFunctions) {
 			// The runtime calls the platform layer by name.
 			if (vFunction.cName.startsWith("ktc2_internal_")) vOpen += vFunction

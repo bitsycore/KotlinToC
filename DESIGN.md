@@ -86,9 +86,28 @@ when the string is all ASCII, a scan otherwise.
 
 `--warn-heap` lists every allocation left on the heap, with the reason.
 
-On the heap, an object of a class or a box of at most 128 bytes does not go through `malloc`
-and `free`: the runtime keeps freed blocks in lists by size, per thread, and the next object
-of that size takes one. Strings, arrays and larger objects are `malloc`'s. `-DKTC2_NO_POOL`
+An object "leaves its block" when it is returned, stored into a top-level property, an array
+or a field, or passed to something that keeps it. One store into a field does not count: into
+an object the same function made, which stays in the frame itself; nor does handing it to a
+function that only stores it into the object of another argument (a constructor, a setter:
+`Keeper(Item())` held by a local allocates neither), which is recorded per parameter
+(`mParamHeld`). Inside that function the object it stores into was passed in and outlives the
+call, so what it creates and stores there is not put in its own frame. That is what a closure
+does with the variables its lambda uses, so a lambda that is only called, not kept, costs no
+allocation for itself, for the objects it uses or for the cells of the `var`s it writes. The
+condition is that no read of that field anywhere in the program lets the value out (returns
+it, stores it, hands it to something that keeps it): `EscapeAnalysis` keeps the set of such
+"leaky" fields, by name within a family of generic instantiations.
+
+Destroying an object releases what it holds, which may destroy that in turn. So that a long
+list does not need a frame of the C stack per cell, `ktc2_destroy` looks at how far the stack
+has grown since the shallowest destruction on the thread: past 96 KB the object is put aside
+and destroyed when the stack is back (`DESTROY_STACK` in `ktc2_core.c`).
+
+On the heap, an object of at most 128 bytes does not go through `malloc` and `free`: the
+runtime keeps freed blocks in lists by size, per thread, and the next object of that size
+takes one. That goes for small strings and arrays too, whose size is read from the object
+when it is freed. Larger objects are `malloc`'s. `-DKTC2_NO_POOL`
 makes every object a block of `malloc`'s again.
 
 ---------------------------------------------------------------------------
@@ -105,7 +124,8 @@ makes every object a block of `malloc`'s again.
 | `@Weak` on a property, `WeakRef<T>` | references that do not keep their target alive; they read as null once it is gone. |
 | `@Acyclic` on a property | tells the cycle warning this reference never closes a cycle. |
 | `ktc2.concurrent` | `Thread`, `thread { }`, `synchronized(lock) { }`, `sleep(ms)`. Kotlin has these on the JVM only. |
-| `Deinit` | declared, **not implemented in C**: see `PLAN.md`. |
+| `Deinit` | `deinit()` of a class that implements it runs when the last reference to an object goes. See "Deinit" in section 5. On the JVM nothing calls it. |
+| `createCleaner(resource) { }`, `Cleaner` | the way to release something that runs everywhere: Kotlin/Native's `kotlin.native.ref.createCleaner`, with `java.lang.ref.Cleaner` behind it on the JVM. In C it is a `deinit`, and in a private property it costs no object. See "Cleaners" in section 5. |
 
 ---------------------------------------------------------------------------
 ## 5. Reference counting
@@ -117,6 +137,9 @@ The rules `ArcInsert` applies:
 - A call, an allocation or a string concatenation hands its result to the caller, counted.
 - A local of reference type owns what it holds: declared null at the start of its block,
   released on every way out of it.
+- A temporary (the importer's own local: the object built for an argument, `KLocal.isTemporary`)
+  that is only passed to functions is released after the statement that uses it last, and a
+  result nobody takes at once: what no variable of the program holds ends with its statement.
 - Storing into a local, field, top-level property or array element takes a count and
   releases what was there.
 - An argument that is not a local is first held in a temporary.
@@ -134,6 +157,24 @@ What is left out because nobody can observe it:
   class, elements of reference arrays as one, each top-level property). C written by the
   program may write anything; so may starting or joining a thread and entering or leaving a
   monitor, since another thread's writes come through there.
+- A function that stores a parameter as it is, in a statement of its body that is not inside
+  a branch or a loop (`this.next = next`, with no read of the parameter after it), has a second
+  form `name__o` in which that parameter is owned like a local: the store takes its reference
+  over, and a way out before the store gives it up. A caller at its last use of what it passes
+  calls that form and keeps nothing; for the other owned parameters of the same call it takes
+  a count to give. Only for calls that name the function: a dispatcher has no such form.
+- "Last use" includes a local that is given another value before anything reads it again
+  (`head = Node(i, head)`): what it holds is handed over and the local is cleared, so the
+  assignment finds nothing to release. This holds inside a loop too.
+- A `var` that goes down a structure (`node = node.next`) does not count the objects it
+  passes: every value it is given is read, through fields and elements only, from itself or
+  from something that holds its object for the rest of the block, and nothing in the rest of
+  the block writes a field it follows (`canWalk`). Each object then hangs on the one before.
+  Not when it starts from a local at its last use: that one hands its reference over, and the
+  walk gives up each object as it leaves it, which is cheaper than giving up the structure
+  whole at the end. Not from a temporary either: `var x = T(); x = null` gives up at once.
+- A way out of a block (the `return` after a call that failed) does not release the locals
+  that no statement before it assigned: they still hold the null they were declared with.
 - When something later in the block does overwrite the place, the local may still borrow up
   to its last use, if nothing before that overwrites it: in `x.f = g(x.f)` the old value is
   only needed until `g` returns, and the store comes after. Nothing may in turn borrow from
@@ -148,6 +189,69 @@ What is left out because nobody can observe it:
 
 Counts are plain until the program starts its first thread, atomic after, and always plain
 for objects in a frame.
+
+**Deinit.** A class that implements `ktc2.Deinit` has its `deinit()` called by the runtime
+(`ktc2_destroy`, through `ktc2_TypeInfo.deinit`) when the count of an instance reaches zero,
+before its fields are released, wherever the object lives (heap, frame, arena). As in Swift:
+
+- it runs once, on the thread that gave up the last reference. A variable holds its object to
+  the end of its block unless it handed it on; a temporary to the end of its statement;
+- the object is whole while it runs, and is counted as held once, so the code may pass `this`
+  around. A reference to it that is still there afterwards ends the program ("still referred
+  to after its deinit"), and so does an exception that leaves `deinit`: it is reported as an
+  uncaught one. An exception already in flight is set aside for the call, so `deinit` runs
+  normally while a function that threw is being left;
+- a weak reference to the object reads null from the moment the count is zero, inside
+  `deinit` too;
+- what is still alive when the program ends (held by a top-level property or an `object`) is
+  not deinitialized: `main` calls `ktc2_ending()`, which waits for the other threads and
+  switches `deinit` off, before it releases those.
+
+Not as in Swift: `deinit` is an ordinary overridable function, so a subclass that overrides
+it calls `super.deinit()` itself, and nothing stops a program from calling `deinit()` (it then
+runs again at the end). A `@Struct`, a value class or a class held in place by `@Value` cannot
+implement it: those are copied, and a copy has no last reference (an error from the importer).
+`Deinit` does not extend `AutoCloseable`: `close()` may be called by anyone, more than once,
+on an object that goes on living; a class that wants both implements both and has `deinit`
+call a `close` that can be called twice.
+
+**Cleaners.** `ktc2.createCleaner(resource, action)` returns a `Cleaner` whose end runs
+`action(resource)`: the signature and the rules of Kotlin/Native (the action uses nothing from
+around it; a resource that refers back to the holder of the cleaner leaks). The three targets
+differ only in when: C at the last release, Kotlin/Native and the JVM some time after, on
+another thread, perhaps never. In C the general case is a small object with a `deinit`
+(`ResourceCleaner` in `Ktc2Lifetime.kt`). The usual case has none:
+
+```
+class Wrapper {
+    private val resource = Resource()
+    private val cleaner = createCleaner(resource) { it.dispose() }
+}
+```
+
+A `private val` that nothing in the class reads, initialized by `createCleaner` with a lambda
+without captures, is folded into the class (`foldedCleaner` in `KirImport.kt`): the lambda
+becomes a function `Class_property__clean(resource)`, and `KClass.cleaners` lists it with the
+field the resource is found in when the object ends. When the resource is a `val` property of
+the class, as above, that is the property's own field and the cleaner takes no room: a `val`
+still holds what it held when the cleaner was declared. For any other resource (a constructor
+parameter, a `var`, an expression) the field of the cleaner holds it instead. `settleDeinit` then writes `Class__ends(self)`, which
+calls the `deinit` of the class if it has one and then each action with its field, the most
+derived class first, and makes it `KClass.deinit`. Nothing after the importer knows of
+cleaners: the runtime, `Effects` and the emitter see a class with a `deinit`.
+
+The importer finds the implementation of `Deinit.deinit` as for a call the program makes: the dispatcher of
+`Deinit.deinit` is created when the first such class is instantiated, and `settleDeinit`
+copies each entry to `KClass.deinit`. For counting, the consequence is that giving up a
+reference can run the program's code. `Effects` accounts for it: in a program that has a
+`deinit`, every statement that may give up a reference (a store over an old value, a local
+that ends with its block, a result nobody takes, a runtime function handed references) writes
+what all the `deinit` functions write, unless the type rules it out (a string, an array of
+numbers, a class whose objects hold only such things, with its subclasses and the other
+instantiations of the same generic class). A program without `deinit` is counted exactly as
+before. The early release of a temporary is the one release `Effects` does not place: `ArcInsert`
+leaves it to the end of the block when the object may have a `deinit` and a local that borrows
+from a writable place is still in use (`mPlaceBorrowers`).
 
 **Cycles** are not collected. `CycleLint` warns at compile time about classes that can reach
 themselves through strong references; `@Weak`, `WeakRef` or `@Acyclic` answer the warning.
@@ -345,7 +449,6 @@ Not Kotlin, by design:
 - destruction is immediate, not deferred: visible only through weak references.
 
 Kotlin, but not done:
-- `Deinit.deinit()` is never called in C;
 - `Clock`, `Instant`; the `U` flag and four-letter script codes of `Regex`;
 - case conversion of characters beyond U+FFFF;
 - `isDaemon`, names and priorities of threads;
@@ -356,6 +459,10 @@ Known to differ from the JVM:
   everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library);
 - `ConcurrentModificationException` is never thrown: a list changed while it is iterated
   goes on with what it holds;
+- a `HashMap` entry removed through an iterator stays in the map's storage until the map is
+  rebuilt or cleared (the `Map.Entry` handed out still reads it, as on the JVM): the key and
+  value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
+  and every removal from an `ArrayList`, let go at once;
 - the clock behind `kotlin.time` and `measureTimeMillis` is the clock of the day, not a
   monotonic counter: setting the system clock during a measurement shows in the result;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
@@ -432,8 +539,9 @@ closely; `--dump-ir` writes the Kotlin IR the importer received (`ir.txt`, `ir.k
   code of a local class between the instantiations of the generic class around it, so that
   code reads an `X<Int>` through the type `X<Any>` (`KClass.family` names what the
   instantiations have in common; the pass looks for the casts that give this away and then
-  trusts only what it followed from the allocation). `KTC2_SKIP=devirtualize` (also `ranges`,
-  `handover`, `brief`, separated by commas) leaves an optimization out, to find which one a
+  trusts only what it followed from the allocation). The same knowledge answers `is` and the
+  test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
+  `ranges`, `handover`, `brief`, `walk`, `owned`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - `hidden.txt` and `files.txt`: a class hidden too much or too little shows as an unresolved
   or an ambiguous call inside library sources, far from the cause.

@@ -418,7 +418,10 @@ internal class BodyBuilder(
 		return freshName("${vBase}_$vCount")
 	}
 
-	private fun newTemp(inType: KType): KLocal = KLocal(freshName("t"), inType).also { mTemps += it }
+	private fun newTemp(inType: KType): KLocal = KLocal(freshName("t"), inType).also {
+		it.isTemporary = true
+		mTemps += it
+	}
 
 	/** True when [inValue] cannot be changed by a later statement. */
 	private fun isStable(inValue: KExpr): Boolean = when (inValue) {
@@ -1303,6 +1306,13 @@ internal class BodyBuilder(
 			mBlock += KIndexSet(vOperands[0], vOperands[1], coerce(vOperands[2], inType.element))
 			KUnitValue
 		}
+		// `Storage.drop(index)`: the slot gives up the reference it holds; numbers are left as they are.
+		"drop" -> {
+			val vOperands = lowerOperands(inArguments)
+			val vElement = inType.element
+			if (vElement.isCounted()) mBlock += KIndexSet(vOperands[0], vOperands[1], if (vElement is KRefType) KNull(vElement) else KZero(vElement))
+			KUnitValue
+		}
 		else -> fail(inCall, "call to 'kotlin.Array.$inName'")
 	}
 
@@ -1572,7 +1582,9 @@ internal class BodyBuilder(
 					val vBacking = vDeclaration.backingField ?: continue
 					val vInit = vBacking.initializer?.expression ?: continue
 					val vField = mImporter.fieldIn((mFunction.params[0].type as? KClassType)?.cls, vBacking) ?: continue
-					writeField(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vInit), vField.type))
+					// A folded cleaner: the property holds the resource `createCleaner` was given.
+					val vValue = mImporter.cleanerOf(vField)?.resource ?: vInit
+					writeField(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vValue), vField.type))
 				}
 				is IrAnonymousInitializer -> vDeclaration.body.statements.forEach { lowerStatement(it) }
 				else -> {}

@@ -1,0 +1,70 @@
+in scope with local
+deinit local
+after scope
+made first
+deinit first
+made second
+deinit second
+after reassign
+holding 2
+deinit plain
+deinit derived extra
+deinit base
+after inherited
+parent made
+deinit parent with parent.child and [a, b]
+deinit parent.child
+after parent
+removing
+deinit item1
+clearing
+deinit item0
+deinit item2
+cleared
+deinit old
+replaced
+deinit slot
+array emptied
+deinit new
+as Any: true, as Named: iface
+captured generic is a Deinit: true
+deinit generic text
+deinit named iface
+deinit generic 42
+after seenAs
+deinit argument
+after the call
+deinit statement
+after the statement
+the variable is alive: true
+deinit round0
+end of round 0
+deinit round1
+end of round 1
+deinit in try
+end of try
+finally
+deinit condition
+in the branch
+end of the block
+deinit variable
+after temporaries
+throwing with unwound
+deinit unwound
+caught boom
+made true
+deinit careful [careful, caught]
+caught bang
+weak reference finds it: true
+deinit watched, weak reference finds it: false
+after weak: false
+deinit visitor v, seen 1
+visitor gone
+block: kept then replaced
+assignment: true
+assignment: kept then replaced null
+call: kept and other then replaced and null
+field: kept then replaced
+deinit arena
+after arena 5
+alive at the end: top-level, object

@@ -9,8 +9,78 @@ import com.bitsycore.ktc2.kir.*
  *
  * A field is the field of its class (a write to `next` of one class says nothing of another's);
  * elements of arrays of references are not told apart at all: the answer errs towards "written".
+ *
+ * Giving up a reference can run the program's code: the `deinit` of the object when that was
+ * the last one, and of whatever dies with it. So in a program that has a `deinit`, a statement
+ * that may give up a reference (a store over an old value, a local that ends with its block,
+ * a result nobody takes) writes what every `deinit` writes - unless the type of the reference
+ * rules out that anything with a `deinit` hangs on it: a string, an array of numbers, a class
+ * whose objects hold only such things. A program without `deinit` is not affected.
  */
 class Effects(inModule: KModule) {
+
+	/** Every `deinit` of the program. */
+	private val mDeinits: List<KFunction> = inModule.classes.mapNotNull { it.deinit }.distinct()
+
+	/** The classes whose instances, and what they alone keep alive, have no `deinit`. */
+	private val mQuiet: Set<KClass> = quietClasses(inModule)
+
+	/**
+	 * The classes that giving up a reference of their type cannot lead to a `deinit`. A class is
+	 * out when it has one, when a field may hold something that is out, and when a subclass or
+	 * another instantiation of the same generic class is out (a reference of its type may be to
+	 * one of those).
+	 */
+	private fun quietClasses(inModule: KModule): Set<KClass> {
+		val vQuiet = HashSet<KClass>()
+		if (mDeinits.isEmpty()) return vQuiet
+		vQuiet += inModule.classes
+		// For each class, the classes that are out once it is.
+		val vDependents = HashMap<KClass, MutableList<KClass>>()
+		fun depends(inClass: KClass, inOn: KClass) {
+			vDependents.getOrPut(inOn) { ArrayList() } += inClass
+		}
+		val vFamilies = inModule.classes.filter { it.family != null }.groupBy { it.family }
+		val vPending = ArrayList<KClass>()
+		for (vClass in inModule.classes) {
+			vClass.superClass?.let {
+				depends(vClass, it)
+				depends(it, vClass)
+			}
+			vFamilies[vClass.family]?.forEach { if (it !== vClass) depends(vClass, it) }
+			var vIsOut = vClass.deinit != null
+			for (vField in vClass.fields) {
+				classesOf(vField.type) { vHeld -> if (vHeld == null || vHeld !in vQuiet) vIsOut = true else depends(vClass, vHeld) }
+			}
+			if (vIsOut) vPending += vClass
+		}
+		while (vPending.isNotEmpty()) {
+			val vClass = vPending.removeLast()
+			if (vQuiet.remove(vClass)) vDependents[vClass]?.let { vPending += it }
+		}
+		return vQuiet
+	}
+
+	/** Passes to [inFound] the classes a value of type [inType] may refer to; null stands for any class. */
+	private fun classesOf(inType: KType, inFound: (KClass?) -> Unit) {
+		when (inType) {
+			KStringType -> {}
+			is KClassType -> inFound(inType.cls)
+			is KArrayType -> classesOf(inType.element, inFound)
+			is KStructType -> inType.struct.fields.forEach { classesOf(it.type, inFound) }
+			is KRefType -> inFound(null)
+			else -> {}
+		}
+	}
+
+	private fun mayDeinit(inType: KType, inQuiet: Set<KClass>): Boolean {
+		var vMay = false
+		classesOf(inType) { if (it == null || it !in inQuiet) vMay = true }
+		return vMay
+	}
+
+	/** True when giving up a reference of type [inType] may run a `deinit`. */
+	fun mayDeinit(inType: KType): Boolean = mDeinits.isNotEmpty() && mayDeinit(inType, mQuiet)
 
 	/** What a function or a block may write. [all] stands for code that cannot be looked into. */
 	class Summary {
@@ -114,13 +184,32 @@ class Effects(inModule: KModule) {
 	}
 
 	private fun scan(inBlock: List<KStmt>, outSummary: Summary, outCallees: MutableSet<KFunction>) {
+		// What is given up with a reference of [inType]: see the class comment.
+		fun givesUp(inType: KType) {
+			if (mayDeinit(inType)) outCallees += mDeinits
+		}
 		inBlock.anyStatement { vStatement ->
 			when (vStatement) {
 				// Assigning to inline storage copies a whole object over the one that is there.
-				is KFieldSet -> if (vStatement.field.isInline) outSummary.all = true else outSummary.fields += vStatement.field
+				is KFieldSet -> if (vStatement.field.isInline) outSummary.all = true else {
+					outSummary.fields += vStatement.field
+					givesUp(vStatement.field.type)
+				}
 				// Only an array of references can hold what a borrowed reference depends on.
-				is KIndexSet -> if (vStatement.value.type.isCounted()) outSummary.elements = true
-				is KGlobalSet -> outSummary.globals += vStatement.global
+				is KIndexSet -> if (vStatement.value.type.isCounted()) {
+					outSummary.elements = true
+					givesUp(vStatement.value.type)
+				}
+				is KGlobalSet -> {
+					outSummary.globals += vStatement.global
+					givesUp(vStatement.global.type)
+				}
+				// A local gives up what it held when it is assigned again, and what it holds when its block ends.
+				is KSet -> givesUp(vStatement.local.type)
+				is KLet -> givesUp(vStatement.local.type)
+				// A result nobody takes is given up at once.
+				is KEval -> givesUp(vStatement.expr.type)
+				is KRelease -> givesUp(vStatement.operand.type)
 				// Printing or joining an object calls its `toString`, which is the program's code.
 				is KPrint -> if (vStatement.parts.any { isObject(it) }) outSummary.all = true
 				is KConcat -> if (vStatement.parts.any { isObject(it) }) outSummary.all = true
@@ -136,11 +225,19 @@ class Effects(inModule: KModule) {
 		for (vRoot in inStatement.ownExpressions()) {
 			vRoot.anyNode { vNode ->
 				when (vNode) {
-					is KCall -> outCallees += vNode.function
+					is KCall -> {
+						outCallees += vNode.function
+						// The runtime may give up what hangs on the references it is handed.
+						if (vNode.function.isExternal && vNode.function.params.any { mayDeinit(it.type) }) outCallees += mDeinits
+					}
 					is KIntrinsic -> when {
 						// C written by the program, or a call through a C pointer: it may call back into anything.
 						vNode.template != null || vNode.functions.isNotEmpty() || vNode.name == "ktc2_call_pointer" -> outSummary.all = true
-						!vNode.isPure && kHarmless.none { vNode.name.startsWith(it) } -> outSummary.elements = true
+						!vNode.isPure && kHarmless.none { vNode.name.startsWith(it) } -> {
+							outSummary.elements = true
+							// Storing over elements gives up the ones that were there.
+							outCallees += mDeinits
+						}
 					}
 					else -> {}
 				}

@@ -53,10 +53,22 @@ for these passes: it is the C compiler's.
   made that pass on Windows. Test builds now keep freed objects aside, filled, and end the
   program on a retain or release of one. AddressSanitizer on the generated C finds the rest
   and is worth a second suite target (`-fsanitize=address`), which is not there yet.
-- [ ] **`Deinit` is not implemented.** `ktc2.Deinit` is declared and documented as called when
-  the last reference goes, but the C build never calls `deinit()`. Either call it from the
-  generated `destroy` of classes that implement it (and then treat a release as something
-  that can run the program's code, in `Effects`), or remove the interface.
+- [x] **`Deinit` is implemented**, as Swift's `deinit` (`DESIGN.md`, section 5). With it:
+  `Effects` treats giving up a reference as something that can run the program's code,
+  temporaries end with their statement, and `ArrayList` and `HashMap.remove` let go of what is
+  removed at once. `createCleaner` is the portable form (Kotlin/Native's API, the JVM's cleaner
+  behind it on the JVM); in a private property it is folded into the class and costs no object, and no field either
+  when its resource is a `val` of the class.
+  Left:
+  - [ ] a `HashMap` entry removed through an iterator is held until the map is rebuilt
+    (the entry handed out reads the map's storage). Looked at and left: the entry would need a
+    copy of its key and value, two retains and releases for every entry of every
+    `for ((k, v) in map)`, to cover a rare case.
+  - [ ] `deinit` chained through the superclasses by the compiler, as Swift does, instead of
+    `super.deinit()` written by hand: only if wanted, it is not what `override` means. Effort: low.
+  - [ ] a variable could give up its object after its last use, as Swift does in optimized
+    builds, instead of at the end of its block: frees earlier, but a guard object
+    (`val lock = Guard()`) would then end at once. Not planned unless asked for.
 
 ---------------------------------------------------------------------------
 ## 1. Compile time
@@ -81,11 +93,13 @@ sources (`KTC2_TIMING=1`).
 | [~] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known (`Devirtualize`) the iterator is now in the frame and `hasNext` / `next` are direct calls, which LTO inlines. Left: writing the index loop in the importer, which also needs the `modCount` test of part 8 | medium now: one inlined call per element | medium |
 | [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). Left: a parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there): needs a copy of the function per class, or the iterator built in a slot the dispatcher is handed | high where it applies | medium |
 | [ ] An object that never leaves its function becomes plain locals | medium | medium |
-| [ ] Closures in the frame when the lambda does not outlive the call it is passed to | medium | medium |
+| [x] Closures in the frame when the lambda does not outlive the call it is passed to. The closure was there already; what it captured was not, because storing into a field counted as leaving. An object or the cell of a `var` stored into an object that stays in the frame now stays too, unless some read of that field lets it out | every capturing lambda that is only called: no allocation left | medium |
+| [x] Destroying a long structure does not use a frame of the C stack per object: past 96 KB of stack the object is put aside and destroyed later. A list of a million cells crashed before | correctness | low |
 | [ ] Small strings inside the header, no block of their own | medium for string-heavy code | medium |
 | [x] A size-class allocator in the runtime for small objects: those of a class or a box, up to 128 bytes, come from per-thread lists of freed blocks of their size (`KTC2_NO_POOL` turns it off) | Objects 0.39 s -> 0.19 s; 10 to 15 % elsewhere | low to medium |
-| [ ] The same for small strings and arrays, whose size is not that of their type: the size has to be found in the object when it is freed | medium for string-heavy code | low |
-| [ ] Reuse the storage of an object freed just before one of the same class is made | medium in loops of short-lived objects | medium |
+| [x] The same for small strings and arrays, whose size is not that of their type: the size is found in the object when it is freed (`pool_size_of`) | Strings -4 % | low |
+| [x] What a constructor or a setter keeps stays in the frame with the object that keeps it (`Keeper(Item())` as a local: neither is allocated). A parameter stored into a field of the object of another parameter is "held" by it, not escaped; the caller decides by where its own object goes | every object built around others | medium |
+| [~] Reuse the storage of an object freed just before one of the same class is made. The pool does this already: its lists are last in, first out, so the block just freed is the next one handed out. Left: skipping the pool altogether when the compiler can see the pair, which saves a few instructions | low now | medium |
 | [x] A cache of boxes for small integers: -128..127 as `Int` and `Long`, characters below 128, the Booleans, static and immortal as on the JVM | low to medium | low |
 | [ ] Escape analysis through dispatchers, not only direct calls | medium: more objects stay in the frame | high |
 
@@ -102,13 +116,13 @@ write to an array of references.
 | | Gain | Effort |
 |---|---|---|
 | [ ] Tell arrays apart in `Effects`, so a loop that adds to one list can borrow from another | unblocks those 43 loops | high |
-| [ ] Owned parameters for constructors and setters: the caller hands its count over | medium: common when objects are built | medium |
-| [ ] No release for locals known to be null or immortal (literals, statics) | low: removes many calls that do nothing | low |
+| [x] Owned parameters for constructors and setters: a function that stores a parameter as it is (`this.next = next`) has a form `name__o` that takes the caller's reference over, called where the caller is at its last use of what it passes. A local that is assigned again before anything reads it (`head = Node(i, head)`) counts as at its last use, in a loop too. Direct calls only: not through a dispatcher | Objects: retains -50 % | medium |
+| [~] No release for locals known to be null or immortal (literals, statics). Done: a way out of a block skips the locals nothing assigned yet (outside loops). A local that only ever holds literals or statics borrowed already unless it is reassigned; that case is left | smaller code; the C compiler removed most of these itself | low |
 | [ ] A "shared" bit per object, so counts are atomic only for objects another thread can reach | high for threaded programs | high; a mistake is a data race. Needs a transitive mark when an object is shared and a barrier on stores into shared objects |
 | [x] Merge a retain with a later release of the same object: a local hands its reference over at its last read (`t = T(); init(t); x.f = t`), not only when it is read once | Objects: retains -45 % | medium |
 | [x] Borrow up to the last use when the place is overwritten after it (`x.f = g(x.f)`) | part of the same -45 % | medium |
 | [ ] The same last-use rule for the result of a borrowed call (`BorrowedReturns`): today it needs the whole rest of the block to leave the place alone | low to medium | low |
-| [ ] A `var` local that walks a structure (`node = node.next`) borrows when nothing in the loop writes the fields it follows | medium for linked structures: one retain and release per step today | medium |
+| [x] A `var` local that walks a structure (`node = node.next`) borrows when nothing in the rest of the block writes the fields it follows. Not when it starts from a local at its last use (the walk then consumes the structure, which measured faster than giving it up whole: Objects 0.20 s against 0.25 s) | one retain and release less per step | medium |
 
 ---------------------------------------------------------------------------
 ## 4. Calls and dispatch
@@ -119,7 +133,7 @@ write to an array of references.
 | [x] Call the implementation directly when only one class implements the method, or the type is known at the call (`Devirtualize`: the class is followed from the allocation through locals, parameters, fields and results) | Dispatch -17 %, -48 % with LTO; 375 calls in the showcase | medium |
 | [ ] Follow the other arguments through dispatchers too, and the element class of a collection (`List<Shape>` that only holds circles) | medium | medium |
 | [ ] Stop sharing the code of a local class between the instantiations of the generic class around it (the importer reads an `X<Int>` through the type `X<Any>`): `Devirtualize` has to distrust static types wherever it sees this, and so will every later pass that reasons about classes | removes a trap more than it gains speed | medium, in the importer |
-| [ ] Fold `is` and `as` when the class is known | low | low |
+| [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
 | [ ] Small generated functions as `static inline` in the headers | medium: inlining across files needs LTO today | low |
 | [ ] Instantiate generic classes for hot reference types too, not only for numbers | medium: no casts, more direct calls | high, more code |
 | [ ] Dispatcher cases ordered by how often each class is created | low | low |
@@ -224,7 +238,7 @@ Open:
 5. `ConcurrentModificationException` (8): the one known place where a program that runs
    differs from the JVM in what it does.
 6. The compiler kept running (1): the biggest change to how ktc2 feels.
-7. Decide `Deinit` (0) and the enum that is a number (8).
+7. Decide the enum that is a number (8).
 
 ---------------------------------------------------------------------------
 ## Measuring

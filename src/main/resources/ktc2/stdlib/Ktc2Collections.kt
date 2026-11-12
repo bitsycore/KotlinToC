@@ -104,6 +104,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		val vOld = array[index]
 		for (vIndex in index until length - 1) array[vIndex] = array[vIndex + 1]
 		length--
+		array.drop(length)
 		return vOld
 	}
 
@@ -125,6 +126,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 			}
 		}
 		val vChanged = vKept != length
+		for (vIndex in vKept until length) array.drop(vIndex)
 		length = vKept
 		return vChanged
 	}
@@ -134,6 +136,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	actual override fun retainAll(elements: Collection<E>): Boolean = filterInPlace(elements, true)
 
 	actual override fun clear() {
+		for (vIndex in 0 until length) array.drop(vIndex)
 		length = 0
 	}
 

@@ -47,6 +47,8 @@ also runs there.
 | `arena(size) { }` | what a block allocates is given back in one go |
 | `@Weak`, `WeakRef<T>`, `@Acyclic` | references that do not keep their target alive, to break cycles; and a way to say a reference never closes one |
 | `ktc2.concurrent` | `Thread`, `thread { }`, `synchronized(lock) { }`, `sleep(ms)` |
+| `Deinit` | `deinit()` runs when the last reference to an object goes, as in Swift (in C; the JVM never calls it) |
+| `createCleaner(resource) { }` | the same for code that also runs on the JVM or Kotlin/Native: their cleaner, which in C is a `deinit` and costs no object |
 
 ## C libraries
 
