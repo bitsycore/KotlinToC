@@ -255,12 +255,15 @@ private val kIsWindows = "win" in System.getProperty("os.name").lowercase()
 /** The C compiler to call: the one `KTC2_CC` names, else the first of gcc, clang and cc there is. */
 fun cCompiler(): String {
 	System.getenv("KTC2_CC")?.let { return it }
-	val vDirectories = (System.getenv("PATH") ?: "").split(File.pathSeparator)
 	for (vName in listOf("gcc", "clang", "cc")) {
-		if (vDirectories.any { File(it, vName).isFile || File(it, "$vName.exe").isFile }) return vName
+		if (isOnPath(vName)) return vName
 	}
 	return "cc"
 }
+
+/** Whether a program called [inName] is in one of the directories of `PATH`. */
+private fun isOnPath(inName: String): Boolean =
+	(System.getenv("PATH") ?: "").split(File.pathSeparator).any { File(it, inName).isFile || File(it, "$inName.exe").isFile }
 
 /**
  * Writes `<inOutDir>/CMakeLists.txt` for the C that was written under `<inOutDir>/c`: the
@@ -318,17 +321,18 @@ fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vProgram = File(inOutDir, if (kIsWindows) "$inName.exe" else inName)
 	val vCompiler = cCompiler()
 	// A release build is optimized as one program, so that small functions are inlined across the
-	// files of their classes. `KTC2_LTO=0` turns that off, `KTC2_LTO=1` forces it; by default it is
-	// used except with clang on Windows, where it needs a linker that may not be installed.
+	// files of their classes. `KTC2_LTO=0` turns that off, `KTC2_LTO=1` forces it. With clang on
+	// Windows it needs LLVM's own linker, so it is used by default only when that one is there.
+	val vNeedsLld = kIsWindows && "gcc" !in File(vCompiler).name
 	val vWholeProgram = when (System.getenv("KTC2_LTO")) {
 		"0" -> false
 		"1" -> true
-		else -> !kIsWindows || "gcc" in File(vCompiler).name
+		else -> !vNeedsLld || isOnPath("lld-link")
 	}
 	// Floating-point operations are never fused (see ktc2_core.h): Kotlin rounds after each one.
 	val vMode = listOf("-ffp-contract=off") + when {
 		inIsDebug -> listOf("-O0", "-g", "-DKTC2_LEAK_CHECK")
-		vWholeProgram -> listOf("-O2", "-flto")
+		vWholeProgram -> listOf("-O2", "-flto") + if (vNeedsLld) listOf("-fuse-ld=lld") else emptyList()
 		else -> listOf("-O2")
 	}
 	// On Windows the runtime uses the system's own threads and the math functions are in the C
