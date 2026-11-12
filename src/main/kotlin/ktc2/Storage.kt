@@ -24,6 +24,30 @@ annotation class Value
 annotation class Struct
 
 /**
+ * On an `enum class`: its values are numbers, a C `enum`, and not objects. An entry is the
+ * constant, `==` and `when` compare numbers, and `name`, `ordinal` and the properties of the
+ * constructor are looked up from the number. Where Kotlin needs an object (`Any`, a nullable,
+ * a type argument as in `List<Key>`) the value is replaced by an object kept for its entry,
+ * which is an ordinary `Enum`.
+ *
+ * What cannot be a number is refused: an entry with a body, a property that is not a `val` of
+ * the constructor, a constructor argument that is not a constant. On the JVM the class is the
+ * enum it is declared as.
+ */
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.SOURCE)
+annotation class SimpleEnum
+
+/**
+ * On one `Int` parameter of the constructor of a [SimpleEnum] class: the number of an entry in
+ * C is the value it gives for this parameter (`enum { Key_A = 4 }`), which has to be different
+ * for each entry. Without it the number is the ordinal.
+ */
+@Target(AnnotationTarget.VALUE_PARAMETER)
+@Retention(AnnotationRetention.SOURCE)
+annotation class EnumValue
+
+/**
  * Fixed element count of an array slot, stored inline in its owner or, for a local, in the frame.
  *
  * @property inN element count, a compile-time constant

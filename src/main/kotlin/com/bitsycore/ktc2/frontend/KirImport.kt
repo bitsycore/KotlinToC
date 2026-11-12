@@ -14,6 +14,8 @@ import org.jetbrains.kotlin.ir.expressions.IrConst
 import org.jetbrains.kotlin.ir.expressions.IrFunctionExpression
 import org.jetbrains.kotlin.ir.expressions.IrGetField
 import org.jetbrains.kotlin.ir.expressions.IrGetValue
+import org.jetbrains.kotlin.ir.expressions.IrEnumConstructorCall
+import org.jetbrains.kotlin.ir.expressions.IrGetEnumValue
 import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.expressions.IrVararg
@@ -673,6 +675,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	private fun isStruct(inClass: IrClass): Boolean {
 		if (inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Struct" }) return true
+		if (isSimpleEnum(inClass)) return true
 		mValueStructs[inClass]?.let { return it }
 		// While its own fields are being looked at, a class is not yet known to be a struct.
 		mValueStructs[inClass] = false
@@ -784,6 +787,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mStructs[inClass] = vStruct
 		mStructClasses[vStruct] = inClass
 		mUnits += vUnit
+		if (isSimpleEnum(inClass)) {
+			declareSimpleEnum(inClass, vStruct, vFile)
+			return vStruct
+		}
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
 			if (vProperty.isVar) unsupported(vFile, vProperty, "'var' property in a @Struct class")
@@ -812,6 +819,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 */
 	internal fun boxFor(inStruct: KStruct): KClass {
 		inStruct.box?.let { return it }
+		mSimpleEnums[inStruct]?.let { return simpleEnumBox(it) }
 		val vIrClass = mStructClasses.getValue(inStruct)
 		val vUnit = KUnit(inStruct.unit.pkg, inStruct.unit.name + ".Box")
 		val vClass = KClass(inStruct.cName + "_Box", vUnit, null, jvmNameOf(vIrClass))
@@ -1198,6 +1206,168 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 	}
 
+	// ==================
+	// MARK: Simple enums
+	// ==================
+
+	/** An entry of a `@SimpleEnum` class: its [value] is what it is in C, [arguments] what it gives the constructor. */
+	internal class SimpleEntry(val name: String, val ordinal: Int, val value: Int, val arguments: List<IrExpression?>)
+
+	/**
+	 * A `@SimpleEnum` class: an enum whose values are numbers (a C `enum`, [struct] with its one
+	 * field). The objects that stand for them where Kotlin needs one are made by [simpleEnumBox].
+	 */
+	internal class SimpleEnum(val irClass: IrClass, val file: IrFile, val struct: KStruct, val entries: List<SimpleEntry>, val parameters: List<IrValueParameter>) {
+		val valueField: KField get() = struct.fields[0]
+
+		/** The object kept for each entry, in the order of [entries]. */
+		var boxes: List<KStatic> = emptyList()
+
+		fun constant(inEntry: SimpleEntry): KExpr = KStructNew(struct, listOf(KConst(inEntry.value, KPrimType(KPrim.INT))))
+
+		/** `inValue` is the entry [inEntry]. */
+		fun isEntry(inValue: KExpr, inEntry: SimpleEntry): KExpr =
+			KBinary(KBinaryOp.EQ, KFieldRead(inValue, valueField), KConst(inEntry.value, KPrimType(KPrim.INT)), KPrim.INT, KPrimType(KPrim.BOOLEAN))
+	}
+
+	private val mSimpleEnums = HashMap<KStruct, SimpleEnum>()
+	private val mSimpleEnumProperties = HashMap<IrField, KFunction?>()
+
+	internal fun isSimpleEnum(inClass: IrClass): Boolean =
+		inClass.kind == ClassKind.ENUM_CLASS && inClass.annotations.any { it.type.classFqName?.asString() == "ktc2.SimpleEnum" }
+
+	/** What is known of [inClass] when it is a `@SimpleEnum` class; null for any other. */
+	internal fun simpleEnumOf(inClass: IrClass): SimpleEnum? = if (isSimpleEnum(inClass)) structFor(inClass)?.let { mSimpleEnums[it] } else null
+
+	internal fun simpleEnumOf(inStruct: KStruct): SimpleEnum? = mSimpleEnums[inStruct]
+
+	private fun refuse(inFile: IrFile, inElement: IrElement, inWhat: String) {
+		val vLine = if (inElement.startOffset >= 0) inFile.fileEntry.getLineNumber(inElement.startOffset) + 1 else 0
+		errors += "${File(inFile.fileEntry.name).name}:$vLine: $inWhat"
+	}
+
+	/** Reads the entries of the `@SimpleEnum` class [inClass] and refuses what cannot be a number. */
+	private fun declareSimpleEnum(inClass: IrClass, inStruct: KStruct, inFile: IrFile) {
+		val vName = inClass.name.asString()
+		inStruct.fields += KField("value", KPrimType(KPrim.INT))
+		val vConstructor = inClass.declarations.filterIsInstance<IrConstructor>().firstOrNull { it.isPrimary }
+		val vParams = vConstructor?.parameters?.filter { it.kind == IrParameterKind.Regular } ?: emptyList()
+		val vMarked = vParams.filter { vParam -> vParam.annotations.any { it.type.classFqName?.asString() == "ktc2.EnumValue" } }
+		if (vMarked.size > 1) refuse(inFile, vMarked[1], "@SimpleEnum class '$vName': only one parameter can be the @EnumValue")
+		val vNumber = vMarked.firstOrNull()
+		if (vNumber != null && !vNumber.type.isInt()) refuse(inFile, vNumber, "@SimpleEnum class '$vName': the @EnumValue parameter '${vNumber.name}' has to be an Int")
+		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
+			val vBacking = vProperty.backingField ?: continue
+			val vSource = (vBacking.initializer?.expression as? IrGetValue)?.symbol?.owner
+			if (vProperty.isVar || vSource !in vParams) {
+				refuse(inFile, vProperty, "@SimpleEnum class '$vName': property '${vProperty.name}' holds a value of its own; only a 'val' of the constructor can be looked up from a number")
+			}
+		}
+		if (inClass.declarations.any { it is IrAnonymousInitializer }) refuse(inFile, inClass, "@SimpleEnum class '$vName': an init block cannot run for a number")
+		val vEntries = inClass.declarations.filterIsInstance<IrEnumEntry>().mapIndexed { vOrdinal, vEntry ->
+			if (vEntry.correspondingClass != null) refuse(inFile, vEntry, "@SimpleEnum class '$vName': entry '${vEntry.name}' has a body, which needs an object")
+			val vCall = vEntry.initializerExpression?.expression as? IrEnumConstructorCall
+			val vArguments = vParams.map { vParam -> vCall?.arguments?.getOrNull(vConstructor!!.parameters.indexOf(vParam)) ?: vParam.defaultValue?.expression }
+			var vValue = vOrdinal
+			if (vNumber != null) {
+				val vGiven = (vArguments[vParams.indexOf(vNumber)] as? IrConst)?.value as? Int
+				if (vGiven == null) refuse(inFile, vEntry, "@SimpleEnum class '$vName': the @EnumValue of entry '${vEntry.name}' has to be a constant") else vValue = vGiven
+			}
+			SimpleEntry(vEntry.name.asString(), vOrdinal, vValue, vArguments)
+		}
+		vEntries.groupBy { it.value }.values.firstOrNull { it.size > 1 }?.let {
+			refuse(inFile, inClass, "@SimpleEnum class '$vName': entries '${it[0].name}' and '${it[1].name}' have the same @EnumValue ${it[0].value}")
+		}
+		inStruct.enumEntries = vEntries.map { "${inStruct.cName}_${cSuffix(it.name)}" to it.value }
+		mSimpleEnums[inStruct] = SimpleEnum(inClass, inFile, inStruct, vEntries, vParams)
+	}
+
+	/** What the constant [inValue] is in KIR, as a value of type [inType]; null when it is no constant. */
+	private fun simpleEnumConstant(inValue: IrExpression?, inType: KType): KExpr? = when {
+		inValue is IrConst && inValue.value is String && inType == KStringType -> KStringLit(inValue.value as String)
+		inValue is IrConst && inValue.value != null && inType is KPrimType -> KConst(inValue.value!!, inType)
+		inValue is IrGetEnumValue -> {
+			val vOther = simpleEnumOf(inValue.symbol.owner.parentAsClass)
+			val vEntry = vOther?.entries?.firstOrNull { it.name == inValue.symbol.owner.name.asString() }
+			if (vOther != null && vEntry != null && inType == KStructType(vOther.struct)) vOther.constant(vEntry) else null
+		}
+		else -> null
+	}
+
+	/**
+	 * The function that gives, for a value of a `@SimpleEnum` class, what the property behind
+	 * [inField] is for its entry: the entries compared one after the other, which the C compiler
+	 * turns into a table.
+	 */
+	internal fun simpleEnumProperty(inField: IrField): KFunction? = mSimpleEnumProperties.getOrPut(inField) {
+		val vEnum = simpleEnumOf(inField.parentAsClass) ?: return@getOrPut null
+		val vParam = (inField.initializer?.expression as? IrGetValue)?.symbol?.owner
+		val vIndex = vEnum.parameters.indexOf(vParam)
+		val vType = kTypeOf(inField.type)
+		if (vIndex < 0 || vType == null) return@getOrPut null
+		val vSelf = KLocal("self", KStructType(vEnum.struct))
+		val vFunction = KFunction(uniqueName("${vEnum.struct.cName}__${cSuffix(inField.name.asString())}"), vEnum.struct.unit, listOf(vSelf), vType)
+		for (vEntry in vEnum.entries) {
+			val vConstant = simpleEnumConstant(vEntry.arguments[vIndex], vType)
+			if (vConstant == null) {
+				refuse(vEnum.file, vEnum.irClass, "@SimpleEnum class '${vEnum.irClass.name}': what entry '${vEntry.name}' gives for '${inField.name}' is not a constant (a number, a string, an entry of a @SimpleEnum class)")
+				continue
+			}
+			vFunction.body += KIf(vEnum.isEntry(KRead(vSelf), vEntry), listOf(KReturn(vConstant)), emptyList())
+		}
+		vFunction.body += KReturn(KZero(vType))
+		vEnum.struct.unit.functions += vFunction
+		vFunction
+	}
+
+	/**
+	 * The class of the objects that stand for the values of a `@SimpleEnum` class where Kotlin
+	 * needs an object: an ordinary `Enum`, with the name and the ordinal, and the number. There
+	 * is one such object per entry for the whole run of the program, so two of the same entry
+	 * are the same object, as on the JVM. `KStruct.boxFunction` gives the one of a value; it
+	 * fills them in the first time it is called.
+	 */
+	private fun simpleEnumBox(inEnum: SimpleEnum): KClass {
+		val vStruct = inEnum.struct
+		val vBase = enumBase()
+		val vBaseType = KClassType(vBase)
+		val vUnit = KUnit(vStruct.unit.pkg, vStruct.unit.name + ".Box")
+		val vClass = KClass(vStruct.cName + "_Box", vUnit, vBase, jvmNameOf(inEnum.irClass))
+		vUnit.cls = vClass
+		vStruct.box = vClass
+		val vValueField = KField("value", KStructType(vStruct), vClass, isImmutable = true)
+		vClass.fields += vValueField
+		collectInterfaces(inEnum.irClass, vClass.interfaces)
+		mClassInfo[vClass] = ClassInfo(inEnum.irClass, emptyMap(), inEnum.irClass.symbol.typeWith())
+		mClassList += vClass
+		mUnits += vUnit
+		instantiate(vClass)
+		inEnum.boxes = inEnum.entries.map { vEntry -> KStatic("${vClass.cName}__${cSuffix(vEntry.name)}", vClass, vUnit).also { vUnit.statics += it } }
+
+		val vValue = KLocal("value", KStructType(vStruct))
+		val vBoxing = KFunction(uniqueName("${vStruct.cName}__box"), vUnit, listOf(vValue), KClassType(vClass))
+		if (inEnum.entries.isEmpty()) {
+			vBoxing.body += KReturn(KNull(KClassType(vClass)))
+		} else {
+			// The name of the first one is written last: it says that all of them are filled in.
+			val vFill = ArrayList<KStmt>()
+			for ((vEntry, vBox) in inEnum.entries.zip(inEnum.boxes).reversed()) {
+				vFill += KFieldSet(KStaticRead(vBox), vValueField, inEnum.constant(vEntry))
+				vFill += KFieldSet(KRefCast(KStaticRead(vBox), vBaseType), enumOrdinalField, KConst(vEntry.ordinal, KPrimType(KPrim.INT)))
+				vFill += KFieldSet(KRefCast(KStaticRead(vBox), vBaseType), enumNameField, KStringLit(vEntry.name))
+			}
+			val vFirstName = KFieldRead(KRefCast(KStaticRead(inEnum.boxes[0]), vBaseType), enumNameField)
+			vBoxing.body += KIf(KRefEquals(vFirstName, KNull(KStringType)), vFill, emptyList())
+			for ((vEntry, vBox) in inEnum.entries.zip(inEnum.boxes)) {
+				vBoxing.body += KIf(inEnum.isEntry(KRead(vValue), vEntry), listOf(KReturn(KStaticRead(vBox))), emptyList())
+			}
+			vBoxing.body += KReturn(KStaticRead(inEnum.boxes[0]))
+		}
+		vUnit.functions += vBoxing
+		vStruct.boxFunction = vBoxing
+		return vClass
+	}
+
 	/** Declares one static instance per entry and the startup function that constructs them. */
 	private fun declareEnumEntries(inClass: IrClass, inEnum: KClass, inFile: IrFile) {
 		val vEntries = inClass.declarations.filterIsInstance<IrEnumEntry>()
@@ -1556,6 +1726,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		if (vOwner != null && vOwner.kotlinFqName.asString() == "kotlin.Enum") {
 			return enumFunction(inFunction.name.asString()).also { mFunctions[vKey] = it }
+		}
+		// A property of the constructor of a `@SimpleEnum` class is looked up from the number.
+		if (vOwner != null && isSimpleEnum(vOwner) && inFunction is IrSimpleFunction && inFunction.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR) {
+			val vField = inFunction.correspondingPropertySymbol?.owner?.backingField
+			return (vField?.let { simpleEnumProperty(it) }).also { mFunctions[vKey] = it }
 		}
 		if (vOwner != null && isThrowableClass(vOwner) && inFunction !is IrConstructor) {
 			return throwableFunction(inFunction.name.asString()).also { mFunctions[vKey] = it }

@@ -1,0 +1,4 @@
+entry 'ON' has a body
+property 'uses' holds a value of its own
+entries 'ON' and 'AUTO' have the same @EnumValue 1
+what entry 'LOW' gives for 'weight' is not a constant

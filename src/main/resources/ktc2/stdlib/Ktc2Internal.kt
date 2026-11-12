@@ -224,6 +224,9 @@ public fun throwSubstringRange(begin: Int, end: Int, length: Int): Nothing =
 /** An integer division or remainder by zero. */
 public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")
 
+/** `valueOf` of the enum class [enumName] was given [name], which no entry has. */
+public fun throwNoEnumConstant(enumName: String, name: String): Nothing = throw IllegalArgumentException("No enum constant $enumName.$name")
+
 /** `Enum.entries`: the constants of an enum class as a list. */
 public fun <E : Enum<E>> enumEntriesOf(values: Array<E>): kotlin.enums.EnumEntries<E> = kotlin.enums.enumEntries(values)
 

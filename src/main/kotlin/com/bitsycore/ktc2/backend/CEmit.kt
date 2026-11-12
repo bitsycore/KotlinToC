@@ -186,7 +186,14 @@ class CEmitter(private val mModule: KModule) {
 		vForward.forEach { append("typedef struct ${it.cName} ${it.cName};\n") }
 		if (vForward.isNotEmpty()) append("\n")
 
-		inUnit.struct?.let { vStruct ->
+		inUnit.struct?.takeIf { it.enumEntries != null }?.let { vStruct ->
+			append("typedef enum ${vStruct.cName} {\n")
+			val vEntries = vStruct.enumEntries!!
+			if (vEntries.isEmpty()) append("\t${vStruct.cName}__none = 0\n")
+			append(vEntries.joinToString(",\n") { (vName, vValue) -> "\t$vName = ${if (vValue == Int.MIN_VALUE) "(-2147483647 - 1)" else vValue.toString()}" })
+			append("\n} ${vStruct.cName};\n\n")
+		}
+		inUnit.struct?.takeIf { it.enumEntries == null }?.let { vStruct ->
 			append("typedef struct ${vStruct.cName} {\n")
 			if (vStruct.fields.isEmpty()) append("\tchar _empty;\n")
 			vStruct.fields.forEach { append("\t${cType(it.type)} ${it.cName};\n") }
@@ -434,6 +441,11 @@ class CEmitter(private val mModule: KModule) {
 					val vBox = inTo.struct.box!!
 					mState.includes += vBox.unit
 					"((${vBox.cName}*)$inText)->value"
+				}
+				inFrom is KStructType && inTo is KRefType && inFrom.struct.boxFunction != null -> {
+					val vBoxing = inFrom.struct.boxFunction!!
+					mState.includes += vBoxing.unit
+					"(${cType(inTo)})${vBoxing.cName}($inText)"
 				}
 				inFrom is KStructType && inTo is KRefType -> {
 					val vBox = inFrom.struct.box!!
@@ -707,6 +719,8 @@ class CEmitter(private val mModule: KModule) {
 
 		private fun field(inTarget: KExpr, inField: KField): String {
 			inField.owner?.let { mState.includes += it.unit }
+			// The one field of a C enum is the number it is.
+			if ((inTarget.type as? KStructType)?.struct?.enumEntries != null) return "((int32_t)${expr(inTarget)})"
 			return "${expr(inTarget)}${if (inTarget.type is KClassType) "->" else "."}${inField.cName}"
 		}
 
@@ -803,7 +817,11 @@ class CEmitter(private val mModule: KModule) {
 					else -> vSlot
 				}
 			}
-			is KStructNew -> {
+			is KStructNew -> if (inExpr.struct.enumEntries != null) {
+				mState.includes += inExpr.struct.unit
+				val vNumber = (inExpr.values[0] as? KConst)?.value
+				inExpr.struct.enumEntries!!.firstOrNull { it.second == vNumber }?.first ?: "((${inExpr.struct.cName})${expr(inExpr.values[0])})"
+			} else {
 				mState.includes += inExpr.struct.unit
 				val vFields = inExpr.struct.fields.zip(inExpr.values).joinToString(", ") { (vField, vValue) -> ".${vField.cName} = ${bare(expr(vValue))}" }
 				"(${inExpr.struct.cName}){ ${vFields.ifEmpty { "0" }} }"

@@ -166,7 +166,48 @@ internal class BodyBuilder(
 	}
 
 	/** `values()` and `valueOf()` of an enum class. */
+	/** `values()`, `entries` and `valueOf()` of a `@SimpleEnum` class: the entries are constants. */
+	private fun buildSimpleEnumSynthetic(inEnum: KirImporter.SimpleEnum, inFunction: IrFunction, inKind: IrSyntheticBodyKind) {
+		when (inKind) {
+			IrSyntheticBodyKind.ENUM_VALUES, IrSyntheticBodyKind.ENUM_ENTRIES -> {
+				// The list of `entries` holds objects: the ones kept for the entries.
+				val vType = if (inKind == IrSyntheticBodyKind.ENUM_VALUES) mFunction.returnType as KArrayType else KArrayType(KObjType)
+				val vArray = newTemp(vType)
+				mBlock += KLet(vArray, KArrayNew(KConst(inEnum.entries.size, kIntType), vType))
+				inEnum.entries.forEachIndexed { vIndex, vEntry ->
+					mBlock += KIndexSet(KRead(vArray), KConst(vIndex, kIntType), coerce(inEnum.constant(vEntry), vType.element))
+				}
+				if (inKind == IrSyntheticBodyKind.ENUM_VALUES) {
+					mBlock += KReturn(KRead(vArray))
+				} else {
+					val vList = mImporter.internalFunction("enumEntriesOf")?.let { mImporter.functionFor(it) }
+					if (vList == null) fail(inFunction, "enum entries") else mBlock += KReturn(coerce(spill(KCall(vList, listOf(KRead(vArray)))), mFunction.returnType))
+				}
+			}
+			IrSyntheticBodyKind.ENUM_VALUEOF -> {
+				val vName = KRead(mFunction.params[0])
+				for (vEntry in inEnum.entries) {
+					val vMatches = KIntrinsic("ktc2_str_equals", listOf(KStringLit(vEntry.name), vName), kBoolType)
+					mBlock += KIf(vMatches, listOf(KReturn(coerce(inEnum.constant(vEntry), mFunction.returnType))), emptyList())
+				}
+				noEnumConstant(inFunction, vName)
+			}
+			else -> fail(inFunction, "enum '${inFunction.name}'")
+		}
+	}
+
+	/** The end of a `valueOf` that found no entry called [inName]: an `IllegalArgumentException`, as on the JVM. */
+	private fun noEnumConstant(inFunction: IrFunction, inName: KExpr) {
+		val vThrow = mImporter.internalFunction("throwNoEnumConstant")?.let { mImporter.functionFor(it) }
+		if (vThrow == null) {
+			mBlock += KEval(KIntrinsic("ktc2_fail_enum_value", listOf(inName), KUnitType, isPure = false))
+		} else {
+			mBlock += KEval(KCall(vThrow, listOf(KStringLit(inFunction.parentAsClass.kotlinFqName.asString()), inName)))
+		}
+	}
+
 	private fun buildEnumSynthetic(inFunction: IrFunction, inKind: IrSyntheticBodyKind) {
+		mImporter.simpleEnumOf(inFunction.parentAsClass)?.let { return buildSimpleEnumSynthetic(it, inFunction, inKind) }
 		val vEntries = mImporter.enumEntriesOf(inFunction.parentAsClass)
 		ensureInitialized(inFunction.parentAsClass)
 		val vBaseType = KClassType(mImporter.enumBase())
@@ -201,7 +242,7 @@ internal class BodyBuilder(
 					val vMatches = KIntrinsic("ktc2_str_equals", listOf(vEntryName, vName), kBoolType)
 					mBlock += KIf(vMatches, listOf(KReturn(coerce(KStaticRead(vEntry), mFunction.returnType))), emptyList())
 				}
-				mBlock += KEval(KIntrinsic("ktc2_fail_enum_value", listOf(vName), KUnitType, isPure = false))
+				noEnumConstant(inFunction, vName)
 			}
 			else -> fail(inFunction, "enum '${inFunction.name}'")
 		}
@@ -489,6 +530,11 @@ internal class BodyBuilder(
 		return when {
 			inTo is KRefType && vFrom is KRefType -> if (inValue is KNull) KNull(inTo) else KRefCast(inValue, inTo)
 			// A struct where an object is needed (Any, an interface, a nullable): it is put in its box.
+			// A value of a `@SimpleEnum` class: the object kept for its entry.
+			vFrom is KStructType && inTo is KRefType && mImporter.simpleEnumOf(vFrom.struct) != null -> {
+				mImporter.boxFor(vFrom.struct)
+				coerce(spill(KCall(vFrom.struct.boxFunction!!, listOf(if (inValue.isImpure()) spill(inValue) else inValue))), inTo)
+			}
 			vFrom is KStructType && inTo is KRefType -> {
 				val vBox = mImporter.boxFor(vFrom.struct)
 				mImporter.instantiate(vBox)
@@ -762,7 +808,10 @@ internal class BodyBuilder(
 		}
 		is IrTry -> lowerTry(inExpression)
 		is IrGetObjectValue -> lowerObject(inExpression)
-		is IrGetEnumValue -> mImporter.enumEntryFor(inExpression.symbol.owner)?.let {
+		is IrGetEnumValue -> mImporter.simpleEnumOf(inExpression.symbol.owner.parentAsClass)?.let { vEnum ->
+			val vEntry = vEnum.entries.firstOrNull { it.name == inExpression.symbol.owner.name.asString() }
+			if (vEntry == null) fail(inExpression, "enum entry '${inExpression.symbol.owner.name}'") else coerce(vEnum.constant(vEntry), typeOf(inExpression))
+		} ?: mImporter.enumEntryFor(inExpression.symbol.owner)?.let {
 			ensureInitialized(inExpression.symbol.owner.parentAsClass)
 			coerce(KStaticRead(it), typeOf(inExpression))
 		}
@@ -821,6 +870,7 @@ internal class BodyBuilder(
 		(kType(vBase) as? KPrimType)?.let { return KBoxTarget(it.prim) }
 		val vClass = vBase.classOrNull?.owner ?: return null
 		if (vClass.isInterface) return KInterfaceTarget(mImporter.interfaceFor(vClass))
+		if (vClass.kotlinFqName.asString() == "kotlin.Enum") return KClassTarget(mImporter.enumBase())
 		// An object holding a struct is its box.
 		(kType(vBase) as? KStructType)?.let { return KClassTarget(mImporter.boxFor(it.struct).also { vBox -> mImporter.instantiate(vBox) }) }
 		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it) }
@@ -1596,6 +1646,11 @@ internal class BodyBuilder(
 	private fun lowerGetField(inExpression: IrGetField): KExpr {
 		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(ensuredFile(it)) }
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field access")
+		// A property of a `@SimpleEnum` class is not stored: it is looked up from the number.
+		(inExpression.symbol.owner.parent as? IrClass)?.takeIf { mImporter.isSimpleEnum(it) }?.let {
+			val vLookup = mImporter.simpleEnumProperty(inExpression.symbol.owner) ?: return fail(inExpression, "field access")
+			return adapt(spill(KCall(vLookup, listOf(coerce(lowerPure(vReceiver), vLookup.params[0].type)))), inExpression)
+		}
 		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
 		return adapt(readField(fieldTarget(lowerPure(vReceiver), vField), vField), inExpression)
 	}
@@ -2427,6 +2482,11 @@ internal class BodyBuilder(
 			vLeftType == KObjType && vRightType is KPrimType -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
 			vRightType == KObjType && vLeftType is KPrimType -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
 			// Structs compare with their own equals; they have no identity and are never null.
+			// Two values of a `@SimpleEnum` class are two numbers.
+			vLeftType is KStructType && vLeftType == vRightType && mImporter.simpleEnumOf(vLeftType.struct) != null -> {
+				val vField = vLeftType.struct.fields[0]
+				KBinary(KBinaryOp.EQ, KFieldRead(vLeft, vField), KFieldRead(vRight, vField), KPrim.INT, kBoolType)
+			}
 			vLeftType is KStructType || vRightType is KStructType -> when {
 				vLeft is KNull || vRight is KNull -> kFalse
 				inIdentity -> fail(inCall, "'===' on a @Struct value, which has no identity")

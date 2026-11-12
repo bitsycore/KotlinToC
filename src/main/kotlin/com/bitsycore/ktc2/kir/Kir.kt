@@ -132,6 +132,18 @@ class KStruct(
 	 * `Any` or an interface, or nullable. One field, `value`. Null until the program needs it.
 	 */
 	var box: KClass? = null
+
+	/**
+	 * Set for a `@SimpleEnum` class: the struct is then a C `enum` with these enumerators (name
+	 * in C, number), and its one field, `value`, is the number itself.
+	 */
+	var enumEntries: List<Pair<String, Int>>? = null
+
+	/**
+	 * For a `@SimpleEnum` class: the function that gives the object kept for a value. Such a
+	 * value is not copied into a new [box]: each entry has one, for the whole run of the program.
+	 */
+	var boxFunction: KFunction? = null
 }
 
 /**
