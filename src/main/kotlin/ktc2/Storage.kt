@@ -39,9 +39,10 @@ annotation class Struct
 annotation class SimpleEnum
 
 /**
- * On one `Int` parameter of the constructor of a [SimpleEnum] class: the number of an entry in
- * C is the value it gives for this parameter (`enum { Key_A = 4 }`), which has to be different
- * for each entry. Without it the number is the ordinal.
+ * On one `Int` or `UInt` parameter of the constructor of a [SimpleEnum] class: the number of an
+ * entry in C is the value it gives for this parameter (`enum { Key_A = 4 }`), which has to be
+ * different for each entry. Without it the number is the ordinal. [enumOf] goes from such a
+ * number back to the entry.
  */
 @Target(AnnotationTarget.VALUE_PARAMETER)
 @Retention(AnnotationRetention.SOURCE)
@@ -94,3 +95,22 @@ class ValueArray<T>(inSize: Int, inInit: (Int) -> T) : Iterable<T> {
  */
 @Suppress("UNUSED_PARAMETER")
 inline fun <R> arena(inSize: Int, inBlock: () -> R): R = inBlock()
+
+/**
+ * The entry of the enum class [T] for which [valueOf] gives [value], or null when there is
+ * none: the way from a number (one that comes from C, say) to the entry that stands for it.
+ *
+ * For a [SimpleEnum] class whose numbers are given by [EnumValue], [valueOf] has to read
+ * that property (`enumOf<Key>(code) { it.code }`): in C the number is then compared with the
+ * numbers of the entries, and nothing is looked up.
+ */
+inline fun <reified T : Enum<T>> enumOf(value: Int, valueOf: (T) -> Int): T? {
+	for (vEntry in enumValues<T>()) if (valueOf(vEntry) == value) return vEntry
+	return null
+}
+
+/** [enumOf] for an unsigned number. */
+inline fun <reified T : Enum<T>> enumOf(value: UInt, valueOf: (T) -> UInt): T? {
+	for (vEntry in enumValues<T>()) if (valueOf(vEntry) == value) return vEntry
+	return null
+}

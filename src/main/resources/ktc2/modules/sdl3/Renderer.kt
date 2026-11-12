@@ -73,9 +73,9 @@ fun SDL3.Renderer.drawPoint(point: SDL3.FPoint) {
 	SDL_RenderPoint(handle, point.x, point.y)
 }
 
-/** Set blend mode for subsequent draw calls (SDL3.BlendMode). */
-fun SDL3.Renderer.setBlendMode(mode: UInt) {
-	SDL_SetRenderDrawBlendMode(handle, mode)
+/** Set blend mode for subsequent draw calls. */
+fun SDL3.Renderer.setBlendMode(mode: SDL3.BlendMode) {
+	SDL_SetRenderDrawBlendMode(handle, mode.value)
 }
 
 /** Set the drawing scale (zoom) factor. */
@@ -156,8 +156,8 @@ fun SDL3.Texture.destroy() {
 	SDL_DestroyTexture(handle)
 }
 
-fun SDL3.Texture.setBlendMode(mode: UInt) {
-	SDL_SetTextureBlendMode(handle, mode)
+fun SDL3.Texture.setBlendMode(mode: SDL3.BlendMode) {
+	SDL_SetTextureBlendMode(handle, mode.value)
 }
 
 /** Alpha multiplier applied when rendering; 0 = transparent, 255 = opaque. */
@@ -190,21 +190,21 @@ fun SDL3.Renderer.renderTexture(texture: SDL3.Texture, src: SDL3.FRect, dst: SDL
 	SDL_RenderTexture(handle, texture.handle, vSource.ptr, vTarget.ptr)
 }
 
-/** Render texture with clockwise rotation in degrees and flip flags (SDL3.Flip). */
-fun SDL3.Renderer.renderTextureRotated(texture: SDL3.Texture, dst: SDL3.FRect, angle: Float, flip: UInt) {
+/** Render texture with clockwise rotation in degrees, mirrored as [flip] says. */
+fun SDL3.Renderer.renderTextureRotated(texture: SDL3.Texture, dst: SDL3.FRect, angle: Float, flip: SDL3.Flip) {
 	val vTarget = onStack<SDL_FRect>()
 	fill(vTarget, dst)
-	SDL_RenderTextureRotated(handle, texture.handle, null, vTarget.ptr, angle.toDouble(), null, flip)
+	SDL_RenderTextureRotated(handle, texture.handle, null, vTarget.ptr, angle.toDouble(), null, flip.value)
 }
 
 /** Render texture with rotation around a custom pivot point. */
-fun SDL3.Renderer.renderTextureRotated(texture: SDL3.Texture, dst: SDL3.FRect, angle: Float, center: SDL3.FPoint, flip: UInt) {
+fun SDL3.Renderer.renderTextureRotated(texture: SDL3.Texture, dst: SDL3.FRect, angle: Float, center: SDL3.FPoint, flip: SDL3.Flip) {
 	val vTarget = onStack<SDL_FRect>()
 	fill(vTarget, dst)
 	val vCenter = onStack<SDL_FPoint>()
 	vCenter.x = center.x
 	vCenter.y = center.y
-	SDL_RenderTextureRotated(handle, texture.handle, null, vTarget.ptr, angle.toDouble(), vCenter.ptr, flip)
+	SDL_RenderTextureRotated(handle, texture.handle, null, vTarget.ptr, angle.toDouble(), vCenter.ptr, flip.value)
 }
 
 /** Redirect all rendering to a texture (must have TextureAccess.Target). */
@@ -217,9 +217,9 @@ fun SDL3.Renderer.clearTarget() {
 	SDL_SetRenderTarget(handle, null)
 }
 
-/** Create a blank texture (SDL3.PixelFormat, SDL3.TextureAccess). */
-fun SDL3.Renderer.createTexture(width: Int, height: Int, format: UInt, access: UInt): SDL3.Texture =
-	SDL3.Texture(SDL_CreateTexture(handle, format, access, width, height) ?: error("SDL_CreateTexture failed: ${lastError()}"))
+/** Create a blank texture. */
+fun SDL3.Renderer.createTexture(width: Int, height: Int, format: SDL3.PixelFormat, access: SDL3.TextureAccess): SDL3.Texture =
+	SDL3.Texture(SDL_CreateTexture(handle, format.value, access.value, width, height) ?: error("SDL_CreateTexture failed: ${lastError()}"))
 
 /** Load a BMP file and upload it as a static texture. */
 fun SDL3.Renderer.loadTextureBmp(path: String): SDL3.Texture {

@@ -42,7 +42,7 @@ also runs there.
 | | |
 |---|---|
 | `@Struct` | a class held by value, like a number |
-| `@SimpleEnum`, `@EnumValue` | an enum that is a C `enum`: its values are numbers, the ones you give |
+| `@SimpleEnum`, `@EnumValue`, `enumOf` | an enum that is a C `enum`: its values are numbers, the ones you give, and a number from C becomes an entry again |
 | `@Value`, `@Size(n)` | an object or an array stored inside its owner, or kept in the frame |
 | `ValueArray<T>` | an array that holds its elements in place |
 | `arena(size) { }` | what a block allocates is given back in one go |

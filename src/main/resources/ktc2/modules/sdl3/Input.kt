@@ -3,6 +3,7 @@
 package ktc2.sdl3
 
 import kotlinx.cinterop.*
+import ktc2.enumOf
 import sdl3.*
 
 // ==================
@@ -41,16 +42,26 @@ inline fun pollEvents(block: (SDL_Event) -> Unit) {
 	while (SDL_PollEvent(gEvent.ptr)) block(gEvent)
 }
 
+/** What kind of event this is; `SDL3.Event.Unknown` for a kind that has no entry. */
+val SDL_Event.kind: SDL3.Event get() = enumOf<SDL3.Event>(type) { it.value } ?: SDL3.Event.Unknown
+
+/** The key of a key event (`event.key.code`); `SDL3.Scancode.Unknown` for a key that has no entry. */
+val SDL_KeyboardEvent.code: SDL3.Scancode get() = enumOf<SDL3.Scancode>(scancode) { it.value } ?: SDL3.Scancode.Unknown
+
+/** The button of a mouse button event (`event.button.pressed`); null for one beyond the five that have a name. */
+val SDL_MouseButtonEvent.pressed: SDL3.MouseButton? get() = enumOf<SDL3.MouseButton>(button.toInt()) { it.number }
+
 // ==================
 // MARK: Keyboard
 // ==================
 
-/** True if the key with the given scancode (SDL3.Scancode) is currently held down (polled, not event-based). */
-fun isKeyDown(scancode: UInt): Boolean {
+/** True if the key is currently held down (polled, not event-based). */
+fun isKeyDown(scancode: SDL3.Scancode): Boolean {
 	val vCount = onStack<IntVar>()
 	val vState = SDL_GetKeyboardState(vCount.ptr) ?: return false
-	if (scancode.toInt() < 0 || scancode.toInt() >= vCount.value) return false
-	return vState[scancode.toInt()]
+	val vIndex = scancode.value.toInt()
+	if (vIndex < 0 || vIndex >= vCount.value) return false
+	return vState[vIndex]
 }
 
 // ==================
@@ -65,8 +76,8 @@ fun SDL3.Mouse.position(): SDL3.FPoint {
 	return SDL3.FPoint(vX.value, vY.value)
 }
 
-/** True if the given mouse button (SDL3.Mouse.Left…) is currently held down (polled, not event-based). */
-fun SDL3.Mouse.isButtonDown(button: Int): Boolean {
+/** True if the given mouse button is currently held down (polled, not event-based). */
+fun SDL3.Mouse.isButtonDown(button: SDL3.MouseButton): Boolean {
 	val vMask = SDL_GetMouseState(null, null)
-	return (vMask and (1u shl (button - 1))) != 0u
+	return (vMask and (1u shl (button.number - 1))) != 0u
 }

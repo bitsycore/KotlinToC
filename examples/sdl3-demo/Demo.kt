@@ -23,8 +23,8 @@ fun main() {
 	gameLoop(60) { vDelta ->
 		pollEvents { vEvent ->
 			vEvents++
-			if (vEvent.type == SDL3.Event.Quit) vQuit = true
-			if (vEvent.type == SDL3.Event.KeyDown && vEvent.key.scancode == SDL3.Scancode.Escape) vQuit = true
+			if (vEvent.kind == SDL3.Event.Quit) vQuit = true
+			if (vEvent.kind == SDL3.Event.KeyDown && vEvent.key.code == SDL3.Scancode.Escape) vQuit = true
 		}
 		if (isKeyDown(SDL3.Scancode.Space)) vVelocity = vVelocity.scale(1.01f)
 

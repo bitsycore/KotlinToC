@@ -26,6 +26,24 @@ it can use: Visual Studio, or Ninja or make with gcc or clang.
 `examples/sdl3-demo` opens a window and draws for a second; `examples/showcase` is a window
 with buttons.
 
-The constant tables in `SDL3.kt` (between `// <constants>` and `// </constants>`) name SDL's
-constants in groups (`SDL3.Event.Quit`, `SDL3.Scancode.Escape`). A constant SDL adds later is
-there in package `sdl3` under its C name, and can be given a name here by adding a line.
+The tables in `SDL3.kt` (between `// <constants>` and `// </constants>`) name SDL's
+constants in groups. The kinds that are one of several are enums that are numbers in C
+(`@SimpleEnum`, with SDL's own numbers): `SDL3.Event`, `SDL3.Scancode`, `SDL3.MouseButton`,
+`SDL3.BlendMode`, `SDL3.TextureAccess`, `SDL3.PixelFormat`, `SDL3.Flip`, `SDL3.SystemCursor`.
+The functions of the module take them, and an event gives them:
+
+```kotlin
+pollEvents { vEvent ->
+	when (vEvent.kind) {
+		SDL3.Event.Quit -> vQuit = true
+		SDL3.Event.KeyDown -> if (vEvent.key.code == SDL3.Scancode.Escape) vQuit = true
+		SDL3.Event.MouseButtonDown -> if (vEvent.button.pressed == SDL3.MouseButton.Left) click()
+		else -> {}
+	}
+}
+```
+
+A kind of event or a key that has no entry is `Unknown`; its number is still in the event
+(`vEvent.type`, `vEvent.key.scancode`). The flags that are combined with `or` (`InitFlags`,
+`WindowFlags`, `MessageBoxFlags`) are plain constants. A constant SDL adds later is there in
+package `sdl3` under its C name, and can be given a name here by adding a line.

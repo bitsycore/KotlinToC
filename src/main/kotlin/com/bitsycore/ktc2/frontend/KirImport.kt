@@ -1217,7 +1217,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * A `@SimpleEnum` class: an enum whose values are numbers (a C `enum`, [struct] with its one
 	 * field). The objects that stand for them where Kotlin needs one are made by [simpleEnumBox].
 	 */
-	internal class SimpleEnum(val irClass: IrClass, val file: IrFile, val struct: KStruct, val entries: List<SimpleEntry>, val parameters: List<IrValueParameter>) {
+	internal class SimpleEnum(
+		val irClass: IrClass,
+		val file: IrFile,
+		val struct: KStruct,
+		val entries: List<SimpleEntry>,
+		val parameters: List<IrValueParameter>,
+		/** True when the numbers are given by an `@EnumValue` parameter, false when they are the ordinals. */
+		val isNumbered: Boolean,
+	) {
 		val valueField: KField get() = struct.fields[0]
 
 		/** The object kept for each entry, in the order of [entries]. */
@@ -1255,7 +1263,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vMarked = vParams.filter { vParam -> vParam.annotations.any { it.type.classFqName?.asString() == "ktc2.EnumValue" } }
 		if (vMarked.size > 1) refuse(inFile, vMarked[1], "@SimpleEnum class '$vName': only one parameter can be the @EnumValue")
 		val vNumber = vMarked.firstOrNull()
-		if (vNumber != null && !vNumber.type.isInt()) refuse(inFile, vNumber, "@SimpleEnum class '$vName': the @EnumValue parameter '${vNumber.name}' has to be an Int")
+		if (vNumber != null && !vNumber.type.isInt() && !vNumber.type.isUInt()) refuse(inFile, vNumber, "@SimpleEnum class '$vName': the @EnumValue parameter '${vNumber.name}' has to be an Int or a UInt")
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
 			val vSource = (vBacking.initializer?.expression as? IrGetValue)?.symbol?.owner
@@ -1270,7 +1278,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vArguments = vParams.map { vParam -> vCall?.arguments?.getOrNull(vConstructor!!.parameters.indexOf(vParam)) ?: vParam.defaultValue?.expression }
 			var vValue = vOrdinal
 			if (vNumber != null) {
-				val vGiven = (vArguments[vParams.indexOf(vNumber)] as? IrConst)?.value as? Int
+				val vGiven = constantOf(vArguments[vParams.indexOf(vNumber)])?.value as? Int
 				if (vGiven == null) refuse(inFile, vEntry, "@SimpleEnum class '$vName': the @EnumValue of entry '${vEntry.name}' has to be a constant") else vValue = vGiven
 			}
 			SimpleEntry(vEntry.name.asString(), vOrdinal, vValue, vArguments)
@@ -1279,13 +1287,27 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			refuse(inFile, inClass, "@SimpleEnum class '$vName': entries '${it[0].name}' and '${it[1].name}' have the same @EnumValue ${it[0].value}")
 		}
 		inStruct.enumEntries = vEntries.map { "${inStruct.cName}_${cSuffix(it.name)}" to it.value }
-		mSimpleEnums[inStruct] = SimpleEnum(inClass, inFile, inStruct, vEntries, vParams)
+		mSimpleEnums[inStruct] = SimpleEnum(inClass, inFile, inStruct, vEntries, vParams, vNumber != null)
+	}
+
+	/** [inValue] as a constant: one written there, or a `const val` it reads. */
+	private fun constantOf(inValue: IrExpression?): IrConst? = when (inValue) {
+		is IrConst -> inValue
+		is IrGetField -> inValue.symbol.owner.takeIf { it.isFinal }?.initializer?.expression as? IrConst
+		is IrCall -> inValue.symbol.owner.correspondingPropertySymbol?.owner?.takeIf { it.isConst }?.backingField?.initializer?.expression as? IrConst
+		else -> null
 	}
 
 	/** What the constant [inValue] is in KIR, as a value of type [inType]; null when it is no constant. */
 	private fun simpleEnumConstant(inValue: IrExpression?, inType: KType): KExpr? = when {
-		inValue is IrConst && inValue.value is String && inType == KStringType -> KStringLit(inValue.value as String)
-		inValue is IrConst && inValue.value != null && inType is KPrimType -> KConst(inValue.value!!, inType)
+		inValue !is IrGetEnumValue && constantOf(inValue) != null -> {
+			val vConstant = constantOf(inValue)!!.value
+			when {
+				vConstant is String && inType == KStringType -> KStringLit(vConstant)
+				vConstant != null && vConstant !is String && inType is KPrimType -> KConst(vConstant, inType)
+				else -> null
+			}
+		}
 		inValue is IrGetEnumValue -> {
 			val vOther = simpleEnumOf(inValue.symbol.owner.parentAsClass)
 			val vEntry = vOther?.entries?.firstOrNull { it.name == inValue.symbol.owner.name.asString() }

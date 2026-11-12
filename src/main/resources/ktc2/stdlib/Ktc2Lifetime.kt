@@ -105,3 +105,22 @@ public class WeakRef<T : Any>(inTarget: T) {
 	@Suppress("UNCHECKED_CAST")
 	public fun get(): T? = weakGet(mCell) as T?
 }
+
+/**
+ * The entry of the enum class [T] for which [valueOf] gives [value], or null when there is
+ * none: the way from a number (one that comes from C, say) to the entry that stands for it.
+ *
+ * For a [SimpleEnum] class whose numbers are given by [EnumValue], [valueOf] has to read
+ * that property (`enumOf<Key>(code) { it.code }`): in C the number is then compared with the
+ * numbers of the entries, and nothing is looked up.
+ */
+public inline fun <reified T : Enum<T>> enumOf(value: Int, valueOf: (T) -> Int): T? {
+	for (vEntry in enumValues<T>()) if (valueOf(vEntry) == value) return vEntry
+	return null
+}
+
+/** [enumOf] for an unsigned number. */
+public inline fun <reified T : Enum<T>> enumOf(value: UInt, valueOf: (T) -> UInt): T? {
+	for (vEntry in enumValues<T>()) if (valueOf(vEntry) == value) return vEntry
+	return null
+}

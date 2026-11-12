@@ -292,17 +292,29 @@ Open:
   `StrictMath` is); a few hundred lines of C. Until then DESIGN.md lists it as a difference.
 - [x] **An enum that is a number: `@SimpleEnum`** (`DESIGN.md`, section 4;
   `integration/values/SimpleEnums.kt`, `integration/errors/SimpleEnumState.kt`). A C `enum`;
-  `@EnumValue` on an `Int` parameter of the constructor gives the numbers. Left:
+  `@EnumValue` on an `Int` or `UInt` parameter of the constructor gives the numbers (a
+  constant, or a `const val` such as the ones of C bindings), and `ktc2.enumOf<T>(number) {
+  it.code }` goes from a number back to the entry: a loop over the entries on the JVM, the
+  number compared with the entries' own in C. Left:
   - [ ] `name`, `ordinal`, `toString()` and `compareTo` of a value go through the object kept
     for its entry (a chain of compares, then a field): right, not as cheap as a table. A
     lookup of their own, as the constructor's properties have, is a few lines in the call
     lowering.
-  - [ ] the SDL3 module's `object { const val ... }` namespaces (scancodes, event types) as
-    `@SimpleEnum` classes with the C constants as `@EnumValue`, so the compiler checks them.
-    A value given to a C function still has to be converted by hand (`.code`): the bindings
-    could accept the enum where C declares the `enum`.
-  - [ ] flags that are or-ed together are not an enum: a `value class` over the number with
-    the constants in its companion does that today and costs nothing.
+  - [x] the SDL3 module's namespaces of constants are `@SimpleEnum` classes with SDL's own
+    numbers: `SDL3.Event`, `Scancode`, `MouseButton`, `BlendMode`, `TextureAccess`,
+    `PixelFormat`, `Flip`, `SystemCursor`. The functions of the module take them
+    (`setBlendMode(SDL3.BlendMode.Blend)`, `isKeyDown(SDL3.Scancode.Space)`), and an event
+    gives them (`event.kind`, `event.key.code`, `event.button.pressed`). The showcase and the
+    demo build and run with gcc and MSVC. Not exercised by a test: an event that really comes
+    from SDL (the automatic run of the showcase calls its screen directly).
+  - [ ] the flags that are or-ed together (`InitFlags`, `WindowFlags`, `MessageBoxFlags`) are
+    still `object { const val }`: they are not an enum. A `value class` over the number with
+    the constants in its companion and an `or` would check them too, and costs nothing.
+  - [ ] a `@SimpleEnum` given to a C function is converted by hand (`mode.value`): the
+    bindings could accept the enum where C declares the `enum`.
+  - [ ] `enumOf` gives the object kept for the entry (`T?`), which `?: Unknown` turns back
+    into the number: correct, with a chain of compares on each side. A form with a default
+    (`enumOf(number, Unknown) { }`) would stay a number all the way.
 - [x] **A failing `valueOf` throws** `IllegalArgumentException("No enum constant ...")`, for
   every enum: it ended the program before.
 - [ ] **Coroutines.** `sequence { }` and `iterator { }` first: they are what the library
@@ -349,8 +361,8 @@ Open:
    which an index loop written by the importer for a list known to be an `ArrayList` would
    fold into one test per round. Then `HashMap` (4), and templates built in place (6).
 3. More shapes for `RangeChecks` (5).
-4. `name` and `ordinal` of a `@SimpleEnum` without the object; the SDL3 constants as such
-   enums (8).
+4. `name` and `ordinal` of a `@SimpleEnum` without the object; the flags of the SDL3 module
+   as value classes (8).
 5. The array inside a local list (2): 2 M allocations of `Ordinary`, but removing 4 M others
    did not change its time; measure before building it.
 

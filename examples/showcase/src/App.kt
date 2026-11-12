@@ -47,9 +47,9 @@ fun start(args: Array<String>) {
 	var vFarthest = 0
 	gameLoop(60) {
 		pollEvents { vEvent ->
-			when (vEvent.type) {
+			when (vEvent.kind) {
 				SDL3.Event.Quit -> vQuit = true
-				SDL3.Event.KeyDown -> when (vEvent.key.scancode) {
+				SDL3.Event.KeyDown -> when (vEvent.key.code) {
 					SDL3.Scancode.Escape -> vQuit = true
 					SDL3.Scancode.Up -> vScreen.scroll(-1)
 					SDL3.Scancode.Down -> vScreen.scroll(1)
@@ -57,13 +57,15 @@ fun start(args: Array<String>) {
 					SDL3.Scancode.PageDown -> vScreen.page(1)
 					SDL3.Scancode.Home -> vScreen.scrollToStart()
 					SDL3.Scancode.End -> vScreen.scrollToEnd()
+					else -> {}
 				}
 				SDL3.Event.MouseWheel -> vScreen.scroll(-(vEvent.wheel.y * 3.0f).toInt())
 				SDL3.Event.MouseMotion -> vScreen.move(vEvent.motion.x / kScale, vEvent.motion.y / kScale)
 				SDL3.Event.MouseButtonDown -> {
-					if (vEvent.button.button.toInt() == SDL3.Mouse.Left) vScreen.press(vEvent.button.x / kScale, vEvent.button.y / kScale)
+					if (vEvent.button.pressed == SDL3.MouseButton.Left) vScreen.press(vEvent.button.x / kScale, vEvent.button.y / kScale)
 				}
 				SDL3.Event.MouseButtonUp -> vScreen.release()
+				else -> {}
 			}
 		}
 		if (vIsAuto && vFrame % 3 == 2) {

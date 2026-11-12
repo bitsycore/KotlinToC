@@ -1815,6 +1815,21 @@ internal class BodyBuilder(
 		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "kotlinx.cinterop.internal") {
 			lowerInteropIntrinsic(inCall, vCallee.name.asString())?.let { return it }
 		}
+		// `enumOf<T>(number) { … }` for a `@SimpleEnum` class with numbers of its own: the number is compared with theirs.
+		if (vOwner == null && vCallee.name.asString() == "enumOf" && vCallee.kotlinFqName.asString() == "ktc2.enumOf") {
+			val vEnum = inCall.typeArguments.firstOrNull()?.let { closed(it).classOrNull?.owner }?.let { mImporter.simpleEnumOf(it) }
+			val vType = typeOf(inCall)
+			if (vEnum != null && vEnum.isNumbered && vType != null) {
+				val vNumber = spill(lowerPure(inCall.arguments[0]!!))
+				val vResult = newTemp(vType)
+				mBlock += KLet(vResult, KNull(vType))
+				for (vEntry in vEnum.entries) {
+					val vFound = inBlock { mBlock += KSet(vResult, coerce(vEnum.constant(vEntry), vType)) }
+					mBlock += KIf(KBinary(KBinaryOp.EQ, vNumber, KConst(vEntry.value, kIntType), KPrim.INT, kBoolType), vFound, emptyList())
+				}
+				return KRead(vResult)
+			}
+		}
 		// `listOf(a, b, c)` is `elements.asList()` unless there is no element, which the call shows: the
 		// list is then of one class for the passes that follow the classes of values.
 		if (vOwner == null && vCallee.name.asString() == "listOf" && vCallee.kotlinFqName.asString() == "kotlin.collections.listOf") {

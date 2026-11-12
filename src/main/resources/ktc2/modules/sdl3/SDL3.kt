@@ -5,6 +5,8 @@ package ktc2.sdl3
 import kotlinx.cinterop.*
 import kotlinx.cinterop.internal.cExpr
 import kotlinx.cinterop.internal.cSizeOf
+import ktc2.EnumValue
+import ktc2.SimpleEnum
 import ktc2.Struct
 import sdl3.*
 
@@ -136,9 +138,9 @@ object SDL3 {
 		SDL_ShowSimpleMessageBox(flags, title, message, window.handle)
 	}
 
-	/** Create a system cursor from a SystemCursor id. Destroy with destroy() when done. */
-	fun createSystemCursor(id: UInt): Cursor =
-		Cursor(SDL_CreateSystemCursor(id) ?: error("SDL_CreateSystemCursor failed: ${lastError()}"))
+	/** Create one of the cursors the system provides. Destroy with destroy() when done. */
+	fun createSystemCursor(id: SystemCursor): Cursor =
+		Cursor(SDL_CreateSystemCursor(id.value) ?: error("SDL_CreateSystemCursor failed: ${lastError()}"))
 
 	/** Copy text to the system clipboard. */
 	fun setClipboardText(text: String) {
@@ -177,283 +179,299 @@ object SDL3 {
 		const val AlwaysOnTop = SDL_WINDOW_ALWAYS_ON_TOP
 	}
 
-	/** Event types: compare with the type of a polled event. */
-	object Event {
-		const val Quit = SDL_EVENT_QUIT
-		const val Terminating = SDL_EVENT_TERMINATING
-		const val LowMemory = SDL_EVENT_LOW_MEMORY
-		const val WillEnterBackground = SDL_EVENT_WILL_ENTER_BACKGROUND
-		const val DidEnterBackground = SDL_EVENT_DID_ENTER_BACKGROUND
-		const val WillEnterForeground = SDL_EVENT_WILL_ENTER_FOREGROUND
-		const val DidEnterForeground = SDL_EVENT_DID_ENTER_FOREGROUND
-		const val LocaleChanged = SDL_EVENT_LOCALE_CHANGED
-		const val SystemThemeChanged = SDL_EVENT_SYSTEM_THEME_CHANGED
-		const val DisplayOrientation = SDL_EVENT_DISPLAY_ORIENTATION
-		const val DisplayAdded = SDL_EVENT_DISPLAY_ADDED
-		const val DisplayRemoved = SDL_EVENT_DISPLAY_REMOVED
-		const val DisplayMoved = SDL_EVENT_DISPLAY_MOVED
-		const val DisplayDesktopModeChanged = SDL_EVENT_DISPLAY_DESKTOP_MODE_CHANGED
-		const val DisplayCurrentModeChanged = SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED
-		const val DisplayContentScaleChanged = SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED
-		const val DisplayUsableBoundsChanged = SDL_EVENT_DISPLAY_USABLE_BOUNDS_CHANGED
-		const val WindowShown = SDL_EVENT_WINDOW_SHOWN
-		const val WindowHidden = SDL_EVENT_WINDOW_HIDDEN
-		const val WindowExposed = SDL_EVENT_WINDOW_EXPOSED
-		const val WindowMoved = SDL_EVENT_WINDOW_MOVED
-		const val WindowResized = SDL_EVENT_WINDOW_RESIZED
-		const val WindowPixelSizeChanged = SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED
-		const val WindowMetalViewResized = SDL_EVENT_WINDOW_METAL_VIEW_RESIZED
-		const val WindowMinimized = SDL_EVENT_WINDOW_MINIMIZED
-		const val WindowMaximized = SDL_EVENT_WINDOW_MAXIMIZED
-		const val WindowRestored = SDL_EVENT_WINDOW_RESTORED
-		const val WindowMouseEnter = SDL_EVENT_WINDOW_MOUSE_ENTER
-		const val WindowMouseLeave = SDL_EVENT_WINDOW_MOUSE_LEAVE
-		const val WindowFocusGained = SDL_EVENT_WINDOW_FOCUS_GAINED
-		const val WindowFocusLost = SDL_EVENT_WINDOW_FOCUS_LOST
-		const val WindowCloseRequested = SDL_EVENT_WINDOW_CLOSE_REQUESTED
-		const val WindowHitTest = SDL_EVENT_WINDOW_HIT_TEST
-		const val WindowIccprofChanged = SDL_EVENT_WINDOW_ICCPROF_CHANGED
-		const val WindowDisplayChanged = SDL_EVENT_WINDOW_DISPLAY_CHANGED
-		const val WindowDisplayScaleChanged = SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED
-		const val WindowSafeAreaChanged = SDL_EVENT_WINDOW_SAFE_AREA_CHANGED
-		const val WindowOccluded = SDL_EVENT_WINDOW_OCCLUDED
-		const val WindowEnterFullscreen = SDL_EVENT_WINDOW_ENTER_FULLSCREEN
-		const val WindowLeaveFullscreen = SDL_EVENT_WINDOW_LEAVE_FULLSCREEN
-		const val WindowDestroyed = SDL_EVENT_WINDOW_DESTROYED
-		const val WindowHdrStateChanged = SDL_EVENT_WINDOW_HDR_STATE_CHANGED
-		const val KeyDown = SDL_EVENT_KEY_DOWN
-		const val KeyUp = SDL_EVENT_KEY_UP
-		const val TextEditing = SDL_EVENT_TEXT_EDITING
-		const val TextInput = SDL_EVENT_TEXT_INPUT
-		const val KeymapChanged = SDL_EVENT_KEYMAP_CHANGED
-		const val KeyboardAdded = SDL_EVENT_KEYBOARD_ADDED
-		const val KeyboardRemoved = SDL_EVENT_KEYBOARD_REMOVED
-		const val TextEditingCandidates = SDL_EVENT_TEXT_EDITING_CANDIDATES
-		const val ScreenKeyboardShown = SDL_EVENT_SCREEN_KEYBOARD_SHOWN
-		const val ScreenKeyboardHidden = SDL_EVENT_SCREEN_KEYBOARD_HIDDEN
-		const val MouseMotion = SDL_EVENT_MOUSE_MOTION
-		const val MouseButtonDown = SDL_EVENT_MOUSE_BUTTON_DOWN
-		const val MouseButtonUp = SDL_EVENT_MOUSE_BUTTON_UP
-		const val MouseWheel = SDL_EVENT_MOUSE_WHEEL
-		const val MouseAdded = SDL_EVENT_MOUSE_ADDED
-		const val MouseRemoved = SDL_EVENT_MOUSE_REMOVED
-		const val JoystickAxisMotion = SDL_EVENT_JOYSTICK_AXIS_MOTION
-		const val JoystickBallMotion = SDL_EVENT_JOYSTICK_BALL_MOTION
-		const val JoystickHatMotion = SDL_EVENT_JOYSTICK_HAT_MOTION
-		const val JoystickButtonDown = SDL_EVENT_JOYSTICK_BUTTON_DOWN
-		const val JoystickButtonUp = SDL_EVENT_JOYSTICK_BUTTON_UP
-		const val JoystickAdded = SDL_EVENT_JOYSTICK_ADDED
-		const val JoystickRemoved = SDL_EVENT_JOYSTICK_REMOVED
-		const val JoystickBatteryUpdated = SDL_EVENT_JOYSTICK_BATTERY_UPDATED
-		const val JoystickUpdateComplete = SDL_EVENT_JOYSTICK_UPDATE_COMPLETE
-		const val GamepadAxisMotion = SDL_EVENT_GAMEPAD_AXIS_MOTION
-		const val GamepadButtonDown = SDL_EVENT_GAMEPAD_BUTTON_DOWN
-		const val GamepadButtonUp = SDL_EVENT_GAMEPAD_BUTTON_UP
-		const val GamepadAdded = SDL_EVENT_GAMEPAD_ADDED
-		const val GamepadRemoved = SDL_EVENT_GAMEPAD_REMOVED
-		const val GamepadRemapped = SDL_EVENT_GAMEPAD_REMAPPED
-		const val GamepadTouchpadDown = SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN
-		const val GamepadTouchpadMotion = SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION
-		const val GamepadTouchpadUp = SDL_EVENT_GAMEPAD_TOUCHPAD_UP
-		const val GamepadSensorUpdate = SDL_EVENT_GAMEPAD_SENSOR_UPDATE
-		const val GamepadUpdateComplete = SDL_EVENT_GAMEPAD_UPDATE_COMPLETE
-		const val GamepadSteamHandleUpdated = SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED
-		const val FingerDown = SDL_EVENT_FINGER_DOWN
-		const val FingerUp = SDL_EVENT_FINGER_UP
-		const val FingerMotion = SDL_EVENT_FINGER_MOTION
-		const val FingerCanceled = SDL_EVENT_FINGER_CANCELED
-		const val PinchBegin = SDL_EVENT_PINCH_BEGIN
-		const val PinchUpdate = SDL_EVENT_PINCH_UPDATE
-		const val PinchEnd = SDL_EVENT_PINCH_END
-		const val ClipboardUpdate = SDL_EVENT_CLIPBOARD_UPDATE
-		const val DropFile = SDL_EVENT_DROP_FILE
-		const val DropText = SDL_EVENT_DROP_TEXT
-		const val DropBegin = SDL_EVENT_DROP_BEGIN
-		const val DropComplete = SDL_EVENT_DROP_COMPLETE
-		const val DropPosition = SDL_EVENT_DROP_POSITION
-		const val AudioDeviceAdded = SDL_EVENT_AUDIO_DEVICE_ADDED
-		const val AudioDeviceRemoved = SDL_EVENT_AUDIO_DEVICE_REMOVED
-		const val AudioDeviceFormatChanged = SDL_EVENT_AUDIO_DEVICE_FORMAT_CHANGED
-		const val SensorUpdate = SDL_EVENT_SENSOR_UPDATE
-		const val PenProximityIn = SDL_EVENT_PEN_PROXIMITY_IN
-		const val PenProximityOut = SDL_EVENT_PEN_PROXIMITY_OUT
-		const val PenDown = SDL_EVENT_PEN_DOWN
-		const val PenUp = SDL_EVENT_PEN_UP
-		const val PenButtonDown = SDL_EVENT_PEN_BUTTON_DOWN
-		const val PenButtonUp = SDL_EVENT_PEN_BUTTON_UP
-		const val PenMotion = SDL_EVENT_PEN_MOTION
-		const val PenAxis = SDL_EVENT_PEN_AXIS
-		const val CameraDeviceAdded = SDL_EVENT_CAMERA_DEVICE_ADDED
-		const val CameraDeviceRemoved = SDL_EVENT_CAMERA_DEVICE_REMOVED
-		const val CameraDeviceApproved = SDL_EVENT_CAMERA_DEVICE_APPROVED
-		const val CameraDeviceDenied = SDL_EVENT_CAMERA_DEVICE_DENIED
-		const val RenderTargetsReset = SDL_EVENT_RENDER_TARGETS_RESET
-		const val RenderDeviceReset = SDL_EVENT_RENDER_DEVICE_RESET
-		const val RenderDeviceLost = SDL_EVENT_RENDER_DEVICE_LOST
-		const val User = SDL_EVENT_USER
+	/** The kinds of events: what `kind` of a polled event is. A C `enum` with SDL's own numbers. */
+	@SimpleEnum
+	enum class Event(@EnumValue val value: UInt) {
+		/** Any other one. */
+		Unknown(SDL_EVENT_FIRST),
+		Quit(SDL_EVENT_QUIT),
+		Terminating(SDL_EVENT_TERMINATING),
+		LowMemory(SDL_EVENT_LOW_MEMORY),
+		WillEnterBackground(SDL_EVENT_WILL_ENTER_BACKGROUND),
+		DidEnterBackground(SDL_EVENT_DID_ENTER_BACKGROUND),
+		WillEnterForeground(SDL_EVENT_WILL_ENTER_FOREGROUND),
+		DidEnterForeground(SDL_EVENT_DID_ENTER_FOREGROUND),
+		LocaleChanged(SDL_EVENT_LOCALE_CHANGED),
+		SystemThemeChanged(SDL_EVENT_SYSTEM_THEME_CHANGED),
+		DisplayOrientation(SDL_EVENT_DISPLAY_ORIENTATION),
+		DisplayAdded(SDL_EVENT_DISPLAY_ADDED),
+		DisplayRemoved(SDL_EVENT_DISPLAY_REMOVED),
+		DisplayMoved(SDL_EVENT_DISPLAY_MOVED),
+		DisplayDesktopModeChanged(SDL_EVENT_DISPLAY_DESKTOP_MODE_CHANGED),
+		DisplayCurrentModeChanged(SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED),
+		DisplayContentScaleChanged(SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED),
+		DisplayUsableBoundsChanged(SDL_EVENT_DISPLAY_USABLE_BOUNDS_CHANGED),
+		WindowShown(SDL_EVENT_WINDOW_SHOWN),
+		WindowHidden(SDL_EVENT_WINDOW_HIDDEN),
+		WindowExposed(SDL_EVENT_WINDOW_EXPOSED),
+		WindowMoved(SDL_EVENT_WINDOW_MOVED),
+		WindowResized(SDL_EVENT_WINDOW_RESIZED),
+		WindowPixelSizeChanged(SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED),
+		WindowMetalViewResized(SDL_EVENT_WINDOW_METAL_VIEW_RESIZED),
+		WindowMinimized(SDL_EVENT_WINDOW_MINIMIZED),
+		WindowMaximized(SDL_EVENT_WINDOW_MAXIMIZED),
+		WindowRestored(SDL_EVENT_WINDOW_RESTORED),
+		WindowMouseEnter(SDL_EVENT_WINDOW_MOUSE_ENTER),
+		WindowMouseLeave(SDL_EVENT_WINDOW_MOUSE_LEAVE),
+		WindowFocusGained(SDL_EVENT_WINDOW_FOCUS_GAINED),
+		WindowFocusLost(SDL_EVENT_WINDOW_FOCUS_LOST),
+		WindowCloseRequested(SDL_EVENT_WINDOW_CLOSE_REQUESTED),
+		WindowHitTest(SDL_EVENT_WINDOW_HIT_TEST),
+		WindowIccprofChanged(SDL_EVENT_WINDOW_ICCPROF_CHANGED),
+		WindowDisplayChanged(SDL_EVENT_WINDOW_DISPLAY_CHANGED),
+		WindowDisplayScaleChanged(SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED),
+		WindowSafeAreaChanged(SDL_EVENT_WINDOW_SAFE_AREA_CHANGED),
+		WindowOccluded(SDL_EVENT_WINDOW_OCCLUDED),
+		WindowEnterFullscreen(SDL_EVENT_WINDOW_ENTER_FULLSCREEN),
+		WindowLeaveFullscreen(SDL_EVENT_WINDOW_LEAVE_FULLSCREEN),
+		WindowDestroyed(SDL_EVENT_WINDOW_DESTROYED),
+		WindowHdrStateChanged(SDL_EVENT_WINDOW_HDR_STATE_CHANGED),
+		KeyDown(SDL_EVENT_KEY_DOWN),
+		KeyUp(SDL_EVENT_KEY_UP),
+		TextEditing(SDL_EVENT_TEXT_EDITING),
+		TextInput(SDL_EVENT_TEXT_INPUT),
+		KeymapChanged(SDL_EVENT_KEYMAP_CHANGED),
+		KeyboardAdded(SDL_EVENT_KEYBOARD_ADDED),
+		KeyboardRemoved(SDL_EVENT_KEYBOARD_REMOVED),
+		TextEditingCandidates(SDL_EVENT_TEXT_EDITING_CANDIDATES),
+		ScreenKeyboardShown(SDL_EVENT_SCREEN_KEYBOARD_SHOWN),
+		ScreenKeyboardHidden(SDL_EVENT_SCREEN_KEYBOARD_HIDDEN),
+		MouseMotion(SDL_EVENT_MOUSE_MOTION),
+		MouseButtonDown(SDL_EVENT_MOUSE_BUTTON_DOWN),
+		MouseButtonUp(SDL_EVENT_MOUSE_BUTTON_UP),
+		MouseWheel(SDL_EVENT_MOUSE_WHEEL),
+		MouseAdded(SDL_EVENT_MOUSE_ADDED),
+		MouseRemoved(SDL_EVENT_MOUSE_REMOVED),
+		JoystickAxisMotion(SDL_EVENT_JOYSTICK_AXIS_MOTION),
+		JoystickBallMotion(SDL_EVENT_JOYSTICK_BALL_MOTION),
+		JoystickHatMotion(SDL_EVENT_JOYSTICK_HAT_MOTION),
+		JoystickButtonDown(SDL_EVENT_JOYSTICK_BUTTON_DOWN),
+		JoystickButtonUp(SDL_EVENT_JOYSTICK_BUTTON_UP),
+		JoystickAdded(SDL_EVENT_JOYSTICK_ADDED),
+		JoystickRemoved(SDL_EVENT_JOYSTICK_REMOVED),
+		JoystickBatteryUpdated(SDL_EVENT_JOYSTICK_BATTERY_UPDATED),
+		JoystickUpdateComplete(SDL_EVENT_JOYSTICK_UPDATE_COMPLETE),
+		GamepadAxisMotion(SDL_EVENT_GAMEPAD_AXIS_MOTION),
+		GamepadButtonDown(SDL_EVENT_GAMEPAD_BUTTON_DOWN),
+		GamepadButtonUp(SDL_EVENT_GAMEPAD_BUTTON_UP),
+		GamepadAdded(SDL_EVENT_GAMEPAD_ADDED),
+		GamepadRemoved(SDL_EVENT_GAMEPAD_REMOVED),
+		GamepadRemapped(SDL_EVENT_GAMEPAD_REMAPPED),
+		GamepadTouchpadDown(SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN),
+		GamepadTouchpadMotion(SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION),
+		GamepadTouchpadUp(SDL_EVENT_GAMEPAD_TOUCHPAD_UP),
+		GamepadSensorUpdate(SDL_EVENT_GAMEPAD_SENSOR_UPDATE),
+		GamepadUpdateComplete(SDL_EVENT_GAMEPAD_UPDATE_COMPLETE),
+		GamepadSteamHandleUpdated(SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED),
+		FingerDown(SDL_EVENT_FINGER_DOWN),
+		FingerUp(SDL_EVENT_FINGER_UP),
+		FingerMotion(SDL_EVENT_FINGER_MOTION),
+		FingerCanceled(SDL_EVENT_FINGER_CANCELED),
+		PinchBegin(SDL_EVENT_PINCH_BEGIN),
+		PinchUpdate(SDL_EVENT_PINCH_UPDATE),
+		PinchEnd(SDL_EVENT_PINCH_END),
+		ClipboardUpdate(SDL_EVENT_CLIPBOARD_UPDATE),
+		DropFile(SDL_EVENT_DROP_FILE),
+		DropText(SDL_EVENT_DROP_TEXT),
+		DropBegin(SDL_EVENT_DROP_BEGIN),
+		DropComplete(SDL_EVENT_DROP_COMPLETE),
+		DropPosition(SDL_EVENT_DROP_POSITION),
+		AudioDeviceAdded(SDL_EVENT_AUDIO_DEVICE_ADDED),
+		AudioDeviceRemoved(SDL_EVENT_AUDIO_DEVICE_REMOVED),
+		AudioDeviceFormatChanged(SDL_EVENT_AUDIO_DEVICE_FORMAT_CHANGED),
+		SensorUpdate(SDL_EVENT_SENSOR_UPDATE),
+		PenProximityIn(SDL_EVENT_PEN_PROXIMITY_IN),
+		PenProximityOut(SDL_EVENT_PEN_PROXIMITY_OUT),
+		PenDown(SDL_EVENT_PEN_DOWN),
+		PenUp(SDL_EVENT_PEN_UP),
+		PenButtonDown(SDL_EVENT_PEN_BUTTON_DOWN),
+		PenButtonUp(SDL_EVENT_PEN_BUTTON_UP),
+		PenMotion(SDL_EVENT_PEN_MOTION),
+		PenAxis(SDL_EVENT_PEN_AXIS),
+		CameraDeviceAdded(SDL_EVENT_CAMERA_DEVICE_ADDED),
+		CameraDeviceRemoved(SDL_EVENT_CAMERA_DEVICE_REMOVED),
+		CameraDeviceApproved(SDL_EVENT_CAMERA_DEVICE_APPROVED),
+		CameraDeviceDenied(SDL_EVENT_CAMERA_DEVICE_DENIED),
+		RenderTargetsReset(SDL_EVENT_RENDER_TARGETS_RESET),
+		RenderDeviceReset(SDL_EVENT_RENDER_DEVICE_RESET),
+		RenderDeviceLost(SDL_EVENT_RENDER_DEVICE_LOST),
+		User(SDL_EVENT_USER),
 	}
 
-	/** Physical keys, for isKeyDown and key events. */
-	object Scancode {
-		const val Escape = SDL_SCANCODE_ESCAPE
-		const val Return = SDL_SCANCODE_RETURN
-		const val Space = SDL_SCANCODE_SPACE
-		const val Backspace = SDL_SCANCODE_BACKSPACE
-		const val Tab = SDL_SCANCODE_TAB
-		const val Delete = SDL_SCANCODE_DELETE
-		const val Insert = SDL_SCANCODE_INSERT
-		const val Home = SDL_SCANCODE_HOME
-		const val End = SDL_SCANCODE_END
-		const val PageUp = SDL_SCANCODE_PAGEUP
-		const val PageDown = SDL_SCANCODE_PAGEDOWN
-		const val Left = SDL_SCANCODE_LEFT
-		const val Right = SDL_SCANCODE_RIGHT
-		const val Up = SDL_SCANCODE_UP
-		const val Down = SDL_SCANCODE_DOWN
-		const val LShift = SDL_SCANCODE_LSHIFT
-		const val RShift = SDL_SCANCODE_RSHIFT
-		const val LCtrl = SDL_SCANCODE_LCTRL
-		const val RCtrl = SDL_SCANCODE_RCTRL
-		const val LAlt = SDL_SCANCODE_LALT
-		const val RAlt = SDL_SCANCODE_RALT
-		const val LGui = SDL_SCANCODE_LGUI
-		const val RGui = SDL_SCANCODE_RGUI
-		const val CapsLock = SDL_SCANCODE_CAPSLOCK
-		const val NumLock = SDL_SCANCODE_NUMLOCKCLEAR
-		const val ScrollLock = SDL_SCANCODE_SCROLLLOCK
-		const val A = SDL_SCANCODE_A
-		const val B = SDL_SCANCODE_B
-		const val C = SDL_SCANCODE_C
-		const val D = SDL_SCANCODE_D
-		const val E = SDL_SCANCODE_E
-		const val F = SDL_SCANCODE_F
-		const val G = SDL_SCANCODE_G
-		const val H = SDL_SCANCODE_H
-		const val I = SDL_SCANCODE_I
-		const val J = SDL_SCANCODE_J
-		const val K = SDL_SCANCODE_K
-		const val L = SDL_SCANCODE_L
-		const val M = SDL_SCANCODE_M
-		const val N = SDL_SCANCODE_N
-		const val O = SDL_SCANCODE_O
-		const val P = SDL_SCANCODE_P
-		const val Q = SDL_SCANCODE_Q
-		const val R = SDL_SCANCODE_R
-		const val S = SDL_SCANCODE_S
-		const val T = SDL_SCANCODE_T
-		const val U = SDL_SCANCODE_U
-		const val V = SDL_SCANCODE_V
-		const val W = SDL_SCANCODE_W
-		const val X = SDL_SCANCODE_X
-		const val Y = SDL_SCANCODE_Y
-		const val Z = SDL_SCANCODE_Z
-		const val Num0 = SDL_SCANCODE_0
-		const val Num1 = SDL_SCANCODE_1
-		const val Num2 = SDL_SCANCODE_2
-		const val Num3 = SDL_SCANCODE_3
-		const val Num4 = SDL_SCANCODE_4
-		const val Num5 = SDL_SCANCODE_5
-		const val Num6 = SDL_SCANCODE_6
-		const val Num7 = SDL_SCANCODE_7
-		const val Num8 = SDL_SCANCODE_8
-		const val Num9 = SDL_SCANCODE_9
-		const val F1 = SDL_SCANCODE_F1
-		const val F2 = SDL_SCANCODE_F2
-		const val F3 = SDL_SCANCODE_F3
-		const val F4 = SDL_SCANCODE_F4
-		const val F5 = SDL_SCANCODE_F5
-		const val F6 = SDL_SCANCODE_F6
-		const val F7 = SDL_SCANCODE_F7
-		const val F8 = SDL_SCANCODE_F8
-		const val F9 = SDL_SCANCODE_F9
-		const val F10 = SDL_SCANCODE_F10
-		const val F11 = SDL_SCANCODE_F11
-		const val F12 = SDL_SCANCODE_F12
-		const val Kp0 = SDL_SCANCODE_KP_0
-		const val Kp1 = SDL_SCANCODE_KP_1
-		const val Kp2 = SDL_SCANCODE_KP_2
-		const val Kp3 = SDL_SCANCODE_KP_3
-		const val Kp4 = SDL_SCANCODE_KP_4
-		const val Kp5 = SDL_SCANCODE_KP_5
-		const val Kp6 = SDL_SCANCODE_KP_6
-		const val Kp7 = SDL_SCANCODE_KP_7
-		const val Kp8 = SDL_SCANCODE_KP_8
-		const val Kp9 = SDL_SCANCODE_KP_9
-		const val KpEnter = SDL_SCANCODE_KP_ENTER
-		const val KpPlus = SDL_SCANCODE_KP_PLUS
-		const val KpMinus = SDL_SCANCODE_KP_MINUS
-		const val KpMultiply = SDL_SCANCODE_KP_MULTIPLY
-		const val KpDivide = SDL_SCANCODE_KP_DIVIDE
-		const val KpPeriod = SDL_SCANCODE_KP_PERIOD
-		const val Minus = SDL_SCANCODE_MINUS
-		const val Equals = SDL_SCANCODE_EQUALS
-		const val LeftBracket = SDL_SCANCODE_LEFTBRACKET
-		const val RightBracket = SDL_SCANCODE_RIGHTBRACKET
-		const val Backslash = SDL_SCANCODE_BACKSLASH
-		const val Semicolon = SDL_SCANCODE_SEMICOLON
-		const val Apostrophe = SDL_SCANCODE_APOSTROPHE
-		const val Grave = SDL_SCANCODE_GRAVE
-		const val Comma = SDL_SCANCODE_COMMA
-		const val Period = SDL_SCANCODE_PERIOD
-		const val Slash = SDL_SCANCODE_SLASH
+	/** Physical keys, for isKeyDown and for `key.code` of a key event. */
+	@SimpleEnum
+	enum class Scancode(@EnumValue val value: UInt) {
+		/** Any other one. */
+		Unknown(SDL_SCANCODE_UNKNOWN),
+		Escape(SDL_SCANCODE_ESCAPE),
+		Return(SDL_SCANCODE_RETURN),
+		Space(SDL_SCANCODE_SPACE),
+		Backspace(SDL_SCANCODE_BACKSPACE),
+		Tab(SDL_SCANCODE_TAB),
+		Delete(SDL_SCANCODE_DELETE),
+		Insert(SDL_SCANCODE_INSERT),
+		Home(SDL_SCANCODE_HOME),
+		End(SDL_SCANCODE_END),
+		PageUp(SDL_SCANCODE_PAGEUP),
+		PageDown(SDL_SCANCODE_PAGEDOWN),
+		Left(SDL_SCANCODE_LEFT),
+		Right(SDL_SCANCODE_RIGHT),
+		Up(SDL_SCANCODE_UP),
+		Down(SDL_SCANCODE_DOWN),
+		LShift(SDL_SCANCODE_LSHIFT),
+		RShift(SDL_SCANCODE_RSHIFT),
+		LCtrl(SDL_SCANCODE_LCTRL),
+		RCtrl(SDL_SCANCODE_RCTRL),
+		LAlt(SDL_SCANCODE_LALT),
+		RAlt(SDL_SCANCODE_RALT),
+		LGui(SDL_SCANCODE_LGUI),
+		RGui(SDL_SCANCODE_RGUI),
+		CapsLock(SDL_SCANCODE_CAPSLOCK),
+		NumLock(SDL_SCANCODE_NUMLOCKCLEAR),
+		ScrollLock(SDL_SCANCODE_SCROLLLOCK),
+		A(SDL_SCANCODE_A),
+		B(SDL_SCANCODE_B),
+		C(SDL_SCANCODE_C),
+		D(SDL_SCANCODE_D),
+		E(SDL_SCANCODE_E),
+		F(SDL_SCANCODE_F),
+		G(SDL_SCANCODE_G),
+		H(SDL_SCANCODE_H),
+		I(SDL_SCANCODE_I),
+		J(SDL_SCANCODE_J),
+		K(SDL_SCANCODE_K),
+		L(SDL_SCANCODE_L),
+		M(SDL_SCANCODE_M),
+		N(SDL_SCANCODE_N),
+		O(SDL_SCANCODE_O),
+		P(SDL_SCANCODE_P),
+		Q(SDL_SCANCODE_Q),
+		R(SDL_SCANCODE_R),
+		S(SDL_SCANCODE_S),
+		T(SDL_SCANCODE_T),
+		U(SDL_SCANCODE_U),
+		V(SDL_SCANCODE_V),
+		W(SDL_SCANCODE_W),
+		X(SDL_SCANCODE_X),
+		Y(SDL_SCANCODE_Y),
+		Z(SDL_SCANCODE_Z),
+		Num0(SDL_SCANCODE_0),
+		Num1(SDL_SCANCODE_1),
+		Num2(SDL_SCANCODE_2),
+		Num3(SDL_SCANCODE_3),
+		Num4(SDL_SCANCODE_4),
+		Num5(SDL_SCANCODE_5),
+		Num6(SDL_SCANCODE_6),
+		Num7(SDL_SCANCODE_7),
+		Num8(SDL_SCANCODE_8),
+		Num9(SDL_SCANCODE_9),
+		F1(SDL_SCANCODE_F1),
+		F2(SDL_SCANCODE_F2),
+		F3(SDL_SCANCODE_F3),
+		F4(SDL_SCANCODE_F4),
+		F5(SDL_SCANCODE_F5),
+		F6(SDL_SCANCODE_F6),
+		F7(SDL_SCANCODE_F7),
+		F8(SDL_SCANCODE_F8),
+		F9(SDL_SCANCODE_F9),
+		F10(SDL_SCANCODE_F10),
+		F11(SDL_SCANCODE_F11),
+		F12(SDL_SCANCODE_F12),
+		Kp0(SDL_SCANCODE_KP_0),
+		Kp1(SDL_SCANCODE_KP_1),
+		Kp2(SDL_SCANCODE_KP_2),
+		Kp3(SDL_SCANCODE_KP_3),
+		Kp4(SDL_SCANCODE_KP_4),
+		Kp5(SDL_SCANCODE_KP_5),
+		Kp6(SDL_SCANCODE_KP_6),
+		Kp7(SDL_SCANCODE_KP_7),
+		Kp8(SDL_SCANCODE_KP_8),
+		Kp9(SDL_SCANCODE_KP_9),
+		KpEnter(SDL_SCANCODE_KP_ENTER),
+		KpPlus(SDL_SCANCODE_KP_PLUS),
+		KpMinus(SDL_SCANCODE_KP_MINUS),
+		KpMultiply(SDL_SCANCODE_KP_MULTIPLY),
+		KpDivide(SDL_SCANCODE_KP_DIVIDE),
+		KpPeriod(SDL_SCANCODE_KP_PERIOD),
+		Minus(SDL_SCANCODE_MINUS),
+		Equals(SDL_SCANCODE_EQUALS),
+		LeftBracket(SDL_SCANCODE_LEFTBRACKET),
+		RightBracket(SDL_SCANCODE_RIGHTBRACKET),
+		Backslash(SDL_SCANCODE_BACKSLASH),
+		Semicolon(SDL_SCANCODE_SEMICOLON),
+		Apostrophe(SDL_SCANCODE_APOSTROPHE),
+		Grave(SDL_SCANCODE_GRAVE),
+		Comma(SDL_SCANCODE_COMMA),
+		Period(SDL_SCANCODE_PERIOD),
+		Slash(SDL_SCANCODE_SLASH),
 	}
 
-	/** Mouse buttons and wheel directions. */
+	/** The buttons of a mouse: what `button.pressed` of a mouse button event is. */
+	@SimpleEnum
+	enum class MouseButton(@EnumValue val number: Int) {
+		Left(SDL_BUTTON_LEFT),
+		Middle(SDL_BUTTON_MIDDLE),
+		Right(SDL_BUTTON_RIGHT),
+		X1(SDL_BUTTON_X1),
+		X2(SDL_BUTTON_X2),
+	}
+
+	/** The mouse: its position, its buttons (`SDL3.Mouse.isButtonDown`), and the directions of its wheel. */
 	object Mouse {
-		const val Left = SDL_BUTTON_LEFT
-		const val Middle = SDL_BUTTON_MIDDLE
-		const val Right = SDL_BUTTON_RIGHT
-		const val X1 = SDL_BUTTON_X1
-		const val X2 = SDL_BUTTON_X2
 		const val WheelNormal = SDL_MOUSEWHEEL_NORMAL
 		const val WheelFlipped = SDL_MOUSEWHEEL_FLIPPED
 	}
 
 	/** How drawing combines with what is already there. */
-	object BlendMode {
-		const val None = SDL_BLENDMODE_NONE
-		const val Blend = SDL_BLENDMODE_BLEND
-		const val Add = SDL_BLENDMODE_ADD
-		const val Mod = SDL_BLENDMODE_MOD
-		const val Mul = SDL_BLENDMODE_MUL
+	@SimpleEnum
+	enum class BlendMode(@EnumValue val value: UInt) {
+		None(SDL_BLENDMODE_NONE),
+		Blend(SDL_BLENDMODE_BLEND),
+		Add(SDL_BLENDMODE_ADD),
+		Mod(SDL_BLENDMODE_MOD),
+		Mul(SDL_BLENDMODE_MUL),
 	}
 
 	/** How a texture is going to be used. */
-	object TextureAccess {
-		const val Static = SDL_TEXTUREACCESS_STATIC
-		const val Streaming = SDL_TEXTUREACCESS_STREAMING
-		const val Target = SDL_TEXTUREACCESS_TARGET
+	@SimpleEnum
+	enum class TextureAccess(@EnumValue val value: UInt) {
+		Static(SDL_TEXTUREACCESS_STATIC),
+		Streaming(SDL_TEXTUREACCESS_STREAMING),
+		Target(SDL_TEXTUREACCESS_TARGET),
 	}
 
 	/** Pixel layouts of textures. */
-	object PixelFormat {
-		const val RGBA8888 = SDL_PIXELFORMAT_RGBA8888
-		const val ARGB8888 = SDL_PIXELFORMAT_ARGB8888
-		const val RGB24 = SDL_PIXELFORMAT_RGB24
-		const val RGBA32 = SDL_PIXELFORMAT_RGBA32
+	@SimpleEnum
+	enum class PixelFormat(@EnumValue val value: UInt) {
+		RGBA8888(SDL_PIXELFORMAT_RGBA8888),
+		ARGB8888(SDL_PIXELFORMAT_ARGB8888),
+		RGB24(SDL_PIXELFORMAT_RGB24),
+		RGBA32(SDL_PIXELFORMAT_RGBA32),
 	}
 
 	/** Mirroring for renderTextureRotated. */
-	object Flip {
-		const val None = SDL_FLIP_NONE
-		const val Horizontal = SDL_FLIP_HORIZONTAL
-		const val Vertical = SDL_FLIP_VERTICAL
+	@SimpleEnum
+	enum class Flip(@EnumValue val value: UInt) {
+		None(SDL_FLIP_NONE),
+		Horizontal(SDL_FLIP_HORIZONTAL),
+		Vertical(SDL_FLIP_VERTICAL),
 	}
 
 	/** Cursors the system provides. */
-	object SystemCursor {
-		const val Default = SDL_SYSTEM_CURSOR_DEFAULT
-		const val Text = SDL_SYSTEM_CURSOR_TEXT
-		const val Wait = SDL_SYSTEM_CURSOR_WAIT
-		const val Crosshair = SDL_SYSTEM_CURSOR_CROSSHAIR
-		const val Progress = SDL_SYSTEM_CURSOR_PROGRESS
-		const val NwseResize = SDL_SYSTEM_CURSOR_NWSE_RESIZE
-		const val NeswResize = SDL_SYSTEM_CURSOR_NESW_RESIZE
-		const val EwResize = SDL_SYSTEM_CURSOR_EW_RESIZE
-		const val NsResize = SDL_SYSTEM_CURSOR_NS_RESIZE
-		const val Move = SDL_SYSTEM_CURSOR_MOVE
-		const val NotAllowed = SDL_SYSTEM_CURSOR_NOT_ALLOWED
-		const val Pointer = SDL_SYSTEM_CURSOR_POINTER
+	@SimpleEnum
+	enum class SystemCursor(@EnumValue val value: UInt) {
+		Default(SDL_SYSTEM_CURSOR_DEFAULT),
+		Text(SDL_SYSTEM_CURSOR_TEXT),
+		Wait(SDL_SYSTEM_CURSOR_WAIT),
+		Crosshair(SDL_SYSTEM_CURSOR_CROSSHAIR),
+		Progress(SDL_SYSTEM_CURSOR_PROGRESS),
+		NwseResize(SDL_SYSTEM_CURSOR_NWSE_RESIZE),
+		NeswResize(SDL_SYSTEM_CURSOR_NESW_RESIZE),
+		EwResize(SDL_SYSTEM_CURSOR_EW_RESIZE),
+		NsResize(SDL_SYSTEM_CURSOR_NS_RESIZE),
+		Move(SDL_SYSTEM_CURSOR_MOVE),
+		NotAllowed(SDL_SYSTEM_CURSOR_NOT_ALLOWED),
+		Pointer(SDL_SYSTEM_CURSOR_POINTER),
 	}
 
 	/** Kinds of message box. */

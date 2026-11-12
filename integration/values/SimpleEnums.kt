@@ -47,6 +47,20 @@ enum class Medal(val points: Long, val heading: Direction, val ratio: Double, va
 /** An ordinary enum next to them. */
 enum class Plain { ONE, TWO }
 
+const val kQuit: UInt = 256u
+const val kKeyDown: UInt = 768u
+const val kHigh: UInt = 4000000000u
+
+/** Numbers that are unsigned, taken from constants: what a C header gives. */
+@SimpleEnum
+enum class Event(@EnumValue val type: UInt) {
+	UNKNOWN(0u), QUIT(kQuit), KEY_DOWN(kKeyDown), HIGH(kHigh);
+
+	companion object {
+		fun of(type: UInt): Event = ktc2.enumOf<Event>(type) { it.type } ?: UNKNOWN
+	}
+}
+
 class Player(val name: String, var medal: Medal, var key: Key?)
 
 fun label(direction: Direction): String = when (direction) {
@@ -138,4 +152,18 @@ fun main() {
 	val vGrid = Array(4) { Direction.values()[3 - it] }
 	println(vGrid.contentToString())
 	println(enumValues<Direction>().size.toString() + " " + enumValueOf<Medal>("BRONZE").points)
+
+	// From a number back to the entry.
+	println("${Event.of(256u)} ${Event.of(768u)} ${Event.of(4000000000u)} ${Event.of(5u)} ${Event.of(0u)} ${Event.HIGH.type} ${Event.QUIT.type + 1u}")
+	println("${ktc2.enumOf<Key>(40) { it.code }} ${ktc2.enumOf<Key>(-3) { it.code }} ${ktc2.enumOf<Key>(7) { it.code }}")
+	println("${ktc2.enumOf<Direction>(2) { it.ordinal }} ${ktc2.enumOf<Plain>(1) { it.ordinal }} ${ktc2.enumOf<Medal>(20) { it.score }} ${ktc2.enumOf<Plain>(9) { it.ordinal }}")
+	var vQuits = 0
+	for (vType in listOf(256u, 1u, 768u, 256u)) {
+		when (Event.of(vType)) {
+			Event.QUIT -> vQuits++
+			Event.KEY_DOWN -> vQuits += 10
+			else -> {}
+		}
+	}
+	println(vQuits)
 }
