@@ -896,6 +896,32 @@ static int format_char(char* out, uint16_t v)
 	return 3;
 }
 
+/** Writes [v] in decimal, without a final zero byte. Returns the length. `printf` takes several times as long. */
+static int format_unsigned(char* out, uint64_t v)
+{
+	char digits[20];
+	int count = 0;
+	do {
+		digits[count++] = (char)('0' + v % 10);
+		v /= 10;
+	} while (v);
+	for (int index = 0; index < count; index++) out[index] = digits[count - 1 - index];
+	return count;
+}
+
+static int format_signed(char* out, int64_t v)
+{
+	if (v >= 0) return format_unsigned(out, (uint64_t)v);
+	out[0] = '-';
+	return 1 + format_unsigned(out + 1, 0 - (uint64_t)v);
+}
+
+static int format_bool(char* out, bool v)
+{
+	memcpy(out, v ? "true" : "false", 5);
+	return v ? 4 : 5;
+}
+
 /**
  * Formats like Double.toString / Float.toString: the shortest digits that
  * read back to the same value, plain notation for 1e-3 <= |v| < 1e7 and
@@ -1026,11 +1052,11 @@ ktc2_String* ktc2_sb_finish_into(ktc2_Sb* sb, void* storage, size_t capacity)
 		fwrite(text, 1, (size_t)size, stdout); \
 	}
 
-KTC2_FORMATTED(bool, bool, sprintf(text, "%s", v ? "true" : "false"))
-KTC2_FORMATTED(int, int32_t, sprintf(text, "%" PRId32, v))
-KTC2_FORMATTED(long, int64_t, sprintf(text, "%" PRId64, v))
-KTC2_FORMATTED(uint, uint32_t, sprintf(text, "%" PRIu32, v))
-KTC2_FORMATTED(ulong, uint64_t, sprintf(text, "%" PRIu64, v))
+KTC2_FORMATTED(bool, bool, format_bool(text, v))
+KTC2_FORMATTED(int, int32_t, format_signed(text, v))
+KTC2_FORMATTED(long, int64_t, format_signed(text, v))
+KTC2_FORMATTED(uint, uint32_t, format_unsigned(text, v))
+KTC2_FORMATTED(ulong, uint64_t, format_unsigned(text, v))
 KTC2_FORMATTED(float, float, format_real(text, v, true))
 KTC2_FORMATTED(double, double, format_real(text, v, false))
 
@@ -1188,6 +1214,16 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 {
 	const uint16_t* units = (const uint16_t*)(chars + 1);
 	if (start < 0 || length < 0 || start + length > chars->length) fail_range(start + length, chars->length);
+	/* All ASCII, as most text is: a byte per character, written where it stays. */
+	uint16_t all = 0;
+	for (int32_t i = start; i < start + length; i++) all |= units[i];
+	if (all < 0x80) {
+		ktc2_String* s = ktc2_alloc(sizeof(ktc2_String) + (size_t)length + 1, KTC2_TYPE_STRING);
+		s->size = length;
+		s->length = length;
+		for (int32_t i = 0; i < length; i++) s->bytes[i] = (char)units[start + i];
+		return s;
+	}
 	ktc2_Sb sb;
 	ktc2_sb_init(&sb);
 	for (int32_t i = start; i < start + length; i++) {
@@ -1208,6 +1244,18 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 		}
 	}
 	return ktc2_sb_finish(&sb);
+}
+
+void ktc2_stringToChars(ktc2_String* s, ktc2_Array* chars, int32_t at)
+{
+	uint16_t* units = (uint16_t*)(chars + 1) + at;
+	if (at < 0 || at + s->length > chars->length) fail_range(at + s->length, chars->length);
+	if (s->size == s->length) {
+		for (int32_t i = 0; i < s->length; i++) units[i] = (unsigned char)s->bytes[i];
+		return;
+	}
+	UnitCursor cursor = cursor_of(s);
+	while (cursor_has(&cursor)) *units++ = cursor_next(&cursor);
 }
 
 /** The byte offset of UTF-16 unit [index] in a non-ASCII string (at a code point boundary). */

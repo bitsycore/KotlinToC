@@ -764,6 +764,9 @@ int32_t ktc2_str_hashCode(const ktc2_String* s);
 /** A new string from [length] UTF-16 code units of a CharArray, starting at [start]. */
 ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length);
 
+/** Writes the UTF-16 code units of a string into a CharArray, from index [at], which must have the room. */
+void ktc2_stringToChars(ktc2_String* s, ktc2_Array* chars, int32_t at);
+
 /** The UTF-16 code units [start, end) of a string, as a new string. */
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end);
 

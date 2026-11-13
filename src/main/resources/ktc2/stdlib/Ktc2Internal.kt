@@ -65,6 +65,9 @@ public fun <T> arrayIterator(array: Array<out T>): Iterator<T> = ArrayIterator(a
 public external fun stringOfChars(chars: CharArray, start: Int, length: Int): String
 
 /** The UTF-16 code units [startIndex, endIndex) of [string] as a new String. */
+/** Writes the UTF-16 code units of [string] into [chars] from index [at]; [chars] must have the room. */
+public external fun stringToChars(string: String, chars: CharArray, at: Int)
+
 public external fun stringSubstring(string: String, startIndex: Int, endIndex: Int): String
 
 /** Parses [string] as `Double.parseDouble` does into `result[0]`; false when it is not a number. */

@@ -155,7 +155,11 @@ public actual fun CharArray.concatToString(): String = stringOfChars(this, 0, si
 
 public actual fun CharArray.concatToString(startIndex: Int, endIndex: Int): String = stringOfChars(this, startIndex, endIndex - startIndex)
 
-public actual fun String.toCharArray(): CharArray = toCharArray(0, length)
+public actual fun String.toCharArray(): CharArray {
+	val vChars = CharArray(length)
+	ktc2.internal.stringToChars(this, vChars, 0)
+	return vChars
+}
 
 public actual fun String.toCharArray(startIndex: Int, endIndex: Int): CharArray {
 	val vChars = CharArray(endIndex - startIndex)

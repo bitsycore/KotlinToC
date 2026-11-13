@@ -67,6 +67,7 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 
 	actual override fun append(value: CharSequence?): StringBuilder {
 		val vSource: CharSequence = value ?: "null"
+		if (vSource is String) return append(vSource)
 		return append(vSource, 0, vSource.length)
 	}
 
@@ -84,10 +85,32 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 		val vSource: String = value ?: "null"
 		val vLength = vSource.length
 		ensureCapacity(count + vLength)
-		for (vIndex in 0 until vLength) {
-			chars[count] = vSource[vIndex]
-			count++
+		ktc2.internal.stringToChars(vSource, chars, count)
+		count += vLength
+		return this
+	}
+
+	/** The digits of [value], written where they stay: no string in between. */
+	private fun appendNumber(value: Long): StringBuilder {
+		if (value == Long.MIN_VALUE) return append("-9223372036854775808")
+		ensureCapacity(count + 20)
+		var vRest = value
+		if (vRest < 0) {
+			chars[count++] = '-'
+			vRest = -vRest
 		}
+		var vDigits = 1
+		var vScale = vRest
+		while (vScale >= 10) {
+			vScale /= 10
+			vDigits++
+		}
+		var vAt = count + vDigits
+		count = vAt
+		do {
+			chars[--vAt] = '0' + (vRest % 10).toInt()
+			vRest /= 10
+		} while (vRest != 0L)
 		return this
 	}
 
@@ -95,9 +118,9 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 
 	public actual fun append(value: Boolean): StringBuilder = append("$value")
 
-	public actual fun append(value: Int): StringBuilder = append("$value")
+	public actual fun append(value: Int): StringBuilder = appendNumber(value.toLong())
 
-	public actual fun append(value: Long): StringBuilder = append("$value")
+	public actual fun append(value: Long): StringBuilder = appendNumber(value)
 
 	public actual fun append(value: Float): StringBuilder = append("$value")
 
