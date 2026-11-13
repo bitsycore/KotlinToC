@@ -290,7 +290,7 @@ write to an array of references.
 | [x] A whole-program "cannot throw" answer per function, so calls to such functions are not followed by a test (`ExceptionLowering.mMayThrow` was there; direct calls and proven array accesses now make more functions qualify) | medium to high | medium |
 | [x] The same answer for the runtime's functions and for dispatchers' defaults. Checked one by one: three could leave with an exception and were trusted not to (`ktc2_cs_get`, `ktc2_cs_subSequence`, `ktc2_stringSubstring`), so a bad index on a `String` seen as a `CharSequence` was not caught, and `substring` with a bad range ended the program. They are listed in `kRaisingRuntime` (`Kir.kt`); the others end the program on purpose (`AbstractMethodError`, a cast that cannot happen) | correctness | low |
 | [ ] The failure in the return value, not in a thread-local slot | medium in threaded programs | high: changes how every function is called |
-| [~] No bounds check in a loop whose index is known to be in range (`RangeChecks`): the loops over an array, its `indices`, `0 until size` and `Array(n) { }`. With clang at `-O2` the time does not change (it removed those tests itself); the code is smaller and such functions no longer count as throwing. Left: `while (i < a.size)`, `i + 1` under `i < size - 1`, a `downTo` loop, `list[i]` under `i < list.size`, strings | medium for array code | medium |
+| [~] No bounds check in a loop whose index is known to be in range (`RangeChecks`): the loops over an array, its `indices`, `0 until size` and `Array(n) { }`. With clang at `-O2` the time does not change (it removed those tests itself); the code is smaller and such functions no longer count as throwing. Also: `while (i < a.size) { …; i++ }` (the step in the body; a copy of the counter made before the step still counts after it), `for (i in a.size - 1 downTo 0)`, and an index next to the counter (`a[i + 1]` under `i < a.size - 1`, `a[i - 1]` from `i = 1`). Left: a step other than one, `list[i]` under `i < list.size` (the list is not an array: its storage would have to be followed), strings | medium for array code | medium |
 | [x] An array store is tested once: `ArcInsert` dropped the "already tested" mark, so every store was tested by the generated code and again by the runtime | small, everywhere | low |
 | [ ] The first-use test of an object or a file taken out of loops | low | low |
 
@@ -408,10 +408,9 @@ Open:
    list: the `modCount` test and the test for an exception after `next()` (it can throw two),
    which an index loop written by the importer for a list known to be an `ArrayList` would
    fold into one test per round. Then `HashMap` (4), and templates built in place (6).
-3. More shapes for `RangeChecks` (5).
-4. `name` and `ordinal` of a `@SimpleEnum` without the object; the flags of the SDL3 module
+3. `name` and `ordinal` of a `@SimpleEnum` without the object; the flags of the SDL3 module
    as value classes (8).
-5. The array inside a local list (2): 2 M allocations of `Ordinary`, but removing 4 M others
+4. The array inside a local list (2): 2 M allocations of `Ordinary`, but removing 4 M others
    did not change its time; measure before building it.
 
 ---------------------------------------------------------------------------

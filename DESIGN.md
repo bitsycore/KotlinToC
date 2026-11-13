@@ -306,8 +306,11 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
 - **The checks of the language** (array and string index, integer division by zero, null
   assertion, casts) throw the Kotlin exceptions. `--checks=abort` makes index and division
   failures end the program instead. An array access in the loop of `for (x in array)`,
-  `for (i in array.indices)`, `for (i in 0 until array.size)` or `Array(n) { }` is known to be
-  in range and carries no check (`RangeChecks`).
+  `for (i in array.indices)`, `for (i in 0 until array.size)`, `Array(n) { }`,
+  `while (i < array.size) { …; i++ }` or `for (i in array.size - 1 downTo 0)` is known to be
+  in range and carries no check, and so is an index a constant away from the counter when the
+  bounds of the loop leave room for it (`a[i + 1]` under `i < a.size - 1`, `a[i - 1]` from
+  `i = 1`) (`RangeChecks`).
 - **An assignment whose right-hand side fails** leaves its target as it was.
 - **Objects, enum classes and the top-level properties of a file** are initialized on first
   use, as Kotlin says. When an initializer only computes and stores, it runs at startup

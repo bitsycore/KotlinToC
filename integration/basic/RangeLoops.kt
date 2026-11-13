@@ -85,4 +85,144 @@ fun main() {
 		println("negative start")
 	}
 	println(vTotal)
+	moreShapes()
+}
+
+/** What happens, as text: a result or the kind of failure. */
+fun outcome(inBlock: () -> Int): String = try {
+	inBlock().toString()
+} catch (inError: IndexOutOfBoundsException) {
+	"out of bounds"
+}
+
+/** `while` loops, loops that go down, and an index next to the counter: in range or not, the answer is the JVM's. */
+fun moreShapes() {
+	val vValues = intArrayOf(3, 1, 4, 1, 5, 9)
+	val vEmpty = IntArray(0)
+	// A `while` whose step is in the body.
+	println(outcome {
+		var vSum = 0
+		var vIndex = 0
+		while (vIndex < vValues.size) {
+			vSum += vValues[vIndex]
+			vIndex++
+		}
+		vSum
+	})
+	// The element is read after the step: the last round is one too far.
+	println(outcome {
+		var vSum = 0
+		var vIndex = 0
+		while (vIndex < vValues.size) {
+			vIndex++
+			vSum += vValues[vIndex]
+		}
+		vSum
+	})
+	// A copy made before the step still names the element of this round.
+	println(outcome {
+		var vSum = 0
+		var vIndex = 0
+		while (vIndex < vValues.size) {
+			val vHere = vIndex
+			vIndex++
+			vSum += vValues[vHere]
+		}
+		vSum
+	})
+	// A step of two under a test for one.
+	println(outcome {
+		var vSum = 0
+		var vIndex = 0
+		while (vIndex < vValues.size) {
+			vSum += vValues[vIndex] + vValues[vIndex + 1]
+			vIndex += 2
+		}
+		vSum
+	})
+	// Down to zero.
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vValues.size - 1 downTo 0) vSum = vSum * 2 + vValues[vIndex]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vEmpty.size - 1 downTo 0) vSum += vEmpty[vIndex]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vValues.size - 2 downTo 0) vSum += vValues[vIndex] - vValues[vIndex + 1]
+		vSum
+	})
+	// One above the counter, from the last element down: out at once.
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vValues.size - 1 downTo 0) vSum += vValues[vIndex + 1]
+		vSum
+	})
+	// One below the counter, down to zero: out at the end.
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vValues.size - 1 downTo 0) vSum += vValues[vIndex - 1]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vValues.size downTo 0) vSum += vValues[vIndex]
+		vSum
+	})
+	// Neighbours of the counter.
+	println(outcome {
+		var vSum = 0
+		for (vIndex in 0 until vValues.size - 1) vSum += vValues[vIndex] * vValues[vIndex + 1]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in 0 until vValues.size - 1) vSum += vValues[vIndex + 2]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in 1 until vValues.size) vSum += vValues[vIndex] - vValues[vIndex - 1]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in 1 until vValues.size) vSum += vValues[vIndex - 2]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		for (vIndex in 0 until vEmpty.size - 1) vSum += vEmpty[vIndex + 1]
+		vSum
+	})
+	// Another array than the one the bound was read from.
+	val vShort = intArrayOf(7, 8)
+	println(outcome {
+		var vSum = 0
+		for (vIndex in vValues.size - 1 downTo 0) vSum += vShort[vIndex]
+		vSum
+	})
+	println(outcome {
+		var vSum = 0
+		var vIndex = 0
+		while (vIndex < vValues.size) {
+			vSum += vShort[vIndex]
+			vIndex++
+		}
+		vSum
+	})
+	// Writing, in the three shapes.
+	val vTarget = IntArray(6)
+	var vAt = 0
+	while (vAt < vTarget.size) {
+		vTarget[vAt] = vAt * vAt
+		vAt++
+	}
+	for (vIndex in vTarget.size - 1 downTo 0) vTarget[vIndex] += 1
+	for (vIndex in 0 until vTarget.size - 1) vTarget[vIndex + 1] += vTarget[vIndex]
+	println(vTarget.joinToString())
 }
