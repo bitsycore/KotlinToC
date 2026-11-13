@@ -198,7 +198,7 @@ class KirDump(private val mModule: KModule) {
 		is KRefCast -> "(${expr(inExpr.operand)} as ${type(inExpr.type)})"
 		is KInstanceOf -> {
 			val vTarget = when (val vOf = inExpr.target) {
-				is KClassTarget -> vOf.cls.cName
+				is KClassTarget -> vOf.cls.cName + if (vOf.isAnyInstantiation) "<*>" else ""
 				is KInterfaceTarget -> vOf.iface.name
 				KStringTarget -> "String"
 				is KBoxTarget -> "box ${vOf.prim.cName}"

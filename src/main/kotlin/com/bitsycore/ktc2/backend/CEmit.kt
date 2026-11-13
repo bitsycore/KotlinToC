@@ -823,7 +823,7 @@ class CEmitter(private val mModule: KModule) {
 			val vIds = when (val vTarget = inTest.target) {
 				KStringTarget -> listOf("KTC2_TYPE_STRING")
 				is KBoxTarget -> listOf("KTC2_TYPE_BOX_${vTarget.prim.name}")
-				is KClassTarget -> mConcrete.filter { it.isSubclassOf(vTarget.cls) }.map { typeId(it) }
+				is KClassTarget -> mConcrete.filter { vTarget.holds(it) }.map { typeId(it) }
 				is KInterfaceTarget -> {
 					// The built-in types implement these library interfaces too.
 					val vBuiltIn = when (vTarget.iface.name) {

@@ -1954,6 +1954,20 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType || inActual[it] == KObjType || inActual[it] == KNothingType
 		}
 
+	/**
+	 * True when the object behind a reference of type [inReceiver] may be of another instantiation
+	 * of the generic class [inOwner] than the one that type names: a `Box<Int>`, which stores an
+	 * int, seen as a `Box<*>` or handed to code written for a `Box<T>` of objects. Kotlin has one
+	 * class there; here they are several, of different layouts, so a member of such an object is
+	 * reached through a dispatcher, as a member of an interface is. A type with a number for an
+	 * argument names its instantiation exactly.
+	 */
+	internal fun mayBeOtherInstantiation(inReceiver: IrType?, inOwner: IrClass): Boolean {
+		if (inReceiver == null || inOwner.isInterface || classParameters(inOwner).isEmpty()) return false
+		if (isStruct(inOwner) || isPointerClass(inOwner) || isThrowableClass(inOwner) || inOwner.fileOrNull == null) return false
+		return superArguments(inReceiver, inOwner).all { (kTypeOf(canonical(it)) ?: KObjType) == KObjType }
+	}
+
 	/** True when a call to [inFunction] must go through a dispatcher. */
 	internal fun isVirtual(inFunction: IrSimpleFunction): Boolean {
 		val vOwner = inFunction.parent as? IrClass ?: return false

@@ -875,7 +875,8 @@ internal class BodyBuilder(
 		if (vClass.kotlinFqName.asString() == "kotlin.Enum") return KClassTarget(mImporter.enumBase())
 		// An object holding a struct is its box.
 		(kType(vBase) as? KStructType)?.let { return KClassTarget(mImporter.boxFor(it.struct).also { vBox -> mImporter.instantiate(vBox) }) }
-		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it) }
+		// A type without a number for an argument (`Box<*>`, `Box<String>`) says nothing of the instantiation: Kotlin tests the class.
+		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it, mImporter.mayBeOtherInstantiation(closed(vBase), vClass)) }
 	}
 
 	/** `inValue is inType`, including the nullable and `Any` cases. */
@@ -1865,7 +1866,22 @@ internal class BodyBuilder(
 	 * with the substitution its declaration is read under. [inReceiver] is the closed type of
 	 * the receiver, which picks the instantiation of a generic class.
 	 */
-	private fun memberTarget(inFunction: IrSimpleFunction, inIsSuper: Boolean, inReceiver: IrType?, inOwnArguments: List<IrType?>): Pair<KFunction, Subst>? {
+	/**
+	 * True when the member [inFunction] of what [inReceiver] gives has to be found by the class of
+	 * the object: the object may be of another instantiation of its generic class than the type
+	 * says (see `mayBeOtherInstantiation`). Not for `this`, which is of the instantiation the
+	 * function was made for.
+	 */
+	private fun isErasedReceiver(inReceiver: IrExpression?, inFunction: IrSimpleFunction): Boolean {
+		if (inReceiver == null || inFunction.dispatchReceiverParameter == null) return false
+		val vThis = (mIrFunction as? IrSimpleFunction)?.dispatchReceiverParameter ?: (mIrFunction as? IrConstructor)?.parentAsClass?.thisReceiver
+		if (inReceiver is IrGetValue && vThis != null && inReceiver.symbol.owner == vThis) return false
+		if (kType(inReceiver.type) !is KClassType) return false
+		val vReal = if (inFunction.isFakeOverride) inFunction.resolveFakeOverride() ?: inFunction else inFunction
+		return mImporter.mayBeOtherInstantiation(closed(inReceiver.type), vReal.parentAsClass)
+	}
+
+	private fun memberTarget(inFunction: IrSimpleFunction, inIsSuper: Boolean, inReceiver: IrType?, inOwnArguments: List<IrType?>, inIsErased: Boolean = false): Pair<KFunction, Subst>? {
 		// The class of a struct value is known exactly: its implementation is called directly, the value never boxed.
 		if (inReceiver != null && kType(inReceiver) is KStructType) {
 			val vImplementation = inReceiver.classOrNull?.owner?.let { mImporter.implementationIn(it, inFunction) }
@@ -1874,7 +1890,7 @@ internal class BodyBuilder(
 				if (!isAnyClass(vReal.parentAsClass)) mImporter.functionFor(vReal, vSubst)?.let { return it to vSubst }
 			}
 		}
-		if (!inIsSuper && mImporter.isVirtual(inFunction)) {
+		if (!inIsSuper && (mImporter.isVirtual(inFunction) || inIsErased)) {
 			val vSubst = mImporter.substFor(inFunction, mImporter.superArguments(inReceiver, inFunction.parentAsClass), inOwnArguments)
 			return mImporter.dispatcherFor(inFunction, vSubst)?.let { it to vSubst }
 		}
@@ -1989,8 +2005,9 @@ internal class BodyBuilder(
 				return expandInline(inCall, vInlined, exactSubst(vInlined, mImporter.superArguments(vReceiver, vInlined.parentAsClass), vOwnArguments))
 			}
 		}
+		val vIsErased = !vIsSuper && isErasedReceiver(vArguments.firstOrNull(), vCallee)
 		// A default accessor that cannot be overridden is a plain field access.
-		if (vProperty != null && (vIsSuper || !mImporter.isVirtual(vCallee))) {
+		if (vProperty != null && (vIsSuper || !(mImporter.isVirtual(vCallee) || vIsErased))) {
 			val vReal = if (vCallee.isFakeOverride) vCallee.resolveFakeOverride() ?: vCallee else vCallee
 			val vRealProperty = vReal.correspondingPropertySymbol?.owner
 			val vField = vRealProperty?.backingField?.let { mImporter.fieldFor(it, vReceiver) }
@@ -2004,7 +2021,7 @@ internal class BodyBuilder(
 				return KUnitValue
 			}
 		}
-		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vReceiver, vOwnArguments) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
+		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vReceiver, vOwnArguments, vIsErased) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
 		return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
 	}
 

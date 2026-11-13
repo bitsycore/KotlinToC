@@ -216,6 +216,10 @@ class KClass(
 
 	fun isSubclassOf(inOther: KClass): Boolean = this === inOther || superClass?.isSubclassOf(inOther) == true
 
+	/** True when this class is [inOther], another instantiation of the same generic class, or a subclass of one. */
+	fun isOfFamilyOf(inOther: KClass): Boolean =
+		this === inOther || (family != null && family === inOther.family) || superClass?.isOfFamilyOf(inOther) == true
+
 	fun implements(inInterface: KInterface): Boolean =
 		interfaces.any { it === inInterface || inInterface in it.supers } || superClass?.implements(inInterface) == true
 }
@@ -371,7 +375,14 @@ class KRefCast(val operand: KExpr, override val type: KType) : KExpr
 /** What an `is` check tests against. */
 sealed interface KTypeTarget
 
-class KClassTarget(val cls: KClass) : KTypeTarget
+/**
+ * A class and its subclasses. With [isAnyInstantiation], every instantiation of the generic
+ * class [cls] is one of: `x is Box<*>`, which holds for a `Box<Int>` too, a class of its own here.
+ */
+class KClassTarget(val cls: KClass, val isAnyInstantiation: Boolean = false) : KTypeTarget {
+	/** True for an object of class [inClass]. */
+	fun holds(inClass: KClass): Boolean = if (isAnyInstantiation) inClass.isOfFamilyOf(cls) else inClass.isSubclassOf(cls)
+}
 
 class KInterfaceTarget(val iface: KInterface) : KTypeTarget
 

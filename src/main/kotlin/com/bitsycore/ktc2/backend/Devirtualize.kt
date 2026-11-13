@@ -250,7 +250,7 @@ class Devirtualize(private val mModule: KModule) {
 					if (vNode is KInstanceOf) {
 						val vClass = classOf(vNode.operand) as? KClass
 						val vPasses = when (val vTarget = vNode.target) {
-							is KClassTarget -> vClass?.isSubclassOf(vTarget.cls)
+							is KClassTarget -> vClass?.let { vTarget.holds(it) }
 							is KInterfaceTarget -> vClass?.implements(vTarget.iface)
 							// A string or a boxed number is no object of a class of the program.
 							KStringTarget, is KBoxTarget -> if (vClass != null) false else null
