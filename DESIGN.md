@@ -495,10 +495,16 @@ Kotlin, but not done:
 Known to differ from the JVM:
 - the last digit of `exp`, `ln`, `pow`, `sin` and the like is the C library's, which is not
   everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library);
-- a `HashMap` entry removed through an iterator stays in the map's storage until the map is
-  rebuilt or cleared (the `Map.Entry` handed out still reads it, as on the JVM): the key and
-  value live that much longer, which a weak reference or a cleaner can see. `remove(key)`,
-  and every removal from an `ArrayList`, let go at once;
+- an entry of a `HashMap` is a new object each time the map hands it out (as on
+  Kotlin/Native; on the JVM it is the map's own node, the same every time): two entries for
+  one key are equal, not identical, and what one is given by `setValue` after its key was
+  removed the other does not see;
+- a `HashMap` goes over its entries in the order they were put in, as Kotlin/Native's does;
+  the JVM's goes by hash. Kotlin promises neither;
+- `x::class` and the rest of reflection: not there (`DESIGN.md`, "Not Kotlin, by design");
+- an argument of the wrong kind that reaches a function of a concrete class through an
+  unchecked cast (a `Comparator<Int>` handed a `String` as a `Comparator<Any>`) is answered
+  with -1, false or null where the JVM throws `ClassCastException`;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
 
 A difference from the JVM in plain Kotlin is a bug to fix, not a line for this list: what may
@@ -616,6 +622,21 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   nothing moves does it say "anything". Said in the first round, it would stay said. `KTC2_SKIP=devirtualize` (also
   `copies`, `listloops`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, `inline`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
+- A generic class is one class in Kotlin and several here: `Box<Int>` stores an int, `Box<String>`
+  a reference, and they are `Box__Int` and `Box__Any`. A type that names no number for an
+  argument (`Box<*>`, `Box<T>` in code written for objects, `Box<String>`) may be given an
+  object of either, so a member of such a receiver is reached through a dispatcher, as a member
+  of an interface is (`isErasedReceiver` in `BodyLowering.kt`, `mayBeOtherInstantiation` in
+  `KirImport.kt`): the dispatcher switches on the class and turns numbers into boxes and back.
+  `this` is exact, and so is a type with a number in it. `x is Box<*>` tests the family of
+  classes (`KClassTarget.isAnyInstantiation`). `Devirtualize` makes the call direct again where
+  it knows the class, which is nearly everywhere: the benchmarks did not move. Where the
+  dispatcher is handed a value the implementation cannot take (a `List<Int>` asked
+  `contains("x")`, or seen as a `List<Int?>` and asked `contains(null)`) it answers what a
+  lookup that finds nothing answers (`CEmitter.dispatcher`).
+- `kotlin.Unit` is nothing at all (`KUnitValue`) until it is needed as an object (`List<Unit>`,
+  `"$unit"`, a lambda's result kept as a `T`): then it is `ktc2_unit_object`. As a type
+  argument it counts as a reference.
 - `ListLoops` finds the platform `ArrayList` by its name and by the names of what it needs
   of it (the fields `length`, `changes`, `array`, the function `checkChanges`): rename one in
   `Ktc2Collections.kt` and the loops silently go back to the iterator. The same for `HashMap`: the

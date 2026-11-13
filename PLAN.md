@@ -19,7 +19,7 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 120
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 127
 tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
 the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
 `007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
@@ -56,6 +56,38 @@ or one that may be null, is boxed by a cast to a type of objects (`x as Any?`,
 `as Number`, its six conversions on a box: `integration/basic/NumberType.kt`), and two
 halves of a pair printed one after the other, and a class of the program that extends
 `Number`.
+
+**Looking for differences on purpose** (the same day, after the rule below): five programs
+of what ordinary code does (`generics/ErasedViews`, `objects/OrdinaryClasses`,
+`stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`, `basic/OrdinaryControl`), each compared
+with the JVM line by line (`tools/jvmdiff.sh <Name>` after a run), found and fixed:
+a `Box<Int>` seen as a `Box<*>` (a crash; see "A generic class is one class in Kotlin" in
+`DESIGN.md`), `is Box<*>`, a `List<Int>` asked about a value that is no `Int` or seen as a
+`List<Int?>`, `lateinit` (it gave null) and `isInitialized`, `hashCode` of a data class with a
+`Double?`, `String.CASE_INSENSITIVE_ORDER`, the members the JDK gives lists, maps and
+`StringBuilder` (`removeFirst`, `getOrDefault`, `setCharAt`...), `mod` and `floorDiv`,
+unsigned numbers from text and in ranges, `AutoCloseable` and `use`, `Unit` as an object,
+`runCatching { error(…) }`, `1 / zero` as a statement (it threw nothing), `String::length`
+as a function, an entry of a map kept after the map changed. It is the cheapest way found
+to make ktc2 right: write another such program before anything else. Not looked at yet:
+inheritance with generics in depth, inner and local classes, interfaces with properties,
+operators on collections of collections, labels and non-local returns in depth, threads,
+`kotlin.time`, `Regex` in depth, `Random`, arrays of arrays, value classes, delegation of
+properties (`by map`), `companion` constants, `vararg` with spread in depth, numbers at their
+limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
+
+**Left open by that search**, each a decision or a larger piece of work:
+- `x::class` (and `::class.simpleName`, `==` between classes): reflection, which `CLAUDE.md`
+  says is not supported. The two uses above are all ordinary code makes of it, and would be a
+  type id and a name the runtime already has;
+- `sequence { }` and `iterator { }` are reached by `zipWithNext`, `chunked` and `windowed`
+  on a sequence, and fail at run time. A way that needs no transformation of `suspend`
+  functions: run the block on a stack of its own (`ucontext` on POSIX, fibers on Windows) and
+  have `yield` switch back; K2's IR, at the point ktc2 reads it, calls a `suspend` function as
+  any other. What it costs: stack-switching code per system in the runtime (the Windows half
+  cannot be tried on a Mac), a stack per iterator in flight, and an iterator that is dropped
+  half way has to be unwound, which runs its `finally` blocks (the JVM runs none);
+- `toSortedMap`, `toSortedSet`, `String.format`: the JVM has them, Kotlin/Native does not.
 
 **The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
 Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be
@@ -225,10 +257,9 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
   interface as Swift's `deinit`, removed since: `integration/values/CleanerLifetimes.kt` is
   the test of when objects end.
   Left:
-  - [ ] a `HashMap` entry removed through an iterator is held until the map is rebuilt
-    (the entry handed out reads the map's storage). Looked at and left: the entry would need a
-    copy of its key and value, two retains and releases for every entry of every
-    `for ((k, v) in map)`, to cover a rare case.
+  - [x] a `HashMap` entry removed through an iterator is let go at once: an entry that is
+    handed out has its own key and value (`HashMapEntry`), which a `for ((k, v) in map)` no
+    longer makes (`ListLoops`). `integration/stdlib/MapEntries.kt`.
   - [ ] a variable could give up its object after its last use, as Swift does in optimized
     builds, instead of at the end of its block: frees earlier, but a guard object
     (`val lock = Guard()`) would then end at once. Not planned unless asked for.
@@ -455,7 +486,9 @@ Open:
 1. Run the suite on Windows (see "Where the work stands": nothing since `007dd9b` ran
    there, and the functions in the headers are new to gcc and MSVC), and on Linux for the
    first time. Then a CI job per system with an AddressSanitizer run.
-2. Write a program of small loops over what ordinary code does and time each (what found the
+2. Another program of ordinary code compared with the JVM, on what was not looked at yet
+   ("Looking for differences on purpose" above): each one so far found several differences.
+   Then a program of small loops over what ordinary code does, timed (what found the
    search in accented text, `printf` and the sort): the seven benchmarks do not cover text
    that is not ASCII, sorting, `StringBuilder`, `Regex` or number formatting. Worth keeping
    as an eighth benchmark, with the JVM's times next to it.
