@@ -40,6 +40,9 @@ private val kConversionByName = mapOf(
 	"toUByte" to KPrim.UBYTE, "toUShort" to KPrim.USHORT, "toUInt" to KPrim.UINT, "toULong" to KPrim.ULONG,
 )
 
+/** The conversions of `kotlin.Number`. */
+private val kNumberConversions = setOf("toByte", "toShort", "toInt", "toLong", "toFloat", "toDouble")
+
 private val kInverse = mapOf(
 	KBinaryOp.EQ to KBinaryOp.NE, KBinaryOp.NE to KBinaryOp.EQ, KBinaryOp.LT to KBinaryOp.GE,
 	KBinaryOp.GE to KBinaryOp.LT, KBinaryOp.GT to KBinaryOp.LE, KBinaryOp.LE to KBinaryOp.GT,
@@ -931,7 +934,12 @@ internal class BodyBuilder(
 		// So is a type parameter nothing here stands for (that of a class around a local object).
 		val vIsUnbound = vType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 		if (vType.makeNotNull().isAny() || vIsUnbound) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
-		val vTest = KInstanceOf(inValue, typeTargetOf(vType) ?: return fail(inElement, "type test against '${inType.render()}'"))
+		// A `Number` is one of the boxed numbers: they have no class, the runtime knows them by their kind.
+		val vTest = if (vType.classOrNull?.owner?.kotlinFqName?.asString() == "kotlin.Number") {
+			KIntrinsic("ktc2_is_number", listOf(inValue), kBoolType)
+		} else {
+			KInstanceOf(inValue, typeTargetOf(vType) ?: return fail(inElement, "type test against '${inType.render()}'"))
+		}
 		return if (vType.isMarkedNullable()) KSelect(vIsNull, kTrue, vTest, kBoolType) else vTest
 	}
 
@@ -2465,6 +2473,18 @@ internal class BodyBuilder(
 
 		if (vName == "contains" && vParent.startsWith("kotlin.ranges.") && vIrArguments.size == 2) {
 			lowerRangeContains(vIrArguments[0], vIrArguments[1])?.let { return it }
+		}
+
+		// `toInt()`, `toDouble()`... of a `Number`: of the number itself when its kind is known here, else of its box, by the runtime.
+		if (vParent == "kotlin.Number" && vIrArguments.size == 1) {
+			val vReceiver = lowerPure(vIrArguments[0])
+			if (vName == "hashCode" && vReceiver.type is KRefType) return KIntrinsic("ktc2_any_hashCode", listOf(coerce(vReceiver, KObjType)), kIntType)
+			val vTo = kConversionByName[vName]?.takeIf { vName in kNumberConversions } ?: return fail(inCall, vWhat)
+			return when (vReceiver.type) {
+				is KPrimType -> convert(vReceiver, vTo)
+				is KRefType -> KIntrinsic("ktc2_number_$vName", listOf(coerce(vReceiver, KObjType)), KPrimType(vTo))
+				else -> fail(inCall, vWhat)
+			}
 		}
 
 		// K2 can leave a smart cast implicit (an Any known to be an Int passed where an Int is

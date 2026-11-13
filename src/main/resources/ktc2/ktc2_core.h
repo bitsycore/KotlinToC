@@ -805,6 +805,16 @@ _Noreturn void ktc2_fail_throw(const ktc2_String* exception, const ktc2_String* 
 /** `Comparable.compareTo` for the built-in comparable types: strings and boxed primitives. */
 int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b);
 
+/** `is Number`: a boxed Byte, Short, Int, Long, Float or Double. False for NULL. */
+bool ktc2_is_number(const void* object);
+/** The conversions of `kotlin.Number`, on the box of any of those, as the JVM's classes do them. */
+int8_t ktc2_number_toByte(ktc2_Obj* number);
+int16_t ktc2_number_toShort(ktc2_Obj* number);
+int32_t ktc2_number_toInt(ktc2_Obj* number);
+int64_t ktc2_number_toLong(ktc2_Obj* number);
+float ktc2_number_toFloat(ktc2_Obj* number);
+double ktc2_number_toDouble(ktc2_Obj* number);
+
 /** The same for a box seen as a `Comparable` of its own primitive, which is then what it is compared with. */
 int32_t ktc2_box_compareTo_boolean(ktc2_Obj* a, bool y);
 int32_t ktc2_box_compareTo_byte(ktc2_Obj* a, int8_t y);

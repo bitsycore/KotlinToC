@@ -1128,7 +1128,7 @@ ktc2_String* ktc2_sb_finish_into(ktc2_Sb* sb, void* storage, size_t capacity)
 	{ \
 		char text[48]; \
 		int size = format_call; \
-		fwrite(text, 1, (size_t)size, stdout); \
+		write_text(text, size); \
 	}
 
 KTC2_FORMATTED(bool, bool, format_bool(text, v))
@@ -1265,6 +1265,75 @@ int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
 	case KTC2_TYPE_BOX_ULONG: return KTC2_CMP(x->value.ulong_, y->value.ulong_);
 	default: ktc2_fail_dispatch();
 	}
+}
+
+bool ktc2_is_number(const void* object)
+{
+	if (!object) return false;
+	switch (((const ktc2_Obj*)object)->typeId) {
+	case KTC2_TYPE_BOX_BYTE:
+	case KTC2_TYPE_BOX_SHORT:
+	case KTC2_TYPE_BOX_INT:
+	case KTC2_TYPE_BOX_LONG:
+	case KTC2_TYPE_BOX_FLOAT:
+	case KTC2_TYPE_BOX_DOUBLE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/** The number in a box: true and [*real] when it is a Float or a Double, false and [*whole] otherwise. */
+static bool number_in(ktc2_Obj* number, int64_t* whole, double* real)
+{
+	const ktc2_Box* box = (const ktc2_Box*)number;
+	switch (number->typeId) {
+	case KTC2_TYPE_BOX_BYTE: *whole = box->value.byte_; return false;
+	case KTC2_TYPE_BOX_SHORT: *whole = box->value.short_; return false;
+	case KTC2_TYPE_BOX_INT: *whole = box->value.int_; return false;
+	case KTC2_TYPE_BOX_LONG: *whole = box->value.long_; return false;
+	case KTC2_TYPE_BOX_FLOAT: *real = box->value.float_; return true;
+	case KTC2_TYPE_BOX_DOUBLE: *real = box->value.double_; return true;
+	default: ktc2_fail_dispatch();
+	}
+}
+
+int32_t ktc2_number_toInt(ktc2_Obj* number)
+{
+	int64_t whole = 0;
+	double real = 0;
+	return number_in(number, &whole, &real) ? ktc2_d2i(real) : (int32_t)(uint32_t)(uint64_t)whole;
+}
+
+int64_t ktc2_number_toLong(ktc2_Obj* number)
+{
+	int64_t whole = 0;
+	double real = 0;
+	return number_in(number, &whole, &real) ? ktc2_d2l(real) : whole;
+}
+
+int16_t ktc2_number_toShort(ktc2_Obj* number)
+{
+	return (int16_t)(uint16_t)(uint32_t)ktc2_number_toInt(number);
+}
+
+int8_t ktc2_number_toByte(ktc2_Obj* number)
+{
+	return (int8_t)(uint8_t)(uint32_t)ktc2_number_toInt(number);
+}
+
+double ktc2_number_toDouble(ktc2_Obj* number)
+{
+	int64_t whole = 0;
+	double real = 0;
+	return number_in(number, &whole, &real) ? real : (double)whole;
+}
+
+float ktc2_number_toFloat(ktc2_Obj* number)
+{
+	int64_t whole = 0;
+	double real = 0;
+	return number_in(number, &whole, &real) ? (float)real : (float)whole;
 }
 
 /* `compareTo` of a boxed primitive against a value of its own kind: the box seen as a `Comparable<Int>`. */
