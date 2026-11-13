@@ -231,8 +231,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	/** The class of the cell holding a captured mutable variable of type [inType], and its `value` field. */
 	internal fun cellFor(inType: KType): Pair<KClass, KField> = mCells.getOrPut(inType) {
-		val vUnit = KUnit("ktc2", "Cell_${mangle(inType)}")
-		val vClass = KClass("ktc2_Cell_${mangle(inType)}", vUnit, null, "Cell")
+		// By the C name of a class: its Kotlin name has dots, and is the same for every instantiation.
+		fun nameOf(inOf: KType): String = when (inOf) {
+			is KClassType -> inOf.cls.cName
+			is KArrayType -> nameOf(inOf.element) + "Array"
+			else -> mangle(inOf)
+		}
+		val vName = nameOf(inType)
+		val vUnit = KUnit("ktc2", "Cell_$vName")
+		val vClass = KClass("ktc2_Cell_$vName", vUnit, null, "Cell")
 		vUnit.cls = vClass
 		val vField = KField("value", inType, vClass)
 		vClass.fields += vField
