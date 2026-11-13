@@ -21,11 +21,11 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 
 	private var keyArray: Storage<K> = Storage(if (initialCapacity > 8) initialCapacity else 8)
 	private var valueArray: Storage<V> = Storage(keyArray.size)
-	private var hashArray: IntArray = IntArray(keyArray.size)
-	private var liveArray: BooleanArray = BooleanArray(keyArray.size)
+	private var hashArray: Storage<Int> = Storage(keyArray.size)
+	private var liveArray: Storage<Boolean> = Storage(keyArray.size)
 
 	/** Slot → entry index + 1, or 0 when the slot is empty. Its size is a power of two. */
-	private var table: IntArray = IntArray(tableSizeFor(keyArray.size))
+	private var table: Storage<Int> = Storage(tableSizeFor(keyArray.size))
 
 	/** Entries in use, holes included. */
 	private var used: Int = 0
@@ -55,22 +55,31 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 
 	/** The index of the live entry for [key], or -1. */
 	private fun find(key: K, hash: Int): Int {
-		val vMask = table.size - 1
+		// The arrays as they are now, held for the whole probe. They are replaced together (`rebuild`,
+		// `clear`) and a slot of the table only names entries its own arrays have, so these four are
+		// read without a test - also when comparing a key runs code of the program that replaces the
+		// map's: the ones held here stay what their indices were made for.
+		val vTable = table
+		val vLive = liveArray
+		val vHashes = hashArray
+		val vKeys = keyArray
+		val vMask = vTable.size - 1
 		var vSlot = hash and vMask
 		while (true) {
-			val vEntry = table[vSlot]
+			val vEntry = vTable.at(vSlot)
 			if (vEntry == 0) return -1
 			val vIndex = vEntry - 1
-			if (liveArray[vIndex] && hashArray[vIndex] == hash && keyArray[vIndex] == key) return vIndex
+			if (vLive.at(vIndex) && vHashes.at(vIndex) == hash && vKeys.at(vIndex) == key) return vIndex
 			vSlot = (vSlot + 1) and vMask
 		}
 	}
 
 	private fun link(index: Int) {
-		val vMask = table.size - 1
-		var vSlot = hashArray[index] and vMask
-		while (table[vSlot] != 0) vSlot = (vSlot + 1) and vMask
-		table[vSlot] = index + 1
+		val vTable = table
+		val vMask = vTable.size - 1
+		var vSlot = hashArray.at(index) and vMask
+		while (vTable.at(vSlot) != 0) vSlot = (vSlot + 1) and vMask
+		vTable.put(vSlot, index + 1)
 	}
 
 	/** Drops the holes and makes room for at least one more entry. */
@@ -78,8 +87,8 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		val vCapacity = if (live * 2 > keyArray.size) keyArray.size * 2 else keyArray.size
 		val vKeys = Storage<K>(vCapacity)
 		val vValues = Storage<V>(vCapacity)
-		val vHashes = IntArray(vCapacity)
-		val vLive = BooleanArray(vCapacity)
+		val vHashes = Storage<Int>(vCapacity)
+		val vLive = Storage<Boolean>(vCapacity)
 		var vCount = 0
 		for (vIndex in 0 until used) {
 			if (!liveArray[vIndex]) continue
@@ -94,7 +103,7 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		hashArray = vHashes
 		liveArray = vLive
 		used = vCount
-		table = IntArray(tableSizeFor(vCapacity))
+		table = Storage(tableSizeFor(vCapacity))
 		for (vIndex in 0 until used) link(vIndex)
 	}
 
@@ -124,11 +133,12 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 			valueArray[vIndex] = value
 			return vOld
 		}
+		// Room for one more is made first: `used` is an index of the four arrays.
 		if (used == keyArray.size) rebuild()
-		keyArray[used] = key
-		valueArray[used] = value
-		hashArray[used] = vHash
-		liveArray[used] = true
+		keyArray.put(used, key)
+		valueArray.put(used, value)
+		hashArray.put(used, vHash)
+		liveArray.put(used, true)
 		link(used)
 		used++
 		live++
@@ -155,9 +165,9 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	actual override fun clear() {
 		keyArray = Storage(8)
 		valueArray = Storage(8)
-		hashArray = IntArray(8)
-		liveArray = BooleanArray(8)
-		table = IntArray(tableSizeFor(8))
+		hashArray = Storage(8)
+		liveArray = Storage(8)
+		table = Storage(tableSizeFor(8))
 		used = 0
 		live = 0
 		changes++

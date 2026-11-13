@@ -99,17 +99,18 @@ that way, and are worth knowing:
 ---------------------------------------------------------------------------
 
 `python tools/bench.py`, Apple clang on an ARM64 Mac, best of five runs. "Before" is commit
-`2a16110`, built `-O2`; "now" is the same build (at commit `4773f24`); "now, LTO" is what
+`2a16110`, built `-O2`; "now" is the same build (on 2026-11-13, with the loops over lists); "now, LTO" is what
 `--build` does by default.
 
 | | Before | Now | Now, LTO | Allocations | Retains |
 |---|---|---|---|---|---|
-| Collections | 0.527 s | 0.290 s | 0.275 s | 4.50 M, unchanged | 11.9 M -> 8.7 M |
-| Dispatch | 0.508 s | 0.365 s | 0.211 s | 6.52 M -> 6.50 M | 5.0 M, unchanged |
-| Numeric | 0.279 s | 0.264 s | 0.271 s | 44 | 0 |
-| Objects | 0.473 s | 0.193 s | 0.155 s | 26.0 M, unchanged | 58.0 M -> 16.0 M |
-| Strings | 1.207 s | 0.298 s | 0.260 s | 1.20 M, unchanged | 3.9 M -> 2.7 M |
-| Threads | 0.352 s | 0.189 s | 0.129 s | 5.54 M, unchanged | 17.0 M -> 6.2 M |
+| Collections | 0.527 s | 0.148 s | 0.151 s | 4.50 M, unchanged | 11.9 M -> 8.7 M |
+| Dispatch | 0.508 s | 0.217 s | 0.112 s | 6.52 M -> 1,013 | 5.0 M -> 1,275 |
+| Numeric | 0.279 s | 0.268 s | 0.274 s | 44 | 0 |
+| Objects | 0.473 s | 0.166 s | 0.152 s | 26.0 M, unchanged | 58.0 M -> 16.0 M |
+| Strings | 1.207 s | 0.302 s | 0.263 s | 1.20 M, unchanged | 3.9 M -> 2.7 M |
+| Threads | 0.352 s | 0.048 s | 0.045 s | 5.54 M, unchanged | 17.0 M -> 6.2 M |
+| Ordinary (added later) | | 0.282 s | 0.245 s | 8.56 M | 2.2 M |
 
 Programs are also 30 to 45 % smaller with LTO. What these numbers say about what is left:
 the number of allocations did not move in the benchmarks (the iterators that left the heap
@@ -272,7 +273,7 @@ write to an array of references.
 | [x] `listOf(a, b, c)` is of a known class: with at least one element and no spread the call is lowered as `elements.asList()`, which is what `listOf` does then (`lowerCall` in `BodyLowering.kt`) | with the two lines below: Collections -18 %, Ordinary -17 %, Dispatch -12 % | low |
 | [x] `ArrayList` does not test the index of its own storage: `Storage.at` and `Storage.put` (`Ktc2Internal.kt`) are `get` and `set` without the test, for the platform layer where it has made sure of the index. The storage of an `ArrayList` never shrinks and every index was below its length. So `add` cannot throw, and no caller tests for an exception after it | part of the above | low |
 | [x] A function that returns the result of a call directly (`fun first() = at(0)`) can have its result borrowed: `ExceptionLowering` gives every returned call a local, the shape it already gave the ones that can throw and the only one `BorrowedReturns` looked at. Found when `next()` of the list iterator lost its borrowed form (retains of Collections: 8.7 M -> 38.7 M until fixed). `integration/objects/ReturnedCalls.kt` | correctness of the counts; Objects and Threads -8 % | low |
-| [ ] `HashMap` still tests every index (four per probe): its storage is replaced by a smaller one in `clear()`, and the `equals` of a key runs the program's code in the middle of a probe. It would need the arrays read once into locals per probe, and a probe that starts over when `changes` moved | Collections | medium |
+| [x] `HashMap` no longer tests the four indices of a probe: `find` holds the table and the three arrays in locals for the whole probe and reads them with `Storage.at`. They are replaced together, and a slot only names entries its own arrays have, so that holds even when comparing a key runs code that clears the map. The index it returns is still tested by the caller. No restart when `changes` moved: what the JVM does then is not defined either | Collections: no change in time (the C compiler had most of it); less code, fewer tests for an exception | low |
 | [ ] Follow the other arguments through dispatchers too, and the element class of a collection (`List<Shape>` that only holds circles) | medium | medium |
 | [ ] Stop sharing the code of a local class between the instantiations of the generic class around it (the importer reads an `X<Int>` through the type `X<Any>`): `Devirtualize` has to distrust static types wherever it sees this, and so will every later pass that reasons about classes | removes a trap more than it gains speed | medium, in the importer |
 | [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
