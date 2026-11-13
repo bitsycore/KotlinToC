@@ -5,6 +5,12 @@ import java.io.File
 
 private val kRuntimeFiles = listOf("ktc2_core.h", "ktc2_core.c")
 
+/** `KTC2_SKIP=inline`: every function in its C file, none in a header. */
+/** The longest body, in lines of C, that is written in a header. Longer ones gained nothing when measured, and every C file reads them. */
+private const val kInlineLines = 4
+
+private val kNoInline = "inline" in (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }
+
 /**
  * Prints a [KModule] as C11: one `.h` / `.c` pair per [KUnit], the runtime, `ktc2_types.h`
  * (type ids) and `ktc2_main.c` (type table, startup, `main`).
@@ -172,11 +178,7 @@ class CEmitter(private val mModule: KModule) {
 			vTypes += vFunction.returnType
 			vFunction.params.forEach { vTypes += it.type }
 		}
-		val vIncludes = LinkedHashSet<KUnit>()
-		vTypes.forEach { vType -> unitOf(vType)?.let(vIncludes::add) }
-		inUnit.cls?.superClass?.let { vIncludes += it.unit }
-		// An object stored inline needs its full definition here.
-		inUnit.cls?.fields?.filter { it.inlineSize == 0 }?.forEach { vIncludes += (it.type as KClassType).cls.unit }
+		val vIncludes = headerUnits(inUnit)
 		vIncludes.filter { it !== inUnit }.forEach { append("#include \"${it.path}.h\"\n") }
 		append("\n")
 		val vForward = LinkedHashSet<KClass>()
@@ -232,8 +234,62 @@ class CEmitter(private val mModule: KModule) {
 		}
 		inUnit.statics.forEach { append("extern ${it.cls.cName} ${it.cName};\n") }
 		inUnit.globals.forEach { append("extern ${cType(it.type)} ${it.cName};\n") }
-		allFunctions(inUnit).forEach { append(signature(it)).append(";\n") }
+		val vInHeader = inHeader(inUnit)
+		allFunctions(inUnit).forEach { append(if (it in vInHeader) "static inline " else "").append(signature(it)).append(";\n") }
+		for ((vFunction, vBody) in vInHeader) append("\nstatic inline ").append(signature(vFunction)).append("\n{\n").append(vBody).append("}\n")
 		append("\n#endif\n")
+	}
+
+	/** The units whose headers the header of [inUnit] includes: the types it holds by value. */
+	private fun headerUnits(inUnit: KUnit): Set<KUnit> {
+		val vTypes = ArrayList<KType>()
+		inUnit.struct?.fields?.forEach { vTypes += it.type }
+		inUnit.cls?.fields?.forEach { vTypes += it.type }
+		inUnit.globals.forEach { vTypes += it.type }
+		for (vFunction in allFunctions(inUnit)) {
+			vTypes += vFunction.returnType
+			vFunction.params.forEach { vTypes += it.type }
+		}
+		val vIncludes = LinkedHashSet<KUnit>()
+		vTypes.forEach { vType -> unitOf(vType)?.let(vIncludes::add) }
+		inUnit.cls?.superClass?.let { vIncludes += it.unit }
+		// An object stored inline needs its full definition here.
+		inUnit.cls?.fields?.filter { it.inlineSize == 0 }?.forEach { vIncludes += (it.type as KClassType).cls.unit }
+		return vIncludes
+	}
+
+	private val mInHeader = HashMap<KUnit, Map<KFunction, String>>()
+
+	/**
+	 * The functions of [inUnit] that are written in its header, as `static inline`, with their
+	 * bodies: the C compiler can then put them where they are called without link-time
+	 * optimization. They are the short ones without a loop that need nothing but what the header
+	 * declares: the unit's own class and functions and the runtime - no other unit, no string
+	 * or type id, which belong to a C file.
+	 */
+	private fun inHeader(inUnit: KUnit): Map<KFunction, String> = mInHeader.getOrPut(inUnit) {
+		val vResult = LinkedHashMap<KFunction, String>()
+		if (kNoInline) return@getOrPut vResult
+		val vVisible = headerUnits(inUnit) + inUnit
+		for (vFunction in inUnit.functions) {
+			if (vFunction.isExternal || vFunction.dispatch != null) continue
+			val vText = StringBuilder()
+			val vState = UnitState()
+			printBody(vFunction, FunctionPrinter(vText, vState), vText)
+			if (vState.literals.isNotEmpty() || vState.typeTests.isNotEmpty() || vState.trampolines.isNotEmpty() || vState.cHeaders.isNotEmpty()) continue
+			if (!vVisible.containsAll(vState.includes)) continue
+			if (vText.count { it == '\n' } > kInlineLines || "for (;;)" in vText || "KTC2_TYPE_" in vText || "goto " in vText) continue
+			vResult[vFunction] = vText.toString()
+		}
+		vResult
+	}
+
+	/** Writes the body of [inFunction], between its braces, to [outText] through [inPrinter]. */
+	private fun printBody(inFunction: KFunction, inPrinter: FunctionPrinter, outText: StringBuilder) {
+		inPrinter.block(inFunction.body, 1)
+		// Kotlin has checked that every path returns or throws; the C compiler has not.
+		val vReturns = inFunction.returnType != KUnitType && inFunction.returnType != KNothingType
+		if (vReturns && inFunction.body.lastOrNull() !is KReturn) outText.append("\treturn ${inPrinter.zero(inFunction.returnType)};\n")
 	}
 
 	private fun source(inUnit: KUnit): String {
@@ -305,16 +361,11 @@ class CEmitter(private val mModule: KModule) {
 			val vInit = vGlobal.constInit?.let { " = ${vPrinter.constant(it)}" } ?: ""
 			vBodies.append("${cType(vGlobal.type)} ${vGlobal.cName}$vInit;\n")
 		}
+		val vInHeader = inHeader(inUnit)
 		for (vFunction in allFunctions(inUnit)) {
+			if (vFunction in vInHeader) continue
 			vBodies.append("\n").append(signature(vFunction)).append("\n{\n")
-			if (vFunction.dispatch != null) {
-				vPrinter.dispatcher(vFunction)
-			} else {
-				vPrinter.block(vFunction.body, 1)
-				// Kotlin has checked that every path returns or throws; the C compiler has not.
-				val vReturns = vFunction.returnType != KUnitType && vFunction.returnType != KNothingType
-				if (vReturns && vFunction.body.lastOrNull() !is KReturn) vBodies.append("\treturn ${vPrinter.zero(vFunction.returnType)};\n")
-			}
+			if (vFunction.dispatch != null) vPrinter.dispatcher(vFunction) else printBody(vFunction, vPrinter, vBodies)
 			vBodies.append("}\n")
 		}
 
