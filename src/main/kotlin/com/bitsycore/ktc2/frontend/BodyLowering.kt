@@ -76,6 +76,8 @@ private fun and(inLeft: KExpr, inRight: KExpr): KExpr = when {
 /** `inValue == null`, already decided for values that can never be null (literals, static instances). */
 private fun isNull(inValue: KExpr): KExpr = when (inValue) {
 	is KStringLit, is KStaticRead -> kFalse
+	// The Unit object is never null (and gcc refuses a test of an address against NULL).
+	is KIntrinsic -> if (inValue.name == "ktc2_unit_object") kFalse else KRefEquals(inValue, KNull(inValue.type))
 	is KRefCast -> isNull(inValue.operand).let { if (it === kFalse) it else KRefEquals(inValue, KNull(inValue.type)) }
 	is KNull -> kTrue
 	else -> KRefEquals(inValue, KNull(inValue.type))

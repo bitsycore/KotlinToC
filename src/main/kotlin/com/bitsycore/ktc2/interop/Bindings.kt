@@ -62,6 +62,20 @@ private val kApplePrivateHeaders = mapOf(
 	"string.h" to listOf("_strings.h"),
 )
 
+/**
+ * The same for the GNU C library, which keeps types and whole families of declarations in
+ * headers of its own under `bits/` (and takes the error numbers from the kernel's headers).
+ */
+private val kGlibcPrivateHeaders = mapOf(
+	"stdio.h" to listOf("bits/types/FILE.h", "bits/types/__FILE.h", "bits/types/struct_FILE.h", "bits/stdio_lim.h"),
+	"math.h" to listOf("bits/mathcalls.h", "bits/mathcalls-helper-functions.h"),
+	"errno.h" to listOf("bits/errno.h", "asm-generic/errno.h", "asm-generic/errno-base.h"),
+	"time.h" to listOf("bits/time.h", "bits/types/struct_tm.h", "bits/types/struct_timespec.h", "bits/types/time_t.h", "bits/types/clock_t.h"),
+	"string.h" to listOf("strings.h"),
+	"stdlib.h" to listOf("bits/stdlib-float.h"),
+	"signal.h" to listOf("bits/signum-generic.h", "bits/signum-arch.h"),
+)
+
 /** What a `.def` file turned into. */
 class Bindings(
 	/** The generated Kotlin source, to compile with the program. */
@@ -148,7 +162,7 @@ class BindingGenerator(
 		// `stdio.h`, and a few more. Asking for the public header asks for those.
 		val vPrivate = mDef.headers.flatMap { vHeader ->
 			val vName = vHeader.substringAfterLast('/')
-			listOf("_$vName") + (kApplePrivateHeaders[vName] ?: emptyList())
+			listOf("_$vName") + (kApplePrivateHeaders[vName] ?: emptyList()) + (kGlibcPrivateHeaders[vName] ?: emptyList())
 		}
 		val vFilters = (mDef.headers + mDef.headerFilter + vPrivate).map { vGlob ->
 			val vPattern = Regex.escape(vGlob.replace('\\', '/')).replace("**", "\u0001").replace("*", "\\E[^/]*\\Q").replace("\u0001", "\\E.*\\Q")
@@ -185,7 +199,12 @@ class BindingGenerator(
 			vExpanded[vMatch.groupValues[1].toInt()] = vMatch.groupValues[2].trim()
 		}
 		vProbe.delete()
-		vMacros.forEachIndexed { vIndex, vMacro -> macro(CMacro(vMacro.name, vExpanded[vIndex] ?: vMacro.body, vMacro.file), vParser) }
+		// A macro that stands for itself (`#define stdout stdout`, as the GNU C library has) says nothing: the variable of that name is bound already.
+		val vBound = (vParser.variables.filter { isWanted(it.file) }.map { it.name } + vParser.functions.filter { isWanted(it.file) }.map { it.name }).toSet()
+		vMacros.forEachIndexed { vIndex, vMacro ->
+			val vValue = vExpanded[vIndex] ?: vMacro.body
+			if (vValue != vMacro.name && vMacro.name !in vBound) macro(CMacro(vMacro.name, vValue, vMacro.file), vParser)
+		}
 
 		mOut.append(mExtraKotlin)
 		val vSource = File(inKotlinDir, mDef.packageName.replace('.', '_') + ".kt")
