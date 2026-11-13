@@ -114,5 +114,10 @@ fun main() {
 	geometry_canvas_free(vCanvas)
 	println(geometry_scale(2.0, 1.5f))
 	println(abs(-17) + atoi("25"))
+	// A type the header names twice, private name first, and a variable that is also a macro of its own name.
+	geometry_log_open()
+	val vLog: CPointer<geometry_log>? = geometry_main_log
+	geometry_log_add(vLog, 2)
+	println("${geometry_log_add(geometry_main_log, 3)} ${vLog!!.pointed.lines}")
 	println("done")
 }

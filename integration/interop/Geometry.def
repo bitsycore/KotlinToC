@@ -116,3 +116,17 @@ static inline int geometry_format(char* buffer, size_t size, const char* format,
 	va_end(arguments);
 	return written;
 }
+
+__attribute__((weak)) geometry_log geometry_log_storage = { 0 };
+__attribute__((weak)) geometry_log* geometry_main_log = 0;
+
+static inline void geometry_log_open(void)
+{
+	geometry_main_log = &geometry_log_storage;
+}
+
+static inline int geometry_log_add(__geometry_log* log, int lines)
+{
+	log->lines += lines;
+	return log->lines;
+}

@@ -206,7 +206,12 @@ class BindingGenerator(
 			if (vValue != vMacro.name && vMacro.name !in vBound) macro(CMacro(vMacro.name, vValue, vMacro.file), vParser)
 		}
 
-		mOut.append(mExtraKotlin)
+		// What is written by hand for a library (the parts of the C library that are macros on some systems)
+		// gives way to what the headers of this system declare themselves: `stdin` is a variable with the GNU C library.
+		for (vBlock in mExtraKotlin.split(Regex("\\n[ \\t]*\\n"))) {
+			val vName = Regex("^public (?:val|var|fun) `?(\\w+)", RegexOption.MULTILINE).find(vBlock)?.groupValues?.get(1)
+			if (vName == null || vName !in mDeclared) mOut.append(vBlock).append("\n\n")
+		}
 		val vSource = File(inKotlinDir, mDef.packageName.replace('.', '_') + ".kt")
 		vSource.writeText(mOut.toString())
 		return Bindings(vSource, vCompilerOpts, mDef.linkerOpts + mExtraLinkerOpts)

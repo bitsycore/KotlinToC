@@ -532,9 +532,11 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 			if (vSpecifiers.isTypedef) {
 				mTypedefs[vName] = vType
 				typedefs += CTypedefDecl(vName, vType, vFile)
-				// A struct or enum without a tag takes the name of its typedef.
-				(vType as? CRecord)?.let { if (it.typedefName == null) it.typedefName = vName }
-				(vType as? CEnum)?.let { if (it.typedefName == null) it.typedefName = vName }
+				// A struct or enum without a tag takes the name of its typedef. Of two names the one a program
+				// is meant to write wins over a private one (`FILE` over `__FILE`, which the GNU C library declares first).
+				fun isBetter(inKnown: String?): Boolean = inKnown == null || (inKnown.startsWith("_") && !vName.startsWith("_"))
+				(vType as? CRecord)?.let { if (isBetter(it.typedefName)) it.typedefName = vName }
+				(vType as? CEnum)?.let { if (isBetter(it.typedefName)) it.typedefName = vName }
 			} else if (vType is CFunctionType) {
 				functions += CFunctionDecl(vName, vType, vFile)
 			} else if (vSpecifiers.isExtern) {

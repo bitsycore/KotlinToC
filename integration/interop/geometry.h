@@ -47,6 +47,19 @@ typedef double (*scaler)(double value, float factor);
 /* A variable of the library. */
 extern int geometry_counter;
 
+/*
+A type with a private name declared before its public one, a variable of that type, and a
+macro of the name of the variable: what the GNU C library does with FILE and stdout.
+*/
+struct _geometry_log;
+typedef struct _geometry_log __geometry_log;
+typedef struct _geometry_log geometry_log;
+struct _geometry_log {
+	int lines;
+};
+extern geometry_log* geometry_main_log;
+#define geometry_main_log geometry_main_log
+
 /* The functions are defined in Geometry.def, as a library with inline functions would. */
 
 #endif
