@@ -120,6 +120,16 @@ internal fun isAnyClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asStri
 
 internal fun isThrowableClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Throwable"
 
+/**
+ * `kotlin.Number`: an abstract class with nothing in it, which the boxed numbers extend without
+ * having a class here. It is treated as an interface: a class of the program that extends it
+ * implements it, and a call on it goes to that class or, for a box, to the runtime.
+ */
+internal fun isNumberClass(inClass: IrClass): Boolean = inClass.kotlinFqName.asString() == "kotlin.Number"
+
+/** The conversions `kotlin.Number` declares. */
+internal val kNumberConversions = setOf("toByte", "toShort", "toInt", "toLong", "toFloat", "toDouble")
+
 /** True when [inClass] is [inAncestor] or inherits from it (class or interface). */
 internal fun isSubtype(inClass: IrClass, inAncestor: IrClass): Boolean =
 	inClass == inAncestor || inClass.superTypes.any { vSuper -> vSuper.classOrNull?.owner?.let { isSubtype(it, inAncestor) } == true }
@@ -856,7 +866,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		mClasses[vKey] = null
 		val vSubst = classParameters(inClass).map { it.symbol }.zip(vArguments).toMap()
-		val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) } == true }
+		val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) && !isNumberClass(it) } == true }
 		val vSuperIr = vSuperType?.classOrNull?.owner
 		val vSuper = vSuperIr?.let {
 			if (it.kotlinFqName.asString() == "kotlin.Enum") enumBase() else classFor(it, argumentsOf(close(vSuperType, vSubst)))
@@ -1056,7 +1066,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	private fun collectInterfaces(inClass: IrClass, outInterfaces: MutableSet<KInterface>) {
 		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }) {
-			if (vSuper.isInterface) outInterfaces += interfaceFor(vSuper)
+			if (vSuper.isInterface || isNumberClass(vSuper)) outInterfaces += interfaceFor(vSuper)
 		}
 	}
 
@@ -1879,6 +1889,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vIsCompare = vOwner.kotlinFqName.asString() == "kotlin.Comparable" && inFunction.name.asString() == "compareTo"
 		if (vIsCompare && vSignature.params.all { it.type == KObjType }) {
 			vTarget.dispatchDefault = runtime("ktc2_any_compareTo", listOf(KObjType, KObjType), KPrimType(KPrim.INT))
+		}
+		// A Number that is no class of the program is a boxed number.
+		if (isNumberClass(vOwner) && inFunction.name.asString() in kNumberConversions && vSignature.params.size == 1) {
+			vTarget.dispatchDefault = runtime("ktc2_number_${inFunction.name.asString()}", listOf(KObjType), vSignature.returnType)
 		}
 		// Comparable<Double>: the receiver is a box, what it is compared with a number.
 		val vOther = vSignature.params.getOrNull(1)?.type as? KPrimType

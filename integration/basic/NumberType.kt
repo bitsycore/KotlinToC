@@ -14,7 +14,56 @@ fun total(inValues: List<Number>): Double {
 
 fun <T : Number> half(inValue: T): Double = inValue.toDouble() / 2
 
+/** A number of the program's own. */
+class Money(val cents: Long) : Number(), Comparable<Money> {
+	override fun toByte(): Byte = cents.toByte()
+	override fun toShort(): Short = cents.toShort()
+	override fun toInt(): Int = cents.toInt()
+	override fun toLong(): Long = cents
+	override fun toFloat(): Float = cents / 100f
+	override fun toDouble(): Double = cents / 100.0
+	override fun compareTo(other: Money): Int = cents.compareTo(other.cents)
+	override fun toString(): String = "$cents c"
+	override fun equals(other: Any?): Boolean = other is Money && other.cents == cents
+	override fun hashCode(): Int = cents.toInt()
+}
+
+/** Another, which leaves `toString` and `hashCode` as they are. */
+open class Ratio(val over: Int, val under: Int) : Number() {
+	override fun toByte(): Byte = toInt().toByte()
+	override fun toShort(): Short = toInt().toShort()
+	override fun toInt(): Int = over / under
+	override fun toLong(): Long = toInt().toLong()
+	override fun toFloat(): Float = over.toFloat() / under
+	override fun toDouble(): Double = over.toDouble() / under
+}
+
+class Half : Ratio(1, 2) {
+	override fun toInt(): Int = 1
+}
+
+fun ownNumbers() {
+	val vMoney = Money(1250)
+	val vAll: List<Number> = listOf(1, vMoney, 2.5, Ratio(7, 2), Half(), 9L)
+	for (vValue in vAll) println(describe(vValue))
+	println(total(vAll))
+	println(vAll.map { it is Money })
+	println(vAll.filterIsInstance<Ratio>().map { it.toDouble() })
+	println("${half(vMoney)} ${half(Ratio(3, 4))} ${vMoney.toDouble()} ${Half().toLong()}")
+	val vAny: Any = vMoney
+	println("${vAny is Number} ${vAny is Comparable<*>} ${(vAny as Number).toLong()} ${(vAny as? Number)?.toShort()} ${vAny == Money(1250)} ${vAny.hashCode()} $vAny")
+	val vNumber: Number = vMoney
+	println("${vNumber is Money} ${vNumber is Int} ${vNumber == 1250} ${vNumber.hashCode()} $vNumber ${vNumber.toByte()}")
+	println("${("text" as Any) is Number} ${(Ratio(1, 1) as Any) is Money} ${listOf<Any?>(null, vMoney, 3, "x").map { it is Number }}")
+	println(listOf(Money(3), Money(1), Money(2)).sorted())
+	val vByName = HashMap<String, Number>()
+	vByName["money"] = vMoney
+	vByName["int"] = 4
+	println(vByName["money"]!!.toInt() + vByName["int"]!!.toInt())
+}
+
 fun main() {
+	ownNumbers()
 	val vValues: List<Any?> = listOf(
 		7, -7, 300, Int.MAX_VALUE, Int.MIN_VALUE, 5L, Long.MAX_VALUE, Long.MIN_VALUE, 4000000000L,
 		1.5, -1.5, 1e20, -1e20, Double.NaN, Double.POSITIVE_INFINITY, 2.75f, 3.0e10f,
