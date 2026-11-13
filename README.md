@@ -110,8 +110,8 @@ after half an hour without a command; `KTC2_DAEMON=0` does without it.
 
 The generated C is C11. On Windows the whole test suite runs with gcc, and the showcase's
 tests also pass with clang and with MSVC. On macOS (ARM64) the whole suite runs with Apple
-clang, and the showcase with SDL3. Linux is written for and not yet tried;
-Android is not there yet.
+clang, and the showcase with SDL3. On Linux the suite runs with gcc in the CI job and
+passes but for the bindings of `platform.posix`. Android is not there yet.
 
 ## Working on ktc2
 
@@ -120,6 +120,9 @@ Android is not there yet.
 ```
 
 runs every program under `integration/` twice - as C, compiled with `-Wall -Werror` and
-checked for leaks, and on the JVM - and compares what they print. `DESIGN.md` describes
+checked for leaks, and on the JVM - and compares what they print. It also runs the tests
+under `tests/`, which are written as Kotlin Multiplatform's common tests are, with
+`kotlin.test`: among them tests of the Kotlin standard library itself (`tests/README.md`).
+A job on GitHub runs all of it on Linux, macOS and Windows on every push. `DESIGN.md` describes
 how ktc2 works, `PLAN.md` what is left to do, `HISTORY.md` how it got here; `CLAUDE.md` is
 the short map of the code and of how to work on it.

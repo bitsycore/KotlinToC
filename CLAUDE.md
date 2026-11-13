@@ -8,6 +8,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - `DESIGN.md`: how ktc2 works now. Meant to be read whole before changing anything; section 13 is the map of the code.
 - `PLAN.md`: what is left to do, with estimates, and what to do first.
 - `HISTORY.md`: the original design and the log of the work. Not reference: only for the reasoning behind a decision, or to see what was tried and dropped.
+- `tests/README.md`: the common tests, written as Kotlin Multiplatform's are, and the tests of the Kotlin standard library taken as they are.
 - `README.md`: the user's view.
 
 ## What you need
@@ -15,12 +16,12 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - gcc on the path (mingw on Windows; on macOS `gcc` is Apple clang, which takes the same options): the tests build with it. `KTC2_CC` names another compiler, but the tests' options are gcc's.
 - For anything that depends on the `sdl3` module: git, CMake, and a generator CMake can use.
 - Python 3 for `tools/*.py`; Git Bash on Windows for `tools/*.sh`.
-- The gate is the suite, run locally (Windows with gcc, macOS with Apple clang on ARM64) and by the CI job on every push (`.github/workflows/test.yml`: Linux, macOS, Windows; written on 2026-11-13 and not seen to run yet).
+- The gate is the suite, run locally (Windows with gcc, macOS with Apple clang on ARM64) and by the CI job on every push (`.github/workflows/test.yml`: Linux, macOS, Windows; `gh run list --repo bitsycore/KotlinToC` shows it). On 2026-11-13 macOS and Windows pass and Linux fails on `interop/Posix` alone.
 
 ## Build / Run / Test
 - Build the tool: `./gradlew installDist` -> `build/install/ktc2/bin/ktc2`. Do it again after a change before using the installed tool or `tools/try_cmake.sh`.
 - Translate, build, run: `ktc2 <module dir | file.kt | lib.def>... [-o dir] [--build | --cmake | --run [-- args]] [--debug] [-copt x] [-lopt x] [--checks=abort] [--warn-heap] [--no-warn-cycles] [--dump-ir]`
-- Tests: `./gradlew test --rerun` runs every `integration/**/*.kt` as C (gcc, `-O1 -Wall -Werror`, leak check) and on the JVM, and compares the output. About 70 seconds on a 16-core Windows machine (it was about 10 minutes, and 5 on a Mac, with one program after another): the programs are shared between several processes, each of which analyses the library once for all its programs. Without `--rerun` Gradle may answer "up to date" and run nothing.
+- Tests: `./gradlew test --rerun` runs every `integration/**/*.kt` as C (gcc, `-O1 -Wall -Werror`, leak check) and on the JVM, and compares the output; and every file of common tests under `tests/` (`@Test` functions with `kotlin.test`, no `main`: `tests/README.md`) the same way, failing when a test fails on either. About 70 seconds on a 16-core Windows machine (it was about 10 minutes, and 5 on a Mac, with one program after another): the programs are shared between several processes, each of which analyses the library once for all its programs. Without `--rerun` Gradle may answer "up to date" and run nothing.
   - `KTC2_TEST_FILTER=<path part>` runs a subset in under a minute (`objects/`, `stdlib/Regex`, `projects/`).
   - `KTC2_TEST_VERBOSE=1` prints a line for each program as it passes, to follow a run in a terminal.
   - `KTC2_TEST_FORKS=<n>` says how many processes share the programs (default: half the processors but no more than 8; at most 12; each takes about 1 GB). `KTC2_TEST_JOBS=<n>` says how many C compilers work on one program at once (default 4). `KTC2_KEEP_LIBRARY=0` has each program compiled with the library from nothing, as a single `ktc2` command does. `KTC2_TEST_FORKS=1 KTC2_TEST_JOBS=1 KTC2_KEEP_LIBRARY=0` is the suite as it was.

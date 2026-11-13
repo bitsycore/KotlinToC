@@ -444,7 +444,7 @@ one block at the top of `ktc2_core.h` (atomics, bit counts, `alloca`).
 | clang on Windows (MSVC ABI) | the showcase's tests |
 | MSVC through CMake | the showcase's tests, threads included; one harmless warning (C4116) per array kept in the frame |
 | Apple clang on macOS (ARM64) | the whole suite; the showcase with SDL3 through CMake |
-| gcc, clang on Linux | written for, never compiled |
+| gcc on Linux | the suite passes in the CI job but for `interop/Posix` (the bindings of `platform.posix` with the GNU C library) |
 | Android NDK | not there: no console, no `main`; see `PLAN.md` |
 
 ---------------------------------------------------------------------------
@@ -463,6 +463,17 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   object", on every system. AddressSanitizer (`-fsanitize=address -DKTC2_NO_POOL` on the C of
   `build/integration/<Name>/c`) finds the reads the fill does not.
 - `integration/ported/` are the plain-Kotlin tests of the first transpiler.
+- `tests/**/*.kt` are common tests, written as Kotlin Multiplatform's are: classes of `@Test`
+  functions that assert with `kotlin.test` (`stdlib/Ktc2Test.kt` here), and no `main`. The
+  suite writes the `main` that calls each test (`testMain` in `IntegrationTest.kt`, which
+  reads the source as text), runs it in C and on the JVM, and fails when a test fails on
+  either. `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged. See
+  `tests/README.md`.
+- The comparison with the JVM counts the two names of a standard exception as one
+  (`java.lang.IllegalStateException` there, `kotlin.IllegalStateException` here and on
+  Kotlin/Native): `samePlatform` in `IntegrationTest.kt`.
+- `tools/native.sh` runs what is plain Kotlin with Kotlin/Native as well, after a run of the
+  suite, and lists what prints something else there.
 - There are no unit tests of the passes: everything is tested through whole programs.
 
 `examples/showcase` is the program that uses a bit of everything, with an SDL3 window. It is
@@ -470,11 +481,11 @@ not in the suite (it fetches and builds SDL3). `--headless` runs its tests with 
 `--auto` opens the window and clicks by itself, which with `SDL_VIDEODRIVER=dummy` needs no
 screen, and `--shot file.bmp` saves what it drew.
 
-`benchmarks/` holds six programs (objects, collections, strings, numbers, dispatch,
-threads) that `python tools/bench.py` builds at `-O2` and times, with their counts of
+`benchmarks/` holds seven programs (objects, collections, strings, numbers, dispatch,
+threads, ordinary code) that `python tools/bench.py` builds at `-O2` and times, with their counts of
 allocations, retains and releases; `--compare` shows the change against a saved table.
 
-There is no CI: the only gate is running the suite, on Windows and on macOS.
+The gate is the suite: run locally, and by the CI job on Linux, macOS and Windows on every push (`.github/workflows/test.yml`).
 
 ---------------------------------------------------------------------------
 ## 12. Known differences and gaps

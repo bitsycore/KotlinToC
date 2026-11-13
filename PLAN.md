@@ -13,181 +13,134 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-13)
+## Where the work stands (2026-11-13, evening)
 ---------------------------------------------------------------------------
 
-For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
-works; this is what those do not say.
+For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,
+`DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
+not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 128
-tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
-the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
-`007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
-showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `Walking`,
-`OwnedParameters`, `HeldInFrame`, `CleanerLifetimes`, `Cleaners`, `Collections`,
-`ConcurrentModification`, `DispatchedResults`, `Reassigned`, `Copies`, `ReturnedCalls`,
-`SimpleEnums`, `Generics`).
+**State.** Everything is on `master` and pushed (`f09ecd8` and the commit of this text); the
+working tree is clean. The suite is 135 tests: 127 programs under `integration/` (compared
+with the JVM or an `.expected` file, or that must be refused), 7 files of common tests under
+`tests/` (118 `@Test` functions), and the showcase as a program of several modules. It
+passes on macOS (Apple clang, ARM64) in about a minute. AddressSanitizer is clean on every
+program (`tools/asan_all.sh`, run once that day; `tools/asan.sh` on what each change touched).
 
-**Written on macOS since, not run on Windows** (`git log 6e4550b..`): more loops proven in
-range (`RangeChecks`), `for` over an `ArrayList` or a `HashMap` as a loop over its storage (`ListLoops`), the
-probe of `HashMap` without index tests, `name` and `ordinal` of a `@SimpleEnum` from its
-number, the class of a call's result followed in two rounds (`Devirtualize`: the one of these
-that changes what the other passes are told), two more programs that must be refused. Nothing
-in them is specific to a system; run the suite there all the same.
+**The CI job** (`.github/workflows/test.yml`, on every push; see it with
+`gh run list --repo bitsycore/KotlinToC`) runs the suite on Linux, macOS and Windows:
+- macOS and Windows (gcc) pass. Windows therefore ran everything written on the Mac that
+  day, the functions in the headers included (`static inline`);
+- Linux fails on one test, `interop/Posix`: the bindings of `platform.posix` do not find
+  `FILE` with the GNU C library (`unresolved reference 'FILE'` in the generated
+  `platform_posix.kt`), after one attempt that could not be tried on a Mac
+  (`kGlibcPrivateHeaders` in `interop/Bindings.kt`). Everything else passes there: Linux is
+  no longer untried. Because the suite step fails, the AddressSanitizer step that follows it
+  on Linux has never run. This is the first thing to fix, on a machine with Linux or by
+  reading what the job prints;
+- MSVC is not in the job: it was last tried by hand on Windows at `007dd9b`, before the
+  functions in the headers and `ktc2_all.c`.
 
-Then (`git log 3a04274..`), also on macOS only: text that is not ASCII searched as bytes,
-`ArrayList` sorted in its storage, `subList` as a view, `compareTo` of `Float` and `Double`
-as the JVM orders them, integers formatted without `printf`, `StringBuilder.append`, `get`,
-`set` and `size` of an `ArrayList` written out where they are called, short functions as
-`static inline` in the headers, `ktc2_all.c`. Two of these are about the C compiler and
-want a look on Windows first: the functions in the headers (gcc and MSVC have not seen
-them; `KTC2_SKIP=inline` puts them back in the C files) and `ktc2_all.c` (`KTC2_TEST_UNITY=1`
-has the suite compile it: the gain expected there is in the time gcc takes to start, which
-on a Mac is nothing).
+**What that day did**, in the order of `git log 3a04274..`: speed (text that is not ASCII
+searched as bytes, `ArrayList` sorted in its storage, integers as text without `printf`,
+`get`, `set` and `size` of an `ArrayList` written out, short functions in the headers), then
+correctness, which is where the work is now. The benchmarks did not move after the speed
+work (table below).
 
-**Found on the way, and fixed since**: a string holds half of a surrogate pair on its own
-(as the three bytes UTF-8 would give its number; two halves that meet become the character;
-`?` on the way out, as on the JVM); a number seen as a `Comparable` of its own kind is
-compared (`ktc2_box_compareTo_double` and the like are the dispatcher's default); a number,
-or one that may be null, is boxed by a cast to a type of objects (`x as Any?`,
-`compareValues` on two `Double`); `null as String` is a `NullPointerException`;
-`StringBuilder.reverse` keeps a pair in order. `integration/stdlib/Surrogates.kt`,
-`integration/basic/NullableNumbers.kt`. Then `Number` as a type of its own (`is Number`,
-`as Number`, its six conversions on a box: `integration/basic/NumberType.kt`), and two
-halves of a pair printed one after the other, and a class of the program that extends
-`Number`.
+**The owner's rule** (2026-11-13): ktc2 does what Kotlin does on the JVM and on
+Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be
+limited or different is behind an annotation of the `ktc2.` package (`@Struct`, `@Value`...),
+which is the program saying it accepts that in exchange for storage closer to the machine. A
+difference found in plain Kotlin is fixed in general, not written down as a gap with the
+common case covered. Where the JVM and Kotlin/Native themselves differ because of their
+platform, either is accepted, and Kotlin/Native is the one to look at first.
 
-**Looking for differences on purpose** (the same day, after the rule below): five programs
-of what ordinary code does (`generics/ErasedViews`, `objects/OrdinaryClasses`,
-`stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`, `basic/OrdinaryControl`), each compared
-with the JVM line by line (`tools/jvmdiff.sh <Name>` after a run), found and fixed:
-a `Box<Int>` seen as a `Box<*>` (a crash; see "A generic class is one class in Kotlin" in
-`DESIGN.md`), `is Box<*>`, a `List<Int>` asked about a value that is no `Int` or seen as a
-`List<Int?>`, `lateinit` (it gave null) and `isInitialized`, `hashCode` of a data class with a
-`Double?`, `String.CASE_INSENSITIVE_ORDER`,
-`removeFirst` and `removeLast` as the members Java 21 gave lists, `mod` and `floorDiv`,
-unsigned numbers from text and in ranges, `AutoCloseable` and `use`, `Unit` as an object,
-`runCatching { error(…) }`, `1 / zero` as a statement (it threw nothing), `String::length`
-as a function, an entry of a map kept after the map changed. It is the cheapest way found
-to make ktc2 right: write another such program before anything else. Not looked at yet:
-inheritance with generics in depth, inner and local classes, interfaces with properties,
-operators on collections of collections, labels and non-local returns in depth, threads,
-`kotlin.time`, `Regex` in depth, `Random`, arrays of arrays, value classes, delegation of
-properties (`by map`), `companion` constants, `vararg` with spread in depth, numbers at their
-limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
-
-**Decided by the owner after that search** (2026-11-13):
+**Decided by the owner** (all on 2026-11-13 unless said):
+- `ktc2.Deinit` is removed: what runs when an object ends is a cleaner (`createCleaner`),
+  which the JVM and Kotlin/Native have too, and which costs nothing in a private property.
+  The runtime's hook is still there under it (`ktc2.internal.Deinit`, for the cleaner that is
+  kept as an object);
 - `sequence { }` and `iterator { }` wait for `suspend` functions done in full (the
   transformation into a state machine), not a stack of their own for each iterator. Until
   then `zipWithNext`, `chunked` and `windowed` on a sequence fail at run time;
 - a class as a value is in: `x::class`, `Name::class`, compared, as keys, `simpleName`,
-  `qualifiedName` (`integration/objects/ClassReferences.kt`). The rest of reflection is not;
+  `qualifiedName`, `isInstance` for a class. The rest of reflection is not;
 - what only the JDK has is not added (`toSortedMap`, `String.format`, `getOrDefault`,
   `setCharAt`...): a program has no JDK, as on Kotlin/Native. A compatibility layer in the
   `ktc2.` package may come later. `removeFirst` and `removeLast` of a list stay: they are
   Kotlin's own extensions, which a program compiled for the JVM reaches as the members Java 21
   gave lists;
-- the tests should also be run with Kotlin/Native, since a program is meant to behave the same
-  on the JVM, on Kotlin/Native and here. Begun: `tools/native.sh` runs the tests that are plain
-  Kotlin with a Kotlin/Native compiler and compares what they print with what the C programs
-  printed (which the suite has compared with the JVM). First run, with Kotlin/Native 2.4.21 on
-  a Mac, of 97 programs: 73 print the same on all three; 18 differ, and in each it is the JVM
-  and Kotlin/Native that differ, ktc2 being with the JVM; 6 do not compile there. Where they
-  differ:
-  - the text of exceptions the library throws (`/ by zero` against null, `For input string`,
-    the bounds of `subList`), and the names of exception classes (`java.lang.` against `kotlin.`);
-  - what a list or a map notices of a change while it is gone over (`clear` in a loop is not
-    noticed there; a key added at the last entry is);
-  - `Float` as text (`1.5E10` against `1.5000001E10`);
-  - a template whose parts change what an earlier part shows: the JVM evaluates every part and
-    then turns them into text, Kotlin/Native goes part by part;
-  - the Unicode tables (another version), `readLine` at the end of the input, `Regex` in places.
-  What does not compile there: `String(chars)` and `ArrayIndexOutOfBoundsException` (deprecated
-  into errors), `@JvmInline`, `UninitializedPropertyAccessException` (internal there), a feature
-  of Kotlin 2.5. Not part of the suite or of the CI job yet.
-- where the JVM and Kotlin/Native differ because of their platform, either is accepted, as
-  between those two, and Kotlin/Native is the one to look at first. Done for the names of the
-  standard exceptions: they are `kotlin.` ones here, as there, and the suite takes either name.
-  For the rest (the text of messages, `Float` as text, what a collection notices of a change)
-  tests are now also written the way Kotlin Multiplatform's are: `tests/`, with `kotlin.test`
-  assertions in common code and no output to compare (`tests/README.md`). The suite runs them
-  in C and on the JVM, `tools/native.sh` on Kotlin/Native: the first 19 pass on all three.
-  `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged: the first six
-  files taken (99 tests) found five differences in an hour, all fixed (`tests/README.md`).
-  The library has hundreds more files; most use helpers of its own (`test.TestPlatform`,
-  `test.collections.behaviors`), which have to come with them. Taking more of them is the
-  best next use of time: each file is a list of things Kotlin promises.
-- the CI job (2026-11-13): macOS and Windows pass. Linux passes but for `interop/Posix`: the
-  bindings of `platform.posix` do not find `FILE` with the GNU C library, after one attempt
-  that could not be tried on a Mac (`kGlibcPrivateHeaders` in `Bindings.kt`).
+- the standard exceptions have their Kotlin names (`kotlin.IllegalStateException`), as on
+  Kotlin/Native; the suite takes that or the JVM's `java.lang.` name when it compares;
+- tests are also written as Kotlin Multiplatform's common tests are (`tests/`), and the
+  tests of the Kotlin standard library itself are taken as they are (`tests/kotlin/`);
+- the enum that is a number is `@SimpleEnum`, with `@EnumValue` and `ktc2.enumOf`; the
+  package of the SDL3 module is `ktc2.sdl3`; nothing of `java.*` for programs; files and the
+  like through kotlinx.io or okio (part 8);
+- any addition to the `ktc2.` package is proposed first, not built unasked. The model is
+  `ktc2.concurrent` and `createCleaner`: one API that is plain Kotlin on the JVM and the
+  native thing in C. The flags of the SDL3 module as value classes wait for the same reason.
 
-**The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
-Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be
-limited or different is behind an annotation of the `ktc2.` package (`@Struct`, `@Value`...),
-which is the program saying it accepts that in exchange for storage closer to the machine. So
-a difference found in plain Kotlin is fixed in general, not written down as a gap with the
-common case covered.
+**How differences are found**, which is the work to go on with:
+1. *Tests of the Kotlin standard library* (`tests/kotlin/`, from `libraries/stdlib/test` of
+   github.com/JetBrains/kotlin, unchanged). The first six files (99 tests) found five
+   differences in an hour, all fixed. Each file is a list of things Kotlin promises: taking
+   more of them is the best next use of time. Most use helpers of the library's own
+   (`test.TestPlatform`, `test.collections.behaviors`), which have to come with them. A file
+   that does not pass yet goes to `tests/pending/` with its reason in `tests/README.md`.
+2. *Programs of ordinary code compared with the JVM* (`generics/ErasedViews`,
+   `objects/OrdinaryClasses`, `stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`,
+   `basic/OrdinaryControl`, `objects/ClassReferences`): write what ordinary code does with one
+   part of the language, run it with `KTC2_TEST_FILTER`, read `tools/jvmdiff.sh <Name>`. They
+   found some twenty differences. Not looked at yet: inheritance with generics in depth,
+   inner and local classes, interfaces with properties, labels and non-local returns in depth,
+   threads, `kotlin.time`, `Regex` in depth, `Random`, arrays of arrays, value classes,
+   delegation of properties (`by map`), `vararg` with spread in depth, `Double` as text at its
+   limits, `Comparable` and `Comparator` in depth.
+3. *Kotlin/Native as a third opinion* (`tools/native.sh`, after a run of the suite; it needs a
+   Kotlin/Native compiler under `~/.konan` or named by `KTC2_KONAN`, which a Mac with a
+   multiplatform project has and another machine may not). With Kotlin/Native 2.4.21, of 97
+   programs that are plain Kotlin 73 print the same on all three, 18 differ and 6 do not
+   compile there; in the 18 it is the JVM and Kotlin/Native that differ (the text of
+   exceptions, what a collection notices of a change while it is gone over, `Float` as text,
+   the order in which a template turns its parts into text, the Unicode tables), ktc2 being
+   with the JVM. Of the 7 files of common tests 4 pass there and 3 need the compiler of
+   Kotlin 2.5. Not part of the suite or of the CI job.
 
-**Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
-suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
-43 seconds; AddressSanitizer is clean there on the showcase and on `DispatchedResults`,
-`Reassigned`, `Copies`, `ReturnedCalls`, `SimpleEnums`, `DeinitSuper`, `ListIndexMessages`,
-`Collections`, `HeldInFrame`, `Borrowing`, `Generics`; the compiler process that stays works
-(a small program in 0.7 to 0.9 s, 8 s without it). One thing was wrong there and is fixed:
-`~/.ktc2/daemon.txt`, which holds the secret of that process, was readable by every user of
-the machine. Not built on macOS: `examples/sdl3-demo`.
+**What the fixes of that day changed in the design**, to know before touching the importer
+(each is in `DESIGN.md`, "Where a small mistake costs most"):
+- a generic class is one class in Kotlin and several here. A member of an object whose
+  instantiation the type does not settle (`Box<*>`, a `Pair<Int?, Int?>`, what a cast to a
+  generic class gives) is reached through a dispatcher; `Devirtualize` makes it direct again
+  where the class is known;
+- `Unit` is an object of the runtime where one is asked for; `Number` is treated as an
+  interface the boxed numbers implement; a string holds half of a surrogate pair;
+- `==` on a `T` that stands for `Double` is `equals`; `compareTo` of `Double` is a total order.
 
-If the suite misbehaves on a system, `KTC2_TEST_FORKS=1 KTC2_TEST_JOBS=1 KTC2_KEEP_LIBRARY=0`
-is the suite as it ran before it was made parallel: start from that, then turn the three back
-on one by one. `ktc2` itself: `KTC2_DAEMON=0` is the command as it was. The process that
-stays keeps the environment it was started with: only the `KTC2_` variables and `PATH` make a
-command start another one, so a changed `SDKROOT` or `CPATH` is not seen until it is stopped
-(`ktc2 --stop-daemon`).
-
-**Other compilers.** On Windows the new runtime code and the tests of the new passes were
-also built through CMake with MSVC 19.51 and print what gcc's build prints (`Walking`,
-`Deinit`, `Cleaners`, `HeldInFrame`, `LastUse`, `OwnedParameters`, `Time`,
-`ConcurrentModification`, `ThreadBorrowing`, `StringSearch`, `DispatchedResults`,
-`Reassigned`, `Copies`, `ReturnedCalls`, `SimpleEnums`, `Collections`, `Borrowing`), and
-the showcase with SDL3 passes its automatic run with gcc and with MSVC. Three programs were
-built with clang 23. The whole suite has only ever run with gcc and Apple clang.
-
-**Not run anywhere.** Linux: the POSIX half of the runtime is the one macOS uses, except the
-hand-written prototype of `clock_gettime` in `ktc2_ticksNanos`, which strict C11 hides there.
-Not exercised by any test: an input event that really comes from SDL through `event.kind`,
-`key.code` or `button.pressed`; `examples/sdl3-demo` was translated, not built.
-
-**Decided by the owner, and done:**
-- the enum that is a number is `@SimpleEnum`, a real C `enum`, with `@EnumValue` on the
-  constructor parameter that gives the numbers, and an object per entry where Kotlin needs
-  one (`Key?`, `List<Key>`, `Any`); what cannot be a number is a compile error (part 8);
-- `ktc2.Deinit` is removed (2026-11-13): what runs when an object ends is a cleaner
-  (`createCleaner`), which the JVM and Kotlin/Native have too, and which costs nothing in a
-  private property. The runtime's hook is still there under it (`ktc2.internal.Deinit`, for
-  the cleaner that is kept as an object);
-- the package of the SDL3 module is `ktc2.sdl3` (part 8);
-- nothing of `java.*` for programs; files and the like through kotlinx.io or okio (part 8).
-- `ktc2.enumOf<T>(number) { it.code }`, from a number to the entry of a `@SimpleEnum`: its
-  name and shape are confirmed (2026-11-13).
-
-**Waiting for a decision of the owner:**
-- any addition to the `ktc2.` package: propose it here first, do not build it
-  unasked. The model is `ktc2.concurrent` and `createCleaner`: one API that is plain Kotlin
-  on the JVM and the native thing in C.
+**Known and not done**, besides what the parts below list:
+- `interop/Posix` on Linux (above);
+- a value of the wrong kind that reaches a function of a concrete class through an unchecked
+  cast (a `Comparator<Int>` handed a `String`) is answered with -1, false or null where the
+  JVM throws `ClassCastException`;
+- `KClass.isInstance` answers false for an interface;
+- two entries a `HashMap` hands out for one key are equal, not the same object as on the JVM;
+- the `.warnings` kind of test has no test since the one for `Deinit` went.
 
 **How the owner works.** They follow a run of the suite in a terminal (`./gradlew test
 --rerun`, a line per program with `KTC2_TEST_VERBOSE=1`). Never two runs of the suite at
 once: they share `build/integration`. A targeted run (`KTC2_TEST_FILTER`) after each change
-and the whole suite after two or three is what they asked for, the whole suite before a
-commit that touches a pass. They push to `master` directly, from two machines (Windows, and a
-Mac Studio): pull first.
+and the whole suite after two or three, the whole suite before a commit that touches a pass.
+They push to `master` directly, from several machines: pull first. Commits are by
+`Bitsy <bitsydoge@proton.me>` with no mention of an assistant (`CLAUDE.md`, "Conventions"):
+on a new machine set `user.name` and `user.email` in the checkout before the first commit.
 
-**How the work went, and should go on.** One item at a time: a program under `integration/`
-that shows it, the change, the whole suite, `tools/asan.sh` on the programs it touches,
-`tools/bench.py --compare`, the documents, a commit. Every optimization of counting or of the
-frame got a test that also holds the cases where it must *not* apply (the value that gets out,
-the place that is overwritten): those are what caught the mistakes. Three were made and found
-that way, and are worth knowing:
+**How the work went, and should go on.** One item at a time: a test that shows it (a common
+test under `tests/` when it is about what must hold everywhere, a program under
+`integration/` otherwise), the change, the whole suite, `tools/asan.sh` on the programs it
+touches, `tools/bench.py --compare` when a pass or the library changed, the documents, a
+commit. Every optimization of counting or of the frame got a test that also holds the cases
+where it must *not* apply (the value that gets out, the place that is overwritten): those are
+what caught the mistakes. Three were made and found that way, and are worth knowing:
 - an object created inside a constructor and stored into `this` was put in the constructor's
   own frame: held by an object that was passed in means it outlives the call;
 - letting a `var` borrow from a temporary kept `var x = T(); x = null` alive to the end of the
@@ -195,6 +148,14 @@ that way, and are worth knowing:
 - borrowing in `node = node.next` when the walk starts from a variable at its last use made
   the benchmark slower: the list was then given up whole at the end. A count removed is not
   always time saved: measure.
+
+If the suite misbehaves on a system, `KTC2_TEST_FORKS=1 KTC2_TEST_JOBS=1 KTC2_KEEP_LIBRARY=0`
+is the suite as it ran before it was made parallel: start from that, then turn the three back
+on one by one. `ktc2` itself: `KTC2_DAEMON=0` is the command as it was. The process that
+stays keeps the environment it was started with: only the `KTC2_` variables and `PATH` make a
+command start another one, so a changed `SDKROOT` or `CPATH` is not seen until it is stopped
+(`ktc2 --stop-daemon`). `KTC2_SKIP=inline` puts the short functions back in the C files if a
+C compiler objects to them in the headers.
 
 ---------------------------------------------------------------------------
 ## Where the benchmarks stand
@@ -272,9 +233,9 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
   clang on ARM64. What it took: the bindings of `platform.posix` (Apple declares the C library
   in private headers), `-ffp-contract=off` (ARM64 fuses a product and a sum), two test lines
   that printed the last digit of `exp` and `log`, the tool's JVM running out of code cache,
-  and a double release that Windows had been hiding (below). Linux is still untried, and
-  there is still no CI: a job per system would keep both true. Windows was run again after
-  the macOS work (see "Where the work stands").
+  and a double release that Windows had been hiding (below). Linux runs in the CI job since
+  2026-11-13 and passes but for `interop/Posix` (the same bindings, with the GNU C library:
+  see "Where the work stands"). The CI job runs the three systems on every push.
 - [x] **A use of freed memory is reported on every system.** A local that handed its
   reference over and was assigned again later was released twice; the fill of freed objects
   made that pass on Windows. Test builds now keep freed objects aside, filled, and end the
@@ -481,7 +442,8 @@ Open:
     (`enumOf(number, Unknown) { }`) would stay a number all the way.
 - [x] **A failing `valueOf` throws** `IllegalArgumentException("No enum constant ...")`, for
   every enum: it ended the program before.
-- [ ] **Coroutines.** `sequence { }` and `iterator { }` first: they are what the library
+- [ ] **Coroutines.** Decided: `suspend` functions in full, by the transformation into a
+  state machine. `sequence { }` and `iterator { }` come with it: they are what the library
   itself uses (`chunked` and `windowed` on things that are not lists fail at run time today).
 - [ ] **Android.** The C should compile with the NDK's clang. Missing: `println` to the log
   and not to a console; a program as a shared library entered from Java and not a `main`; a
@@ -515,19 +477,18 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. Run the suite on Windows (see "Where the work stands": nothing since `007dd9b` ran
-   there, and the functions in the headers are new to gcc and MSVC), and on Linux for the
-   first time. Then a CI job per system with an AddressSanitizer run.
-2. Another program of ordinary code compared with the JVM, on what was not looked at yet
-   ("Looking for differences on purpose" above): each one so far found several differences.
-   Then a program of small loops over what ordinary code does, timed (what found the
-   search in accented text, `printf` and the sort): the seven benchmarks do not cover text
-   that is not ASCII, sorting, `StringBuilder`, `Regex` or number formatting. Worth keeping
-   as an eighth benchmark, with the JVM's times next to it.
-4. `Double` as text without `snprintf` (6); `sortedBy` without boxing its keys (6).
-5. An object that never leaves its function as plain locals (2): where the time of a small
-   local list is, more than in its array.
-6. The flags of the SDL3 module as value classes (8): the owner's decision.
+1. `interop/Posix` on Linux, so that the CI job is green and its AddressSanitizer step runs
+   ("Where the work stands").
+2. More of the Kotlin standard library's own tests under `tests/kotlin/`, with the helpers
+   they use; each difference they find is fixed in general.
+3. Another program of ordinary code compared with the JVM, on what was not looked at yet.
+4. The differences `DESIGN.md` still lists in section 12 (paths on Windows, the last digit of
+   `exp` and the like, case beyond U+FFFF, `Clock` and `Instant`, the `U` flag of `Regex`).
+5. `suspend` functions in full, which `sequence { }` and `iterator { }` wait for (part 8).
+6. Unit tests of the passes; files through kotlinx.io or okio (part 8).
+7. Speed, last: `Double` as text without `snprintf`, `sortedBy` without boxing its keys, an
+   object that never leaves its function as plain locals (parts 2 and 6); a program of small
+   loops over what ordinary code does, timed, as an eighth benchmark.
 
 ---------------------------------------------------------------------------
 ## Measuring
