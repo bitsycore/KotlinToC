@@ -88,8 +88,25 @@ limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
   Kotlin's own extensions, which a program compiled for the JVM reaches as the members Java 21
   gave lists;
 - the tests should also be run with Kotlin/Native, since a program is meant to behave the same
-  on the JVM, on Kotlin/Native and here: not started (it needs the Kotlin/Native compiler, a
-  download of several hundred megabytes, and a third run of each program).
+  on the JVM, on Kotlin/Native and here. Begun: `tools/native.sh` runs the tests that are plain
+  Kotlin with a Kotlin/Native compiler and compares what they print with what the C programs
+  printed (which the suite has compared with the JVM). First run, with Kotlin/Native 2.4.21 on
+  a Mac, of 97 programs: 73 print the same on all three; 18 differ, and in each it is the JVM
+  and Kotlin/Native that differ, ktc2 being with the JVM; 6 do not compile there. Where they
+  differ:
+  - the text of exceptions the library throws (`/ by zero` against null, `For input string`,
+    the bounds of `subList`), and the names of exception classes (`java.lang.` against `kotlin.`);
+  - what a list or a map notices of a change while it is gone over (`clear` in a loop is not
+    noticed there; a key added at the last entry is);
+  - `Float` as text (`1.5E10` against `1.5000001E10`);
+  - a template whose parts change what an earlier part shows: the JVM evaluates every part and
+    then turns them into text, Kotlin/Native goes part by part;
+  - the Unicode tables (another version), `readLine` at the end of the input, `Regex` in places.
+  What does not compile there: `String(chars)` and `ArrayIndexOutOfBoundsException` (deprecated
+  into errors), `@JvmInline`, `UninitializedPropertyAccessException` (internal there), a feature
+  of Kotlin 2.5. Open, for the owner: where the two differ ktc2 follows the JVM, because that is
+  what the suite compares with; whether the tests should avoid what differs, or say which of
+  the two they expect, is not decided. Not part of the suite or of the CI job yet.
 
 **The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
 Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be

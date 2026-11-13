@@ -28,6 +28,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
   - A run of the whole suite does not write the dumps (`ir.txt`, `kir/`: 25 MB a program); a run with `KTC2_TEST_FILTER` does, and `KTC2_TEST_DUMP=1` or `=0` says so directly.
   - `build/integration/times.txt` holds, for each program of the last run, the milliseconds of each step (`translate`, `jvmCompile`, `jvmRun`, `cCompile`, `cRun`).
   - `python tools/failures.py` summarizes the failures of the last run.
+  - `tools/native.sh [part of a path]`, after a run of the suite, runs the tests that are plain Kotlin with Kotlin/Native too (a compiler under `~/.konan`, or `KTC2_KONAN`) and lists those that print something else there or do not compile there: `build/native/report.txt`. About five minutes. Where the JVM and Kotlin/Native differ, ktc2 is with the JVM (`PLAN.md`, "Decided by the owner").
   - `tools/asan_all.sh [part of a name]` does that for every program a run of the suite left (several minutes); the CI job does it on Linux (`.github/workflows/test.yml`: the suite on Linux, macOS and Windows on every push).
   - `tools/asan.sh build/integration/<Name>` (or `build/try`) builds the generated C of one program with AddressSanitizer and without the pool, and runs it. On Windows it uses clang (mingw's gcc has no sanitizer).
   - `tools/try.sh <group/Name>` builds and runs one program as the tests do, through Gradle, so it always uses the current sources. `tools/try_cmake.sh <group/Name> [cmake args]` builds it through CMake (with no arguments on Windows: MSVC).
