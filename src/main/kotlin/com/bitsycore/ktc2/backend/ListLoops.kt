@@ -52,18 +52,34 @@ import com.bitsycore.ktc2.kir.*
  *
  * which is `HashMapCursor` written out. For the entries, the entry object is not made: the
  * loop must only ask it for its key and its value (`component1`, `component2`, `key`, `value`).
+ *
+ * And `list[i]`, `list[i] = x` and `list.size` on a list known to be an `ArrayList`, wherever
+ * they are, are written out as what `get`, `set` and `size` do:
+ *
+ * ```
+ * if ((i < 0) | (i >= l.length)) checkIndex(l, i)         // throws
+ * let x = l.array[i]
+ * ```
+ *
+ * so that what is left on the way of an index in range is one test: no call, and no test for
+ * an exception after it.
  */
 class ListLoops(private val mModule: KModule) {
 
 	/** Loops rewritten. Filled by [run]. */
 	var rewritten = 0
 
+	/** Calls to `get`, `set` and `size` written out. Filled by [run]. */
+	var accesses = 0
+
 	private var mNext = 0
 
 	/** What the loop needs of a list class. */
-	private class ListClass(val cls: KClass, val length: KField, val changes: KField, val array: KField, val check: KFunction)
+	private class ListClass(val cls: KClass, val length: KField, val changes: KField, val array: KField, val check: KFunction, val checkIndex: KFunction?)
 
 	private val mClasses = HashMap<KFunction, ListClass?>()
+
+	private val mListClasses = HashMap<KClass, ListClass?>()
 
 	fun run() {
 		for (vUnit in mModule.units) {
@@ -89,15 +105,76 @@ class ListLoops(private val mModule: KModule) {
 	/** The list class whose `iterator()` [inFunction] is; null for any other function. */
 	private fun listClassOf(inFunction: KFunction): ListClass? = mClasses.getOrPut(inFunction) {
 		val vClass = (inFunction.params.singleOrNull()?.type as? KClassType)?.cls ?: return@getOrPut null
+		if (inFunction.cName != vClass.cName + "_iterator") return@getOrPut null
+		listClass(vClass)
+	}
+
+	/** What is known of [inClass] when it is an `ArrayList`; null for another class. */
+	private fun listClass(inClass: KClass): ListClass? = mListClasses.getOrPut(inClass) {
+		val vClass = inClass
 		val vName = vClass.cName
 		if (vName != "kotlin_collections_ArrayList" && !vName.startsWith("kotlin_collections_ArrayList__")) return@getOrPut null
-		if (inFunction.cName != vName + "_iterator") return@getOrPut null
 		fun field(inName: String): KField? = vClass.fields.firstOrNull { it.cName == inName }
 		val vLength = field("length")?.takeIf { it.type == kInt } ?: return@getOrPut null
 		val vChanges = field("changes")?.takeIf { it.type == kInt } ?: return@getOrPut null
 		val vArray = field("array")?.takeIf { it.type is KArrayType && !it.isInline } ?: return@getOrPut null
 		val vCheck = vClass.unit.functions.firstOrNull { it.cName == vName + "_checkChanges" && it.params.size == 2 } ?: return@getOrPut null
-		ListClass(vClass, vLength, vChanges, vArray, vCheck)
+		val vCheckIndex = vClass.unit.functions.firstOrNull { it.cName == vName + "_checkIndex" && it.params.size == 2 && it.params[1].type == kInt }
+		ListClass(vClass, vLength, vChanges, vArray, vCheck, vCheckIndex)
+	}
+
+	/**
+	 * What replaces [inStatement] when its value is a call to `get`, `set` or `size` of an
+	 * `ArrayList`: the same thing written out, the statement last. Null for any other statement.
+	 */
+	private fun accessor(inStatement: KStmt): List<KStmt>? {
+		val vGiven = valueOf(inStatement) ?: return null
+		val vCall = callOf(vGiven) ?: return null
+		val vFunction = vCall.function
+		if (vFunction.isExternal || vFunction.dispatch != null) return null
+		val vList = (vFunction.params.firstOrNull()?.type as? KClassType)?.cls?.let { listClass(it) } ?: return null
+		val vName = vFunction.cName.removePrefix(vList.cls.cName)
+		val vElement = (vList.array.type as KArrayType).element
+		val vOut = ArrayList<KStmt>()
+		/** [inValue] where it can be read again: itself when it is a local, else a local that holds it. */
+		fun again(inValue: KExpr, inType: KType, inWhat: String): () -> KExpr {
+			var vInner = inValue
+			while (vInner is KRefCast) vInner = vInner.operand
+			val vLocal = if (vInner is KRead && inValue.type == inType) vInner.local else {
+				KLocal("ktc2_$inWhat${mNext++}", inType).also { vOut += KLet(it, if (inValue.type == inType) inValue else KRefCast(inValue, inType)) }
+			}
+			return { if (vLocal.type == inType) KRead(vLocal) else KRefCast(KRead(vLocal), inType) }
+		}
+		fun inPlace(inValue: KExpr, inWith: KExpr): KExpr = if (inValue is KRefCast) KRefCast(inPlace(inValue.operand, inWith), inValue.type) else inWith
+		val vListType = KClassType(vList.cls)
+		if (vName == "__get_size_" && vCall.arguments.size == 1 && vFunction.returnType == kInt) {
+			accesses++
+			return listOf(withValue(inStatement, inPlace(vGiven, KFieldRead(vCall.arguments[0], vList.length)))!!)
+		}
+		val vCheckIndex = vList.checkIndex ?: return null
+		val vIsGet = vName == "_get" && vCall.arguments.size == 2 && vFunction.returnType == vElement
+		val vIsSet = vName == "_set" && vCall.arguments.size == 3 && inStatement is KEval && vFunction.params[2].type == vElement
+		if (!vIsGet && !vIsSet) return null
+		if (vFunction.params[1].type != kInt) return null
+		val vHeld = again(vCall.arguments[0], vListType, "list")
+		val vAt = again(vCall.arguments[1], kInt, "at")
+		vOut += KIf(
+			KBinary(
+				KBinaryOp.OR,
+				KBinary(KBinaryOp.LT, vAt(), KConst(0, kInt), KPrim.INT, kBool),
+				KBinary(KBinaryOp.GE, vAt(), KFieldRead(vHeld(), vList.length), KPrim.INT, kBool),
+				KPrim.BOOLEAN, kBool,
+			),
+			listOf(KEval(KCall(vCheckIndex, listOf(vHeld(), vAt())))),
+			emptyList(),
+		)
+		vOut += if (vIsGet) {
+			withValue(inStatement, inPlace(vGiven, KIndexRead(KFieldRead(vHeld(), vList.array), vAt(), vElement).also { it.isChecked = true }))!!
+		} else {
+			KIndexSet(KFieldRead(vHeld(), vList.array), vAt(), vCall.arguments[2]).also { it.isChecked = true }
+		}
+		accesses++
+		return vOut
 	}
 
 	private fun callOf(inValue: KExpr?): KCall? = when (inValue) {
@@ -126,6 +203,12 @@ class ListLoops(private val mModule: KModule) {
 				val vNew = vOver.last() as KLoop
 				vOut += KLoop(vNew.id, block(vNew.body, inReads, inSets), block(vNew.latch, inReads, inSets))
 				vIndex += 2
+				continue
+			}
+			val vWritten = accessor(vStatement)
+			if (vWritten != null) {
+				vOut += vWritten
+				vIndex++
 				continue
 			}
 			vOut += when (vStatement) {
