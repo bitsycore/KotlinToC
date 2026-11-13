@@ -8,6 +8,7 @@
 #   cmd //c "call \"<Visual Studio>/VC/Auxiliary/Build/vcvars64.bat\" && bash tools/msvc_all.sh"
 cd "$(dirname "$0")/.." || exit 1
 command -v cl > /dev/null || { echo "cl is not on the path"; exit 1; }
+echo "$(ls build/integration | wc -l) entries under build/integration, $(ls build/integration/*/program.exe 2>/dev/null | wc -l) with a program, $(ls build/integration/*/c/ktc2_all.c 2>/dev/null | wc -l) with the C as one file"
 vFailed=0
 vCount=0
 vKnown=0
