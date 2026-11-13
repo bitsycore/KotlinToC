@@ -257,10 +257,18 @@ abstract class IntegrationPart(private val mShard: Int) {
 		lap("cRun")
 		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")
 
-		assertEquals(vExpected, vActual, "C output differs from the JVM for $inName")
+		assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
 	}
 
 	/** Runs a process and returns its stdout with normalized line endings; fails on a non-zero exit. */
+	/**
+	 * [inOutput] without what differs between platforms and is no difference of behaviour. The
+	 * standard exceptions are classes of `java.lang` and `java.util` on the JVM and of `kotlin`
+	 * here and on Kotlin/Native: a program that prints one prints either name.
+	 */
+	private fun samePlatform(inOutput: String): String =
+		inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")
+
 	private fun run(inCommand: List<String>, inDirectory: File): String {
 		val vErrors = File.createTempFile("ktc2", ".err")
 		try {

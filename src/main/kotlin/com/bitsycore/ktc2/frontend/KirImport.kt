@@ -1087,27 +1087,21 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		private set
 
 	/**
-	 * The name a class reports at run time (`toString`, an uncaught exception): its qualified
-	 * name, and for the standard exceptions the `java.lang` / `java.util` name they have on
-	 * the JVM, so that messages read the same.
+	 * The name a class reports at run time (`toString`, an uncaught exception, `x::class`): its
+	 * Kotlin name, as on Kotlin/Native. (On the JVM the standard exceptions are the classes of
+	 * `java.lang` and `java.util` and say so; the tests take either.) The few exceptions the
+	 * platform layer has to declare in package `java.lang` are `kotlin.` ones too.
 	 */
 	private fun jvmNameOf(inClass: IrClass): String {
 		val vName = inClass.kotlinFqName.asString()
-		if (inClass.fileOrNull?.packageFqName?.asString() != "kotlin" || inClass.parent !is IrFile) return vName
-		return when (val vSimple = inClass.name.asString()) {
-			"NoSuchElementException", "ConcurrentModificationException" -> "java.util.$vSimple"
-			"Error", "Exception", "RuntimeException", "IllegalArgumentException", "IllegalStateException", "IndexOutOfBoundsException",
-			"UnsupportedOperationException", "NumberFormatException", "NullPointerException", "ClassCastException", "AssertionError",
-			"ArithmeticException" -> "java.lang.$vSimple"
-			else -> vName
-		}
+		return if (vName.startsWith("java.lang.")) "kotlin." + vName.removePrefix("java.lang.") else vName
 	}
 
 	/** `kotlin.Throwable`: the base of every exception, holding `message` and `cause` (same layout as `ktc2_Throwable`). */
 	internal fun throwableBase(): KClass {
 		mThrowableBase?.let { return it }
 		val vUnit = KUnit("kotlin", "Throwable")
-		val vClass = KClass("kotlin_Throwable", vUnit, null, "java.lang.Throwable")
+		val vClass = KClass("kotlin_Throwable", vUnit, null, "kotlin.Throwable")
 		vUnit.cls = vClass
 		mThrowableBase = vClass
 		throwableMessageField = KField("message", KStringType, vClass, isImmutable = true)

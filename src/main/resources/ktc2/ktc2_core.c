@@ -35,30 +35,30 @@ KTC2_FAILS void ktc2_fail_div_zero(void)
 #ifdef KTC2_CHECKS_THROW
 	ktc2_internal_throwDivideByZero();
 #else
-	fail("java.lang.ArithmeticException", "/ by zero");
+	fail("kotlin.ArithmeticException", "/ by zero");
 #endif
 }
 
 _Noreturn void ktc2_fail_null(void)
 {
-	fail("java.lang.NullPointerException", NULL);
+	fail("kotlin.NullPointerException", NULL);
 }
 
 _Noreturn void ktc2_fail_cast(void)
 {
-	fail("java.lang.ClassCastException", NULL);
+	fail("kotlin.ClassCastException", NULL);
 }
 
 _Noreturn void ktc2_fail_dispatch(void)
 {
-	fail("java.lang.AbstractMethodError", NULL);
+	fail("kotlin.AbstractMethodError", NULL);
 }
 
 _Noreturn void ktc2_fail_dispatch_of(const char* function, uint32_t typeId)
 {
 	char text[256];
 	snprintf(text, sizeof text, "%s on %s", function, typeId == 0 ? "null" : typeId < ktc2_type_count ? ktc2_types[typeId].name : "?");
-	fail(typeId == 0 ? "java.lang.NullPointerException" : "java.lang.AbstractMethodError", text);
+	fail(typeId == 0 ? "kotlin.NullPointerException" : "kotlin.AbstractMethodError", text);
 }
 
 _Noreturn void ktc2_fail_when(void)
@@ -70,7 +70,7 @@ void ktc2_check_step(int64_t step)
 {
 	if (step > 0) return;
 	fflush(stdout);
-	fprintf(stderr, "Exception in thread \"main\" java.lang.IllegalArgumentException: Step must be positive, was: %" PRId64 ".\n", step);
+	fprintf(stderr, "Exception in thread \"main\" kotlin.IllegalArgumentException: Step must be positive, was: %" PRId64 ".\n", step);
 	exit(1);
 }
 
@@ -180,7 +180,7 @@ static ktc2_Obj* arena_alloc(Arena* arena, size_t size)
 	if (!block || block->size - block->used < need) {
 		size_t blockSize = arena->blockSize > need ? arena->blockSize : need;
 		block = malloc(ARENA_ALIGN(sizeof *block) + blockSize);
-		if (!block) fail("java.lang.OutOfMemoryError", NULL);
+		if (!block) fail("kotlin.OutOfMemoryError", NULL);
 		block->next = arena->blocks;
 		block->used = 0;
 		block->size = blockSize;
@@ -204,7 +204,7 @@ static ktc2_Obj* arena_alloc(Arena* arena, size_t size)
 int64_t ktc2_arenaEnter(int32_t size)
 {
 	Arena* arena = malloc(sizeof *arena);
-	if (!arena) fail("java.lang.OutOfMemoryError", NULL);
+	if (!arena) fail("kotlin.OutOfMemoryError", NULL);
 	arena->outer = arena_top;
 	arena->blocks = NULL;
 	arena->blockSize = size > 256 ? (size_t)size : 256;
@@ -314,7 +314,7 @@ static void* pool_take(size_t size)
 	if (pool_left < rounded) {
 		/* What is left of the last piece is too small for this size: it is given up. */
 		pool_room = malloc(POOL_PIECE);
-		if (!pool_room) fail("java.lang.OutOfMemoryError", NULL);
+		if (!pool_room) fail("kotlin.OutOfMemoryError", NULL);
 		pool_left = POOL_PIECE;
 	}
 	void* taken = pool_room;
@@ -369,12 +369,12 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 #endif
 		if (pooled) {
 			/* Where the object goes back to is decided by its type alone: it must be of the size of its type. */
-			if (size > pooled) fail("java.lang.InternalError", "an object larger than its type");
+			if (size > pooled) fail("kotlin.InternalError", "an object larger than its type");
 			object = pool_take(pooled);
 			memset(object, 0, pooled);
 		} else {
 			object = calloc(1, size);
-			if (!object) fail("java.lang.OutOfMemoryError", NULL);
+			if (!object) fail("kotlin.OutOfMemoryError", NULL);
 		}
 		object->rc = 1;
 	}
@@ -616,7 +616,7 @@ int ktc2_exit(void)
 static _Noreturn void fail_range(int32_t index, int32_t length)
 {
 	fflush(stdout);
-	fprintf(stderr, "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, length);
+	fprintf(stderr, "Exception in thread \"main\" kotlin.ArrayIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, length);
 	exit(1);
 }
 
@@ -642,7 +642,7 @@ ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)
 	if (length < 0) {
 		char text[16];
 		snprintf(text, sizeof text, "%" PRId32, length);
-		fail("java.lang.NegativeArraySizeException", text);
+		fail("kotlin.NegativeArraySizeException", text);
 	}
 	/* Room for at least one element, so that a read with a bad index has something to yield. */
 	ktc2_Array* array = ktc2_alloc(sizeof(ktc2_Array) + (size_t)(length > 0 ? length : 1) * elementSize, typeId);
@@ -657,7 +657,7 @@ void ktc2_array_assign(ktc2_Array* slot, int32_t length, uint32_t typeId, size_t
 	if (source->length != length) {
 		char text[96];
 		snprintf(text, sizeof text, "an array of %" PRId32 " elements assigned to inline storage of %" PRId32, source->length, length);
-		fail("java.lang.IllegalArgumentException", text);
+		fail("kotlin.IllegalArgumentException", text);
 	}
 	void** incoming = (void**)(source + 1);
 	void** current = (void**)(slot + 1);
@@ -780,7 +780,7 @@ uint16_t ktc2_str_get(const ktc2_String* s, int32_t index)
 		return 0;
 #endif
 		fflush(stdout);
-		fprintf(stderr, "Exception in thread \"main\" java.lang.StringIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, s->length);
+		fprintf(stderr, "Exception in thread \"main\" kotlin.StringIndexOutOfBoundsException: Index %" PRId32 " out of bounds for length %" PRId32 "\n", index, s->length);
 		exit(1);
 	}
 	if (s->size == s->length) return (unsigned char)s->bytes[index];
@@ -842,7 +842,7 @@ int32_t ktc2_str_hashCode(const ktc2_String* s)
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name)
 {
 	fflush(stdout);
-	fprintf(stderr, "Exception in thread \"main\" java.lang.IllegalArgumentException: No enum constant %s\n", name->bytes);
+	fprintf(stderr, "Exception in thread \"main\" kotlin.IllegalArgumentException: No enum constant %s\n", name->bytes);
 	exit(1);
 }
 
@@ -1079,7 +1079,7 @@ void ktc2_sb_text(ktc2_Sb* sb, const char* text, int32_t size, int32_t length)
 		int32_t capacity = sb->capacity * 2;
 		while (capacity < sb->size + size) capacity *= 2;
 		char* data = malloc((size_t)capacity);
-		if (!data) fail("java.lang.OutOfMemoryError", NULL);
+		if (!data) fail("kotlin.OutOfMemoryError", NULL);
 		memcpy(data, sb->data, (size_t)sb->size);
 		if (sb->data != sb->local) free(sb->data);
 		sb->data = data;
@@ -1633,7 +1633,7 @@ ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
 		return NULL;
 #endif
 		fflush(stdout);
-		fprintf(stderr, "Exception in thread \"main\" java.lang.StringIndexOutOfBoundsException: begin %" PRId32 ", end %" PRId32 ", length %" PRId32 "\n", start, end, s->length);
+		fprintf(stderr, "Exception in thread \"main\" kotlin.StringIndexOutOfBoundsException: begin %" PRId32 ", end %" PRId32 ", length %" PRId32 "\n", start, end, s->length);
 		exit(1);
 	}
 	if (start == 0 && end == s->length) return ktc2_retain(s);
@@ -1748,7 +1748,7 @@ ktc2_Array* ktc2_readLineBytes(void)
 	fflush(stdout);
 	while ((next = getchar()) != EOF && next != '\n') {
 		char byte = (char)next;
-		if (!buffer_add(&line, &size, &capacity, &byte, 1)) fail("java.lang.OutOfMemoryError", NULL);
+		if (!buffer_add(&line, &size, &capacity, &byte, 1)) fail("kotlin.OutOfMemoryError", NULL);
 	}
 	if (next == EOF && size == 0) {
 		free(line);
@@ -1820,7 +1820,7 @@ void* ktc2_unbox_ptr(ktc2_Obj* object)
 void* ktc2_scope_alloc(void* head, int64_t size)
 {
 	void** block = calloc(1, 16 + (size_t)size);
-	if (!block) fail("java.lang.OutOfMemoryError", NULL);
+	if (!block) fail("kotlin.OutOfMemoryError", NULL);
 	block[0] = head;
 	return block;
 }
@@ -1872,7 +1872,7 @@ static void weak_insert(WeakCell* cell)
 	if (weak_cell_count >= weak_bucket_count) {
 		size_t count = weak_bucket_count ? weak_bucket_count * 2 : 64;
 		WeakCell** buckets = calloc(count, sizeof *buckets);
-		if (!buckets) fail("java.lang.OutOfMemoryError", NULL);
+		if (!buckets) fail("kotlin.OutOfMemoryError", NULL);
 		for (size_t i = 0; i < weak_bucket_count; i++) {
 			for (WeakCell* moved = weak_buckets[i]; moved;) {
 				WeakCell* next = moved->next;
@@ -2051,7 +2051,7 @@ int64_t ktc2_threadStart(ktc2_Obj* thread)
 	ktc2_retain(thread);
 	ktc2_atomic_add(&threads_running, 1);
 	HANDLE handle = CreateThread(NULL, 0, thread_main, thread, 0, NULL);
-	if (!handle) fail("java.lang.OutOfMemoryError", "unable to create native thread");
+	if (!handle) fail("kotlin.OutOfMemoryError", "unable to create native thread");
 	return (int64_t)(intptr_t)handle;
 }
 
@@ -2075,7 +2075,7 @@ int64_t ktc2_threadStart(ktc2_Obj* thread)
 	ktc2_threaded = 1;
 	ktc2_retain(thread);
 	ktc2_atomic_add(&threads_running, 1);
-	if (!handle || pthread_create(handle, NULL, thread_main, thread) != 0) fail("java.lang.OutOfMemoryError", "unable to create native thread");
+	if (!handle || pthread_create(handle, NULL, thread_main, thread) != 0) fail("kotlin.OutOfMemoryError", "unable to create native thread");
 	return (int64_t)(intptr_t)handle;
 }
 
@@ -2223,7 +2223,7 @@ void ktc2_monitorEnter(ktc2_Obj* lock)
 		Monitor* monitor = *link;
 		if (!monitor) {
 			monitor = calloc(1, sizeof *monitor);
-			if (!monitor) fail("java.lang.OutOfMemoryError", NULL);
+			if (!monitor) fail("kotlin.OutOfMemoryError", NULL);
 			monitor->object = lock;
 			*link = monitor;
 		}

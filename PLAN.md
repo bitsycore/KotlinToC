@@ -104,9 +104,15 @@ limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
   - the Unicode tables (another version), `readLine` at the end of the input, `Regex` in places.
   What does not compile there: `String(chars)` and `ArrayIndexOutOfBoundsException` (deprecated
   into errors), `@JvmInline`, `UninitializedPropertyAccessException` (internal there), a feature
-  of Kotlin 2.5. Open, for the owner: where the two differ ktc2 follows the JVM, because that is
-  what the suite compares with; whether the tests should avoid what differs, or say which of
-  the two they expect, is not decided. Not part of the suite or of the CI job yet.
+  of Kotlin 2.5. Not part of the suite or of the CI job yet.
+- where the JVM and Kotlin/Native differ because of their platform, either is accepted, as
+  between those two, and Kotlin/Native is the one to look at first. Done for the names of the
+  standard exceptions: they are `kotlin.` ones here, as there, and the suite takes either name.
+  To do the same for the rest (the text of messages, `Float` as text, what a collection
+  notices of a change): the way Kotlin Multiplatform tests are written, with `kotlin.test`
+  assertions in common code instead of printed output compared, so that a test says what must
+  hold everywhere and nothing of what a platform is free in. That needs `kotlin.test` here
+  (its common sources and an asserter for ktc2): proposed, not started.
 
 **The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
 Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be
