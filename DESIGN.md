@@ -31,7 +31,7 @@ sources + library sources + generated bindings
   -> KirImporter/BodyBuilder IR -> KIR, from main, monomorphizing        frontend/KirImport.kt, BodyLowering.kt
   -> CycleLint               warns about classes that can form cycles    backend/CycleLint.kt
   -> Devirtualize            dispatched calls -> direct calls            backend/Devirtualize.kt
-  -> ListLoops               `for` over an ArrayList as a loop over its storage   backend/ListLoops.kt
+  -> ListLoops               `for` over an ArrayList or a HashMap as a loop over its storage   backend/ListLoops.kt
   -> RangeChecks             array accesses proven in range              backend/RangeChecks.kt
   -> ExceptionLowering       throw/try -> pending value + tests          backend/ExceptionLowering.kt
   -> EscapeAnalysis          objects to the frame, results in place      backend/EscapeAnalysis.kt
@@ -608,7 +608,11 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - `ListLoops` finds the platform `ArrayList` by its name and by the names of what it needs
   of it (the fields `length`, `changes`, `array`, the function `checkChanges`): rename one in
-  `Ktc2Collections.kt` and the loops silently go back to the iterator. The loop it writes
+  `Ktc2Collections.kt` and the loops silently go back to the iterator. The same for `HashMap`: the
+  iterator classes `HashMapEntryIterator`, `HashMapKeyIterator`, `HashMapValueIterator` and
+  their field `owner`, the fields `keyArray`, `valueArray`, `changes`, the functions
+  `liveFrom` and `checkChanges` (`Ktc2HashMap.kt`), and the accessors of an entry by the
+  names `component1`, `component2`, `key`, `value`. The loop it writes
   reads the storage without a test, which holds because the storage never shrinks and every
   change of size adds to `changes`: a new way to change the size has to add to it too.
 - A function of the C runtime that can leave with an exception has to be named in

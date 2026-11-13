@@ -184,6 +184,24 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 
 	internal fun entryLimit(): Int = used
 
+	/**
+	 * The index of the first live entry at or after [from] (which is not negative), or -1. For
+	 * the cursor, and for the loop ktc2 writes in its place (`ListLoops`), which finds this
+	 * function and [checkChanges] by their names.
+	 */
+	internal fun liveFrom(from: Int): Int {
+		val vLive = liveArray
+		val vLimit = used
+		var vIndex = from
+		while (vIndex < vLimit && !vLive.at(vIndex)) vIndex++
+		return if (vIndex < vLimit) vIndex else -1
+	}
+
+	/** Fails when a key was added or removed since [expected] was read from [changes]. */
+	internal fun checkChanges(expected: Int) {
+		if (changes != expected) throw ConcurrentModificationException()
+	}
+
 	internal fun isLiveEntry(index: Int): Boolean = liveArray[index]
 
 	internal fun keyAt(index: Int): K = keyArray[index]
@@ -247,24 +265,17 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
  * removed otherwise than through this cursor.
  */
 private class HashMapCursor<K, V>(private val map: HashMap<K, V>) {
-	private var coming = liveFrom(0)
+	private var coming = map.liveFrom(0)
 	private var last = -1
 	private var expected = map.changes
-
-	/** The index of the first live entry at or after [from], or -1. */
-	private fun liveFrom(from: Int): Int {
-		var vIndex = from
-		while (vIndex < map.entryLimit() && !map.isLiveEntry(vIndex)) vIndex++
-		return if (vIndex < map.entryLimit()) vIndex else -1
-	}
 
 	fun hasNext(): Boolean = coming >= 0
 
 	fun next(): Int {
-		if (map.changes != expected) throw ConcurrentModificationException()
+		map.checkChanges(expected)
 		if (coming < 0) throw NoSuchElementException()
 		last = coming
-		coming = liveFrom(coming + 1)
+		coming = map.liveFrom(coming + 1)
 		return last
 	}
 

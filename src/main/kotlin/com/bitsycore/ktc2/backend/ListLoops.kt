@@ -34,6 +34,24 @@ import com.bitsycore.ktc2.kir.*
  *
  * The class is recognized by its name and by what it must have for this: the fields `length`,
  * `changes` and `array`, and `checkChanges`.
+ *
+ * A `HashMap` gets the same, for `for ((k, v) in map)`, `map.keys` and `map.values` (and what
+ * is built on it: `LinkedHashMap`, the sets). There the loop is known by the class of its
+ * iterator, whichever way it was obtained; the iterator is still made, once, and the map is
+ * read from it:
+ *
+ * ```
+ * let m = it.owner; let seen = m.changes; let coming = liveFrom(m, 0)
+ * loop {
+ *     if (coming < 0) break
+ *     if (m.changes != seen) checkChanges(m, seen)        // throws
+ *     let at = coming; coming = liveFrom(m, at + 1)
+ *     let k = m.keyArray[at]; let v = m.valueArray[at]; body
+ * }
+ * ```
+ *
+ * which is `HashMapCursor` written out. For the entries, the entry object is not made: the
+ * loop must only ask it for its key and its value (`component1`, `component2`, `key`, `value`).
  */
 class ListLoops(private val mModule: KModule) {
 
@@ -102,7 +120,7 @@ class ListLoops(private val mModule: KModule) {
 		while (vIndex < inBlock.size) {
 			val vStatement = inBlock[vIndex]
 			val vLoop = inBlock.getOrNull(vIndex + 1) as? KLoop
-			val vOver = if (vStatement is KLet && vLoop != null) over(vStatement, vLoop, inReads, inSets) else null
+			val vOver = if (vStatement is KLet && vLoop != null) over(vStatement, vLoop, inReads, inSets) ?: overMap(vStatement, vLoop, inReads, inSets) else null
 			if (vOver != null) {
 				vOut += vOver.dropLast(1)
 				val vNew = vOver.last() as KLoop
@@ -170,7 +188,157 @@ class ListLoops(private val mModule: KModule) {
 		)
 	}
 
+	// ==================
+	// MARK: Maps
+	// ==================
+
+	/** What the loop needs of a map class and of the class of one of its iterators. */
+	private class MapClass(val owner: KField, val keys: KField, val values: KField, val changes: KField, val liveFrom: KFunction, val check: KFunction)
+
+	private val mMapClasses = HashMap<KClass, MapClass?>()
+
+	/** What is known of the map behind the iterator class [inIterator]; null when it is no iterator of a `HashMap`. */
+	private fun mapClassOf(inIterator: KClass): MapClass? = mMapClasses.getOrPut(inIterator) {
+		val vOwner = inIterator.fields.firstOrNull { it.cName == "owner" } ?: return@getOrPut null
+		val vMap = (vOwner.type as? KClassType)?.cls ?: return@getOrPut null
+		val vName = vMap.cName
+		if (vName != "kotlin_collections_HashMap" && !vName.startsWith("kotlin_collections_HashMap__")) return@getOrPut null
+		fun array(inName: String): KField? = vMap.fields.firstOrNull { it.cName == inName && it.type is KArrayType && !it.isInline }
+		val vKeys = array("keyArray") ?: return@getOrPut null
+		val vValues = array("valueArray") ?: return@getOrPut null
+		val vChanges = vMap.fields.firstOrNull { it.cName == "changes" && it.type == kInt } ?: return@getOrPut null
+		val vLiveFrom = vMap.unit.functions.firstOrNull { it.cName == vName + "_liveFrom" && it.params.size == 2 && it.returnType == kInt } ?: return@getOrPut null
+		val vCheck = vMap.unit.functions.firstOrNull { it.cName == vName + "_checkChanges" && it.params.size == 2 } ?: return@getOrPut null
+		MapClass(vOwner, vKeys, vValues, vChanges, vLiveFrom, vCheck)
+	}
+
+	/** Which of the three iterators of a map the class named [inName] is: "Entry", "Key", "Value"; null for another class. */
+	private fun iteratorKind(inName: String): String? = listOf("Entry", "Key", "Value").firstOrNull {
+		val vClass = "kotlin_collections_HashMap${it}Iterator"
+		inName == vClass || inName.startsWith(vClass + "__")
+	}
+
+	/** [inStatement] with [inValue] where its own value was; null for a statement that has none. */
+	private fun withValue(inStatement: KStmt, inValue: KExpr): KStmt? = when (inStatement) {
+		is KLet -> KLet(inStatement.local, inValue)
+		is KSet -> KSet(inStatement.local, inValue, inStatement.releasesOld)
+		is KGlobalSet -> KGlobalSet(inStatement.global, inValue, inStatement.releasesOld)
+		is KFieldSet -> KFieldSet(inStatement.target, inStatement.field, inValue, inStatement.releasesOld)
+		is KIndexSet -> KIndexSet(inStatement.array, inStatement.index, inValue, inStatement.releasesOld).also { it.isChecked = inStatement.isChecked }
+		is KEval -> KEval(inValue)
+		is KReturn -> KReturn(inValue)
+		else -> null
+	}
+
+	private fun valueOf(inStatement: KStmt): KExpr? = when (inStatement) {
+		is KLet -> inStatement.init
+		is KSet -> inStatement.value
+		is KGlobalSet -> inStatement.value
+		is KFieldSet -> inStatement.value
+		is KIndexSet -> inStatement.value
+		is KEval -> inStatement.expr
+		is KReturn -> inStatement.value
+		else -> null
+	}
+
+	/**
+	 * [inBlock] with each call that asks the entry [inEntry] for its key or its value replaced by
+	 * what [inKey] and [inValue] give. [outCount] counts them; it is set to a negative number
+	 * when one of them does not have the type of what would replace it.
+	 */
+	private fun withoutEntry(inBlock: List<KStmt>, inEntry: KLocal, inKey: () -> KExpr, inValue: () -> KExpr, outCount: IntArray): List<KStmt> = inBlock.map { vStatement ->
+		when (vStatement) {
+			is KIf -> KIf(vStatement.condition, withoutEntry(vStatement.thenBlock, inEntry, inKey, inValue, outCount), withoutEntry(vStatement.elseBlock, inEntry, inKey, inValue, outCount))
+			is KLoop -> KLoop(vStatement.id, withoutEntry(vStatement.body, inEntry, inKey, inValue, outCount), withoutEntry(vStatement.latch, inEntry, inKey, inValue, outCount))
+			is KTryRegion -> KTryRegion(vStatement.id, withoutEntry(vStatement.body, inEntry, inKey, inValue, outCount))
+			else -> {
+				val vGiven = valueOf(vStatement)
+				val vCall = callOf(vGiven)
+				val vPart = when {
+					isOn(vCall, inEntry, kEntryKey) -> inKey()
+					isOn(vCall, inEntry, kEntryValue) -> inValue()
+					else -> null
+				}
+				if (vPart == null || vCall == null) {
+					vStatement
+				} else if (vPart.type != vCall.function.returnType || outCount[0] < 0) {
+					outCount[0] = -1
+					vStatement
+				} else {
+					outCount[0]++
+					fun inPlace(inExpr: KExpr): KExpr = if (inExpr is KRefCast) KRefCast(inPlace(inExpr.operand), inExpr.type) else vPart
+					withValue(vStatement, inPlace(vGiven!!))!!
+				}
+			}
+		}
+	}
+
+	/** As [over], for a loop over the entries, the keys or the values of a `HashMap`. */
+	private fun overMap(inLet: KLet, inLoop: KLoop, inReads: Map<KLocal, Int>, inSets: Map<KLocal, Int>): List<KStmt>? {
+		val vIterator = inLet.local
+		if (inReads[vIterator] != 2 || vIterator in inSets || inLet.init == null) return null
+		val vAsk = inLoop.body.getOrNull(0) as? KLet ?: return null
+		val vAskCall = callOf(vAsk.init)
+		if (vAsk.local in inSets || inReads[vAsk.local] != 1 || !isOn(vAskCall, vIterator, kHasNext)) return null
+		val vIteratorClass = (vAskCall!!.function.params[0].type as? KClassType)?.cls ?: return null
+		val vKind = iteratorKind(vIteratorClass.cName) ?: return null
+		val vMap = mapClassOf(vIteratorClass) ?: return null
+		val vLeave = inLoop.body.getOrNull(1) as? KIf ?: return null
+		val vNot = vLeave.condition as? KUnary ?: return null
+		if (vNot.op != KUnaryOp.NOT || (vNot.operand as? KRead)?.local !== vAsk.local) return null
+		if (vLeave.elseBlock.isNotEmpty() || (vLeave.thenBlock.singleOrNull() as? KBreak)?.loopId != inLoop.id) return null
+		val vTake = inLoop.body.getOrNull(2) as? KLet ?: return null
+		val vNextCall = callOf(vTake.init) ?: return null
+		if (!isOn(vNextCall, vIterator, kNext) || vNextCall.function.params[0].type != KClassType(vIteratorClass)) return null
+
+		val vNumber = mNext++
+		val vHeld = KLocal("ktc2_map$vNumber", vMap.owner.type)
+		val vSeen = KLocal("ktc2_seen$vNumber", kInt)
+		val vComing = KLocal("ktc2_coming$vNumber", kInt)
+		val vAt = KLocal("ktc2_at$vNumber", kInt)
+		fun map(): KExpr = KRead(vHeld)
+		fun element(inArray: KField): KExpr =
+			KIndexRead(KFieldRead(map(), inArray), KRead(vAt), (inArray.type as KArrayType).element).also { it.isChecked = true }
+
+		val vRest = inLoop.body.drop(3)
+		val vElements: List<KStmt> = if (vKind == "Entry") {
+			// The entry is only asked for its key and its value: it is not made.
+			val vEntry = vTake.local
+			if (vEntry in inSets) return null
+			val vCount = IntArray(1)
+			val vBody = withoutEntry(vRest, vEntry, { element(vMap.keys) }, { element(vMap.values) }, vCount)
+			if (vCount[0] < 0 || vCount[0] != (inReads[vEntry] ?: 0) || inLoop.latch.any { vLatch -> listOf(vLatch).anyStatement { vInner -> vInner.ownExpressions().any { vRoot -> vRoot.anyNode { it is KRead && it.local === vEntry } } } }) return null
+			vBody
+		} else {
+			val vArray = if (vKind == "Key") vMap.keys else vMap.values
+			if (vNextCall.function.returnType != (vArray.type as KArrayType).element) return null
+			val vRead = element(vArray)
+			fun inPlace(inValue: KExpr): KExpr = if (inValue is KRefCast) KRefCast(inPlace(inValue.operand), inValue.type) else vRead
+			listOf<KStmt>(KLet(vTake.local, inPlace(vTake.init!!))) + vRest
+		}
+		val vBody = listOf(
+			KIf(KBinary(KBinaryOp.LT, KRead(vComing), KConst(0, kInt), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
+			KIf(
+				KBinary(KBinaryOp.NE, KFieldRead(map(), vMap.changes), KRead(vSeen), KPrim.INT, kBool),
+				listOf(KEval(KCall(vMap.check, listOf(map(), KRead(vSeen))))),
+				emptyList(),
+			),
+			KLet(vAt, KRead(vComing)),
+			KSet(vComing, KCall(vMap.liveFrom, listOf(map(), KBinary(KBinaryOp.ADD, KRead(vAt), KConst(1, kInt), KPrim.INT, kInt)))),
+		) + vElements
+		rewritten++
+		return listOf(
+			inLet,
+			KLet(vHeld, KFieldRead(KRefCast(KRead(vIterator), KClassType(vIteratorClass)), vMap.owner)),
+			KLet(vSeen, KFieldRead(map(), vMap.changes)),
+			KLet(vComing, KCall(vMap.liveFrom, listOf(map(), KConst(0, kInt)))),
+			KLoop(inLoop.id, vBody, inLoop.latch),
+		)
+	}
+
 	private companion object {
+		val kEntryKey = Regex("component1__Entry|_get_key_")
+		val kEntryValue = Regex("component2__Entry|_get_value_")
 		val kInt = KPrimType(KPrim.INT)
 		val kBool = KPrimType(KPrim.BOOLEAN)
 		val kHasNext = Regex("_hasNext(__|$)")
