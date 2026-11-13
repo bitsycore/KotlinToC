@@ -69,6 +69,8 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - **Try another compiler**: `tools/try_cmake.sh <group/Name>` for MSVC; `KTC2_CC=clang tools/try.sh <group/Name>` for clang.
 
 ## Things that cost time before
+- After a run of Gradle on the other system of a checkout shared between Windows and WSL, the Kotlin compile of ktc2 itself fails with "Expected absolute path but found relative path": delete `build/kotlin` and `build/classes/kotlin`.
+- The tests of the Kotlin standard library (`tests/kotlin/`) have to be of the tag of the library ktc2 compiles (`v2.5.0-RC`): a file of another version fails on the JVM as well, which looks like a difference and is not one.
 - Several Kotlin compilers at once slow each other down, through memory and not through the processors (8 at once: each takes twice as long; the machine is half idle meanwhile). The suite gains about 3.5 times from its processes, not 8 or 12, and a first compilation in each costs half a minute then. Do not expect more from more processes.
 - A change that makes a library function unable to throw changes the shape of its callers (no test after the call), and a pass that only knew the old shape then quietly stops applying: the counts of `tools/bench.py --compare` show it at once (retains of Collections went from 8.7 M to 38.7 M once). Compare the counts, not only the times, after any change to the library or to `ExceptionLowering`.
 - A function and the forms made of it (`name__into`, `__b`, `__m`, `__o`) share their statements: a pass that rewrites a statement in place rewrites it in each of them. What it adds to one body (a declaration) has to be added to the others (`declareRooms` in `EscapeAnalysis` is the example).

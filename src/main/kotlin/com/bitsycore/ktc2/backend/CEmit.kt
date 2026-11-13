@@ -1085,7 +1085,8 @@ class CEmitter(private val mModule: KModule) {
 				KBinaryOp.USHR -> helper("ushr")
 				KBinaryOp.AND -> infix("&")
 				KBinaryOp.OR -> infix("|")
-				KBinaryOp.XOR -> infix("^")
+				// Between two integers written out, `^` reads to a C compiler like a power meant and gets a warning: with a cast it does not.
+				KBinaryOp.XOR -> if (inExpr.left is KConst && inExpr.right is KConst) "((${cType(inExpr.type)})$vLeft ^ $vRight)" else infix("^")
 				KBinaryOp.LT -> infix("<")
 				KBinaryOp.LE -> infix("<=")
 				KBinaryOp.GT -> infix(">")

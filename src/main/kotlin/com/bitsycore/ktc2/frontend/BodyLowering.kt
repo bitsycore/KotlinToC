@@ -1029,6 +1029,9 @@ internal class BodyBuilder(
 			} else if (vValue.type is KOptType && vTo is KPrimType) {
 				// `x as V` where x is a `V?` and V a number: the number that is there.
 				coerce(vValue, vTo)
+			} else if (vValue.type is KPrimType && vTo is KOptType && vTo.prim == (vValue.type as KPrimType).prim) {
+				// `1 as Int?`: the number, as one that may be null.
+				coerce(vValue, vTo)
 			} else if (vValue.type is KRefType && vTo is KStructType) {
 				nullCastCheck(inExpression, vValue)
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
@@ -2016,6 +2019,16 @@ internal class BodyBuilder(
 		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "kotlinx.cinterop.internal") {
 			lowerInteropIntrinsic(inCall, vCallee.name.asString())?.let { return it }
 		}
+		// The field of an exception that holds what was suppressed for it.
+		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "ktc2.internal" && vCallee.name.asString() in setOf("throwableSuppressed", "setThrowableSuppressed")) {
+			val vBase = KClassType(mImporter.throwableBase())
+			if (vCallee.name.asString() == "throwableSuppressed") {
+				return KFieldRead(coerce(lowerPure(inCall.arguments[0]!!), vBase), mImporter.throwableSuppressedField)
+			}
+			val vSides = lowerOperands(listOf(inCall.arguments[0]!!, inCall.arguments[1]!!), inLastMayBeImpure = true)
+			mBlock += KFieldSet(coerce(vSides[0], vBase), mImporter.throwableSuppressedField, coerce(vSides[1], KObjType))
+			return KUnitValue
+		}
 		if (vOwner != null) lowerSimpleEnumMember(inCall, vCallee, vOwner)?.let { return it }
 		// `enumOf<T>(number) { … }` for a `@SimpleEnum` class with numbers of its own: the number is compared with theirs.
 		if (vOwner == null && vCallee.name.asString() == "enumOf" && vCallee.kotlinFqName.asString() == "ktc2.enumOf") {
@@ -2526,6 +2539,8 @@ internal class BodyBuilder(
 	 */
 	private fun redirectToPlatform(inCall: IrCall): KExpr? {
 		val vCallee = inCall.symbol.owner
+		// `a..b` between integers is settled by the kinds of both sides, not by the class of the first (`1..<Long.MIN_VALUE`): see `lowerLibraryCall`.
+		if (vCallee.name.asString().let { it == "rangeTo" || it == "rangeUntil" } && kPrimByClass[vCallee.parent.kotlinFqName.asString()].let { it != null && it != KPrim.CHAR }) return null
 		val vBase = vCallee.kotlinFqName.asString().replace('.', '_')
 		// A name ending in __<ReceiverClass> covers one overload among several (single() on a CharArray).
 		val vReceiverClass = inCall.arguments.firstOrNull()?.let { closed(it.type).classOrNull?.owner?.name?.asString() }
@@ -2610,7 +2625,8 @@ internal class BodyBuilder(
 		}
 		if (vParent == "kotlin.String") return lowerStringCall(inCall, vName, vIrArguments)
 		if (vParent == "kotlin.Comparable" && vName == "compareTo" && vIrArguments.size == 2) {
-			val vSides = lowerOperands(vIrArguments)
+			// A number that may be null and is known here not to be (`min !== null && max !== null`): the number.
+			val vSides = lowerOperands(vIrArguments).map { if (it.type is KOptType) KOptValue(it) else it }
 			val vPrim = primOf(vSides[0])
 			return when {
 				vSides[0].type == KStringType -> KIntrinsic("ktc2_str_compare", listOf(vSides[0], coerce(vSides[1], KStringType)), kIntType)
@@ -2646,6 +2662,24 @@ internal class BodyBuilder(
 			val vTo = kConversionByName[vName]?.takeIf { vName in kNumberConversions } ?: return fail(inCall, vWhat)
 			val vReceiver = lowerPure(vIrArguments[0])
 			return if (vReceiver.type is KPrimType) convert(vReceiver, vTo) else fail(inCall, vWhat)
+		}
+
+		// `a.equals(b)` written out on a number: the `equals` of the object the number is as an `Any`
+		// (0.0 is not -0.0 there, NaN is NaN, and a number of another kind is another thing).
+		if (vName == "equals" && vIrArguments.size == 2 && kPrimByClass[vParent] != null) {
+			val vSides = lowerOperands(vIrArguments)
+			return KCall(mImporter.runtime("ktc2_any_equals", listOf(KObjType, KObjType), kBoolType), vSides.map { coerce(it, KObjType) })
+		}
+		// `a..b` and `a..<b` on integers of any width: the range of `Int`, `Long`, `UInt` or `ULong` both fit in.
+		if ((vName == "rangeTo" || vName == "rangeUntil") && vIrArguments.size == 2 && kPrimByClass[vParent] != null) {
+			val vKinds = vIrArguments.map { (kType(it.type) as? KPrimType)?.prim }
+			val vWork = if (vKinds.any { it == null || it.isFloating || it == KPrim.BOOLEAN || it == KPrim.CHAR }) null else promote(vKinds[0]!!, vKinds[1]!!)
+			val vClassName = kPrimByClass.entries.firstOrNull { it.value == vWork }?.key?.removePrefix("kotlin.")
+			val vTarget = vClassName?.let { mImporter.internalFunction("kotlin_${it}_$vName") }?.let { mImporter.functionFor(it) }
+			if (vWork != null && vTarget != null) {
+				val vSides = lowerOperands(vIrArguments)
+				return adapt(KCall(vTarget, vSides.map { convert(it, vWork) }), inCall)
+			}
 		}
 
 		// K2 can leave a smart cast implicit (an Any known to be an Int passed where an Int is
@@ -2705,7 +2739,14 @@ internal class BodyBuilder(
 			return convert(vValue, vResultType.prim)
 		}
 		if (vOperands.size == 2) {
-			val vOp = kBinaryByName[vName] ?: return fail(inCall, vWhat)
+			// `floorDiv` and `mod` of unsigned numbers, which have no sign to round by, are `/` and `%`.
+			val vUnsignedOp = when {
+				!vFirst.isUnsigned -> null
+				vName == "floorDiv" -> KBinaryOp.DIV
+				vName == "mod" -> KBinaryOp.REM
+				else -> null
+			}
+			val vOp = vUnsignedOp ?: kBinaryByName[vName] ?: return fail(inCall, vWhat)
 			val vSecond = vOperandTypes[1]!!.prim
 			val vIsShift = vOp == KBinaryOp.SHL || vOp == KBinaryOp.SHR || vOp == KBinaryOp.USHR
 			val vWork = if (vIsShift) vFirst else promote(vFirst, vSecond)

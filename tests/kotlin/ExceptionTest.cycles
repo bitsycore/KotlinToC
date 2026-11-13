@@ -1,0 +1,1 @@
+circularSuppressedDetailedTrace makes exceptions that are suppressed for each other, in a circle, on purpose.

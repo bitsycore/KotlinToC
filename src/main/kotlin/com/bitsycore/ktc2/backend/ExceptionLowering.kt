@@ -201,7 +201,9 @@ class ExceptionLowering(private val mModule: KModule) {
 					} else if (vStatement.value!!.type == KUnitType || vStatement.value.type == KNothingType) {
 						vOut += KEval(vStatement.value)
 						vOut += KIf(pending(), vLeave, emptyList())
-						vOut += KReturn(null)
+						// `return TODO()` in a function that returns something: the call never comes back, the C still needs a value.
+						val vType = inFunction.returnType
+						vOut += KReturn(if (vType == KUnitType || vType == KNothingType) null else KZero(vType))
 					} else {
 						// The result is only returned if computing it did not throw.
 						val vResult = KLocal("ktc2_x${mNextTemp++}", vStatement.value.type)

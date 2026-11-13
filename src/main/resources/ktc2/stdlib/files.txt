@@ -125,6 +125,11 @@ Ktc2Enums.kt
 Ktc2Numbers.kt
 commonMain/kotlin/random/Random.kt
 commonMain/kotlin/random/XorWowRandom.kt
+commonMain/kotlin/random/URandom.kt
+commonMain/kotlin/UMath.kt
+commonMain/kotlin/util/KotlinVersion.kt
+commonMain/kotlin/comparisons/compareTo.kt
+Ktc2UHex.kt
 Ktc2Random.kt
 commonMain/kotlin/internal/throwNoWhenBranchMatchedException.kt
 Ktc2KotlinInternal.kt

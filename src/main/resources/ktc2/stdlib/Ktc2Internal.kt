@@ -261,6 +261,15 @@ public fun throwSubstringRange(begin: Int, end: Int, length: Int): Nothing =
 /** An integer division or remainder by zero. */
 public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")
 
+/**
+ * What [of] holds of the exceptions that were suppressed for it (`addSuppressed`): a list, or
+ * null while there is none. A field of every exception; ktc2 lowers the two calls to the field.
+ */
+public fun throwableSuppressed(of: Throwable): Any? = null
+
+public fun setThrowableSuppressed(of: Throwable, list: Any?) {
+}
+
 /** `valueOf` of the enum class [enumName] was given [name], which no entry has. */
 public fun throwNoEnumConstant(enumName: String, name: String): Nothing = throw IllegalArgumentException("No enum constant $enumName.$name")
 

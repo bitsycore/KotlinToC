@@ -1,0 +1,309 @@
+/*
+ * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+package test.ranges
+
+import kotlin.test.*
+
+public class URangeTest {
+    @Test
+    fun uintRange() {
+        val range = 9u..(-5).toUInt()
+        assertFalse((-4).toUInt() in range)
+        assertFalse((-1).toUInt() in range)
+        assertFalse(0u in range)
+        assertFalse(3u in range)
+        assertFalse(8u in range)
+
+        assertTrue(9u in range)
+        assertTrue(10u in range)
+        assertTrue(9000u in range)
+        assertTrue((-1000).toUInt() in range)
+        assertTrue((-6).toUInt() in range)
+        assertTrue((-5).toUInt() in range)
+
+        assertFalse(range.isEmpty())
+
+        assertTrue(9u in (range as ClosedRange<UInt>))
+        assertFalse((range as ClosedRange<UInt>).isEmpty())
+
+        assertTrue(12.toUShort() in range)
+        assertTrue(12.toUByte() in range)
+        assertTrue(12.toULong() in range)
+
+        assertFalse((-1).toULong() in range)
+        assertFalse((-1000).toULong() in range)
+
+        assertFalse(null in range)
+        assertTrue(12u as UInt? in range)
+        assertFalse((-3).toUInt() as UInt? in range)
+
+        val closedRange = 1u..9u
+        val openRange = 1u until 10u
+        assertTrue(9u in openRange)
+        assertFalse(10u in openRange)
+        assertEquals(closedRange, openRange)
+
+        val openRange2 = 1u..<10u
+        assertEquals(closedRange, openRange2)
+
+        assertTrue((1u until UInt.MIN_VALUE).isEmpty())
+    }
+
+    @Test
+    fun ubyteRange() {
+        val range = 9.toUByte()..(-5).toUByte()
+        assertFalse((-4).toUByte() in range)
+        assertFalse((-1).toUByte() in range)
+        assertFalse(0.toUByte() in range)
+        assertFalse(3.toUByte() in range)
+        assertFalse(8.toUByte() in range)
+
+        assertTrue(9.toUByte() in range)
+        assertTrue(10.toUByte() in range)
+        assertTrue(111.toUByte() in range)
+        assertTrue((-100).toUByte() in range)
+        assertTrue((-6).toUByte() in range)
+        assertTrue((-5).toUByte() in range)
+
+        assertFalse(range.isEmpty())
+
+        assertTrue(12.toUShort() in range)
+        assertTrue(12.toUInt() in range)
+        assertTrue(12.toULong() in range)
+
+        assertFalse((-1).toUShort() in range)
+        assertFalse((-1000).toUInt() in range)
+
+//         assertTrue(1.toUByte() as UByte? in range) // expected not to compile
+
+        val openRange = 1.toUByte() until 10.toUByte()
+        assertTrue(9.toUByte() in openRange)
+        assertFalse(10.toUByte() in openRange)
+        val openRange2 = 1.toUByte()..<10.toUByte()
+        assertEquals(openRange, openRange2)
+
+        assertTrue((UByte.MAX_VALUE until UByte.MIN_VALUE).isEmpty())
+    }
+
+    @Test
+    fun ushortRange() {
+        val range = 9.toUShort()..(-5).toUShort()
+        assertFalse((-1).toUShort() in range)
+        assertFalse((-4).toUShort() in range)
+        assertFalse(0.toUShort() in range)
+        assertFalse(3.toUShort() in range)
+        assertFalse(8.toUShort() in range)
+
+        assertTrue(9.toUShort() in range)
+        assertTrue(10.toUShort() in range)
+        assertTrue(239.toUShort() in range)
+        assertTrue((-1000).toUShort() in range)
+        assertTrue((-6).toUShort() in range)
+        assertTrue((-5).toUShort() in range)
+
+        assertFalse(range.isEmpty())
+
+        assertTrue(12.toUByte() in range)
+        assertTrue(12.toUInt() in range)
+        assertTrue(12.toULong() in range)
+
+        assertFalse((-1).toUInt() in range)
+        assertFalse((-1000).toULong() in range)
+
+//        assertTrue(1.toUShort() as UShort? in range) // expected not to compile
+
+        val openRange = 1.toUShort() until 10.toUShort()
+        assertTrue(9.toUShort() in openRange)
+        assertFalse(10.toUShort() in openRange)
+        val openRange2 = 1.toUShort()..<10.toUShort()
+        assertEquals(openRange, openRange2)
+
+        assertTrue((0.toUShort() until UShort.MIN_VALUE).isEmpty())
+    }
+
+    @Test
+    fun ulongRange() {
+        val range = 9uL..(-5).toULong()
+        assertFalse((-1).toULong() in range)
+        assertFalse((-4).toULong() in range)
+        assertFalse(0uL in range)
+        assertFalse(3uL in range)
+        assertFalse(8uL in range)
+
+        assertTrue(9uL in range)
+        assertTrue(10uL in range)
+        assertTrue(10000000uL in range)
+        assertTrue((-10000000).toULong() in range)
+        assertTrue((-6).toULong() in range)
+        assertTrue((-5).toULong() in range)
+
+        assertFalse(range.isEmpty())
+
+        assertTrue((-5).toULong() in (range as ClosedRange<ULong>))
+        assertFalse((range as ClosedRange<ULong>).isEmpty())
+
+        assertTrue(12.toUByte() in range)
+        assertTrue(12.toUShort() in range)
+        assertTrue(12.toUInt() in range)
+
+        assertFalse(null in range)
+        assertTrue(12uL as ULong? in range)
+        assertFalse((-3).toULong() as ULong? in range)
+
+        val closedRange = 1uL..9uL
+        val openRange = 1uL until 10uL
+        assertTrue(9uL in openRange)
+        assertFalse(10uL in openRange)
+        assertEquals(closedRange, openRange)
+
+        val openRange2 = 1uL..<10uL
+        assertEquals(closedRange, openRange2)
+
+        assertTrue((0uL until ULong.MIN_VALUE).isEmpty())
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun openRangeEndExclusive() {
+        assertEquals((1u..5u).endInclusive, (1u..<4u).endExclusive + 1u)
+        assertEquals((1uL..5uL).endInclusive, (1uL..<4uL).endExclusive + 1u)
+
+        assertNotEquals(UInt.MIN_VALUE, (1u..<UInt.MIN_VALUE).endExclusive)
+        assertNotEquals(ULong.MIN_VALUE, (1uL..<ULong.MIN_VALUE).endExclusive)
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun openRangeEndExclusiveThrows() {
+        assertFailsWith<IllegalStateException> { (1u..UInt.MAX_VALUE).endExclusive }
+        assertFailsWith<IllegalStateException> { (1uL..ULong.MAX_VALUE).endExclusive }
+    }
+
+    @Suppress("EmptyRange")
+    @Test
+    fun isEmpty() {
+        assertTrue((2u..1u).isEmpty())
+        assertTrue((2uL..0uL).isEmpty())
+        assertTrue(((-1).toUShort()..1.toUShort()).isEmpty())
+        assertTrue(((-5).toUByte()..0.toUByte()).isEmpty())
+
+        assertTrue((1u downTo 2u).isEmpty())
+        assertTrue((0uL downTo 2uL).isEmpty())
+        assertFalse((2u downTo 1u).isEmpty())
+        assertFalse((2uL downTo 0uL).isEmpty())
+    }
+
+    private fun <T> assertAllEqual(vararg elements: T) {
+        for (i in 0..<elements.size) {
+            assertEquals(elements[i], elements[i])
+            for (j in i + 1..<elements.size) {
+                assertEquals(elements[i], elements[j])
+                assertEquals(elements[j], elements[i])
+                assertEquals(elements[i].hashCode(), elements[j].hashCode())
+            }
+        }
+    }
+
+    @Suppress("EmptyRange")
+    @Test
+    fun emptyEqualsHashCode() {
+        assertAllEqual(UIntRange.EMPTY, 2u..1u, 3u..<3u, 1u..<1u, 5u..4u step 1, 5u..4u step 5, 0u downTo 3u step 2)
+        assertAllEqual(ULongRange.EMPTY, 2uL..1uL, 3uL..<3uL, 1uL..<1uL, 5uL..4uL step 1, 5uL..4uL step 5, 0uL downTo 3uL step 2)
+
+        assertNotEquals(0u..1u, UIntRange.EMPTY)
+        assertNotEquals(0uL..1uL, ULongRange.EMPTY)
+    }
+
+    @Test
+    fun nonEmptyRangeHashCode() {
+        fun <N : Comparable<N>, R> checkIterableRangeHashCode(range: R) where R : ClosedRange<N>, R : Iterable<N> {
+            assertEquals(31 * 31 * range.start.hashCode() + 31 * range.endInclusive.hashCode() + 1, range.hashCode())
+        }
+        checkIterableRangeHashCode(1u..10u)
+        checkIterableRangeHashCode(1uL..10uL)
+    }
+
+    @Test
+    fun nonEmptyProgressionHashCode() {
+        fun checkHashCode(progression: Any, first: Any, last: Any, step: Any) {
+            assertEquals(31 * 31 * first.hashCode() + 31 * last.hashCode() + step.hashCode(), progression.hashCode())
+        }
+        (1U..10U step 1).let { checkHashCode(it, it.first, it.last, it.step) }
+        (1U..10U step 2).let { checkHashCode(it, it.first, it.last, it.step) }
+        (10U downTo 1U).let { checkHashCode(it, it.first, it.last, it.step) }
+        (1UL..10UL step 1).let { checkHashCode(it, it.first, it.last, it.step) }
+        (1UL..10UL step 2).let { checkHashCode(it, it.first, it.last, it.step) }
+        (10UL downTo 1UL).let { checkHashCode(it, it.first, it.last, it.step) }
+    }
+
+    @IgnorableReturnValue
+    private fun assertFailsWithIllegalArgument(f: () -> Any?) = assertFailsWith<IllegalArgumentException> { f() }
+
+    @Test
+    fun illegalProgressionCreation() {
+        // create Progression explicitly with increment = 0
+        assertFailsWithIllegalArgument { UIntProgression.fromClosedRange(0u, 5u, 0) }
+        assertFailsWithIllegalArgument { ULongProgression.fromClosedRange(0uL, 5uL, 0) }
+
+
+        assertFailsWithIllegalArgument { 0u..5u step 0 }
+        assertFailsWithIllegalArgument { 0.toUByte()..5.toUByte() step 0 }
+        assertFailsWithIllegalArgument { 0.toUShort()..5.toUShort() step 0 }
+        assertFailsWithIllegalArgument { 0uL..5uL step 0 }
+
+        assertFailsWithIllegalArgument { (-5).toUInt() downTo 0u step 0 }
+        assertFailsWithIllegalArgument { (-5).toUByte() downTo 0.toUByte() step 0 }
+        assertFailsWithIllegalArgument { (-5).toUShort() downTo 0.toUShort() step 0 }
+        assertFailsWithIllegalArgument { (-5).toULong() downTo 0uL step 0L }
+
+        assertFailsWithIllegalArgument { 0u..5u step -2 }
+        assertFailsWithIllegalArgument { 0.toUByte()..5.toUByte() step -2 }
+        assertFailsWithIllegalArgument { 0.toUShort()..5.toUShort() step -2 }
+        assertFailsWithIllegalArgument { 0uL..5uL step -2L }
+
+
+        assertFailsWithIllegalArgument { (-5).toUInt() downTo 0u step -2 }
+        assertFailsWithIllegalArgument { (-5).toUByte() downTo 0.toUByte() step -2 }
+        assertFailsWithIllegalArgument { (-5).toUShort() downTo 0.toUShort() step -2 }
+        assertFailsWithIllegalArgument { (-5).toULong() downTo 0uL step -2L }
+    }
+
+    @Test
+    fun stepSizeIsTooLow() {
+        assertFailsWithIllegalArgument { UIntProgression.fromClosedRange(0u, 1u, Int.MIN_VALUE) }
+        assertFailsWithIllegalArgument { ULongProgression.fromClosedRange(0u, 1u, Long.MIN_VALUE) }
+    }
+
+    @Test
+    fun randomInEmptyRange() {
+        assertFailsWith<NoSuchElementException> { UIntRange.EMPTY.random() }
+        assertFailsWith<NoSuchElementException> { ULongRange.EMPTY.random() }
+    }
+
+    @Test fun firstInEmptyRange() {
+        assertFailsWith<NoSuchElementException> { UIntRange.EMPTY.first() }
+        assertFailsWith<NoSuchElementException> { ULongRange.EMPTY.first() }
+        assertFailsWith<NoSuchElementException> { UIntProgression.fromClosedRange(0u, 3u, -2).first() }
+    }
+
+    @Test fun firstOrNullInEmptyRange() {
+        assertNull(UIntRange.EMPTY.firstOrNull())
+        assertNull(ULongRange.EMPTY.firstOrNull())
+        assertNull(UIntProgression.fromClosedRange(0u, 3u, -2).firstOrNull())
+    }
+
+    @Test fun lastInEmptyRange() {
+        assertFailsWith<NoSuchElementException> { UIntRange.EMPTY.last() }
+        assertFailsWith<NoSuchElementException> { ULongRange.EMPTY.last() }
+        assertFailsWith<NoSuchElementException> { UIntProgression.fromClosedRange(0u, 3u, -2).last() }
+    }
+
+    @Test fun lastOrNullInEmptyRange() {
+        assertNull(UIntRange.EMPTY.lastOrNull())
+        assertNull(ULongRange.EMPTY.lastOrNull())
+        assertNull(UIntProgression.fromClosedRange(0u, 3u, -2).lastOrNull())
+    }
+}

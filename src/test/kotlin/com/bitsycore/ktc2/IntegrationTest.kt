@@ -125,6 +125,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun checkCommon(inSource: File) {
 		mInput = null
 		mWarnings = emptyList()
+		// `<Name>.cycles` next to a file of common tests says, with the reason, that it builds objects that
+		// refer to each other in a circle: those are never freed (there is no collector of cycles), which
+		// for this one file is not a failure.
+		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
 		val vOutDir = File("build/integration/test-${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		val vMain = File("build/testmain/${inSource.nameWithoutExtension}Main.kt").apply { parentFile.mkdirs() }
 		vMain.writeText(testMain(inSource.readText()))
@@ -133,6 +137,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			verify("tests/${inSource.name}", listOf(inSource, vMain), vOutDir, null)
 		} finally {
 			mJvmExtra = emptyList()
+			mAllowsLeaks = false
 		}
 	}
 
@@ -164,6 +169,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 	/** The standard input of the program being checked; null when it has none. */
 	private var mInput: File? = null
+
+	/** Set while a file of tests that says it makes cycles is checked: what it leaves allocated is not reported. */
+	private var mAllowsLeaks = false
 
 	private fun check(inSource: File) {
 		mInput = File(inSource.parentFile, inSource.nameWithoutExtension + ".in").takeIf { it.isFile }
@@ -333,7 +341,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 				File(kStatsFile).appendText("${File(inCommand.first()).parentFile.name}: ${vLine.removePrefix("ktc2: arc: ")}\n")
 			}
 			val vLeaks = vErrors.readLines().filter { it.startsWith("ktc2: leak") }
-			if (vLeaks.isNotEmpty()) fail("${inCommand.first()} leaked:\n${vLeaks.joinToString("\n")}")
+			if (vLeaks.isNotEmpty() && !mAllowsLeaks) fail("${inCommand.first()} leaked:\n${vLeaks.joinToString("\n")}")
 			return vOutput.replace("\r\n", "\n")
 		} finally {
 			vErrors.delete()

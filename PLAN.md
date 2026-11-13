@@ -13,19 +13,20 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-13, evening)
+## Where the work stands (2026-11-13, night)
 ---------------------------------------------------------------------------
 
 For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed (`f09ecd8` and the commit of this text); the
-working tree is clean. The suite is 135 tests: 127 programs under `integration/` (compared
-with the JVM or an `.expected` file, or that must be refused), 7 files of common tests under
-`tests/` (118 `@Test` functions), and the showcase as a program of several modules. It
-passes on macOS (Apple clang, ARM64) in about a minute. AddressSanitizer is clean on every
-program (`tools/asan_all.sh`, run once that day; `tools/asan.sh` on what each change touched).
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 171
+tests: 127 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 43 files of common tests under `tests/` (one of ktc2's own and 42 of
+the Kotlin standard library's, 405 `@Test` functions), and the showcase as a program of
+several modules. It passes on Windows (mingw gcc 15) in about two minutes, on Linux (Debian
+in WSL2, gcc 14) and, by the CI job, on macOS. AddressSanitizer is clean on every program on
+Linux (the CI job's last step, `tools/asan_all.sh`).
 
 **The CI job** (`.github/workflows/test.yml`, on every push; see it with
 `gh run list --repo bitsycore/KotlinToC`) runs the suite on Linux, macOS and Windows:
@@ -88,7 +89,10 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **How differences are found**, which is the work to go on with:
 1. *Tests of the Kotlin standard library* (`tests/kotlin/`, from `libraries/stdlib/test` of
-   github.com/JetBrains/kotlin, unchanged). The first six files (99 tests) found five
+   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 42 files are
+   in and pass (405 tests); `tests/README.md` lists what they found, the 8 that wait in
+   `tests/pending/` with the reason, and how to take in more. Next: the 30 or so files that
+   need the helpers of the library's tests, which are the largest. The first six files (99 tests) found five
    differences in an hour, all fixed. Each file is a list of things Kotlin promises: taking
    more of them is the best next use of time. Most use helpers of the library's own
    (`test.TestPlatform`, `test.collections.behaviors`), which have to come with them. A file

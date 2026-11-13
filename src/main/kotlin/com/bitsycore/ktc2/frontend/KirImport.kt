@@ -1084,6 +1084,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	lateinit var throwableMessageField: KField
 		private set
 	lateinit var throwableCauseField: KField
+
+	/** The list of the exceptions suppressed for this one, when there is one (`ktc2.internal.throwableSuppressed`). */
+	lateinit var throwableSuppressedField: KField
 		private set
 
 	/**
@@ -1108,6 +1111,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		throwableCauseField = KField("cause", KClassType(vClass), vClass, isImmutable = true)
 		vClass.fields += throwableMessageField
 		vClass.fields += throwableCauseField
+		throwableSuppressedField = KField("suppressed", KObjType, vClass)
+		vClass.fields += throwableSuppressedField
 		mClassList += vClass
 		mUnits += vUnit
 		return vClass

@@ -189,9 +189,9 @@ public inline fun <T> expect(expected: T, message: String?, block: () -> T) {
 }
 
 /** Checks that [block] fails, and gives what it threw. */
-public inline fun assertFails(block: () -> Unit): Throwable = assertFails(null, block)
+public inline fun assertFails(block: () -> Any?): Throwable = assertFails(null, block)
 
-public inline fun assertFails(message: String?, block: () -> Unit): Throwable {
+public inline fun assertFails(message: String?, block: () -> Any?): Throwable {
 	try {
 		block()
 	} catch (inError: Throwable) {
@@ -201,10 +201,10 @@ public inline fun assertFails(message: String?, block: () -> Unit): Throwable {
 }
 
 /** Checks that [block] fails with an exception of the class [exceptionClass], and gives it. */
-public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect.KClass<T>, block: () -> Unit): T =
+public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect.KClass<T>, block: () -> Any?): T =
 	assertFailsWith(exceptionClass, null, block)
 
-public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect.KClass<T>, message: String?, block: () -> Unit): T {
+public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect.KClass<T>, message: String?, block: () -> Any?): T {
 	try {
 		block()
 	} catch (inError: Throwable) {
@@ -216,7 +216,7 @@ public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect
 }
 
 /** Checks that [block] fails with an exception of type [T], and gives it. */
-public inline fun <reified T : Throwable> assertFailsWith(message: String? = null, block: () -> Unit): T {
+public inline fun <reified T : Throwable> assertFailsWith(message: String? = null, block: () -> Any?): T {
 	try {
 		block()
 	} catch (inError: Throwable) {

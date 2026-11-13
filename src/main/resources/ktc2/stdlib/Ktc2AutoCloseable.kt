@@ -17,24 +17,29 @@ public actual inline fun AutoCloseable(crossinline closeAction: () -> Unit): Aut
 
 /**
  * Runs [block] with this resource and closes it, whether the block ends or throws. What
- * `close` throws while the block's own exception is on its way is dropped: the block's is the
- * one that goes on.
+ * `close` throws while the block's own exception is on its way is added to that one as
+ * suppressed: the block's is the one that goes on.
  */
+@OptIn(kotlin.contracts.ExperimentalContracts::class)
 public actual inline fun <T : AutoCloseable?, R> T.use(block: (T) -> R): R {
-	var vFailed = false
+	kotlin.contracts.contract {
+		callsInPlace(block, kotlin.contracts.InvocationKind.EXACTLY_ONCE)
+	}
+	var vFailure: Throwable? = null
 	try {
 		return block(this)
 	} catch (inError: Throwable) {
-		vFailed = true
+		vFailure = inError
 		throw inError
 	} finally {
 		if (this != null) {
-			if (!vFailed) {
+			if (vFailure == null) {
 				close()
 			} else {
 				try {
 					close()
 				} catch (inError: Throwable) {
+					vFailure.addSuppressed(inError)
 				}
 			}
 		}
