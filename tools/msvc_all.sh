@@ -11,11 +11,17 @@ command -v cl > /dev/null || { echo "cl is not on the path"; exit 1; }
 vFailed=0
 vCount=0
 vKnown=0
+vSkipped=0
 for vDir in build/integration/*/; do
 	vDir=${vDir%/}
 	vName=$(basename "$vDir")
-	[ -f "$vDir/c/ktc2_all.c" ] && [ -f "$vDir/program.exe" ] || continue
 	case "$vName" in *"$1"*) ;; *) continue ;; esac
+	if [ ! -f "$vDir/c/ktc2_all.c" ] || [ ! -f "$vDir/program.exe" ]; then
+		# Said, not passed over in silence: a run that compares nothing must not look like one that found nothing.
+		vSkipped=$((vSkipped + 1)); [ "$vSkipped" -le 3 ] && echo "skipped $vName: $(ls "$vDir" | tr '
+' ' ')"
+		continue
+	fi
 	# What is known to differ with MSVC, with the reason: tools/msvc_known.txt.
 	if grep -q "^$vName:" tools/msvc_known.txt 2>/dev/null; then vKnown=$((vKnown + 1)); continue; fi
 	vCount=$((vCount + 1))
@@ -38,5 +44,6 @@ for vDir in build/integration/*/; do
 		grep -m 4 "ktc2:" "$vDir/msvc.err" | grep -v "ktc2: arc" | cut -c1-240
 	fi
 done
-echo "$vCount programs, $vFailed failed, $vKnown left out as known"
-[ "$vFailed" -eq 0 ]
+echo "$vCount programs, $vFailed failed, $vKnown left out as known, $vSkipped directories without a program"
+# Nearly every directory has a program after a run of the suite: many without one means the comparison did not happen.
+[ "$vFailed" -eq 0 ] && [ "$vCount" -gt "$vSkipped" ]
