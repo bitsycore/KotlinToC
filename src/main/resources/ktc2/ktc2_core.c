@@ -809,6 +809,14 @@ bool ktc2_str_equals(const ktc2_String* a, const ktc2_String* b)
 
 int32_t ktc2_str_compare(const ktc2_String* a, const ktc2_String* b)
 {
+	if (a->size == a->length && b->size == b->length) {
+		/* ASCII: a character is a byte. */
+		int32_t shared = a->length < b->length ? a->length : b->length;
+		for (int32_t index = 0; index < shared; index++) {
+			if (a->bytes[index] != b->bytes[index]) return (unsigned char)a->bytes[index] - (unsigned char)b->bytes[index];
+		}
+		return a->length - b->length;
+	}
 	UnitCursor ca = cursor_of(a);
 	UnitCursor cb = cursor_of(b);
 	while (cursor_has(&ca) && cursor_has(&cb)) {
@@ -822,6 +830,10 @@ int32_t ktc2_str_compare(const ktc2_String* a, const ktc2_String* b)
 int32_t ktc2_str_hashCode(const ktc2_String* s)
 {
 	uint32_t hash = 0;
+	if (s->size == s->length) {
+		for (int32_t index = 0; index < s->size; index++) hash = 31u * hash + (unsigned char)s->bytes[index];
+		return (int32_t)hash;
+	}
 	UnitCursor cursor = cursor_of(s);
 	while (cursor_has(&cursor)) hash = 31u * hash + cursor_next(&cursor);
 	return (int32_t)hash;
