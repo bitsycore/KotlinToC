@@ -58,6 +58,20 @@ private const val kIdleMinutes = 30
 /** Where the process says how to reach it. */
 private fun stateFile(): File = File(File(System.getProperty("user.home"), ".ktc2"), "daemon.txt")
 
+/**
+ * Leaves [inFile] to its owner alone, where the system has such rights (on Windows the home
+ * directory is the user's already). The state file holds the secret: whoever can read it can
+ * have the process compile and run tools as the user who started it.
+ */
+private fun ownerOnly(inFile: File) {
+	inFile.setReadable(false, false)
+	inFile.setWritable(false, false)
+	inFile.setExecutable(false, false)
+	inFile.setReadable(true, true)
+	inFile.setWritable(true, true)
+	if (inFile.isDirectory) inFile.setExecutable(true, true)
+}
+
 /** What a process has to have been started with to serve this command. */
 private fun daemonKey(): String {
 	val vText = StringBuilder()
@@ -117,7 +131,11 @@ fun runThroughDaemon(inArguments: Array<String>): Int? {
 private fun start(inKey: String): State? {
 	val vFile = stateFile()
 	vFile.parentFile.mkdirs()
+	ownerOnly(vFile.parentFile)
 	vFile.delete()
+	val vLog = File(vFile.parentFile, "daemon.log")
+	vLog.createNewFile()
+	ownerOnly(vLog)
 	val vJava = File(System.getProperty("java.home"), "bin/java").path
 	// As this process was started, but compiling at full speed: it runs long enough to gain from it.
 	val vOptions = ManagementFactory.getRuntimeMXBean().inputArguments.filter { !it.startsWith("-XX:TieredStopAtLevel") && !it.startsWith("-agentlib") && !it.startsWith("-javaagent") }
@@ -125,7 +143,7 @@ private fun start(inKey: String): State? {
 	val vIsWindows = "win" in System.getProperty("os.name").lowercase()
 	// Nothing of the command's terminal: the process outlives the command.
 	ProcessBuilder(vCommand).redirectInput(ProcessBuilder.Redirect.from(File(if (vIsWindows) "NUL" else "/dev/null")))
-		.redirectOutput(File(vFile.parentFile, "daemon.log")).redirectErrorStream(true).start()
+		.redirectOutput(vLog).redirectErrorStream(true).start()
 	repeat(200) {
 		Thread.sleep(25)
 		readState()?.takeIf { it.key == inKey }?.let { return it }
@@ -218,6 +236,10 @@ fun serveDaemon(inKey: String, inRun: (Array<String>, File) -> Pair<Int, List<St
 	val vServer = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
 	vServer.soTimeout = kIdleMinutes * 60 * 1000
 	val vFile = stateFile()
+	// Closed to the others before the secret is in it.
+	vFile.delete()
+	vFile.createNewFile()
+	ownerOnly(vFile)
 	vFile.writeText("$inKey\n${vServer.localPort}\n$vSecret\n")
 	val vOut = System.out
 	val vErr = System.err
