@@ -197,6 +197,17 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 			vLow++
 			vHigh--
 		}
+		// As on the JVM, a surrogate pair stays a pair: its halves are put back in order.
+		var vIndex = 0
+		while (vIndex < count - 1) {
+			if (chars[vIndex].isLowSurrogate() && chars[vIndex + 1].isHighSurrogate()) {
+				val vHalf = chars[vIndex]
+				chars[vIndex] = chars[vIndex + 1]
+				chars[vIndex + 1] = vHalf
+				vIndex++
+			}
+			vIndex++
+		}
 		return this
 	}
 

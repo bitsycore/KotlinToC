@@ -380,7 +380,7 @@ class CEmitter(private val mModule: KModule) {
 			vState.cHeaders.forEach { append("#include $it\n") }
 			if (vState.literals.isNotEmpty()) append("\n")
 			vState.literals.forEach { (vText, vName) ->
-				append("KTC2_STRING_LIT($vName, ${vText.encodeToByteArray().size}, ${vText.length}, ${cString(vText)});\n")
+				append("KTC2_STRING_LIT($vName, ${utf8Of(vText).size}, ${vText.length}, ${cString(vText)});\n")
 			}
 			vState.typeTests.forEachIndexed { vIndex, vIds ->
 				append("\nstatic bool is_${vState.tag}$vIndex(const void* object)\n{\n\tif (!object) return false;\n")
@@ -438,10 +438,36 @@ class CEmitter(private val mModule: KModule) {
 		val typeTests = ArrayList<List<String>>()
 	}
 
+	/**
+	 * The bytes of [inText] as the runtime holds a string: UTF-8, and half of a surrogate pair
+	 * on its own as the three bytes UTF-8 would give its number (see `format_char` in `ktc2_core.c`).
+	 */
+	private fun utf8Of(inText: String): ByteArray {
+		if (inText.none { it.isSurrogate() }) return inText.encodeToByteArray()
+		val vBytes = ArrayList<Byte>()
+		var vIndex = 0
+		while (vIndex < inText.length) {
+			val vChar = inText[vIndex]
+			if (vChar.isHighSurrogate() && vIndex + 1 < inText.length && inText[vIndex + 1].isLowSurrogate()) {
+				vBytes += inText.substring(vIndex, vIndex + 2).encodeToByteArray().toList()
+				vIndex += 2
+			} else if (vChar.isSurrogate()) {
+				vBytes += (0xE0 or (vChar.code shr 12)).toByte()
+				vBytes += (0x80 or ((vChar.code shr 6) and 0x3F)).toByte()
+				vBytes += (0x80 or (vChar.code and 0x3F)).toByte()
+				vIndex++
+			} else {
+				vBytes += vChar.toString().encodeToByteArray().toList()
+				vIndex++
+			}
+		}
+		return vBytes.toByteArray()
+	}
+
 	/** A C string literal holding the UTF-8 bytes of [inText]. */
 	private fun cString(inText: String): String = buildString {
 		append('"')
-		for (vByte in inText.encodeToByteArray()) {
+		for (vByte in utf8Of(inText)) {
 			val vCode = vByte.toInt() and 0xFF
 			when {
 				vCode == '"'.code -> append("\\\"")
@@ -713,7 +739,7 @@ class CEmitter(private val mModule: KModule) {
 			fun flush() {
 				if (vText.isEmpty()) return
 				val vString = vText.toString()
-				line(inDepth, "${inPrefix}_text($inFirst${cString(vString)}, ${vString.encodeToByteArray().size}, ${vString.length});")
+				line(inDepth, "${inPrefix}_text($inFirst${cString(vString)}, ${utf8Of(vString).size}, ${vString.length});")
 				vText.clear()
 			}
 			for (vPart in inParts) {

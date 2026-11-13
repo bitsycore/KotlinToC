@@ -874,7 +874,41 @@ static ktc2_String* new_string(const char* bytes, int32_t size, int32_t length)
 /* MARK: Formatting   */
 /* ================== */
 
-/** Encodes one UTF-16 code unit as UTF-8; a lone surrogate becomes '?'. Returns the byte count. */
+/*
+ * Half of a surrogate pair on its own is held as the three bytes UTF-8 would give that number
+ * (0xED, then 0xA0 to 0xBF: "WTF-8"), so that a string holds any sequence of UTF-16 units. Two
+ * halves that meet are written as the one character they are (see ktc2_sb_text): a text has
+ * one form, and equal strings equal bytes. What leaves the program (stdout, the bytes of
+ * `encodeToByteArray`) has `?` in its place, as on the JVM.
+ */
+
+/** The first half of a pair on its own in [from, end), or NULL. */
+static const char* lone_surrogate(const char* from, const char* end)
+{
+	while (from < end) {
+		const char* at = memchr(from, 0xED, (size_t)(end - from));
+		if (!at || at + 1 >= end) return NULL;
+		if ((unsigned char)at[1] >= 0xA0) return at;
+		from = at + 1;
+	}
+	return NULL;
+}
+
+/** Writes text to stdout with `?` for each half of a pair on its own. */
+static void write_text(const char* text, int32_t size)
+{
+	const char* end = text + size;
+	for (;;) {
+		const char* at = lone_surrogate(text, end);
+		if (!at) break;
+		fwrite(text, 1, (size_t)(at - text), stdout);
+		fputc('?', stdout);
+		text = at + 3;
+	}
+	fwrite(text, 1, (size_t)(end - text), stdout);
+}
+
+/** Encodes one UTF-16 code unit as UTF-8, half of a pair as its own three bytes. Returns the byte count. */
 static int format_char(char* out, uint16_t v)
 {
 	if (v < 0x80) {
@@ -885,10 +919,6 @@ static int format_char(char* out, uint16_t v)
 		out[0] = (char)(0xC0 | (v >> 6));
 		out[1] = (char)(0x80 | (v & 0x3F));
 		return 2;
-	}
-	if (v >= 0xD800 && v <= 0xDFFF) {
-		out[0] = '?';
-		return 1;
 	}
 	out[0] = (char)(0xE0 | (v >> 12));
 	out[1] = (char)(0x80 | ((v >> 6) & 0x3F));
@@ -996,6 +1026,26 @@ void ktc2_sb_init(ktc2_Sb* sb)
 
 void ktc2_sb_text(ktc2_Sb* sb, const char* text, int32_t size, int32_t length)
 {
+	/* The first half of a pair at the end, the second at the start of what comes: the character they are. */
+	if (size >= 3 && sb->size >= 3 && (unsigned char)text[0] == 0xED && ((unsigned char)text[1] & 0xF0) == 0xB0) {
+		const unsigned char* last = (const unsigned char*)sb->data + sb->size - 3;
+		if (last[0] == 0xED && (last[1] & 0xF0) == 0xA0) {
+			uint32_t high = 0xD000u | ((uint32_t)(last[1] & 0x3F) << 6) | (last[2] & 0x3F);
+			uint32_t low = 0xD000u | ((uint32_t)((unsigned char)text[1] & 0x3F) << 6) | ((unsigned char)text[2] & 0x3F);
+			uint32_t point = 0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00);
+			char pair[4] = {
+				(char)(0xF0 | (point >> 18)),
+				(char)(0x80 | ((point >> 12) & 0x3F)),
+				(char)(0x80 | ((point >> 6) & 0x3F)),
+				(char)(0x80 | (point & 0x3F)),
+			};
+			sb->size -= 3;
+			sb->length -= 1;
+			ktc2_sb_text(sb, pair, 4, 2);
+			ktc2_sb_text(sb, text + 3, size - 3, length - 1);
+			return;
+		}
+	}
 	if (sb->size + size > sb->capacity) {
 		int32_t capacity = sb->capacity * 2;
 		while (capacity < sb->size + size) capacity *= 2;
@@ -1069,18 +1119,18 @@ void ktc2_sb_char(ktc2_Sb* sb, uint16_t v)
 void ktc2_print_char(uint16_t v)
 {
 	char text[4];
-	fwrite(text, 1, (size_t)format_char(text, v), stdout);
+	write_text(text, format_char(text, v));
 }
 
 void ktc2_print_text(const char* text, int32_t size, int32_t length)
 {
 	(void)length;
-	fwrite(text, 1, (size_t)size, stdout);
+	write_text(text, size);
 }
 
 void ktc2_print_string(const ktc2_String* s)
 {
-	if (s) fwrite(s->bytes, 1, (size_t)s->size, stdout); else fputs("null", stdout);
+	if (s) write_text(s->bytes, s->size); else fputs("null", stdout);
 }
 
 /* ================== */
@@ -1281,20 +1331,6 @@ void ktc2_stringToChars(ktc2_String* s, ktc2_Array* chars, int32_t at)
 	while (cursor_has(&cursor)) *units++ = cursor_next(&cursor);
 }
 
-/** The byte offset of UTF-16 unit [index] in a non-ASCII string (at a code point boundary). */
-static int32_t byte_offset_of_unit(const ktc2_String* s, int32_t index)
-{
-	const char* end = s->bytes + s->size;
-	int32_t unit;
-	const char* at = place_in(s, index, &unit);
-	while (at < end && unit < index) {
-		uint32_t point = next_code_point(&at);
-		unit += point >= 0x10000 ? 2 : 1;
-	}
-	if (unit == index) place_note(s, unit, at);
-	return (int32_t)(at - s->bytes);
-}
-
 /**
  * Where the code point that holds UTF-16 unit [index] of a non-ASCII string starts, and in
  * [*unit] the index of its first unit: [index] itself unless it is the second half of a pair.
@@ -1328,8 +1364,9 @@ static int32_t units_in(const char* from, const char* to)
 /*
  * Searches a non-ASCII string for [size] bytes of UTF-8 that are [count] UTF-16 units, whole
  * code points and not empty. A place where the bytes are found is the start of a code point
- * (the first of them is no continuation byte), so it is where the units are found too: a
- * string never holds half of a surrogate pair on its own.
+ * (the first of them is no continuation byte), so it is where the units are found too. Not
+ * for text that starts with the second half of a pair or ends with the first, which is also
+ * found inside a pair: the caller leaves that to the Kotlin code.
  */
 static int32_t find_wide(ktc2_String* s, const char* wanted, int32_t size, int32_t count, int32_t from, bool backwards)
 {
@@ -1374,6 +1411,9 @@ int32_t ktc2_stringFind(ktc2_String* s, ktc2_String* other, int32_t from, bool b
 			int32_t index = from < 0 ? 0 : from;
 			return index <= s->length ? index : s->length;
 		}
+		const unsigned char* wanted = (const unsigned char*)other->bytes;
+		if (other->size >= 3 && wanted[0] == 0xED && (wanted[1] & 0xF0) == 0xB0) return -2;
+		if (other->size >= 3 && wanted[other->size - 3] == 0xED && (wanted[other->size - 2] & 0xF0) == 0xA0) return -2;
 		return find_wide(s, other->bytes, other->size, count, from, backwards);
 	}
 	int32_t length = s->length;
@@ -1484,9 +1524,20 @@ ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
 	}
 	if (start == 0 && end == s->length) return ktc2_retain(s);
 	if (s->size == s->length) return new_string(s->bytes + start, end - start, end - start);
-	int32_t from = byte_offset_of_unit(s, start);
-	int32_t to = byte_offset_of_unit(s, end);
-	return new_string(s->bytes + from, to - from, end - start);
+	int32_t firstUnit;
+	int32_t lastUnit;
+	const char* first = code_point_at(s, start, &firstUnit);
+	const char* last = code_point_at(s, end, &lastUnit);
+	if (firstUnit == start && lastUnit == end) return new_string(first, (int32_t)(last - first), end - start);
+	/* An end inside a pair: half of it is in the result, on its own. */
+	ktc2_Sb sb;
+	ktc2_sb_init(&sb);
+	UnitCursor cursor = { first, s->bytes + s->size, 0 };
+	for (int32_t unit = firstUnit; unit < end; unit++) {
+		uint16_t value = cursor_next(&cursor);
+		if (unit >= start) ktc2_sb_char(&sb, value);
+	}
+	return ktc2_sb_finish(&sb);
 }
 
 bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
@@ -1515,8 +1566,20 @@ bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
 
 ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
 {
-	ktc2_Array* bytes = ktc2_array_new(s->size, 1, KTC2_TYPE_ARRAY_BYTE);
-	memcpy(bytes + 1, s->bytes, (size_t)s->size);
+	const char* end = s->bytes + s->size;
+	int32_t lone = 0;
+	for (const char* at = lone_surrogate(s->bytes, end); at; at = lone_surrogate(at + 3, end)) lone++;
+	ktc2_Array* bytes = ktc2_array_new(s->size - 2 * lone, 1, KTC2_TYPE_ARRAY_BYTE);
+	char* out = (char*)(bytes + 1);
+	const char* text = s->bytes;
+	/* As the JVM: `?` for half of a pair on its own. */
+	for (const char* at = lone_surrogate(text, end); at; at = lone_surrogate(text, end)) {
+		memcpy(out, text, (size_t)(at - text));
+		out += at - text;
+		*out++ = '?';
+		text = at + 3;
+	}
+	memcpy(out, text, (size_t)(end - text));
 	return bytes;
 }
 
