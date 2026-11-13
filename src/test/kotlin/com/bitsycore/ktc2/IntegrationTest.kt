@@ -361,8 +361,10 @@ fun testMain(inSource: String): String {
 	val vTopLevel = vCurrent
 	var vMarks = HashSet<String>()
 	var vIsIgnoredClass = false
-	for (vLine in inSource.lines()) {
-		val vText = vLine.trim()
+	// What is in a comment is no test.
+	val vCode = inSource.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+	for (vLine in vCode.lines()) {
+		val vText = vLine.trim().substringBefore("//")
 		Regex("^@(Test|Ignore|BeforeTest|AfterTest)\\b").findAll(vText).forEach { vMarks += it.groupValues[1] }
 		// Marks may share a line with what they mark.
 		Regex("@(Test|Ignore|BeforeTest|AfterTest)\\b").findAll(vText).forEach { vMarks += it.groupValues[1] }

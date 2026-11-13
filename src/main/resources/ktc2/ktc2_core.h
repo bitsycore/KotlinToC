@@ -195,6 +195,8 @@ typedef struct ktc2_TypeInfo {
 	void (*destroy)(ktc2_Obj* object);
 	uint32_t size;
 	void (*deinit)(ktc2_Obj* object);
+	/* The names of the class and of the classes above it, each between two '|': what `KClass.isInstance` looks in. NULL for a built-in type. */
+	const char* ancestors;
 } ktc2_TypeInfo;
 
 enum {
@@ -793,6 +795,9 @@ ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end);
 
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
+
+/** `KClass.isInstance` for the class called [name]: true for an object of that class or of a class under it. Interfaces are not known. */
+bool ktc2_classIsInstance(ktc2_Obj* object, ktc2_String* name);
 
 /** The Kotlin name of the class of an object: `x::class`. Owned by the caller. */
 ktc2_String* ktc2_className(ktc2_Obj* object);

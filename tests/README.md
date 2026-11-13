@@ -18,20 +18,15 @@ package). The same file runs:
 - `kotlin/`: tests of the Kotlin standard library itself, unchanged, from
   `libraries/stdlib/test` of github.com/JetBrains/kotlin at tag `v2.4.21` (Apache 2.0, the
   header of each file). They are the best tests there are of what the library must do.
-- `pending/`: tests of the same origin that do not pass yet, and why. Not run. Each is a
-  difference to fix, after which the file moves to `kotlin/`:
-  - `TuplesTest.kt`: `Pair(1, null).toList()` gives `[0, null]`: a `Pair<Int, Nothing?>` read
-    as a `Pair<Int?, Int?>` (two instantiations of one class, as in "A generic class is one
-    class in Kotlin" of `DESIGN.md`, for a number against a number that may be null);
-  - `MathTest.kt`: 7 of its 29 tests fail in C. `assertEquals(Double.NaN, x)` fails: in code
-    written for a `T` and instantiated for `Double`, `==` compares as numbers do (NaN is not
-    NaN) where Kotlin calls `equals` (NaN equals NaN); `powers` and `nextAndPrev` fail too
-    (not looked at);
-  - `CharTest.kt`: `Char(code)`, the function that makes a character of a number, is refused;
-  - `ListSpecificTest.kt`: `assertFailsWith(Exception::class) { }`, the form that takes the
-    class as a value, is not in `Ktc2Test.kt` (it needs `KClass.isInstance`);
-  - `GroupingTest.kt`: the `main` the suite writes takes a function that follows a `@Test`
-    one for a test (`testMain` in `IntegrationTest.kt` reads the source as text).
+- `pending/`, when there is one: tests of the same origin that do not pass yet, each with the
+  reason written here. Not run. A test that does not pass has found a difference to fix; the
+  file then moves to `kotlin/`. The first six files taken found five (a `Pair<Int, Nothing?>`
+  read as a `Pair<Int?, Int?>`, `==` on a `T` that is a `Double`, `Pair('b', x) == Pair('b', x)`
+  across two instantiations, `Char(code)`, `pow` and `ulp` at their edges) and all pass now:
+  99 tests.
+
+On Kotlin/Native 2.4.21 three of these files do not compile ("name based destructuring is only
+available since language version 2.5"): they need the compiler of their own version.
 
 Most files of the library's tests use helpers of its own (`test.TestPlatform`,
 `test.collections.behaviors`): those come next, with the helpers.

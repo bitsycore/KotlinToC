@@ -1966,10 +1966,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * argument names its instantiation exactly.
 	 */
 	internal fun mayBeOtherInstantiation(inReceiver: IrType?, inOwner: IrClass): Boolean {
-		if (inReceiver == null || inOwner.isInterface || classParameters(inOwner).isEmpty()) return false
-		if (isStruct(inOwner) || isPointerClass(inOwner) || isThrowableClass(inOwner) || inOwner.fileOrNull == null) return false
-		return superArguments(inReceiver, inOwner).all { (kTypeOf(canonical(it)) ?: KObjType) == KObjType }
+		if (inReceiver == null || !hasInstantiations(inOwner)) return false
+		// A number that may be null is also what a `Pair<Int, Nothing?>` gives when it is read as a `Pair<Int?, Int?>`.
+		return superArguments(inReceiver, inOwner).all { vArgument -> (kTypeOf(canonical(vArgument)) ?: KObjType).let { it == KObjType || it is KOptType } }
 	}
+
+	/** True for a generic class that is several classes here, one for each kind of type argument. */
+	internal fun hasInstantiations(inClass: IrClass): Boolean =
+		!inClass.isInterface && classParameters(inClass).isNotEmpty() && !isStruct(inClass) && !isPointerClass(inClass) &&
+			!isThrowableClass(inClass) && inClass.fileOrNull != null
+
+	/** [inClass] with `Any?` for each of its type parameters: the type under which an object of any of its instantiations is reached. */
+	internal fun anyViewOf(inClass: IrClass): IrType = inClass.symbol.typeWith(classParameters(inClass).map { mBuiltIns.anyNType })
 
 	/** True when a call to [inFunction] must go through a dispatcher. */
 	internal fun isVirtual(inFunction: IrSimpleFunction): Boolean {

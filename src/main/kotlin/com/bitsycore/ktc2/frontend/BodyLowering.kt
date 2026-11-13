@@ -617,6 +617,7 @@ internal class BodyBuilder(
 					return
 				}
 				val vInit = inStatement.initializer?.let { coerce(lowerRhs(it), vType) }
+				if (!inStatement.isVar && isUncertain(inStatement.initializer)) mUncertain += inStatement
 				forceOnStack(inStatement, vInit)
 				if (inStatement in mCellVariables && vType != KUnitType && vType != KNothingType) {
 					// Shared with a closure: the value lives in a cell both sides point to.
@@ -911,8 +912,8 @@ internal class BodyBuilder(
 		if (vClass.kotlinFqName.asString() == "kotlin.Enum") return KClassTarget(mImporter.enumBase())
 		// An object holding a struct is its box.
 		(kType(vBase) as? KStructType)?.let { return KClassTarget(mImporter.boxFor(it.struct).also { vBox -> mImporter.instantiate(vBox) }) }
-		// A type without a number for an argument (`Box<*>`, `Box<String>`) says nothing of the instantiation: Kotlin tests the class.
-		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it, mImporter.mayBeOtherInstantiation(closed(vBase), vClass)) }
+		// Kotlin tests the class, whatever its type arguments: `x is Pair<A, B>` holds for every pair.
+		return mImporter.classFor(vClass, mImporter.argumentsOf(closed(vBase)))?.let { KClassTarget(it, mImporter.hasInstantiations(vClass)) }
 	}
 
 	/** `inValue is inType`, including the nullable and `Any` cases. */
@@ -1793,6 +1794,8 @@ internal class BodyBuilder(
 			val vLookup = mImporter.simpleEnumProperty(inExpression.symbol.owner) ?: return fail(inExpression, "field access")
 			return adapt(spill(KCall(vLookup, listOf(coerce(lowerPure(vReceiver), vLookup.params[0].type)))), inExpression)
 		}
+		// Of an object that may be of another instantiation of its class than this code was made for: through its getter.
+		if (vLate == null) erasedFieldRead(inExpression, false)?.let { return it }
 		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
 		val vRead = readField(fieldTarget(lowerPure(vReceiver), vField), vField)
 		return adapt(if (vLate != null) initialized(vRead, vLate) else vRead, inExpression)
@@ -1921,11 +1924,52 @@ internal class BodyBuilder(
 	 * says (see `mayBeOtherInstantiation`). Not for `this`, which is of the instantiation the
 	 * function was made for.
 	 */
+	/** The variables that were given the result of a cast to a generic class: see [isUncertain]. */
+	private val mUncertain = HashSet<IrValueDeclaration>()
+
+	/**
+	 * True when [inValue] comes from a cast to a generic class: `other as Pair<A, B>`. Kotlin
+	 * only tests the class there, so the object may be of any instantiation, whatever the type
+	 * says: its members are reached under the type that fits them all ([receiverView]).
+	 */
+	private fun isUncertain(inValue: IrExpression?): Boolean = when (inValue) {
+		is IrTypeOperatorCall -> {
+			val vTo = inValue.typeOperand.classOrNull?.owner
+			(inValue.operator == IrTypeOperator.CAST || inValue.operator == IrTypeOperator.IMPLICIT_CAST || inValue.operator == IrTypeOperator.SAFE_CAST) &&
+				vTo != null && mImporter.hasInstantiations(vTo) && inValue.argument.type.classOrNull?.owner != vTo
+		}
+		is IrGetValue -> inValue.symbol.owner in mUncertain
+		else -> false
+	}
+
+	/** The type under which the member [inFunction] of [inReceiver] is looked up. */
+	private fun receiverView(inReceiver: IrExpression?, inFunction: IrSimpleFunction, inClosed: IrType?): IrType? {
+		if (!isUncertain(inReceiver)) return inClosed
+		val vReal = if (inFunction.isFakeOverride) inFunction.resolveFakeOverride() ?: inFunction else inFunction
+		return mImporter.anyViewOf(vReal.parentAsClass)
+	}
+
+	/**
+	 * A field of an object whose instantiation the type does not settle, read through the getter
+	 * of its property, by the class of the object; null when [inRead] is no such read. With
+	 * [inAsObject] the value is left as the object the getter gives (a number in its box): what
+	 * `==` wants of it.
+	 */
+	private fun erasedFieldRead(inRead: IrGetField, inAsObject: Boolean): KExpr? {
+		val vReceiver = inRead.receiver ?: return null
+		val vGetter = inRead.symbol.owner.correspondingPropertySymbol?.owner?.getter ?: return null
+		if (!isErasedReceiver(vReceiver, vGetter)) return null
+		val vTarget = memberTarget(vGetter, false, receiverView(vReceiver, vGetter, closed(vReceiver.type)), emptyList(), true)?.first ?: return null
+		val vCall = spill(KCall(vTarget, listOf(coerce(lowerPure(vReceiver), vTarget.params[0].type))))
+		return if (inAsObject) vCall else adapt(vCall, inRead)
+	}
+
 	private fun isErasedReceiver(inReceiver: IrExpression?, inFunction: IrSimpleFunction): Boolean {
 		if (inReceiver == null || inFunction.dispatchReceiverParameter == null) return false
 		val vThis = (mIrFunction as? IrSimpleFunction)?.dispatchReceiverParameter ?: (mIrFunction as? IrConstructor)?.parentAsClass?.thisReceiver
 		if (inReceiver is IrGetValue && vThis != null && inReceiver.symbol.owner == vThis) return false
 		if (kType(inReceiver.type) !is KClassType) return false
+		if (isUncertain(inReceiver)) return true
 		val vReal = if (inFunction.isFakeOverride) inFunction.resolveFakeOverride() ?: inFunction else inFunction
 		return mImporter.mayBeOtherInstantiation(closed(inReceiver.type), vReal.parentAsClass)
 	}
@@ -2072,7 +2116,8 @@ internal class BodyBuilder(
 				return KUnitValue
 			}
 		}
-		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vReceiver, vOwnArguments, vIsErased) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
+		val vView = if (vIsErased) receiverView(vArguments.firstOrNull(), vCallee, vReceiver) else vReceiver
+		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vView, vOwnArguments, vIsErased) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
 		return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
 	}
 
@@ -2558,7 +2603,9 @@ internal class BodyBuilder(
 			if (vName == "CHECK_NOT_NULL") return lowerNotNull(inCall, vIrArguments[0])
 			if (vName == "EQEQ" || vName == "EQEQEQ" || vName == "ieee754equals") {
 				val vTypes = vIrArguments.map { kType(it.type) }
-				if (vTypes.any { it !is KPrimType }) return lowerEquality(inCall, vIrArguments[0], vIrArguments[1], vName == "EQEQEQ")
+				// A field of an object of an uncertain instantiation is compared as the object it is read as.
+				val vIsUncertainRead = vIrArguments.any { it is IrGetField && isUncertain(it.receiver) }
+				if (vTypes.any { it !is KPrimType } || vIsUncertainRead) return lowerEquality(inCall, vIrArguments[0], vIrArguments[1], vName == "EQEQEQ")
 			}
 		}
 		if (vParent == "kotlin.String") return lowerStringCall(inCall, vName, vIrArguments)
@@ -2621,6 +2668,13 @@ internal class BodyBuilder(
 			val vOp = kComparisonByName[vName] ?: return fail(inCall, "intrinsic '$vName'")
 			val vSecond = vOperandTypes[1]!!.prim
 			val vCommon = if (vFirst == KPrim.CHAR && vSecond == KPrim.CHAR) KPrim.CHAR else promote(vFirst, vSecond)
+			// `==` on two values the compiler does not know to be Float or Double where it is written (a `T`
+			// that stands for Double here) is `equals`: NaN equals NaN, and 0.0 is not -0.0. Where it does
+			// know, it asks for `ieee754equals`.
+			if (vName == "EQEQ" && vCommon.isFloating) {
+				val vOrder = KBinary(KBinaryOp.CMP, convert(vOperands[0], vCommon), convert(vOperands[1], vCommon), vCommon, kIntType)
+				return KBinary(KBinaryOp.EQ, vOrder, KConst(0, kIntType), KPrim.INT, kBoolType)
+			}
 			return KBinary(vOp, convert(vOperands[0], vCommon), convert(vOperands[1], vCommon), vCommon, kBoolType)
 		}
 		if (kPrimByClass[vParent] != vFirst) return fail(inCall, vWhat)
@@ -2704,13 +2758,30 @@ internal class BodyBuilder(
 	//  Equality
 
 	private fun lowerEquality(inCall: IrCall, inLeft: IrExpression, inRight: IrExpression, inIdentity: Boolean): KExpr {
-		val vOperands = lowerOperands(listOf(inLeft, inRight))
+		fun objectRead(inSide: IrExpression): KExpr? = (inSide as? IrGetField)?.takeIf { isUncertain(it.receiver) }?.let { erasedFieldRead(it, true) }
+		val vOperands = if ((inLeft is IrGetField && isUncertain(inLeft.receiver)) || (inRight is IrGetField && isUncertain(inRight.receiver))) {
+			val vFirst = objectRead(inLeft) ?: spill(lowerPure(inLeft))
+			mutableListOf(vFirst, objectRead(inRight) ?: lowerPure(inRight))
+		} else {
+			lowerOperands(listOf(inLeft, inRight))
+		}
 		// `Unit` compared with something is the Unit object.
 		val vLeft = vOperands[0].let { if (it === KUnitValue) coerce(it, KObjType) else it }
 		val vRight = vOperands[1].let { if (it === KUnitValue) coerce(it, KObjType) else it }
 		val vLeftType = vLeft.type
 		val vRightType = vRight.type
 		return when {
+			// Two numbers, one of them read through a getter (a field that is a number in every instantiation).
+			vLeftType is KPrimType && vRightType is KPrimType -> {
+				val vCommon = if (vLeftType.prim == vRightType.prim) vLeftType.prim else promote(vLeftType.prim, vRightType.prim)
+				val vFirst = convert(vLeft, vCommon)
+				val vSecond = convert(vRight, vCommon)
+				if (vCommon.isFloating) {
+					KBinary(KBinaryOp.EQ, KBinary(KBinaryOp.CMP, vFirst, vSecond, vCommon, kIntType), KConst(0, kIntType), KPrim.INT, kBoolType)
+				} else {
+					KBinary(KBinaryOp.EQ, vFirst, vSecond, vCommon, kBoolType)
+				}
+			}
 			// `===` between a number that may be null and an object: only two nulls are the same.
 			inIdentity && vLeftType is KOptType && vRightType is KRefType && vRight !is KNull -> and(not(KOptHas(spill(vLeft))), isNull(spill(vRight)))
 			inIdentity && vRightType is KOptType && vLeftType is KRefType && vLeft !is KNull -> and(not(KOptHas(spill(vRight))), isNull(spill(vLeft)))

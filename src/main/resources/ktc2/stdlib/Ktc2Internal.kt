@@ -210,6 +210,14 @@ public fun <T> kotlin_collections_MutableList_removeFirst(list: MutableList<T>):
 public fun <T> kotlin_collections_MutableList_removeLast(list: MutableList<T>): T =
 	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(list.size - 1)
 
+/** `Char(code)`: the character with that number, which has to be one. */
+public fun kotlin_Char__Int(code: Int): Char {
+	if (code < 0 || code > 0xFFFF) throw IllegalArgumentException("Invalid Char code: $code")
+	return code.toChar()
+}
+
+public fun kotlin_Char__UShort(code: UShort): Char = code.toInt().toChar()
+
 public fun kotlin_Int_rangeTo(start: Int, end: Int): IntRange = IntRange(start, end)
 
 public fun kotlin_Long_rangeTo(start: Long, end: Long): LongRange = LongRange(start, end)
@@ -291,6 +299,9 @@ public class PropertyReference(override val name: String) : kotlin.reflect.KProp
 
 public fun propertyReference(name: String): Any = PropertyReference(name)
 
+/** True when [value] is of the class called [name] or of a class under it. */
+public external fun classIsInstance(value: Any, name: String): Boolean
+
 /** The Kotlin name of the class of [value], as the runtime's table of types has it. */
 public external fun className(value: Any): String
 
@@ -324,7 +335,8 @@ public class ClassReference(private val mName: String) : kotlin.reflect.KClass<A
 	override val isFun: Boolean get() = unavailable()
 	override val isValue: Boolean get() = unavailable()
 
-	override fun isInstance(value: Any?): Boolean = unavailable()
+	/** For a class: an object of it or of a class under it. Of an interface nothing is known here: false. */
+	override fun isInstance(value: Any?): Boolean = value != null && classIsInstance(value, mName)
 
 	override fun equals(other: Any?): Boolean = other is ClassReference && other.mName == mName
 

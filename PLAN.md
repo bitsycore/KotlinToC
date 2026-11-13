@@ -112,10 +112,11 @@ limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
   tests are now also written the way Kotlin Multiplatform's are: `tests/`, with `kotlin.test`
   assertions in common code and no output to compare (`tests/README.md`). The suite runs them
   in C and on the JVM, `tools/native.sh` on Kotlin/Native: the first 19 pass on all three.
-  `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged: of the first
-  six taken, one passes and five are in `tests/pending/` with the difference each found (a
-  `Pair<Int, Nothing?>` read as a `Pair<Int?, Int?>`, `==` on a `T` that is a `Double`,
-  `Char(code)`). They are the next things to fix, and the library has hundreds more.
+  `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged: the first six
+  files taken (99 tests) found five differences in an hour, all fixed (`tests/README.md`).
+  The library has hundreds more files; most use helpers of its own (`test.TestPlatform`,
+  `test.collections.behaviors`), which have to come with them. Taking more of them is the
+  best next use of time: each file is a list of things Kotlin promises.
 - the CI job (2026-11-13): macOS and Windows pass. Linux passes but for `interop/Posix`: the
   bindings of `platform.posix` do not find `FILE` with the GNU C library, after one attempt
   that could not be tried on a Mac (`kGlibcPrivateHeaders` in `Bindings.kt`).

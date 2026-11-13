@@ -200,6 +200,21 @@ public inline fun assertFails(message: String?, block: () -> Unit): Throwable {
 	fail((if (message == null) "" else "$message. ") + "Expected an exception to be thrown, but was completed successfully.")
 }
 
+/** Checks that [block] fails with an exception of the class [exceptionClass], and gives it. */
+public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect.KClass<T>, block: () -> Unit): T =
+	assertFailsWith(exceptionClass, null, block)
+
+public inline fun <T : Throwable> assertFailsWith(exceptionClass: kotlin.reflect.KClass<T>, message: String?, block: () -> Unit): T {
+	try {
+		block()
+	} catch (inError: Throwable) {
+		@Suppress("UNCHECKED_CAST")
+		if (exceptionClass.isInstance(inError)) return inError as T
+		fail((if (message == null) "" else "$message. ") + "Expected an exception of another type to be thrown, but was $inError")
+	}
+	fail((if (message == null) "" else "$message. ") + "Expected an exception to be thrown, but was completed successfully.")
+}
+
 /** Checks that [block] fails with an exception of type [T], and gives it. */
 public inline fun <reified T : Throwable> assertFailsWith(message: String? = null, block: () -> Unit): T {
 	try {

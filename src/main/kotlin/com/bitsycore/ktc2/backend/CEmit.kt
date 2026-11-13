@@ -93,7 +93,8 @@ class CEmitter(private val mModule: KModule) {
 		append("\nconst ktc2_TypeInfo ktc2_types[] = {\n\tKTC2_BUILTIN_TYPES,\n")
 		mConcrete.forEach { vClass ->
 			val vDeinit = if (vClass.deinit != null) "${vClass.cName}__deinit" else "NULL"
-			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit },\n")
+			val vAncestors = generateSequence(vClass) { it.superClass }.joinToString("|", "|", "|") { it.name }
+			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)} },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 

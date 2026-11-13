@@ -1217,6 +1217,29 @@ bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
 
 ktc2_Obj ktc2_unit_object = { KTC2_IMMORTAL, KTC2_TYPE_UNIT };
 
+bool ktc2_classIsInstance(ktc2_Obj* object, ktc2_String* name)
+{
+	if (!object) return false;
+	if (strcmp(name->bytes, "kotlin.Any") == 0) return true;
+	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
+	if (type->ancestors) {
+		/* "|a.B|c.D|": the name between two marks. */
+		size_t size = (size_t)name->size;
+		for (const char* at = strstr(type->ancestors, name->bytes); at; at = strstr(at + 1, name->bytes)) {
+			if (at[-1] == '|' && at[size] == '|') return true;
+		}
+		return false;
+	}
+	/* A built-in type: its own name, and what the numbers and the texts are besides. */
+	if (strncmp(name->bytes, "kotlin.", 7) != 0) return false;
+	const char* bare = name->bytes + 7;
+	if (strcmp(bare, type->name) == 0 || strcmp(name->bytes, type->name) == 0) return true;
+	if (strcmp(bare, "Number") == 0) return ktc2_is_number(object);
+	if (strcmp(bare, "CharSequence") == 0) return object->typeId == KTC2_TYPE_STRING;
+	if (strcmp(bare, "Comparable") == 0) return object->typeId == KTC2_TYPE_STRING || (object->typeId >= KTC2_TYPE_BOX_BOOLEAN && object->typeId <= KTC2_TYPE_BOX_ULONG);
+	return false;
+}
+
 ktc2_String* ktc2_className(ktc2_Obj* object)
 {
 	const char* name = ktc2_types[object->typeId].name;

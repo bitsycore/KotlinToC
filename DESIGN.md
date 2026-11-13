@@ -502,9 +502,9 @@ Known to differ from the JVM:
 - a `HashMap` goes over its entries in the order they were put in, as Kotlin/Native's does;
   the JVM's goes by hash. Kotlin promises neither;
 - of reflection there is a class as a value, and no more: `x::class` and `Name::class` can be
-  compared, used as keys, and asked for `simpleName` and `qualifiedName` (`ClassReference` in
-  `Ktc2Internal.kt`, by the name the runtime's table of types has); everything else a `KClass`
-  offers throws;
+  compared, used as keys, asked for `simpleName` and `qualifiedName`, and asked `isInstance`
+  for a class (not for an interface: false) (`ClassReference` in `Ktc2Internal.kt`, by the
+  names the runtime's table of types has); everything else a `KClass` offers throws;
 - what only the JDK has is not there, by the owner's decision: `toSortedMap`, `toSortedSet`,
   `String.format`, `getOrDefault` and `putIfAbsent` of a map, `setCharAt` and `deleteCharAt` of
   a `StringBuilder`. Kotlin/Native has none of them either; a compatibility layer in the
@@ -638,6 +638,11 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   `this` is exact, and so is a type with a number in it. `x is Box<*>` tests the family of
   classes (`KClassTarget.isAnyInstantiation`). `Devirtualize` makes the call direct again where
   it knows the class, which is nearly everywhere: the benchmarks did not move. Where the
+  A value that comes from a cast to a generic class (`other as Pair<A, B>`, which Kotlin only
+  tests by the class) is of an uncertain instantiation whatever its type says (`isUncertain`):
+  its members are looked up under the type with `Any?` for every argument, a field through
+  its getter, and a field compared with `==` is compared as the object the getter gives, so
+  that a `Pair<Char, X>` equals the same pair made by code written for objects. Where the
   dispatcher is handed a value the implementation cannot take (a `List<Int>` asked
   `contains("x")`, or seen as a `List<Int?>` and asked `contains(null)`) it answers what a
   lookup that finds nothing answers (`CEmitter.dispatcher`).

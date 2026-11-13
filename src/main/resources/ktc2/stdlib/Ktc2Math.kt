@@ -92,9 +92,19 @@ public actual fun max(a: Double, b: Double): Double = when {
 	else -> if (cExpr<Boolean>("signbit($0) != 0", a)) b else a
 }
 
-public actual inline fun Double.pow(x: Double): Double = cExpr("pow($0, $1)", this, x)
+/**
+ * As `Math.pow`, which is not C's `pow` in three places: anything to the power NaN is NaN
+ * (C gives 1 for 1), NaN to a power that is not zero is NaN, and 1 or -1 to an infinite power
+ * is NaN (C gives 1).
+ */
+public actual fun Double.pow(x: Double): Double = when {
+	x == 0.0 -> 1.0
+	this != this || x != x -> Double.NaN
+	(this == 1.0 || this == -1.0) && (x == Double.POSITIVE_INFINITY || x == Double.NEGATIVE_INFINITY) -> Double.NaN
+	else -> cExpr("pow($0, $1)", this, x)
+}
 
-public actual inline fun Double.pow(n: Int): Double = cExpr("pow($0, (double)$1)", this, n)
+public actual fun Double.pow(n: Int): Double = pow(n.toDouble())
 
 public actual inline val Double.absoluteValue: Double get() = cExpr("fabs($0)", this)
 
@@ -108,6 +118,8 @@ public actual val Double.ulp: Double
 	get() = when {
 		this != this -> this
 		this == Double.POSITIVE_INFINITY || this == Double.NEGATIVE_INFINITY -> Double.POSITIVE_INFINITY
+		// The largest number has no next one: its step is the one down to the number before it.
+		this == Double.MAX_VALUE || this == -Double.MAX_VALUE -> cExpr<Double>("fabs($0) - nextafter(fabs($0), 0.0)", this)
 		else -> cExpr<Double>("nextafter(fabs($0), INFINITY) - fabs($0)", this)
 	}
 
@@ -199,9 +211,9 @@ public actual fun min(a: Float, b: Float): Float = min(a.toDouble(), b.toDouble(
 
 public actual fun max(a: Float, b: Float): Float = max(a.toDouble(), b.toDouble()).toFloat()
 
-public actual inline fun Float.pow(x: Float): Float = cExpr("(float)pow((double)$0, (double)$1)", this, x)
+public actual fun Float.pow(x: Float): Float = toDouble().pow(x.toDouble()).toFloat()
 
-public actual inline fun Float.pow(n: Int): Float = cExpr("(float)pow((double)$0, (double)$1)", this, n)
+public actual fun Float.pow(n: Int): Float = toDouble().pow(n.toDouble()).toFloat()
 
 public actual inline val Float.absoluteValue: Float get() = cExpr("fabsf($0)", this)
 
