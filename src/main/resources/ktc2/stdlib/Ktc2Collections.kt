@@ -44,6 +44,50 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	/** The element at [index], for the iterator, which has compared the index with the size already. */
 	internal fun held(index: Int): E = array.at(index)
 
+	/**
+	 * Sorts the elements where they are, with a stable merge sort as the JVM's is. As there, a
+	 * comparator that changed the list is reported when the sort is over, and the sort itself
+	 * counts as a change.
+	 */
+	internal fun sortStorage(comparator: Comparator<in E>) {
+		val vCount = length
+		if (vCount < 2) return
+		val vSeen = changes
+		mergeSort(array, Storage(vCount), 0, vCount, comparator)
+		if (changes != vSeen) throw ConcurrentModificationException()
+		changes++
+	}
+
+	/** Sorts `[from, to)` of [values], which only ever holds what it held when the sort began, in another order. */
+	private fun mergeSort(values: Storage<E>, buffer: Storage<E>, from: Int, to: Int, comparator: Comparator<in E>) {
+		if (to - from <= 8) {
+			for (vIndex in from + 1 until to) {
+				val vValue = values.at(vIndex)
+				var vHole = vIndex
+				while (vHole > from && comparator.compare(values.at(vHole - 1), vValue) > 0) {
+					values.put(vHole, values.at(vHole - 1))
+					vHole--
+				}
+				values.put(vHole, vValue)
+			}
+			return
+		}
+		val vMiddle = (from + to) / 2
+		mergeSort(values, buffer, from, vMiddle, comparator)
+		mergeSort(values, buffer, vMiddle, to, comparator)
+		// Already in order: nothing to merge.
+		if (comparator.compare(values.at(vMiddle), values.at(vMiddle - 1)) >= 0) return
+		var vLeft = from
+		var vRight = vMiddle
+		var vOut = from
+		while (vLeft < vMiddle && vRight < to) {
+			if (comparator.compare(values.at(vRight), values.at(vLeft)) < 0) buffer.put(vOut++, values.at(vRight++)) else buffer.put(vOut++, values.at(vLeft++))
+		}
+		while (vLeft < vMiddle) buffer.put(vOut++, values.at(vLeft++))
+		while (vRight < to) buffer.put(vOut++, values.at(vRight++))
+		for (vIndex in from until to) values.put(vIndex, buffer.at(vIndex))
+	}
+
 	public actual constructor() : this(10)
 
 	public actual constructor(elements: Collection<E>) : this(elements.size) {
@@ -204,12 +248,8 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	}
 
 	actual override fun subList(fromIndex: Int, toIndex: Int): MutableList<E> {
-		if (fromIndex < 0 || toIndex > length || fromIndex > toIndex) {
-			throw IndexOutOfBoundsException("fromIndex: $fromIndex, toIndex: $toIndex, size: $length")
-		}
-		val vResult = ArrayList<E>(toIndex - fromIndex)
-		for (vIndex in fromIndex until toIndex) vResult.add(array.at(vIndex))
-		return vResult
+		checkPart(fromIndex, toIndex, length)
+		return ListPart(this, fromIndex, toIndex - fromIndex)
 	}
 
 	override fun toString(): String {
@@ -430,6 +470,76 @@ public actual fun <T> Iterable<T>.shuffled(): List<T> {
 	return vList
 }
 
+/** Fails as the JVM does for a `subList` that is not inside a list of [size] elements. */
+private fun checkPart(fromIndex: Int, toIndex: Int, size: Int) {
+	if (fromIndex < 0) throw IndexOutOfBoundsException("fromIndex = $fromIndex")
+	if (toIndex > size) throw IndexOutOfBoundsException("toIndex = $toIndex")
+	if (fromIndex > toIndex) throw IllegalArgumentException("fromIndex($fromIndex) > toIndex($toIndex)")
+}
+
+/**
+ * A part of a list, seen through it: what is read comes from the list and what is written
+ * goes to it. As on the JVM, the part of an `ArrayList` fails with
+ * `ConcurrentModificationException` once the list changed size by another way than the part.
+ */
+private class ListPart<E>(private val list: MutableList<E>, private val from: Int, private var count: Int) : AbstractMutableList<E>() {
+
+	private var seen: Int = changesOfList()
+
+	private fun changesOfList(): Int {
+		val vList = list
+		return if (vList is ArrayList<E>) vList.changes else 0
+	}
+
+	private fun check() {
+		if (changesOfList() != seen) throw ConcurrentModificationException()
+	}
+
+	override val size: Int
+		get() {
+			check()
+			return count
+		}
+
+	override fun get(index: Int): E {
+		check()
+		if (index < 0 || index >= count) throw IndexOutOfBoundsException("Index $index out of bounds for length $count")
+		return list[from + index]
+	}
+
+	override fun set(index: Int, element: E): E {
+		check()
+		if (index < 0 || index >= count) throw IndexOutOfBoundsException("Index $index out of bounds for length $count")
+		return list.set(from + index, element)
+	}
+
+	override fun add(index: Int, element: E) {
+		check()
+		if (index < 0 || index > count) throw IndexOutOfBoundsException("Index: $index, Size: $count")
+		list.add(from + index, element)
+		count++
+		seen = changesOfList()
+	}
+
+	override fun removeAt(index: Int): E {
+		check()
+		if (index < 0 || index >= count) throw IndexOutOfBoundsException("Index $index out of bounds for length $count")
+		val vRemoved = list.removeAt(from + index)
+		count--
+		seen = changesOfList()
+		return vRemoved
+	}
+
+	override fun clear() {
+		check()
+		while (count > 0) {
+			list.removeAt(from + count - 1)
+			count--
+		}
+		seen = changesOfList()
+	}
+}
+
 private class NaturalOrder<T : Comparable<T>> : Comparator<T> {
 	override fun compare(a: T, b: T): Int = a.compareTo(b)
 }
@@ -486,8 +596,7 @@ public actual fun <T : Comparable<T>> MutableList<T>.sort() {
 public actual fun <T> MutableList<T>.sortWith(comparator: Comparator<in T>) {
 	// As on the JVM a list of one element is left alone, and sorting counts as a change for the iterators.
 	if (size <= 1) return
-	mergeSort(this, comparator)
-	if (this is ArrayList<T>) changes++
+	if (this is ArrayList<T>) sortStorage(comparator) else mergeSort(this, comparator)
 }
 
 public actual fun <T, K> Grouping<T, K>.eachCount(): Map<K, Int> {
@@ -776,9 +885,8 @@ public actual abstract class AbstractMutableList<E> protected actual constructor
 	actual override fun listIterator(index: Int): MutableListIterator<E> = ArrayListIterator(this, index)
 
 	actual override fun subList(fromIndex: Int, toIndex: Int): MutableList<E> {
-		val vResult = ArrayList<E>(toIndex - fromIndex)
-		for (vIndex in fromIndex until toIndex) vResult.add(this[vIndex])
-		return vResult
+		checkPart(fromIndex, toIndex, size)
+		return ListPart(this, fromIndex, toIndex - fromIndex)
 	}
 
 	override fun equals(other: Any?): Boolean {

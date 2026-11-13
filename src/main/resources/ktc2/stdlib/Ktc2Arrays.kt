@@ -220,6 +220,8 @@ private fun <T> mergeSort(inArray: Array<T>, inBuffer: Array<T>, inFrom: Int, in
 	val vMiddle = (inFrom + inTo) / 2
 	mergeSort(inArray, inBuffer, inFrom, vMiddle, inComparator)
 	mergeSort(inArray, inBuffer, vMiddle, inTo, inComparator)
+	// Already in order: nothing to merge.
+	if (inComparator.compare(inArray[vMiddle], inArray[vMiddle - 1]) >= 0) return
 	var vLeft = inFrom
 	var vRight = vMiddle
 	var vOut = inFrom
