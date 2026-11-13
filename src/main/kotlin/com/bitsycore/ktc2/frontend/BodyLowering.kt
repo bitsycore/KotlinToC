@@ -2485,6 +2485,8 @@ internal class BodyBuilder(
 		// expected), so an operand takes the parameter's type when its own is not primitive.
 		val vOperandTypes = vIrArguments.mapIndexed { vIndex, vArgument ->
 			kType(vArgument.type) as? KPrimType ?: kType(vCallee.parameters[vIndex].type) as? KPrimType
+				// A member a number inherits (`hashCode` of a `Double?` known not to be null): its receiver is that number.
+				?: kPrimByClass[vParent]?.takeIf { vIndex == 0 }?.let { KPrimType(it) }
 		}
 		if (vOperandTypes.any { it == null }) return fail(inCall, vWhat)
 		val vResultType = typeOf(inCall) as? KPrimType ?: return fail(inCall, vWhat)
