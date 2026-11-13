@@ -31,12 +31,12 @@ sources + library sources + generated bindings
   -> KirImporter/BodyBuilder IR -> KIR, from main, monomorphizing        frontend/KirImport.kt, BodyLowering.kt
   -> CycleLint               warns about classes that can form cycles    backend/CycleLint.kt
   -> Devirtualize            dispatched calls -> direct calls            backend/Devirtualize.kt
-  -> ListLoops               `for` over an ArrayList or a HashMap as a loop over its storage   backend/ListLoops.kt
+  -> ListLoops               `for` over an ArrayList or a HashMap as a loop over its storage; `list[i]` and `list.size` written out   backend/ListLoops.kt
   -> RangeChecks             array accesses proven in range              backend/RangeChecks.kt
   -> ExceptionLowering       throw/try -> pending value + tests          backend/ExceptionLowering.kt
   -> EscapeAnalysis          objects to the frame, results in place      backend/EscapeAnalysis.kt
   -> ArcInsert               retain/release, minus what is unobservable  backend/ArcInsert.kt (+ Effects, BorrowedReturns)
-  -> CEmitter                one .h/.c per class, CMakeLists.txt         backend/CEmit.kt
+  -> CEmitter                one .h/.c per class (short functions in the .h), ktc2_all.c, CMakeLists.txt   backend/CEmit.kt
 ```
 
 - The plugin receives the module's IR after the compiler's front end and before any JVM
@@ -344,9 +344,16 @@ The platform layer's `ArrayList` reads and writes its storage without testing th
 only ever grows. Its `add` therefore cannot throw, and a caller does not test for it.
 
 Where the JVM would use an intrinsic, the platform layer asks the runtime: searching and
-comparing strings that are all ASCII works on their bytes (`indexOf`, `contains`, `split`,
-`startsWith`, `replace`), and indexing a string that is not ASCII starts from where the
-last index of that string was found, so a loop over its characters is linear.
+comparing strings works on their bytes (`indexOf`, `contains`, `split`, `startsWith`,
+`replace`; in text that is not ASCII the bytes of whole code points are found where their
+UTF-16 units are), and indexing a string that is not ASCII starts from where the last index
+of that string was found, so a loop over its characters is linear. Two such places are
+remembered, for code that reads two strings side by side. A `StringBuilder` takes a string
+at once and writes the digits of a number itself; integers are formatted without `printf`.
+
+An `ArrayList` is sorted in its own storage (a stable merge sort that does nothing to runs
+already in order); `subList` is a view of its list (`ListPart`), as on the JVM. A `Regex`
+that starts with a character, exactly, only tries to match where that character is.
 
 What is there: collections and sequences (not `sequence { }`; a library function that uses
 it on one of its paths, like `chunked` on something that is not a list, compiles and fails
@@ -492,7 +499,12 @@ Known to differ from the JVM:
   rebuilt or cleared (the `Map.Entry` handed out still reads it, as on the JVM): the key and
   value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
   and every removal from an `ArrayList`, let go at once;
-- paths and program arguments are UTF-8, which on Windows is right for ASCII only.
+- paths and program arguments are UTF-8, which on Windows is right for ASCII only;
+- half of a surrogate pair on its own cannot be held by a string: it becomes `?`;
+- a `Double` or `Float` seen as a `Comparable<Double>` cannot be compared through that type
+  (`AbstractMethodError`); `compareTo` on the number itself, and sorting, are right;
+- a number that may be null cast to `Any?` and then tested with `is` is refused by the
+  translator ("not supported yet").
 
 ---------------------------------------------------------------------------
 ## 13. Inside the code
@@ -604,7 +616,7 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   standstill twice: at first a call through a dispatcher that cannot be resolved yet says
   nothing of its result (the class of its receiver may still be on its way), and only once
   nothing moves does it say "anything". Said in the first round, it would stay said. `KTC2_SKIP=devirtualize` (also
-  `copies`, `listloops`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
+  `copies`, `listloops`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, `inline`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - `ListLoops` finds the platform `ArrayList` by its name and by the names of what it needs
   of it (the fields `length`, `changes`, `array`, the function `checkChanges`): rename one in
@@ -615,6 +627,15 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   names `component1`, `component2`, `key`, `value`. The loop it writes
   reads the storage without a test, which holds because the storage never shrinks and every
   change of size adds to `changes`: a new way to change the size has to add to it too.
+  It also writes out the calls to `get`, `set` and `size` of an `ArrayList` (found by those
+  names, with `checkIndex`): what it writes is what those functions do, so a change to one of
+  them in `Ktc2Collections.kt` has to be made in `ListLoops.accessor` too.
+- `CEmitter` writes a function in the header of its unit, as `static inline`, when its body
+  is at most four lines of C and needs nothing but what that header declares (`inHeader`):
+  it prints the body once to find out. A body that would need another unit's header, a
+  string or a type id stays in the C file. The names a C file keeps to itself (`lit_3_0`,
+  `is_3_0`) carry the number of the unit, so that `ktc2_all.c`, which includes every C file,
+  compiles.
 - A function of the C runtime that can leave with an exception has to be named in
   `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the
   exception shows up later, somewhere else. There are three today.

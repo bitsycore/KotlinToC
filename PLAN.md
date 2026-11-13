@@ -19,9 +19,9 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 112
-tests (109 programs compared with the JVM or an `.expected` file, 2 that must be refused, the
-showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 120
+tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
+the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
 `007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
 showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `Walking`,
 `OwnedParameters`, `HeldInFrame`, `Deinit`, `Cleaners`, `Collections`,
@@ -34,6 +34,23 @@ probe of `HashMap` without index tests, `name` and `ordinal` of a `@SimpleEnum` 
 number, the class of a call's result followed in two rounds (`Devirtualize`: the one of these
 that changes what the other passes are told), two more programs that must be refused. Nothing
 in them is specific to a system; run the suite there all the same.
+
+Then (`git log 3a04274..`), also on macOS only: text that is not ASCII searched as bytes,
+`ArrayList` sorted in its storage, `subList` as a view, `compareTo` of `Float` and `Double`
+as the JVM orders them, integers formatted without `printf`, `StringBuilder.append`, `get`,
+`set` and `size` of an `ArrayList` written out where they are called, short functions as
+`static inline` in the headers, `ktc2_all.c`. Two of these are about the C compiler and
+want a look on Windows first: the functions in the headers (gcc and MSVC have not seen
+them; `KTC2_SKIP=inline` puts them back in the C files) and `ktc2_all.c` (`KTC2_TEST_UNITY=1`
+has the suite compile it: the gain expected there is in the time gcc takes to start, which
+on a Mac is nothing).
+
+**Found on the way, and not fixed** (each is in `DESIGN.md`, section 12): half of a
+surrogate pair on its own becomes `?` in a string; a `Double` seen as `Comparable<Double>`
+cannot be compared through that type (`AbstractMethodError`: the dispatcher's default for
+`Comparable<T>` only knows `T` as a reference); `(x as Any?) is Int` for an `x: Int?` is
+refused ("cast to 'kotlin.Any?'"), and so is `compareValues` on two `Double`
+("cast to 'kotlin.Comparable<kotlin.Any>'").
 
 **Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
 suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
@@ -105,19 +122,32 @@ that way, and are worth knowing:
 ## Where the benchmarks stand
 ---------------------------------------------------------------------------
 
-`python tools/bench.py`, Apple clang on an ARM64 Mac, best of five runs. "Before" is commit
-`2a16110`, built `-O2`; "now" is the same build (on 2026-11-13, with the loops over lists); "now, LTO" is what
+`python tools/bench.py`, Apple clang on an ARM64 Mac, best of seven runs. "Before" is commit
+`2a16110`, built `-O2`; "now" is the same build (on 2026-11-13, at the end of the day); "now, LTO" is what
 `--build` does by default.
 
 | | Before | Now | Now, LTO | Allocations | Retains |
 |---|---|---|---|---|---|
-| Collections | 0.527 s | 0.148 s | 0.151 s | 4.50 M, unchanged | 11.9 M -> 8.7 M |
-| Dispatch | 0.508 s | 0.217 s | 0.112 s | 6.52 M -> 1,013 | 5.0 M -> 1,275 |
-| Numeric | 0.279 s | 0.268 s | 0.274 s | 44 | 0 |
-| Objects | 0.473 s | 0.166 s | 0.152 s | 26.0 M, unchanged | 58.0 M -> 16.0 M |
-| Strings | 1.207 s | 0.302 s | 0.263 s | 1.20 M, unchanged | 3.9 M -> 2.7 M |
-| Threads | 0.352 s | 0.048 s | 0.045 s | 5.54 M, unchanged | 17.0 M -> 6.2 M |
-| Ordinary (added later) | | 0.282 s | 0.245 s | 8.56 M | 2.2 M |
+| Collections | 0.527 s | 0.128 s | 0.149 s | 4.50 M, unchanged | 11.9 M -> 8.5 M |
+| Dispatch | 0.508 s | 0.136 s | 0.115 s | 6.52 M -> 1,013 | 5.0 M -> 1,275 |
+| Numeric | 0.279 s | 0.269 s | 0.284 s | 44 | 0 |
+| Objects | 0.473 s | 0.169 s | 0.151 s | 26.0 M, unchanged | 58.0 M -> 16.0 M |
+| Strings | 1.207 s | 0.241 s | 0.201 s | 1.20 M, unchanged | 3.9 M -> 2.6 M |
+| Threads | 0.352 s | 0.049 s | 0.045 s | 5.54 M, unchanged | 17.0 M -> 6.2 M |
+| Ordinary (added later) | | 0.223 s | 0.203 s | 8.56 M | 2.2 M |
+
+The benchmarks did not show the largest things that day; a program of small loops over what
+ordinary code does (`build/scratch`, not kept) did. Each line is the same work before and after:
+
+| | Before | After |
+|---|---|---|
+| 200,000 `indexOf` and `contains` in a text of 650 characters with accents | 37 s | 0.11 s |
+| a template with three numbers, 2 M times | 162 ms | 50 ms |
+| three `StringBuilder.append` (a string, a number, a character), 5 M times | 234 ms | 39 ms |
+| `sort()` of an `ArrayList` of a million `Int` | 169 ms | 35 ms |
+| `for (i in 0 until list.size) sum += list[i]`, 20 M elements | 37 ms | 5 ms |
+| a `HashMap` lookup with a key of 35 characters, 5 M times | 109 ms | 75 ms |
+| `Regex("item[0-9]+").find` in a text of 350 characters, 20,000 times | 46 ms | 7 ms |
 
 Programs are also 30 to 45 % smaller with LTO. What these numbers say about what is left:
 the number of allocations did not move in the benchmarks (the iterators that left the heap
@@ -220,7 +250,7 @@ start together) and the C compiler.
 | [x] The front end's work on the library is kept in the process (`frontend/PhasedCompiler.kt`): the compiler is run phase by phase; the library is resolved once, and a program is one more part on top of it (a source session that depends on the library's, as one source set of a multiplatform module on another), the only one resolved each time. The conversion to IR is done for the whole each time (0.4 s), told not to empty what it converted. In the process `ktc2` keeps running and in the suite; `KTC2_KEEP_LIBRARY=0` goes back to one whole compilation per program | 3.1 s -> 0.45 s per program in a warm process; the suite 2 min 41 s -> 71 s | high |
 | [ ] The same across processes: the 12 s of a first compilation are the library resolved from nothing. The compiler has no form of its resolved tree that can be written and read back; the nearest is the library compiled once to a jar with its IR serialized (`-Xserialize-ir`) and function bodies read from there on demand, which would also need the importer to accept IR that is loaded lazily | 12 s -> perhaps 2 s for a first compilation | high, unknown |
 | [ ] Keep the library's IR too, not only its analysis: the 0.4 s left per program are mostly the conversion of the library to IR again. The importer does not change the IR it reads, but the conversion registers every declaration in tables that would have to be shared between programs | 0.45 s -> perhaps 0.15 s | medium to high |
-| [ ] The C of a test program: 1 to 2 s, as much as the translation now. One C file that includes all the others would be several times faster (the headers are read once), but the files have `static` names in common (`lit_0`); the emitter would have to number them per program | the suite: perhaps 71 s -> 50 s | medium |
+| [~] The C of a test program: 1 to 2 s, as much as the translation now. One C file that includes all the others is written (`ktc2_all.c`; the `static` names are numbered by unit), and `KTC2_TEST_UNITY=1` has the suite compile it. Measured on a Mac: one compiler on that file takes what four take on the files (1.4 s against 4.4 s for one after another), and the suite the same 46 s. Not tried on Windows, where starting gcc costs more; and not the default, because a C file that lacks an include is only found when each is compiled by itself | none on a Mac; the suite on Windows: perhaps 71 s -> 55 s | done, to be measured |
 | [x] The suite in several processes, and the C of a program by several compilers (`IntegrationTest.kt`, `build.gradle.kts`: `KTC2_TEST_FORKS`, `KTC2_TEST_JOBS`) | 10 min -> 2 min 40 s | low |
 | [ ] Hand the compiler only the library files a program can reach | 1-2 s; tried once for the unsigned arrays and dropped as fragile | medium |
 | [x] Do not rewrite C files whose content did not change, so the C build is incremental (`CEmitter.write` already did) | faster rebuilds through CMake | low |
@@ -236,7 +266,7 @@ start together) and the C compiler.
 | [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). A parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there) is covered by the next line | high where it applies | medium |
 | [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`integration/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
 | [x] A variable that is given a new object on every turn of a loop (`place = place + step`): the function has two rooms for it, and the call builds in the one that holds no object in use (`KStackSlot.rooms`, `ktc2_slot_reuse`); when something else still holds an older object, that one comes from the heap. `integration/objects/Reassigned.kt`, `KTC2_SKIP=rooms` | Ordinary: 12.56 M allocations -> 8.56 M; the time does not move | medium |
-| [ ] The array inside an `ArrayList` (or `StringBuilder`, `HashMap`) that is itself in the frame: the constructor stores it into `this`, which was passed in. Needs room in the caller for a first small array, as `ktc2_array_local` has for arrays | 2 M of `Ordinary`; every local list | medium to high |
+| [ ] The array inside an `ArrayList` (or `StringBuilder`, `HashMap`) that is itself in the frame: the constructor stores it into `this`, which was passed in. Needs room in the caller for a first small array, as `ktc2_array_local` has for arrays. Measured before building it: a local list that is given six numbers and summed takes 22 ns, of which making and freeing its array is 5 (the same loop over a local `IntArray` takes 1.4 ns: the rest is the list itself, its `add` and its counters). So about a quarter of such a function at best, for a change to the most delicate pass; an object that never leaves its function as plain locals (below) is where the other 15 ns are | 5 ns per local list; perhaps 5 % of `Ordinary` | medium to high |
 | [ ] An object that never leaves its function becomes plain locals | medium | medium |
 | [x] Closures in the frame when the lambda does not outlive the call it is passed to. The closure was there already; what it captured was not, because storing into a field counted as leaving. An object or the cell of a `var` stored into an object that stays in the frame now stays too, unless some read of that field lets it out | every capturing lambda that is only called: no allocation left | medium |
 | [x] Destroying a long structure does not use a frame of the C stack per object: past 96 KB of stack the object is put aside and destroyed later. A list of a million cells crashed before | correctness | low |
@@ -286,7 +316,8 @@ write to an array of references.
 | [ ] Follow the other arguments through dispatchers too, and the element class of a collection (`List<Shape>` that only holds circles) | medium | medium |
 | [ ] Stop sharing the code of a local class between the instantiations of the generic class around it (the importer reads an `X<Int>` through the type `X<Any>`): `Devirtualize` has to distrust static types wherever it sees this, and so will every later pass that reasons about classes | removes a trap more than it gains speed | medium, in the importer |
 | [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
-| [ ] Small generated functions as `static inline` in the headers | medium: inlining across files needs LTO today | low |
+| [x] Short generated functions as `static inline` in the headers: those of at most four lines of C that need nothing but their own class and the runtime (`CEmitter.inHeader`, `KTC2_SKIP=inline`). Longer ones were tried (6, 8, 12 lines) and gained nothing | Dispatch without LTO: 0.218 s -> 0.136 s; nothing with LTO | low |
+| [x] `list[i]`, `list[i] = x` and `list.size` on a list known to be an `ArrayList` are written out where they are (`ListLoops.accessor`): one test of the index, and the call to `checkIndex` only when it fails. `integration/stdlib/ListAccess.kt` | an indexed loop: 1.85 ns -> 0.25 ns for an element; Collections -9 %, Ordinary -15 % | low |
 | [ ] Instantiate generic classes for hot reference types too, not only for numbers | medium: no casts, more direct calls | high, more code |
 | [x] Dispatcher cases ordered by how often each class is created: not needed. A dispatcher is a `switch` on the type id, which the C compiler turns into a table or a search of its own; the order of the cases changes nothing | none | - |
 
@@ -299,9 +330,9 @@ write to an array of references.
 | [x] A whole-program "cannot throw" answer per function, so calls to such functions are not followed by a test (`ExceptionLowering.mMayThrow` was there; direct calls and proven array accesses now make more functions qualify) | medium to high | medium |
 | [x] The same answer for the runtime's functions and for dispatchers' defaults. Checked one by one: three could leave with an exception and were trusted not to (`ktc2_cs_get`, `ktc2_cs_subSequence`, `ktc2_stringSubstring`), so a bad index on a `String` seen as a `CharSequence` was not caught, and `substring` with a bad range ended the program. They are listed in `kRaisingRuntime` (`Kir.kt`); the others end the program on purpose (`AbstractMethodError`, a cast that cannot happen) | correctness | low |
 | [ ] The failure in the return value, not in a thread-local slot | medium in threaded programs | high: changes how every function is called |
-| [~] No bounds check in a loop whose index is known to be in range (`RangeChecks`): the loops over an array, its `indices`, `0 until size` and `Array(n) { }`. With clang at `-O2` the time does not change (it removed those tests itself); the code is smaller and such functions no longer count as throwing. Also: `while (i < a.size) { …; i++ }` (the step in the body; a copy of the counter made before the step still counts after it), `for (i in a.size - 1 downTo 0)`, and an index next to the counter (`a[i + 1]` under `i < a.size - 1`, `a[i - 1]` from `i = 1`). Left: a step other than one, `list[i]` under `i < list.size` (the list is not an array: its storage would have to be followed), strings | medium for array code | medium |
+| [~] No bounds check in a loop whose index is known to be in range (`RangeChecks`): the loops over an array, its `indices`, `0 until size` and `Array(n) { }`. With clang at `-O2` the time does not change (it removed those tests itself); the code is smaller and such functions no longer count as throwing. Also: `while (i < a.size) { …; i++ }` (the step in the body; a copy of the counter made before the step still counts after it), `for (i in a.size - 1 downTo 0)`, and an index next to the counter (`a[i + 1]` under `i < a.size - 1`, `a[i - 1]` from `i = 1`). `list[i]` is not proven in range but written out (part 4): its test stays, the call and the test for an exception go. Left: a step other than one, strings; with clang neither changes the time | medium for array code | medium |
 | [x] An array store is tested once: `ArcInsert` dropped the "already tested" mark, so every store was tested by the generated code and again by the runtime | small, everywhere | low |
-| [ ] The first-use test of an object or a file taken out of loops | low | low |
+| [x] The first-use test of an object or a file taken out of loops: not needed. The one of a file is at the start of the function already; the one of an object is a load and a branch that is never taken. A loop that reads two properties of an object and a top-level variable on every round takes 0.6 ns a round | none | - |
 
 ---------------------------------------------------------------------------
 ## 6. Strings and the library
@@ -310,9 +341,9 @@ write to an array of references.
 | | Gain | Effort |
 |---|---|---|
 | [x] Remember the last index and byte position in a non-ASCII string, so `s[i]` in a loop is not a scan each time (per thread; forgotten when a non-ASCII string is destroyed) | high for loops over such text | low |
-| [ ] Build a template straight into where it goes, without strings in between | medium | medium |
-| [~] Platform versions of hot library paths. Done: `indexOf`, `lastIndexOf`, `regionMatches` (so `contains`, `split`, `startsWith`, `endsWith`, `replace`) on ASCII strings work on bytes in the runtime: Strings -75 %. Left: the same for non-ASCII strings (UTF-8 can be searched as bytes when neither string holds a lone surrogate), `HashMap` probing, `StringBuilder.append`, sorting, `String.hashCode` kept in the string | medium | medium, one at a time |
-| [ ] `Regex`: keep the match state between searches; a literal start of the pattern as a `memchr` | medium for Regex-heavy code | medium |
+| [x] A template is built in a buffer of the frame already, and copied once into its string. What it cost was `printf` for every number: integers and Booleans are now written by the runtime itself (`format_signed`). `Double` and `Float` still go through `snprintf` and `strtod`, up to 17 times each, to find the shortest digits: an algorithm of its own (Ryu, Grisu) is what is left | a template with three numbers: 81 ns -> 25 ns; Strings -17 % | low |
+| [~] Platform versions of hot library paths. Done: `indexOf`, `lastIndexOf`, `regionMatches` (so `contains`, `split`, `startsWith`, `endsWith`, `replace`) on ASCII strings work on bytes in the runtime: Strings -75 %. Also done: the same for strings that are not ASCII (they went one character at a time, each found by walking the string: 300 times slower than now), two remembered places for code that reads two strings side by side, `StringBuilder.append` of a string (one copy) and of a number (no string in between), `toCharArray`, the hash and the order of ASCII strings on their bytes, `ArrayList.sort` in its own storage. Left: `String.hashCode` kept in the string (four bytes more for every string: to be weighed), `sortedBy` on objects (15 ns for a comparison, most of it the two keys boxed), `Double` as text | medium | medium, one at a time |
+| [~] `Regex`. Done: a pattern that starts with a character, exactly, is only tried where that character is (`find`, `findAll`, `containsMatchIn` 3 to 6 times faster for such a pattern), and the text is turned into characters by one loop. Left: the same for a pattern that starts with a class (`[a-z]+`: 42 ns for every place it is tried), and keeping the match state between searches (three small objects for each search) | medium for Regex-heavy code | medium |
 
 ---------------------------------------------------------------------------
 ## 7. Code size and the C build
@@ -321,7 +352,7 @@ write to an array of references.
 | | Gain | Effort |
 |---|---|---|
 | [x] Link-time optimization by default for `--build` without `--debug`, and through CMake where the compiler has it (`KTC2_LTO=0`, `-DKTC2_LTO=OFF`). With clang on Windows it needs LLVM's linker: used when `lld-link` is on the path (`-fuse-ld=lld`), Objects 0.27 s -> 0.21 s there | 10 to 48 % faster, 30 to 45 % smaller | low |
-| [ ] One C file per package, not per class | faster C builds, inlining without LTO | low to medium |
+| [x] One C file per package, not per class: not done as such. What it was for is there another way: inlining without LTO by the short functions in the headers (part 4), and a build by one compiler by `ktc2_all.c`, which includes every C file (part 1) | - | - |
 | [ ] One implementation for instantiations that compile to the same code | smaller programs | medium |
 
 ---------------------------------------------------------------------------
@@ -342,7 +373,9 @@ Open:
 - [x] **`ConcurrentModificationException`.** `ArrayList` and `HashMap` (and what is built on
   it: `LinkedHashMap`, the sets) count their changes, and their iterators fail as on the JVM,
   the cases the JVM does not notice included, and `sort()` counts as a change. One compare per
-  `next()`. Left: the lists built on `AbstractMutableList` do not check.
+  `next()`. The lists built on `AbstractMutableList` (`ArrayDeque`) check by `modCount`, as
+  the JVM's `AbstractList` does, and `subList` is a view that fails once its list changed
+  size another way.
 - [ ] **The last digit of `exp`, `ln`, `pow`, `sin`.** It is the C library's. To print what
   the JVM prints on every system, the runtime would carry fdlibm's versions (what
   `StrictMath` is); a few hundred lines of C. Until then DESIGN.md lists it as a difference.
@@ -407,19 +440,18 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. Run the suite on macOS again (see "Where the work stands": nothing since `4773f24` ran
-   there), and on Linux for the first time. Then a CI job per system with an
-   AddressSanitizer run.
-2. Where the time of `Ordinary` is, now that allocation is not it (measured by timing its
-   parts, with LTO): the library's operators on lists (`filter`, `zip`, `sumOf`: about 100 ms
-   of 290), a local `ArrayList` that is filled and gone over (55 ms), a `for` over a `List`
-   parameter (under 60 ms), text (`split`, a template: 50 ms). What is left per element of a
-   list: the `modCount` test and the test for an exception after `next()` (it can throw two),
-   which an index loop written by the importer for a list known to be an `ArrayList` would
-   fold into one test per round. Then `HashMap` (4), and templates built in place (6).
-3. The flags of the SDL3 module as value classes (8).
-4. The array inside a local list (2): 2 M allocations of `Ordinary`, but removing 4 M others
-   did not change its time; measure before building it.
+1. Run the suite on Windows (see "Where the work stands": nothing since `007dd9b` ran
+   there, and the functions in the headers are new to gcc and MSVC), and on Linux for the
+   first time. Then a CI job per system with an AddressSanitizer run.
+2. Write a program of small loops over what ordinary code does and time each (what found the
+   search in accented text, `printf` and the sort): the seven benchmarks do not cover text
+   that is not ASCII, sorting, `StringBuilder`, `Regex` or number formatting. Worth keeping
+   as an eighth benchmark, with the JVM's times next to it.
+3. The three differences found on the way ("Where the work stands"): each is small.
+4. `Double` as text without `snprintf` (6); `sortedBy` without boxing its keys (6).
+5. An object that never leaves its function as plain locals (2): where the time of a small
+   local list is, more than in its array.
+6. The flags of the SDL3 module as value classes (8): the owner's decision.
 
 ---------------------------------------------------------------------------
 ## Measuring
@@ -431,7 +463,7 @@ Open:
   of the program; the table goes to `build/bench/results.txt`. `--compare` shows the change
   against a table saved before; `KTC2_TOOL` names an installed tool of another state of the
   sources, to measure both on the same day. Do not run it while the suite runs.
-- `KTC2_SKIP=devirtualize,copies,ranges,handover,brief,walk,owned,slots,rooms` leaves optimizations out, one or several, to
+- `KTC2_SKIP=devirtualize,copies,listloops,ranges,handover,brief,walk,owned,slots,rooms,inline` leaves optimizations out, one or several, to
   measure what each gives or to find which one a wrong program comes from;
   `KTC2_DEBUG_PASSES=1` prints how many calls were made direct and how many array accesses
   were proven in range.
