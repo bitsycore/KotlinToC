@@ -227,6 +227,7 @@ enum {
 	KTC2_TYPE_BOX_UINT,
 	KTC2_TYPE_BOX_ULONG,
 	KTC2_TYPE_WEAK_CELL,    /* what a weak reference holds: see ktc2_weakCell */
+	KTC2_TYPE_UNIT,         /* kotlin.Unit, where it is needed as an object: ktc2_unit_object */
 	KTC2_TYPE_FIRST_USER
 };
 
@@ -262,7 +263,8 @@ void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
 	[KTC2_TYPE_BOX_USHORT] = { "UShort", NULL, sizeof(ktc2_Box) }, \
 	[KTC2_TYPE_BOX_UINT] = { "UInt", NULL, sizeof(ktc2_Box) }, \
 	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL, sizeof(ktc2_Box) }, \
-	[KTC2_TYPE_WEAK_CELL] = { "ktc2.WeakRef cell", ktc2_weak_cell_destroy }
+	[KTC2_TYPE_WEAK_CELL] = { "ktc2.WeakRef cell", ktc2_weak_cell_destroy }, \
+	[KTC2_TYPE_UNIT] = { "kotlin.Unit", NULL }
 
 /**
  * A new object of [typeId] holding a copy of the [size] bytes at [data], [offset] bytes into
@@ -791,6 +793,9 @@ ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end);
 
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
+
+/** `kotlin.Unit` as an object: what a function without a result gives where an object is asked for. */
+extern ktc2_Obj ktc2_unit_object;
 
 /** Defaults of kotlin.Any, also correct for strings. `toString` returns an owned reference. */
 ktc2_String* ktc2_any_toString(ktc2_Obj* object);

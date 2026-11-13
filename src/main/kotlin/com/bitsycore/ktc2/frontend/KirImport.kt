@@ -588,8 +588,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun arrayTypeOf(inType: IrType): KArrayType? {
 		val vName = inType.classOrNull?.owner?.kotlinFqName?.asString() ?: return null
 		mPrimArrays[vName]?.let { return KArrayType(KPrimType(it)) }
-		val vElement = argumentsOf(inType).firstOrNull()?.let { kTypeOf(it) } ?: return null
-		if (vElement == KUnitType || vElement == KNothingType) return null
+		// An array of `Unit` holds the Unit object.
+		val vElement = argumentsOf(inType).firstOrNull()?.let { kTypeOf(it) }?.let { if (it == KUnitType) KObjType else it } ?: return null
+		if (vElement == KNothingType) return null
 		return when (vName) {
 			// As in Kotlin, Array<Int> holds boxed values (IntArray is the unboxed one): code may
 			// cast freely between Array<T> and Array<Comparable<T>>.
@@ -644,6 +645,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		is KStructType -> if (vKind.struct.holdsReferences) mBuiltIns.anyNType else inType
 		// Every C address type shares one instantiation too, without being boxed.
 		KPtrType -> mPointerType ?: inType
+		// `Unit` as an argument (`List<Unit>`, a `Map<K, Unit>`) is an object like any other there.
+		KUnitType -> mBuiltIns.anyNType
 		else -> inType
 	}
 

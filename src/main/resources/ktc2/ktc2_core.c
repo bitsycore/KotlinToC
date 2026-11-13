@@ -1215,9 +1215,12 @@ bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
 	}
 }
 
+ktc2_Obj ktc2_unit_object = { KTC2_IMMORTAL, KTC2_TYPE_UNIT };
+
 ktc2_String* ktc2_any_toString(ktc2_Obj* object)
 {
 	if (object->typeId == KTC2_TYPE_STRING) return ktc2_retain(object);
+	if (object->typeId == KTC2_TYPE_UNIT) return new_string("kotlin.Unit", 11, 11);
 	const ktc2_Box* box = (const ktc2_Box*)object;
 	ktc2_Sb sb;
 	ktc2_sb_init(&sb);

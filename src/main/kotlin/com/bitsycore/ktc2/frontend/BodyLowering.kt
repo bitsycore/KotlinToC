@@ -528,6 +528,10 @@ internal class BodyBuilder(
 	 */
 	private fun coerce(inValue: KExpr, inTo: KType): KExpr {
 		val vFrom = inValue.type
+		// `Unit` where an object is asked for (the result of a lambda that has none, kept as a `T`): the runtime's one.
+		if (inValue === KUnitValue && inTo is KRefType) {
+			return KIntrinsic("ktc2_unit_object", emptyList(), inTo).also { it.template = "((${if (inTo == KStringType) "ktc2_String" else "ktc2_Obj"}*)&ktc2_unit_object)" }
+		}
 		if (vFrom == inTo || inValue === KUnitValue) return inValue
 		return when {
 			inTo is KRefType && vFrom is KRefType -> if (inValue is KNull) KNull(inTo) else KRefCast(inValue, inTo)
@@ -650,7 +654,8 @@ internal class BodyBuilder(
 
 	/** Keeps the side effect of an unused value, drops pure expressions. */
 	private fun discard(inValue: KExpr) {
-		if (inValue.isImpure()) mBlock += KEval(inValue)
+		// A value nobody takes is still computed when computing it can fail: `1 / zero`, `array[9]`.
+		if (inValue.isImpure() || inValue.anyNode { it.isRuntimeCheck() }) mBlock += KEval(inValue)
 	}
 
 	private fun emitReturn(inValue: IrExpression?) {
@@ -724,7 +729,19 @@ internal class BodyBuilder(
 		is IrRichFunctionReference -> lowerRichFunctionReference(inExpression)
 		// The property a delegate is told about (`getValue(thisRef, property)`): there is no
 		// reflection here, so it is passed as null - fine for the delegates that ignore it.
-		is IrRichPropertyReference -> propertyObject(inExpression, (inExpression.reflectionTargetSymbol?.owner as? IrDeclarationWithName)?.name?.asString())
+		is IrRichPropertyReference -> if (inExpression.origin == IrStatementOrigin.PROPERTY_REFERENCE_FOR_DELEGATE) {
+			propertyObject(inExpression, (inExpression.reflectionTargetSymbol?.owner as? IrDeclarationWithName)?.name?.asString())
+		} else {
+			// `String::length`, `item::name` as a value: the function that reads the property.
+			val vBound = lowerOperands(inExpression.boundValues).mapIndexed { vIndex, vValue ->
+				val vType = kType(inExpression.getterFunction.parameters[vIndex].type) ?: vValue.type
+				KLocal(freshName("bound"), vType).also {
+					mTemps += it
+					mBlock += KLet(it, coerce(vValue, vType))
+				}
+			}
+			makeClosure(inExpression, inExpression.getterFunction, null, null, vBound)?.let { KRead(it.first) } ?: KUnitValue
+		}
 		is IrPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
 		is IrLocalDelegatedPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
 		is IrSetValue -> {
@@ -969,11 +986,15 @@ internal class BodyBuilder(
 		}
 		IrTypeOperator.INSTANCEOF -> instanceTest(inExpression, spill(lowerPure(inExpression.argument)), inExpression.typeOperand)
 		IrTypeOperator.NOT_INSTANCEOF -> not(instanceTest(inExpression, spill(lowerPure(inExpression.argument)), inExpression.typeOperand))
-		IrTypeOperator.CAST -> {
+		IrTypeOperator.CAST -> if (typeOf(inExpression) == KNothingType && inExpression.typeOperand.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) {
+			// A cast to a type parameter that stands for `Nothing` here (`Result<Nothing>.getOrElse`): no test, as for any type parameter.
+			lowerRhs(inExpression.argument)
+		} else {
 			val vTo = typeOf(inExpression)
 			// A struct cast to anything but its own type is cast as the object it would be.
 			val vValue = spill(lowerPure(inExpression.argument)).let {
 				when {
+					it === KUnitValue && vTo is KRefType -> coerce(it, KObjType)
 					it.type is KStructType && it.type != vTo && vTo !is KRefType -> spill(coerce(it, KObjType))
 					// A number, or one that may be null, cast to a type of objects: its box.
 					(it.type is KPrimType || it.type is KOptType) && vTo is KRefType -> spill(coerce(it, KObjType))
@@ -1787,6 +1808,17 @@ internal class BodyBuilder(
 	 * Builds the call to [inTarget]. [inPrefix], when given, is passed before the arguments
 	 * (the object a constructor initializes).
 	 */
+	/**
+	 * [inValue], lowered from [inGiven], as an argument of type [inType]. An argument that never
+	 * has a value (`error("…")` handed on, a `Nothing`) is anything at all: the call is not reached.
+	 * `Unit` given where an object is asked for is the runtime's Unit object.
+	 */
+	private fun argument(inValue: KExpr, inGiven: IrExpression, inType: KType): KExpr {
+		if (inValue !== KUnitValue || inType == KUnitType) return coerce(inValue, inType)
+		if (inGiven.type.isNothing() || inType !is KRefType) return KZero(inType)
+		return coerce(inValue, inType)
+	}
+
 	private fun callFunction(
 		inCall: IrElement,
 		inTarget: KFunction,
@@ -1798,8 +1830,7 @@ internal class BodyBuilder(
 		val vOffset = if (inPrefix != null) 1 else 0
 		if (inArguments.any { it == null }) return callWithDefaults(inCall, inTarget, inCallee, inArguments, inPrefix, inCalleeSubst)
 		val vArguments = lowerOperands(inArguments.map { it!! })
-		if (vArguments.any { it === KUnitValue }) return fail(inCall, "Unit passed as an argument")
-		return KCall(inTarget, listOfNotNull(inPrefix) + vArguments.mapIndexed { vIndex, vValue -> coerce(vValue, inTarget.params[vIndex + vOffset].type) })
+		return KCall(inTarget, listOfNotNull(inPrefix) + vArguments.mapIndexed { vIndex, vValue -> argument(vValue, inArguments[vIndex]!!, inTarget.params[vIndex + vOffset].type) })
 	}
 
 	/**
@@ -1816,14 +1847,13 @@ internal class BodyBuilder(
 	): KExpr {
 		val vOffset = if (inPrefix != null) 1 else 0
 		val vGiven = lowerOperands(inArguments.filterNotNull())
-		if (vGiven.any { it === KUnitValue }) return fail(inCall, "Unit passed as an argument")
 		val vSaved = inCallee.parameters.associateWith { mLocals[it] }
 		val vBound = arrayOfNulls<KLocal>(inArguments.size)
 		var vNext = 0
 		inArguments.forEachIndexed { vIndex, vArgument ->
 			if (vArgument == null) return@forEachIndexed
 			val vTemp = newTemp(inTarget.params[vIndex + vOffset].type)
-			mBlock += KLet(vTemp, coerce(vGiven[vNext++], vTemp.type))
+			mBlock += KLet(vTemp, argument(vGiven[vNext++], vArgument, vTemp.type))
 			vBound[vIndex] = vTemp
 		}
 		var vFailed = false
@@ -1912,8 +1942,8 @@ internal class BodyBuilder(
 
 	private fun lowerCall(inCall: IrCall): KExpr {
 		var vCallee = mImporter.sourceOf(inCall.symbol.owner)
-		// `f(x)` on a function reference (`val f = ::name`, a KFunctionN) is the `invoke` of the function type it extends.
-		if (vCallee.name.asString() == "invoke" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString()?.startsWith("kotlin.reflect.KFunction") == true) {
+		// `f(x)` on a reference (`val f = ::name`, a KFunctionN; `String::length`, a KProperty1) is the `invoke` of the function type it extends.
+		if (vCallee.name.asString() == "invoke" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString()?.let { it.startsWith("kotlin.reflect.KFunction") || it.startsWith("kotlin.reflect.KProperty") || it.startsWith("kotlin.reflect.KMutableProperty") } == true) {
 			vCallee.overriddenSymbols.map { it.owner }.firstOrNull { isFunctionType(it.parentAsClass.symbol.typeWith()) }?.let { vCallee = it }
 		}
 		// A call into a `companion { }` block has no receiver: it is a call to a top-level function.
@@ -2651,8 +2681,9 @@ internal class BodyBuilder(
 
 	private fun lowerEquality(inCall: IrCall, inLeft: IrExpression, inRight: IrExpression, inIdentity: Boolean): KExpr {
 		val vOperands = lowerOperands(listOf(inLeft, inRight))
-		val vLeft = vOperands[0]
-		val vRight = vOperands[1]
+		// `Unit` compared with something is the Unit object.
+		val vLeft = vOperands[0].let { if (it === KUnitValue) coerce(it, KObjType) else it }
+		val vRight = vOperands[1].let { if (it === KUnitValue) coerce(it, KObjType) else it }
 		val vLeftType = vLeft.type
 		val vRightType = vRight.type
 		return when {
@@ -2801,6 +2832,11 @@ internal class BodyBuilder(
 			}
 			val vMark = mBlock.size
 			var vValue = lowerPure(vPiece)
+			if (vValue === KUnitValue && vPiece.type.isUnit()) {
+				// What a function without a result gives, in a template: its name.
+				vParts += KPrintText("kotlin.Unit")
+				continue
+			}
 			if (vValue === KUnitValue) {
 				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
 				continue

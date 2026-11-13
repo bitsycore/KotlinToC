@@ -668,7 +668,8 @@ class CEmitter(private val mModule: KModule) {
 					}
 				}
 				is KIndexSet -> store(element(inStatement.array, inStatement.index, inStatement.value.type, inStatement.isChecked), inStatement.value, inStatement.releasesOld, inDepth)
-				is KEval -> line(inDepth, "${bare(expr(inStatement.expr))};")
+				// A value that is computed only because computing it can fail is not kept: the cast says so to the C compiler.
+				is KEval -> line(inDepth, if (inStatement.expr is KCall || inStatement.expr is KIntrinsic) "${bare(expr(inStatement.expr))};" else "(void)${expr(inStatement.expr)};")
 				is KRelease -> line(inDepth, "${releaseText(inStatement.operand.type, bare(expr(inStatement.operand)))};")
 				is KReturn -> line(inDepth, inStatement.value?.let { "return ${bare(expr(it))};" } ?: "return;")
 				is KIf -> ifChain(inStatement, inDepth)
