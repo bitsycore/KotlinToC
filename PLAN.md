@@ -108,11 +108,17 @@ limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
 - where the JVM and Kotlin/Native differ because of their platform, either is accepted, as
   between those two, and Kotlin/Native is the one to look at first. Done for the names of the
   standard exceptions: they are `kotlin.` ones here, as there, and the suite takes either name.
-  To do the same for the rest (the text of messages, `Float` as text, what a collection
-  notices of a change): the way Kotlin Multiplatform tests are written, with `kotlin.test`
-  assertions in common code instead of printed output compared, so that a test says what must
-  hold everywhere and nothing of what a platform is free in. That needs `kotlin.test` here
-  (its common sources and an asserter for ktc2): proposed, not started.
+  For the rest (the text of messages, `Float` as text, what a collection notices of a change)
+  tests are now also written the way Kotlin Multiplatform's are: `tests/`, with `kotlin.test`
+  assertions in common code and no output to compare (`tests/README.md`). The suite runs them
+  in C and on the JVM, `tools/native.sh` on Kotlin/Native: the first 19 pass on all three.
+  `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged: of the first
+  six taken, one passes and five are in `tests/pending/` with the difference each found (a
+  `Pair<Int, Nothing?>` read as a `Pair<Int?, Int?>`, `==` on a `T` that is a `Double`,
+  `Char(code)`). They are the next things to fix, and the library has hundreds more.
+- the CI job (2026-11-13): macOS and Windows pass. Linux passes but for `interop/Posix`: the
+  bindings of `platform.posix` do not find `FILE` with the GNU C library, after one attempt
+  that could not be tried on a Mac (`kGlibcPrivateHeaders` in `Bindings.kt`).
 
 **The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
 Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be

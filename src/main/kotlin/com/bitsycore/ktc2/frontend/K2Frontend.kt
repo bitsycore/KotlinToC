@@ -240,7 +240,8 @@ object K2Frontend {
 	 */
 	fun compileJvm(inSources: List<File>, inOutDir: File): Boolean {
 		val vArgs = inSources.map { it.path } + listOf(
-			"-d", inOutDir.path, "-no-stdlib", "-no-reflect", "-nowarn", "-cp", userClasspath(),
+			// (A test is compiled with ktc2's own `kotlin.test`, a source in a package of the library.)
+			"-d", inOutDir.path, "-no-stdlib", "-no-reflect", "-nowarn", "-Xallow-kotlin-package", "-cp", userClasspath(),
 			// The inline functions of the `ktc2.` package are built for the JVM this runs on.
 			"-jvm-target", System.getProperty("java.specification.version"),
 		) + kLanguageOptions

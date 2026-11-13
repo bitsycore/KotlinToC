@@ -142,3 +142,4 @@ Ktc2Concurrent.kt
 Ktc2Synchronized.kt
 Ktc2CinteropInternal.kt
 Ktc2Cinterop.kt
+Ktc2Test.kt

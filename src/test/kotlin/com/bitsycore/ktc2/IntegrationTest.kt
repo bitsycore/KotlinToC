@@ -93,7 +93,48 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
-			.toList() + projectList()
+			.toList() + projectList() + commonTestList()
+
+	// ==================
+	// MARK: Common tests
+	// ==================
+
+	/**
+	 * The files under `tests/` are tests as Kotlin Multiplatform's common tests are written:
+	 * classes with `@Test` functions that assert with `kotlin.test`, and no `main`. They say what
+	 * must hold on every platform and nothing of what a platform is free in. The suite writes
+	 * the `main` that calls each test ([testMain]), runs the program in C and on the JVM, and
+	 * fails when a test fails on either or when the two do not print the same. `tools/native.sh`
+	 * runs them with Kotlin/Native, whose own `kotlin.test` they then use.
+	 */
+	private fun commonTestList(): List<DynamicTest> =
+		File("tests").walkTopDown()
+			// tests/pending holds those that do not pass yet (tests/README.md).
+			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" }
+			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
+			.sortedBy { it.path }
+			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
+			.toList()
+
+	/** `kotlin.test` as ktc2 has it: compiled with a test for the JVM too, so that both run the same assertions. */
+	private val kTestLibrary = File("src/main/resources/ktc2/stdlib/Ktc2Test.kt")
+
+	/** The sources compiled for the JVM besides the program's own. */
+	private var mJvmExtra: List<File> = emptyList()
+
+	private fun checkCommon(inSource: File) {
+		mInput = null
+		mWarnings = emptyList()
+		val vOutDir = File("build/integration/test-${inSource.nameWithoutExtension}").apply { deleteRecursively() }
+		val vMain = File("build/testmain/${inSource.nameWithoutExtension}Main.kt").apply { parentFile.mkdirs() }
+		vMain.writeText(testMain(inSource.readText()))
+		mJvmExtra = listOf(kTestLibrary)
+		try {
+			verify("tests/${inSource.name}", listOf(inSource, vMain), vOutDir, null)
+		} finally {
+			mJvmExtra = emptyList()
+		}
+	}
 
 	/**
 	 * Programs of several files and modules: each directory named here has a module file, and is
@@ -209,7 +250,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			inExpected.readText().replace("\r\n", "\n")
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
-			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" }, vJvmDir), "kotlinc failed on $inName")
+			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" } + mJvmExtra, vJvmDir), "kotlinc failed on $inName")
 			lap("jvmCompile")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
 			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
@@ -297,5 +338,77 @@ abstract class IntegrationPart(private val mShard: Int) {
 		} finally {
 			vErrors.delete()
 		}
+	}
+}
+
+/**
+ * The `main` that runs the tests of a file of common tests, given its text [inSource]: each
+ * `@Test` function of each class on a new object of the class, between its `@BeforeTest` and
+ * `@AfterTest` functions, and each `@Test` function that is in no class. A test that is
+ * `@Ignore`d, or in a class that is, is left out. It prints a line for each test, and fails
+ * when one of them did.
+ */
+fun testMain(inSource: String): String {
+	val vPackage = Regex("^package\\s+([\\w.]+)", RegexOption.MULTILINE).find(inSource)?.groupValues?.get(1)
+	val vPrefix = if (vPackage == null) "" else "$vPackage."
+	class TestClass(val name: String?) {
+		val tests = ArrayList<String>()
+		val before = ArrayList<String>()
+		val after = ArrayList<String>()
+	}
+	val vClasses = ArrayList<TestClass>()
+	var vCurrent = TestClass(null).also { vClasses += it }
+	val vTopLevel = vCurrent
+	var vMarks = HashSet<String>()
+	var vIsIgnoredClass = false
+	for (vLine in inSource.lines()) {
+		val vText = vLine.trim()
+		Regex("^@(Test|Ignore|BeforeTest|AfterTest)\\b").findAll(vText).forEach { vMarks += it.groupValues[1] }
+		// Marks may share a line with what they mark.
+		Regex("@(Test|Ignore|BeforeTest|AfterTest)\\b").findAll(vText).forEach { vMarks += it.groupValues[1] }
+		val vClass = Regex("^(?:(?:internal|public|open|abstract|final)\\s+)*class\\s+(\\w+)").find(vLine)
+		if (vClass != null) {
+			vIsIgnoredClass = "Ignore" in vMarks
+			vCurrent = TestClass(vClass.groupValues[1]).also { vClasses += it }
+			vMarks = HashSet()
+			continue
+		}
+		if (vLine.startsWith("}")) {
+			vCurrent = vTopLevel
+			vIsIgnoredClass = false
+		}
+		val vFunction = Regex("\\bfun\\s+(`[^`]+`|\\w+)\\s*\\(").find(vText)
+		if (vFunction != null) {
+			val vName = vFunction.groupValues[1]
+			when {
+				"Ignore" in vMarks || vIsIgnoredClass -> {}
+				"Test" in vMarks -> vCurrent.tests += vName
+				"BeforeTest" in vMarks -> vCurrent.before += vName
+				"AfterTest" in vMarks -> vCurrent.after += vName
+			}
+			vMarks = HashSet()
+		}
+	}
+	return buildString {
+		append("// Written by the suite: runs the tests of the file next to it.\n\n")
+		append("fun main() {\n\tvar vCount = 0\n\tvar vFailed = 0\n")
+		append("\tfun test(inName: String, inBody: () -> Unit) {\n\t\tvCount++\n\t\ttry {\n\t\t\tinBody()\n\t\t\tprintln(\"ok \$inName\")\n")
+		append("\t\t} catch (inError: Throwable) {\n\t\t\tvFailed++\n\t\t\tprintln(\"FAILED \$inName: \$inError\")\n\t\t}\n\t}\n")
+		for (vClass in vClasses) {
+			for (vTest in vClass.tests) {
+				val vShown = vTest.trim('`')
+				if (vClass.name == null) {
+					append("\ttest(\"$vShown\") { $vPrefix$vTest() }\n")
+				} else {
+					append("\ttest(\"${vClass.name}.$vShown\") {\n\t\tval vTest = $vPrefix${vClass.name}()\n")
+					vClass.before.forEach { append("\t\tvTest.$it()\n") }
+					append("\t\ttry {\n\t\t\tvTest.$vTest()\n\t\t} finally {\n")
+					vClass.after.forEach { append("\t\t\tvTest.$it()\n") }
+					append("\t\t}\n\t}\n")
+				}
+			}
+		}
+		append("\tprintln(\"\$vCount tests, \$vFailed failed\")\n")
+		append("\tif (vFailed > 0) throw IllegalStateException(\"\$vFailed of \$vCount tests failed\")\n}\n")
 	}
 }
