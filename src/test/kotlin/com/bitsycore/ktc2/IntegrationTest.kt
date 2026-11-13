@@ -27,6 +27,9 @@ private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1
 private val kDumps = System.getenv("KTC2_TEST_DUMP")?.let { it != "0" } ?: (System.getenv("KTC2_TEST_FILTER") != null)
 
 /** How many C compilers work on one program at once (`KTC2_TEST_JOBS`; 1: one compiler for all its files). */
+/** `KTC2_TEST_UNITY=1`: the C of a program is compiled as one file, `ktc2_all.c`, by one compiler. */
+private val kIsOneFile = System.getenv("KTC2_TEST_UNITY") == "1"
+
 private val kCompileJobs = (System.getenv("KTC2_TEST_JOBS")?.toIntOrNull() ?: 4).coerceIn(1, 16)
 
 /*
@@ -215,7 +218,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 		val vExe = File(vOutDir, "program.exe")
 		val vOptions = listOf(mCompiler, "-std=c11", "-O1", "-ffp-contract=off", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror", "-Wno-unused-variable", "-Wno-unused-but-set-variable") + kSystemLibraries.take(1)
-		if (kCompileJobs <= 1) {
+		val vAll = File(vCDir, "ktc2_all.c")
+		if (kIsOneFile && vAll.isFile) {
+			// The program as one C file, and what it does not include (the C of a module).
+			val vIncluded = vAll.readLines().filter { it.startsWith("#include \"") }.map { it.substringAfter('"').substringBefore('"') }.toSet()
+			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + listOf(vAll.name) + vCSources.filter { it !in vIncluded } + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
+		} else if (kCompileJobs <= 1) {
 			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
 		} else {
 			// The C files in a few groups, each compiled by a process of its own into a directory of its own
