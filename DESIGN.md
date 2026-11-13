@@ -87,7 +87,8 @@ when the string is all ASCII, a scan otherwise. They are UTF-8, with one additio
 string holds any sequence of units: half of a surrogate pair on its own is the three bytes
 UTF-8 would give its number, and two halves that meet (a concatenation, a `StringBuilder`)
 are written as the character they are, so equal strings have equal bytes. Such a half
-leaves the program as `?` (stdout, `encodeToByteArray`), as on the JVM.
+leaves the program as `?` (stdout, `encodeToByteArray`), as on the JVM; a first half that
+ends what is printed waits for what is printed next, as in the JVM's stream.
 
 **Where an object is stored**, from cheapest:
 
@@ -504,10 +505,9 @@ Known to differ from the JVM:
   value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
   and every removal from an `ArrayList`, let go at once;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only;
-- `Number` as a type of its own (`x as Number`, `x is Number` on an object, `toDouble()` on
-  it) is refused by the translator ("not supported yet");
-- two halves of a surrogate pair printed one after the other, each by its own `print`, come
-  out as two `?`: the JVM's stream puts them together.
+- a class of the program that extends `Number` is not seen as one: `Number` is the boxed
+  Byte, Short, Int, Long, Float and Double, which the runtime knows by their kind
+  (`ktc2_is_number`, `ktc2_number_toInt` and the like).
 
 ---------------------------------------------------------------------------
 ## 13. Inside the code

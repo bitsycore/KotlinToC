@@ -19,7 +19,7 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 121
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 122
 tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
 the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
 `007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
@@ -52,8 +52,10 @@ compared (`ktc2_box_compareTo_double` and the like are the dispatcher's default)
 or one that may be null, is boxed by a cast to a type of objects (`x as Any?`,
 `compareValues` on two `Double`); `null as String` is a `NullPointerException`;
 `StringBuilder.reverse` keeps a pair in order. `integration/stdlib/Surrogates.kt`,
-`integration/basic/NullableNumbers.kt`. **Not fixed**: `Number` as a type of its own
-(`DESIGN.md`, section 12).
+`integration/basic/NullableNumbers.kt`. Then `Number` as a type of its own (`is Number`,
+`as Number`, its six conversions on a box: `integration/basic/NumberType.kt`), and two
+halves of a pair printed one after the other. Left: a class of the program that extends
+`Number` (`DESIGN.md`, section 12).
 
 **Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
 suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
@@ -450,7 +452,6 @@ Open:
    search in accented text, `printf` and the sort): the seven benchmarks do not cover text
    that is not ASCII, sorting, `StringBuilder`, `Regex` or number formatting. Worth keeping
    as an eighth benchmark, with the JVM's times next to it.
-3. `Number` as a type of its own (`x as Number`, `toDouble()` on it): refused today.
 4. `Double` as text without `snprintf` (6); `sortedBy` without boxing its keys (6).
 5. An object that never leaves its function as plain locals (2): where the time of a small
    local list is, more than in its array.
