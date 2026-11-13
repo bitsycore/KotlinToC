@@ -79,20 +79,40 @@ public actual inline fun Double.withSign(sign: Double): Double = cExpr("copysign
 
 public actual inline fun Double.withSign(sign: Int): Double = cExpr("copysign($0, (double)$1)", this, sign)
 
+/*
+The neighbours of a number, from its bits and not from the C library's `nextafter`: the one of
+mingw's library steps wrongly among the smallest numbers (-4.9E-324 went to -1.0E-323, not to -0.0).
+*/
 public actual val Double.ulp: Double
-	get() = when {
-		this != this -> this
-		this == Double.POSITIVE_INFINITY || this == Double.NEGATIVE_INFINITY -> Double.POSITIVE_INFINITY
-		// The largest number has no next one: its step is the one down to the number before it.
-		this == Double.MAX_VALUE || this == -Double.MAX_VALUE -> cExpr<Double>("fabs($0) - nextafter(fabs($0), 0.0)", this)
-		else -> cExpr<Double>("nextafter(fabs($0), INFINITY) - fabs($0)", this)
+	get() {
+		val vSize = if (this < 0.0) -this else this
+		return when {
+			this != this -> this
+			vSize == Double.POSITIVE_INFINITY -> Double.POSITIVE_INFINITY
+			// The largest number has no next one: its step is the one down to the number before it.
+			vSize == Double.MAX_VALUE -> vSize - vSize.nextDown()
+			else -> vSize.nextUp() - vSize
+		}
 	}
 
-public actual inline fun Double.nextUp(): Double = cExpr("nextafter($0, INFINITY)", this)
+public actual fun Double.nextUp(): Double = when {
+	this != this || this == Double.POSITIVE_INFINITY -> this
+	this == 0.0 -> Double.MIN_VALUE
+	else -> Double.fromBits(toRawBits() + (if (this > 0.0) 1L else -1L))
+}
 
-public actual inline fun Double.nextDown(): Double = cExpr("nextafter($0, -INFINITY)", this)
+public actual fun Double.nextDown(): Double = when {
+	this != this || this == Double.NEGATIVE_INFINITY -> this
+	this == 0.0 -> -Double.MIN_VALUE
+	else -> Double.fromBits(toRawBits() + (if (this > 0.0) -1L else 1L))
+}
 
-public actual inline fun Double.nextTowards(to: Double): Double = cExpr("nextafter($0, $1)", this, to)
+public actual fun Double.nextTowards(to: Double): Double = when {
+	this != this || to != to -> Double.NaN
+	to == this -> to
+	to > this -> nextUp()
+	else -> nextDown()
+}
 
 /** As `Math.round`: to the nearest integer, a tie going up; saturates. */
 public actual fun Double.roundToLong(): Long {
