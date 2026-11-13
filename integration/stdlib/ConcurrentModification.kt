@@ -119,4 +119,47 @@ fun main() {
 		for (vKey in vMap.keys) vMap["other"] = 2
 		vMap.size
 	}
+	// A list that is not an ArrayList: a deque.
+	attempt("a deque changed while iterating") {
+		val vDeque = ArrayDeque(listOf(1, 2, 3))
+		for (vItem in vDeque) if (vItem == 1) vDeque.addLast(4)
+		vDeque
+	}
+	attempt("a deque, the last but one removed") {
+		val vDeque = ArrayDeque(listOf(1, 2, 3))
+		for (vItem in vDeque) if (vItem == 2) vDeque.removeFirst()
+		vDeque
+	}
+	attempt("a deque, set while iterating") {
+		val vDeque = ArrayDeque(listOf(1, 2, 3))
+		for (vItem in vDeque) if (vItem == 1) vDeque[2] = 30
+		vDeque
+	}
+	attempt("a deque through its iterator") {
+		val vDeque = ArrayDeque(listOf(1, 2, 3, 4, 5))
+		val vIterator = vDeque.listIterator()
+		while (vIterator.hasNext()) {
+			val vItem = vIterator.next()
+			if (vItem % 2 == 0) vIterator.remove() else if (vItem == 3) vIterator.add(30) else vIterator.set(vItem * 10)
+		}
+		while (vIterator.hasPrevious()) if (vIterator.previous() == 30) vIterator.remove()
+		vDeque
+	}
+	attempt("a deque, two iterators") {
+		val vDeque = ArrayDeque(listOf(1, 2, 3))
+		val vFirst = vDeque.iterator()
+		val vSecond = vDeque.iterator()
+		vFirst.next()
+		vFirst.remove()
+		vSecond.next()
+	}
+	attempt("a part of a list while the list grows") {
+		val vList = arrayListOf(1, 2, 3, 4)
+		var vSum = 0
+		for (vItem in vList.subList(1, 3)) {
+			vSum += vItem
+			vList.add(5)
+		}
+		vSum
+	}
 }

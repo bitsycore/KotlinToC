@@ -344,21 +344,33 @@ private class ArrayListCursor<E>(private val list: ArrayList<E>, private var ind
 }
 
 /** The iterator of the other lists of this file, by index. */
-private class ArrayListIterator<E>(private val list: MutableList<E>, private var index: Int) : MutableListIterator<E> {
+/**
+ * The iterator of a list built on `AbstractMutableList`, as the JVM's `AbstractList` has it: it
+ * fails with `ConcurrentModificationException` when the list counted a change (`modCount`)
+ * that the iterator did not make itself.
+ */
+private class ArrayListIterator<E>(private val list: AbstractMutableList<E>, private var index: Int) : MutableListIterator<E> {
 	private var last = -1
+	private var seen = list.changeCount()
 
-	override fun hasNext(): Boolean = index < list.size
+	private fun check() {
+		if (list.changeCount() != seen) throw ConcurrentModificationException()
+	}
+
+	override fun hasNext(): Boolean = index != list.size
 
 	override fun next(): E {
+		check()
 		if (index >= list.size) throw NoSuchElementException()
 		last = index
 		index++
 		return list[last]
 	}
 
-	override fun hasPrevious(): Boolean = index > 0
+	override fun hasPrevious(): Boolean = index != 0
 
 	override fun previous(): E {
+		check()
 		if (index <= 0) throw NoSuchElementException()
 		index--
 		last = index
@@ -371,20 +383,26 @@ private class ArrayListIterator<E>(private val list: MutableList<E>, private var
 
 	override fun remove() {
 		if (last < 0) throw IllegalStateException()
+		check()
 		list.removeAt(last)
-		index = last
+		if (last < index) index--
 		last = -1
+		seen = list.changeCount()
 	}
 
 	override fun set(element: E) {
 		if (last < 0) throw IllegalStateException()
+		check()
 		list[last] = element
+		seen = list.changeCount()
 	}
 
 	override fun add(element: E) {
+		check()
 		list.add(index, element)
 		index++
 		last = -1
+		seen = list.changeCount()
 	}
 }
 
@@ -816,6 +834,9 @@ public actual abstract class AbstractMutableSet<E> protected actual constructor(
 
 public actual abstract class AbstractMutableList<E> protected actual constructor() : AbstractMutableCollection<E>(), MutableList<E> {
 	protected actual var modCount: Int = 0
+
+	/** [modCount], for the iterator. */
+	internal fun changeCount(): Int = modCount
 
 	protected actual open fun removeRange(fromIndex: Int, toIndex: Int) {
 		var vCount = toIndex - fromIndex
