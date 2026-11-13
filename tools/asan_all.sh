@@ -17,7 +17,9 @@ for vDir in build/integration/*/; do
 	vResult=$(tools/asan.sh "$vDir" ${vInput:+"$vInput"} 2>&1)
 	vCount=$((vCount + 1))
 	# What a program writes to standard error itself (an exception in a thread) is not a failure.
-	if [ "${vResult%% *}" != "exit" ] || [ "$(echo "$vResult" | head -1 | cut -d' ' -f2)" != "0" ] || grep -qE "AddressSanitizer|LeakSanitizer|ktc2: leak|ktc2: .*freed" "$vDir/asan.err" 2>/dev/null; then
+	# The line that says how the program ended; the C compiler may have said something before it (a note of gcc's).
+	vEnded=$(echo "$vResult" | grep -m1 "^exit ")
+	if [ -z "$vEnded" ] || [ "$(echo "$vEnded" | cut -d' ' -f2)" != "0" ] || grep -qE "AddressSanitizer|LeakSanitizer|ktc2: leak|ktc2: .*freed" "$vDir/asan.err" 2>/dev/null; then
 		vFailed=$((vFailed + 1)); echo "== $vName"; echo "$vResult" | head -20
 	fi
 done

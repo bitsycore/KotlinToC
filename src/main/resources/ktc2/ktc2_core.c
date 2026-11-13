@@ -2092,21 +2092,29 @@ static void* thread_main(void* argument)
 	return NULL;
 }
 
+/*
+The handle of a thread is its pthread_t itself, a number or a pointer on the systems ktc2 runs
+on: a block allocated for it would never be given back by a thread nobody joins.
+*/
+_Static_assert(sizeof(pthread_t) <= sizeof(int64_t), "a pthread_t does not fit the handle of a thread");
+
 int64_t ktc2_threadStart(ktc2_Obj* thread)
 {
-	pthread_t* handle = malloc(sizeof *handle);
+	pthread_t created;
+	int64_t handle = 0;
 	ktc2_threaded = 1;
 	ktc2_retain(thread);
 	ktc2_atomic_add(&threads_running, 1);
-	if (!handle || pthread_create(handle, NULL, thread_main, thread) != 0) fail("kotlin.OutOfMemoryError", "unable to create native thread");
-	return (int64_t)(intptr_t)handle;
+	if (pthread_create(&created, NULL, thread_main, thread) != 0) fail("kotlin.OutOfMemoryError", "unable to create native thread");
+	memcpy(&handle, &created, sizeof created);
+	return handle;
 }
 
 void ktc2_threadJoin(int64_t handle)
 {
-	pthread_t* thread = (pthread_t*)(intptr_t)handle;
-	pthread_join(*thread, NULL);
-	free(thread);
+	pthread_t thread;
+	memcpy(&thread, &handle, sizeof thread);
+	pthread_join(thread, NULL);
 }
 
 #endif

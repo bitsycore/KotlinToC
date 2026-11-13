@@ -29,15 +29,20 @@ program (`tools/asan_all.sh`, run once that day; `tools/asan.sh` on what each ch
 
 **The CI job** (`.github/workflows/test.yml`, on every push; see it with
 `gh run list --repo bitsycore/KotlinToC`) runs the suite on Linux, macOS and Windows:
-- macOS and Windows (gcc) pass. Windows therefore ran everything written on the Mac that
-  day, the functions in the headers included (`static inline`);
-- Linux fails on one test, `interop/Posix`: the bindings of `platform.posix` do not find
-  `FILE` with the GNU C library (`unresolved reference 'FILE'` in the generated
-  `platform_posix.kt`), after one attempt that could not be tried on a Mac
-  (`kGlibcPrivateHeaders` in `interop/Bindings.kt`). Everything else passes there: Linux is
-  no longer untried. Because the suite step fails, the AddressSanitizer step that follows it
-  on Linux has never run. This is the first thing to fix, on a machine with Linux or by
-  reading what the job prints;
+- the suite passes on all three since `c556bea` (2026-11-13, late). What Linux needed: the
+  GNU C library declares `FILE` under a private name first (`__FILE`), and the bindings kept
+  the first name of a type; and `stdin`, `stdout`, `stderr` are variables there, which met
+  the ones written by hand for the systems where they are macros (`interop/Geometry` now has
+  both shapes, so every system tests them);
+- the AddressSanitizer step on Linux ran for the first time on that commit and found two
+  things, fixed in the commit after it: a thread nobody joins left the block of its handle
+  (Linux's sanitizer looks for leaks, macOS's does not; the handle is now the `pthread_t`
+  itself), and `tools/asan_all.sh` took a note of gcc's for a failure. Look at the run of the
+  latest commit to see that step green;
+- Linux can also be run on the Windows machine: it has WSL2 with Debian, gcc, git and CMake
+  (`wsl -e bash -lc "cd /mnt/c/Dev/KotlinToC && ./gradlew test --rerun"`; about 4 minutes
+  from the Windows checkout, whose `build/` it shares, so never at the same time as a run on
+  Windows). `.gitattributes` keeps the shell scripts with Unix line ends for that;
 - MSVC is not in the job: it was last tried by hand on Windows at `007dd9b`, before the
   functions in the headers and `ktc2_all.c`.
 
@@ -118,7 +123,9 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `==` on a `T` that stands for `Double` is `equals`; `compareTo` of `Double` is a total order.
 
 **Known and not done**, besides what the parts below list:
-- `interop/Posix` on Linux (above);
+- a thread nobody joins keeps its handle on Windows (a `HANDLE` that is never closed) and
+  its stack on POSIX systems until the program ends: the `Thread` object would have to give
+  them up when it goes, with a cleaner;
 - a value of the wrong kind that reaches a function of a concrete class through an unchecked
   cast (a `Comparator<Int>` handed a `String`) is answered with -1, false or null where the
   JVM throws `ClassCastException`;

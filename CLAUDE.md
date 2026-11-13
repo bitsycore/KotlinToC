@@ -16,7 +16,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - gcc on the path (mingw on Windows; on macOS `gcc` is Apple clang, which takes the same options): the tests build with it. `KTC2_CC` names another compiler, but the tests' options are gcc's.
 - For anything that depends on the `sdl3` module: git, CMake, and a generator CMake can use.
 - Python 3 for `tools/*.py`; Git Bash on Windows for `tools/*.sh`.
-- The gate is the suite, run locally (Windows with gcc, macOS with Apple clang on ARM64) and by the CI job on every push (`.github/workflows/test.yml`: Linux, macOS, Windows; `gh run list --repo bitsycore/KotlinToC` shows it). On 2026-11-13 macOS and Windows pass and Linux fails on `interop/Posix` alone.
+- The gate is the suite, run locally (Windows with gcc, macOS with Apple clang on ARM64) and by the CI job on every push (`.github/workflows/test.yml`: Linux, macOS, Windows; `gh run list --repo bitsycore/KotlinToC` shows it). All three pass; on Linux the job then runs every program under AddressSanitizer (`tools/asan_all.sh`). On a Windows machine with WSL, Linux is `wsl -e bash -lc "cd /mnt/c/<checkout> && ./gradlew test --rerun"`: it shares `build/` with Windows, so one at a time (`.gitattributes` keeps the shell scripts with Unix line ends for that).
 
 ## Build / Run / Test
 - Build the tool: `./gradlew installDist` -> `build/install/ktc2/bin/ktc2`. Do it again after a change before using the installed tool or `tools/try_cmake.sh`.
