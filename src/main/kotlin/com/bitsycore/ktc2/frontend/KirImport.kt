@@ -1880,6 +1880,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		if (vIsCompare && vSignature.params.all { it.type == KObjType }) {
 			vTarget.dispatchDefault = runtime("ktc2_any_compareTo", listOf(KObjType, KObjType), KPrimType(KPrim.INT))
 		}
+		// Comparable<Double>: the receiver is a box, what it is compared with a number.
+		val vOther = vSignature.params.getOrNull(1)?.type as? KPrimType
+		if (vIsCompare && vSignature.params.size == 2 && vSignature.params[0].type == KObjType && vOther != null) {
+			vTarget.dispatchDefault = runtime("ktc2_box_compareTo_${vOther.prim.name.lowercase()}", listOf(KObjType, vOther), KPrimType(KPrim.INT))
+		}
 		// A String is also a CharSequence.
 		if (vOwner.kotlinFqName.asString() == "kotlin.CharSequence") {
 			vTarget.dispatchDefault = when (inFunction.name.asString()) {

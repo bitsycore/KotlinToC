@@ -935,6 +935,16 @@ internal class BodyBuilder(
 		return if (vType.isMarkedNullable()) KSelect(vIsNull, kTrue, vTest, kBoolType) else vTest
 	}
 
+	/** `null as T` for a `T` that is not nullable is a `NullPointerException`, as on the JVM, not a failed cast. */
+	private fun nullCastCheck(inExpression: IrTypeOperatorCall, inValue: KExpr) {
+		// A type parameter may stand for a nullable type: only a type that is written out says no to null.
+		val vType = closed(inExpression.typeOperand)
+		if (vType.isMarkedNullable() || inExpression.typeOperand.isMarkedNullable()) return
+		if (vType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol || inExpression.typeOperand.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) return
+		val vIsNull = isNull(inValue)
+		if (vIsNull !== kFalse) mBlock += KIf(vIsNull, listOf(failure("throwNullPointer", "ktc2_fail_null")), emptyList())
+	}
+
 	private fun lowerTypeOperator(inExpression: IrTypeOperatorCall): KExpr = when (inExpression.operator) {
 		IrTypeOperator.IMPLICIT_COERCION_TO_UNIT -> {
 			discard(lowerRhs(inExpression.argument))
@@ -950,7 +960,14 @@ internal class BodyBuilder(
 		IrTypeOperator.CAST -> {
 			val vTo = typeOf(inExpression)
 			// A struct cast to anything but its own type is cast as the object it would be.
-			val vValue = spill(lowerPure(inExpression.argument)).let { if (it.type is KStructType && it.type != vTo && vTo !is KRefType) spill(coerce(it, KObjType)) else it }
+			val vValue = spill(lowerPure(inExpression.argument)).let {
+				when {
+					it.type is KStructType && it.type != vTo && vTo !is KRefType -> spill(coerce(it, KObjType))
+					// A number, or one that may be null, cast to a type of objects: its box.
+					(it.type is KPrimType || it.type is KOptType) && vTo is KRefType -> spill(coerce(it, KObjType))
+					else -> it
+				}
+			}
 			if (vValue.type == vTo && vTo !is KRefType) {
 				vValue
 			} else if (vValue.type == KObjType && (vTo is KPrimType || vTo is KOptType)) {
@@ -962,12 +979,14 @@ internal class BodyBuilder(
 				// `x as V` where x is a `V?` and V a number: the number that is there.
 				coerce(vValue, vTo)
 			} else if (vValue.type is KRefType && vTo is KStructType) {
+				nullCastCheck(inExpression, vValue)
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
 				if (vTest !== kTrue) mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
 				coerce(vValue, vTo)
 			} else if (vValue.type !is KRefType || vTo !is KRefType) {
 				fail(inExpression, "cast to '${inExpression.typeOperand.render()}'")
 			} else {
+				nullCastCheck(inExpression, vValue)
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
 				if (vTest !== kTrue) {
 					mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
@@ -976,8 +995,10 @@ internal class BodyBuilder(
 			}
 		}
 		IrTypeOperator.SAFE_CAST -> {
-			val vValue = spill(lowerPure(inExpression.argument)).let { if (it.type is KStructType) spill(coerce(it, KObjType)) else it }
 			val vTo = typeOf(inExpression)
+			val vValue = spill(lowerPure(inExpression.argument)).let {
+				if (it.type is KStructType || ((it.type is KPrimType || it.type is KOptType) && vTo is KRefType)) spill(coerce(it, KObjType)) else it
+			}
 			if (vValue.type is KRefType && vTo is KOptType) {
 				// `x as? Int`: the number in the box when it is one of that kind, otherwise null.
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)

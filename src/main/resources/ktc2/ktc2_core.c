@@ -1172,11 +1172,12 @@ int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
 	switch (a->typeId) {
 	case KTC2_TYPE_STRING: return ktc2_str_compare((ktc2_String*)a, (ktc2_String*)b);
 	case KTC2_TYPE_BOX_BOOLEAN: return KTC2_CMP(x->value.boolean_, y->value.boolean_);
-	case KTC2_TYPE_BOX_BYTE: return KTC2_CMP(x->value.byte_, y->value.byte_);
-	case KTC2_TYPE_BOX_SHORT: return KTC2_CMP(x->value.short_, y->value.short_);
+	/* As java.lang.Byte, Short and Character, which answer the difference. */
+	case KTC2_TYPE_BOX_BYTE: return x->value.byte_ - y->value.byte_;
+	case KTC2_TYPE_BOX_SHORT: return x->value.short_ - y->value.short_;
 	case KTC2_TYPE_BOX_INT: return KTC2_CMP(x->value.int_, y->value.int_);
 	case KTC2_TYPE_BOX_LONG: return KTC2_CMP(x->value.long_, y->value.long_);
-	case KTC2_TYPE_BOX_CHAR: return KTC2_CMP(x->value.char_, y->value.char_);
+	case KTC2_TYPE_BOX_CHAR: return x->value.char_ - y->value.char_;
 	case KTC2_TYPE_BOX_FLOAT: return ktc2_cmp_double(x->value.float_, y->value.float_);
 	case KTC2_TYPE_BOX_DOUBLE: return ktc2_cmp_double(x->value.double_, y->value.double_);
 	case KTC2_TYPE_BOX_UBYTE: return KTC2_CMP(x->value.ubyte_, y->value.ubyte_);
@@ -1186,6 +1187,28 @@ int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
 	default: ktc2_fail_dispatch();
 	}
 }
+
+/* `compareTo` of a boxed primitive against a value of its own kind: the box seen as a `Comparable<Int>`. */
+#define KTC2_BOX_COMPARE(name, type, id, field, result) \
+	int32_t ktc2_box_compareTo_##name(ktc2_Obj* a, type y) \
+	{ \
+		if (a->typeId != id) ktc2_fail_cast(); \
+		type x = ((const ktc2_Box*)a)->value.field; \
+		return result; \
+	}
+
+KTC2_BOX_COMPARE(boolean, bool, KTC2_TYPE_BOX_BOOLEAN, boolean_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(byte, int8_t, KTC2_TYPE_BOX_BYTE, byte_, x - y)
+KTC2_BOX_COMPARE(short, int16_t, KTC2_TYPE_BOX_SHORT, short_, x - y)
+KTC2_BOX_COMPARE(int, int32_t, KTC2_TYPE_BOX_INT, int_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(long, int64_t, KTC2_TYPE_BOX_LONG, long_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(char, uint16_t, KTC2_TYPE_BOX_CHAR, char_, x - y)
+KTC2_BOX_COMPARE(float, float, KTC2_TYPE_BOX_FLOAT, float_, ktc2_cmp_double(x, y))
+KTC2_BOX_COMPARE(double, double, KTC2_TYPE_BOX_DOUBLE, double_, ktc2_cmp_double(x, y))
+KTC2_BOX_COMPARE(ubyte, uint8_t, KTC2_TYPE_BOX_UBYTE, ubyte_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(ushort, uint16_t, KTC2_TYPE_BOX_USHORT, ushort_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(uint, uint32_t, KTC2_TYPE_BOX_UINT, uint_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(ulong, uint64_t, KTC2_TYPE_BOX_ULONG, ulong_, KTC2_CMP(x, y))
 
 /* ================== */
 /* MARK: CharSequence */

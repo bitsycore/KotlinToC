@@ -805,6 +805,20 @@ _Noreturn void ktc2_fail_throw(const ktc2_String* exception, const ktc2_String* 
 /** `Comparable.compareTo` for the built-in comparable types: strings and boxed primitives. */
 int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b);
 
+/** The same for a box seen as a `Comparable` of its own primitive, which is then what it is compared with. */
+int32_t ktc2_box_compareTo_boolean(ktc2_Obj* a, bool y);
+int32_t ktc2_box_compareTo_byte(ktc2_Obj* a, int8_t y);
+int32_t ktc2_box_compareTo_short(ktc2_Obj* a, int16_t y);
+int32_t ktc2_box_compareTo_int(ktc2_Obj* a, int32_t y);
+int32_t ktc2_box_compareTo_long(ktc2_Obj* a, int64_t y);
+int32_t ktc2_box_compareTo_char(ktc2_Obj* a, uint16_t y);
+int32_t ktc2_box_compareTo_float(ktc2_Obj* a, float y);
+int32_t ktc2_box_compareTo_double(ktc2_Obj* a, double y);
+int32_t ktc2_box_compareTo_ubyte(ktc2_Obj* a, uint8_t y);
+int32_t ktc2_box_compareTo_ushort(ktc2_Obj* a, uint16_t y);
+int32_t ktc2_box_compareTo_uint(ktc2_Obj* a, uint32_t y);
+int32_t ktc2_box_compareTo_ulong(ktc2_Obj* a, uint64_t y);
+
 /** Builds a string piece by piece; starts on the stack and moves to the heap when it grows. */
 typedef struct ktc2_Sb {
 	char* data;
