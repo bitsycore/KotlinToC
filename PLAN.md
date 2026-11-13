@@ -65,12 +65,11 @@ Not exercised by any test: an input event that really comes from SDL through `ev
   warns when an override does not (part 0);
 - the package of the SDL3 module is `ktc2.sdl3` (part 8);
 - nothing of `java.*` for programs; files and the like through kotlinx.io or okio (part 8).
+- `ktc2.enumOf<T>(number) { it.code }`, from a number to the entry of a `@SimpleEnum`: its
+  name and shape are confirmed (2026-11-13).
 
 **Waiting for a decision of the owner:**
-- `ktc2.enumOf<T>(number) { it.code }` was added to the `ktc2.` package without being
-  proposed first, because the SDL3 events could not be typed without a way from a number to
-  an entry. Its name and shape are the owner's to confirm or change (part 8);
-- any other addition to the `ktc2.` package: propose it here first, do not build it
+- any addition to the `ktc2.` package: propose it here first, do not build it
   unasked. The model is `ktc2.concurrent` and `createCleaner`: one API that is plain Kotlin
   on the JVM and the native thing in C.
 
@@ -224,7 +223,7 @@ start together) and the C compiler.
 
 | | Gain | Effort |
 |---|---|---|
-| [~] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known (`Devirtualize`) the iterator is now in the frame and `hasNext` / `next` are direct calls, which LTO inlines. Left: writing the index loop in the importer, which also needs the `modCount` test of part 8 | medium now: one inlined call per element | medium |
+| [x] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known to be `ArrayList` (`Devirtualize`), `ListLoops` writes the loop over the storage itself: no iterator, the size and the count of changes compared once per round, the element read without a test. It is the platform iterator written out, so it ends and fails as that one does (`integration/stdlib/ListLoops.kt`, `KTC2_SKIP=listloops`) | Collections 0.26 s -> 0.15 s, Dispatch 0.31 -> 0.22, Ordinary 0.35 -> 0.28, Threads 0.17 -> 0.05 | medium |
 | [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). A parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there) is covered by the next line | high where it applies | medium |
 | [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`integration/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
 | [x] A variable that is given a new object on every turn of a loop (`place = place + step`): the function has two rooms for it, and the call builds in the one that holds no object in use (`KStackSlot.rooms`, `ktc2_slot_reuse`); when something else still holds an older object, that one comes from the heap. `integration/objects/Reassigned.kt`, `KTC2_SKIP=rooms` | Ordinary: 12.56 M allocations -> 8.56 M; the time does not move | medium |

@@ -31,6 +31,7 @@ sources + library sources + generated bindings
   -> KirImporter/BodyBuilder IR -> KIR, from main, monomorphizing        frontend/KirImport.kt, BodyLowering.kt
   -> CycleLint               warns about classes that can form cycles    backend/CycleLint.kt
   -> Devirtualize            dispatched calls -> direct calls            backend/Devirtualize.kt
+  -> ListLoops               `for` over an ArrayList as a loop over its storage   backend/ListLoops.kt
   -> RangeChecks             array accesses proven in range              backend/RangeChecks.kt
   -> ExceptionLowering       throw/try -> pending value + tests          backend/ExceptionLowering.kt
   -> EscapeAnalysis          objects to the frame, results in place      backend/EscapeAnalysis.kt
@@ -600,8 +601,13 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   instantiations have in common; the pass looks for the casts that give this away and then
   trusts only what it followed from the allocation). The same knowledge answers `is` and the
   test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
-  `copies`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
+  `copies`, `listloops`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
+- `ListLoops` finds the platform `ArrayList` by its name and by the names of what it needs
+  of it (the fields `length`, `changes`, `array`, the function `checkChanges`): rename one in
+  `Ktc2Collections.kt` and the loops silently go back to the iterator. The loop it writes
+  reads the storage without a test, which holds because the storage never shrinks and every
+  change of size adds to `changes`: a new way to change the size has to add to it too.
 - A function of the C runtime that can leave with an exception has to be named in
   `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the
   exception shows up later, somewhere else. There are three today.

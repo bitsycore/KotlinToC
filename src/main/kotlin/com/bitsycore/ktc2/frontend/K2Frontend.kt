@@ -18,6 +18,7 @@ import com.bitsycore.ktc2.interop.DefFile
 import com.bitsycore.ktc2.backend.Devirtualize
 import com.bitsycore.ktc2.backend.EscapeAnalysis
 import com.bitsycore.ktc2.backend.ExceptionLowering
+import com.bitsycore.ktc2.backend.ListLoops
 import com.bitsycore.ktc2.backend.RangeChecks
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
@@ -385,9 +386,10 @@ class Ktc2Extension : IrGenerationExtension {
 		// KTC2_SKIP names optimizations to leave out (devirtualize, ranges, handover, brief), to find which one a wrong program comes from.
 		val vSkipped = (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }.toSet()
 		val vDirect = Devirtualize(vModule).also { if ("devirtualize" !in vSkipped) it.run() }
+		val vLists = ListLoops(vModule).also { if ("listloops" !in vSkipped) it.run() }
 		val vRanges = RangeChecks(vModule).also { if ("ranges" !in vSkipped) it.run() }
 		if (System.getenv("KTC2_DEBUG_PASSES") != null) {
-			System.err.println("ktc2: passes: ${vDirect.copied} functions copied for the classes they are called with, ${vDirect.resolved} dispatched calls made direct, ${vDirect.answered} type tests answered, ${vRanges.proven} array accesses proven in range")
+			System.err.println("ktc2: passes: ${vDirect.copied} functions copied for the classes they are called with, ${vDirect.resolved} dispatched calls made direct, ${vDirect.answered} type tests answered, ${vLists.rewritten} loops over a list written without an iterator, ${vRanges.proven} array accesses proven in range")
 		}
 		dumpKir("Devirtualize and RangeChecks: calls made direct, type tests answered, accesses proven in range")
 		ExceptionLowering(vModule).run()

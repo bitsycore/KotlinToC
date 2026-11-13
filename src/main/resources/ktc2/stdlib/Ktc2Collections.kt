@@ -32,6 +32,15 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	 */
 	internal var changes: Int = 0
 
+	/**
+	 * Fails when the list was changed since [expected] was read from [changes]. Its iterator
+	 * asks this before each element, and so does the loop ktc2 writes in the iterator's place
+	 * (`ListLoops`), which finds this function by its name.
+	 */
+	internal fun checkChanges(expected: Int) {
+		if (changes != expected) throw ConcurrentModificationException()
+	}
+
 	/** The element at [index], for the iterator, which has compared the index with the size already. */
 	internal fun held(index: Int): E = array.at(index)
 
@@ -243,7 +252,7 @@ private class ArrayListCursor<E>(private val list: ArrayList<E>, private var ind
 	private var expected = list.changes
 
 	private fun check() {
-		if (list.changes != expected) throw ConcurrentModificationException()
+		list.checkChanges(expected)
 	}
 
 	override fun hasNext(): Boolean = index != list.size
