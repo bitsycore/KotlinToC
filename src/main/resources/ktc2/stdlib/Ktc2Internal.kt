@@ -253,6 +253,14 @@ public fun kotlin_Long_rangeUntil(start: Long, end: Long): LongRange = start unt
 
 public fun kotlin_Char_rangeUntil(start: Char, end: Char): CharRange = start until end
 
+public fun kotlin_UInt_rangeTo(start: UInt, end: UInt): kotlin.ranges.UIntRange = kotlin.ranges.UIntRange(start, end)
+
+public fun kotlin_ULong_rangeTo(start: ULong, end: ULong): kotlin.ranges.ULongRange = kotlin.ranges.ULongRange(start, end)
+
+public fun kotlin_UInt_rangeUntil(start: UInt, end: UInt): kotlin.ranges.UIntRange = start until end
+
+public fun kotlin_ULong_rangeUntil(start: ULong, end: ULong): kotlin.ranges.ULongRange = start until end
+
 // ==================
 // MARK: Failures raised by generated code
 // ==================
