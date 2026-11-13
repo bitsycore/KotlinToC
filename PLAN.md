@@ -19,7 +19,7 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 120
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 121
 tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
 the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
 `007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
@@ -45,12 +45,15 @@ them; `KTC2_SKIP=inline` puts them back in the C files) and `ktc2_all.c` (`KTC2_
 has the suite compile it: the gain expected there is in the time gcc takes to start, which
 on a Mac is nothing).
 
-**Found on the way, and not fixed** (each is in `DESIGN.md`, section 12): half of a
-surrogate pair on its own becomes `?` in a string; a `Double` seen as `Comparable<Double>`
-cannot be compared through that type (`AbstractMethodError`: the dispatcher's default for
-`Comparable<T>` only knows `T` as a reference); `(x as Any?) is Int` for an `x: Int?` is
-refused ("cast to 'kotlin.Any?'"), and so is `compareValues` on two `Double`
-("cast to 'kotlin.Comparable<kotlin.Any>'").
+**Found on the way, and fixed since**: a string holds half of a surrogate pair on its own
+(as the three bytes UTF-8 would give its number; two halves that meet become the character;
+`?` on the way out, as on the JVM); a number seen as a `Comparable` of its own kind is
+compared (`ktc2_box_compareTo_double` and the like are the dispatcher's default); a number,
+or one that may be null, is boxed by a cast to a type of objects (`x as Any?`,
+`compareValues` on two `Double`); `null as String` is a `NullPointerException`;
+`StringBuilder.reverse` keeps a pair in order. `integration/stdlib/Surrogates.kt`,
+`integration/basic/NullableNumbers.kt`. **Not fixed**: `Number` as a type of its own
+(`DESIGN.md`, section 12).
 
 **Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
 suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
@@ -447,7 +450,7 @@ Open:
    search in accented text, `printf` and the sort): the seven benchmarks do not cover text
    that is not ASCII, sorting, `StringBuilder`, `Regex` or number formatting. Worth keeping
    as an eighth benchmark, with the JVM's times next to it.
-3. The three differences found on the way ("Where the work stands"): each is small.
+3. `Number` as a type of its own (`x as Number`, `toDouble()` on it): refused today.
 4. `Double` as text without `snprintf` (6); `sortedBy` without boxing its keys (6).
 5. An object that never leaves its function as plain locals (2): where the time of a small
    local list is, more than in its array.

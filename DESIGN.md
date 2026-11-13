@@ -83,7 +83,11 @@ sources + library sources + generated bindings
 table of type names and `destroy` functions.
 
 **Strings** keep Kotlin's meaning of `length` and `s[i]` (UTF-16 code units): constant time
-when the string is all ASCII, a scan otherwise.
+when the string is all ASCII, a scan otherwise. They are UTF-8, with one addition so that a
+string holds any sequence of units: half of a surrogate pair on its own is the three bytes
+UTF-8 would give its number, and two halves that meet (a concatenation, a `StringBuilder`)
+are written as the character they are, so equal strings have equal bytes. Such a half
+leaves the program as `?` (stdout, `encodeToByteArray`), as on the JVM.
 
 **Where an object is stored**, from cheapest:
 
@@ -500,11 +504,10 @@ Known to differ from the JVM:
   value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
   and every removal from an `ArrayList`, let go at once;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only;
-- half of a surrogate pair on its own cannot be held by a string: it becomes `?`;
-- a `Double` or `Float` seen as a `Comparable<Double>` cannot be compared through that type
-  (`AbstractMethodError`); `compareTo` on the number itself, and sorting, are right;
-- a number that may be null cast to `Any?` and then tested with `is` is refused by the
-  translator ("not supported yet").
+- `Number` as a type of its own (`x as Number`, `x is Number` on an object, `toDouble()` on
+  it) is refused by the translator ("not supported yet");
+- two halves of a surrogate pair printed one after the other, each by its own `print`, come
+  out as two `?`: the JVM's stream puts them together.
 
 ---------------------------------------------------------------------------
 ## 13. Inside the code
