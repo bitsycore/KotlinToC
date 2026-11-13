@@ -626,6 +626,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 					// `Number` is what every number is when its kind is not known: an object, the number in its box.
 					vClass.kotlinFqName.asString() == "kotlin.Number" -> KObjType
 					vClass.isInterface -> KObjType
+					// The companion of a built-in class (`String.Companion`, the receiver of `String.CASE_INSENSITIVE_ORDER`) holds nothing: it is a name.
+					vClass.isCompanion && vClass.fileOrNull == null -> KObjType
 					// A struct that may be null is held in its box: null needs a pointer.
 					isStruct(vClass) -> structFor(vClass)?.let { if (vType.isMarkedNullable()) KClassType(boxFor(it)) else KStructType(it) }
 					else -> classFor(vClass, argumentsOf(vBase))?.let { KClassType(it) }

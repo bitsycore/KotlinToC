@@ -848,6 +848,8 @@ internal class BodyBuilder(
 
 	private fun lowerObject(inExpression: IrGetObjectValue): KExpr {
 		if (isUnitObject(inExpression)) return KUnitValue
+		// The companion of a built-in class is only a name to hang extensions on.
+		inExpression.symbol.owner.let { if (it.isCompanion && it.fileOrNull == null) return KNull(KObjType) }
 		val vInstance = mImporter.objectFor(inExpression.symbol.owner) ?: return fail(inExpression, "object '${inExpression.symbol.owner.name}'")
 		ensureInitialized(inExpression.symbol.owner)
 		return KStaticRead(vInstance)
