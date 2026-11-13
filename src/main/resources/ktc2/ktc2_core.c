@@ -2084,6 +2084,11 @@ void ktc2_threadJoin(int64_t handle)
 	CloseHandle((HANDLE)(intptr_t)handle);
 }
 
+void ktc2_threadRelease(int64_t handle)
+{
+	CloseHandle((HANDLE)(intptr_t)handle);
+}
+
 #else
 
 static void* thread_main(void* argument)
@@ -2115,6 +2120,13 @@ void ktc2_threadJoin(int64_t handle)
 	pthread_t thread;
 	memcpy(&thread, &handle, sizeof thread);
 	pthread_join(thread, NULL);
+}
+
+void ktc2_threadRelease(int64_t handle)
+{
+	pthread_t thread;
+	memcpy(&thread, &handle, sizeof thread);
+	pthread_detach(thread);
 }
 
 #endif

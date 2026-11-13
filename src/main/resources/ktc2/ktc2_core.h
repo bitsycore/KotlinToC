@@ -448,6 +448,9 @@ int64_t ktc2_threadStart(ktc2_Obj* thread);
 /** Waits for the thread behind [handle] to end and gives the handle up. */
 void ktc2_threadJoin(int64_t handle);
 
+/** Gives the handle of a thread up without waiting for it: for a thread nobody joins. */
+void ktc2_threadRelease(int64_t handle);
+
 /** The time of day in nanoseconds since 1970 (`System.currentTimeMillis`). */
 int64_t ktc2_timeNanos(void);
 

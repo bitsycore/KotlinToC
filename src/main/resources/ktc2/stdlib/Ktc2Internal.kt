@@ -115,6 +115,9 @@ public external fun threadStart(thread: Any): Long
 /** Waits for the thread behind [handle] to end. */
 public external fun threadJoin(handle: Long)
 
+/** Gives up the handle of a thread nobody will join: the system then keeps nothing of it once it has ended. */
+public external fun threadRelease(handle: Long)
+
 /** Suspends the calling thread for [milliseconds]; returns at once for zero or less. */
 public external fun threadSleep(milliseconds: Long)
 

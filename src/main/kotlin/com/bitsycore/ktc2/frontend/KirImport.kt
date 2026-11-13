@@ -408,7 +408,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		settleInitialization()
 		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
 		return KModule(mUnits, vEntry, mClassList).also {
-			it.usesThreads = kThreadStart in mRuntime
+			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
 		}
 	}

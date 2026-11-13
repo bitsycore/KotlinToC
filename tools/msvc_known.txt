@@ -1,0 +1,3 @@
+# Programs tools/msvc_all.sh leaves out, each with the reason. One per line: <build directory>: <reason>.
+test-MathTest: the last digit of pow, exp and ln is the C library's, and MSVC's is not gcc's in DoubleMathTest.powers (DESIGN.md, the differences)
+Geometry: the C of the test itself (Geometry.def) uses __attribute__((weak)), which MSVC does not have

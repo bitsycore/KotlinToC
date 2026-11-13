@@ -14,12 +14,16 @@ for vDir in build/integration/*/; do
 	case "$vName" in *"$1"*) ;; *) continue ;; esac
 	# The standard input of the test, when it has one.
 	vInput=$(find integration -name "$vName.in" | head -1)
-	vResult=$(tools/asan.sh "$vDir" ${vInput:+"$vInput"} 2>&1)
+	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated: not looked for there.
+	vLeaks="AddressSanitizer|LeakSanitizer|ktc2: leak|ktc2: .*freed"
+	vOptions=${ASAN_OPTIONS:-}
+	if [ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ]; then vLeaks="AddressSanitizer|ktc2: .*freed"; vOptions="detect_leaks=0:$vOptions"; fi
+	vResult=$(ASAN_OPTIONS=$vOptions tools/asan.sh "$vDir" ${vInput:+"$vInput"} 2>&1)
 	vCount=$((vCount + 1))
 	# What a program writes to standard error itself (an exception in a thread) is not a failure.
 	# The line that says how the program ended; the C compiler may have said something before it (a note of gcc's).
 	vEnded=$(echo "$vResult" | grep -m1 "^exit ")
-	if [ -z "$vEnded" ] || [ "$(echo "$vEnded" | cut -d' ' -f2)" != "0" ] || grep -qE "AddressSanitizer|LeakSanitizer|ktc2: leak|ktc2: .*freed" "$vDir/asan.err" 2>/dev/null; then
+	if [ -z "$vEnded" ] || [ "$(echo "$vEnded" | cut -d' ' -f2)" != "0" ] || grep -qE "$vLeaks" "$vDir/asan.err" 2>/dev/null; then
 		vFailed=$((vFailed + 1)); echo "== $vName"; echo "$vResult" | head -20
 	fi
 done

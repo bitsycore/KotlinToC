@@ -44,8 +44,11 @@ Linux (the CI job's last step, `tools/asan_all.sh`).
   (`wsl -e bash -lc "cd /mnt/c/Dev/KotlinToC && ./gradlew test --rerun"`; about 4 minutes
   from the Windows checkout, whose `build/` it shares, so never at the same time as a run on
   Windows). `.gitattributes` keeps the shell scripts with Unix line ends for that;
-- MSVC is not in the job: it was last tried by hand on Windows at `007dd9b`, before the
-  functions in the headers and `ktc2_all.c`.
+- MSVC is in the job since 2026-11-13: on Windows, after the suite, `tools/msvc_all.sh`
+  compiles the one C file of every program (`ktc2_all.c`) with MSVC and compares what it
+  prints with gcc's build. Run by hand that day: 166 of 168 programs the same, the two others
+  left out with their reason in `tools/msvc_known.txt` (the last digit of `pow` in MSVC's C
+  library, and a test whose own C uses a gcc attribute).
 
 **What that day did**, in the order of `git log 3a04274..`: speed (text that is not ASCII
 searched as bytes, `ArrayList` sorted in its storage, integers as text without `printf`,
@@ -127,9 +130,6 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `==` on a `T` that stands for `Double` is `equals`; `compareTo` of `Double` is a total order.
 
 **Known and not done**, besides what the parts below list:
-- a thread nobody joins keeps its handle on Windows (a `HANDLE` that is never closed) and
-  its stack on POSIX systems until the program ends: the `Thread` object would have to give
-  them up when it goes, with a cleaner;
 - a value of the wrong kind that reaches a function of a concrete class through an unchecked
   cast (a `Comparator<Int>` handed a `String`) is answered with -1, false or null where the
   JVM throws `ClassCastException`;

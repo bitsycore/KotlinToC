@@ -1,4 +1,5 @@
-# The suite on each system, and on Linux every program again with AddressSanitizer.
+# The suite on each system; then on Linux every program again with AddressSanitizer, and on
+# Windows the C of every program again with MSVC, compared with what gcc's build prints.
 name: test
 
 on:
@@ -39,3 +40,10 @@ jobs:
       - name: AddressSanitizer
         if: matrix.os == 'ubuntu-latest'
         run: tools/asan_all.sh
+      - name: MSVC
+        if: matrix.os == 'windows-latest'
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
+          call "%VS%\VC\Auxiliary\Build\vcvars64.bat"
+          "C:\Program Files\Git\bin\bash.exe" tools/msvc_all.sh

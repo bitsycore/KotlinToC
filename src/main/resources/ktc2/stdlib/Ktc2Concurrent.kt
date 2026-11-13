@@ -3,6 +3,7 @@ package ktc2.concurrent
 import ktc2.internal.monitorEnter
 import ktc2.internal.monitorExit
 import ktc2.internal.threadJoin
+import ktc2.internal.threadRelease
 import ktc2.internal.threadSleep
 import ktc2.internal.threadStart
 
@@ -23,7 +24,12 @@ sleeping. Kotlin itself has these only on the JVM, under the names of the JDK.
 public open class Thread() {
 
 	private var mBlock: (() -> Unit)? = null
-	private var mHandle: Long = 0L
+
+	/** The system's handle of the thread while it is started and not joined. */
+	private val mHandle = ThreadHandle()
+
+	/** A thread nobody joined: what the system keeps for a join is given back when this object goes. */
+	private val mCleaner = ktc2.createCleaner(mHandle) { if (it.value != 0L) threadRelease(it.value) }
 	private var mStarted: Boolean = false
 
 	public constructor(block: () -> Unit) : this() {
@@ -38,17 +44,22 @@ public open class Thread() {
 	public fun start() {
 		if (mStarted) throw IllegalStateException("Thread already started")
 		mStarted = true
-		mHandle = threadStart(this)
+		mHandle.value = threadStart(this)
 	}
 
 	/** Waits for the thread to end; returns at once when it was not started or already joined. */
 	public fun join() {
-		val vHandle = mHandle
+		val vHandle = mHandle.value
 		if (vHandle != 0L) {
-			mHandle = 0L
+			mHandle.value = 0L
 			threadJoin(vHandle)
 		}
 	}
+}
+
+/** Holds the handle of a [Thread] apart from it, for the cleaner of the thread to read when the thread object is gone. */
+private class ThreadHandle {
+	var value: Long = 0L
 }
 
 /** Creates a thread that runs [block], started at once unless [start] is false. */
