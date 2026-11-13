@@ -1139,8 +1139,8 @@ int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
 	case KTC2_TYPE_BOX_INT: return KTC2_CMP(x->value.int_, y->value.int_);
 	case KTC2_TYPE_BOX_LONG: return KTC2_CMP(x->value.long_, y->value.long_);
 	case KTC2_TYPE_BOX_CHAR: return KTC2_CMP(x->value.char_, y->value.char_);
-	case KTC2_TYPE_BOX_FLOAT: return KTC2_CMP(x->value.float_, y->value.float_);
-	case KTC2_TYPE_BOX_DOUBLE: return KTC2_CMP(x->value.double_, y->value.double_);
+	case KTC2_TYPE_BOX_FLOAT: return ktc2_cmp_double(x->value.float_, y->value.float_);
+	case KTC2_TYPE_BOX_DOUBLE: return ktc2_cmp_double(x->value.double_, y->value.double_);
 	case KTC2_TYPE_BOX_UBYTE: return KTC2_CMP(x->value.ubyte_, y->value.ubyte_);
 	case KTC2_TYPE_BOX_USHORT: return KTC2_CMP(x->value.ushort_, y->value.ushort_);
 	case KTC2_TYPE_BOX_UINT: return KTC2_CMP(x->value.uint_, y->value.uint_);

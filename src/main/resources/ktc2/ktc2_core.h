@@ -843,6 +843,17 @@ ktc2_String* ktc2_sb_finish_into(ktc2_Sb* sb, void* storage, size_t capacity);
 /** Three-way comparison, the result of Kotlin's `compareTo`. */
 #define KTC2_CMP(a, b) (((a) > (b)) - ((a) < (b)))
 
+/** `compareTo` of Float and Double, which is an order of all their values: -0.0 below 0.0, NaN equal to itself and above all others. */
+static inline int32_t ktc2_cmp_double(double a, double b)
+{
+	if (a < b) return -1;
+	if (a > b) return 1;
+	int aIsNan = a != a;
+	int bIsNan = b != b;
+	if (aIsNan || bIsNan) return aIsNan - bIsNan;
+	return (signbit(b) != 0) - (signbit(a) != 0);
+}
+
 /** Reports `ArithmeticException: / by zero` and exits. */
 KTC2_FAILS void ktc2_fail_div_zero(void);
 

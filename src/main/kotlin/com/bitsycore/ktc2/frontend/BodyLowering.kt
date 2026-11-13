@@ -888,6 +888,20 @@ internal class BodyBuilder(
 				(vTargetName == "kotlin.Number" && vIsNumber)
 			return if (vHolds) kTrue else kFalse
 		}
+		// A primitive or null (a type parameter standing for `Int?`): what the type says of the number, when there is one.
+		(inValue.type as? KOptType)?.let { vOpt ->
+			val vTargetName = vType.classOrNull?.owner?.kotlinFqName?.asString()
+			val vIsNumber = vOpt.prim != KPrim.BOOLEAN && vOpt.prim != KPrim.CHAR && !vOpt.prim.isUnsigned
+			val vHolds = kType(vType.makeNotNull()) == KPrimType(vOpt.prim) || vTargetName == "kotlin.Any" || vTargetName == "kotlin.Comparable" ||
+				(vTargetName == "kotlin.Number" && vIsNumber)
+			val vHas = KOptHas(inValue)
+			return when {
+				vHolds && vType.isMarkedNullable() -> kTrue
+				vHolds -> vHas
+				vType.isMarkedNullable() -> KUnary(KUnaryOp.NOT, vHas, KPrimType(KPrim.BOOLEAN))
+				else -> kFalse
+			}
+		}
 		// The class of a struct value is known exactly: the answer is a constant.
 		(inValue.type as? KStructType)?.let { vStructType ->
 			val vTarget = vType.classOrNull?.owner ?: return kFalse
@@ -2539,6 +2553,12 @@ internal class BodyBuilder(
 		val vLeftType = vLeft.type
 		val vRightType = vRight.type
 		return when {
+			// `===` between a number that may be null and an object: only two nulls are the same.
+			inIdentity && vLeftType is KOptType && vRightType is KRefType && vRight !is KNull -> and(not(KOptHas(spill(vLeft))), isNull(spill(vRight)))
+			inIdentity && vRightType is KOptType && vLeftType is KRefType && vLeft !is KNull -> and(not(KOptHas(spill(vRight))), isNull(spill(vLeft)))
+			// A number that may be null compared with an object: as an object itself.
+			vLeftType is KRefType && vRightType is KOptType && vLeft !is KNull -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
+			vRightType is KRefType && vLeftType is KOptType && vRight !is KNull -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
 			vLeftType is KOptType || vRightType is KOptType -> optEquals(inCall, spill(vLeft), spill(vRight))
 			vLeft is KNull && vRight is KNull -> kTrue
 			// A primitive compared with an Any: box it and compare as objects.
