@@ -768,8 +768,10 @@ ktc2_String* ktc2_stringOfChars(ktc2_Array* chars, int32_t start, int32_t length
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end);
 
 /*
- * Searching and comparing text that is all ASCII, where a character is a byte: the index, -1
- * for "not found", and -2 when a string is not ASCII and the Kotlin code has to do it.
+ * Searching and comparing text as bytes: the index, -1 for "not found", and -2 when the Kotlin
+ * code has to do it (half of a surrogate pair on its own, or a region that cuts a pair). In
+ * ASCII text a character is a byte; in other text the bytes of whole code points are found
+ * where their UTF-16 units are.
  */
 int32_t ktc2_stringFind(ktc2_String* s, ktc2_String* other, int32_t from, bool backwards);
 int32_t ktc2_stringFindChar(ktc2_String* s, uint16_t c, int32_t from, bool backwards);

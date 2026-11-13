@@ -746,14 +746,20 @@ typedef struct {
 	int32_t offset;  /* the byte where that code point starts */
 } Place;
 
-static KTC2_TLS Place last_place;
+/* Two of them: code that compares two strings character by character asks for one, then the other. */
+static KTC2_TLS Place last_places[2];
+static KTC2_TLS int last_place_used;
 
 /** Where to start walking [s] to reach unit [index]: the remembered place when it serves, else the beginning. */
 static const char* place_in(const ktc2_String* s, int32_t index, int32_t* unit)
 {
-	if (last_place.string == s && last_place.unit <= index && last_place.gone == ktc2_atomic_load(&strings_gone)) {
-		*unit = last_place.unit;
-		return s->bytes + last_place.offset;
+	for (int which = 0; which < 2; which++) {
+		const Place* place = &last_places[which];
+		if (place->string == s && place->unit <= index && place->gone == ktc2_atomic_load(&strings_gone)) {
+			last_place_used = which;
+			*unit = place->unit;
+			return s->bytes + place->offset;
+		}
 	}
 	*unit = 0;
 	return s->bytes;
@@ -761,7 +767,9 @@ static const char* place_in(const ktc2_String* s, int32_t index, int32_t* unit)
 
 static void place_note(const ktc2_String* s, int32_t unit, const char* at)
 {
-	last_place = (Place){ s, ktc2_atomic_load(&strings_gone), unit, (int32_t)(at - s->bytes) };
+	int which = last_places[0].string == s ? 0 : last_places[1].string == s ? 1 : !last_place_used;
+	last_places[which] = (Place){ s, ktc2_atomic_load(&strings_gone), unit, (int32_t)(at - s->bytes) };
+	last_place_used = which;
 }
 
 uint16_t ktc2_str_get(const ktc2_String* s, int32_t index)
@@ -1204,9 +1212,87 @@ static int32_t byte_offset_of_unit(const ktc2_String* s, int32_t index)
 	return (int32_t)(at - s->bytes);
 }
 
+/**
+ * Where the code point that holds UTF-16 unit [index] of a non-ASCII string starts, and in
+ * [*unit] the index of its first unit: [index] itself unless it is the second half of a pair.
+ * The end of the string for its length.
+ */
+static const char* code_point_at(const ktc2_String* s, int32_t index, int32_t* unit)
+{
+	const char* end = s->bytes + s->size;
+	const char* at = place_in(s, index, unit);
+	while (at < end) {
+		int32_t width = (unsigned char)*at >= 0xF0 ? 2 : 1;
+		if (index < *unit + width) break;
+		next_code_point(&at);
+		*unit += width;
+	}
+	place_note(s, *unit, at);
+	return at;
+}
+
+/** How many UTF-16 units the code points that start in [from, to) are. */
+static int32_t units_in(const char* from, const char* to)
+{
+	int32_t units = 0;
+	for (; from < to; from++) {
+		unsigned char byte = (unsigned char)*from;
+		if ((byte & 0xC0) != 0x80) units += byte >= 0xF0 ? 2 : 1;
+	}
+	return units;
+}
+
+/*
+ * Searches a non-ASCII string for [size] bytes of UTF-8 that are [count] UTF-16 units, whole
+ * code points and not empty. A place where the bytes are found is the start of a code point
+ * (the first of them is no continuation byte), so it is where the units are found too: a
+ * string never holds half of a surrogate pair on its own.
+ */
+static int32_t find_wide(ktc2_String* s, const char* wanted, int32_t size, int32_t count, int32_t from, bool backwards)
+{
+	int32_t length = s->length;
+	const char* limit = s->bytes + s->size - size;
+	int32_t unit;
+	if (backwards) {
+		int32_t last = length - count;
+		if (from < last) last = from;
+		if (last < 0 || s->size < size) return -1;
+		const char* at = code_point_at(s, last, &unit);
+		if (at > limit) at = limit;
+		for (; at >= s->bytes; at--) {
+			if (*at == wanted[0] && memcmp(at, wanted, (size_t)size) == 0) return units_in(s->bytes, at);
+		}
+		return -1;
+	}
+	int32_t index = from < 0 ? 0 : from;
+	if (index > length - count) return -1;
+	const char* at = code_point_at(s, index, &unit);
+	if (unit < index) {
+		/* Inside a pair: nothing is found there. */
+		at += 4;
+		unit += 2;
+	}
+	const char* start = at;
+	for (; at <= limit; at++) {
+		if (*at != wanted[0] || memcmp(at, wanted, (size_t)size) != 0) continue;
+		int32_t found = unit + units_in(start, at);
+		place_note(s, found, at);
+		return found;
+	}
+	return -1;
+}
+
 int32_t ktc2_stringFind(ktc2_String* s, ktc2_String* other, int32_t from, bool backwards)
 {
-	if (s->size != s->length) return -2;
+	if (s->size != s->length) {
+		int32_t count = other->length;
+		if (count == 0) {
+			if (backwards) return from < 0 ? -1 : from < s->length ? from : s->length;
+			int32_t index = from < 0 ? 0 : from;
+			return index <= s->length ? index : s->length;
+		}
+		return find_wide(s, other->bytes, other->size, count, from, backwards);
+	}
 	int32_t length = s->length;
 	int32_t count = other->length;
 	/* Text that is all ASCII holds no string that is not; the empty string is ASCII. */
@@ -1235,7 +1321,25 @@ int32_t ktc2_stringFind(ktc2_String* s, ktc2_String* other, int32_t from, bool b
 
 int32_t ktc2_stringFindChar(ktc2_String* s, uint16_t c, int32_t from, bool backwards)
 {
-	if (s->size != s->length) return -2;
+	if (s->size != s->length) {
+		if (c >= 0xD800 && c <= 0xDFFF) return -2;
+		char text[3];
+		int32_t size;
+		if (c < 0x80) {
+			text[0] = (char)c;
+			size = 1;
+		} else if (c < 0x800) {
+			text[0] = (char)(0xC0 | (c >> 6));
+			text[1] = (char)(0x80 | (c & 0x3F));
+			size = 2;
+		} else {
+			text[0] = (char)(0xE0 | (c >> 12));
+			text[1] = (char)(0x80 | ((c >> 6) & 0x3F));
+			text[2] = (char)(0x80 | (c & 0x3F));
+			size = 3;
+		}
+		return find_wide(s, text, size, 1, from, backwards);
+	}
 	if (c >= 0x80) return -1;
 	int32_t length = s->length;
 	if (backwards) {
@@ -1250,10 +1354,38 @@ int32_t ktc2_stringFindChar(ktc2_String* s, uint16_t c, int32_t from, bool backw
 	return found ? (int32_t)(found - s->bytes) : -1;
 }
 
+/**
+ * The bytes of the UTF-16 units [offset, offset + length) of a string, which must be inside it:
+ * where they start in [*start], and how many they are; -1 when a pair is cut at either end.
+ */
+static int32_t region_of(const ktc2_String* s, int32_t offset, int32_t length, const char** start)
+{
+	if (s->size == s->length) {
+		*start = s->bytes + offset;
+		return length;
+	}
+	int32_t unit;
+	const char* from = code_point_at(s, offset, &unit);
+	if (unit != offset) return -1;
+	const char* to = from;
+	while (unit < offset + length) {
+		unit += (unsigned char)*to >= 0xF0 ? 2 : 1;
+		next_code_point(&to);
+	}
+	if (unit != offset + length) return -1;
+	*start = from;
+	return (int32_t)(to - from);
+}
+
 int32_t ktc2_stringRegionEquals(ktc2_String* s, int32_t offset, ktc2_String* other, int32_t otherOffset, int32_t length)
 {
-	if (s->size != s->length || other->size != other->length) return -2;
-	return memcmp(s->bytes + offset, other->bytes + otherOffset, (size_t)length) == 0;
+	if (s->size == s->length && other->size == other->length) return memcmp(s->bytes + offset, other->bytes + otherOffset, (size_t)length) == 0;
+	const char* mine;
+	const char* theirs;
+	int32_t mineSize = region_of(s, offset, length, &mine);
+	int32_t theirsSize = region_of(other, otherOffset, length, &theirs);
+	if (mineSize < 0 || theirsSize < 0) return -2;
+	return mineSize == theirsSize && memcmp(mine, theirs, (size_t)mineSize) == 0;
 }
 
 ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
