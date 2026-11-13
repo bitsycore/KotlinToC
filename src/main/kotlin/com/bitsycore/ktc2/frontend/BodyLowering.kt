@@ -431,7 +431,9 @@ internal class BodyBuilder(
 		}
 		val vSelf = KRead(mFunction.params[0])
 		if (mFunction.params.size == 1) {
-			mBlock += KReturn(KFieldRead(vSelf, vField))
+			val vProperty = inAccessor.correspondingPropertySymbol?.owner
+			val vRead: KExpr = KFieldRead(vSelf, vField)
+			mBlock += KReturn(if (vProperty?.isLateinit == true) initialized(vRead, vProperty.name.asString()) else vRead)
 		} else {
 			mBlock += KFieldSet(vSelf, vField, KRead(mFunction.params[1]))
 		}
@@ -715,7 +717,7 @@ internal class BodyBuilder(
 				vCell != null -> KFieldRead(KRead(vLocal), vCell)
 				vLocal.type == KUnitType -> KUnitValue
 				else -> KRead(vLocal)
-			}
+			}.let { vRead -> if ((vDeclaration as? IrVariable)?.isLateinit == true && vLocal != null) initialized(vRead, vDeclaration.name.asString()) else vRead }
 		}
 		is IrFunctionExpression -> makeClosure(inExpression, inExpression.function, null)?.let { KRead(it.first) } ?: KUnitValue
 		is IrFunctionReference -> lowerFunctionReference(inExpression)
@@ -1139,6 +1141,21 @@ internal class BodyBuilder(
 	}
 
 	/** A call to the platform layer's function that throws the failure, or the fatal runtime fallback. */
+	/**
+	 * [inValue], read from a `lateinit` property or variable called [inName]: before it was
+	 * given a value the read fails with `UninitializedPropertyAccessException`, as on the JVM.
+	 */
+	private fun initialized(inValue: KExpr, inName: String): KExpr {
+		val vValue = spill(inValue)
+		val vThrower = mImporter.internalFunction("throwUninitialized")?.let { mImporter.functionFor(it) }
+		val vFail: KStmt = if (vThrower != null) KEval(KCall(vThrower, listOf(KStringLit(inName)))) else KEval(KIntrinsic("ktc2_fail_null", emptyList(), KUnitType, isPure = false))
+		mBlock += KIf(isNull(vValue), listOf(vFail), emptyList())
+		return vValue
+	}
+
+	/** The name of the `lateinit` property [inField] is the field of; null for any other field. */
+	private fun lateinitName(inField: IrField): String? = inField.correspondingPropertySymbol?.owner?.takeIf { it.isLateinit }?.name?.asString()
+
 	private fun failure(inThrower: String, inFallback: String): KStmt {
 		val vTarget = mImporter.internalFunction(inThrower)?.let { mImporter.functionFor(it) }
 		return KEval(if (vTarget != null) KCall(vTarget, emptyList()) else KIntrinsic(inFallback, emptyList(), KUnitType, isPure = false))
@@ -1724,7 +1741,11 @@ internal class BodyBuilder(
 	}
 
 	private fun lowerGetField(inExpression: IrGetField): KExpr {
-		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(ensuredFile(it)) }
+		val vLate = lateinitName(inExpression.symbol.owner)
+		mImporter.globalFor(inExpression.symbol.owner)?.let { vGlobal ->
+			val vRead = KGlobalRead(ensuredFile(vGlobal))
+			return if (vLate != null) initialized(vRead, vLate) else vRead
+		}
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field access")
 		// A property of a `@SimpleEnum` class is not stored: it is looked up from the number.
 		(inExpression.symbol.owner.parent as? IrClass)?.takeIf { mImporter.isSimpleEnum(it) }?.let {
@@ -1732,7 +1753,8 @@ internal class BodyBuilder(
 			return adapt(spill(KCall(vLookup, listOf(coerce(lowerPure(vReceiver), vLookup.params[0].type)))), inExpression)
 		}
 		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
-		return adapt(readField(fieldTarget(lowerPure(vReceiver), vField), vField), inExpression)
+		val vRead = readField(fieldTarget(lowerPure(vReceiver), vField), vField)
+		return adapt(if (vLate != null) initialized(vRead, vLate) else vRead, inExpression)
 	}
 
 	private fun lowerSetField(inExpression: IrSetField): KExpr {
@@ -1940,7 +1962,11 @@ internal class BodyBuilder(
 		val vOwnArguments = inCall.typeArguments.map { vType -> vType?.let { closed(it) } }
 		val vProperty = vCallee.correspondingPropertySymbol?.owner
 		if (vOwner == null) {
-			mImporter.globalGetter(vCallee)?.let { return KGlobalRead(ensuredFile(it)) }
+			mImporter.globalGetter(vCallee)?.let { vGlobal ->
+				val vRead = KGlobalRead(ensuredFile(vGlobal))
+				val vLate = vCallee.correspondingPropertySymbol?.owner?.takeIf { it.isLateinit }?.name?.asString()
+				return if (vLate != null) initialized(vRead, vLate) else vRead
+			}
 			mImporter.globalSetter(vCallee)?.let { vGlobal ->
 				mBlock += KGlobalSet(ensuredFile(vGlobal), coerce(lowerRhs(vArguments.last()!!), vGlobal.type))
 				return KUnitValue
@@ -1970,7 +1996,8 @@ internal class BodyBuilder(
 			val vField = vRealProperty?.backingField?.let { mImporter.fieldFor(it, vReceiver) }
 			if (vField != null && vReal.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR) {
 				if (vReal === vRealProperty.getter) {
-					return adapt(readField(fieldTarget(lowerPure(vArguments[0]!!), vField), vField), inCall)
+					val vRead = readField(fieldTarget(lowerPure(vArguments[0]!!), vField), vField)
+					return adapt(if (vRealProperty.isLateinit) initialized(vRead, vRealProperty.name.asString()) else vRead, inCall)
 				}
 				val vOperands = lowerOperands(listOf(vArguments[0]!!, vArguments[1]!!), inLastMayBeImpure = true)
 				writeField(fieldTarget(vOperands[0], vField), vField, coerce(vOperands[1], vField.type))
@@ -2412,6 +2439,24 @@ internal class BodyBuilder(
 			}
 			mBlock += KPrint(lowerParts(vPieces), vName == "println")
 			return KUnitValue
+		}
+		if (vParent == "kotlin" && vName == "<get-isInitialized>") {
+			// `::property.isInitialized`: whether the field of a `lateinit` property holds something yet.
+			val vReference = vArguments.firstOrNull()
+			val vProperty = when (vReference) {
+				is IrRichPropertyReference -> vReference.reflectionTargetSymbol?.owner as? IrProperty
+				is IrPropertyReference -> vReference.symbol.owner
+				else -> null
+			}
+			val vBacking = vProperty?.backingField ?: return fail(inCall, vWhat)
+			mImporter.globalFor(vBacking)?.let { return not(isNull(spill(KGlobalRead(ensuredFile(it))))) }
+			val vBound = when (vReference) {
+				is IrRichPropertyReference -> vReference.boundValues.firstOrNull()
+				is IrPropertyReference -> vReference.arguments.firstOrNull()
+				else -> null
+			} ?: return fail(inCall, vWhat)
+			val vField = mImporter.fieldFor(vBacking, closed(vBound.type)) ?: return fail(inCall, vWhat)
+			return not(isNull(spill(readField(fieldTarget(lowerPure(vBound), vField), vField))))
 		}
 		if (vParent == "kotlin" && (vName == "enumValues" || vName == "enumValueOf")) {
 			// The enum class is known where the call is written: these are its `values()` and `valueOf()`.

@@ -303,6 +303,10 @@ public fun kotlin_internal_ir_dataClassArrayMemberHashCode(value: Any?): Int = w
 public fun throwNoCoroutines(): Nothing =
 	throw UnsupportedOperationException("coroutines are not supported: this is reached through sequence { } or iterator { }")
 
+/** A `lateinit` property or variable read before it was given a value. */
+public fun throwUninitialized(name: String): Nothing =
+	throw UninitializedPropertyAccessException("lateinit property $name has not been initialized")
+
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()
 
