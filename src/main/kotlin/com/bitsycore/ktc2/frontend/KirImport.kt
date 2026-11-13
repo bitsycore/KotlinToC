@@ -1953,7 +1953,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun accepts(inDispatcher: List<KType>, inActual: List<KType>): Boolean =
 		inDispatcher.size == inActual.size && inDispatcher.indices.all {
 			// `Nothing` as an argument (the empty list is a List<Nothing>) fits every instantiation.
-			inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType || inActual[it] == KObjType || inActual[it] == KNothingType
+			inDispatcher[it] == inActual[it] || inDispatcher[it] == KObjType || inActual[it] == KObjType || inActual[it] == KNothingType ||
+				// A `List<Int>` is a `List<Int?>` too: the dispatcher turns one form of the number into the other.
+				((inDispatcher[it] as? KOptType)?.prim ?: (inDispatcher[it] as? KPrimType)?.prim)?.let { vPrim ->
+					vPrim == ((inActual[it] as? KOptType)?.prim ?: (inActual[it] as? KPrimType)?.prim)
+				} == true
 		}
 
 	/**

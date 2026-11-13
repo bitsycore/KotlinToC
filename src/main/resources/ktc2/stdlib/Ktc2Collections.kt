@@ -215,12 +215,7 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	actual override fun contains(element: E): Boolean = indexOf(element) >= 0
 
-	actual override fun containsAll(elements: Collection<E>): Boolean {
-		for (vElement in elements) {
-			if (!contains(vElement)) return false
-		}
-		return true
-	}
+	actual override fun containsAll(elements: Collection<E>): Boolean = containsEach(this, elements)
 
 	actual override fun indexOf(element: E): Int {
 		for (vIndex in 0 until length) {
@@ -488,6 +483,20 @@ public actual fun <T> Iterable<T>.shuffled(): List<T> {
 	return vList
 }
 
+/**
+ * True when [all] holds each of [elements]. What is asked for may be anything - a `List<Int>`
+ * seen as a `List<Any>` is asked for strings - so each is looked up as an object, which a
+ * collection of numbers answers without mistaking it for a number.
+ */
+internal fun containsEach(all: Collection<*>, elements: Collection<*>): Boolean {
+	@Suppress("UNCHECKED_CAST")
+	val vAll = all as Collection<Any?>
+	for (vElement in elements) {
+		if (!vAll.contains(vElement)) return false
+	}
+	return true
+}
+
 /** Fails as the JVM does for a `subList` that is not inside a list of [size] elements. */
 private fun checkPart(fromIndex: Int, toIndex: Int, size: Int) {
 	if (fromIndex < 0) throw IndexOutOfBoundsException("fromIndex = $fromIndex")
@@ -738,12 +747,7 @@ public actual abstract class AbstractMutableCollection<E> protected actual const
 		return false
 	}
 
-	actual override fun containsAll(elements: Collection<E>): Boolean {
-		for (vElement in elements) {
-			if (!contains(vElement)) return false
-		}
-		return true
-	}
+	actual override fun containsAll(elements: Collection<E>): Boolean = containsEach(this, elements)
 
 	actual override fun addAll(elements: Collection<E>): Boolean {
 		var vChanged = false

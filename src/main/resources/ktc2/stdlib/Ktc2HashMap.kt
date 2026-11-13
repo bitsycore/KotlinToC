@@ -412,12 +412,7 @@ public actual class HashSet<E> actual constructor(initialCapacity: Int) : Mutabl
 	actual override fun isEmpty(): Boolean = map.isEmpty()
 	actual override fun contains(element: E): Boolean = map.containsKey(element)
 
-	actual override fun containsAll(elements: Collection<E>): Boolean {
-		for (vElement in elements) {
-			if (!map.containsKey(vElement)) return false
-		}
-		return true
-	}
+	actual override fun containsAll(elements: Collection<E>): Boolean = containsEach(this, elements)
 
 	actual override fun iterator(): MutableIterator<E> = map.keys.iterator()
 

@@ -78,6 +78,25 @@ fun main() {
 	println("${take(Counter(1), 4).sum()} ${take(Words(listOf("a", "b", "c")), 4).joinToString("")}")
 	println("${sum()} ${sum(1)} ${sum(1, 2, 3)} ${sum(*intArrayOf(4, 5))} ${listOfAll(1, "a", null)} ${listOfAll<Int>()}")
 
+	// A collection of numbers asked about something that is no such number, as Kotlin allows.
+	val vInts = arrayListOf(1, 2, 3)
+	val vAnyKey: Any = "x"
+	val vAnyOne: Any = 2
+	val vAsAny: List<Any> = vInts
+	println("${vAsAny.contains("x")} ${vAsAny.contains(2)} ${vAsAny.indexOf("x")} ${vAsAny.indexOf(3)} ${vAsAny.lastIndexOf(2.0)} ${vInts.contains<Any>(vAnyKey)} ${vInts.contains<Any>(vAnyOne)} ${vAsAny.containsAll(listOf(1, "x"))} ${vAsAny.containsAll(listOf(1, 3))}")
+	val vNullable: List<Int?> = vInts
+	println("${vNullable.contains(null)} ${vNullable.indexOf(null)} ${vNullable.indexOf(2)} ${vNullable.size} ${vNullable[1]} ${vNullable.filterNotNull().sum()} ${vNullable.binarySearch(3)} ${vNullable.lastIndexOf(null)} $vNullable")
+	val vByNumber = hashMapOf(1 to "one", 2 to "two")
+	val vKeys: Map<out Any, String> = vByNumber
+	@Suppress("UNCHECKED_CAST")
+	println("${vKeys[vAnyOne]} ${vKeys[vAnyKey]} ${vKeys.containsKey(vAnyKey)} ${vKeys.containsKey(1)} ${(vByNumber as Map<Any, String>).get(2.0)} ${vKeys.containsValue("two")}")
+	val vMutable: MutableCollection<out Any> = vInts
+	println("${vMutable.remove("x")} ${vMutable.remove(2)} $vInts")
+	val vDoubles: Collection<Any> = hashSetOf(1.5, 2.5)
+	println("${vDoubles.contains(1.5)} ${vDoubles.contains(1)} ${vDoubles.contains("1.5")} ${vDoubles.size}")
+	val vLongs: Map<out Any, Any> = hashMapOf(5L to 1.5)
+	println("${vLongs[5L]} ${vLongs[5]} ${vLongs["5"]} ${vLongs.containsValue(1.5)} ${vLongs.containsValue(1)}")
+
 	val vPairs = listOf(1 to "one", 2 to "two")
 	val (vNumbers, vWords) = vPairs.unzip()
 	println("$vNumbers $vWords ${vPairs.toMap()[2]} ${Triple(1, 2.0, "3")} ${Triple(1, 2.0, "3").second + 1}")

@@ -563,7 +563,31 @@ class CEmitter(private val mModule: KModule) {
 					vBefore.append("memset($vSlot, 0, sizeof(${vBuilt.cName})); *(ktc2_Obj*)$vSlot = (ktc2_Obj){ KTC2_STACK | 1, ${typeId(vBuilt)} }; ")
 					vRoom = "(${vBuilt.cName}*)$vSlot, "
 				}
+				/*
+				An argument the implementation cannot take: null, or a box of another kind, for a number. It
+				gets there the way it does in Kotlin, where a `List<Int>` is asked `contains(x)` for an `x` that
+				is `Any`, or looked at as a `List<Int?>`: the functions that can be asked so look something up,
+				and what they do not find they answer with false, -1 or null.
+				*/
+				val vAbsent = when (val vReturn = inFunction.returnType) {
+					KUnitType, KNothingType -> "return;"
+					KPrimType(KPrim.INT) -> "return -1;"
+					is KPrimType -> "return ${zero(vReturn)};"
+					is KRefType, KPtrType -> "return NULL;"
+					else -> "return (${cType(vReturn)}){ 0 };"
+				}
 				val vArguments = vRoom + vOwnParams.zip(if (vBuilt != null) inTarget.params.drop(1) else inTarget.params).joinToString(", ") { (vFrom, vTo) ->
+					if (vFrom !== vOwnParams[0]) {
+						val vToPrim = (vTo.type as? KPrimType)?.prim ?: (vTo.type as? KOptType)?.prim
+						val vFits = when {
+							vToPrim == null -> null
+							vFrom.type is KRefType && vTo.type is KPrimType -> "${vFrom.cName} && ((ktc2_Obj*)${vFrom.cName})->typeId == KTC2_TYPE_BOX_${vToPrim.name}"
+							vFrom.type is KRefType && vTo.type is KOptType -> "!${vFrom.cName} || ((ktc2_Obj*)${vFrom.cName})->typeId == KTC2_TYPE_BOX_${vToPrim.name}"
+							vFrom.type is KOptType && vTo.type is KPrimType -> "${vFrom.cName}.has"
+							else -> null
+						}
+						if (vFits != null) vBefore.append("if (!($vFits)) $vAbsent ")
+					}
 					// The box made for the call owns what the struct refers to, until it is released after the call.
 					val vGiven = if (vFrom.type.isCounted() && vFrom.type is KStructType && vTo.type is KRefType) retainText(vFrom.type, vFrom.cName) else vFrom.cName
 					val vText = adapt(vGiven, vFrom.type, vTo.type)
