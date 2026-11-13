@@ -257,6 +257,29 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 		return -1
 	}
 
+	// ============
+	//  What the JVM's StringBuilder has under other names, for code written there
+
+	public fun setCharAt(index: Int, value: Char) {
+		setAt(index, value)
+	}
+
+	public fun deleteCharAt(index: Int): StringBuilder {
+		removeRange(index, index + 1)
+		return this
+	}
+
+	/** As the JDK's: an end beyond the length is the length. */
+	public fun delete(startIndex: Int, endIndex: Int): StringBuilder {
+		removeRange(startIndex, if (endIndex > count) count else endIndex)
+		return this
+	}
+
+	public fun replace(startIndex: Int, endIndex: Int, value: String): StringBuilder {
+		removeRange(startIndex, if (endIndex > count) count else endIndex)
+		return insert(startIndex, value)
+	}
+
 	/** Removes the code units in [startIndex, endIndex). */
 	internal fun removeRange(startIndex: Int, endIndex: Int) {
 		if (startIndex < 0 || endIndex > count || startIndex > endIndex) {
