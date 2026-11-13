@@ -305,3 +305,12 @@ public fun throwNoCoroutines(): Nothing =
 
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()
+
+/**
+ * What a cleaner that is kept as an object is (`ktc2.createCleaner`): the runtime calls [deinit]
+ * once, when the last reference to the object goes and before its properties are given up.
+ * Not for programs: theirs is `createCleaner`, which the JVM and Kotlin/Native have too.
+ */
+public interface Deinit {
+	public fun deinit()
+}

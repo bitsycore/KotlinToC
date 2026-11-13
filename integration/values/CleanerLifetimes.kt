@@ -1,52 +1,41 @@
-import ktc2.Deinit
 import ktc2.WeakRef
 import ktc2.arena
+import ktc2.createCleaner
 
-// `deinit` runs when the last reference to an object goes. The JVM never calls it, so this
-// program is compared with Deinit.expected.
+// When an object ends, seen through its cleaner: in C the action runs when the last reference
+// to the object goes. On the JVM it runs whenever the collector gets to it, so this program is
+// compared with CleanerLifetimes.expected.
 
-/** Prints when it dies. */
-open class Res(val name: String) : Deinit {
-	override fun deinit() {
-		println("deinit $name")
-	}
+/** Prints when it ends. */
+open class Res(val name: String) {
+	private val mCleaner = createCleaner(name) { println("end $it") }
 }
 
-/** Inherits `deinit`. */
+/** Inherits the cleaner. */
 class Plain(inName: String) : Res(inName)
 
-/** Adds to it. */
-class Derived(inName: String, private val mExtra: String) : Res(inName) {
-	override fun deinit() {
-		println("deinit derived $mExtra")
-		super.deinit()
-	}
+/** Adds one: its own runs first. */
+class Derived(inName: String, inExtra: String) : Res(inName) {
+	private val mExtra = createCleaner(inExtra) { println("end derived $it") }
 }
 
-/** Its properties are whole while `deinit` runs, and given up after it. */
-class Parent(val name: String) : Deinit {
+/** Its properties are whole while the action runs, and given up after it. */
+class Parent(val name: String) {
 	val child = Res("$name.child")
 	val notes = ArrayList<String>()
-
-	override fun deinit() {
-		println("deinit $name with ${child.name} and $notes")
-	}
+	private val mCleaner = createCleaner(notes) { println("end parent with $it") }
 }
 
-class Generic<T>(private val mValue: T) : Deinit {
-	override fun deinit() {
-		println("deinit generic $mValue")
-	}
+class Generic<T>(inValue: T) {
+	private val mCleaner = createCleaner(inValue) { println("end generic $it") }
 }
 
 interface Named {
 	val label: String
 }
 
-class NamedRes(override val label: String) : Named, Deinit {
-	override fun deinit() {
-		println("deinit named $label")
-	}
+class NamedRes(override val label: String) : Named {
+	private val mCleaner = createCleaner(label) { println("end named $it") }
 }
 
 // ==================
@@ -100,9 +89,9 @@ fun collections() {
 fun seenAs() {
 	val vAny: Any = Generic(42)
 	val vNamed: Named = NamedRes("iface")
-	println("as Any: ${vAny is Deinit}, as Named: ${vNamed.label}")
+	println("as Any: ${vAny !is Res}, as Named: ${vNamed.label}")
 	val vText = Generic("text")
-	val vHolder: () -> Unit = { println("captured generic is a Deinit: ${(vText as Any) is Deinit}") }
+	val vHolder: () -> Unit = { println("captured generic is a Res: ${(vText as Any) is Res}") }
 	vHolder()
 }
 
@@ -144,17 +133,17 @@ fun failing() {
 	throw IllegalStateException("boom")
 }
 
-/** Calls code that throws, and catches it, while another exception may be in flight. */
-class Careful(private val mName: String) : Deinit {
-	override fun deinit() {
+/** Its action calls code that throws, and catches it, while another exception may be in flight. */
+class Careful(inName: String) {
+	private val mCleaner = createCleaner(inName) {
 		val vWords = ArrayList<String>()
 		try {
-			vWords += mName
+			vWords += it
 			vWords[5]
 		} catch (inError: IndexOutOfBoundsException) {
 			vWords += "caught"
 		}
-		println("deinit careful $vWords")
+		println("end careful $vWords")
 	}
 }
 
@@ -170,37 +159,15 @@ fun failingCareful() {
 
 var gWatched: WeakRef<Watched>? = null
 
-class Watched : Deinit {
-	override fun deinit() {
-		// As in Swift, a weak reference no longer finds an object that is being deinitialized.
-		println("deinit watched, weak reference finds it: ${gWatched?.get() != null}")
-	}
+class Watched {
+	// A weak reference no longer finds an object that is ending.
+	private val mCleaner = createCleaner("watched") { println("end $it, weak reference finds it: ${gWatched?.get() != null}") }
 }
 
 fun weak() {
 	val vWatched = Watched()
 	gWatched = WeakRef(vWatched)
 	println("weak reference finds it: ${gWatched?.get() != null}")
-}
-
-// ==================
-// MARK: References to itself
-// ==================
-
-val gSeen = ArrayList<Any>()
-
-/** Hands itself out during `deinit`, and takes itself back. */
-class Visitor(private val mName: String) : Deinit {
-	override fun deinit() {
-		gSeen += this
-		println("deinit visitor $mName, seen ${gSeen.size}")
-		gSeen.clear()
-	}
-}
-
-fun visitor() {
-	Visitor("v")
-	println("visitor gone")
 }
 
 // ==================
@@ -214,11 +181,11 @@ class Holder {
 	var other: Label? = Label("other")
 }
 
-/** Overwrites, when it dies, a place something else may be reading from. */
-class Killer(private val mHolder: Holder) : Deinit {
-	override fun deinit() {
-		mHolder.item = Label("replaced")
-		mHolder.other = null
+/** Overwrites, when it ends, a place something else may be reading from. */
+class Killer(private val mHolder: Holder) {
+	private val mCleaner = createCleaner(mHolder) {
+		it.item = Label("replaced")
+		it.other = null
 	}
 
 	fun touch(): Int = 1
@@ -300,7 +267,6 @@ fun main() {
 	}
 	weak()
 	println("after weak: ${gWatched?.get() != null}")
-	visitor()
 	underBlock(Holder(), true)
 	underAssignment(Holder())
 	underCall(Holder())

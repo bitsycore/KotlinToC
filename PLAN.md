@@ -19,12 +19,12 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 122
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 120
 tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
 the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
 `007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
 showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `Walking`,
-`OwnedParameters`, `HeldInFrame`, `Deinit`, `Cleaners`, `Collections`,
+`OwnedParameters`, `HeldInFrame`, `CleanerLifetimes`, `Cleaners`, `Collections`,
 `ConcurrentModification`, `DispatchedResults`, `Reassigned`, `Copies`, `ReturnedCalls`,
 `SimpleEnums`, `Generics`).
 
@@ -97,8 +97,10 @@ Not exercised by any test: an input event that really comes from SDL through `ev
 - the enum that is a number is `@SimpleEnum`, a real C `enum`, with `@EnumValue` on the
   constructor parameter that gives the numbers, and an object per entry where Kotlin needs
   one (`Key?`, `List<Key>`, `Any`); what cannot be a number is a compile error (part 8);
-- `deinit` stays an ordinary `override` that calls `super.deinit()`, the Kotlin way; ktc2
-  warns when an override does not (part 0);
+- `ktc2.Deinit` is removed (2026-11-13): what runs when an object ends is a cleaner
+  (`createCleaner`), which the JVM and Kotlin/Native have too, and which costs nothing in a
+  private property. The runtime's hook is still there under it (`ktc2.internal.Deinit`, for
+  the cleaner that is kept as an object);
 - the package of the SDL3 module is `ktc2.sdl3` (part 8);
 - nothing of `java.*` for programs; files and the like through kotlinx.io or okio (part 8).
 - `ktc2.enumOf<T>(number) { it.code }`, from a number to the entry of a `@SimpleEnum`: its
@@ -214,21 +216,19 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
   made that pass on Windows. Test builds now keep freed objects aside, filled, and end the
   program on a retain or release of one. AddressSanitizer on the generated C finds the rest
   and is worth a second suite target (`-fsanitize=address`), which is not there yet.
-- [x] **`Deinit` is implemented**, as Swift's `deinit` (`DESIGN.md`, section 5). With it:
-  `Effects` treats giving up a reference as something that can run the program's code,
-  temporaries end with their statement, and `ArrayList` and `HashMap.remove` let go of what is
-  removed at once. `createCleaner` is the portable form (Kotlin/Native's API, the JVM's cleaner
-  behind it on the JVM); in a private property it is folded into the class and costs no object, and no field either
-  when its resource is a `val` of the class.
+- [x] **What runs when an object ends** is a cleaner (`DESIGN.md`, section 5):
+  `createCleaner`, Kotlin/Native's API, the JVM's cleaner behind it on the JVM; in a private
+  property it is folded into the class and costs no object, and no field either when its
+  resource is a `val` of the class. With it: `Effects` treats giving up a reference as
+  something that can run the program's code, temporaries end with their statement, and
+  `ArrayList` and `HashMap.remove` let go of what is removed at once. It began as a `Deinit`
+  interface as Swift's `deinit`, removed since: `integration/values/CleanerLifetimes.kt` is
+  the test of when objects end.
   Left:
   - [ ] a `HashMap` entry removed through an iterator is held until the map is rebuilt
     (the entry handed out reads the map's storage). Looked at and left: the entry would need a
     copy of its key and value, two retains and releases for every entry of every
     `for ((k, v) in map)`, to cover a rare case.
-  - [x] `deinit` through the superclasses: decided against chaining by the compiler. It is
-    an `override`, which calls `super.deinit()` itself; ktc2 warns when one that overrides the
-    `deinit` of a superclass does not (`checkSuperDeinit` in `KirImport.kt`,
-    `integration/values/DeinitSuper.kt` with its `.warnings` file).
   - [ ] a variable could give up its object after its last use, as Swift does in optimized
     builds, instead of at the end of its block: frees earlier, but a guard object
     (`val lock = Guard()`) would then end at once. Not planned unless asked for.
@@ -444,7 +444,7 @@ Open:
   order, so `diff` of two of them shows what a pass did.
 - [x] **A test that must fail to compile.** A program with a `<Name>.errors` file next to it
   has to be refused, with a message that contains each line of that file
-  (`integration/errors/`). A use of `java.*`, `Deinit` on a `@Struct` and a `@SimpleEnum` with state have one. So have
+  (`integration/errors/`). A use of `java.*` and a `@SimpleEnum` with state have one. So have
   inline storage that would need a copy (`InlineNeedsCopy`) and a `@Value` or `@Size` local
   that cannot stay in the frame (`ValueLeavesFrame`).
 

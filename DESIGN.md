@@ -147,7 +147,6 @@ makes every object a block of `malloc`'s again.
 | `@Weak` on a property, `WeakRef<T>` | references that do not keep their target alive; they read as null once it is gone. |
 | `@Acyclic` on a property | tells the cycle warning this reference never closes a cycle. |
 | `ktc2.concurrent` | `Thread`, `thread { }`, `synchronized(lock) { }`, `sleep(ms)`. Kotlin has these on the JVM only. |
-| `Deinit` | `deinit()` of a class that implements it runs when the last reference to an object goes. See "Deinit" in section 5. On the JVM nothing calls it. |
 | `createCleaner(resource) { }`, `Cleaner` | the way to release something that runs everywhere: Kotlin/Native's `kotlin.native.ref.createCleaner`, with `java.lang.ref.Cleaner` behind it on the JVM. In C it is a `deinit`, and in a private property it costs no object. See "Cleaners" in section 5. |
 
 ---------------------------------------------------------------------------
@@ -213,38 +212,34 @@ What is left out because nobody can observe it:
 Counts are plain until the program starts its first thread, atomic after, and always plain
 for objects in a frame.
 
-**Deinit.** A class that implements `ktc2.Deinit` has its `deinit()` called by the runtime
-(`ktc2_destroy`, through `ktc2_TypeInfo.deinit`) when the count of an instance reaches zero,
-before its fields are released, wherever the object lives (heap, frame, arena). As in Swift:
+**Cleaners.** What runs when an object ends is a cleaner: `ktc2.createCleaner(resource,
+action)` returns a `Cleaner` whose end runs `action(resource)`. It is the signature and the
+rules of Kotlin/Native's `kotlin.native.ref.createCleaner` (the action uses nothing from
+around it; a resource that refers back to the holder of the cleaner leaks), with
+`java.lang.ref.Cleaner` behind it on the JVM. The three targets differ only in when: C at the
+last release, Kotlin/Native and the JVM some time after, on another thread, perhaps never.
+There is no other way: ktc2 had a `Deinit` interface of its own, as Swift's `deinit`, which
+was removed for this one that every target has.
 
-- it runs once, on the thread that gave up the last reference. A variable holds its object to
-  the end of its block unless it handed it on; a temporary to the end of its statement;
-- the object is whole while it runs, and is counted as held once, so the code may pass `this`
-  around. A reference to it that is still there afterwards ends the program ("still referred
-  to after its deinit"), and so does an exception that leaves `deinit`: it is reported as an
-  uncaught one. An exception already in flight is set aside for the call, so `deinit` runs
-  normally while a function that threw is being left;
-- a weak reference to the object reads null from the moment the count is zero, inside
-  `deinit` too;
+In C:
+
+- the action runs once, on the thread that gave up the last reference, before the fields of
+  the object are released, wherever the object lives (heap, frame, arena). A variable holds
+  its object to the end of its block unless it handed it on; a temporary to the end of its
+  statement;
+- an exception that leaves the action is reported as an uncaught one. An exception already in
+  flight is set aside for the call, so the action runs normally while a function that threw
+  is being left;
+- a weak reference to the object reads null from the moment the count is zero;
 - what is still alive when the program ends (held by a top-level property or an `object`) is
-  not deinitialized: `main` calls `ktc2_ending()`, which waits for the other threads and
-  switches `deinit` off, before it releases those.
+  not cleaned: `main` calls `ktc2_ending()`, which waits for the other threads and switches
+  the calls off, before it releases those;
+- a `@Struct`, a value class or a class held in place by `@Value` cannot have a cleaner: those
+  are copied, and a copy has no last reference (an error from the importer).
 
-Not as in Swift: `deinit` is an ordinary overridable function, so a subclass that overrides
-it calls `super.deinit()` itself (ktc2 warns when an override of a superclass's `deinit` does
-not), and nothing stops a program from calling `deinit()` (it then
-runs again at the end). A `@Struct`, a value class or a class held in place by `@Value` cannot
-implement it: those are copied, and a copy has no last reference (an error from the importer).
-`Deinit` does not extend `AutoCloseable`: `close()` may be called by anyone, more than once,
-on an object that goes on living; a class that wants both implements both and has `deinit`
-call a `close` that can be called twice.
-
-**Cleaners.** `ktc2.createCleaner(resource, action)` returns a `Cleaner` whose end runs
-`action(resource)`: the signature and the rules of Kotlin/Native (the action uses nothing from
-around it; a resource that refers back to the holder of the cleaner leaks). The three targets
-differ only in when: C at the last release, Kotlin/Native and the JVM some time after, on
-another thread, perhaps never. In C the general case is a small object with a `deinit`
-(`ResourceCleaner` in `Ktc2Lifetime.kt`). The usual case has none:
+The general case is a small object the runtime calls when it ends (`ResourceCleaner` in
+`Ktc2Lifetime.kt`, which implements `ktc2.internal.Deinit`: the runtime's own interface, not
+one for programs). The usual case has none:
 
 ```
 class Wrapper {
@@ -259,23 +254,23 @@ becomes a function `Class_property__clean(resource)`, and `KClass.cleaners` list
 field the resource is found in when the object ends. When the resource is a `val` property of
 the class, as above, that is the property's own field and the cleaner takes no room: a `val`
 still holds what it held when the cleaner was declared. For any other resource (a constructor
-parameter, a `var`, an expression) the field of the cleaner holds it instead. `settleDeinit` then writes `Class__ends(self)`, which
-calls the `deinit` of the class if it has one and then each action with its field, the most
-derived class first, and makes it `KClass.deinit`. Nothing after the importer knows of
-cleaners: the runtime, `Effects` and the emitter see a class with a `deinit`.
+parameter, a `var`, an expression) the field of the cleaner holds it instead. `settleDeinit`
+then writes `Class__ends(self)`, which calls each action with its field, the most derived
+class first, and makes it `KClass.deinit`: what the runtime calls (`ktc2_destroy`, through
+`ktc2_TypeInfo.deinit`) when the count of an instance reaches zero. Nothing after the
+importer knows of cleaners: the runtime, `Effects` and the emitter see a class with a
+`deinit`.
 
-The importer finds the implementation of `Deinit.deinit` as for a call the program makes: the dispatcher of
-`Deinit.deinit` is created when the first such class is instantiated, and `settleDeinit`
-copies each entry to `KClass.deinit`. For counting, the consequence is that giving up a
-reference can run the program's code. `Effects` accounts for it: in a program that has a
-`deinit`, every statement that may give up a reference (a store over an old value, a local
-that ends with its block, a result nobody takes, a runtime function handed references) writes
-what all the `deinit` functions write, unless the type rules it out (a string, an array of
-numbers, a class whose objects hold only such things, with its subclasses and the other
-instantiations of the same generic class). A program without `deinit` is counted exactly as
-before. The early release of a temporary is the one release `Effects` does not place: `ArcInsert`
-leaves it to the end of the block when the object may have a `deinit` and a local that borrows
-from a writable place is still in use (`mPlaceBorrowers`).
+For counting, the consequence is that giving up a reference can run the program's code.
+`Effects` accounts for it: in a program that has a cleaner, every statement that may give up
+a reference (a store over an old value, a local that ends with its block, a result nobody
+takes, a runtime function handed references) writes what all those functions write, unless
+the type rules it out (a string, an array of numbers, a class whose objects hold only such
+things, with its subclasses and the other instantiations of the same generic class). A
+program without one is counted exactly as before. The early release of a temporary is the
+one release `Effects` does not place: `ArcInsert` leaves it to the end of the block when the
+object may have a cleaner and a local that borrows from a writable place is still in use
+(`mPlaceBorrowers`).
 
 **Cycles** are not collected. `CycleLint` warns at compile time about classes that can reach
 themselves through strong references; `@Weak`, `WeakRef` or `@Acyclic` answer the warning.
@@ -502,7 +497,7 @@ Known to differ from the JVM:
   everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library);
 - a `HashMap` entry removed through an iterator stays in the map's storage until the map is
   rebuilt or cleared (the `Map.Entry` handed out still reads it, as on the JVM): the key and
-  value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
+  value live that much longer, which a weak reference or a cleaner can see. `remove(key)`,
   and every removal from an `ArrayList`, let go at once;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
 

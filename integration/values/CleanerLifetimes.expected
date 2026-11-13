@@ -1,70 +1,68 @@
 in scope with local
-deinit local
+end local
 after scope
 made first
-deinit first
+end first
 made second
-deinit second
+end second
 after reassign
 holding 2
-deinit plain
-deinit derived extra
-deinit base
+end plain
+end derived extra
+end base
 after inherited
 parent made
-deinit parent with parent.child and [a, b]
-deinit parent.child
+end parent with [a, b]
+end parent.child
 after parent
 removing
-deinit item1
+end item1
 clearing
-deinit item0
-deinit item2
+end item0
+end item2
 cleared
-deinit old
+end old
 replaced
-deinit slot
+end slot
 array emptied
-deinit new
+end new
 as Any: true, as Named: iface
-captured generic is a Deinit: true
-deinit generic text
-deinit named iface
-deinit generic 42
+captured generic is a Res: false
+end generic text
+end named iface
+end generic 42
 after seenAs
-deinit argument
+end argument
 after the call
-deinit statement
+end statement
 after the statement
 the variable is alive: true
-deinit round0
+end round0
 end of round 0
-deinit round1
+end round1
 end of round 1
-deinit in try
+end in try
 end of try
 finally
-deinit condition
+end condition
 in the branch
 end of the block
-deinit variable
+end variable
 after temporaries
 throwing with unwound
-deinit unwound
+end unwound
 caught boom
 made true
-deinit careful [careful, caught]
+end careful [careful, caught]
 caught bang
 weak reference finds it: true
-deinit watched, weak reference finds it: false
+end watched, weak reference finds it: false
 after weak: false
-deinit visitor v, seen 1
-visitor gone
 block: kept then replaced
 assignment: true
 assignment: kept then replaced null
 call: kept and other then replaced and null
 field: kept then replaced
-deinit arena
+end arena
 after arena 5
 alive at the end: top-level, object

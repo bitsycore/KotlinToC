@@ -200,7 +200,7 @@ class KClass(
 
 	/**
 	 * What the runtime calls when the last reference to an instance goes, before the fields are
-	 * given up: the `deinit` of a class that implements `ktc2.Deinit`, or a function the importer
+	 * given up: the `deinit` of a cleaner that is kept as an object, or a function the importer
 	 * wrote that calls it and then the cleaners of the class ([cleaners]). Null for a class that
 	 * has neither.
 	 */

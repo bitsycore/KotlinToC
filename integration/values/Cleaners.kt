@@ -1,5 +1,4 @@
 import ktc2.Cleaner
-import ktc2.Deinit
 import ktc2.createCleaner
 
 // `createCleaner` as in Kotlin/Native: the action runs when the cleaner ends. In C that is when
@@ -36,14 +35,10 @@ open class Base(inName: String) {
 	private val mBase = createCleaner("$inName.base") { println("clean $it") }
 }
 
-/** Its own `deinit` first, then its cleaner, then the one of its superclass. */
-class Sub(inName: String) : Base(inName), Deinit {
+/** Its own cleaners first, in the order they are declared, then the one of its superclass. */
+class Sub(inName: String) : Base(inName) {
 	private val mFirst = createCleaner("$inName.first") { println("clean $it") }
 	private val mSecond = createCleaner("$inName.second") { println("clean $it") }
-
-	override fun deinit() {
-		println("deinit sub")
-	}
 }
 
 /** Inherits the cleaner. */

@@ -1,5 +1,6 @@
 package ktc2
 
+import ktc2.internal.Deinit
 import ktc2.internal.Storage
 import ktc2.internal.arenaEnter
 import ktc2.internal.arenaLeave
@@ -59,15 +60,6 @@ private class ValueArrayIterator<T>(private val mArray: ValueArray<T>) : Iterato
 		if (mIndex >= mArray.size) throw NoSuchElementException()
 		return mArray[mIndex++]
 	}
-}
-
-/**
- * Implemented by classes that own something else than memory. [deinit] runs once, when the
- * last reference to the object goes and before its properties are given up. The C side of
- * `ktc2.Deinit`: the runtime makes the call.
- */
-public interface Deinit {
-	public fun deinit()
 }
 
 /**

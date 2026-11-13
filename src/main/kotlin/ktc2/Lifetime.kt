@@ -35,30 +35,6 @@ class WeakRef<T : Any>(inTarget: T) {
 }
 
 /**
- * Implemented by classes that own something else than memory (a handle of a C library, a
- * registration to undo). In C, [deinit] runs once, when the last reference to the object goes
- * and before its properties are given up, as `deinit` does in Swift:
- *
- * - a variable holds its object to the end of its block unless it handed it on; an object
- *   that no variable holds (an argument built in place, a result nobody takes) ends with its
- *   statement;
- * - the object must not be referred to any longer when `deinit` returns, and no exception may
- *   leave it: either ends the program;
- * - a weak reference to the object already reads `null` inside `deinit`;
- * - what is still alive when the program ends is not deinitialized.
- *
- * A subclass that overrides `deinit` calls `super.deinit()` itself. A `@Struct`, a value class
- * and a class held in place by `@Value` cannot implement this: they are copied.
- *
- * On the JVM nothing calls `deinit`: there is no last reference to wait for. Code that must
- * release something on both implements `AutoCloseable` as well, is used with `use { }`, and has
- * `deinit` call a `close()` that may be called twice.
- */
-interface Deinit {
-	fun deinit()
-}
-
-/**
  * What [createCleaner] returns. It has no members: it is kept, usually in a private property
  * of the object that owns the resource, so that it ends when that object does.
  */
@@ -90,9 +66,8 @@ private val kJvmCleaner: java.lang.ref.Cleaner by lazy { java.lang.ref.Cleaner.c
  * - a cleaner that is still alive when the program ends does not run.
  *
  * In C a cleaner declared as above costs nothing, not even a field: the class runs the action
- * with its `resource` property when an instance ends, as if it had a [Deinit.deinit]. (With a
- * resource that is not a `val` of the class, the property of the cleaner holds it.) Where the
- * whole object is needed at that moment, and C is the only target, use [Deinit].
+ * with its `resource` property when an instance ends. (With a resource that is not a `val` of
+ * the class, the property of the cleaner holds it.)
  */
 fun <T> createCleaner(resource: T, cleanupAction: (resource: T) -> Unit): Cleaner {
 	val vCleaner = RegisteredCleaner()
