@@ -31,7 +31,9 @@ showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `W
 **Written on macOS since, not run on Windows** (`git log 6e4550b..`): more loops proven in
 range (`RangeChecks`), `for` over an `ArrayList` as a loop over its storage (`ListLoops`), the
 probe of `HashMap` without index tests, `name` and `ordinal` of a `@SimpleEnum` from its
-number. Nothing in them is specific to a system; run the suite there all the same.
+number, the class of a call's result followed in two rounds (`Devirtualize`: the one of these
+that changes what the other passes are told), two more programs that must be refused. Nothing
+in them is specific to a system; run the suite there all the same.
 
 **Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
 suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
