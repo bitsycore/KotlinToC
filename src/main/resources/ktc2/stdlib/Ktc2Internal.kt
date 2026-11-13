@@ -199,6 +199,47 @@ public inline fun kotlin_collections_any__CharArray(array: CharArray, predicate:
 }
 
 /** `a..b` used as a value (a loop over a range does not build one). */
+/*
+What the JDK's lists have as members since Java 21, which a program compiled for the JVM calls
+instead of the extensions the Kotlin library has under the same names: they do what those do,
+and fail as the JDK's do.
+*/
+public fun <T> kotlin_collections_MutableList_removeFirst(list: MutableList<T>): T =
+	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(0)
+
+public fun <T> kotlin_collections_MutableList_removeLast(list: MutableList<T>): T =
+	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(list.size - 1)
+
+public fun <T> kotlin_collections_MutableList_addFirst(list: MutableList<T>, element: T) {
+	list.add(0, element)
+}
+
+public fun <T> kotlin_collections_MutableList_addLast(list: MutableList<T>, element: T) {
+	list.add(element)
+}
+
+public fun <T> kotlin_collections_List_getFirst(list: List<T>): T =
+	if (list.isEmpty()) throw NoSuchElementException() else list[0]
+
+public fun <T> kotlin_collections_List_getLast(list: List<T>): T =
+	if (list.isEmpty()) throw NoSuchElementException() else list[list.size - 1]
+
+/* The same for maps: members of the JDK's `Map` that Kotlin code written for the JVM uses. */
+public fun <K, V> kotlin_collections_Map_getOrDefault(map: Map<K, V>, key: K, defaultValue: V): V {
+	val vValue = map[key]
+	@Suppress("UNCHECKED_CAST")
+	return if (vValue != null || map.containsKey(key)) vValue as V else defaultValue
+}
+
+public fun <K, V> kotlin_collections_MutableMap_getOrDefault(map: MutableMap<K, V>, key: K, defaultValue: V): V =
+	kotlin_collections_Map_getOrDefault(map, key, defaultValue)
+
+public fun <K, V> kotlin_collections_MutableMap_putIfAbsent(map: MutableMap<K, V>, key: K, value: V): V? {
+	val vOld = map[key]
+	if (vOld == null) map[key] = value
+	return vOld
+}
+
 public fun kotlin_Int_rangeTo(start: Int, end: Int): IntRange = IntRange(start, end)
 
 public fun kotlin_Long_rangeTo(start: Long, end: Long): LongRange = LongRange(start, end)

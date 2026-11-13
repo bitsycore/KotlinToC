@@ -1968,6 +1968,8 @@ internal class BodyBuilder(
 			if (vBoundLambda != null) return adapt(expandLambda(vBoundLambda, inCall.arguments.drop(1)), inCall)
 		}
 		if (vCallee.fileOrNull == null && vOwner != null && (vOwner.isInterface || isNumberClass(vOwner))) {
+			// A member the JDK gives a library interface and Kotlin has as an extension (`removeFirst` of a list): the platform layer's.
+			redirectToPlatform(inCall)?.let { return it }
 			// A library interface (Comparable…): primitives and strings have direct answers,
 			// everything else is an ordinary interface call.
 			val vReceiverType = inCall.arguments.firstOrNull()?.let { kType(it.type) }
