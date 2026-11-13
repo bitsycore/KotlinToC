@@ -28,19 +28,21 @@ showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `W
 `ConcurrentModification`, `DispatchedResults`, `Reassigned`, `Copies`, `ReturnedCalls`,
 `SimpleEnums`, `Generics`).
 
-**The first thing to do: run the suite on macOS.** The last commit that ran there is
-`4773f24`. Everything after it was written and run on Windows only (`git log 4773f24..`):
-- results through a dispatcher and a reassigned variable built in the frame, functions
-  copied per class, the unchecked storage of `ArrayList`, borrowed returned calls, `listOf`;
-- `@SimpleEnum`, `@EnumValue`, `enumOf`, and the SDL3 module's constants as such enums;
-- the warning for a `deinit` without `super.deinit()`, the package `ktc2.sdl3`;
-- the compiler process that stays (`Daemon.kt`: it starts a process and talks to it over a
-  local port; where its state file is and how the process is detached depend on the system);
-- the suite in several processes, each keeping the front end's work on the library
-  (`PhasedCompiler.kt`).
-If the suite misbehaves there, `KTC2_TEST_FORKS=1 KTC2_TEST_JOBS=1 KTC2_KEEP_LIBRARY=0` is
-the suite as it ran on macOS before: start from that, then turn the three back on one by
-one. `ktc2` itself: `KTC2_DAEMON=0` is the command as it was.
+**Both systems ran it.** After the work written on Windows (`git log 4773f24..007dd9b`), the
+suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
+43 seconds; AddressSanitizer is clean there on the showcase and on `DispatchedResults`,
+`Reassigned`, `Copies`, `ReturnedCalls`, `SimpleEnums`, `DeinitSuper`, `ListIndexMessages`,
+`Collections`, `HeldInFrame`, `Borrowing`, `Generics`; the compiler process that stays works
+(a small program in 0.7 to 0.9 s, 8 s without it). One thing was wrong there and is fixed:
+`~/.ktc2/daemon.txt`, which holds the secret of that process, was readable by every user of
+the machine. Not built on macOS: `examples/sdl3-demo`.
+
+If the suite misbehaves on a system, `KTC2_TEST_FORKS=1 KTC2_TEST_JOBS=1 KTC2_KEEP_LIBRARY=0`
+is the suite as it ran before it was made parallel: start from that, then turn the three back
+on one by one. `ktc2` itself: `KTC2_DAEMON=0` is the command as it was. The process that
+stays keeps the environment it was started with: only the `KTC2_` variables and `PATH` make a
+command start another one, so a changed `SDKROOT` or `CPATH` is not seen until it is stopped
+(`ktc2 --stop-daemon`).
 
 **Other compilers.** On Windows the new runtime code and the tests of the new passes were
 also built through CMake with MSVC 19.51 and print what gcc's build prints (`Walking`,
