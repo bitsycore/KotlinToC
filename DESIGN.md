@@ -504,10 +504,10 @@ Known to differ from the JVM:
   rebuilt or cleared (the `Map.Entry` handed out still reads it, as on the JVM): the key and
   value live that much longer, which a weak reference or a `deinit` can see. `remove(key)`,
   and every removal from an `ArrayList`, let go at once;
-- paths and program arguments are UTF-8, which on Windows is right for ASCII only;
-- a class of the program that extends `Number` is not seen as one: `Number` is the boxed
-  Byte, Short, Int, Long, Float and Double, which the runtime knows by their kind
-  (`ktc2_is_number`, `ktc2_number_toInt` and the like).
+- paths and program arguments are UTF-8, which on Windows is right for ASCII only.
+
+A difference from the JVM in plain Kotlin is a bug to fix, not a line for this list: what may
+be limited is only what a program asks for with an annotation of the `ktc2.` package.
 
 ---------------------------------------------------------------------------
 ## 13. Inside the code
@@ -639,6 +639,12 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   string or a type id stays in the C file. The names a C file keeps to itself (`lit_3_0`,
   `is_3_0`) carry the number of the unit, so that `ktc2_all.c`, which includes every C file,
   compiles.
+- `kotlin.Number` is an abstract class without a class here: the boxed numbers extend it and
+  have none. The importer treats it as an interface (`isNumberClass`): a class of the program
+  that extends it implements it; a call on a `Number` goes through a dispatcher whose default,
+  for what is no class of the program, is the runtime (`ktc2_number_toInt` and the like);
+  `is Number` is `ktc2_is_number` or one of those classes. `CharSequence` and `Comparable`
+  work the same way for `String` and the boxes.
 - A function of the C runtime that can leave with an exception has to be named in
   `kRaisingRuntime` (`Kir.kt`): otherwise the call is not followed by the test, and the
   exception shows up later, somewhere else. There are three today.

@@ -54,8 +54,15 @@ or one that may be null, is boxed by a cast to a type of objects (`x as Any?`,
 `StringBuilder.reverse` keeps a pair in order. `integration/stdlib/Surrogates.kt`,
 `integration/basic/NullableNumbers.kt`. Then `Number` as a type of its own (`is Number`,
 `as Number`, its six conversions on a box: `integration/basic/NumberType.kt`), and two
-halves of a pair printed one after the other. Left: a class of the program that extends
-`Number` (`DESIGN.md`, section 12).
+halves of a pair printed one after the other, and a class of the program that extends
+`Number`.
+
+**The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
+Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be
+limited or different is behind an annotation of the `ktc2.` package (`@Struct`, `@Value`...),
+which is the program saying it accepts that in exchange for storage closer to the machine. So
+a difference found in plain Kotlin is fixed in general, not written down as a gap with the
+common case covered.
 
 **Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
 suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
