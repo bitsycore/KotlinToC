@@ -1,0 +1,2 @@
+a Particle marked @Value cannot be kept on the stack
+an array marked @Size cannot be kept on the stack

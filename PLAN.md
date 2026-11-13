@@ -397,9 +397,9 @@ Open:
   order, so `diff` of two of them shows what a pass did.
 - [x] **A test that must fail to compile.** A program with a `<Name>.errors` file next to it
   has to be refused, with a message that contains each line of that file
-  (`integration/errors/`). Two so far: a use of `java.*`, and `Deinit` on a `@Struct`. The
-  other refusals (inline storage that would need a copy, `@Value` that cannot stay in the
-  frame) still want one each.
+  (`integration/errors/`). A use of `java.*`, `Deinit` on a `@Struct` and a `@SimpleEnum` with state have one. So have
+  inline storage that would need a copy (`InlineNeedsCopy`) and a `@Value` or `@Size` local
+  that cannot stay in the frame (`ValueLeavesFrame`).
 
 ---------------------------------------------------------------------------
 ## What I would do first
