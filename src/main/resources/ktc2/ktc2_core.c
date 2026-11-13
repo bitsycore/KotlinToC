@@ -894,9 +894,38 @@ static const char* lone_surrogate(const char* from, const char* end)
 	return NULL;
 }
 
+/*
+ * The first half of a pair that ended what was last written: it waits for what is written
+ * next, as in the JVM's stream. The second half makes the character; anything else, a `?`.
+ * What still waits when the program ends is not written, as there.
+ */
+static KTC2_TLS unsigned char waiting_half[3];
+
 /** Writes text to stdout with `?` for each half of a pair on its own. */
 static void write_text(const char* text, int32_t size)
 {
+	if (size <= 0) return;
+	if (waiting_half[0]) {
+		const unsigned char* next = (const unsigned char*)text;
+		if (size >= 3 && next[0] == 0xED && (next[1] & 0xF0) == 0xB0) {
+			uint32_t high = 0xD000u | ((uint32_t)(waiting_half[1] & 0x3F) << 6) | (waiting_half[2] & 0x3F);
+			uint32_t low = 0xD000u | ((uint32_t)(next[1] & 0x3F) << 6) | (next[2] & 0x3F);
+			uint32_t point = 0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00);
+			fputc((int)(0xF0 | (point >> 18)), stdout);
+			fputc((int)(0x80 | ((point >> 12) & 0x3F)), stdout);
+			fputc((int)(0x80 | ((point >> 6) & 0x3F)), stdout);
+			fputc((int)(0x80 | (point & 0x3F)), stdout);
+			text += 3;
+			size -= 3;
+		} else {
+			fputc('?', stdout);
+		}
+		waiting_half[0] = 0;
+	}
+	if (size >= 3 && (unsigned char)text[size - 3] == 0xED && ((unsigned char)text[size - 2] & 0xF0) == 0xA0) {
+		memcpy(waiting_half, text + size - 3, 3);
+		size -= 3;
+	}
 	const char* end = text + size;
 	for (;;) {
 		const char* at = lone_surrogate(text, end);
@@ -1130,7 +1159,7 @@ void ktc2_print_text(const char* text, int32_t size, int32_t length)
 
 void ktc2_print_string(const ktc2_String* s)
 {
-	if (s) write_text(s->bytes, s->size); else fputs("null", stdout);
+	if (s) write_text(s->bytes, s->size); else write_text("null", 4);
 }
 
 /* ================== */

@@ -53,6 +53,14 @@ fun main() {
 	// Outside the program a half is a question mark.
 	println("[$vOnlyHigh] [$vOnlyLow] [${vText.substring(0, 2)}]")
 	println(vHigh)
+	// Two halves printed one after the other are the character; a first half followed by anything else is not.
+	print(vHigh); print(vLow); println()
+	print("a$vOnlyHigh"); print(vOnlyLow + "b"); println()
+	print(vHigh); print(5); println()
+	print(vHigh); print(""); print(vLow); println()
+	print(vLow); print(vHigh); println()
+	print(vHigh); print(vHigh); print(vLow); println()
+	print(vOnlyHigh); println(vOnlyLow)
 	println(vOnlyHigh.encodeToByteArray().toList())
 	println(("a" + vOnlyLow + "é").encodeToByteArray().toList())
 	println(vText.toCharArray().concatToString() == vText)
