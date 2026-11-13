@@ -343,10 +343,10 @@ Open:
   constant, or a `const val` such as the ones of C bindings), and `ktc2.enumOf<T>(number) {
   it.code }` goes from a number back to the entry: a loop over the entries on the JVM, the
   number compared with the entries' own in C. Left:
-  - [ ] `name`, `ordinal`, `toString()` and `compareTo` of a value go through the object kept
-    for its entry (a chain of compares, then a field): right, not as cheap as a table. A
-    lookup of their own, as the constructor's properties have, is a few lines in the call
-    lowering.
+  - [x] `name`, `ordinal`, `toString()` (unless the class wrote its own) and `compareTo` of a
+    value are answered from the number, by a lookup of their own as the constructor's
+    properties have (`simpleEnumBuiltin`): no object. `compareTo` is the difference of the
+    ordinals, as on the JVM.
   - [x] the SDL3 module's namespaces of constants are `@SimpleEnum` classes with SDL's own
     numbers: `SDL3.Event`, `Scancode`, `MouseButton`, `BlendMode`, `TextureAccess`,
     `PixelFormat`, `Flip`, `SystemCursor`. The functions of the module take them
@@ -408,8 +408,7 @@ Open:
    list: the `modCount` test and the test for an exception after `next()` (it can throw two),
    which an index loop written by the importer for a list known to be an `ArrayList` would
    fold into one test per round. Then `HashMap` (4), and templates built in place (6).
-3. `name` and `ordinal` of a `@SimpleEnum` without the object; the flags of the SDL3 module
-   as value classes (8).
+3. The flags of the SDL3 module as value classes (8).
 4. The array inside a local list (2): 2 M allocations of `Ordinary`, but removing 4 M others
    did not change its time; measure before building it.
 

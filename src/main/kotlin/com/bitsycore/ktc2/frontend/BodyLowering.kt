@@ -1653,6 +1653,34 @@ internal class BodyBuilder(
 		return KUnitValue
 	}
 
+	/**
+	 * `name`, `ordinal`, `toString()` and `compareTo` of a value of a `@SimpleEnum` class, which
+	 * every enum has from `kotlin.Enum`: answered from the number, without the object kept for
+	 * the entry. Null for any other call, and for a `toString` the class wrote itself.
+	 */
+	private fun lowerSimpleEnumMember(inCall: IrCall, inCallee: IrSimpleFunction, inOwner: IrClass): KExpr? {
+		val vName = inCallee.name.asString()
+		if (vName != "<get-name>" && vName != "<get-ordinal>" && vName != "toString" && vName != "compareTo") return null
+		if (inOwner.kotlinFqName.asString() != "kotlin.Enum" && !(mImporter.isSimpleEnum(inOwner) && inCallee.isFakeOverride)) return null
+		if (inCallee.dispatchReceiverParameter == null) return null
+		val vReceiver = inCall.arguments.getOrNull(0) ?: return null
+		val vType = kType(vReceiver.type) as? KStructType ?: return null
+		val vEnum = mImporter.simpleEnumOf(vType.struct) ?: return null
+		fun ordinalOf(inValue: KExpr): KExpr =
+			if (vEnum.isNumbered) spill(KCall(mImporter.simpleEnumBuiltin(vEnum, "ordinal"), listOf(inValue))) else KFieldRead(inValue, vEnum.valueField)
+		return when (vName) {
+			"<get-ordinal>" -> adapt(ordinalOf(lowerPure(vReceiver)), inCall)
+			"compareTo" -> {
+				val vOther = inCall.arguments.getOrNull(1) ?: return null
+				if (kType(vOther.type) != vType) return null
+				val vSides = lowerOperands(listOf(vReceiver, vOther))
+				// As `Enum.compareTo` on the JVM: the difference of the ordinals, not only its sign.
+				adapt(KBinary(KBinaryOp.SUB, ordinalOf(vSides[0]), ordinalOf(vSides[1]), KPrim.INT, kIntType), inCall)
+			}
+			else -> adapt(spill(KCall(mImporter.simpleEnumBuiltin(vEnum, "name"), listOf(lowerPure(vReceiver)))), inCall)
+		}
+	}
+
 	private fun lowerGetField(inExpression: IrGetField): KExpr {
 		mImporter.globalFor(inExpression.symbol.owner)?.let { return KGlobalRead(ensuredFile(it)) }
 		val vReceiver = inExpression.receiver ?: return fail(inExpression, "static field access")
@@ -1815,6 +1843,7 @@ internal class BodyBuilder(
 		if (vOwner == null && vCallee.parent.kotlinFqName.asString() == "kotlinx.cinterop.internal") {
 			lowerInteropIntrinsic(inCall, vCallee.name.asString())?.let { return it }
 		}
+		if (vOwner != null) lowerSimpleEnumMember(inCall, vCallee, vOwner)?.let { return it }
 		// `enumOf<T>(number) { … }` for a `@SimpleEnum` class with numbers of its own: the number is compared with theirs.
 		if (vOwner == null && vCallee.name.asString() == "enumOf" && vCallee.kotlinFqName.asString() == "ktc2.enumOf") {
 			val vEnum = inCall.typeArguments.firstOrNull()?.let { closed(it).classOrNull?.owner }?.let { mImporter.simpleEnumOf(it) }

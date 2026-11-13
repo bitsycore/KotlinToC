@@ -1342,6 +1342,27 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		vFunction
 	}
 
+	private val mSimpleEnumBuiltins = HashMap<Pair<KStruct, String>, KFunction>()
+
+	/**
+	 * The function that gives the `name` or the `ordinal` ([inWhat]) of a value of the
+	 * `@SimpleEnum` class [inEnum] from its number, as [simpleEnumProperty] gives a property of
+	 * the constructor: no object is needed for it.
+	 */
+	internal fun simpleEnumBuiltin(inEnum: SimpleEnum, inWhat: String): KFunction = mSimpleEnumBuiltins.getOrPut(inEnum.struct to inWhat) {
+		val vType: KType = if (inWhat == "name") KStringType else KPrimType(KPrim.INT)
+		val vSelf = KLocal("self", KStructType(inEnum.struct))
+		val vFunction = KFunction(uniqueName("${inEnum.struct.cName}__${inWhat}_of"), inEnum.struct.unit, listOf(vSelf), vType)
+		for (vEntry in inEnum.entries) {
+			val vResult: KExpr = if (inWhat == "name") KStringLit(vEntry.name) else KConst(vEntry.ordinal, KPrimType(KPrim.INT))
+			vFunction.body += KIf(inEnum.isEntry(KRead(vSelf), vEntry), listOf(KReturn(vResult)), emptyList())
+		}
+		// Every value is one of the entries.
+		vFunction.body += KReturn(if (inWhat == "name") KStringLit("") else KConst(0, KPrimType(KPrim.INT)))
+		inEnum.struct.unit.functions += vFunction
+		vFunction
+	}
+
 	/**
 	 * The class of the objects that stand for the values of a `@SimpleEnum` class where Kotlin
 	 * needs an object: an ordinary `Enum`, with the name and the ordinal, and the number. There
