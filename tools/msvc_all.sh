@@ -12,6 +12,7 @@ echo "$(ls build/integration | wc -l) entries under build/integration, $(ls buil
 vFailed=0
 vCount=0
 vKnown=0
+vNames=
 vSkipped=0
 for vDir in build/integration/*/; do
 	vDir=${vDir%/}
@@ -26,11 +27,13 @@ for vDir in build/integration/*/; do
 	# What is known to differ with MSVC, with the reason: tools/msvc_known.txt.
 	if grep -q "^$vName:" tools/msvc_known.txt 2>/dev/null; then vKnown=$((vKnown + 1)); continue; fi
 	vCount=$((vCount + 1))
+	vNames="$vNames $vName"
 	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated.
 	vLeaks="ktc2: leak\|ktc2: .*freed"
-	[ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ] && vLeaks="ktc2: .*freed"
+	for vMarker in tests/*/"${vName#test-}.cycles"; do [ -f "$vMarker" ] && vLeaks="ktc2: .*freed"; done
 	# The standard input of the test, when it has one.
-	vInput=$(find integration -name "$vName.in" | head -1)
+	vInput=
+	for vFile in integration/*/"$vName.in"; do [ -f "$vFile" ] && vInput=$vFile; done
 	vOptions=$(grep "^cflag=" "$vDir/ktc2_build.txt" | cut -d= -f2- | tr '\n' ' ')
 	# cl takes its options with a dash too; MSYS must not take /Fe and the like for paths.
 	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -DKTC2_LEAK_CHECK -I . $vOptions ktc2_all.c -Fe:../msvc.exe -Fo:../msvc.obj > ../msvc.log 2>&1); then
@@ -45,6 +48,8 @@ for vDir in build/integration/*/; do
 		grep -m 4 "ktc2:" "$vDir/msvc.err" | grep -v "ktc2: arc" | cut -c1-240
 	fi
 done
+# Launched from cmd, a tool of the same name as a Unix one may be Windows' own (find, sort): none is used above.
+echo "compared:$vNames" | cut -c1-600
 echo "$vCount programs, $vFailed failed, $vKnown left out as known, $vSkipped directories without a program"
 # Nearly every directory has a program after a run of the suite: many without one means the comparison did not happen.
-[ "$vFailed" -eq 0 ] && [ "$vCount" -gt "$vSkipped" ]
+[ "$vFailed" -eq 0 ] && [ "$vCount" -gt 100 -o -n "$1" ]
