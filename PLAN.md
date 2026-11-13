@@ -19,16 +19,21 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 111
-tests (108 programs compared with the JVM or an `.expected` file, 2 that must be refused, the
-showcase as a program of several modules) and passes on Windows (mingw gcc 15, x64) in about
-70 seconds. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 112
+tests (109 programs compared with the JVM or an `.expected` file, 2 that must be refused, the
+showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
+`007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
 showcase, and the tests of counting and of the frame (`Borrowing`, `LastUse`, `Walking`,
 `OwnedParameters`, `HeldInFrame`, `Deinit`, `Cleaners`, `Collections`,
 `ConcurrentModification`, `DispatchedResults`, `Reassigned`, `Copies`, `ReturnedCalls`,
 `SimpleEnums`, `Generics`).
 
-**Both systems ran it.** After the work written on Windows (`git log 4773f24..007dd9b`), the
+**Written on macOS since, not run on Windows** (`git log 6e4550b..`): more loops proven in
+range (`RangeChecks`), `for` over an `ArrayList` as a loop over its storage (`ListLoops`), the
+probe of `HashMap` without index tests, `name` and `ordinal` of a `@SimpleEnum` from its
+number. Nothing in them is specific to a system; run the suite there all the same.
+
+**Both systems ran what came before.** After the work written on Windows (`git log 4773f24..007dd9b`), the
 suite was run on macOS (Apple clang, ARM64) on 2026-11-13, at `23e5b9c`: 111 tests pass, in
 43 seconds; AddressSanitizer is clean there on the showcase and on `DispatchedResults`,
 `Reassigned`, `Copies`, `ReturnedCalls`, `SimpleEnums`, `DeinitSuper`, `ListIndexMessages`,
@@ -225,6 +230,7 @@ start together) and the C compiler.
 | | Gain | Effort |
 |---|---|---|
 | [x] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known to be `ArrayList` (`Devirtualize`), `ListLoops` writes the loop over the storage itself: no iterator, the size and the count of changes compared once per round, the element read without a test. It is the platform iterator written out, so it ends and fails as that one does (`integration/stdlib/ListLoops.kt`, `KTC2_SKIP=listloops`) | Collections 0.26 s -> 0.15 s, Dispatch 0.31 -> 0.22, Ordinary 0.35 -> 0.28, Threads 0.17 -> 0.05 | medium |
+| [ ] The same for a `HashMap`: `for ((k, v) in map)`, `map.keys`, `map.values`. Measured on 2026-11-13 with LTO, 30 M elements of each: 3.7 ns per entry of a map against 0.3 ns per element of a list. The view, the iterator and the entry are in the frame already; what is left per entry is four calls and as many tests for an exception. A loop over the entries written out as `ListLoops` writes one over a list would be about 1 ns. It has three shapes to recognize, by the names of library functions | medium for code that goes over maps | medium |
 | [~] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). A parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there) is covered by the next line | high where it applies | medium |
 | [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`integration/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
 | [x] A variable that is given a new object on every turn of a loop (`place = place + step`): the function has two rooms for it, and the call builds in the one that holds no object in use (`KStackSlot.rooms`, `ktc2_slot_reuse`); when something else still holds an older object, that one comes from the heap. `integration/objects/Reassigned.kt`, `KTC2_SKIP=rooms` | Ordinary: 12.56 M allocations -> 8.56 M; the time does not move | medium |
