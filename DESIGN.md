@@ -501,7 +501,14 @@ Known to differ from the JVM:
   removed the other does not see;
 - a `HashMap` goes over its entries in the order they were put in, as Kotlin/Native's does;
   the JVM's goes by hash. Kotlin promises neither;
-- `x::class` and the rest of reflection: not there (`DESIGN.md`, "Not Kotlin, by design");
+- of reflection there is a class as a value, and no more: `x::class` and `Name::class` can be
+  compared, used as keys, and asked for `simpleName` and `qualifiedName` (`ClassReference` in
+  `Ktc2Internal.kt`, by the name the runtime's table of types has); everything else a `KClass`
+  offers throws;
+- what only the JDK has is not there, by the owner's decision: `toSortedMap`, `toSortedSet`,
+  `String.format`, `getOrDefault` and `putIfAbsent` of a map, `setCharAt` and `deleteCharAt` of
+  a `StringBuilder`. Kotlin/Native has none of them either; a compatibility layer in the
+  `ktc2.` package may come later;
 - an argument of the wrong kind that reaches a function of a concrete class through an
   unchecked cast (a `Comparator<Int>` handed a `String` as a `Comparator<Any>`) is answered
   with -1, false or null where the JVM throws `ClassCastException`;

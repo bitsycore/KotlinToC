@@ -200,45 +200,15 @@ public inline fun kotlin_collections_any__CharArray(array: CharArray, predicate:
 
 /** `a..b` used as a value (a loop over a range does not build one). */
 /*
-What the JDK's lists have as members since Java 21, which a program compiled for the JVM calls
-instead of the extensions the Kotlin library has under the same names: they do what those do,
-and fail as the JDK's do.
+`removeFirst` and `removeLast` of a list are extensions of the Kotlin library; the JDK's lists
+have members of those names since Java 21, which a program compiled for the JVM calls instead.
+They do what the extensions do, and fail as the members do. (What only the JDK has is not here: a program has no JDK.)
 */
 public fun <T> kotlin_collections_MutableList_removeFirst(list: MutableList<T>): T =
 	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(0)
 
 public fun <T> kotlin_collections_MutableList_removeLast(list: MutableList<T>): T =
 	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(list.size - 1)
-
-public fun <T> kotlin_collections_MutableList_addFirst(list: MutableList<T>, element: T) {
-	list.add(0, element)
-}
-
-public fun <T> kotlin_collections_MutableList_addLast(list: MutableList<T>, element: T) {
-	list.add(element)
-}
-
-public fun <T> kotlin_collections_List_getFirst(list: List<T>): T =
-	if (list.isEmpty()) throw NoSuchElementException() else list[0]
-
-public fun <T> kotlin_collections_List_getLast(list: List<T>): T =
-	if (list.isEmpty()) throw NoSuchElementException() else list[list.size - 1]
-
-/* The same for maps: members of the JDK's `Map` that Kotlin code written for the JVM uses. */
-public fun <K, V> kotlin_collections_Map_getOrDefault(map: Map<K, V>, key: K, defaultValue: V): V {
-	val vValue = map[key]
-	@Suppress("UNCHECKED_CAST")
-	return if (vValue != null || map.containsKey(key)) vValue as V else defaultValue
-}
-
-public fun <K, V> kotlin_collections_MutableMap_getOrDefault(map: MutableMap<K, V>, key: K, defaultValue: V): V =
-	kotlin_collections_Map_getOrDefault(map, key, defaultValue)
-
-public fun <K, V> kotlin_collections_MutableMap_putIfAbsent(map: MutableMap<K, V>, key: K, value: V): V? {
-	val vOld = map[key]
-	if (vOld == null) map[key] = value
-	return vOld
-}
 
 public fun kotlin_Int_rangeTo(start: Int, end: Int): IntRange = IntRange(start, end)
 
@@ -320,6 +290,54 @@ public class PropertyReference(override val name: String) : kotlin.reflect.KProp
 }
 
 public fun propertyReference(name: String): Any = PropertyReference(name)
+
+/** The Kotlin name of the class of [value], as the runtime's table of types has it. */
+public external fun className(value: Any): String
+
+/**
+ * `x::class` and `Name::class`: a class as a value. There is no reflection behind it: it knows
+ * its name, and two of them are equal when they name the same class. Everything else a
+ * `KClass` offers fails.
+ */
+public class ClassReference(private val mName: String) : kotlin.reflect.KClass<Any> {
+	private fun unavailable(): Nothing = throw UnsupportedOperationException("Reflection is not available: class '$mName'")
+
+	override val simpleName: String? get() = mName.substringAfterLast('.')
+	override val qualifiedName: String? get() = mName
+
+	override val members: Collection<kotlin.reflect.KCallable<*>> get() = unavailable()
+	override val constructors: Collection<kotlin.reflect.KFunction<Any>> get() = unavailable()
+	override val nestedClasses: Collection<kotlin.reflect.KClass<*>> get() = unavailable()
+	override val objectInstance: Any? get() = unavailable()
+	override val typeParameters: List<kotlin.reflect.KTypeParameter> get() = unavailable()
+	override val supertypes: List<kotlin.reflect.KType> get() = unavailable()
+	override val sealedSubclasses: List<kotlin.reflect.KClass<out Any>> get() = unavailable()
+	override val visibility: kotlin.reflect.KVisibility? get() = unavailable()
+	override val annotations: List<Annotation> get() = unavailable()
+	override val isFinal: Boolean get() = unavailable()
+	override val isOpen: Boolean get() = unavailable()
+	override val isAbstract: Boolean get() = unavailable()
+	override val isSealed: Boolean get() = unavailable()
+	override val isData: Boolean get() = unavailable()
+	override val isInner: Boolean get() = unavailable()
+	override val isCompanion: Boolean get() = unavailable()
+	override val isFun: Boolean get() = unavailable()
+	override val isValue: Boolean get() = unavailable()
+
+	override fun isInstance(value: Any?): Boolean = unavailable()
+
+	override fun equals(other: Any?): Boolean = other is ClassReference && other.mName == mName
+
+	override fun hashCode(): Int = mName.hashCode()
+
+	override fun toString(): String = "class $mName"
+}
+
+/** `Name::class`. */
+public fun classReference(name: String): Any = ClassReference(name)
+
+/** `x::class` for an object. */
+public fun classOf(value: Any): Any = ClassReference(className(value))
 
 /** How a data or value class describes a property that is an array: by its content. */
 public fun kotlin_internal_ir_dataClassArrayMemberToString(value: Any?): String = when (arrayKind(value)) {

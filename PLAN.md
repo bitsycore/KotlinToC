@@ -19,7 +19,7 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 For whoever picks this up next. `CLAUDE.md` says how to build and test, `DESIGN.md` how it
 works; this is what those do not say.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 127
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 128
 tests (the programs compared with the JVM or an `.expected` file, those that must be refused,
 the showcase as a program of several modules). It passed on Windows (mingw gcc 15, x64) at
 `007dd9b`, in about 70 seconds, and passes on macOS at the last commit, in 45. AddressSanitizer (`tools/asan.sh`) is clean on the programs it was run on: the
@@ -64,8 +64,8 @@ with the JVM line by line (`tools/jvmdiff.sh <Name>` after a run), found and fix
 a `Box<Int>` seen as a `Box<*>` (a crash; see "A generic class is one class in Kotlin" in
 `DESIGN.md`), `is Box<*>`, a `List<Int>` asked about a value that is no `Int` or seen as a
 `List<Int?>`, `lateinit` (it gave null) and `isInitialized`, `hashCode` of a data class with a
-`Double?`, `String.CASE_INSENSITIVE_ORDER`, the members the JDK gives lists, maps and
-`StringBuilder` (`removeFirst`, `getOrDefault`, `setCharAt`...), `mod` and `floorDiv`,
+`Double?`, `String.CASE_INSENSITIVE_ORDER`,
+`removeFirst` and `removeLast` as the members Java 21 gave lists, `mod` and `floorDiv`,
 unsigned numbers from text and in ranges, `AutoCloseable` and `use`, `Unit` as an object,
 `runCatching { error(…) }`, `1 / zero` as a statement (it threw nothing), `String::length`
 as a function, an entry of a map kept after the map changed. It is the cheapest way found
@@ -76,18 +76,20 @@ operators on collections of collections, labels and non-local returns in depth, 
 properties (`by map`), `companion` constants, `vararg` with spread in depth, numbers at their
 limits as text (`Double` especially), `Comparable` and `Comparator` in depth.
 
-**Left open by that search**, each a decision or a larger piece of work:
-- `x::class` (and `::class.simpleName`, `==` between classes): reflection, which `CLAUDE.md`
-  says is not supported. The two uses above are all ordinary code makes of it, and would be a
-  type id and a name the runtime already has;
-- `sequence { }` and `iterator { }` are reached by `zipWithNext`, `chunked` and `windowed`
-  on a sequence, and fail at run time. A way that needs no transformation of `suspend`
-  functions: run the block on a stack of its own (`ucontext` on POSIX, fibers on Windows) and
-  have `yield` switch back; K2's IR, at the point ktc2 reads it, calls a `suspend` function as
-  any other. What it costs: stack-switching code per system in the runtime (the Windows half
-  cannot be tried on a Mac), a stack per iterator in flight, and an iterator that is dropped
-  half way has to be unwound, which runs its `finally` blocks (the JVM runs none);
-- `toSortedMap`, `toSortedSet`, `String.format`: the JVM has them, Kotlin/Native does not.
+**Decided by the owner after that search** (2026-11-13):
+- `sequence { }` and `iterator { }` wait for `suspend` functions done in full (the
+  transformation into a state machine), not a stack of their own for each iterator. Until
+  then `zipWithNext`, `chunked` and `windowed` on a sequence fail at run time;
+- a class as a value is in: `x::class`, `Name::class`, compared, as keys, `simpleName`,
+  `qualifiedName` (`integration/objects/ClassReferences.kt`). The rest of reflection is not;
+- what only the JDK has is not added (`toSortedMap`, `String.format`, `getOrDefault`,
+  `setCharAt`...): a program has no JDK, as on Kotlin/Native. A compatibility layer in the
+  `ktc2.` package may come later. `removeFirst` and `removeLast` of a list stay: they are
+  Kotlin's own extensions, which a program compiled for the JVM reaches as the members Java 21
+  gave lists;
+- the tests should also be run with Kotlin/Native, since a program is meant to behave the same
+  on the JVM, on Kotlin/Native and here: not started (it needs the Kotlin/Native compiler, a
+  download of several hundred megabytes, and a third run of each program).
 
 **The owner's rule, said that day:** ktc2 does what Kotlin does on the JVM and on
 Kotlin/Native, everywhere, and is made fast on top of that. The only place something may be

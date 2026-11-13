@@ -827,6 +827,21 @@ internal class BodyBuilder(
 		}
 		is IrTry -> lowerTry(inExpression)
 		is IrGetObjectValue -> lowerObject(inExpression)
+		// Under the name the runtime has for the class (an exception has the JVM's there), so that it equals what `x::class` gives.
+		is IrClassReference -> closed(inExpression.classType).classOrNull?.owner.let { vClass ->
+			classObject(inExpression, vClass?.takeIf { !it.isInterface && it.fileOrNull != null }?.let { mImporter.classFor(it)?.name } ?: vClass?.kotlinFqName?.asString())
+		}
+		is IrGetClass -> {
+			// `x::class`: of an object, the class it is of; of a number or a text, the one its type names.
+			val vValue = lowerPure(inExpression.argument)
+			if (vValue.type is KRefType && vValue.type != KStringType) {
+				val vFactory = mImporter.internalFunction("classOf")?.let { mImporter.functionFor(it) }
+				if (vFactory == null) fail(inExpression, "class reference") else spill(KCall(vFactory, listOf(coerce(vValue, KObjType))))
+			} else {
+				discard(vValue)
+				classObject(inExpression, closed(inExpression.argument.type).makeNotNull().classOrNull?.owner?.kotlinFqName?.asString())
+			}
+		}
 		is IrGetEnumValue -> mImporter.simpleEnumOf(inExpression.symbol.owner.parentAsClass)?.let { vEnum ->
 			val vEntry = vEnum.entries.firstOrNull { it.name == inExpression.symbol.owner.name.asString() }
 			if (vEntry == null) fail(inExpression, "enum entry '${inExpression.symbol.owner.name}'") else coerce(vEnum.constant(vEntry), typeOf(inExpression))
@@ -2280,6 +2295,13 @@ internal class BodyBuilder(
 		val vFactory = mImporter.internalFunction("propertyReference")?.let { mImporter.functionFor(it) }
 			?: return fail(inElement, "property reference")
 		return spill(KCall(vFactory, listOf(KStringLit(inName ?: "<unknown>"))))
+	}
+
+	/** `Name::class` as a value: an object that knows the name of the class, there being no reflection. */
+	private fun classObject(inElement: IrElement, inName: String?): KExpr {
+		val vFactory = mImporter.internalFunction("classReference")?.let { mImporter.functionFor(it) }
+		if (vFactory == null || inName == null) return fail(inElement, "class reference")
+		return spill(KCall(vFactory, listOf(KStringLit(inName))))
 	}
 
 	private fun lowerFunctionReference(inReference: IrFunctionReference): KExpr {

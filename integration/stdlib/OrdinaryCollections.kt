@@ -51,7 +51,7 @@ fun main() {
 	vMap["three"] = 3
 	vMap.putAll(mapOf("four" to 4, "one" to 11))
 	vMap.remove("two")
-	println("$vMap ${vMap["one"]} ${vMap["none"]} ${vMap.getOrDefault("none", -1)} ${vMap.getOrElse("x") { 0 }} ${vMap.getOrPut("five") { 5 }} ${vMap.getValue("four")} ${"three" in vMap} ${vMap.containsValue(3)} ${vMap.keys} ${vMap.values} ${vMap.size}")
+	println("$vMap ${vMap["one"]} ${vMap["none"]} ${vMap.getOrElse("none") { -1 }} ${vMap.getOrElse("x") { 0 }} ${vMap.getOrPut("five") { 5 }} ${vMap.getValue("four")} ${"three" in vMap} ${vMap.containsValue(3)} ${vMap.keys} ${vMap.values} ${vMap.size}")
 	println("${vMap.filter { it.value > 3 }} ${vMap.mapValues { it.value * 2 }} ${vMap.mapKeys { it.key.length }} ${vMap.map { "${it.key}=${it.value}" }} ${vMap.toList().first()} ${vMap.entries.sumOf { it.value }} ${vMap.maxByOrNull { it.value }?.key} ${vMap.any { it.key.length == 3 }} ${vMap.count()} ${vMap.keys.sorted()}")
 	for ((vKey, vValue) in vMap) if (vValue > 4) vMap[vKey] = vValue - 1
 	for (vEntry in vMap.entries) if (vEntry.key == "three") vEntry.setValue(33)

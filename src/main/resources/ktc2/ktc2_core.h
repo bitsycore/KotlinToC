@@ -794,6 +794,9 @@ ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end);
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
 
+/** The Kotlin name of the class of an object: `x::class`. Owned by the caller. */
+ktc2_String* ktc2_className(ktc2_Obj* object);
+
 /** `kotlin.Unit` as an object: what a function without a result gives where an object is asked for. */
 extern ktc2_Obj ktc2_unit_object;
 

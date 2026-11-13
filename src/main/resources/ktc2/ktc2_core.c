@@ -1217,6 +1217,19 @@ bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
 
 ktc2_Obj ktc2_unit_object = { KTC2_IMMORTAL, KTC2_TYPE_UNIT };
 
+ktc2_String* ktc2_className(ktc2_Obj* object)
+{
+	const char* name = ktc2_types[object->typeId].name;
+	/* The built-in types are listed by their short names, and `Unit` by its whole one. */
+	bool isShort = object->typeId < KTC2_TYPE_FIRST_USER && object->typeId != KTC2_TYPE_UNIT;
+	ktc2_Sb sb;
+	ktc2_sb_init(&sb);
+	if (isShort) ktc2_sb_text(&sb, "kotlin.", 7, 7);
+	int32_t size = (int32_t)strlen(name);
+	ktc2_sb_text(&sb, name, size, size);
+	return ktc2_sb_finish(&sb);
+}
+
 ktc2_String* ktc2_any_toString(ktc2_Obj* object)
 {
 	if (object->typeId == KTC2_TYPE_STRING) return ktc2_retain(object);

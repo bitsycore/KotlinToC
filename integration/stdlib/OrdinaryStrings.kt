@@ -16,10 +16,10 @@ fun main() {
 
 	val vBuilder = StringBuilder("hello")
 	vBuilder.append(' ').append("world").insert(0, ">> ").append(1).append(2.5).append('!').append(true).appendLine().append("next")
-	vBuilder.setCharAt(3, 'H')
-	vBuilder.deleteCharAt(vBuilder.length - 1)
-	vBuilder.replace(0, 2, "<<")
-	println("$vBuilder ${vBuilder.length} ${vBuilder.indexOf("world")} ${vBuilder[3]} ${vBuilder.lines().size} ${vBuilder.substring(3, 8)} ${vBuilder.reversed().take(3)} ${vBuilder.isEmpty()} ${vBuilder.toString().trim().length} ${vBuilder.delete(0, 3).take(5)} ${vBuilder.lastIndexOf("l")} ${StringBuilder().append("a", "b", "c")} ${vBuilder.clear().length}")
+	vBuilder[3] = 'H'
+	vBuilder.deleteAt(vBuilder.length - 1)
+	vBuilder.setRange(0, 2, "<<")
+	println("$vBuilder ${vBuilder.length} ${vBuilder.indexOf("world")} ${vBuilder[3]} ${vBuilder.lines().size} ${vBuilder.substring(3, 8)} ${vBuilder.reversed().take(3)} ${vBuilder.isEmpty()} ${vBuilder.toString().trim().length} ${vBuilder.deleteRange(0, 3).take(5)} ${vBuilder.lastIndexOf("l")} ${StringBuilder().append("a", "b", "c")} ${vBuilder.clear().length}")
 	println(buildString { for (vIndex in 1..3) { append(vIndex); if (vIndex < 3) append(", ") }; appendLine(); append("end") })
 	println(listOf("a", "b").joinToString(separator = " | ", prefix = "{", postfix = "}") { it.uppercase() })
 
