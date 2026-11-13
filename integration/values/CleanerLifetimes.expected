@@ -23,6 +23,8 @@ end item2
 cleared
 end old
 replaced
+end through the iterator
+removed through the iterator
 end slot
 array emptied
 end new

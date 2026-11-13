@@ -80,6 +80,10 @@ fun collections() {
 	vMap["k"] = Res("old")
 	vMap["k"] = Res("new")
 	println("replaced")
+	vMap["gone"] = Res("through the iterator")
+	val vEntries = vMap.entries.iterator()
+	while (vEntries.hasNext()) if (vEntries.next().key == "gone") vEntries.remove()
+	println("removed through the iterator")
 	val vArray = arrayOfNulls<Res>(2)
 	vArray[0] = Res("slot")
 	vArray[0] = null
