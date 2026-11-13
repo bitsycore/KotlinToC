@@ -1026,6 +1026,9 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 	private val mLoops: List<Loop>
 	private val mGroupNames: HashMap<String, Int>
 
+	/** The character every match starts with, when the pattern starts with one, exactly; -1 otherwise. */
+	private val mFirst: Int
+
 	init {
 		val vParser = Parser(pattern, options.contains(RegexOption.IGNORE_CASE), options.contains(RegexOption.MULTILINE))
 		val vPiece = vParser.parse()
@@ -1034,6 +1037,10 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 		mGroupCount = vParser.groupCount
 		mLoops = vCompiler.loops
 		mGroupNames = vParser.groupNames
+		// Through the starts of groups, which match nothing themselves.
+		var vNode: Node? = mRoot
+		while (vNode is GroupMark) vNode = vNode.next
+		mFirst = if (vNode is CharNode && vNode.case == kCaseExact) vNode.char.code else -1
 	}
 
 	public actual constructor(pattern: String) : this(pattern, emptySet())
@@ -1051,7 +1058,13 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 		val vState = Matching(vChars, mGroupCount, mLoops)
 		if (inEntire) vState.requiredEnd = inText.length
 		var vStart = inFrom
-		while (vStart <= inText.length) {
+		val vLength = vChars.size
+		while (vStart <= vLength) {
+			if (mFirst >= 0 && !inAnchored) {
+				// Nothing matches before the next place the first character is.
+				while (vStart < vLength && vChars[vStart].code != mFirst) vStart++
+				if (vStart == vLength) break
+			}
 			vState.reset()
 			val vEnd = mRoot.match(vState, vStart)
 			if (vEnd >= 0) {
