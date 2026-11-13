@@ -600,7 +600,10 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   code reads an `X<Int>` through the type `X<Any>` (`KClass.family` names what the
   instantiations have in common; the pass looks for the casts that give this away and then
   trusts only what it followed from the allocation). The same knowledge answers `is` and the
-  test of `as` where the class is known (`KInstanceOf.answer`). `KTC2_SKIP=devirtualize` (also
+  test of `as` where the class is known (`KInstanceOf.answer`). The classes are followed to a
+  standstill twice: at first a call through a dispatcher that cannot be resolved yet says
+  nothing of its result (the class of its receiver may still be on its way), and only once
+  nothing moves does it say "anything". Said in the first round, it would stay said. `KTC2_SKIP=devirtualize` (also
   `copies`, `listloops`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
 - `ListLoops` finds the platform `ArrayList` by its name and by the names of what it needs

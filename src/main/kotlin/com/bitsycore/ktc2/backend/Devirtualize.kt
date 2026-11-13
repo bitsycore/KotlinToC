@@ -217,11 +217,24 @@ class Devirtualize(private val mModule: KModule) {
 				}
 			}
 		}
+		// Twice to a standstill. A call through a dispatcher whose implementation is not known says
+		// nothing of its result at first: the class of its receiver may still be on its way (the
+		// iterator of a view of a map, itself the result of a call). Saying "anything" too early
+		// would stay said. Once nothing moves, the calls that are still not known do say it.
+		mIsSettling = false
+		do {
+			mChanged = false
+			for (vFunction in vBodies) scan(vFunction)
+		} while (mChanged)
+		mIsSettling = true
 		do {
 			mChanged = false
 			for (vFunction in vBodies) scan(vFunction)
 		} while (mChanged)
 	}
+
+	/** False while classes are still being followed for the first time: see [follow]. */
+	private var mIsSettling = false
 
 	/** `is` tests answered. Filled by [run]. */
 	var answered = 0
@@ -359,7 +372,12 @@ class Devirtualize(private val mModule: KModule) {
 		}
 		is KCall -> {
 			val vTarget = if (inValue.function.dispatch != null) implementationFor(inValue) else inValue.function
-			if (vTarget == null || vTarget.isExternal || vTarget.dispatch != null) kAnything else mReturns[vTarget]
+			when {
+				// Not known which implementation, yet or at all.
+				vTarget == null -> if (mIsSettling) kAnything else null
+				vTarget.isExternal || vTarget.dispatch != null -> kAnything
+				else -> mReturns[vTarget]
+			}
 		}
 		else -> kAnything
 	}
