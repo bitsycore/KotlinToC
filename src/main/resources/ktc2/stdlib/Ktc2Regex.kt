@@ -18,9 +18,9 @@ As in Java, (?i) alone knows the case of ASCII letters only; RegexOption.IGNORE_
 know the case of every letter. \p{…} also names scripts (\p{IsGreek}, \p{script=Latin}) and
 blocks (\p{InArrows}, \p{block=BasicLatin}), by their full names. The flag d is known.
 
-Not covered: the flag U, which makes \w, \d, \s and \b follow Unicode, and the four-letter
-codes of scripts (\p{sc=Latn}). A pattern using them is refused with an
-IllegalArgumentException when the Regex is created.
+The flag U makes \w, \d, \s, \b and the POSIX classes (\p{Alpha}...) follow Unicode, as
+UNICODE_CHARACTER_CLASS does in Java (and turns on u). Scripts are also named by their
+four-letter codes (\p{sc=Latn}, \p{IsCyrl}).
 */
 
 // ==================
@@ -71,6 +71,16 @@ private const val kJavaTitleCase = 38
 private const val kUnicodeAlphabetic = 40
 private const val kUnicodeWhiteSpace = 44
 
+// What \w, \b and the POSIX classes are with the flag U (java.util.regex.CharPredicates):
+private const val kUnicodeWord = 50
+private const val kUnicodeAlnum = 51
+private const val kUnicodePunct = 52
+private const val kUnicodeGraph = 53
+private const val kUnicodePrint = 54
+private const val kUnicodeBlank = 55
+private const val kUnicodeControl = 56
+private const val kUnicodeHexDigit = 57
+
 /** A general category of Unicode: this plus the ordinal of its CharCategory. */
 private const val kClassCategory = 100
 
@@ -90,6 +100,34 @@ private const val kCategoryGroups = "CLLLLLMMMNNNZZZCCCCPPPPPSSSSPP"
 private fun isAsciiLetter(inChar: Char): Boolean = inChar in 'a'..'z' || inChar in 'A'..'Z'
 
 private fun isAsciiPunctuation(inChar: Char): Boolean = inChar in '!'..'/' || inChar in ':'..'@' || inChar in '['..'`' || inChar in '{'..'~'
+
+/** The categories a word character of the flag U may be of besides the alphabetic ones: marks, decimal digits, connectors. */
+private val kWordCategories = intArrayOf(
+	CharCategory.NON_SPACING_MARK.ordinal, CharCategory.ENCLOSING_MARK.ordinal, CharCategory.COMBINING_SPACING_MARK.ordinal,
+	CharCategory.DECIMAL_DIGIT_NUMBER.ordinal, CharCategory.CONNECTOR_PUNCTUATION.ordinal,
+)
+
+private val kPunctuationCategories = intArrayOf(
+	CharCategory.CONNECTOR_PUNCTUATION.ordinal, CharCategory.DASH_PUNCTUATION.ordinal, CharCategory.START_PUNCTUATION.ordinal,
+	CharCategory.END_PUNCTUATION.ordinal, CharCategory.OTHER_PUNCTUATION.ordinal, CharCategory.INITIAL_QUOTE_PUNCTUATION.ordinal,
+	CharCategory.FINAL_QUOTE_PUNCTUATION.ordinal,
+)
+
+/** Unicode's White_Space, as Java has it: the separators, the controls from tab to carriage return, and NEL. */
+private fun isWhiteSpace(inChar: Char): Boolean {
+	val vCategory = unicodeCategory(inChar)
+	return vCategory == CharCategory.SPACE_SEPARATOR.ordinal || vCategory == CharCategory.LINE_SEPARATOR.ordinal ||
+		vCategory == CharCategory.PARAGRAPH_SEPARATOR.ordinal || inChar in '\u0009'..'\u000D' || inChar == '\u0085'
+}
+
+/** What is visible: neither a separator, a control, half of a pair nor unassigned. */
+private fun isGraph(inChar: Char): Boolean = when (unicodeCategory(inChar)) {
+	CharCategory.SPACE_SEPARATOR.ordinal, CharCategory.LINE_SEPARATOR.ordinal, CharCategory.PARAGRAPH_SEPARATOR.ordinal,
+	CharCategory.CONTROL.ordinal, CharCategory.SURROGATE.ordinal, CharCategory.UNASSIGNED.ordinal -> false
+	else -> true
+}
+
+private fun isBlank(inChar: Char): Boolean = unicodeCategory(inChar) == CharCategory.SPACE_SEPARATOR.ordinal || inChar == '\t'
 
 private fun inNamedClass(inKind: Int, inChar: Char): Boolean = when (inKind) {
 	kClassDigit -> inChar in '0'..'9'
@@ -115,9 +153,17 @@ private fun inNamedClass(inKind: Int, inChar: Char): Boolean = when (inKind) {
 	kJavaLetterOrDigit -> inChar.isLetterOrDigit()
 	kJavaDefined -> inChar.isDefined()
 	kJavaTitleCase -> inChar.isTitleCase()
-	// Letters and letter numbers; the few marks Unicode also calls alphabetic are not known here.
-	kUnicodeAlphabetic -> inChar.isLetter() || unicodeCategory(inChar) == 10
-	kUnicodeWhiteSpace -> inChar.isWhitespace() || inChar == '\u0085'
+	kUnicodeAlphabetic -> unicodeIsAlphabetic(inChar)
+	kUnicodeWhiteSpace -> isWhiteSpace(inChar)
+	kUnicodeWord -> unicodeIsAlphabetic(inChar) || unicodeCategory(inChar) in kWordCategories || inChar == '\u200C' || inChar == '\u200D'
+	kUnicodeAlnum -> unicodeIsAlphabetic(inChar) || inChar.isDigit()
+	kUnicodePunct -> unicodeCategory(inChar) in kPunctuationCategories
+	kUnicodeGraph -> isGraph(inChar)
+	kUnicodePrint -> (isGraph(inChar) || isBlank(inChar)) && unicodeCategory(inChar) != CharCategory.CONTROL.ordinal
+	kUnicodeBlank -> isBlank(inChar)
+	kUnicodeControl -> unicodeCategory(inChar) == CharCategory.CONTROL.ordinal
+	kUnicodeHexDigit -> inChar.isDigit() || inChar in '0'..'9' || inChar in 'A'..'F' || inChar in 'a'..'f' ||
+		inChar in '\uFF10'..'\uFF19' || inChar in '\uFF21'..'\uFF26' || inChar in '\uFF41'..'\uFF46'
 	kClassCasedLetter -> unicodeCategory(inChar) in 1..3
 	else -> if (inKind >= kClassBlock) {
 		unicodeBlock(inChar) == inKind - kClassBlock
@@ -213,7 +259,7 @@ private class Atomic(val body: Piece) : Piece()
 private class Look(val body: Piece, val ahead: Boolean, val negated: Boolean) : Piece()
 
 /** `^` `$` `\A` `\z` `\Z` `\b` `\B`, named by the character that writes them; [multiline] is the flag where it stands. */
-private class Anchor(val kind: Char, val multiline: Boolean, val unixLines: Boolean) : Piece()
+private class Anchor(val kind: Char, val multiline: Boolean, val unixLines: Boolean, val unicodeWords: Boolean = false) : Piece()
 
 // ==================
 // MARK: Parser
@@ -231,6 +277,9 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 	private var mDotAll = false
 	private var mComments = false
 	private var mUnixLines = false
+
+	/** The flag U: the classes follow Unicode. */
+	private var mUnicodeClasses = false
 
 	private fun case(): Int = if (!mIgnoreCase) kCaseExact else if (mUnicodeCase) kCaseUnicode else kCaseAscii
 
@@ -264,8 +313,10 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 		val vDotAll = mDotAll
 		val vComments = mComments
 		val vUnixLines = mUnixLines
+		val vUnicodeClasses = mUnicodeClasses
 		val vPiece = inBody()
 		mUnixLines = vUnixLines
+		mUnicodeClasses = vUnicodeClasses
 		mIgnoreCase = vIgnoreCase
 		mUnicodeCase = vUnicodeCase
 		mMultiline = vMultiline
@@ -286,6 +337,11 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 				's' -> mDotAll = vIsOn
 				'x' -> mComments = vIsOn
 				'd' -> mUnixLines = vIsOn
+				// As in Java, U brings u with it.
+				'U' -> {
+					mUnicodeClasses = vIsOn
+					mUnicodeCase = vIsOn
+				}
 				else -> fail("Unknown inline modifier '$vFlag'")
 			}
 		}
@@ -459,6 +515,23 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 
 	/** The class a `\p{…}` names; null when it is not one known here. */
 	private fun classNamed(inName: String): Int? {
+		// With the flag U the POSIX classes follow Unicode.
+		if (mUnicodeClasses) {
+			when (inName) {
+				"Lower" -> return kJavaLowerCase
+				"Upper" -> return kJavaUpperCase
+				"Alpha" -> return kUnicodeAlphabetic
+				"Digit" -> return kJavaDigit
+				"Alnum" -> return kUnicodeAlnum
+				"Punct" -> return kUnicodePunct
+				"Graph" -> return kUnicodeGraph
+				"Print" -> return kUnicodePrint
+				"Blank" -> return kUnicodeBlank
+				"Cntrl" -> return kUnicodeControl
+				"XDigit" -> return kUnicodeHexDigit
+				"Space" -> return kUnicodeWhiteSpace
+			}
+		}
 		when (inName) {
 			"Lower" -> return kClassLower
 			"Upper" -> return kClassUpper
@@ -491,7 +564,7 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 			vName = vName.substring(vEquals + 1)
 			when (vKey) {
 				"general_category", "gc" -> {}
-				"script", "sc" -> return unicodeScriptNamed(vName).takeIf { it >= 0 }?.let { kClassScript + it }
+				"script", "sc" -> return scriptNamed(vName)?.let { kClassScript + it }
 				"block", "blk" -> return unicodeBlockNamed(vName).takeIf { it >= 0 }?.let { kClassBlock + it }
 				else -> return null
 			}
@@ -521,8 +594,12 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 			for (vCategory in CharCategory.entries) if (vCategory.code == vName) return kClassCategory + vCategory.ordinal
 		}
 		// `IsLatin`: a script.
-		return if (vIsScript) unicodeScriptNamed(vName).takeIf { it >= 0 }?.let { kClassScript + it } else null
+		return if (vIsScript) scriptNamed(vName)?.let { kClassScript + it } else null
 	}
+
+	/** The place of a script named by its name (`Latin`) or its four-letter code (`Latn`). */
+	private fun scriptNamed(inName: String): Int? =
+		unicodeScriptNamed(inName).takeIf { it >= 0 } ?: unicodeScriptCoded(inName).takeIf { it >= 0 }
 
 	/** The named class after `\p` or `\P`, added to [outSet]. */
 	private fun property(inNegated: Boolean, outSet: CharSet) {
@@ -546,12 +623,12 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 	 */
 	private fun classEscape(inChar: Char, outSet: CharSet): Boolean {
 		when (inChar) {
-			'd' -> outSet.kinds.add(kClassDigit)
-			'D' -> outSet.negatedKinds.add(kClassDigit)
-			'w' -> outSet.kinds.add(kClassWord)
-			'W' -> outSet.negatedKinds.add(kClassWord)
-			's' -> outSet.kinds.add(kClassSpace)
-			'S' -> outSet.negatedKinds.add(kClassSpace)
+			'd' -> outSet.kinds.add(if (mUnicodeClasses) kJavaDigit else kClassDigit)
+			'D' -> outSet.negatedKinds.add(if (mUnicodeClasses) kJavaDigit else kClassDigit)
+			'w' -> outSet.kinds.add(if (mUnicodeClasses) kUnicodeWord else kClassWord)
+			'W' -> outSet.negatedKinds.add(if (mUnicodeClasses) kUnicodeWord else kClassWord)
+			's' -> outSet.kinds.add(if (mUnicodeClasses) kUnicodeWhiteSpace else kClassSpace)
+			'S' -> outSet.negatedKinds.add(if (mUnicodeClasses) kUnicodeWhiteSpace else kClassSpace)
 			'p' -> property(false, outSet)
 			'P' -> property(true, outSet)
 			else -> return false
@@ -593,7 +670,7 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 		val vSet = CharSet(false)
 		if (classEscape(vChar, vSet)) return SetPiece(vSet, case())
 		when (vChar) {
-			'b', 'B', 'A', 'z', 'Z' -> return Anchor(vChar, mMultiline, mUnixLines)
+			'b', 'B', 'A', 'z', 'Z' -> return Anchor(vChar, mMultiline, mUnixLines, mUnicodeClasses)
 			'k' -> {
 				if (!eat('<')) fail("\\k is not followed by '<' for named capturing group")
 				val vStart = mAt
@@ -727,10 +804,10 @@ private class SetNode(val set: CharSet?, val matchesLines: Boolean, val case: In
 	}
 }
 
-/** What `\\b` takes for part of a word: what `\\w` accepts. */
-private fun isWordChar(inChar: Char): Boolean = inNamedClass(kClassWord, inChar)
+/** What `\\b` takes for part of a word: what `\\w` accepts, with or without the flag U. */
+private fun isWordChar(inChar: Char, inUnicode: Boolean): Boolean = inNamedClass(if (inUnicode) kUnicodeWord else kClassWord, inChar)
 
-private class AnchorNode(val kind: Char, val multiline: Boolean, val unixLines: Boolean) : Node() {
+private class AnchorNode(val kind: Char, val multiline: Boolean, val unixLines: Boolean, val unicodeWords: Boolean) : Node() {
 	private fun isLineEnd(inChar: Char): Boolean = isLineEnd(inChar, unixLines)
 
 	override fun match(inState: Matching, inAt: Int): Int {
@@ -747,8 +824,8 @@ private class AnchorNode(val kind: Char, val multiline: Boolean, val unixLines: 
 			'z' -> inAt == vLength
 			'Z' -> inAt == vLength || (inAt == vLength - 1 && isLineEnd(vInput[inAt])) || (inAt == vLength - 2 && vInput[inAt] == '\r' && vInput[inAt + 1] == '\n')
 			else -> {
-				val vBefore = inAt > 0 && isWordChar(vInput[inAt - 1])
-				val vAfter = inAt < vLength && isWordChar(vInput[inAt])
+				val vBefore = inAt > 0 && isWordChar(vInput[inAt - 1], unicodeWords)
+				val vAfter = inAt < vLength && isWordChar(vInput[inAt], unicodeWords)
 				(vBefore != vAfter) == (kind == 'b')
 			}
 		}
@@ -935,7 +1012,7 @@ private class Compiler {
 			is Literal -> return CharNode(inPiece.char, inPiece.case).also { it.next = inNext }
 			is SetPiece -> return SetNode(inPiece.set, false, inPiece.case, false).also { it.next = inNext }
 			is Dot -> return SetNode(null, inPiece.matchesLines, kCaseExact, inPiece.unixLines).also { it.next = inNext }
-			is Anchor -> return AnchorNode(inPiece.kind, inPiece.multiline, inPiece.unixLines).also { it.next = inNext }
+			is Anchor -> return AnchorNode(inPiece.kind, inPiece.multiline, inPiece.unixLines, inPiece.unicodeWords).also { it.next = inNext }
 			is BackReference -> return BackReferenceNode(inPiece.group, inPiece.case).also { it.next = inNext }
 			is Atomic -> return AtomicNode(compile(inPiece.body, Accept())).also { it.next = inNext }
 			is Chain -> {

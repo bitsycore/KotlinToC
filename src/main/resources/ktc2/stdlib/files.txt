@@ -151,6 +151,14 @@ commonMain/kotlin/uuid/ExperimentalUuidApi.kt
 commonMain/kotlin/uuid/Uuid.kt
 Ktc2Uuid.kt
 commonMain/kotlin/experimental/bitwiseOperations.kt
+commonMain/kotlin/io/encoding/ExperimentalEncodingApi.kt
+commonMain/kotlin/io/encoding/Base64.kt
+Ktc2Base64.kt
+commonMain/kotlin/coroutines/CoroutineContext.kt
+commonMain/kotlin/coroutines/CoroutineContextImpl.kt
+commonMain/kotlin/coroutines/ContinuationInterceptor.kt
+commonMain/kotlin/coroutines/cancellation/CancellationExceptionH.kt
+Ktc2Cancellation.kt
 commonMain/kotlin/text/CharacterCodingException.kt
 commonMain/kotlin/comparisons/compareTo.kt
 Ktc2UHex.kt

@@ -1975,7 +1975,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				// A generic owner matches the instantiation the call was made on.
 				val vSeenAs = superArguments(vInfo.type, vOwner).map { kTypeOf(canonical(it)) ?: KObjType }
 				if (!accepts(vDispatcher.classArguments, vSeenAs)) continue
-				val vMember = membersOf(vInfo.irClass).firstOrNull { it == vFunction || overrides(it, vFunction) } ?: continue
+				// A private member is not copied into the classes below its own: there it is the member itself.
+				val vMember = membersOf(vInfo.irClass).firstOrNull { it == vFunction || overrides(it, vFunction) }
+					?: vFunction.takeIf { DescriptorVisibilities.isPrivate(it.visibility) } ?: continue
 				val vOwnArguments = vFunction.typeParameters.map { vDispatcher.subst[it.symbol] }
 				val (vImplementation, vSubst) = resolveMember(vMember, vInfo.type, vOwnArguments)
 				if (isAnyClass(vImplementation.parentAsClass)) {

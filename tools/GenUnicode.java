@@ -187,6 +187,29 @@ public class GenUnicode
 			if (vToTitle != vToUpper) vSupTitle.append(hex6(vCode)).append(hex6(vToTitle));
 		}
 
+		// The four-letter codes of the scripts (ISO 15924, `Latn`), which Character.UnicodeScript.forName takes
+		// too: every code tried, kept with the place of its script.
+		StringBuilder vScriptCodes = new StringBuilder();
+		char[] vCode = new char[4];
+		for (int vEach = 0; vEach < 26 * 26 * 26 * 26; vEach++)
+		{
+			int vRest = vEach;
+			for (int vAt = 3; vAt >= 0; vAt--)
+			{
+				vCode[vAt] = (char) ((vAt == 0 ? 'A' : 'a') + vRest % 26);
+				vRest /= 26;
+			}
+			String vName = new String(vCode);
+			try
+			{
+				Character.UnicodeScript vNamed = Character.UnicodeScript.forName(vName);
+				if (!vNamed.name().equalsIgnoreCase(vName)) vScriptCodes.append(vName).append(':').append(vNamed.ordinal()).append(',');
+			}
+			catch (IllegalArgumentException vNone)
+			{
+			}
+		}
+
 		StringBuilder vScriptNames = new StringBuilder();
 		for (Character.UnicodeScript vEach : Character.UnicodeScript.values()) vScriptNames.append(vEach.name()).append(',');
 
@@ -199,6 +222,7 @@ public class GenUnicode
 		vOut.append(constant("kCategoryRuns", "Runs of one category: four digits for the first character, a character for the category (`a` + ordinal of CharCategory).", vCategories.toString()));
 		vOut.append(constant("kUpperCaseRanges", "The characters `isUpperCase` accepts, as ranges: first and last, four digits each.", ranges(Character::isUpperCase)));
 		vOut.append(constant("kLowerCaseRanges", "The characters `isLowerCase` accepts, as ranges.", ranges(Character::isLowerCase)));
+		vOut.append(constant("kAlphabeticRanges", "The characters `Character.isAlphabetic` accepts (letters, letter numbers and the marks Unicode calls alphabetic), as ranges.", ranges(Character::isAlphabetic)));
 		vOut.append(constant("kWhitespaceRanges", "The characters `isWhitespace` accepts, as ranges.", ranges(vChar -> Character.isWhitespace(vChar) || Character.isSpaceChar(vChar))));
 		vOut.append(constant("kToUpperCase", "Each character whose uppercase form is another single character, with that form: four digits each.", vUpper.toString()));
 		vOut.append(constant("kToLowerCase", "The same for lowercase.", vLower.toString()));
@@ -207,6 +231,7 @@ public class GenUnicode
 		vOut.append(constant("kDigitZeros", "The digit zero of each script: the nine characters after it are its other digits.", vDigitZeros.toString()));
 		vOut.append(constant("kScriptRuns", "Runs of one script: four digits for the first character, two for the place of the script in `kScriptNames`.", vScripts.toString()));
 		vOut.append(constant("kScriptNames", "The names of the scripts, each followed by a comma.", vScriptNames.toString()));
+		vOut.append(constant("kScriptCodes", "The four-letter code of each script (`Latn`), with its place in `kScriptNames`: `Code:place,`.", vScriptCodes.toString()));
 		vOut.append(constant("kBlockRuns", "Runs of one block: four digits for the first character, two for the place of the block in `kBlockNames` (FF: in no block).", vBlocks.toString()));
 		vOut.append(constant("kBlockNames", "The names of the blocks, each followed by a comma.", vBlockNames.toString()));
 		vOut.append(constant("kSupplementaryCategoryRuns", "Runs of one category above U+FFFF: six digits for the first code point, a character for the category.", vSupCategories.toString()));

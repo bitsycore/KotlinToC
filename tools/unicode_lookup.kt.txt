@@ -227,3 +227,26 @@ internal fun supplementaryToTitleCase(inCode: Int): Int {
 	val vTitle = mapped(gSupplementaryToTitle, inCode)
 	return if (vTitle != inCode) vTitle else supplementaryToUpperCase(inCode)
 }
+
+// ==================
+// MARK: Alphabetic, script codes
+// ==================
+
+private val gAlphabeticRanges: CharArray = decoded(kAlphabeticRanges)
+
+/** As `Character.isAlphabetic`: letters, letter numbers, and the marks Unicode calls alphabetic. */
+internal fun unicodeIsAlphabetic(inChar: Char): Boolean = inRanges(gAlphabeticRanges, inChar)
+
+/** The place of the script whose four-letter code is [inCode] (`Latn`, any case), or -1. */
+internal fun unicodeScriptCoded(inCode: String): Int {
+	if (inCode.length != 4) return -1
+	val vWanted = inCode.uppercase()
+	var vStart = 0
+	while (vStart < kScriptCodes.length) {
+		val vColon = kScriptCodes.indexOf(':', vStart)
+		val vComma = kScriptCodes.indexOf(',', vColon)
+		if (kScriptCodes.substring(vStart, vColon).uppercase() == vWanted) return kScriptCodes.substring(vColon + 1, vComma).toInt()
+		vStart = vComma + 1
+	}
+	return -1
+}

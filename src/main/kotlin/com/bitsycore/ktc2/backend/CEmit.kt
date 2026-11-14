@@ -1102,7 +1102,12 @@ class CEmitter(private val mModule: KModule) {
 				KBinaryOp.GE -> infix(">=")
 				KBinaryOp.EQ -> infix("==")
 				KBinaryOp.NE -> infix("!=")
-				KBinaryOp.CMP -> if (inExpr.operandType == KPrim.FLOAT || inExpr.operandType == KPrim.DOUBLE) "ktc2_cmp_double($vLeft, $vRight)" else "KTC2_CMP($vLeft, $vRight)"
+				KBinaryOp.CMP -> when (inExpr.operandType) {
+					KPrim.FLOAT, KPrim.DOUBLE -> "ktc2_cmp_double($vLeft, $vRight)"
+					// Two booleans as numbers: a C compiler warns of a boolean compared with a constant.
+					KPrim.BOOLEAN -> "((int32_t)($vLeft) - (int32_t)($vRight))"
+					else -> "KTC2_CMP($vLeft, $vRight)"
+				}
 			}
 		}
 

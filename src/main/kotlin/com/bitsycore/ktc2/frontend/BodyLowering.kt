@@ -649,9 +649,13 @@ internal class BodyBuilder(
 					mCells[inStatement] = vValueField
 					return
 				}
-				val vLocal = KLocal(freshName(inStatement.name.asString()), vType)
+				val vLocal = KLocal(freshName(inStatement.name.asString()), if (vType == KNothingType) KObjType else vType)
 				mLocals[inStatement] = vLocal
-				if (vType == KUnitType || vType == KNothingType) {
+				if (vType == KNothingType) {
+					// It never gets a value (`val key = error("…")`): what follows is not reached, but may name it.
+					vInit?.let { discard(it) }
+					mBlock += KLet(vLocal, KNull(KObjType))
+				} else if (vType == KUnitType) {
 					vInit?.let { discard(it) }
 				} else {
 					mBlock += KLet(vLocal, vInit)
@@ -1947,7 +1951,12 @@ internal class BodyBuilder(
 	): KExpr {
 		val vOffset = if (inPrefix != null) 1 else 0
 		val vGiven = lowerOperands(inArguments.filterNotNull())
-		val vSaved = inCallee.parameters.associateWith { mLocals[it] }
+		// A default expression may be the one of a function this one overrides (an inherited member, a fake
+		// override): it names the parameters of that function, which are bound as well.
+		val vVersions = generateSequence(listOf(inCallee)) { vLevel ->
+			vLevel.flatMap { (it as? IrSimpleFunction)?.overriddenSymbols?.map { vSymbol -> vSymbol.owner } ?: emptyList() }.takeIf { it.isNotEmpty() }
+		}.take(16).flatten().distinct().filter { it.parameters.size == inCallee.parameters.size }.toList()
+		val vSaved = vVersions.flatMap { it.parameters }.associateWith { mLocals[it] }
 		val vBound = arrayOfNulls<KLocal>(inArguments.size)
 		var vNext = 0
 		inArguments.forEachIndexed { vIndex, vArgument ->
@@ -1984,7 +1993,7 @@ internal class BodyBuilder(
 				mBlock += KLet(vTemp, coerce(vValue, vTemp.type))
 				vBound[vIndex] = vTemp
 			}
-			mLocals[inCallee.parameters[vIndex]] = vBound[vIndex]!!
+			for (vVersion in vVersions) mLocals[vVersion.parameters[vIndex]] = vBound[vIndex]!!
 		}
 		for ((vParam, vLocal) in vSaved) {
 			if (vLocal == null) mLocals.remove(vParam) else mLocals[vParam] = vLocal
@@ -2944,7 +2953,10 @@ internal class BodyBuilder(
 			// A number that may be null compared with an object: as an object itself.
 			vLeftType is KRefType && vRightType is KOptType && vLeft !is KNull -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
 			vRightType is KRefType && vLeftType is KOptType && vRight !is KNull -> objectEquals(inCall, inRight.type, spill(vRight), coerce(vLeft, KObjType))
-			vLeftType is KOptType || vRightType is KOptType -> optEquals(inCall, spill(vLeft), spill(vRight))
+			// Of a type parameter that stands for Double here (`K?` and `K`): `equals`, as Kotlin has it for what it does not
+			// know to be a floating number where it is written. Of a type `Double?`: as numbers (IEEE 754).
+			vLeftType is KOptType || vRightType is KOptType ->
+				optEquals(inCall, spill(vLeft), spill(vRight), inLeft.type.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol || inRight.type.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol)
 			vLeft is KNull && vRight is KNull -> kTrue
 			// A primitive compared with an Any: box it and compare as objects.
 			// `===` between a primitive and an object: a boxed number is never that object.
@@ -2967,6 +2979,8 @@ internal class BodyBuilder(
 			vLeftType == KPtrType && vRight is KNull -> isNull(vLeft)
 			vRightType == KPtrType && vLeft is KNull -> isNull(vRight)
 			vLeftType == KPtrType && vRightType == KPtrType -> KRefEquals(vLeft, vRight)
+			// A value of type Nothing is never there (`allEqualBy { error("…") }`): the comparison is never made.
+			vLeftType == KNothingType || vRightType == KNothingType -> kFalse
 			vLeftType !is KRefType || vRightType !is KRefType -> fail(inCall, "equality between '${inLeft.type.render()}' and '${inRight.type.render()}'")
 			vRight is KNull -> isNull(vLeft)
 			vLeft is KNull -> isNull(vRight)
@@ -2977,13 +2991,18 @@ internal class BodyBuilder(
 		}
 	}
 
-	private fun optEquals(inCall: IrCall, inLeft: KExpr, inRight: KExpr): KExpr {
+	private fun optEquals(inCall: IrCall, inLeft: KExpr, inRight: KExpr, inByEquals: Boolean = false): KExpr {
 		fun valueOf(inValue: KExpr) = if (inValue.type is KOptType) KOptValue(inValue) else inValue
 		fun has(inValue: KExpr) = if (inValue.type is KOptType) KOptHas(inValue) else kTrue
 		if (inRight is KNull) return not(has(inLeft))
 		if (inLeft is KNull) return not(has(inRight))
 		val vPrim = primOf(valueOf(inLeft)) ?: return fail(inCall, "equality on this type")
-		val vSame = KBinary(KBinaryOp.EQ, valueOf(inLeft), convert(valueOf(inRight), vPrim), vPrim, kBoolType)
+		// `equals` of Double and Float: the total order of `compareTo` (NaN equals NaN, -0.0 is not 0.0).
+		val vSame = if (inByEquals && vPrim.isFloating) {
+			KBinary(KBinaryOp.EQ, KBinary(KBinaryOp.CMP, valueOf(inLeft), convert(valueOf(inRight), vPrim), vPrim, kIntType), KConst(0, kIntType), KPrim.INT, kBoolType)
+		} else {
+			KBinary(KBinaryOp.EQ, valueOf(inLeft), convert(valueOf(inRight), vPrim), vPrim, kBoolType)
+		}
 		return when {
 			inLeft.type !is KOptType -> and(has(inRight), vSame)
 			inRight.type !is KOptType -> and(has(inLeft), vSame)
