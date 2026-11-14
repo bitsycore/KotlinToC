@@ -18,7 +18,7 @@ fun KFunction.copyAs(inName: String): KFunction {
 private class Copier {
 	private val mLocals = HashMap<KLocal, KLocal>()
 
-	fun local(inLocal: KLocal): KLocal = mLocals.getOrPut(inLocal) { KLocal(inLocal.cName, inLocal.type).also { it.isTemporary = inLocal.isTemporary } }
+	fun local(inLocal: KLocal): KLocal = mLocals.getOrPut(inLocal) { KLocal(inLocal.cName, inLocal.type).also { it.isTemporary = inLocal.isTemporary; it.boundClass = inLocal.boundClass } }
 
 	fun block(inBlock: List<KStmt>): List<KStmt> = inBlock.map { statement(it) }
 

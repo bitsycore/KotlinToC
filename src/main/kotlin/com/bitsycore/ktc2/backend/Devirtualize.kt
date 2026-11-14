@@ -436,6 +436,18 @@ class Devirtualize(private val mModule: KModule) {
 	/** True when a value of [inFrom] is passed as one of [inTo] as it is, or with a cast between pointers: no boxing. */
 	private fun fits(inFrom: KType, inTo: KType): Boolean = inFrom == inTo || (inFrom is KRefType && inTo is KRefType)
 
+	/**
+	 * True when [inArgument], given to a dispatcher whose parameter is [inFrom], can go straight to an implementation
+	 * whose parameter is [inTo]: an object where the implementation takes only one of its class has to be of it (the
+	 * dispatcher tests that, as the JVM's bridge does), so the call is direct only when the object is known to be.
+	 */
+	private fun takes(inTo: KLocal, inFrom: KType, inArgument: KExpr): Boolean {
+		val vClass = (inTo.type as? KClassType)?.cls ?: inTo.boundClass ?: return true
+		if (inFrom != KObjType || inArgument is KNull) return true
+		val vKnown = classOf(inArgument) as? KClass ?: return false
+		return vKnown.isSubclassOf(vClass) || vKnown.isOfFamilyOf(vClass)
+	}
+
 	/** [inValue] with the call it is (under its casts) made direct, when it is a dispatcher call that can be. */
 	private fun direct(inValue: KExpr): KExpr = when (inValue) {
 		is KRefCast -> {
@@ -446,7 +458,8 @@ class Devirtualize(private val mModule: KModule) {
 			val vDispatcher = inValue.function
 			val vTarget = implementationFor(inValue)
 			if (vTarget == null || vTarget.dispatch != null || vTarget.params.size != vDispatcher.params.size ||
-				!vDispatcher.params.zip(vTarget.params).all { (vFrom, vTo) -> fits(vFrom.type, vTo.type) } || !fits(vTarget.returnType, vDispatcher.returnType)
+				!vDispatcher.params.zip(vTarget.params).all { (vFrom, vTo) -> fits(vFrom.type, vTo.type) } || !fits(vTarget.returnType, vDispatcher.returnType) ||
+				!inValue.arguments.indices.drop(1).all { vIndex -> takes(vTarget.params[vIndex], vDispatcher.params[vIndex].type, inValue.arguments[vIndex]) }
 			) {
 				inValue
 			} else {

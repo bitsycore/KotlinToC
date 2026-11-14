@@ -273,6 +273,13 @@ class KLocal(val cName: String, val type: KType) {
 	 * up after its last use, where a variable keeps its object to the end of its block.
 	 */
 	var isTemporary: Boolean = false
+
+	/**
+	 * For a parameter whose type is a type parameter bounded by a class (`E : Enum<E>`): that class. The
+	 * parameter is an object here, but the body takes it for one of that class, as the JVM does after erasing
+	 * the type to its bound: a dispatcher hands it only an object of that class (`CEmitter.dispatcher`).
+	 */
+	var boundClass: KClass? = null
 }
 
 /** A top-level property with storage. [constInit] is set when the initializer is a literal. */

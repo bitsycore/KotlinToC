@@ -1698,6 +1698,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	private class Signature(val params: List<KLocal>, val returnType: KType)
 
+	/** The class a type parameter is bounded by, as the JVM erases it (`E : Enum<E>` is an `Enum`); null for anything else. */
+	private fun boundClassOf(inType: IrType): KClass? {
+		val vParameter = (inType.classifierOrNull as? IrTypeParameterSymbol)?.owner ?: return null
+		for (vBound in vParameter.superTypes) {
+			val vClass = vBound.classOrNull?.owner ?: continue
+			if (vClass.isInterface || isAnyClass(vClass)) continue
+			if (vClass.kotlinFqName.asString() == "kotlin.Enum") return enumBase()
+			return (kTypeOf(vBound.makeNotNull()) as? KClassType)?.cls
+		}
+		return null
+	}
+
 	private fun signatureOf(inFunction: IrFunction, inFile: IrFile?, inSubst: Subst): Signature? {
 		var vOk = true
 		val vNames = HashSet<String>()
@@ -1713,7 +1725,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			// The receiver of an inner class's constructor is the enclosing object, not the new one.
 			var vName = if (vParam.kind == IrParameterKind.Regular) cIdentifier(vParam.name.asString()) else if (inFunction is IrConstructor) "outer" else "self"
 			while (!vNames.add(vName)) vName += "_"
-			vParams += KLocal(vName, vType)
+			vParams += KLocal(vName, vType).also { vLocal ->
+				if (vType == KObjType && vParam.kind == IrParameterKind.Regular) vLocal.boundClass = boundClassOf(vParam.type)
+			}
 		}
 		val vReturn = kTypeOf(inFunction.returnType, inSubst)
 		if (vReturn == null) {

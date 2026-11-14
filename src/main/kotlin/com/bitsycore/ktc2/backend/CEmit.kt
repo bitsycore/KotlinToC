@@ -588,6 +588,12 @@ class CEmitter(private val mModule: KModule) {
 							else -> null
 						}
 						if (vFits != null) vBefore.append("if (!($vFits)) $vAbsent ")
+						// An object where the implementation takes one of its class only (`contains(element: E)` of a list of
+						// enum entries, asked about any object): as the JVM's bridge, what is not of that class is not looked at.
+						val vClass = (vTo.type as? KClassType)?.cls ?: vTo.boundClass
+						if (vToPrim == null && vFrom.type == KObjType && vClass != null) {
+							vBefore.append("if (${vFrom.cName} && !${typeTest(KClassTarget(vClass, isAnyInstantiation = true), "(ktc2_Obj*)" + vFrom.cName)}) $vAbsent ")
+						}
 					}
 					// The box made for the call owns what the struct refers to, until it is released after the call.
 					val vGiven = if (vFrom.type.isCounted() && vFrom.type is KStructType && vTo.type is KRefType) retainText(vFrom.type, vFrom.cName) else vFrom.cName
@@ -845,8 +851,11 @@ class CEmitter(private val mModule: KModule) {
 			else -> "KTC2_TYPE_ARRAY_VALUE"
 		}
 
-		private fun typeTest(inTest: KInstanceOf): String {
-			val vIds = when (val vTarget = inTest.target) {
+		private fun typeTest(inTest: KInstanceOf): String = typeTest(inTest.target, bare(expr(inTest.operand)))
+
+		/** A call of the test that [inText], a C pointer, is an object of [inTarget]. */
+		private fun typeTest(inTarget: KTypeTarget, inText: String): String {
+			val vIds = when (val vTarget = inTarget) {
 				KStringTarget -> listOf("KTC2_TYPE_STRING")
 				is KBoxTarget -> listOf("KTC2_TYPE_BOX_${vTarget.prim.name}")
 				is KClassTarget -> mConcrete.filter { vTarget.holds(it) }.map { typeId(it) }
@@ -865,7 +874,7 @@ class CEmitter(private val mModule: KModule) {
 				vIndex = mState.typeTests.size
 				mState.typeTests += vIds
 			}
-			return "is_${mState.tag}$vIndex(${bare(expr(inTest.operand))})"
+			return "is_${mState.tag}$vIndex($inText)"
 		}
 
 		fun zero(inType: KType): String = when (inType) {
