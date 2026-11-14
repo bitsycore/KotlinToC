@@ -990,7 +990,9 @@ static int format_bool(char* out, bool v)
 /**
  * Formats like Double.toString / Float.toString: the shortest digits that
  * read back to the same value, plain notation for 1e-3 <= |v| < 1e7 and
- * "d.dddE±n" otherwise. Returns the length.
+ * "d.dddE±n" otherwise. Returns the length. As Java does since JDK 19, when one
+ * digit is enough the two digits nearest the value are taken: Double.MIN_VALUE
+ * is 4.9E-324, not 5.0E-324.
  */
 static int format_real(char* out, double v, bool is_float)
 {
@@ -1002,7 +1004,10 @@ static int format_real(char* out, double v, bool is_float)
 	int max_digits = is_float ? 9 : 17;
 	for (int prec = 1; prec <= max_digits; prec++) {
 		snprintf(buf, sizeof buf, "%.*e", prec - 1, v);
-		if (is_float ? strtof(buf, NULL) == (float)v : strtod(buf, NULL) == v) break;
+		if (is_float ? strtof(buf, NULL) == (float)v : strtod(buf, NULL) == v) {
+			if (prec == 1) snprintf(buf, sizeof buf, "%.1e", v);
+			break;
+		}
 	}
 
 	char digits[24];
