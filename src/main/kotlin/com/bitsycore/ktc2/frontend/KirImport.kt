@@ -430,6 +430,24 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	/** A function of `ktc2.internal`, which library calls without a Kotlin body are redirected to. */
 	internal fun internalFunction(inName: String): IrSimpleFunction? = mInternal[inName]
 
+	/**
+	 * True for the members of the collections that Kotlin's bridges answer, rather than fail, when
+	 * given an argument their element type does not admit: `contains` and `containsAll`, `indexOf`
+	 * and `lastIndexOf`, `remove`, `get`, `containsKey`, `containsValue`.
+	 */
+	private fun answersWrongClass(inFunction: IrSimpleFunction): Boolean {
+		if (inFunction.name.asString() !in kAnsweringMembers) return false
+		return (sequenceOf(inFunction) + inFunction.overriddenSymbols.asSequence().flatMap { generateSequence(it.owner) { vOwn -> vOwn.overriddenSymbols.firstOrNull()?.owner } })
+			.any { (it.parent as? IrClass)?.kotlinFqName?.asString() in kCollectionInterfaces }
+	}
+
+	private val kAnsweringMembers = setOf("contains", "containsAll", "indexOf", "lastIndexOf", "remove", "get", "containsKey", "containsValue")
+
+	private val kCollectionInterfaces = setOf(
+		"kotlin.collections.Collection", "kotlin.collections.MutableCollection", "kotlin.collections.List", "kotlin.collections.MutableList",
+		"kotlin.collections.Set", "kotlin.collections.MutableSet", "kotlin.collections.Map", "kotlin.collections.MutableMap",
+	)
+
 	/** The classes of the platform layer's `ktc2.internal` package, by name. */
 	private val mInternalClasses = HashMap<String, IrClass>()
 
@@ -2039,6 +2057,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vTarget = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
 		vTarget.dispatch = mutableListOf()
 		vTarget.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }
+		if (!answersWrongClass(inFunction)) vTarget.wrongClassThrower = internalFunction("throwClassCast")?.let { functionFor(it) }
 		// A plain Throwable, created directly, has no class of its own in the module.
 		if (isThrowableClass(vOwner)) vTarget.dispatchDefault = throwableFunction(inFunction.name.asString())
 		// Comparable<T> on a reference T also receives strings and boxed primitives.

@@ -262,6 +262,20 @@ class KFunction(
 	var dispatchDefault: KFunction? = null
 
 	/**
+	 * Set on a dispatcher whose implementations cannot take every argument it can be given (an
+	 * `Int` where it takes `Any?`, reached through an unchecked cast): what throws the
+	 * `ClassCastException`, as the JVM's bridge and Kotlin/Native do. Null for the members of the
+	 * collections that answer such an argument instead (`contains` false, `indexOf` -1, `get` null).
+	 */
+	var wrongClassThrower: KFunction? = null
+
+	/** True when this dispatcher throws for an argument of the wrong class: see [wrongClassThrower] and [testsArgument]. */
+	val refusesArguments: Boolean
+		get() = wrongClassThrower != null && dispatch.orEmpty().any { (_, vImplementation) ->
+			params.drop(1).zip(vImplementation.params.drop(1)).any { (vGiven, vTaken) -> testsArgument(vGiven.type, vTaken) }
+		}
+
+	/**
 	 * Set by `ArcInsert` on the `__m` form of a dispatcher (see `BorrowedReturns`): the result of
 	 * [dispatchDefault] is owned, and is also stored through the last parameter, the address of
 	 * the variable of the caller that is to release it.
@@ -284,6 +298,22 @@ class KFunction(
 	 * state machine the coroutine resumes.
 	 */
 	var coroutine: KCoroutine? = null
+}
+
+/**
+ * True when a dispatcher has to look at an argument of type [inGiven] before passing it to an
+ * implementation that takes [inTaken]: a number from an object, a String or an object of one
+ * class from any object.
+ */
+fun testsArgument(inGiven: KType, inTaken: KLocal): Boolean {
+	val vTaken = inTaken.type
+	return when {
+		inGiven is KRefType && (vTaken is KPrimType || vTaken is KOptType) -> true
+		inGiven is KOptType && vTaken is KPrimType -> true
+		inGiven == KObjType && vTaken == KStringType -> true
+		inGiven == KObjType && ((vTaken as? KClassType)?.cls ?: inTaken.boundClass) != null -> true
+		else -> false
+	}
 }
 
 /**

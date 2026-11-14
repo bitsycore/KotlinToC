@@ -36,7 +36,7 @@ class ExceptionLowering(private val mModule: KModule) {
 			var vChanged = false
 			for (vFunction in vFunctions) {
 				if (vFunction in mMayThrow) continue
-				val vThrows = vFunction.dispatch?.any { it.second in mMayThrow } ?: throwsIn(vFunction.body)
+				val vThrows = vFunction.dispatch?.let { vCases -> vCases.any { it.second in mMayThrow } || vFunction.refusesArguments } ?: throwsIn(vFunction.body)
 				if (vThrows) {
 					mMayThrow += vFunction
 					vChanged = true

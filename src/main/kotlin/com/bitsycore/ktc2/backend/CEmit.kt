@@ -736,13 +736,16 @@ class CEmitter(private val mModule: KModule) {
 				is `Any`, or looked at as a `List<Int?>`: the functions that can be asked so look something up,
 				and what they do not find they answer with false, -1 or null.
 				*/
-				val vAbsent = when (val vReturn = inFunction.returnType) {
+				val vAnswer = when (val vReturn = inFunction.returnType) {
 					KUnitType, KNothingType -> "return;"
 					KPrimType(KPrim.INT) -> "return -1;"
 					is KPrimType -> "return ${zero(vReturn)};"
 					is KRefType, KPtrType -> "return NULL;"
 					else -> "return (${cType(vReturn)}){ 0 };"
 				}
+				// Anywhere else such an argument is a ClassCastException, as on the JVM and Kotlin/Native.
+				val vThrower = inFunction.wrongClassThrower?.also { mState.includes += it.unit }
+				val vAbsent = if (vThrower != null) "{ ${vThrower.cName}(); $vAnswer }" else vAnswer
 				val vArguments = vRoom + vOwnParams.zip(if (vBuilt != null) inTarget.params.drop(1) else inTarget.params).joinToString(", ") { (vFrom, vTo) ->
 					if (vFrom !== vOwnParams[0]) {
 						val vToPrim = (vTo.type as? KPrimType)?.prim ?: (vTo.type as? KOptType)?.prim
@@ -759,6 +762,9 @@ class CEmitter(private val mModule: KModule) {
 						val vClass = (vTo.type as? KClassType)?.cls ?: vTo.boundClass
 						if (vToPrim == null && vFrom.type == KObjType && vClass != null) {
 							vBefore.append("if (${vFrom.cName} && !${typeTest(KClassTarget(vClass, isAnyInstantiation = true), "(ktc2_Obj*)" + vFrom.cName)}) $vAbsent ")
+						}
+						if (vFrom.type == KObjType && vTo.type == KStringType) {
+							vBefore.append("if (${vFrom.cName} && ((ktc2_Obj*)${vFrom.cName})->typeId != KTC2_TYPE_STRING) $vAbsent ")
 						}
 					}
 					// The box made for the call owns what the struct refers to, until it is released after the call.

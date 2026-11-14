@@ -444,11 +444,15 @@ class Devirtualize(private val mModule: KModule) {
 	 * dispatcher tests that, as the JVM's bridge does), so the call is direct only when the object is known to be.
 	 */
 	private fun takes(inTo: KLocal, inFrom: KType, inArgument: KExpr): Boolean {
+		// A String where any object can come: direct only when it is known to be one.
+		if (inTo.type == KStringType && inFrom == KObjType) return inArgument is KNull || isString(inArgument)
 		val vClass = (inTo.type as? KClassType)?.cls ?: inTo.boundClass ?: return true
 		if (inFrom != KObjType || inArgument is KNull) return true
 		val vKnown = classOf(inArgument) as? KClass ?: return false
 		return vKnown.isSubclassOf(vClass) || vKnown.isOfFamilyOf(vClass)
 	}
+
+	private fun isString(inValue: KExpr): Boolean = inValue.type == KStringType || inValue is KStringLit || (inValue is KRefCast && isString(inValue.operand))
 
 	/** [inValue] with the call it is (under its casts) made direct, when it is a dispatcher call that can be. */
 	private fun direct(inValue: KExpr): KExpr = when (inValue) {
