@@ -317,6 +317,57 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   use, as Kotlin says. When an initializer only computes and stores, it runs at startup
   instead and costs nothing later. First use from several threads is synchronized.
 
+**Coroutines** are done as on Kotlin/Native: a `suspend` function is a state machine, not a stack
+of its own.
+
+- A `suspend fun f(a): R` is `f(a, completion): Any?` in C: it takes the continuation that waits
+  for it last, and returns its result as an object (`Unit` as the Unit object) or
+  `COROUTINE_SUSPENDED`. A `suspend` function value is the `FunctionN` with one more parameter,
+  the continuation, as on the JVM (a test or a cast against `SuspendFunctionN` tests that).
+- A function whose every suspension is its last action (`return g()`, `yield` of the sequence
+  builder, `suspendCoroutine { }` as a function body) keeps nothing while it waits: it hands its
+  completion on and returns `COROUTINE_SUSPENDED` when the function it called does
+  (`suspendsOnlyAtTail` in `frontend/Coroutines.kt`, an analysis of the IR that errs towards
+  "not the last").
+- Any other is a class made for it (`KirImporter.newCoroutineClass`) that extends the platform's
+  `ContinuationImpl`: its parameters are fields, and its `invokeSuspend` is the body as a state
+  machine (`KFunction.coroutine`). `f` makes the object and runs `invokeSuspend` from the start.
+  A `suspend` lambda is such a class too: the closure object is one instance with only the
+  captured values; its `invoke` and `create` copy it with the parameters and the completion.
+  `BaseContinuationImpl.resumeWith` (the platform's, as Kotlin/Native's) runs the machines.
+- A suspension point is plain KIR made by the importer: the call, then
+  `if (r === COROUTINE_SUSPENDED) { if (suspend point N) return COROUTINE_SUSPENDED; r = coroutineResult(result) }`.
+  `coroutineResult` throws the exception the coroutine is resumed with, so `ExceptionLowering`
+  puts its test after it like after any call, and a `try` around a suspension works. The exit is
+  not a Kotlin `return`: no `finally` runs.
+- The C emitter writes the machine as the structured code it is: `invokeSuspend` starts with a
+  `switch` on `label` that jumps (`goto`) to `resume_N`, right after the exit of suspension N
+  (C allows a jump into a block). Every local of the body is a field of the coroutine object
+  (`KField.isFrame`), so no jump skips a C declaration, and what a local holds is there when
+  the coroutine comes back.
+- Counting: the exit is a real `return`, so `ArcInsert` puts in front of it the releases of what
+  is owned at that point. The emitter does not run them there: they are the case N of a cleanup
+  in the class's `destroy` (`KCoroutine.cleanups`), for a coroutine dropped while it waits. A
+  coroutine that returns sets `label` to -1 and `destroy` gives up nothing of its locals. To
+  `Effects` a suspension point writes everything (any code runs while the coroutine waits), so
+  nothing borrowed from a writable place is trusted across it. `EscapeAnalysis` puts nothing of
+  a state machine in the frame and takes its parameters for escaping; no pass makes another
+  form of it (`__o`, `__b`, `__m`, `__into`, `__cN`).
+- The driver. `sequence { }`, `iterator { }` and `DeepRecursiveFunction` start a coroutine whose
+  receiver and completion are one object, the driver: it holds the coroutine while it waits and
+  resumes it. Counted by the coroutine in turn, it would never be freed. So a coroutine refers to
+  its driver without counting it: the completion of the first frame is kept as an address
+  (`BaseContinuationImpl.driver`, which every frame inherits from its completion), and a
+  parameter whose type restricts suspension (`@RestrictsSuspension`: `SequenceScope`,
+  `DeepRecursiveScope`) that is the driver is stored without a count, noted in `drivers` so that
+  `destroy` leaves it. Restricted suspension is what makes this safe: only the driver's own
+  functions can take the continuation, so the driver is there as long as the coroutine runs. A
+  sequence left before its end frees its iterator and its coroutine, as on the JVM (where a
+  `finally` in it does not run either).
+- The library's functions written with `sequence { }` that have a plain iterator in the platform
+  layer (`windowed`, `chunked`, `scan`, `zipWithNext`...: `kWithoutCoroutine`) keep it: it does
+  the same steps without a coroutine object, a boxed element and a `Result` for each element.
+
 ---------------------------------------------------------------------------
 ## 7. The standard library
 ---------------------------------------------------------------------------
@@ -355,9 +406,7 @@ An `ArrayList` is sorted in its own storage (a stable merge sort that does nothi
 already in order); `subList` is a view of its list (`ListPart`), as on the JVM. A `Regex`
 that starts with a character, exactly, only tries to match where that character is.
 
-What is there: collections and sequences (not `sequence { }`; a library function that uses
-it on one of its paths, like `chunked` on something that is not a list, compiles and fails
-when that path is taken), strings, `Char` with Unicode
+What is there: collections and sequences (`sequence { }` and `iterator { }` included), coroutines (`kotlin.coroutines`: `startCoroutine`, `createCoroutine`, `suspendCoroutine`, the intrinsics; `DeepRecursiveFunction`), strings, `Char` with Unicode
 for the 16-bit range, `Regex` with Java's syntax (the `U` flag and scripts by their four-letter codes included), ranges, `kotlin.math`,
 `kotlin.time` (`Duration`, `TimeSource`, `measureTime`; not `Clock` and `Instant`),
 `kotlin.random`, `Result`, the property delegates, `readln`.
@@ -492,15 +541,17 @@ The gate is the suite: run locally, and by the CI job on Linux, macOS and Window
 ---------------------------------------------------------------------------
 
 Not Kotlin, by design:
-- no coroutines (`sequence { }`, `iterator { }`, `suspend`); of reflection, a class as a value and
-  `typeOf<T>()` only, as Kotlin/Native has them. A call into them
-  from the library compiles and throws `UnsupportedOperationException` when it is reached;
+- of reflection, a class as a value and `typeOf<T>()` only, as Kotlin/Native has them. A call
+  into the rest from the library compiles and throws `UnsupportedOperationException` when it is
+  reached;
 - no JDK;
 - destruction is immediate, not deferred: visible only through weak references.
 
 Kotlin, but not done:
-- the coroutines themselves (`suspend`, `sequence { }` in a program, `DeepRecursiveFunction`);
-  their context classes (`CoroutineContext`, `CancellationException`) are there;
+- kotlinx.coroutines (the library, not the language: dispatchers, `launch`, `Flow`); a
+  `suspend fun interface`; a coroutine whose receiver is also its completion is held by it
+  without a count also where suspension is not restricted to it (`startCoroutine(x, x)` with no
+  other reference to `x`);
 - `@ThreadLocal` is there but changes nothing: a global is one for every thread, as on the JVM
   (on Kotlin/Native it would be one a thread);
 - `isDaemon`, names and priorities of threads;
@@ -519,7 +570,8 @@ Done in the platform layer, worth knowing:
   `chunked`, `scan`, `runningFold`, `runningReduce`, `zipWithNext`, `flatMapIndexed`,
   `shuffled`, `ifEmpty` of a sequence) are iterators of `Ktc2Internal.kt` that do the same
   steps; a call to one is lowered to the platform's of the same name and parameters
-  (`kWithoutCoroutine` in `BodyLowering.kt`). `sequence { }` in a program still needs coroutines.
+  (`kWithoutCoroutine` in `BodyLowering.kt`). They are kept for speed: a coroutine costs an
+  object, a boxed element and a `Result` for each element.
 - `typeOf<T>()` is built where it is written, T being reified and so known there: a
   `TypeReference` of `Ktc2Internal.kt` (its class as `T::class` gives it, the projections of
   its arguments, its nullability), written out and compared as on Kotlin/Native
@@ -619,6 +671,11 @@ nearly every function; this is the map.
 - Lambdas that are values become classes with an `invoke` (`makeClosure`). `Captures.kt`
   answers which variables a lambda uses from around it and which of them must live in a
   shared cell because the lambda writes them.
+- `suspend` functions and lambdas: `buildSuspendFunction`, `makeSuspendLambda` and
+  `buildStateMachine` (the "Coroutines" part of `BodyLowering.kt`), `suspendCall` and
+  `suspension` at each call that may suspend, `lowerSuspendIntrinsic` for
+  `suspendCoroutineUninterceptedOrReturn`. `frontend/Coroutines.kt` decides which functions need
+  a state machine.
 
 **What each pass may assume of KIR**
 
@@ -627,6 +684,7 @@ nearly every function; this is the map.
 | `KThrow`, `KTryRegion` | from the importer until `ExceptionLowering`, which removes them |
 | `KAlloc.onStack`, `KArrayNew.onStack`, `KConcat.onStack`, `KStackSlot`, calls to `name__into` (a dispatcher's has `KFunction.slotClasses`), the locals `ktc2_roomN_0/1` | set or added by `EscapeAnalysis` |
 | `KRetain`, `KRelease`, `releasesOld` on stores, calls to `name__b` / `name__m` | added by `ArcInsert`; before it no counting exists |
+| `KFunction.coroutine`, `KIf` on `suspendPoint(N)` | from the importer on; the emitter makes the locals fields (`KField.isFrame`) and takes the releases in front of each suspension out into `KCoroutine.cleanups` |
 | `KIndexRead.isChecked`, `KIndexSet.isChecked` | set by `RangeChecks` when the index is proven in range, and by `ExceptionLowering` when it put the test in front of the statement |
 | calls to a dispatcher | fewer after `Devirtualize`, which replaces the ones it can resolve by `KCall`s to the implementation (under a `KRefCast` when the types of the two differ) |
 | functions `name__cN` | copies made by `Devirtualize` for the classes a function is called with; ordinary functions for every pass after it |

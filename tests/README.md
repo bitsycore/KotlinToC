@@ -18,8 +18,7 @@ package). The same file runs:
 - `kotlin/`: tests of the Kotlin standard library itself, unchanged, from
   `libraries/stdlib/test` of github.com/JetBrains/kotlin at tag `v2.5.0-RC`, the version of
   the library ktc2 compiles (Apache 2.0, the header of each file). They are the best tests
-  there are of what the library must do. 153 files, some 2200 tests: every file of `libraries/stdlib/test` but those of JavaScript and the
-  four in `pending/`, which need coroutines. They are compiled as the
+  there are of what the library must do. 156 files, some 2230 tests: every file of `libraries/stdlib/test` but those of JavaScript. They are compiled as the
   library's own tests are: with its opt-ins (`kotlin.ExperimentalUnsignedTypes` and the others
   of its `commonTestOptIns`; `ktc2.optIn` in `build.gradle.kts` for C), and on the JVM seeing
   what the library keeps `internal`.
@@ -115,10 +114,10 @@ The 24 files that use the helpers, taken on 2026-11-14, found these, all fixed:
 
 ## Pending, and why
 
-| File | Why |
-|---|---|
-| `DeepRecursiveTest` | `DeepRecursiveFunction` is built on coroutines |
-| `SequenceBuilderTest`, `CoroutinesReferenceValuesTest` | `sequence { }`, `suspend` functions: coroutines |
+Nothing is pending. The last three (`SequenceBuilderTest`, `CoroutinesReferenceValuesTest`,
+`DeepRecursiveTest`) came in with coroutines (2026-11-14): `suspend` functions as state machines,
+`sequence { }`, `iterator { }`, `DeepRecursiveFunction`. `DeepRecursiveTest.cycles` says why that
+file leaves objects allocated: two of its classes hold functions whose lambdas capture the object.
 
 Tests set aside inside files that run (`.skip`): one of `MapTest` that puts null in a
 `HashMap<String, Int>` through an unchecked cast (that map keeps its values as numbers);

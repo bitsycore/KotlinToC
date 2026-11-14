@@ -20,10 +20,10 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 296
-tests: 141 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 154 files of common tests under `tests/` (one of ktc2's own and 153 of
-the Kotlin standard library's, some 2200 `@Test` functions, with the helpers of the library's
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 301
+tests: 143 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 157 files of common tests under `tests/` (one of ktc2's own and 156 of
+the Kotlin standard library's, some 2230 `@Test` functions, with the helpers of the library's
 tests under `tests/support/`), and the showcase as a program of several modules. It passes
 on Windows (mingw gcc 15) in about five minutes (the library's large test files, `ArraysTest`
 and `CollectionTest`, take most of it), on Linux (Debian in WSL2, gcc 14) and, by the CI job,
@@ -71,10 +71,11 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   which the JVM and Kotlin/Native have too, and which costs nothing in a private property.
   The runtime's hook is still there under it (`ktc2.internal.Deinit`, for the cleaner that is
   kept as an object);
-- `sequence { }` and `iterator { }` wait for `suspend` functions done in full (the
-  transformation into a state machine), not a stack of their own for each iterator. The
-  library's own functions that are written with them (`zipWithNext`, `chunked`, `windowed`,
-  `scan`, `shuffled` of a sequence...) are plain iterators of the platform layer meanwhile;
+- coroutines are `suspend` functions done in full, by the transformation into a state
+  machine, not a stack of their own for each coroutine (done 2026-11-14: `DESIGN.md`,
+  "Coroutines"). The library's own functions written with `sequence { }` (`zipWithNext`,
+  `chunked`, `windowed`, `scan`, `shuffled` of a sequence...) stay plain iterators of the
+  platform layer: measured, they are a quarter faster than the coroutine;
 - a class as a value is in: `x::class`, `Name::class`, compared, as keys, `simpleName`,
   `qualifiedName`, `isInstance`, `cast` for a class, and `typeOf<T>()` (2026-11-14), which is
   what Kotlin/Native has. The rest of reflection is not;
@@ -99,11 +100,10 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
    github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 153 files are
    in and pass (some 2200 tests), with the helpers of the library's tests under
    `tests/support/`; `tests/README.md` lists what they found (some fifty differences, all
-   fixed). What is left: 4 files in `tests/pending/`, which need coroutines, and 2 tests in `<Name>.skip` files, each with
-   the reason. Every file of `libraries/stdlib/test` that
-   does not need the library's `internal` declarations or JavaScript is in. Next: coroutines
-   (`sequence { }`, `iterator { }`, part 8), then the tests of `libraries/stdlib/jvm/test`
-   that are not about the JDK, and those of `kotlin-native/runtime/test`.
+   fixed). What is left: 2 tests in `<Name>.skip` files, each with the reason; `tests/pending/` is
+   empty since coroutines came. Every file of `libraries/stdlib/test` but JavaScript's is in.
+   Next: the tests of `libraries/stdlib/jvm/test` that are not about the JDK, and those of
+   `kotlin-native/runtime/test` (its coroutine tests among them).
 2. *Programs of ordinary code compared with the JVM* (`generics/ErasedViews`,
    `objects/OrdinaryClasses`, `stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`,
    `basic/OrdinaryControl`, `objects/ClassReferences`): write what ordinary code does with one
@@ -457,9 +457,18 @@ Open:
     (`enumOf(number, Unknown) { }`) would stay a number all the way.
 - [x] **A failing `valueOf` throws** `IllegalArgumentException("No enum constant ...")`, for
   every enum: it ended the program before.
-- [ ] **Coroutines.** Decided: `suspend` functions in full, by the transformation into a
-  state machine. `sequence { }` and `iterator { }` come with it, and `DeepRecursiveFunction`
-  (the last file of the library's tests that waits in `tests/pending/` for a feature).
+- [x] **Coroutines** (2026-11-14). `suspend` functions in full, by the transformation into a
+  state machine (`DESIGN.md`, "Coroutines"); `sequence { }`, `iterator { }`,
+  `DeepRecursiveFunction`, `startCoroutine`, `suspendCoroutine`, the intrinsics of
+  `kotlin.coroutines`. Tests: `basic/SuspendFunctions`, `stdlib/SequenceBuilders`, and the
+  library's `SequenceBuilderTest`, `CoroutinesReferenceValuesTest`, `DeepRecursiveTest`. Left:
+  - [ ] kotlinx.coroutines (its common sources and a platform part, as for the library);
+  - [ ] a `suspend fun interface`;
+  - [ ] a frame that is not a state machine still costs nothing, but every state machine is an
+    object on the heap and all its locals are fields: locals that never live across a
+    suspension could stay C locals, and a coroutine that never escapes could be in the frame;
+  - [ ] the driver of a coroutine (a receiver that is also its completion) is held without a
+    count also where suspension is not restricted to it.
 - [ ] **Android.** The C should compile with the NDK's clang. Missing: `println` to the log
   and not to a console; a program as a shared library entered from Java and not a `main`; a
   clock that works below API 29; the build driven by the NDK's CMake toolchain file.
