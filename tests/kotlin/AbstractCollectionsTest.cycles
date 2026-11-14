@@ -1,0 +1,1 @@
+The library's AbstractMap keeps the view of its keys and the one of its values once they were asked for, and a view holds its map: the map and the view are never freed (PLAN.md, "Known").

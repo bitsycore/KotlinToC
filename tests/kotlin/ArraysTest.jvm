@@ -1,0 +1,2 @@
+# arrayOf('a', "b", StringBuilder("c")) has an intersection type, which the compiler for the JVM refuses as a reified argument unless told otherwise.
+-XXLanguage:-ProhibitIntersectionReifiedTypeParameter

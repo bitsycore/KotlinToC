@@ -1,0 +1,1 @@
+Tests that put a collection into itself (to see that its text names it): it holds itself and is never freed.

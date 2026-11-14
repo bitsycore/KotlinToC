@@ -1,0 +1,1 @@
+contentDeepToStringNoRecursion puts an array into itself (to see that its text does not go round for ever): it holds itself and is never freed.

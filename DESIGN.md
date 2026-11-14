@@ -499,7 +499,8 @@ Not Kotlin, by design:
 
 Kotlin, but not done:
 - `Clock`, `Instant`; the `U` flag and four-letter script codes of `Regex`;
-- case conversion of characters beyond U+FFFF;
+- `kotlin.text.unicode.CodePoint`; case conversion beyond U+FFFF is done for strings, for the
+  scripts that have two cases there (a table in `Ktc2Strings.kt`, as of Unicode 15);
 - `isDaemon`, names and priorities of threads;
 - files (to come from kotlinx.io or okio, through a ktc2 compatibility layer).
 
@@ -646,7 +647,11 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   object of either, so a member of such a receiver is reached through a dispatcher, as a member
   of an interface is (`isErasedReceiver` in `BodyLowering.kt`, `mayBeOtherInstantiation` in
   `KirImport.kt`): the dispatcher switches on the class and turns numbers into boxes and back.
-  `this` is exact, and so is a type with a number in it. `x is Box<*>` tests the family of
+  `this` is exact, and so is a type with a number in it. A local class or an object written
+  inside generic code uses the type parameters of the code around it without its type naming
+  them: they count among its own (`classParameters`), and their arguments are those of the
+  body being lowered where it is met (`KirImporter.contextSubst`, which `BodyBuilder` keeps
+  current), so the iterator of `withIndex()` on a sequence of Ints is the one for Ints. `x is Box<*>` tests the family of
   classes (`KClassTarget.isAnyInstantiation`). `Devirtualize` makes the call direct again where
   it knows the class, which is nearly everywhere: the benchmarks did not move. Where the
   A value that comes from a cast to a generic class (`other as Pair<A, B>`, which Kotlin only

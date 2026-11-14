@@ -13,19 +13,21 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-13, night)
+## Where the work stands (2026-11-14)
 ---------------------------------------------------------------------------
 
 For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 171
-tests: 127 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 43 files of common tests under `tests/` (one of ktc2's own and 42 of
-the Kotlin standard library's, 405 `@Test` functions), and the showcase as a program of
-several modules. It passes on Windows (mingw gcc 15) in about two minutes, on Linux (Debian
-in WSL2, gcc 14) and, by the CI job, on macOS. AddressSanitizer is clean on every program on
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 199
+tests: 131 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 67 files of common tests under `tests/` (one of ktc2's own and 66 of
+the Kotlin standard library's, some 1400 `@Test` functions, with the helpers of the library's
+tests under `tests/support/`), and the showcase as a program of several modules. It passes
+on Windows (mingw gcc 15) in about five minutes (the library's large test files, `ArraysTest`
+and `CollectionTest`, take most of it), on Linux (Debian in WSL2, gcc 14) and, by the CI job,
+on macOS. AddressSanitizer is clean on every program on
 Linux (the CI job's last step, `tools/asan_all.sh`).
 
 **The CI job** (`.github/workflows/test.yml`, on every push; see it with
@@ -92,14 +94,15 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **How differences are found**, which is the work to go on with:
 1. *Tests of the Kotlin standard library* (`tests/kotlin/`, from `libraries/stdlib/test` of
-   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 42 files are
-   in and pass (405 tests); `tests/README.md` lists what they found, the 8 that wait in
-   `tests/pending/` with the reason, and how to take in more. Next: the 30 or so files that
-   need the helpers of the library's tests, which are the largest. The first six files (99 tests) found five
-   differences in an hour, all fixed. Each file is a list of things Kotlin promises: taking
-   more of them is the best next use of time. Most use helpers of the library's own
-   (`test.TestPlatform`, `test.collections.behaviors`), which have to come with them. A file
-   that does not pass yet goes to `tests/pending/` with its reason in `tests/README.md`.
+   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 66 files are
+   in and pass (some 1400 tests), with the helpers of the library's tests under
+   `tests/support/`; `tests/README.md` lists what they found (some forty differences, all
+   fixed), the 15 files that wait in `tests/pending/` and the 14 tests set aside in
+   `<Name>.skip` files, each with the reason. Every file of `libraries/stdlib/test` that
+   does not need the library's `internal` declarations or JavaScript is now in one of the
+   two. Next: what `tests/pending/` waits for (`CodePoint`, read-only `buildList`,
+   `KClass.cast`, `kotlin.concurrent.atomics`), then the tests of `libraries/stdlib/jvm/test`
+   that are not about the JDK, and those of `kotlin-native/runtime/test`.
 2. *Programs of ordinary code compared with the JVM* (`generics/ErasedViews`,
    `objects/OrdinaryClasses`, `stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`,
    `basic/OrdinaryControl`, `objects/ClassReferences`): write what ordinary code does with one
@@ -490,11 +493,12 @@ Open:
 
 1. `interop/Posix` on Linux, so that the CI job is green and its AddressSanitizer step runs
    ("Where the work stands").
-2. More of the Kotlin standard library's own tests under `tests/kotlin/`, with the helpers
-   they use; each difference they find is fixed in general.
+2. What the files of `tests/pending/` and the `.skip` files wait for (`tests/README.md`):
+   `buildList` and the others read-only once built, `KClass.cast`, `CodePoint`, then more
+   of the library's tests (`libraries/stdlib/jvm/test` where it is not about the JDK).
 3. Another program of ordinary code compared with the JVM, on what was not looked at yet.
 4. The differences `DESIGN.md` still lists in section 12 (paths on Windows, the last digit of
-   `exp` and the like, case beyond U+FFFF, `Clock` and `Instant`, the `U` flag of `Regex`).
+   `exp` and the like, `Clock` and `Instant`, the `U` flag of `Regex`).
 5. `suspend` functions in full, which `sequence { }` and `iterator { }` wait for (part 8).
 6. Unit tests of the passes; files through kotlinx.io or okio (part 8).
 7. Speed, last: `Double` as text without `snprintf`, `sortedBy` without boxing its keys, an

@@ -1,0 +1,1 @@
+deprecatedAppend: the JDK's StringBuilder has append(chars, offset, length), which the test expects of the JVM; here, as on Kotlin/Native, that call is the library's deprecated one, which is not implemented
