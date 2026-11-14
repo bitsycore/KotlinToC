@@ -186,11 +186,54 @@ class CEmitter(private val mModule: KModule) {
 				vCoroutine.cls.fields += vFields.values
 				mFrames[vFunction] = vFields
 				mStateMachines[vCoroutine.cls] = vFunction
-				val vBody = withoutSuspendReleases(vFunction.body, vCoroutine)
+				val vBody = withoutSuspendReleases(withTestsAfterCalls(vFunction.body), vCoroutine)
 				vFunction.body.clear()
 				vFunction.body += vBody
 			}
 		}
+	}
+
+	/**
+	 * [inBlock] with each test of a result for `COROUTINE_SUSPENDED` moved to right after the call
+	 * that gave it, before what the other passes put after the call (the release of its arguments,
+	 * the test for an exception). A call may run the coroutine further before it returns (a resume
+	 * inside it): that run goes on from the resume label, after the test, and does what follows the
+	 * call itself. The run that made the call then only returns, and touches nothing.
+	 *
+	 * What stood between the call and the test runs when the call did not suspend. Its releases
+	 * also run on resuming (before anything there can leave), and when the coroutine is dropped
+	 * while it waits (they join the releases of the suspension point, which become its cleanups).
+	 */
+	private fun withTestsAfterCalls(inBlock: List<KStmt>): List<KStmt> {
+		val vOut = ArrayList<KStmt>()
+		for (vStatement in inBlock) {
+			val vTest = vStatement as? KIf
+			val vPoint = vTest?.thenBlock?.firstOrNull() as? KIf
+			if (vTest == null || vPoint == null || !vPoint.condition.isSuspendPoint()) {
+				vOut += when (vStatement) {
+					is KIf -> KIf(vStatement.condition, withTestsAfterCalls(vStatement.thenBlock), withTestsAfterCalls(vStatement.elseBlock))
+					is KLoop -> KLoop(vStatement.id, withTestsAfterCalls(vStatement.body), withTestsAfterCalls(vStatement.latch))
+					else -> vStatement
+				}
+				continue
+			}
+			val vTested = ((vTest.condition as? KRefEquals)?.left as? KRead)?.local
+			val vAt = if (vTested == null) -1 else vOut.indexOfLast { (it is KSet && it.local == vTested) || (it is KLet && it.local == vTested) }
+			if (vAt < 0 || vAt == vOut.size - 1) {
+				vOut += vStatement
+				continue
+			}
+			val vBetween = vOut.subList(vAt + 1, vOut.size).toList()
+			while (vOut.size > vAt + 1) vOut.removeLast()
+			val vReleases = vBetween.filter { it is KRelease || (it is KSet && it.value is KNull) }
+			// The suspension point may release some of them already (they were null there before the move): not twice.
+			val vAlready = vPoint.thenBlock.mapNotNull { ((it as? KRelease)?.operand as? KRead)?.local }.toSet()
+			val vAsReleases = vReleases.map { if (it is KSet) KRelease(KRead(it.local)) else it }
+				.filter { ((it as KRelease).operand as? KRead)?.local !in vAlready }
+			val vWaits = KIf(vPoint.condition, vPoint.thenBlock.filter { it !is KReturn } + vAsReleases + vPoint.thenBlock.filterIsInstance<KReturn>(), vPoint.elseBlock)
+			vOut += KIf(vTest.condition, listOf(vWaits) + vReleases + vTest.thenBlock.drop(1), vTest.elseBlock + vBetween)
+		}
+		return vOut
 	}
 
 	/** [inBlock] with the releases in front of each suspension moved to [inCoroutine]'s cleanups. */
@@ -833,15 +876,16 @@ class CEmitter(private val mModule: KModule) {
 		}
 
 		/**
-		 * A suspension point: the coroutine says where it waits and returns `COROUTINE_SUSPENDED`;
-		 * it is resumed at the label after it, with everything it holds in its fields.
+		 * A suspension point: the coroutine returns `COROUTINE_SUSPENDED`; it is resumed at the label
+		 * after it, with everything it holds in its fields. The label was set before the call that
+		 * suspended: set here, it would undo what a run of the coroutine inside that call (a resume
+		 * before the call returned) did, the end of the coroutine included.
 		 */
 		private fun suspension(inPoint: KIf, inDepth: Int) {
 			val vLabel = inPoint.condition.suspendLabel()
 			line(inDepth, "{")
 			for (vStatement in inPoint.thenBlock) {
 				if (vStatement is KReturn) {
-					line(inDepth + 1, "$self->${coroutine!!.label.cName} = $vLabel;")
 					line(inDepth + 1, "return ${bare(expr(vStatement.value!!))};")
 				} else {
 					statement(vStatement, inDepth + 1)

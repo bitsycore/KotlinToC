@@ -129,7 +129,7 @@ class ArcInsert(
 				if (vFunction.isExternal || vFunction.dispatch != null) continue
 				val vOriginal = vFunction.body.toList()
 				if (vReturns.of(vFunction) != null) vOriginals[vFunction] = vOriginal
-				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), passedOnly(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null, null, emptySet()).block(vOriginal, Scope(null))
+				val vBody = FunctionPass(readCounts(vOriginal), reassigned(vOriginal), passedOnly(vOriginal), vFunction.params.toSet(), vEffects, vReturns, null, null, emptySet(), vFunction.coroutine != null).block(vOriginal, Scope(null))
 				vFunction.body.clear()
 				vFunction.body += vBody
 			}
@@ -302,6 +302,12 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 		private val mKeep: KLocal?,
 		/** In an owned form: the parameters the function owns, as it owns its locals. */
 		private val mOwnedParams: Set<KLocal>,
+		/**
+		 * Set for the state machine of a coroutine: a call is never handed a local. The local is a
+		 * field of the coroutine, cleared after the call returns; a `suspend` call may run the coroutine
+		 * further before it returns (a resume inside it), which would find the reference still there.
+		 */
+		private val mIsStateMachine: Boolean = false,
 	) {
 		/** The statement being translated. */
 		private var mCurrent: KStmt? = null
@@ -623,7 +629,7 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 			is KCall -> {
 				// The parameters the function would take over, when this is the last use of what one of them is passed.
 				val vOwned = mOwnable[inValue.function] ?: emptySet()
-				val vGiven = vOwned.filter { vIndex ->
+				val vGiven = if (mIsStateMachine) emptyList() else vOwned.filter { vIndex ->
 					val vLocal = localOf(inValue.arguments[vIndex])
 					vLocal != null && readsNow(vLocal) == 1 && vLocal !in mHandedOver && canHandOver(vLocal)
 				}

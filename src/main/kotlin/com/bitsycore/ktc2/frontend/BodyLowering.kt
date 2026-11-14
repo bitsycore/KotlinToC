@@ -521,7 +521,8 @@ internal class BodyBuilder(
 		if (suspendsOnlyAtTail(inFunction) { mImporter.sourceOf(it) }) {
 			mSuspend = SuspendContext(KRead(vCompletion), null, null)
 			mReturnsUnitObject = inFunction.returnType.isUnit()
-			buildBody(inFunction)
+			// Without a state machine the function's frame is a C frame: a `tailrec` call to itself is a loop, as in any function.
+			if (inFunction.isTailrec && inFunction.body !is IrSyntheticBody) buildTailRecursive(inFunction) else buildBody(inFunction)
 			if (mReturnsUnitObject && mFunction.body.lastOrNull() !is KReturn) mBlock += KReturn(unitObject())
 			return
 		}
@@ -620,6 +621,11 @@ internal class BodyBuilder(
 		val vSelf = mFunction.params[0]
 		mSuspend = SuspendContext(coerce(KRead(vSelf), KObjType), vSelf, mFunction.params[1])
 		mReturnsUnitObject = vIr.returnType.isUnit()
+		// Started with an exception (`createCoroutine(…).resumeWithException(e)`): it is thrown before anything runs, as in Kotlin.
+		internal("coroutineResult")?.let { vResume ->
+			val vResult = mFunction.params[1]
+			mBlock += KIf(not(isNull(KRead(vResult))), listOf(KEval(KCall(vResume, listOf(coerce(KRead(vResult), vResume.params[0].type))))), emptyList())
+		}
 		mCellVariables += mImporter.captures.cellVariables(vIr)
 		mInlineLambdas += inLambdas
 		for ((vParam, vField) in inParams) {
@@ -667,9 +673,22 @@ internal class BodyBuilder(
 		mBlock += KIf(KRefEquals(KRead(inValue), suspended()), vThen, emptyList())
 	}
 
+	/**
+	 * Before a call that may suspend, the state machine notes the place it waits at, as Kotlin does:
+	 * the callee may resume it before it returns (`resume` inside `suspendCoroutineUninterceptedOrReturn`),
+	 * and the state machine, entered again, has to go on after the call and not from where it was.
+	 */
+	private fun markSuspension() {
+		val vContext = mSuspend ?: return
+		val vSelf = vContext.self ?: return
+		val vLabel = mFunction.coroutine?.label ?: return
+		mBlock += KFieldSet(KRead(vSelf), vLabel, KConst(vContext.nextLabel, kIntType))
+	}
+
 	/** A call to a `suspend` function, given the continuation, followed by what a suspension needs. Its value is the result as an object. */
 	private fun suspendCall(inElement: IrElement, inCall: KCall): KExpr {
 		val vContext = mSuspend ?: return fail(inElement, "call to a suspend function outside of a coroutine")
+		markSuspension()
 		val vValue = newTemp(KObjType)
 		mBlock += KLet(vValue, KCall(inCall.function, inCall.arguments + coerce(vContext.continuation, inCall.function.params.last().type)))
 		suspension(vValue)
@@ -688,6 +707,7 @@ internal class BodyBuilder(
 			is IrGetValue -> mInlineLambdas[vArgument.symbol.owner]
 			else -> null
 		} ?: return fail(inCall, "suspendCoroutineUninterceptedOrReturn without a lambda")
+		markSuspension()
 		val vResult = under(vLambda.subst) { inlineLambda(vLambda.expression, listOf(vContext.continuation), KObjType) }
 		val vValue = newTemp(KObjType)
 		mBlock += KLet(vValue, coerce(vResult, KObjType))
@@ -1104,6 +1124,8 @@ internal class BodyBuilder(
 				vLocal == null -> throughOuter(vDeclaration) ?: fail(inExpression, "reference to '${vDeclaration.name}'")
 				vCell != null -> KFieldRead(KRead(vLocal), vCell)
 				vLocal.type == KUnitType -> KUnitValue
+				// A parameter of type Unit holds the Unit object: as a value it is Unit.
+				vLocal.type == KObjType && kType(inExpression.type) == KUnitType -> KUnitValue
 				else -> KRead(vLocal)
 			}.let { vRead -> if ((vDeclaration as? IrVariable)?.isLateinit == true && vLocal != null) initialized(vRead, vDeclaration.name.asString()) else vRead }
 		}
@@ -1124,8 +1146,6 @@ internal class BodyBuilder(
 				}
 			}
 			val vGetter = makeClosure(inExpression, inExpression.getterFunction, null, null, vBound)?.let { KRead(it.first) } ?: return KUnitValue
-				// A parameter of type Unit holds the Unit object: as a value it is Unit.
-				vLocal.type == KObjType && kType(inExpression.type) == KUnitType -> KUnitValue
 			val vSetter = inExpression.setterFunction
 			val vKind = closed(inExpression.type).classOrNull?.owner?.kotlinFqName?.asString()
 			if (vSetter == null || vKind == null || !vKind.startsWith("kotlin.reflect.KMutableProperty")) return vGetter
@@ -1185,7 +1205,7 @@ internal class BodyBuilder(
 		}
 		is IrVararg -> lowerVararg(inExpression)
 		is IrWhileLoop -> {
-			val vId = loopId(inExpression)
+			val vId = newLoopId(inExpression)
 			val vBody = inBlock {
 				val vCondition = lowerPure(inExpression.condition)
 				mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
@@ -1195,7 +1215,7 @@ internal class BodyBuilder(
 			KUnitValue
 		}
 		is IrDoWhileLoop -> {
-			val vId = loopId(inExpression)
+			val vId = newLoopId(inExpression)
 			val vBody = inBlock { inLoopBody(inExpression) { inExpression.body?.let { discard(lowerRhs(it)) } } }
 			val vLatch = inBlock {
 				val vCondition = lowerPure(inExpression.condition)
@@ -1250,6 +1270,12 @@ internal class BodyBuilder(
 		inExpression is IrGetObjectValue && inExpression.symbol.owner.kotlinFqName.asString() == "kotlin.Unit"
 
 	private fun loopId(inLoop: IrLoop): Int = mLoops.getOrPut(inLoop) { mNextLoopId++ }
+
+	/**
+	 * A number for the loop [inLoop] being lowered, which its `break` and `continue` then find. A
+	 * loop is lowered again in each copy of a `finally` block that holds it: each copy is a loop of its own.
+	 */
+	private fun newLoopId(inLoop: IrLoop): Int = (mNextLoopId++).also { mLoops[inLoop] = it }
 
 	private fun lowerConst(inConst: IrConst): KExpr {
 		val vValue = inConst.value
@@ -1917,7 +1943,7 @@ internal class BodyBuilder(
 		val vLength = spill(arrayLength(vArray))
 		val vCounter = KLocal(freshName("i"), kIntType)
 		mBlock += KLet(vCounter, KConst(0, kIntType))
-		val vId = loopId(inLoop)
+		val vId = newLoopId(inLoop)
 		val vElement = KLocal(freshName(inVariable.name.asString()), kType(inVariable.type) ?: inType.element)
 		mLocals[inVariable] = vElement
 		val vBody = inBlock {
@@ -1976,7 +2002,7 @@ internal class BodyBuilder(
 		val vCounter = KLocal(freshName("i"), vElement)
 		mBlock += KLet(vCounter, convert(vBounds[0], vPrim))
 		val vEnd = spill(convert(vBounds[1], vPrim))
-		val vId = loopId(vLoop)
+		val vId = newLoopId(vLoop)
 		val vStepValue = if (vStepArgument != null) spill(convert(vBounds[2], vPrim)) else one(vPrim)
 		if (vStepArgument != null) {
 			mBlock += KEval(KIntrinsic("ktc2_check_step", listOf(convert(vStepValue, KPrim.LONG)), KUnitType, isPure = false))
@@ -3451,6 +3477,8 @@ internal class BodyBuilder(
 			inIdentity -> KRefEquals(vLeft, vRight)
 			vLeftType == KStringType && vRightType == KStringType ->
 				KIntrinsic("ktc2_str_equals", listOf(vLeft, vRight), kBoolType)
+			// A String compared with anything else: through `equals` of Any, which a string answers.
+			vLeftType == KStringType -> objectEquals(inCall, mImporter.mBuiltIns.anyNType, spill(coerce(vLeft, KObjType)), spill(vRight))
 			else -> objectEquals(inCall, inLeft.type, spill(vLeft), spill(vRight))
 		}
 	}
@@ -3477,8 +3505,6 @@ internal class BodyBuilder(
 	/** `a == b` on objects: identical, or both non-null and `a.equals(b)`. */
 	private fun objectEquals(inCall: IrCall, inLeftType: IrType, inLeft: KExpr, inRight: KExpr): KExpr {
 		val vEquals = anyMemberOf(inLeftType, "equals", 1) ?: return fail(inCall, "equals on '${inLeftType.render()}'")
-			// A String compared with anything else: through `equals` of Any, which a string answers.
-			vLeftType == KStringType -> objectEquals(inCall, mImporter.mBuiltIns.anyNType, spill(coerce(vLeft, KObjType)), spill(vRight))
 		val vTarget = memberTarget(vEquals, false, closed(inLeftType), emptyList())?.first ?: return fail(inCall, "equals on '${inLeftType.render()}'")
 		// A final class that does not override equals compares by identity.
 		if (vTarget.isExternal && vTarget.dispatch == null && inLeft.type is KClassType) return KRefEquals(inLeft, inRight)
