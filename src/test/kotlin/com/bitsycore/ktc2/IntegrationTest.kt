@@ -99,7 +99,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
-			.toList() + projectList() + commonTestList()
+			.toList() + projectList() + commonTestList() + boxTestList()
 
 	// ==================
 	// MARK: Common tests
@@ -116,7 +116,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun commonTestList(): List<DynamicTest> =
 		File("tests").walkTopDown()
 			// tests/pending holds those that do not pass yet (tests/README.md).
-			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && "support" !in it.invariantSeparatorsPath.split('/') }
+			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" } }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
@@ -181,6 +181,50 @@ abstract class IntegrationPart(private val mShard: Int) {
 			mJvmOptions = emptyList()
 			mVarying = emptyList()
 			mCExtra = emptyList()
+			mAllowsLeaks = false
+		}
+	}
+
+	// ==================
+	// MARK: Box tests
+	// ==================
+
+	/**
+	 * The tests of the Kotlin compiler (`compiler/testData/codegen/box`), which every back end of
+	 * Kotlin runs, Kotlin/Native's included: each file has a `fun box(): String` that returns "OK".
+	 * They are under `tests/box/`, as they are, with the helpers they import under
+	 * `tests/box/helpers/` (`import helpers.*`). The suite writes a `main` that prints what `box()`
+	 * returns and fails otherwise, and runs it in C and on the JVM.
+	 */
+	private fun boxTestList(): List<DynamicTest> =
+		File("tests/box").walkTopDown()
+			// tests/box/pending holds those that do not pass yet (tests/README.md).
+			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "helpers" && "pending" !in it.invariantSeparatorsPath.split('/') }
+			.filter { vSource -> selected(vSource) }
+			.sortedBy { it.path }
+			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkBox(vSource) } }
+			.toList()
+
+	private fun checkBox(inSource: File) {
+		mInput = null
+		mWarnings = emptyList()
+		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
+		val vName = "box-" + inSource.relativeTo(File("tests/box")).invariantSeparatorsPath.removeSuffix(".kt").replace('/', '-')
+		val vText = inSource.readText()
+		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
+		// The name of the file of `main` is the name of its class on the JVM: no '-' there.
+		val vMain = File("build/testmain/${vName.replace('-', '_')}.kt").apply { parentFile.mkdirs() }
+		vMain.writeText(
+			(if (vPackage != null) "package $vPackage\n\n" else "") +
+				"fun main() {\n\tval vResult = box()\n\tprintln(vResult)\n\tif (vResult != \"OK\") throw IllegalStateException(\"box() returned \" + vResult)\n}\n"
+		)
+		val vHelpers = if ("helpers" in vText) File("tests/box/helpers").listFiles { vFile -> vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList() else emptyList()
+		// The tests assert with `kotlin.test`, which is ktc2's own for C and is compiled with them for the JVM.
+		mJvmExtra = listOf(kTestLibrary)
+		try {
+			verify("tests/box/${inSource.relativeTo(File("tests/box")).invariantSeparatorsPath}", listOf(inSource, vMain) + vHelpers, File("build/integration/$vName").apply { deleteRecursively() }, null)
+		} finally {
+			mJvmExtra = emptyList()
 			mAllowsLeaks = false
 		}
 	}

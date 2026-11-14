@@ -52,6 +52,80 @@ copy files to `kotlin/`, run `KTC2_TEST_FILTER=tests/kotlin/ ./gradlew test --re
 read `python tools/failures.py`. A file from another tag than the library's fails on the JVM
 too (two did, taken from `v2.4.21`).
 
+Besides `libraries/stdlib/test`, `kotlin/` has the files of two other directories of the same
+tag that are not about one platform's own API, unchanged:
+- of `libraries/stdlib/jvm/test`, the 3 that use nothing of the JDK nor of the JVM's own part of
+  the library (`DurationJVMTest`, `NumbersJVMTest`, `SequenceJVMTest`). The others use
+  `java.*` (`Character`, `Thread.sleep`, serialization) or what only the JVM's library has
+  (`IEEErem` is in now, but `MathJVMTest` checks it against `java.lang.Math`; `binarySearch` of
+  unsigned arrays, the internal `MapBuilder`, `assert`);
+- of `kotlin-native/runtime/test`, the 20 that use nothing of Kotlin/Native's own API
+  (`HashMapTest`, `ArrayListNativeTest`, `StringNativeTest`, `HarmonyMathTests`, `MathNativeTest`
+  (its `MathTest.kt` renamed, the name being taken)...). Where Kotlin/Native and the JVM differ,
+  ktc2 is with the JVM, and the test is in the file's `.skip` with the reason
+  (`StringNativeTest.skip`, `UnsignedArraysNativeTest.skip`). Not taken: `CharNativeTest`
+  (`Char.toChars` and the like, Kotlin/Native's only), `BitSetTest`, `ByteArrayTest`, the
+  atomics, workers, `cinterop` and the other tests of Kotlin/Native's own API.
+
+## Box tests
+
+`box/` holds tests of the Kotlin compiler itself (`compiler/testData/codegen/box` at the same tag),
+which every back end of Kotlin runs, Kotlin/Native's included: each file has a `fun box(): String`
+that returns "OK". The suite writes a `main` that prints what `box()` returns and fails
+otherwise, and runs it in C and on the JVM (`KTC2_TEST_FILTER=tests/box/`). `box/helpers/` is
+what they import (`import helpers.*`: `EmptyContinuation`, `handleResultContinuation`,
+`StateMachineChecker`), from `compiler/testData/diagnostics/helpers/coroutines`.
+
+`box/coroutines/` has the tests of `codegen/box/coroutines` that `tools/select_box.py` takes:
+not those marked for one back end or ignored on Kotlin/Native, not those of several files or
+modules (`// FILE:`), not those that need options of the language (`// LANGUAGE:`), and not those
+that use the JDK or the JVM's `TailCallOptimizationChecker`. 425 were taken, 384 pass.
+
+They found, all fixed:
+- a coroutine resumed inside the call that suspended it (`resume` in
+  `suspendCoroutineUninterceptedOrReturn` before it returns `COROUTINE_SUSPENDED`), which most of
+  them do: the state machine noted where it waits only after the call (it ran from the start
+  again, until the stack was gone), noted it again after a run inside the call had ended the
+  coroutine, handed a local over to the call (the inner run released it too), and released the
+  arguments of the call after it (the inner run had released them already). The test for
+  `COROUTINE_SUSPENDED` now comes right after the call, before anything else;
+- a coroutine started with an exception (`createCoroutine(...).resumeWithException(e)`) did
+  not throw it;
+- `tailrec suspend fun` was not a loop;
+- a loop inside a `finally` that a jump leaves was emitted twice with one label (not about
+  coroutines);
+- a parameter of type `Unit` (`(T) -> Unit` with `T = Unit`, `fun f(u: Unit)`), and `==`
+  between a `String` and an `Any?` (not about coroutines either).
+
+`box/pending/` holds the 41 that do not pass yet:
+- conversions to `suspend` function types (a plain function value or a `fun interface` where a
+  `suspend` one is wanted, an adapted reference): `suspendConversion/*`,
+  `featureIntersection/funInterface.kt`, `featureIntersection/callableReference/function/adapted.kt`,
+  `kt28844.kt`, `kt49168.kt`, `intrinsicSemantics/startCoroutineWithCallerContinuation.kt`;
+- references to `suspend` functions as values (`::f` as a `KSuspendFunction`: its `invoke`, its
+  name, `equals`): `simpleSuspendCallableReference.kt`, `functionReference_eqeq_name.kt`,
+  `featureIntersection/callableReference/bound/emptyLHS.kt`,
+  `featureIntersection/callableReference/function/local/equalsHashCode.kt`,
+  `tailCallOptimizations/unit/functionReference.kt`;
+- a class that extends a `suspend` function type, and a lambda used as one:
+  `suspendFunctionAsSupertype.kt`, `featureIntersection/suspendFunctionAsSupertypeIsCheckWithArity.kt`,
+  `createCoroutinesOnManualInstances.kt`, `functionReference_lambdaAsSuspendLambda.kt`;
+- value classes in `suspend` functions (C that does not compile, a leak):
+  `inlineClasses/*`, `suspendLambdaWithValueClassSpilledField.kt`;
+- `tailrec` in a function that is a state machine: `featureIntersection/tailrec/tailCallInBlockInParentheses.kt`,
+  `featureIntersection/tailrec/whenWithIs.kt`;
+- objects left allocated: `tryCatchWithHandleResult.kt`, `tryFinallyWithHandleResult.kt` and
+  `tryCatchFinallyWithHandleResult.kt` by a cycle of the test's own (the controller holds the
+  lambdas that resume the coroutine, which holds the controller, and an exception leaves the
+  lambda in the list), `kt51718.kt` by a property whose lambda calls the members of its own
+  object (a cycle no warning reports yet: PLAN.md); `infiniteLoopInNextMeaningful.kt` and
+  `intrinsicSemantics/resultExceptionOrNullInLambda.kt` not looked at yet;
+- wrong results, not looked at yet: `unitTypeReturn/unitSafeCall.kt`, `varSpilling/safeCallElvis.kt`,
+  `tailCallOptimizations/tryCatch.kt`.
+
+To take in more: `git sparse-checkout add compiler/testData/codegen/box/<dir>` in the clone, then
+`python -I tools/select_box.py <clone>/compiler/testData/codegen/box/<dir> tests/box/<dir>`.
+
 ## What they found
 
 The first six files found five differences (a `Pair<Int, Nothing?>` read as a
