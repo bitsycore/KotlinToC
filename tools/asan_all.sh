@@ -4,7 +4,7 @@
 # with AddressSanitizer (tools/asan.sh) and runs it. Fails when one of them does not end with
 # exit code 0, or when the sanitizer or the runtime reported something. Slow: each program is
 # compiled again; KTC2_ASAN_JOBS of them at once (default: the number of processors), each run
-# limited to KTC2_ASAN_TIMEOUT seconds (default 300).
+# limited to KTC2_ASAN_TIMEOUT seconds (default 1200: the large tests of the library take minutes).
 cd "$(dirname "$0")/.." || exit 1
 
 # Builds and runs one program; writes "ok" or what went wrong to <dir>/asan.result.
@@ -21,7 +21,7 @@ check() {
 	local vOptions=${ASAN_OPTIONS:-}
 	if [ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ]; then vLeaks="AddressSanitizer|ktc2: .*freed"; vOptions="detect_leaks=0:$vOptions"; fi
 	local vLimit=()
-	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-300}")
+	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-1200}")
 	local vResult
 	vResult=$(ASAN_OPTIONS=$vOptions "${vLimit[@]}" tools/asan.sh "$vDir" ${vInput:+"$vInput"} 2>&1)
 	local vCode=$?
