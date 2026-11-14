@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.." || exit 1
 # Builds and runs one program; writes "ok" or what went wrong to <dir>/asan.result.
 check() {
 	local vDir=$1
+	local vStart=$SECONDS
 	local vName
 	vName=$(basename "$vDir")
 	# The standard input of the test, when it has one.
@@ -35,6 +36,10 @@ check() {
 	else
 		echo ok > "$vDir/asan.result"
 	fi
+	# One line a program as it ends, so the log of a slow or stuck run says where it is.
+	local vState=ok
+	[ "$(cat "$vDir/asan.result")" = ok ] || vState=FAILED
+	echo "$vState $vName ($((SECONDS - vStart)) s)"
 }
 export -f check
 
@@ -48,8 +53,10 @@ for vDir in build/integration/*/; do
 done
 
 vJobs=${KTC2_ASAN_JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
+echo "${#vDirs[@]} programs, $vJobs at once"
 [ ${#vDirs[@]} -gt 0 ] && printf '%s\0' "${vDirs[@]}" | xargs -0 -n 1 -P "$vJobs" bash -c 'check "$1"' _
 
+echo
 vFailed=0
 for vDir in "${vDirs[@]}"; do
 	if [ "$(cat "$vDir/asan.result" 2>/dev/null)" != ok ]; then
