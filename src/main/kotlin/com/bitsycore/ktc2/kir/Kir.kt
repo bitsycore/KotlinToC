@@ -235,7 +235,11 @@ class KClass(
 class KStatic(val cName: String, val cls: KClass, val unit: KUnit)
 
 /** An interface, identified for `is` checks. [supers] are the interfaces it extends, transitively. */
-class KInterface(val name: String) {
+class KInterface(
+	val name: String,
+	/** The Kotlin name with its package, as `KClass.isInstance` asks for it. */
+	val qualifiedName: String = name,
+) {
 	val supers = LinkedHashSet<KInterface>()
 }
 

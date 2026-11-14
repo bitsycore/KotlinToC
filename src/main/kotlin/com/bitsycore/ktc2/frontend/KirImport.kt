@@ -315,6 +315,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		fun shared(inType: KType): KType = if (inType is KRefType) KObjType else inType
 		val vParams = inInvoke.params.drop(1)
 		val vArguments = vParams.map { shared(it.type) } + shared(inInvoke.returnType)
+		// It is a FunctionN: `f is Function1<*, *>` and `f as (Any?) -> Any?` hold.
+		inClass.interfaces += interfaceFor(mBuiltIns.functionN(vParams.size))
 		mClosures += Closure(mBuiltIns.functionN(vParams.size), vArguments, inClass, inInvoke)
 	}
 
@@ -1205,7 +1207,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	internal fun interfaceFor(inClass: IrClass): KInterface {
 		mInterfaces[inClass]?.let { return it }
-		val vInterface = KInterface(inClass.name.asString())
+		val vInterface = KInterface(inClass.name.asString(), jvmNameOf(inClass))
 		mInterfaces[inClass] = vInterface
 		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }.filter { it.isInterface }) {
 			val vParent = interfaceFor(vSuper)
