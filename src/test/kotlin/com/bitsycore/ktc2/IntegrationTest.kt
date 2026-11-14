@@ -86,11 +86,17 @@ abstract class IntegrationPart(private val mShard: Int) {
 		return programList().filterIndexed { vIndex, _ -> vIndex % kShards == mShard }
 	}
 
+	/** True when [inSource] is one of what `KTC2_TEST_FILTER` asks for: parts of a path, separated by commas. */
+	private fun selected(inSource: File): Boolean {
+		val vFilter = System.getenv("KTC2_TEST_FILTER") ?: return true
+		return vFilter.split(',').any { it.isNotEmpty() && it in inSource.invariantSeparatorsPath }
+	}
+
 	private fun programList(): List<DynamicTest> =
 		File("integration").walkTopDown()
 			.filter { it.isFile && it.extension == "kt" }
-			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text.
-			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
+			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text (several, separated by commas).
+			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
 			.toList() + projectList() + commonTestList()
@@ -111,7 +117,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		File("tests").walkTopDown()
 			// tests/pending holds those that do not pass yet (tests/README.md).
 			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && "support" !in it.invariantSeparatorsPath.split('/') }
-			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
+			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
 			.toList()
@@ -188,7 +194,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects
-			.filter { vPath -> System.getenv("KTC2_TEST_FILTER")?.let { it in "projects/$vPath" } ?: true }
+			.filter { vPath -> selected(File("projects/$vPath")) }
 			.map { vPath -> DynamicTest.dynamicTest("projects/$vPath") { checkProject(File(vPath)) } }
 
 	private fun checkProject(inDirectory: File) {

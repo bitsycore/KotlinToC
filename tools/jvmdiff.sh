@@ -7,4 +7,6 @@ vJar=$(ls ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdli
 vMain=$(grep "^jvmMain=" ktc2_build.txt | cut -d= -f2-)
 # The standard exceptions are classes of java.lang and java.util on the JVM, of kotlin here: either name is the same.
 vSame='s/java\.\(lang\|util\)\.\([A-Z]\)/kotlin.\2/g'
-diff <(./program.exe 2>&1 | grep -v "^ktc2: arc:" | sed "$vSame") <(java -Dstdout.encoding=UTF-8 -Duser.language=en -Duser.country=US -cp "jvm:$vJar:$(dirname "$0")/../../install/ktc2/lib/*" "$vMain" 2>&1 | sed "$vSame") | cut -c1-400
+# Java on Windows separates the class path with ';'.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) vSep=';'; vJar=$(cygpath -w "$vJar") ;; *) vSep=':' ;; esac
+diff <(./program.exe 2>&1 | grep -v "^ktc2: arc:" | sed "$vSame") <(java -Dstdout.encoding=UTF-8 -Duser.language=en -Duser.country=US -cp "jvm$vSep$vJar$vSep$(dirname "$0")/../../install/ktc2/lib/*" "$vMain" 2>&1 | sed "$vSame") | cut -c1-400
