@@ -27,9 +27,15 @@ four-letter codes (\p{sc=Latn}, \p{IsCyrl}).
 // MARK: Public types
 // ==================
 
-public actual enum class RegexOption {
-	IGNORE_CASE,
-	MULTILINE
+/** The options of a pattern, with the numbers of java.util.regex.Pattern's flags as on the JVM and Kotlin/Native. CANON_EQ is accepted and changes nothing. */
+public actual enum class RegexOption(public val value: Int, public val mask: Int = value) {
+	IGNORE_CASE(2),
+	MULTILINE(8),
+	LITERAL(16),
+	UNIX_LINES(1),
+	COMMENTS(4),
+	DOT_MATCHES_ALL(32),
+	CANON_EQ(128)
 }
 
 public actual data class MatchGroup(public actual val value: String, public val range: IntRange)
@@ -265,18 +271,21 @@ private class Anchor(val kind: Char, val multiline: Boolean, val unixLines: Bool
 // MARK: Parser
 // ==================
 
-private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMultiline: Boolean) {
+private class Parser(private val mPattern: String, inOptions: Set<RegexOption>) {
 	private var mAt = 0
 	var groupCount = 0
 	val groupNames = HashMap<String, Int>()
 
 	// The flags where the parser stands: a group ends what was set inside it.
-	private var mIgnoreCase = inIgnoreCase
-	private var mUnicodeCase = inIgnoreCase
-	private var mMultiline = inMultiline
-	private var mDotAll = false
-	private var mComments = false
-	private var mUnixLines = false
+	private var mIgnoreCase = RegexOption.IGNORE_CASE in inOptions
+	private var mUnicodeCase = mIgnoreCase
+	private var mMultiline = RegexOption.MULTILINE in inOptions
+	private var mDotAll = RegexOption.DOT_MATCHES_ALL in inOptions
+	private var mComments = RegexOption.COMMENTS in inOptions
+	private var mUnixLines = RegexOption.UNIX_LINES in inOptions
+
+	/** LITERAL: every character of the pattern stands for itself. */
+	private val mLiteral = RegexOption.LITERAL in inOptions
 
 	/** The flag U: the classes follow Unicode. */
 	private var mUnicodeClasses = false
@@ -300,6 +309,7 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 	private fun looksAt(inText: String): Boolean = mPattern.startsWith(inText, mAt)
 
 	fun parse(): Piece {
+		if (mLiteral) return Chain(mPattern.map { Literal(it, case()) })
 		val vPiece = alternatives()
 		if (more()) fail(if (peek() == ')') "Unmatched closing ')'" else "Unexpected character '${peek()}'")
 		return vPiece
@@ -1122,7 +1132,7 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 	private val mFirst: Int
 
 	init {
-		val vParser = Parser(pattern, options.contains(RegexOption.IGNORE_CASE), options.contains(RegexOption.MULTILINE))
+		val vParser = Parser(pattern, options)
 		val vPiece = vParser.parse()
 		val vCompiler = Compiler()
 		mRoot = vCompiler.compile(vPiece, Accept())
@@ -1294,7 +1304,7 @@ public actual class Regex actual constructor(pattern: String, options: Set<Regex
 	override fun toString(): String = pattern
 
 	public actual companion object {
-		public actual fun fromLiteral(literal: String): Regex = Regex(escape(literal))
+		public actual fun fromLiteral(literal: String): Regex = Regex(literal, RegexOption.LITERAL)
 
 		/** [literal] quoted so that every character stands for itself. */
 		public actual fun escape(literal: String): String {
