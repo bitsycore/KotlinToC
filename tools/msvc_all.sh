@@ -42,6 +42,17 @@ for vDir in build/integration/*/; do
 	fi
 	"$vDir/program.exe" < "${vInput:-/dev/null}" > "$vDir/gcc.out" 2> "$vDir/gcc.err"; vExpected=$?
 	"$vDir/msvc.exe" < "${vInput:-/dev/null}" > "$vDir/msvc.out" 2> "$vDir/msvc.err"; vActual=$?
+	# The lines a file of tests says differ on every run (`<Name>.vary`: a time, an address) are not compared.
+	for vVary in tests/*/"${vName#test-}.vary"; do
+		[ -f "$vVary" ] || continue
+		while IFS= read -r vPrefix || [ -n "$vPrefix" ]; do
+			vPrefix=${vPrefix%$'\r'}
+			case "$vPrefix" in ""|"#"*) continue ;; esac
+			for vOut in "$vDir/gcc.out" "$vDir/msvc.out"; do
+				awk -v p="$vPrefix" 'index($0, p) != 1' "$vOut" > "$vOut.kept" && mv "$vOut.kept" "$vOut"
+			done
+		done < "$vVary"
+	done
 	if [ "$vExpected" != "$vActual" ] || ! cmp -s "$vDir/gcc.out" "$vDir/msvc.out" || grep -q "$vLeaks" "$vDir/msvc.err"; then
 		vFailed=$((vFailed + 1)); echo "== $vName: exit $vActual (gcc: $vExpected)"
 		diff "$vDir/gcc.out" "$vDir/msvc.out" | head -6 | cut -c1-240
