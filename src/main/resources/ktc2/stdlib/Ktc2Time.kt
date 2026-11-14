@@ -138,3 +138,16 @@ internal actual object MonotonicTimeSource : TimeSource.WithComparableMarks {
 	actual fun adjustReading(timeMark: ValueTimeMark, duration: Duration): ValueTimeMark =
 		ValueTimeMark(saturatingAdd(timeMark.reading, DurationUnit.NANOSECONDS, duration))
 }
+
+// ==================
+// MARK: Clock and Instant
+// ==================
+
+/** The time of the system's wall clock (`Clock.System`). */
+internal actual fun systemClockNow(): Instant {
+	val vNanos = ktc2.internal.timeNanos()
+	return Instant.fromEpochSeconds(vNanos.floorDiv(1_000_000_000L), vNanos.mod(1_000_000_000L))
+}
+
+/** What the JVM writes in place of an Instant when it serializes one: there is no serialization of objects here. */
+internal actual fun serializedInstant(instant: Instant): Any = throw UnsupportedOperationException("serialization of objects")

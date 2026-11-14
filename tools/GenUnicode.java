@@ -26,6 +26,34 @@ public class GenUnicode
 		return String.format("%04X", inValue);
 	}
 
+	/* Six hexadecimal digits of [inValue]: a code point above U+FFFF. */
+	private static String hex6(
+		int inValue
+		)
+	{
+		return String.format("%06X", inValue);
+	}
+
+	/* The code points above U+FFFF [inTest] accepts, as ranges: first and last, six digits each. */
+	private static String supplementaryRanges(
+		IntPredicate inTest
+		)
+	{
+		StringBuilder vOut   = new StringBuilder();
+		int           vStart = -1;
+		for (int vCode = 0x10000; vCode <= 0x110000; vCode++)
+		{
+			boolean vIsIn = vCode <= 0x10FFFF && inTest.test(vCode);
+			if (vIsIn && vStart < 0) vStart = vCode;
+			if (!vIsIn && vStart >= 0)
+			{
+				vOut.append(hex6(vStart)).append(hex6(vCode - 1));
+				vStart = -1;
+			}
+		}
+		return vOut.toString();
+	}
+
 	/* The ordinal of Kotlin's CharCategory for the type the JDK gives: the JDK skips the number 17. */
 	private static int categoryOf(
 		int inChar
@@ -140,6 +168,25 @@ public class GenUnicode
 			if (vNowBlock != vBlock) vBlocks.append(hex(vChar)).append(String.format("%02X", vNowBlock < 0 ? 255 : vNowBlock));
 			vBlock = vNowBlock;
 		}
+		// The same for the code points above U+FFFF (`kotlin.text.unicode.CodePoint`), six digits each.
+		StringBuilder vSupCategories = new StringBuilder();
+		StringBuilder vSupUpper      = new StringBuilder();
+		StringBuilder vSupLower      = new StringBuilder();
+		StringBuilder vSupTitle      = new StringBuilder();
+		vPrevious = -1;
+		for (int vCode = 0x10000; vCode <= 0x10FFFF; vCode++)
+		{
+			int vCategory = categoryOf(vCode);
+			if (vCategory != vPrevious) vSupCategories.append(hex6(vCode)).append((char) ('a' + vCategory));
+			vPrevious = vCategory;
+			int vToUpper = Character.toUpperCase(vCode);
+			int vToLower = Character.toLowerCase(vCode);
+			int vToTitle = Character.toTitleCase(vCode);
+			if (vToUpper != vCode) vSupUpper.append(hex6(vCode)).append(hex6(vToUpper));
+			if (vToLower != vCode) vSupLower.append(hex6(vCode)).append(hex6(vToLower));
+			if (vToTitle != vToUpper) vSupTitle.append(hex6(vCode)).append(hex6(vToTitle));
+		}
+
 		StringBuilder vScriptNames = new StringBuilder();
 		for (Character.UnicodeScript vEach : Character.UnicodeScript.values()) vScriptNames.append(vEach.name()).append(',');
 
@@ -162,6 +209,12 @@ public class GenUnicode
 		vOut.append(constant("kScriptNames", "The names of the scripts, each followed by a comma.", vScriptNames.toString()));
 		vOut.append(constant("kBlockRuns", "Runs of one block: four digits for the first character, two for the place of the block in `kBlockNames` (FF: in no block).", vBlocks.toString()));
 		vOut.append(constant("kBlockNames", "The names of the blocks, each followed by a comma.", vBlockNames.toString()));
+		vOut.append(constant("kSupplementaryCategoryRuns", "Runs of one category above U+FFFF: six digits for the first code point, a character for the category.", vSupCategories.toString()));
+		vOut.append(constant("kSupplementaryUpperCaseRanges", "The code points above U+FFFF `isUpperCase` accepts, as ranges: first and last, six digits each.", supplementaryRanges(Character::isUpperCase)));
+		vOut.append(constant("kSupplementaryLowerCaseRanges", "The code points above U+FFFF `isLowerCase` accepts, as ranges.", supplementaryRanges(Character::isLowerCase)));
+		vOut.append(constant("kSupplementaryToUpperCase", "Each code point above U+FFFF whose uppercase form is another, with that form: six digits each.", vSupUpper.toString()));
+		vOut.append(constant("kSupplementaryToLowerCase", "The same for lowercase.", vSupLower.toString()));
+		vOut.append(constant("kSupplementaryToTitleCase", "The code points above U+FFFF whose titlecase form is not their uppercase form, with that form.", vSupTitle.toString()));
 		vOut.append(Files.readString(Path.of("tools/unicode_lookup.kt.txt"), StandardCharsets.UTF_8));
 		Files.writeString(Path.of("src/main/resources/ktc2/stdlib/Ktc2Unicode.kt"), vOut.toString().replace("\r\n", "\n"), StandardCharsets.UTF_8);
 		System.out.println("category runs: " + vCategories.length() / 5 + ", to upper: " + vUpper.length() / 8 + ", to lower: " + vLower.length() / 8

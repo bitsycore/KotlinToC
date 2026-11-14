@@ -87,7 +87,9 @@ private fun isNull(inValue: KExpr): KExpr = when (inValue) {
 private val kBuiltInCompanions = listOf("Boolean", "Byte", "Short", "Int", "Long", "Char", "Float", "Double", "String")
 
 /** Library functions written with `iterator { }` that the platform layer has under their name (`redirectToPlatform`). */
-private val kWithoutCoroutine = setOf("windowedIterator")
+private val kWithoutCoroutine = setOf(
+	"windowedIterator", "runningFold", "runningFoldIndexed", "runningReduce", "runningReduceIndexed", "zipWithNext", "ifEmpty", "shuffled", "flatMapIndexed",
+)
 
 /**
  * Lowers one function body from K2 IR to KIR statements. Every side effect becomes a statement
@@ -759,7 +761,16 @@ internal class BodyBuilder(
 					mBlock += KLet(it, coerce(vValue, vType))
 				}
 			}
-			makeClosure(inExpression, inExpression.getterFunction, null, null, vBound)?.let { KRead(it.first) } ?: KUnitValue
+			val vGetter = makeClosure(inExpression, inExpression.getterFunction, null, null, vBound)?.let { KRead(it.first) } ?: return KUnitValue
+			val vSetter = inExpression.setterFunction
+			val vKind = closed(inExpression.type).classOrNull?.owner?.kotlinFqName?.asString()
+			if (vSetter == null || vKind == null || !vKind.startsWith("kotlin.reflect.KMutableProperty")) return vGetter
+			// A reference to a `var` as a KMutableProperty: the getter, and the setter beside it (`MutableReference0`).
+			val vSetClosure = makeClosure(inExpression, vSetter, null, null, vBound)?.let { KRead(it.first) } ?: return vGetter
+			val vArguments = mImporter.argumentsOf(closed(inExpression.type))
+			val vFactory = mImporter.internalFunction(if (vArguments.size == 1) "mutableReference0" else "mutableReference1") ?: return vGetter
+			val vTarget = mImporter.functionFor(vFactory, mImporter.substFor(vFactory, emptyList(), vArguments)) ?: return vGetter
+			spill(KCall(vTarget, listOf(coerce(spill(vGetter), vTarget.params[0].type), coerce(spill(vSetClosure), vTarget.params[1].type))))
 		}
 		is IrPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
 		is IrLocalDelegatedPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
@@ -2076,6 +2087,23 @@ internal class BodyBuilder(
 		if (vCallee.name.asString() == "invoke" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString()?.let { it.startsWith("kotlin.reflect.KFunction") || it.startsWith("kotlin.reflect.KProperty") || it.startsWith("kotlin.reflect.KMutableProperty") } == true) {
 			vCallee.overriddenSymbols.map { it.owner }.firstOrNull { isFunctionType(it.parentAsClass.symbol.typeWith()) }?.let { vCallee = it }
 		}
+		// `get()` of a property reference (`::top`, `data::name`, `String::length`) reads it as its `invoke` does:
+		// a reference is the function that reads the property (what `val x by ::top` calls).
+		val vReflected = (vCallee.parent as? IrClass)?.kotlinFqName?.asString()
+		if (vCallee.name.asString() == "get" && vReflected != null && (vReflected.startsWith("kotlin.reflect.KProperty") || vReflected.startsWith("kotlin.reflect.KMutableProperty"))) {
+			val vFunctionType = generateSequence(listOf(vCallee.parentAsClass)) { vLevel -> vLevel.flatMap { vClass -> vClass.superTypes.mapNotNull { it.classOrNull?.owner } }.takeIf { it.isNotEmpty() } }
+				.flatten().flatMap { it.superTypes }.firstOrNull { isFunctionType(it) }?.classOrNull?.owner
+			vFunctionType?.declarations?.filterIsInstance<IrSimpleFunction>()?.firstOrNull { it.name.asString() == "invoke" }?.let { vCallee = it }
+		}
+		// `set(value)` of a reference to a `var`: through the setter it holds (`MutableReference0`).
+		if (vCallee.name.asString() == "set" && (vReflected == "kotlin.reflect.KMutableProperty0" || vReflected == "kotlin.reflect.KMutableProperty1")) {
+			val vSetter = mImporter.internalFunction(if (vReflected.endsWith("0")) "mutableReferenceSet0" else "mutableReferenceSet1")
+			val vReceiverType = inCall.arguments.firstOrNull()?.let { closed(it.type) }
+			if (vSetter != null && vReceiverType != null) {
+				val vSubst = mImporter.substFor(vSetter, emptyList(), mImporter.superArguments(vReceiverType, vCallee.parentAsClass))
+				mImporter.functionFor(vSetter, vSubst)?.let { vTarget -> return adapt(callFunction(inCall, vTarget, vSetter, inCall.arguments, null, vSubst), inCall) }
+			}
+		}
 		// A call into a `companion { }` block has no receiver: it is a call to a top-level function.
 		val vOwner = (vCallee.parent as? IrClass)?.takeUnless { isStaticMember(vCallee) }
 		if (vOwner == null && vCallee.name.asString() == "newArray" && vCallee.kotlinFqName.asString() == "ktc2.internal.newArray") {
@@ -2175,7 +2203,10 @@ internal class BodyBuilder(
 				vGetter?.let { mImporter.functionFor(it) }?.let { return adapt(spill(KCall(it, emptyList())), inCall) }
 			}
 			// A function the library writes as a coroutine and the platform layer without one.
-			if (vCallee.name.asString() in kWithoutCoroutine) redirectToPlatform(inCall)?.let { return it }
+			// (Of the same name as the platform's and the same parameters: `zipWithNext()` calls `zipWithNext(transform)`.)
+			if (vCallee.name.asString() in kWithoutCoroutine && mImporter.internalFunction(vCallee.kotlinFqName.asString().replace('.', '_'))?.parameters?.size == vCallee.parameters.size) {
+				redirectToPlatform(inCall)?.let { return it }
+			}
 			val vSubst = mImporter.substFor(vCallee, emptyList(), vOwnArguments)
 			val vTarget = mImporter.functionFor(vCallee, vSubst) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
 			return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)

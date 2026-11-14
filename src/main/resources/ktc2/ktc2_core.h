@@ -798,6 +798,11 @@ ktc2_Array* ktc2_stringUtf8(ktc2_String* s);
 ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end);
 /** True when the bytes from [start] to [end] are not all UTF-8. */
 bool ktc2_utf8Malformed(ktc2_Array* bytes, int32_t start, int32_t end);
+/** Fills a ByteArray with random bytes from the operating system, fit for secrets (`Uuid.random()`). */
+void ktc2_secureRandomBytes(ktc2_Array* bytes);
+/** An atomic operation on an element of an IntArray or a LongArray (`kotlin.concurrent.atomics`). */
+int32_t ktc2_atomicInt(ktc2_Array* array, int32_t index, int32_t operation, int32_t a, int32_t b);
+int64_t ktc2_atomicLong(ktc2_Array* array, int32_t index, int32_t operation, int64_t a, int64_t b);
 
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);

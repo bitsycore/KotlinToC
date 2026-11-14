@@ -426,17 +426,17 @@ internal actual inline fun <T> Array<out T>.asArrayList(): ArrayList<T> = ArrayL
 @PublishedApi
 @kotlin.internal.InlineOnly
 internal actual inline fun <E> buildListInternal(builderAction: MutableList<E>.() -> Unit): List<E> {
-	val vList = ArrayList<E>()
+	val vList = ListBuilder<E>(10)
 	vList.builderAction()
-	return vList
+	return vList.build()
 }
 
 @PublishedApi
 @kotlin.internal.InlineOnly
 internal actual inline fun <E> buildListInternal(capacity: Int, builderAction: MutableList<E>.() -> Unit): List<E> {
-	val vList = ArrayList<E>(capacity)
+	val vList = ListBuilder<E>(capacity)
 	vList.builderAction()
-	return vList
+	return vList.build()
 }
 
 @PublishedApi
@@ -564,6 +564,39 @@ private class ListPart<E>(private val list: MutableList<E>, private val from: In
 		list.add(from + index, element)
 		count++
 		seen = changesOfList()
+	}
+
+	// Through the list in one call, even for nothing: a list that refuses changes (what `buildList` built) says so.
+	override fun addAll(elements: Collection<E>): Boolean = addAll(count, elements)
+
+	/** A change asked of a part of a list that refuses changes is refused even when it would change nothing. */
+	private fun checkIsMutable() {
+		(list as? ListBuilder<E>)?.checkIsMutable()
+	}
+
+	override fun remove(element: E): Boolean {
+		checkIsMutable()
+		return super.remove(element)
+	}
+
+	override fun removeAll(elements: Collection<E>): Boolean {
+		checkIsMutable()
+		return super.removeAll(elements)
+	}
+
+	override fun retainAll(elements: Collection<E>): Boolean {
+		checkIsMutable()
+		return super.retainAll(elements)
+	}
+
+	override fun addAll(index: Int, elements: Collection<E>): Boolean {
+		check()
+		if (index < 0 || index > count) throw IndexOutOfBoundsException("Index: $index, Size: $count")
+		val vSize = elements.size
+		val vChanged = list.addAll(from + index, elements)
+		count += vSize
+		seen = changesOfList()
+		return vChanged
 	}
 
 	override fun removeAt(index: Int): E {
@@ -710,17 +743,17 @@ public actual fun <K, V> mapOf(pair: Pair<K, V>): Map<K, V> {
 @PublishedApi
 @kotlin.internal.InlineOnly
 internal actual inline fun <K, V> buildMapInternal(builderAction: MutableMap<K, V>.() -> Unit): Map<K, V> {
-	val vMap = LinkedHashMap<K, V>()
+	val vMap = MapBuilder<K, V>(8)
 	vMap.builderAction()
-	return vMap
+	return vMap.build()
 }
 
 @PublishedApi
 @kotlin.internal.InlineOnly
 internal actual inline fun <K, V> buildMapInternal(capacity: Int, builderAction: MutableMap<K, V>.() -> Unit): Map<K, V> {
-	val vMap = LinkedHashMap<K, V>(capacity)
+	val vMap = MapBuilder<K, V>(capacity)
 	vMap.builderAction()
-	return vMap
+	return vMap.build()
 }
 
 @PublishedApi
@@ -735,17 +768,17 @@ public actual fun <T> setOf(element: T): Set<T> {
 @PublishedApi
 @kotlin.internal.InlineOnly
 internal actual inline fun <E> buildSetInternal(builderAction: MutableSet<E>.() -> Unit): Set<E> {
-	val vSet = LinkedHashSet<E>()
+	val vSet = SetBuilder<E>(8)
 	vSet.builderAction()
-	return vSet
+	return vSet.build()
 }
 
 @PublishedApi
 @kotlin.internal.InlineOnly
 internal actual inline fun <E> buildSetInternal(capacity: Int, builderAction: MutableSet<E>.() -> Unit): Set<E> {
-	val vSet = LinkedHashSet<E>(capacity)
+	val vSet = SetBuilder<E>(capacity)
 	vSet.builderAction()
-	return vSet
+	return vSet.build()
 }
 
 public actual inline fun <reified T> Array<out T>?.orEmpty(): Array<out T> = this ?: emptyArray<T>()

@@ -246,7 +246,10 @@ object K2Frontend {
 			"-d", inOutDir.path, "-no-stdlib", "-no-reflect", "-nowarn", "-Xallow-kotlin-package", "-cp", userClasspath(),
 			// The inline functions of the `ktc2.` package are built for the JVM this runs on.
 			"-jvm-target", System.getProperty("java.specification.version"),
-		) + kLanguageOptions + inOptions
+		) + kLanguageOptions + inOptions +
+			// Sources of a multiplatform module (the tests of the Kotlin library) are all its common part: an optional
+			// `expect` (`@ThreadLocal`) is allowed there without its `actual`.
+			(if ("-Xmulti-platform" in inOptions) listOf("-Xcommon-sources=" + inSources.joinToString(",") { it.path }) else emptyList())
 		return K2JVMCompiler().exec(System.err, *vArgs.toTypedArray()) == ExitCode.OK
 	}
 

@@ -163,3 +163,67 @@ internal fun unicodeScriptNamed(inName: String): Int = placeOfName(kScriptNames,
 
 /** The place of the block called [inName] (`Greek`, `BasicLatin`, `Basic Latin`), or -1. */
 internal fun unicodeBlockNamed(inName: String): Int = placeOfName(kBlockNames, inName)
+
+// ==================
+// MARK: Above U+FFFF
+// ==================
+
+/** The number written as six hexadecimal digits at [inAt] of [inText]. */
+private fun hex6At(inText: String, inAt: Int): Int {
+	var vValue = 0
+	for (vIndex in inAt until inAt + 6) {
+		val vDigit = inText[vIndex].code
+		vValue = vValue * 16 + if (vDigit <= '9'.code) vDigit - '0'.code else vDigit - 'A'.code + 10
+	}
+	return vValue
+}
+
+/** The numbers of [inText], six digits each. */
+private fun decoded6(inText: String): IntArray = IntArray(inText.length / 6) { hex6At(inText, it * 6) }
+
+private val gSupplementaryCategoryStarts: IntArray = IntArray(kSupplementaryCategoryRuns.length / 7) { hex6At(kSupplementaryCategoryRuns, it * 7) }
+private val gSupplementaryCategories: ByteArray = ByteArray(kSupplementaryCategoryRuns.length / 7) { (kSupplementaryCategoryRuns[it * 7 + 6].code - 'a'.code).toByte() }
+private val gSupplementaryUpperRanges: IntArray = decoded6(kSupplementaryUpperCaseRanges)
+private val gSupplementaryLowerRanges: IntArray = decoded6(kSupplementaryLowerCaseRanges)
+private val gSupplementaryToUpper: IntArray = decoded6(kSupplementaryToUpperCase)
+private val gSupplementaryToLower: IntArray = decoded6(kSupplementaryToLowerCase)
+private val gSupplementaryToTitle: IntArray = decoded6(kSupplementaryToTitleCase)
+
+/** The place in the sorted [inSorted] (every [inStride]th element) of the last one not above [inCode]; -1 when all are above. */
+private fun floorIndex(inSorted: IntArray, inCode: Int, inStride: Int = 1): Int {
+	var vLow = 0
+	var vHigh = inSorted.size / inStride - 1
+	while (vLow <= vHigh) {
+		val vMiddle = (vLow + vHigh) ushr 1
+		if (inSorted[vMiddle * inStride] <= inCode) vLow = vMiddle + 1 else vHigh = vMiddle - 1
+	}
+	return vHigh
+}
+
+/** The ordinal of the CharCategory of [inCode], a code point above U+FFFF. */
+internal fun supplementaryCategory(inCode: Int): Int = gSupplementaryCategories[floorIndex(gSupplementaryCategoryStarts, inCode)].toInt()
+
+private fun inRanges(inRanges: IntArray, inCode: Int): Boolean {
+	val vAt = floorIndex(inRanges, inCode)
+	return vAt >= 0 && (vAt % 2 == 0 || inRanges[vAt] == inCode)
+}
+
+/** What a pair table ([inPairs]: code point, mapping, ...) maps [inCode] to; [inCode] itself when it is not there. */
+private fun mapped(inPairs: IntArray, inCode: Int): Int {
+	val vAt = floorIndex(inPairs, inCode, 2)
+	return if (vAt >= 0 && inPairs[vAt * 2] == inCode) inPairs[vAt * 2 + 1] else inCode
+}
+
+internal fun supplementaryIsUpperCase(inCode: Int): Boolean = inRanges(gSupplementaryUpperRanges, inCode)
+
+internal fun supplementaryIsLowerCase(inCode: Int): Boolean = inRanges(gSupplementaryLowerRanges, inCode)
+
+internal fun supplementaryToUpperCase(inCode: Int): Int = mapped(gSupplementaryToUpper, inCode)
+
+internal fun supplementaryToLowerCase(inCode: Int): Int = mapped(gSupplementaryToLower, inCode)
+
+/** The titlecase form of [inCode], above U+FFFF: its uppercase form unless the table says otherwise. */
+internal fun supplementaryToTitleCase(inCode: Int): Int {
+	val vTitle = mapped(gSupplementaryToTitle, inCode)
+	return if (vTitle != inCode) vTitle else supplementaryToUpperCase(inCode)
+}

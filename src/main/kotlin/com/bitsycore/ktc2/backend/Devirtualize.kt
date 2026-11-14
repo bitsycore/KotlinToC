@@ -387,6 +387,8 @@ class Devirtualize(private val mModule: KModule) {
 			when (vStatement) {
 				is KLet -> vStatement.init?.let { join(mLocals, vStatement.local, classOf(it)) }
 				is KSet -> join(mLocals, vStatement.local, classOf(vStatement.value))
+				// A text built from parts: a string, of no class of the program.
+				is KConcat -> join(mLocals, vStatement.target, kAnything)
 				is KFieldSet -> if (isFollowed(vStatement.field)) join(mFields, keyOf(vStatement.field), classOf(vStatement.value))
 				is KGlobalSet -> join(mGlobals, vStatement.global, classOf(vStatement.value))
 				is KReturn -> vStatement.value?.let { join(mReturns, inFunction, classOf(it)) }

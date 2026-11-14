@@ -202,6 +202,18 @@ public external fun stringUtf8(string: String): ByteArray
 /** A String from the UTF-8 bytes [startIndex, endIndex) of [bytes]. */
 public external fun stringOfUtf8(bytes: ByteArray, startIndex: Int, endIndex: Int): String
 
+/**
+ * One atomic operation on element [index] of [array] (unchecked): [operation] 0 reads, 1 writes [a], 2 writes [a] and
+ * gives what was there, 3 writes [b] if [a] is there and gives what was there, 4 adds [a] and gives what was there.
+ */
+public external fun atomicInt(array: IntArray, index: Int, operation: Int, a: Int, b: Int): Int
+
+/** Fills [bytes] with random bytes from the operating system, fit for secrets. */
+public external fun secureRandomBytes(bytes: ByteArray)
+
+/** [atomicInt] for a LongArray. */
+public external fun atomicLong(array: LongArray, index: Int, operation: Int, a: Long, b: Long): Long
+
 /** True when the bytes from [startIndex] to [endIndex] are not all UTF-8. */
 public external fun utf8Malformed(bytes: ByteArray, startIndex: Int, endIndex: Int): Boolean
 
@@ -623,3 +635,215 @@ public fun containsAllOfAny(collection: Collection<Any?>, elements: Collection<A
 public interface Deinit {
 	public fun deinit()
 }
+
+// ==================
+// MARK: Mutable property references
+// ==================
+
+/*
+A reference to a `var` (`::top`, `data::count`) where Kotlin wants a KMutableProperty0 or 1: it reads as
+the function that reads the property (`get()` is lowered to `invoke`) and holds the function that writes it
+(`set` is lowered to [mutableReferenceSet0] and [mutableReferenceSet1]).
+*/
+
+public class MutableReference0<V>(private val getter: () -> V, private val setter: (V) -> Unit) : () -> V {
+	override fun invoke(): V = getter()
+	public fun set(value: V): Unit = setter(value)
+}
+
+public class MutableReference1<T, V>(private val getter: (T) -> V, private val setter: (T, V) -> Unit) : (T) -> V {
+	override fun invoke(receiver: T): V = getter(receiver)
+	public fun set(receiver: T, value: V): Unit = setter(receiver, value)
+}
+
+public fun <V> mutableReference0(getter: () -> V, setter: (V) -> Unit): Any = MutableReference0(getter, setter)
+
+public fun <T, V> mutableReference1(getter: (T) -> V, setter: (T, V) -> Unit): Any = MutableReference1(getter, setter)
+
+public fun <V> mutableReferenceSet0(reference: Any, value: V) {
+	(reference as MutableReference0<V>).set(value)
+}
+
+public fun <T, V> mutableReferenceSet1(reference: Any, receiver: T, value: V) {
+	(reference as MutableReference1<T, V>).set(receiver, value)
+}
+
+// ==================
+// MARK: Sequences without coroutines
+// ==================
+
+/*
+The functions of the library written with `sequence { }`, which needs coroutines, as iterators that keep where
+they are in fields. Each does what the library's body does, in the same order: nothing before the first element
+is asked for, the source's iterator asked for where the body asks for it, the same calls to the lambdas and to
+`Random`. A call to the library's function is lowered to the one here of the same name (`kWithoutCoroutine`).
+*/
+
+/** An iterator that works out its next element only when asked: [step] calls [emit] once, or returns false at the end. */
+private abstract class Generator<T> : Iterator<T> {
+	private var state = 0
+	private var pending: Any? = null
+
+	/** Works out the next element and gives it to [emit]; false when there is none. */
+	protected abstract fun step(): Boolean
+
+	protected fun emit(value: T) {
+		pending = value
+	}
+
+	override fun hasNext(): Boolean {
+		if (state == 0) state = if (step()) 1 else 2
+		return state == 1
+	}
+
+	override fun next(): T {
+		if (!hasNext()) throw NoSuchElementException()
+		state = 0
+		val vValue = pending as T
+		pending = null
+		return vValue
+	}
+}
+
+private class RunningFold<T, R>(private val source: Sequence<T>, initial: R, private val operation: (Int, R, T) -> R) : Generator<R>() {
+	private var accumulator: R = initial
+	private var iterator: Iterator<T>? = null
+	private var index = 0
+
+	override fun step(): Boolean {
+		val vIterator = iterator
+		if (vIterator == null) {
+			iterator = source.iterator()
+			emit(accumulator)
+			return true
+		}
+		if (!vIterator.hasNext()) return false
+		accumulator = operation(kotlin.collections.checkIndexOverflow(index++), accumulator, vIterator.next())
+		emit(accumulator)
+		return true
+	}
+}
+
+private class RunningReduce<S, T : S>(private val source: Sequence<T>, private val operation: (Int, S, T) -> S) : Generator<S>() {
+	private var iterator: Iterator<T>? = null
+	private var accumulator: Any? = null
+	private var index = 1
+
+	override fun step(): Boolean {
+		var vIterator = iterator
+		if (vIterator == null) {
+			vIterator = source.iterator()
+			iterator = vIterator
+			if (!vIterator.hasNext()) return false
+			val vFirst: S = vIterator.next()
+			accumulator = vFirst
+			emit(vFirst)
+			return true
+		}
+		if (!vIterator.hasNext()) return false
+		val vNext = operation(kotlin.collections.checkIndexOverflow(index++), accumulator as S, vIterator.next())
+		accumulator = vNext
+		emit(vNext)
+		return true
+	}
+}
+
+private class ZipWithNext<T, R>(private val source: Sequence<T>, private val transform: (T, T) -> R) : Generator<R>() {
+	private var iterator: Iterator<T>? = null
+	private var current: Any? = null
+
+	override fun step(): Boolean {
+		var vIterator = iterator
+		if (vIterator == null) {
+			vIterator = source.iterator()
+			iterator = vIterator
+			if (!vIterator.hasNext()) return false
+			current = vIterator.next()
+		}
+		if (!vIterator.hasNext()) return false
+		val vNext = vIterator.next()
+		emit(transform(current as T, vNext))
+		current = vNext
+		return true
+	}
+}
+
+private class IfEmpty<T>(private val source: Sequence<T>, private val defaultValue: () -> Sequence<T>) : Generator<T>() {
+	private var iterator: Iterator<T>? = null
+
+	override fun step(): Boolean {
+		var vIterator = iterator
+		if (vIterator == null) {
+			vIterator = source.iterator()
+			if (!vIterator.hasNext()) vIterator = defaultValue().iterator()
+			iterator = vIterator
+		}
+		if (!vIterator.hasNext()) return false
+		emit(vIterator.next())
+		return true
+	}
+}
+
+private class Shuffled<T>(private val source: Sequence<T>, private val random: kotlin.random.Random) : Generator<T>() {
+	private var buffer: MutableList<T>? = null
+
+	override fun step(): Boolean {
+		var vBuffer = buffer
+		if (vBuffer == null) {
+			vBuffer = source.toMutableList()
+			buffer = vBuffer
+		}
+		if (vBuffer.isEmpty()) return false
+		val vAt = random.nextInt(vBuffer.size)
+		val vLast = vBuffer.removeLast()
+		emit(if (vAt < vBuffer.size) vBuffer.set(vAt, vLast) else vLast)
+		return true
+	}
+}
+
+private class FlatMapIndexed<T, C, R>(private val source: Sequence<T>, private val transform: (Int, T) -> C, private val iterator: (C) -> Iterator<R>) : Generator<R>() {
+	private var outer: Iterator<T>? = null
+	private var inner: Iterator<R>? = null
+	private var index = 0
+
+	override fun step(): Boolean {
+		var vOuter = outer
+		if (vOuter == null) {
+			vOuter = source.iterator()
+			outer = vOuter
+		}
+		while (true) {
+			val vInner = inner
+			if (vInner != null && vInner.hasNext()) {
+				emit(vInner.next())
+				return true
+			}
+			if (!vOuter.hasNext()) return false
+			inner = iterator(transform(kotlin.collections.checkIndexOverflow(index++), vOuter.next()))
+		}
+	}
+}
+
+public fun <T, R> kotlin_sequences_runningFold(source: Sequence<T>, initial: R, operation: (R, T) -> R): Sequence<R> =
+	Sequence { RunningFold(source, initial) { _, vAccumulator: R, vElement: T -> operation(vAccumulator, vElement) } }
+
+public fun <T, R> kotlin_sequences_runningFoldIndexed(source: Sequence<T>, initial: R, operation: (Int, R, T) -> R): Sequence<R> =
+	Sequence { RunningFold(source, initial, operation) }
+
+public fun <S, T : S> kotlin_sequences_runningReduce(source: Sequence<T>, operation: (S, T) -> S): Sequence<S> =
+	Sequence { RunningReduce<S, T>(source) { _, vAccumulator: S, vElement: T -> operation(vAccumulator, vElement) } }
+
+public fun <S, T : S> kotlin_sequences_runningReduceIndexed(source: Sequence<T>, operation: (Int, S, T) -> S): Sequence<S> =
+	Sequence { RunningReduce(source, operation) }
+
+public fun <T, R> kotlin_sequences_zipWithNext(source: Sequence<T>, transform: (T, T) -> R): Sequence<R> =
+	Sequence { ZipWithNext(source, transform) }
+
+public fun <T> kotlin_sequences_ifEmpty(source: Sequence<T>, defaultValue: () -> Sequence<T>): Sequence<T> =
+	Sequence { IfEmpty(source, defaultValue) }
+
+public fun <T> kotlin_sequences_shuffled(source: Sequence<T>, random: kotlin.random.Random): Sequence<T> =
+	Sequence { Shuffled(source, random) }
+
+public fun <T, C, R> kotlin_sequences_flatMapIndexed(source: Sequence<T>, transform: (Int, T) -> C, iterator: (C) -> Iterator<R>): Sequence<R> =
+	Sequence { FlatMapIndexed(source, transform, iterator) }

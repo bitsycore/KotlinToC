@@ -225,25 +225,6 @@ public actual fun CharSequence.repeat(n: Int): String {
 // MARK: Case
 // ==================
 
-/** The lower case form of a letter outside the first 65536 characters: the scripts that have two cases there (Unicode 15, as the JVM the tests compare with). */
-private fun supplementaryLower(inCodePoint: Int): Int = when (inCodePoint) {
-	in 0x10400..0x10427, in 0x104B0..0x104D3 -> inCodePoint + 0x28
-	in 0x10570..0x1057A, in 0x1057C..0x1058A, in 0x1058C..0x10592, in 0x10594..0x10595 -> inCodePoint + 0x27
-	in 0x10C80..0x10CB2 -> inCodePoint + 0x40
-	in 0x118A0..0x118BF, in 0x16E40..0x16E5F -> inCodePoint + 0x20
-	in 0x1E900..0x1E921 -> inCodePoint + 0x22
-	else -> inCodePoint
-}
-
-private fun supplementaryUpper(inCodePoint: Int): Int = when (inCodePoint) {
-	in 0x10428..0x1044F, in 0x104D8..0x104FB -> inCodePoint - 0x28
-	in 0x10597..0x105A1, in 0x105A3..0x105B1, in 0x105B3..0x105B9, in 0x105BB..0x105BC -> inCodePoint - 0x27
-	in 0x10CC0..0x10CF2 -> inCodePoint - 0x40
-	in 0x118C0..0x118DF, in 0x16E60..0x16E7F -> inCodePoint - 0x20
-	in 0x1E922..0x1E943 -> inCodePoint - 0x22
-	else -> inCodePoint
-}
-
 /**
  * When the two code units at [inIndex] of [inText] are one letter outside the first 65536 characters:
  * that letter in the other case appended to [inBuilder], and true.
@@ -254,7 +235,7 @@ private fun appendSupplementary(inText: String, inIndex: Int, inBuilder: StringB
 	val vLow = inText[inIndex + 1]
 	if (!vLow.isLowSurrogate()) return false
 	val vCodePoint = 0x10000 + ((vHigh.code - 0xD800) shl 10) + (vLow.code - 0xDC00)
-	val vOther = (if (inIsUpper) supplementaryUpper(vCodePoint) else supplementaryLower(vCodePoint)) - 0x10000
+	val vOther = (if (inIsUpper) supplementaryToUpperCase(vCodePoint) else supplementaryToLowerCase(vCodePoint)) - 0x10000
 	inBuilder.append((0xD800 + (vOther shr 10)).toChar()).append((0xDC00 + (vOther and 0x3FF)).toChar())
 	return true
 }

@@ -1,3 +1,8 @@
+/* `rand_s` of the C library of Windows, the source of secure random bytes there: asked for before stdlib.h. */
+#ifdef _WIN32
+#define _CRT_RAND_S
+#endif
+
 #include "ktc2_core.h"
 
 #include <ctype.h>
@@ -2426,6 +2431,81 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 	(void)lock;
 }
 
+#endif
+
+/* ================== */
+/* MARK: Random       */
+/* ================== */
+
+void ktc2_secureRandomBytes(ktc2_Array* bytes)
+{
+	unsigned char* out = (unsigned char*)(bytes + 1);
+	size_t size = (size_t)bytes->length;
+#if defined(_WIN32)
+	for (size_t at = 0; at < size; at += 4) {
+		unsigned int value;
+		if (rand_s(&value) != 0) fail("kotlin.IllegalStateException", "no secure random numbers");
+		size_t count = size - at < 4 ? size - at : 4;
+		memcpy(out + at, &value, count);
+	}
+#elif defined(__APPLE__)
+	arc4random_buf(out, size);
+#else
+	FILE* source = fopen("/dev/urandom", "rb");
+	if (!source || fread(out, 1, size, source) != size) fail("kotlin.IllegalStateException", "no secure random numbers");
+	fclose(source);
+#endif
+}
+
+/* ================== */
+/* MARK: Atomics      */
+/* ================== */
+
+/*
+ * One operation of `kotlin.concurrent.atomics` on element [index] of an IntArray or a LongArray: 0 reads, 1
+ * writes [a], 2 writes [a] and gives what was there, 3 writes [b] if [a] is there and gives what was there,
+ * 4 adds [a] and gives what was there. Every one is sequentially consistent, as on the JVM.
+ */
+#if defined(_MSC_VER) && !defined(__clang__)
+int32_t ktc2_atomicInt(ktc2_Array* array, int32_t index, int32_t operation, int32_t a, int32_t b)
+{
+	volatile long* at = (volatile long*)((int32_t*)(array + 1) + index);
+	switch (operation) {
+	case 0: return (int32_t)_InterlockedCompareExchange(at, 0, 0);
+	case 1: _InterlockedExchange(at, (long)a); return 0;
+	case 2: return (int32_t)_InterlockedExchange(at, (long)a);
+	case 3: return (int32_t)_InterlockedCompareExchange(at, (long)b, (long)a);
+	default: return (int32_t)_InterlockedExchangeAdd(at, (long)a);
+	}
+}
+
+int64_t ktc2_atomicLong(ktc2_Array* array, int32_t index, int32_t operation, int64_t a, int64_t b)
+{
+	volatile __int64* at = (volatile __int64*)((int64_t*)(array + 1) + index);
+	switch (operation) {
+	case 0: return _InterlockedCompareExchange64(at, 0, 0);
+	case 1: _InterlockedExchange64(at, a); return 0;
+	case 2: return _InterlockedExchange64(at, a);
+	case 3: return _InterlockedCompareExchange64(at, b, a);
+	default: return _InterlockedExchangeAdd64(at, a);
+	}
+}
+#else
+#define KTC2_ATOMIC_OPERATIONS(name, type) \
+	type name(ktc2_Array* array, int32_t index, int32_t operation, type a, type b) \
+	{ \
+		type* at = (type*)(array + 1) + index; \
+		switch (operation) { \
+		case 0: return __atomic_load_n(at, __ATOMIC_SEQ_CST); \
+		case 1: __atomic_store_n(at, a, __ATOMIC_SEQ_CST); return 0; \
+		case 2: return __atomic_exchange_n(at, a, __ATOMIC_SEQ_CST); \
+		case 3: __atomic_compare_exchange_n(at, &a, b, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); return a; \
+		default: return __atomic_fetch_add(at, a, __ATOMIC_SEQ_CST); \
+		} \
+	}
+
+KTC2_ATOMIC_OPERATIONS(ktc2_atomicInt, int32_t)
+KTC2_ATOMIC_OPERATIONS(ktc2_atomicLong, int64_t)
 #endif
 
 /* ================== */
