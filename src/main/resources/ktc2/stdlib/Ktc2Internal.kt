@@ -285,7 +285,10 @@ private class WindowIterator<T>(
 	private val partialWindows: Boolean,
 	private val reuseBuffer: Boolean,
 ) : Iterator<List<T>> {
-	private var buffer = ArrayList<T>(if (size < 1024) size else 1024)
+	/** What a new buffer starts with: a window may be asked as long as `Int.MAX_VALUE` (`windowed(Int.MAX_VALUE, 5)`). */
+	private val initialCapacity = if (size < 1024) size else 1024
+
+	private var buffer = ArrayList<T>(initialCapacity)
 
 	/** Elements of the source still to pass over before the next window starts (a step longer than a window). */
 	private var skip = 0
@@ -301,11 +304,11 @@ private class WindowIterator<T>(
 		if (!isHandedOut) return
 		isHandedOut = false
 		if (step >= size) {
-			if (reuseBuffer) buffer.clear() else buffer = ArrayList(size)
+			if (reuseBuffer) buffer.clear() else buffer = ArrayList(initialCapacity)
 			skip = step - size
 		} else {
 			// Windows that overlap: the next one keeps what the step does not pass.
-			val vKept = ArrayList<T>(size)
+			val vKept = ArrayList<T>(initialCapacity)
 			for (vIndex in step until buffer.size) vKept.add(buffer[vIndex])
 			if (reuseBuffer) {
 				buffer.clear()

@@ -42,4 +42,11 @@ fun main() {
 	println(Holder(3).both().first + Holder(4L).both().second)
 	println(Holder('x').wrapped().next().first.code + Holder(2.5).wrapped().next().second)
 	println(Holder("s").both())
+	// Windows and chunks of what is not a list, which the library builds with a coroutine; a window may be asked as long as Int.MAX_VALUE.
+	val seven = Iterable { (0..6).iterator() }
+	println(seven.windowed(4, 2, partialWindows = true))
+	println(seven.windowed(Int.MAX_VALUE, 5, partialWindows = true))
+	println(seven.windowed(5, Int.MAX_VALUE))
+	println(seven.chunked(3))
+	println((0..6).asSequence().windowed(3, 1).toList())
 }
