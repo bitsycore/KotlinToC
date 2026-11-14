@@ -5,6 +5,7 @@
 # exit code 0, or when the sanitizer or the runtime reported something. Slow: each program is
 # compiled again; KTC2_ASAN_JOBS of them at once (default: the number of processors), each run
 # limited to KTC2_ASAN_TIMEOUT seconds (default 1200: the large tests of the library take minutes).
+# KTC2_SHARD=i/n takes the i-th of n shares of the programs (from 0), for several machines at once.
 cd "$(dirname "$0")/.." || exit 1
 
 # Builds and runs one program; writes "ok" or what went wrong to <dir>/asan.result.
@@ -48,6 +49,8 @@ for vDir in build/integration/*/; do
 	vDir=${vDir%/}
 	[ -f "$vDir/ktc2_build.txt" ] || continue
 	case "$(basename "$vDir")" in *"$1"*) ;; *) continue ;; esac
+	vIndex=$((${vIndex:--1} + 1))
+	if [ -n "$KTC2_SHARD" ] && [ $((vIndex % ${KTC2_SHARD#*/})) -ne "${KTC2_SHARD%/*}" ]; then continue; fi
 	rm -f "$vDir/asan.result"
 	vDirs+=("$vDir")
 done

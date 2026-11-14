@@ -392,6 +392,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 		lap("cCompile")
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 		lap("cRun")
+		// What the C program printed: what `tools/msvc_all.sh` compares MSVC's build with on a machine that has the C and not the program.
+		File(vOutDir, "program.out").writeText(vActual)
 		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")
 
 		assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
