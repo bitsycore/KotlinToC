@@ -72,8 +72,9 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   The runtime's hook is still there under it (`ktc2.internal.Deinit`, for the cleaner that is
   kept as an object);
 - `sequence { }` and `iterator { }` wait for `suspend` functions done in full (the
-  transformation into a state machine), not a stack of their own for each iterator. Until
-  then `zipWithNext`, `chunked` and `windowed` on a sequence fail at run time;
+  transformation into a state machine), not a stack of their own for each iterator. The
+  library's own functions that are written with them (`zipWithNext`, `chunked`, `windowed`,
+  `scan`, `shuffled` of a sequence...) are plain iterators of the platform layer meanwhile;
 - a class as a value is in: `x::class`, `Name::class`, compared, as keys, `simpleName`,
   `qualifiedName`, `isInstance` for a class. The rest of reflection is not;
 - what only the JDK has is not added (`toSortedMap`, `String.format`, `getOrDefault`,
@@ -457,8 +458,8 @@ Open:
 - [x] **A failing `valueOf` throws** `IllegalArgumentException("No enum constant ...")`, for
   every enum: it ended the program before.
 - [ ] **Coroutines.** Decided: `suspend` functions in full, by the transformation into a
-  state machine. `sequence { }` and `iterator { }` come with it: they are what the library
-  itself uses (`chunked` and `windowed` on things that are not lists fail at run time today).
+  state machine. `sequence { }` and `iterator { }` come with it, and `DeepRecursiveFunction`
+  (the last file of the library's tests that waits in `tests/pending/` for a feature).
 - [ ] **Android.** The C should compile with the NDK's clang. Missing: `println` to the log
   and not to a console; a program as a shared library entered from Java and not a `main`; a
   clock that works below API 29; the build driven by the NDK's CMake toolchain file.
@@ -469,7 +470,7 @@ Open:
 - [x] **A monotonic clock** behind `kotlin.time` and `measureTimeMillis`
   (`ktc2_ticksNanos`: `QueryPerformanceCounter`, `clock_gettime(CLOCK_MONOTONIC)`). The
   Windows and Linux branches are written and not yet run.
-- [ ] `Clock` and `Instant`; the `U` flag of `Regex`; case of characters beyond U+FFFF.
+- [~] `Clock` and `Instant`, case of characters beyond U+FFFF: done (2026-11-14). The `U` flag of `Regex` is left.
 - [ ] **A `.klib`-like way to ship a module.** Today a module is its sources (a directory or a
   git repository). The Kotlin compiler ktc2 runs is the JVM one and cannot read klibs, and
   published klibs are built against Kotlin/Native's own library, so this means either a
