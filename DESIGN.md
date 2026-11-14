@@ -358,7 +358,7 @@ that starts with a character, exactly, only tries to match where that character 
 What is there: collections and sequences (not `sequence { }`; a library function that uses
 it on one of its paths, like `chunked` on something that is not a list, compiles and fails
 when that path is taken), strings, `Char` with Unicode
-for the 16-bit range, `Regex` with Java's syntax (not the `U` flag), ranges, `kotlin.math`,
+for the 16-bit range, `Regex` with Java's syntax (the `U` flag and scripts by their four-letter codes included), ranges, `kotlin.math`,
 `kotlin.time` (`Duration`, `TimeSource`, `measureTime`; not `Clock` and `Instant`),
 `kotlin.random`, `Result`, the property delegates, `readln`.
 
@@ -498,7 +498,9 @@ Not Kotlin, by design:
 - destruction is immediate, not deferred: visible only through weak references.
 
 Kotlin, but not done:
-- the `U` flag and four-letter script codes of `Regex`;
+- the coroutines themselves (`suspend`, `sequence { }` in a program, `DeepRecursiveFunction`);
+  their context classes (`CoroutineContext`, `CancellationException`) are there;
+- reflection of types (`typeOf`, `KType`);
 - `@ThreadLocal` is there but changes nothing: a global is one for every thread, as on the JVM
   (on Kotlin/Native it would be one a thread);
 - `isDaemon`, names and priorities of threads;

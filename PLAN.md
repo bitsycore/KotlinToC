@@ -20,10 +20,10 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 216
-tests: 135 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 80 files of common tests under `tests/` (one of ktc2's own and 79 of
-the Kotlin standard library's, some 1600 `@Test` functions, with the helpers of the library's
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 293
+tests: 139 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 153 files of common tests under `tests/` (one of ktc2's own and 152 of
+the Kotlin standard library's, some 2200 `@Test` functions, with the helpers of the library's
 tests under `tests/support/`), and the showcase as a program of several modules. It passes
 on Windows (mingw gcc 15) in about five minutes (the library's large test files, `ArraysTest`
 and `CollectionTest`, take most of it), on Linux (Debian in WSL2, gcc 14) and, by the CI job,
@@ -95,11 +95,11 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **How differences are found**, which is the work to go on with:
 1. *Tests of the Kotlin standard library* (`tests/kotlin/`, from `libraries/stdlib/test` of
-   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 79 files are
-   in and pass (some 1600 tests), with the helpers of the library's tests under
+   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 152 files are
+   in and pass (some 2200 tests), with the helpers of the library's tests under
    `tests/support/`; `tests/README.md` lists what they found (some fifty differences, all
-   fixed). What is left: 2 files in `tests/pending/` (`DeepRecursiveFunction`, which is
-   built on coroutines, and reflection of types) and 2 tests in `<Name>.skip` files, each with
+   fixed). What is left: 4 files in `tests/pending/` that need coroutines, and one that needs reflection
+   of types and 2 tests in `<Name>.skip` files, each with
    the reason. Every file of `libraries/stdlib/test` that
    does not need the library's `internal` declarations or JavaScript is in. Next: coroutines
    (`sequence { }`, `iterator { }`, part 8), then the tests of `libraries/stdlib/jvm/test`
@@ -470,7 +470,8 @@ Open:
 - [x] **A monotonic clock** behind `kotlin.time` and `measureTimeMillis`
   (`ktc2_ticksNanos`: `QueryPerformanceCounter`, `clock_gettime(CLOCK_MONOTONIC)`). The
   Windows and Linux branches are written and not yet run.
-- [~] `Clock` and `Instant`, case of characters beyond U+FFFF: done (2026-11-14). The `U` flag of `Regex` is left.
+- [x] `Clock` and `Instant`, case of characters beyond U+FFFF, the `U` flag of `Regex` and its
+  four-letter script codes, `Base64` (2026-11-14).
 - [ ] **A `.klib`-like way to ship a module.** Today a module is its sources (a directory or a
   git repository). The Kotlin compiler ktc2 runs is the JVM one and cannot read klibs, and
   published klibs are built against Kotlin/Native's own library, so this means either a
@@ -499,7 +500,7 @@ Open:
    of the library's tests (`libraries/stdlib/jvm/test` where it is not about the JDK).
 3. Another program of ordinary code compared with the JVM, on what was not looked at yet.
 4. The differences `DESIGN.md` still lists in section 12 (paths on Windows, the last digit of
-   `exp` and the like, `Clock` and `Instant`, the `U` flag of `Regex`).
+   `exp` and the like).
 5. `suspend` functions in full, which `sequence { }` and `iterator { }` wait for (part 8).
 6. Unit tests of the passes; files through kotlinx.io or okio (part 8).
 7. Speed, last: `Double` as text without `snprintf`, `sortedBy` without boxing its keys, an

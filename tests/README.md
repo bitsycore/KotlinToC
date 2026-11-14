@@ -18,7 +18,8 @@ package). The same file runs:
 - `kotlin/`: tests of the Kotlin standard library itself, unchanged, from
   `libraries/stdlib/test` of github.com/JetBrains/kotlin at tag `v2.5.0-RC`, the version of
   the library ktc2 compiles (Apache 2.0, the header of each file). They are the best tests
-  there are of what the library must do. 79 files, some 1600 tests. They are compiled as the
+  there are of what the library must do. 152 files, some 2200 tests: every file of `libraries/stdlib/test` but those of JavaScript and the
+  six in `pending/` (coroutines, reflection of types). They are compiled as the
   library's own tests are: with its opt-ins (`kotlin.ExperimentalUnsignedTypes` and the others
   of its `commonTestOptIns`; `ktc2.optIn` in `build.gradle.kts` for C), and on the JVM seeing
   what the library keeps `internal`.
@@ -117,6 +118,7 @@ The 24 files that use the helpers, taken on 2026-11-14, found these, all fixed:
 | File | Why |
 |---|---|
 | `DeepRecursiveTest` | `DeepRecursiveFunction` is built on coroutines |
+| `SequenceBuilderTest`, `CoroutinesReferenceValuesTest` | `sequence { }`, `suspend` functions: coroutines |
 | `KTypeProjectionTest` | reflection of types (`KType`) is not there |
 
 Tests set aside inside files that run (`.skip`): one of `MapTest` that puts null in a
@@ -137,9 +139,18 @@ They found two faults of the compiler besides: `Devirtualize` did not see a text
 template into a local, and took a generic function's parameter for the one class it had seen
 elsewhere (`objects/TemplateArguments`); and a reference to a `var` could not be written through.
 
-Not taken at all, because they test what only the library's own module can reach
-(`internal`): `AbstractListTest`, `InstantTest`, `InstantIsoStringsTest`, `DurationParserTest`,
-`UByteValueSetTest`, `BytesHexFormatTest`, `Base64Test`.
+Taken in later the same day: `Base64Test` (with `kotlin.io.encoding.Base64`), the files thought
+to need the library's `internal` declarations (`AbstractListTest`, `InstantTest`,
+`InstantIsoStringsTest`, `DurationParserTest`, `UByteValueSetTest`, `BytesHexFormatTest`: they pass,
+compiled as part of the library's module), the 67 generated files of `generated/` (`allDistinct`,
+`allEqual`, `isSorted`, `min`/`max` for every kind of array, iterable and sequence), and the tests of
+the coroutine context that need no `suspend` (`CoroutineContextTest`,
+`AbstractCoroutineContextElementTest`, `ContinuationInterceptorKeyTest`,
+`CancellationExceptionTest`, `ResultTest`, `StackTraceRecoverableTest`). They found: `==` between two
+values of a type parameter that stands for Double or Float is `equals` (NaN equals NaN, -0.0 is not
+0.0: `basic/GenericFloatEquality`), a local of type `Nothing`, booleans compared in C, a default
+argument that names an earlier parameter of an inherited member (`objects/InheritedDefaults`), and
+a private property read on another instance of a class below its own (`generics/PrivateOfAnother`).
 
 On Kotlin/Native 2.4.21 some of these files do not compile ("name based destructuring is only
 available since language version 2.5"): they need the compiler of their own version.
