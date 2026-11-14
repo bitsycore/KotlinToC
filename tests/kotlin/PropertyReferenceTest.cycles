@@ -1,0 +1,1 @@
+Properties of a class delegated to a reference to a property of the same object (`val x by this::y`, `var z by ::w`): the object holds the reference, which holds the object.

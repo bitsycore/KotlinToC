@@ -1,2 +1,1 @@
 nullKeyAndValue: puts null in a HashMap<String, Int> through an unchecked cast to MutableMap<String?, Int?>; here that map keeps its values as numbers and has no room for null (DESIGN.md, generic classes)
-modifiedBackingMapOfEntry: its last part wants an entry of the map being built by buildMap to fail once the map changed; buildMap fills a LinkedHashMap here, whose entries stay good, as those of the JVM's maps do

@@ -141,6 +141,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// refer to each other in a circle: those are never freed (there is no collector of cycles), which
 		// for this one file is not a failure.
 		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
+		// `<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed), one a line.
+		mVarying = File(inSource.parentFile, inSource.nameWithoutExtension + ".vary").takeIf { it.isFile }?.readLines()
+			?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
 		val vOutDir = File("build/integration/test-${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		val vMain = File("build/testmain/${inSource.nameWithoutExtension}Main.kt").apply { parentFile.mkdirs() }
 		// `<Name>.skip` names the tests of the file that are not run, one a line with the reason after a colon
@@ -161,7 +164,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vJvmOptions = File(inSource.parentFile, inSource.nameWithoutExtension + ".jvm").takeIf { it.isFile }?.readLines()
 			?.map { it.trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
 		// The library's tests are of its own module: they opt in to what it calls experimental, and see what it keeps internal.
-		mJvmOptions = if (vShared.isEmpty()) emptyList() else kLibraryOptIns.map { "-opt-in=$it" } + vJvmOptions + "-Xfriend-paths=${K2Frontend.userClasspath().split(File.pathSeparator).first()}"
+		mJvmOptions = if (vShared.isEmpty()) emptyList() else kLibraryOptIns.map { "-opt-in=$it" } + vJvmOptions + "-Xmulti-platform" + "-Xfriend-paths=${K2Frontend.userClasspath().split(File.pathSeparator).first()}"
 		try {
 			// A file that leaves something to the platform (`expect`) is compiled without those lines: tests/support answers them for each side.
 			val vText = inSource.readText()
@@ -170,6 +173,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		} finally {
 			mJvmExtra = emptyList()
 			mJvmOptions = emptyList()
+			mVarying = emptyList()
 			mCExtra = emptyList()
 			mAllowsLeaks = false
 		}
@@ -343,6 +347,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
 	}
 
+	/** Lines of the output that differ from run to run (`<Name>.vary`): left out of the comparison. */
+	private var mVarying: List<String> = emptyList()
+
 	/** Runs a process and returns its stdout with normalized line endings; fails on a non-zero exit. */
 	/**
 	 * [inOutput] without what differs between platforms and is no difference of behaviour. The
@@ -351,6 +358,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 */
 	private fun samePlatform(inOutput: String): String =
 		inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")
+			.lines().filter { vLine -> mVarying.none { vLine.startsWith(it) } }.joinToString("\n")
 
 	private fun run(inCommand: List<String>, inDirectory: File): String {
 		val vErrors = File.createTempFile("ktc2", ".err")

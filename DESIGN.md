@@ -498,11 +498,29 @@ Not Kotlin, by design:
 - destruction is immediate, not deferred: visible only through weak references.
 
 Kotlin, but not done:
-- `Clock`, `Instant`; the `U` flag and four-letter script codes of `Regex`;
-- `kotlin.text.unicode.CodePoint`; case conversion beyond U+FFFF is done for strings, for the
-  scripts that have two cases there (a table in `Ktc2Strings.kt`, as of Unicode 15);
+- the `U` flag and four-letter script codes of `Regex`;
+- `@ThreadLocal` is there but changes nothing: a global is one for every thread, as on the JVM
+  (on Kotlin/Native it would be one a thread);
 - `isDaemon`, names and priorities of threads;
 - files (to come from kotlinx.io or okio, through a ktc2 compatibility layer).
+
+Done in the platform layer, worth knowing:
+- `kotlin.concurrent.atomics` (`Ktc2Atomics.kt`): a number is one element of an IntArray or a
+  LongArray that `ktc2_atomicInt`/`ktc2_atomicLong` change with the C compiler's atomic
+  operations (sequentially consistent); a reference is changed under the monitor of its holder,
+  which costs nothing in a program without threads.
+- What `buildList`, `buildSet` and `buildMap` give (`Ktc2Builders.kt`) refuses every change
+  once built, through itself, its views, iterators and parts; the empty one is one object.
+- Unicode beyond U+FFFF (`CodePoint`, `lowercase` of a string): the tables of `Ktc2Unicode.kt`,
+  generated from the JDK with the others.
+- The functions of the library written with `sequence { }` or `iterator { }` (`windowed`,
+  `chunked`, `scan`, `runningFold`, `runningReduce`, `zipWithNext`, `flatMapIndexed`,
+  `shuffled`, `ifEmpty` of a sequence) are iterators of `Ktc2Internal.kt` that do the same
+  steps; a call to one is lowered to the platform's of the same name and parameters
+  (`kWithoutCoroutine` in `BodyLowering.kt`). `sequence { }` in a program still needs coroutines.
+- A reference to a `var` where a `KMutableProperty0` or `1` is wanted is a `MutableReference0`
+  or `1` of the platform layer: the getter (its `invoke`, which `get()` is lowered to) with
+  the setter beside it (`set` is lowered to `mutableReferenceSet0`/`1`).
 
 Known to differ from the JVM:
 - the last digit of `exp`, `ln`, `pow`, `sin` and the like is the C library's, which is not

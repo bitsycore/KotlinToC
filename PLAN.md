@@ -20,10 +20,10 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 199
-tests: 131 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 67 files of common tests under `tests/` (one of ktc2's own and 66 of
-the Kotlin standard library's, some 1400 `@Test` functions, with the helpers of the library's
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 216
+tests: 135 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 80 files of common tests under `tests/` (one of ktc2's own and 79 of
+the Kotlin standard library's, some 1600 `@Test` functions, with the helpers of the library's
 tests under `tests/support/`), and the showcase as a program of several modules. It passes
 on Windows (mingw gcc 15) in about five minutes (the library's large test files, `ArraysTest`
 and `CollectionTest`, take most of it), on Linux (Debian in WSL2, gcc 14) and, by the CI job,
@@ -94,14 +94,14 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **How differences are found**, which is the work to go on with:
 1. *Tests of the Kotlin standard library* (`tests/kotlin/`, from `libraries/stdlib/test` of
-   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 66 files are
-   in and pass (some 1400 tests), with the helpers of the library's tests under
-   `tests/support/`; `tests/README.md` lists what they found (some forty differences, all
-   fixed), the 15 files that wait in `tests/pending/` and the 14 tests set aside in
-   `<Name>.skip` files, each with the reason. Every file of `libraries/stdlib/test` that
-   does not need the library's `internal` declarations or JavaScript is now in one of the
-   two. Next: what `tests/pending/` waits for (`CodePoint`, read-only `buildList`,
-   `KClass.cast`, `kotlin.concurrent.atomics`), then the tests of `libraries/stdlib/jvm/test`
+   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 79 files are
+   in and pass (some 1600 tests), with the helpers of the library's tests under
+   `tests/support/`; `tests/README.md` lists what they found (some fifty differences, all
+   fixed). What is left: 2 files in `tests/pending/` (`DeepRecursiveFunction`, which is
+   built on coroutines, and reflection of types) and 2 tests in `<Name>.skip` files, each with
+   the reason. Every file of `libraries/stdlib/test` that
+   does not need the library's `internal` declarations or JavaScript is in. Next: coroutines
+   (`sequence { }`, `iterator { }`, part 8), then the tests of `libraries/stdlib/jvm/test`
    that are not about the JDK, and those of `kotlin-native/runtime/test`.
 2. *Programs of ordinary code compared with the JVM* (`generics/ErasedViews`,
    `objects/OrdinaryClasses`, `stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`,
