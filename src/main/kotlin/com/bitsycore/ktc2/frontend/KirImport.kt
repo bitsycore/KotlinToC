@@ -107,6 +107,27 @@ internal fun isStaticMember(inFunction: IrFunction): Boolean =
 	inFunction is IrSimpleFunction && inFunction.parent is IrClass && inFunction.dispatchReceiverParameter == null &&
 		inFunction.origin != IrDeclarationOrigin.ENUM_CLASS_SPECIAL_MEMBER
 
+/**
+ * The reference a property of a class is delegated to when it is another property of the same
+ * object (`var alias by this::name`): its accessors then use that property directly and nothing
+ * is stored, as on the JVM. Stored, the reference would hold the object that holds it.
+ */
+internal fun selfDelegation(inProperty: IrProperty): org.jetbrains.kotlin.ir.expressions.IrRichPropertyReference? {
+	if (!inProperty.isDelegated) return null
+	val vClass = inProperty.parent as? IrClass ?: return null
+	val vReference = inProperty.backingField?.initializer?.expression as? org.jetbrains.kotlin.ir.expressions.IrRichPropertyReference ?: return null
+	val vBound = vReference.boundValues.singleOrNull() as? IrGetValue ?: return null
+	if (vBound.symbol != vClass.thisReceiver?.symbol) return null
+	val vAccessors = listOfNotNull(vReference.getterFunction, vReference.setterFunction)
+	if (vAccessors.any { returnedOf(it) == null }) return null
+	if (inProperty.isVar && vReference.setterFunction == null) return null
+	return vReference
+}
+
+/** The value a function whose body is one `return` returns. */
+internal fun returnedOf(inFunction: IrFunction): org.jetbrains.kotlin.ir.expressions.IrExpression? =
+	((inFunction.body as? org.jetbrains.kotlin.ir.expressions.IrBlockBody)?.statements?.singleOrNull() as? org.jetbrains.kotlin.ir.expressions.IrReturn)?.value
+
 /** True for a property of a `companion { }` block: one variable for the whole program. */
 internal fun isStaticProperty(inProperty: IrProperty): Boolean {
 	val vClass = inProperty.parent as? IrClass ?: return false
@@ -971,6 +992,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
+			if (selfDelegation(vProperty) != null) continue
 			// A cleaner nobody reads is not kept: the property holds its resource, and the class runs the action.
 			val vFolded = if (vFile != null) foldedCleaner(vProperty, vBacking, inClass) else null
 			val vResourceType = vFolded?.let { kTypeOf(it.resourceType, vSubst) }?.takeIf { it != KUnitType && it != KNothingType }
@@ -1100,6 +1122,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		inClass: IrClass,
 		inCaptures: List<Triple<IrValueDeclaration, KType, KField?>>,
 		inLambdas: Map<IrValueDeclaration, BodyBuilder.InlineLambda>,
+		/** The captures held weakly: the field holds a weak cell. */
+		inWeak: Set<IrValueDeclaration> = emptySet(),
 	): List<KField>? {
 		val vClass = classFor(inClass, inFresh = true) ?: return null
 		mLatestLocalClass[inClass] = vClass
@@ -1107,7 +1131,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vBindings = inCaptures.mapIndexed { vIndex, (vDeclaration, vType, vCell) ->
 			var vName = "captured$vIndex"
 			while (!vNames.add(vName)) vName += "_"
-			val vField = KField(vName, vType, vClass)
+			val vField = KField(vName, if (vDeclaration in inWeak) KObjType else vType, vClass)
+			if (vDeclaration in inWeak) vField.weakType = vType
 			vClass.fields += vField
 			BodyBuilder.Binding(vDeclaration, vField, vCell, null)
 		}

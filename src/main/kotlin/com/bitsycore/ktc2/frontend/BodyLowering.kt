@@ -154,6 +154,12 @@ internal class BodyBuilder(
 	internal class Binding(val declaration: Any, val field: KField, val cell: KField?, val invoke: KFunction?)
 
 	private var mBindings: List<Binding> = emptyList()
+
+	/**
+	 * The objects a lambda being created holds weakly: the object whose delegated property is
+	 * being initialized, in a lambda given to `lazy`, `observable` or `vetoable` ([holdsOwnerWeakly]).
+	 */
+	private var mWeakCaptures: Set<IrValueDeclaration> = emptySet()
 	private var mSelfFunction: IrFunction? = null
 	private var mBlock: MutableList<KStmt> = mFunction.body
 
@@ -344,9 +350,12 @@ internal class BodyBuilder(
 		vIr.parameters.forEachIndexed { vIndex, vParam -> if (vIndex + vOffset >= 0) mLocals[vParam] = mFunction.params[vIndex + vOffset] }
 		mCellVariables += mImporter.captures.cellVariables(vIr)
 		for (vBinding in mBindings) {
-			val vLocal = KLocal(freshName("captured"), vBinding.field.type)
+			val vWeakType = vBinding.field.weakType
+			val vLocal = KLocal(freshName("captured"), vWeakType ?: vBinding.field.type)
 			mTemps += vLocal
-			mBlock += KLet(vLocal, KFieldRead(fieldTarget(KRead(mFunction.params[0]), vBinding.field), vBinding.field))
+			val vRead = KFieldRead(fieldTarget(KRead(mFunction.params[0]), vBinding.field), vBinding.field)
+			// A capture held weakly is asked for its object: alive whenever the lambda runs (mWeakCaptures).
+			mBlock += KLet(vLocal, if (vWeakType != null) coerce(KCall(mImporter.weakGetFunction(), listOf(vRead)), vWeakType) else vRead)
 			when (val vDeclaration = vBinding.declaration) {
 				is IrValueDeclaration -> {
 					mLocals[vDeclaration] = vLocal
@@ -364,9 +373,20 @@ internal class BodyBuilder(
 			}
 			vIr.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR -> buildDefaultAccessor(vIr as IrSimpleFunction)
 			vIsSuspend -> buildSuspendFunction(vIr as IrSimpleFunction)
+			vIr is IrSimpleFunction && vIr.correspondingPropertySymbol?.owner?.let { selfDelegation(it) } != null -> buildSelfDelegated(vIr)
 			vIr is IrSimpleFunction && vIr.isTailrec && vIr.body !is IrSyntheticBody -> buildTailRecursive(vIr)
 			else -> buildBody(vIr)
 		}
+	}
+
+	/** An accessor of a property delegated to another property of the same object ([selfDelegation]): that property's accessor, called on `this`. */
+	private fun buildSelfDelegated(inAccessor: IrSimpleFunction) {
+		val vReference = selfDelegation(inAccessor.correspondingPropertySymbol!!.owner)!!
+		val vIsGetter = inAccessor.parameters.size == 1
+		val vTarget = if (vIsGetter) vReference.getterFunction else vReference.setterFunction!!
+		mLocals[vTarget.parameters[0]] = mFunction.params[0]
+		if (!vIsGetter) mLocals[vTarget.parameters[1]] = mLocals.getValue(inAccessor.parameters[1])
+		emitReturn(returnedOf(vTarget)!!)
 	}
 
 	private fun buildBody(inFunction: IrFunction) {
@@ -1081,7 +1101,7 @@ internal class BodyBuilder(
 			val vLocal = mLocals[vDeclaration]
 			val vCell = mCells[vDeclaration]
 			when {
-				vLocal == null -> fail(inExpression, "reference to '${vDeclaration.name}'")
+				vLocal == null -> throughOuter(vDeclaration) ?: fail(inExpression, "reference to '${vDeclaration.name}'")
 				vCell != null -> KFieldRead(KRead(vLocal), vCell)
 				vLocal.type == KUnitType -> KUnitValue
 				else -> KRead(vLocal)
@@ -2029,6 +2049,45 @@ internal class BodyBuilder(
 		mBlock += KFieldSet(inTarget, inField, if (inField.isInline) spill(inValue) else inValue)
 	}
 
+	/**
+	 * True when [inDelegate], the delegate of a property, is a library delegate that only the
+	 * object of the property can reach and that runs its lambda only through it: `lazy { }`,
+	 * `Delegates.observable`, `Delegates.vetoable`. Its lambda then holds that object weakly, which
+	 * is no cycle: the object holds the delegate, the delegate the lambda.
+	 */
+	private fun holdsOwnerWeakly(inDelegate: IrExpression): Boolean {
+		val vCall = inDelegate as? IrCall ?: return false
+		return when (vCall.symbol.owner.kotlinFqName.asString()) {
+			"kotlin.lazy", "kotlin.properties.Delegates.observable", "kotlin.properties.Delegates.vetoable" -> true
+			else -> false
+		}
+	}
+
+	/**
+	 * A value the function has no binding for, reached through the objects it does have: the
+	 * outer object of an `inner` class inside another (`this@Outer` from two levels in), or what a
+	 * local class or its outer object captured. Each step reads the field that holds it.
+	 */
+	private fun throughOuter(inDeclaration: IrValueDeclaration): KExpr? {
+		val vSeen = HashSet<KClass>()
+		val vQueue = ArrayDeque<KExpr>()
+		for ((vKey, vLocal) in mLocals) if (vKey is IrValueParameter && vKey.parent is IrClass && vKey !in mCells) vQueue += KRead(vLocal)
+		while (vQueue.isNotEmpty()) {
+			val vFrom = vQueue.removeFirst()
+			val vClass = (vFrom.type as? KClassType)?.cls ?: continue
+			if (!vSeen.add(vClass)) continue
+			for (vBinding in mImporter.localBindingsOf(vClass)) {
+				val vRead = KFieldRead(fieldTarget(vFrom, vBinding.field), vBinding.field)
+				if (vBinding.declaration === inDeclaration) {
+					return vBinding.cell?.let { KFieldRead(vRead, it) } ?: vRead
+				}
+				if (vBinding.field.weakType != null) continue
+				if (vBinding.cell == null && vBinding.declaration is IrValueParameter && (vBinding.declaration as IrValueParameter).parent is IrClass) vQueue += vRead
+			}
+		}
+		return null
+	}
+
 	/** The receiver of a field access, seen as the class that declares the field. */
 	private fun fieldTarget(inReceiver: KExpr, inField: KField): KExpr =
 		inField.owner?.let { coerce(inReceiver, KClassType(it)) } ?: inReceiver
@@ -2072,7 +2131,7 @@ internal class BodyBuilder(
 			if (vSource == null) {
 				fail(inCall, "creating a local class instance where '${(vBinding.declaration as IrValueDeclaration).name}' is not in scope")
 			} else {
-				mBlock += KFieldSet(fieldTarget(KRead(vObject), vBinding.field), vBinding.field, coerce(vSource, vBinding.field.type))
+				writeField(fieldTarget(KRead(vObject), vBinding.field), vBinding.field, coerce(vSource, vBinding.field.weakType ?: vBinding.field.type))
 			}
 		}
 		mBlock += KEval(vCall)
@@ -2119,7 +2178,9 @@ internal class BodyBuilder(
 		val vSet = CaptureSet()
 		collectCaptures(mImporter.captures.freeVariablesOfClass(inClass), vSet)
 		val vCaptures = vSet.values.map { (vDeclaration, vLocal) -> Triple(vDeclaration, vLocal.type, mCells[vDeclaration]) }
-		if (mImporter.declareLocalClass(inClass, vCaptures, HashMap(vSet.lambdas)) == null) fail(inClass, "local class '${inClass.name}'")
+		// The object of a delegate `observable` makes holds the owner of the property weakly, as its lambda would (mWeakCaptures).
+		val vWeak = vCaptures.filter { (vDeclaration, vType, vCell) -> vDeclaration in mWeakCaptures && vCell == null && vType is KClassType }.map { it.first }.toSet()
+		if (mImporter.declareLocalClass(inClass, vCaptures, HashMap(vSet.lambdas), vWeak) == null) fail(inClass, "local class '${inClass.name}'")
 	}
 
 	/** An enum constructor delegating to its superclass constructor (`kotlin.Enum` needs nothing). */
@@ -2153,11 +2214,16 @@ internal class BodyBuilder(
 			when (vDeclaration) {
 				is IrProperty -> {
 					val vBacking = vDeclaration.backingField ?: continue
+					if (selfDelegation(vDeclaration) != null) continue
 					val vInit = vBacking.initializer?.expression ?: continue
 					val vField = mImporter.fieldIn((mFunction.params[0].type as? KClassType)?.cls, vBacking) ?: continue
 					// A folded cleaner: the property holds the resource `createCleaner` was given.
 					val vValue = mImporter.cleanerOf(vField)?.resource ?: vInit
-					writeField(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vValue), vField.type))
+					val vSaved = mWeakCaptures
+					if (vDeclaration.isDelegated && holdsOwnerWeakly(vValue)) mWeakCaptures = setOfNotNull(inCall.classSymbol.owner.thisReceiver)
+					val vLowered = lowerRhs(vValue)
+					mWeakCaptures = vSaved
+					writeField(fieldTarget(selfRead(), vField), vField, coerce(vLowered, vField.type))
 				}
 				is IrAnonymousInitializer -> vDeclaration.body.statements.forEach { lowerStatement(it) }
 				// What an interface is delegated to (`by list`), kept in a field of no property.
@@ -2747,7 +2813,9 @@ internal class BodyBuilder(
 			fail(inElement, "lambda returning '${inFunction.returnType.render()}'")
 			return null
 		}
-		val vClass = mImporter.newClosureClass(mFile, vCaptures.map { it.name to it.source.type })
+		val vWeak = vCaptures.map { it.declaration in mWeakCaptures && it.cell == null && it.source.type is KClassType }
+		val vClass = mImporter.newClosureClass(mFile, vCaptures.mapIndexed { vIndex, vCapture -> vCapture.name to (if (vWeak[vIndex]) KObjType else vCapture.source.type) })
+		vCaptures.forEachIndexed { vIndex, vCapture -> if (vWeak[vIndex]) vClass.fields[vIndex].weakType = vCapture.source.type }
 		val vInvoke = KFunction("${vClass.cName}_invoke", vClass.unit, listOf(KLocal("self", KClassType(vClass))) + vParams, vReturn)
 		vClass.unit.functions += vInvoke
 		val vSamClass = inSam?.classOrNull?.owner
@@ -2758,7 +2826,7 @@ internal class BodyBuilder(
 
 		val vObject = newTemp(KClassType(vClass))
 		mBlock += KLet(vObject, KAlloc(vClass))
-		vCaptures.forEachIndexed { vIndex, vCapture -> mBlock += KFieldSet(KRead(vObject), vClass.fields[vIndex], KRead(vCapture.source)) }
+		vCaptures.forEachIndexed { vIndex, vCapture -> writeField(KRead(vObject), vClass.fields[vIndex], KRead(vCapture.source)) }
 		return vObject to vInvoke
 	}
 
