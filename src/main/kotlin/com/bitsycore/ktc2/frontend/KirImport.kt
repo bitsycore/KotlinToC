@@ -297,6 +297,85 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mClosures += Closure(mBuiltIns.functionN(vParams.size), vArguments, inClass, inInvoke)
 	}
 
+	// ==================
+	// MARK: Coroutines
+	// ==================
+
+	/**
+	 * A class made for a coroutine: a `suspend` function that is a state machine, or a `suspend`
+	 * lambda. It extends the platform's `ContinuationImpl`; [fields] hold its parameters (and a
+	 * lambda's captured values), [label] where it waits, [drivers] which of its parameters are its
+	 * driver (see `Ktc2CoroutineSupport.kt`), and [invokeSuspend] is its state machine.
+	 */
+	internal class CoroutineClass(val cls: KClass, val fields: List<KField>, val label: KField, val drivers: KField, val invokeSuspend: KFunction)
+
+	/** Members that classes made here implement for a declaration of a class of the library: [resolveDispatch] adds them. */
+	private val mSyntheticOverrides = HashMap<KClass, MutableList<Pair<IrSimpleFunction, KFunction>>>()
+
+	private var mCoroutineClasses = 0
+
+	/** `kotlin.coroutines.intrinsics.CoroutineSingletons`, whose entry `COROUTINE_SUSPENDED` is what a coroutine that waits returns. */
+	private var mCoroutineSingletons: IrClass? = null
+
+	/** A class of the platform layer's `ktc2.internal` package, by name. */
+	internal fun internalClass(inName: String): IrClass? = mInternalClasses[inName]
+
+	/** A member of [inClass] by name and number of parameters. */
+	internal fun memberOf(inClass: IrClass?, inName: String, inParameters: Int): IrSimpleFunction? =
+		inClass?.declarations?.filterIsInstance<IrSimpleFunction>()?.firstOrNull { it.name.asString() == inName && it.parameters.size == inParameters }
+
+	/** The object a coroutine that waits returns: `COROUTINE_SUSPENDED`. */
+	internal fun suspendedMarker(): KStatic? {
+		val vEntry = mCoroutineSingletons?.declarations?.filterIsInstance<IrEnumEntry>()?.firstOrNull { it.name.asString() == "COROUTINE_SUSPENDED" } ?: return null
+		return enumEntryFor(vEntry)
+	}
+
+	/** Makes [inFunction] the implementation of [inDeclaration], a member of a class of the library, in [inClass]. */
+	internal fun overrideIn(inClass: KClass, inDeclaration: IrSimpleFunction, inFunction: KFunction) {
+		mSyntheticOverrides.getOrPut(inClass) { ArrayList() } += inDeclaration to inFunction
+	}
+
+	/**
+	 * A new coroutine class named after [inName], declared in [inFile], with a field for each of
+	 * [inFields] (name and type). Null when the platform layer has no coroutines.
+	 */
+	internal fun newCoroutineClass(inFile: IrFile, inName: String, inFields: List<Pair<String, KType>>): CoroutineClass? {
+		val vBaseIr = mInternalClasses["ContinuationImpl"] ?: return null
+		val vBase = classFor(vBaseIr) ?: return null
+		val vInvokeDeclaration = memberOf(mInternalClasses["BaseContinuationImpl"], "invokeSuspend", 2) ?: return null
+		val vResultType = dispatcherFor(vInvokeDeclaration)?.params?.getOrNull(1)?.type ?: return null
+		val vFacade = facadeFor(inFile)
+		val vName = cIdentifier(inName) + "_coroutine" + mCoroutineClasses++
+		val vUnit = KUnit(vFacade.pkg, "${vFacade.name}.$vName")
+		val vClass = KClass("${cPrefix(vFacade.pkg)}${vFacade.name}_$vName", vUnit, vBase, inName)
+		vUnit.cls = vClass
+		val vNames = generateSequence(vBase) { it.superClass }.flatMap { it.fields }.mapTo(HashSet()) { it.cName }
+		vNames += listOf("label", "drivers")
+		val vFields = inFields.map { (vFieldName, vType) ->
+			var vUnique = cIdentifier(vFieldName)
+			while (!vNames.add(vUnique)) vUnique += "_"
+			KField(vUnique, vType, vClass, isImmutable = true).also { vClass.fields += it }
+		}
+		val vLabel = KField("label", KPrimType(KPrim.INT), vClass)
+		val vDrivers = KField("drivers", KPrimType(KPrim.INT), vClass)
+		vClass.fields += vLabel
+		vClass.fields += vDrivers
+		mClassInfo[vClass] = ClassInfo(vBaseIr, emptyMap(), vBaseIr.symbol.typeWith())
+		mClassList += vClass
+		mUnits += vUnit
+		instantiate(vClass)
+		val vInvoke = KFunction("${vClass.cName}_invokeSuspend", vUnit, listOf(KLocal("self", KClassType(vClass)), KLocal("result", vResultType)), KObjType)
+		vInvoke.coroutine = KCoroutine(vClass, vLabel)
+		vUnit.functions += vInvoke
+		overrideIn(vClass, vInvokeDeclaration, vInvoke)
+		return CoroutineClass(vClass, vFields, vLabel, vDrivers, vInvoke)
+	}
+
+	/** Makes the closure class [inClass] an implementation of `FunctionN` for `is` and `as`, as a `suspend` lambda is on the JVM. */
+	internal fun implementFunction(inClass: KClass, inArity: Int) {
+		inClass.interfaces += interfaceFor(mBuiltIns.functionN(inArity))
+	}
+
 	private var mStaticFunctions = 0
 
 	/** A C function for the lambda [inLambda], which captures nothing: what `staticCFunction { }` points at. */
@@ -385,6 +464,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().forEach { mInternal[it.name.asString()] = it }
 			vFile.declarations.filterIsInstance<IrClass>().forEach { mInternalClasses[it.name.asString()] = it }
 		}
+		mCoroutineSingletons = inModule.files.filter { it.packageFqName.asString() == "kotlin.coroutines.intrinsics" }
+			.flatMap { it.declarations.filterIsInstance<IrClass>() }.firstOrNull { it.name.asString() == "CoroutineSingletons" }
 		val vMain = inModule.files.filter { !it.packageFqName.asString().startsWith("kotlin") }.firstNotNullOfOrNull { vFile ->
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { isEntryPoint(it) }
 		}
@@ -1729,6 +1810,13 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				if (vType == KObjType && vParam.kind == IrParameterKind.Regular) vLocal.boundClass = boundClassOf(vParam.type)
 			}
 		}
+		// A `suspend` function takes the continuation that waits for it last, and returns its result or `COROUTINE_SUSPENDED`.
+		if (inFunction is IrSimpleFunction && inFunction.isSuspend) {
+			var vName = "completion"
+			while (!vNames.add(vName)) vName += "_"
+			vParams += KLocal(vName, KObjType)
+			return if (vOk) Signature(vParams, KObjType) else null
+		}
 		val vReturn = kTypeOf(inFunction.returnType, inSubst)
 		if (vReturn == null) {
 			unsupported(inFile, inFunction, "return type '${inFunction.returnType.render()}'")
@@ -1972,6 +2060,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				if (!mDispatchDone.add(vKey to vConcrete)) continue
 				val vInfo = mClassInfo[vConcrete] ?: continue
 				if (!isSubtype(vInfo.irClass, vOwner)) continue
+				// A member a class made here implements itself (the state machine of a coroutine class).
+				val vSynthetic = mSyntheticOverrides[vConcrete]?.firstOrNull { (vDeclaration, _) ->
+					vDeclaration == vFunction || overrides(vDeclaration, vFunction) || overrides(vFunction, vDeclaration)
+				}
+				if (vSynthetic != null) {
+					vDispatcher.target.dispatch!! += vConcrete to vSynthetic.second
+					vChanged = true
+					continue
+				}
 				// A generic owner matches the instantiation the call was made on.
 				val vSeenAs = superArguments(vInfo.type, vOwner).map { kTypeOf(canonical(it)) ?: KObjType }
 				if (!accepts(vDispatcher.classArguments, vSeenAs)) continue

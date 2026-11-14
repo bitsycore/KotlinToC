@@ -38,6 +38,7 @@ class CEmitter(private val mModule: KModule) {
 	}
 
 	fun emit(inRoot: File): List<String> {
+		prepareCoroutines()
 		val vSources = ArrayList<String>()
 		write(File(inRoot, "ktc2_types.h"), typeIds())
 		write(File(inRoot, "ktc2_config.h"), config())
@@ -142,7 +143,79 @@ class CEmitter(private val mModule: KModule) {
 	private fun allFunctions(inUnit: KUnit): List<KFunction> = inUnit.functions + listOfNotNull(inUnit.initializer)
 
 	/** Reference fields of [inClass] itself (not inherited). */
-	private fun refFields(inClass: KClass): List<KField> = inClass.fields.filter { it.type.isCounted() && !it.isInline }
+	private fun refFields(inClass: KClass): List<KField> = inClass.fields.filter { it.type.isCounted() && !it.isInline && !it.isFrame }
+
+	// ==================
+	// MARK: Coroutines
+	// ==================
+
+	/** For each state machine, its locals and the field of the coroutine object each one is. */
+	private val mFrames = HashMap<KFunction, Map<KLocal, KField>>()
+
+	/** The state machines, by the class of their coroutine object. */
+	private val mStateMachines = HashMap<KClass, KFunction>()
+
+	/**
+	 * Makes the locals of each state machine fields of its coroutine object, and takes the
+	 * releases `ArcInsert` put in front of each suspension out of it: they are what the
+	 * coroutine owns while it waits there, given up by its `destroy` if it is dropped then.
+	 */
+	private fun prepareCoroutines() {
+		for (vUnit in mModule.units) {
+			for (vFunction in vUnit.functions) {
+				val vCoroutine = vFunction.coroutine ?: continue
+				val vParams = vFunction.params.toSet()
+				val vFields = LinkedHashMap<KLocal, KField>()
+				val vNames = generateSequence(vCoroutine.cls) { it.superClass }.flatMap { it.fields }.mapTo(HashSet()) { it.cName }
+				fun local(inLocal: KLocal) {
+					if (inLocal in vParams || inLocal in vFields) return
+					var vName = "F_${inLocal.cName}"
+					while (!vNames.add(vName)) vName += "_"
+					vFields[inLocal] = KField(vName, inLocal.type, vCoroutine.cls).also { it.isFrame = true }
+				}
+				vFunction.body.anyStatement { vStatement ->
+					when (vStatement) {
+						is KLet -> local(vStatement.local)
+						is KSet -> local(vStatement.local)
+						is KConcat -> local(vStatement.target)
+						else -> {}
+					}
+					vStatement.ownExpressions().forEach { vRoot -> vRoot.anyNode { if (it is KRead) local(it.local); false } }
+					false
+				}
+				vCoroutine.cls.fields += vFields.values
+				mFrames[vFunction] = vFields
+				mStateMachines[vCoroutine.cls] = vFunction
+				val vBody = withoutSuspendReleases(vFunction.body, vCoroutine)
+				vFunction.body.clear()
+				vFunction.body += vBody
+			}
+		}
+	}
+
+	/** [inBlock] with the releases in front of each suspension moved to [inCoroutine]'s cleanups. */
+	private fun withoutSuspendReleases(inBlock: List<KStmt>, inCoroutine: KCoroutine): List<KStmt> = inBlock.map { vStatement ->
+		when (vStatement) {
+			is KIf -> if (vStatement.condition.isSuspendPoint()) {
+				inCoroutine.cleanups[vStatement.condition.suspendLabel()] = vStatement.thenBlock.filterIsInstance<KRelease>()
+				KIf(vStatement.condition, vStatement.thenBlock.filter { it !is KRelease }, vStatement.elseBlock)
+			} else {
+				KIf(vStatement.condition, withoutSuspendReleases(vStatement.thenBlock, inCoroutine), withoutSuspendReleases(vStatement.elseBlock, inCoroutine))
+			}
+			is KLoop -> KLoop(vStatement.id, withoutSuspendReleases(vStatement.body, inCoroutine), withoutSuspendReleases(vStatement.latch, inCoroutine))
+			else -> vStatement
+		}
+	}
+
+	/** The labels of the suspension points of [inBlock], in order. */
+	private fun suspendLabels(inBlock: List<KStmt>): List<Int> {
+		val vLabels = ArrayList<Int>()
+		inBlock.anyStatement { vStatement ->
+			if (vStatement is KIf && vStatement.condition.isSuspendPoint()) vLabels += vStatement.condition.suspendLabel()
+			false
+		}
+		return vLabels
+	}
 
 	/** C that takes a reference to [inText]: the object's count, or those of everything a struct holds. Yields the value. */
 	private fun retainText(inType: KType, inText: String): String =
@@ -278,7 +351,7 @@ class CEmitter(private val mModule: KModule) {
 		if (kNoInline) return@getOrPut vResult
 		val vVisible = headerUnits(inUnit) + inUnit
 		for (vFunction in inUnit.functions) {
-			if (vFunction.isExternal || vFunction.dispatch != null) continue
+			if (vFunction.isExternal || vFunction.dispatch != null || vFunction.coroutine != null) continue
 			val vText = StringBuilder()
 			val vState = UnitState()
 			printBody(vFunction, FunctionPrinter(vText, vState), vText)
@@ -292,10 +365,25 @@ class CEmitter(private val mModule: KModule) {
 
 	/** Writes the body of [inFunction], between its braces, to [outText] through [inPrinter]. */
 	private fun printBody(inFunction: KFunction, inPrinter: FunctionPrinter, outText: StringBuilder) {
+		val vCoroutine = inFunction.coroutine
+		if (vCoroutine != null) {
+			// A state machine starts where the coroutine waits.
+			inPrinter.frame = mFrames.getValue(inFunction)
+			inPrinter.self = inFunction.params[0].cName
+			inPrinter.coroutine = vCoroutine
+			outText.append("\tswitch (${inPrinter.self}->${vCoroutine.label.cName}) {\n\tcase 0:\n\t\tbreak;\n")
+			suspendLabels(inFunction.body).forEach { outText.append("\tcase $it:\n\t\tgoto resume_$it;\n") }
+			outText.append("\tdefault:\n\t\tbreak;\n\t}\n")
+		}
 		inPrinter.block(inFunction.body, 1)
 		// Kotlin has checked that every path returns or throws; the C compiler has not.
 		val vReturns = inFunction.returnType != KUnitType && inFunction.returnType != KNothingType
-		if (vReturns && inFunction.body.lastOrNull() !is KReturn) outText.append("\treturn ${inPrinter.zero(inFunction.returnType)};\n")
+		if (vReturns && inFunction.body.lastOrNull() !is KReturn) {
+			if (vCoroutine != null) outText.append("\t${inPrinter.self}->${vCoroutine.label.cName} = -1;\n")
+			outText.append("\treturn ${inPrinter.zero(inFunction.returnType)};\n")
+		}
+		inPrinter.frame = null
+		inPrinter.coroutine = null
 	}
 
 	private fun source(inUnit: KUnit): String {
@@ -310,6 +398,26 @@ class CEmitter(private val mModule: KModule) {
 		}
 		inUnit.cls?.let { vClass ->
 			vBodies.append("\nvoid ${vClass.cName}__destroy(ktc2_Obj* object)\n{\n")
+			mStateMachines[vClass]?.let { vMachine ->
+				// Dropped while it waits: what the state machine holds at that point.
+				val vCoroutine = vMachine.coroutine!!
+				vBodies.append("\t{\n\t\t${vClass.cName}* self = (${vClass.cName}*)object;\n\t\tswitch (self->${vCoroutine.label.cName}) {\n")
+				for ((vLabel, vCleanup) in vCoroutine.cleanups) {
+					if (vCleanup.isEmpty()) continue
+					vBodies.append("\t\tcase $vLabel:\n")
+					vPrinter.frame = mFrames.getValue(vMachine)
+					vPrinter.self = "self"
+					vPrinter.block(vCleanup, 3)
+					vPrinter.frame = null
+					vBodies.append("\t\t\tbreak;\n")
+				}
+				vBodies.append("\t\tdefault:\n\t\t\tbreak;\n\t\t}\n")
+				// A parameter that holds the driver does not count it.
+				for ((vField, vBit) in vCoroutine.driverFields) {
+					vBodies.append("\t\tif (self->${vCoroutine.drivers!!.cName} & ${1 shl vBit}) self->${vField.cName} = NULL;\n")
+				}
+				vBodies.append("\t}\n")
+			}
 			val vOwn = refFields(vClass)
 			if (vOwn.isNotEmpty()) vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n")
 			vOwn.forEach { vBodies.append("\t${releaseText(it.type, "self->${it.cName}")};\n") }
@@ -490,6 +598,18 @@ class CEmitter(private val mModule: KModule) {
 		private val mOut: StringBuilder,
 		private val mState: UnitState,
 	) {
+		/** In a state machine: for each local, the field of the coroutine object it is. */
+		var frame: Map<KLocal, KField>? = null
+
+		/** In a state machine: the name of the coroutine object. */
+		var self: String = "self"
+
+		/** The state machine being printed. */
+		var coroutine: KCoroutine? = null
+
+		/** How a local is written: its name, or the field of the coroutine object it is. */
+		private fun localText(inLocal: KLocal): String = frame?.get(inLocal)?.let { "$self->${it.cName}" } ?: inLocal.cName
+
 		/** Enclosing loops, innermost last. */
 		private val mLoops = ArrayList<KLoop>()
 		private val mBreakLabels = HashSet<Int>()
@@ -651,9 +771,13 @@ class CEmitter(private val mModule: KModule) {
 					// A local without an initializer starts at zero: a path that leaves through a call
 					// that always throws never assigns it, which the C compiler cannot know.
 					val vInit = " = ${bare(expr(inStatement.init ?: KZero(inStatement.local.type)))}"
-					line(inDepth, "${cType(inStatement.local.type)} ${inStatement.local.cName}$vInit;")
+					if (frame?.containsKey(inStatement.local) == true) {
+						line(inDepth, "${localText(inStatement.local)}$vInit;")
+					} else {
+						line(inDepth, "${cType(inStatement.local.type)} ${inStatement.local.cName}$vInit;")
+					}
 				}
-				is KSet -> store(inStatement.local.cName, inStatement.value, inStatement.releasesOld, inDepth)
+				is KSet -> store(localText(inStatement.local), inStatement.value, inStatement.releasesOld, inDepth)
 				is KGlobalSet -> {
 					mState.includes += inStatement.global.unit
 					store(inStatement.global.cName, inStatement.value, inStatement.releasesOld, inDepth)
@@ -678,8 +802,12 @@ class CEmitter(private val mModule: KModule) {
 				// A value that is computed only because computing it can fail is not kept: the cast says so to the C compiler.
 				is KEval -> line(inDepth, if (inStatement.expr is KCall || inStatement.expr is KIntrinsic) "${bare(expr(inStatement.expr))};" else "(void)${expr(inStatement.expr)};")
 				is KRelease -> line(inDepth, "${releaseText(inStatement.operand.type, bare(expr(inStatement.operand)))};")
-				is KReturn -> line(inDepth, inStatement.value?.let { "return ${bare(expr(it))};" } ?: "return;")
-				is KIf -> ifChain(inStatement, inDepth)
+				is KReturn -> {
+					// A coroutine that returns is done: dropped now, it has nothing to give up.
+					coroutine?.let { line(inDepth, "$self->${it.label.cName} = -1;") }
+					line(inDepth, inStatement.value?.let { "return ${bare(expr(it))};" } ?: "return;")
+				}
+				is KIf -> if (inStatement.condition.isSuspendPoint()) suspension(inStatement, inDepth) else ifChain(inStatement, inDepth)
 				is KLoop -> loop(inStatement, inDepth)
 				is KBreak -> {
 					if (mLoops.last().id == inStatement.loopId) {
@@ -702,6 +830,25 @@ class CEmitter(private val mModule: KModule) {
 				is KThrow, is KTryRegion -> error("exceptions are lowered before emission")
 				is KConcat -> concat(inStatement, inDepth)
 			}
+		}
+
+		/**
+		 * A suspension point: the coroutine says where it waits and returns `COROUTINE_SUSPENDED`;
+		 * it is resumed at the label after it, with everything it holds in its fields.
+		 */
+		private fun suspension(inPoint: KIf, inDepth: Int) {
+			val vLabel = inPoint.condition.suspendLabel()
+			line(inDepth, "{")
+			for (vStatement in inPoint.thenBlock) {
+				if (vStatement is KReturn) {
+					line(inDepth + 1, "$self->${coroutine!!.label.cName} = $vLabel;")
+					line(inDepth + 1, "return ${bare(expr(vStatement.value!!))};")
+				} else {
+					statement(vStatement, inDepth + 1)
+				}
+			}
+			line(inDepth, "}")
+			line(inDepth, "resume_$vLabel: ;")
 		}
 
 		private fun store(inSlot: String, inValue: KExpr, inReleasesOld: Boolean, inDepth: Int) {
@@ -805,13 +952,14 @@ class CEmitter(private val mModule: KModule) {
 		private fun concat(inConcat: KConcat, inDepth: Int) {
 			// A string that stays in this block is built in a buffer of the block when it fits.
 			val vBuffer = "${inConcat.target.cName}_buffer"
+			val vTarget = localText(inConcat.target)
 			if (inConcat.onStack) line(inDepth, "_Alignas(ktc2_String) char $vBuffer[KTC2_STACK_STRING_SIZE];")
 			line(inDepth, "{")
 			line(inDepth + 1, "ktc2_Sb sb;")
 			line(inDepth + 1, "ktc2_sb_init(&sb);")
 			parts(inConcat.parts, "ktc2_sb", "&sb, ", "", inDepth + 1)
 			val vFinish = if (inConcat.onStack) "ktc2_sb_finish_into(&sb, $vBuffer, sizeof $vBuffer)" else "ktc2_sb_finish(&sb)"
-			line(inDepth + 1, "${inConcat.target.cName} = $vFinish;")
+			line(inDepth + 1, "$vTarget = $vFinish;")
 			line(inDepth, "}")
 		}
 
@@ -894,7 +1042,7 @@ class CEmitter(private val mModule: KModule) {
 				else -> "NULL"
 			}
 			is KStringLit -> "KTC2_STR(${mState.literals.getOrPut(inExpr.text) { "lit_${mState.tag}${mState.literals.size}" }})"
-			is KRead -> inExpr.local.cName
+			is KRead -> localText(inExpr.local)
 			is KGlobalRead -> {
 				mState.includes += inExpr.global.unit
 				inExpr.global.cName

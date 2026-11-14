@@ -112,7 +112,7 @@ class ArcInsert(
 		if (mOwnsParameters) {
 			for (vUnit in mModule.units) {
 				for (vFunction in vUnit.functions) {
-					if (vFunction.isExternal || vFunction.dispatch != null || vFunction.body.isEmpty()) continue
+					if (vFunction.isExternal || vFunction.dispatch != null || vFunction.body.isEmpty() || vFunction.coroutine != null) continue
 					val vBody = vFunction.body.toList()
 					val vOwned = ownable(vFunction, vBody)
 					if (vOwned.isNotEmpty()) {

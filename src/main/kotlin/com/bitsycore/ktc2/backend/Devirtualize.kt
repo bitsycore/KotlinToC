@@ -179,7 +179,7 @@ class Devirtualize(private val mModule: KModule) {
 
 	private fun copyFor(inCall: KCall): Boolean {
 		val vFunction = inCall.function
-		if (vFunction.dispatch != null || vFunction.isExternal || vFunction.body.isEmpty()) return false
+		if (vFunction.dispatch != null || vFunction.isExternal || vFunction.body.isEmpty() || vFunction.coroutine != null) return false
 		val vWorth = worthKnowing(vFunction)
 		if (vWorth.isEmpty()) return false
 		val vClasses = vFunction.params.mapIndexed { vIndex, vParam ->

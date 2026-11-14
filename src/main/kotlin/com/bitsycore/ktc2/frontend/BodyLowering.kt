@@ -157,6 +157,21 @@ internal class BodyBuilder(
 	private var mSelfFunction: IrFunction? = null
 	private var mBlock: MutableList<KStmt> = mFunction.body
 
+	/**
+	 * In a body that can suspend: the continuation handed to the `suspend` functions it calls (the
+	 * coroutine object of a state machine, or the completion of a function that suspends only in
+	 * its last call), and for a state machine the coroutine object, the result it is resumed with,
+	 * and the label of the next suspension.
+	 */
+	private class SuspendContext(val continuation: KExpr, val self: KLocal?, val result: KLocal?) {
+		var nextLabel = 1
+	}
+
+	private var mSuspend: SuspendContext? = null
+
+	/** A `suspend` function whose result is `Unit`: it returns the Unit object, which is what its continuation is given. */
+	private var mReturnsUnitObject = false
+
 	// ==================
 	// MARK: Entry points
 	// ==================
@@ -322,7 +337,9 @@ internal class BodyBuilder(
 		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
 		// Calling a top-level function is a use of its file: the file's properties get their values first.
 		if (vIr is IrSimpleFunction && vIr.parent is IrFile) mImporter.fileEnsureFor(mFunction.unit, mFunction)?.let { mBlock += KEval(KCall(it, emptyList())) }
-		val vOffset = mFunction.params.size - vIr.parameters.size
+		val vIsSuspend = vIr is IrSimpleFunction && vIr.isSuspend
+		// A `suspend` function has the continuation as one more parameter, last.
+		val vOffset = mFunction.params.size - vIr.parameters.size - (if (vIsSuspend) 1 else 0)
 		// The first parameters of a function reference's `invoke` are its bound values: they come from the closure, below.
 		vIr.parameters.forEachIndexed { vIndex, vParam -> if (vIndex + vOffset >= 0) mLocals[vParam] = mFunction.params[vIndex + vOffset] }
 		mCellVariables += mImporter.captures.cellVariables(vIr)
@@ -346,6 +363,7 @@ internal class BodyBuilder(
 				(vIr.body as? IrBlockBody)?.statements?.forEach { lowerStatement(it) }
 			}
 			vIr.origin == IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR -> buildDefaultAccessor(vIr as IrSimpleFunction)
+			vIsSuspend -> buildSuspendFunction(vIr as IrSimpleFunction)
 			vIr is IrSimpleFunction && vIr.isTailrec && vIr.body !is IrSyntheticBody -> buildTailRecursive(vIr)
 			else -> buildBody(vIr)
 		}
@@ -457,6 +475,322 @@ internal class BodyBuilder(
 		} else {
 			mBlock += KFieldSet(vSelf, vField, KRead(mFunction.params[1]))
 		}
+	}
+
+	// ==================
+	// MARK: Coroutines
+	// ==================
+
+	/** `Unit` as the object a `suspend` function returns. */
+	private fun unitObject(): KExpr = coerce(KUnitValue, KObjType)
+
+	/** `COROUTINE_SUSPENDED`. */
+	private fun suspended(): KExpr = mImporter.suspendedMarker()?.let { coerce(KStaticRead(it), KObjType) } ?: KNull(KObjType)
+
+	/** A function of the platform layer's `ktc2.internal` package, made for the program; null when it is missing. */
+	private fun internal(inName: String): KFunction? = mImporter.internalFunction(inName)?.let { mImporter.functionFor(it) }
+
+	/**
+	 * A `suspend` function. When it suspends only in its last call it keeps nothing while it waits:
+	 * it hands its completion on and returns what the function it called returns. Otherwise its body
+	 * is the state machine of a coroutine class, and the function makes the coroutine object and
+	 * runs the machine from the start.
+	 */
+	private fun buildSuspendFunction(inFunction: IrSimpleFunction) {
+		val vCompletion = mFunction.params.last()
+		if (suspendsOnlyAtTail(inFunction) { mImporter.sourceOf(it) }) {
+			mSuspend = SuspendContext(KRead(vCompletion), null, null)
+			mReturnsUnitObject = inFunction.returnType.isUnit()
+			buildBody(inFunction)
+			if (mReturnsUnitObject && mFunction.body.lastOrNull() !is KReturn) mBlock += KReturn(unitObject())
+			return
+		}
+		val vParams = mFunction.params.dropLast(1)
+		val vCoroutine = mImporter.newCoroutineClass(mFile, inFunction.name.asString(), vParams.map { it.cName to it.type })
+		if (vCoroutine == null) {
+			fail(inFunction, "suspend function '${inFunction.name}'")
+			return
+		}
+		val vObject = newCoroutineObject(vCoroutine, KRead(vCompletion), emptyList(), null)
+		storeCoroutineParams(vObject, vCoroutine, vCoroutine.fields, vParams.map { KRead(it) }, inFunction.parameters, KRead(vCompletion))
+		val vResult = newTemp(KObjType)
+		mBlock += KLet(vResult, KCall(vCoroutine.invokeSuspend, listOf(KRead(vObject), KNull(vCoroutine.invokeSuspend.params[1].type))))
+		mBlock += KReturn(KRead(vResult))
+		val vSubst = mSubst
+		val vFields = inFunction.parameters.zip(vCoroutine.fields)
+		// The captured values of a local class are read from the object the function is a member of.
+		val vBindings = mBindings
+		mImporter.later {
+			BodyBuilder(mImporter, vCoroutine.invokeSuspend, inFunction, mFile, vSubst).buildStateMachine(vCoroutine, vFields, vBindings, true, mInlineLambdas.toMap(), null, null)
+		}
+	}
+
+	/**
+	 * A new object of [inCoroutine] waited for by [inCompletion]: allocated, made a
+	 * `ContinuationImpl`, and given the captured values [inCaptured] read from [inFrom].
+	 */
+	private fun newCoroutineObject(inCoroutine: KirImporter.CoroutineClass, inCompletion: KExpr, inCaptured: List<KField>, inFrom: KExpr?): KLocal {
+		val vObject = newTemp(KClassType(inCoroutine.cls))
+		mBlock += KLet(vObject, KAlloc(inCoroutine.cls))
+		val vConstructor = mImporter.internalClass("ContinuationImpl")?.declarations?.filterIsInstance<IrConstructor>()?.firstOrNull()?.let { mImporter.functionFor(it) }
+		if (vConstructor != null) mBlock += KEval(KCall(vConstructor, listOf(coerce(KRead(vObject), vConstructor.params[0].type), coerce(inCompletion, vConstructor.params[1].type))))
+		for (vField in inCaptured) mBlock += KFieldSet(KRead(vObject), vField, KFieldRead(inFrom!!, vField))
+		return vObject
+	}
+
+	/** True for a type whose class restricts suspension (`SequenceScope`, `DeepRecursiveScope`): an object of it may be a coroutine's driver. */
+	private fun isRestricted(inType: IrType): Boolean {
+		val vClass = inType.classOrNull?.owner ?: return false
+		return generateSequence(listOf(vClass)) { vLevel -> vLevel.flatMap { vOne -> vOne.superTypes.mapNotNull { it.classOrNull?.owner } }.takeIf { it.isNotEmpty() } }
+			.take(8).flatten().any { vOne -> vOne.annotations.any { it.type.classFqName?.asString() == "kotlin.coroutines.RestrictsSuspension" } }
+	}
+
+	/**
+	 * Stores the parameters of a coroutine into its object. One whose type restricts suspension may
+	 * be the driver of the coroutine: the completion itself (it then becomes the driver), or the
+	 * driver of the coroutine the completion belongs to. It is then stored without a count, which
+	 * `drivers` notes for `destroy`: the state machine reads it as any parameter, borrowed.
+	 */
+	private fun storeCoroutineParams(inObject: KLocal, inCoroutine: KirImporter.CoroutineClass, inFields: List<KField>, inValues: List<KExpr>, inIrParams: List<IrValueParameter>, inCompletion: KExpr) {
+		inValues.forEachIndexed { vIndex, vValue ->
+			val vField = inFields[vIndex]
+			val vStore = KFieldSet(KRead(inObject), vField, vValue)
+			val vIrParam = inIrParams.getOrNull(vIndex)
+			val vDrivenBy = internal("coroutineDrivenBy")
+			val vIsDriver = internal("isCoroutineDriver")
+			if (vIrParam == null || vIndex >= 31 || vValue.type !is KRefType || !isRestricted(vIrParam.type) || vDrivenBy == null || vIsDriver == null) {
+				mBlock += vStore
+				return@forEachIndexed
+			}
+			inCoroutine.invokeSuspend.coroutine!!.driverFields[vField] = vIndex
+			inCoroutine.invokeSuspend.coroutine!!.drivers = inCoroutine.drivers
+			val vUncounted = KIntrinsic("ktc2_store_uncounted", listOf(KRead(inObject), vValue), KUnitType, isPure = false).also { it.template = "($0)->${vField.cName} = $1" }
+			val vBit = listOf(
+				KFieldSet(KRead(inObject), inCoroutine.drivers, KBinary(KBinaryOp.OR, KFieldRead(KRead(inObject), inCoroutine.drivers), KConst(1 shl vIndex, kIntType), KPrim.INT, kIntType)),
+				KEval(vUncounted),
+			)
+			val vIsCompletion = KRefEquals(coerce(vValue, KObjType), coerce(inCompletion, KObjType))
+			val vInherited = newTemp(kBoolType)
+			val vOtherwise = listOf(
+				KLet(vInherited, KCall(vIsDriver, listOf(coerce(vValue, KObjType), coerce(inCompletion, KObjType)))),
+				KIf(KRead(vInherited), vBit, listOf(vStore)),
+			)
+			mBlock += KIf(vIsCompletion, listOf(KEval(KCall(vDrivenBy, listOf(coerce(KRead(inObject), KObjType), coerce(vValue, KObjType))))) + vBit, vOtherwise)
+		}
+	}
+
+	/**
+	 * The body of a coroutine class's `invokeSuspend`: the state machine. The parameters
+	 * [inParams] of the function or lambda are read from their fields of the coroutine object
+	 * (the driver where it was not kept), and so are captured values ([inBindings]: from the
+	 * object itself, or with [inBindingsOnReceiver] from the receiver of the function, a member
+	 * of a local class).
+	 */
+	fun buildStateMachine(
+		inCoroutine: KirImporter.CoroutineClass,
+		inParams: List<Pair<IrValueParameter, KField>>,
+		inBindings: List<Binding>,
+		inBindingsOnReceiver: Boolean,
+		inLambdas: Map<IrValueDeclaration, InlineLambda>,
+		inSelfFunction: IrFunction?,
+		inSelfInvoke: KFunction?,
+	) {
+		val vIr = mIrFunction!!
+		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
+		val vSelf = mFunction.params[0]
+		mSuspend = SuspendContext(coerce(KRead(vSelf), KObjType), vSelf, mFunction.params[1])
+		mReturnsUnitObject = vIr.returnType.isUnit()
+		mCellVariables += mImporter.captures.cellVariables(vIr)
+		mInlineLambdas += inLambdas
+		for ((vParam, vField) in inParams) {
+			val vLocal = KLocal(freshName(if (vParam.kind == IrParameterKind.Regular) vParam.name.asString().trim('<', '>') else "self"), vField.type)
+			mBlock += KLet(vLocal, KFieldRead(KRead(vSelf), vField))
+			mLocals[vParam] = vLocal
+		}
+		val vHolder = if (inBindingsOnReceiver) inParams.firstOrNull()?.first?.let { mLocals[it] } else vSelf
+		for (vBinding in inBindings) {
+			val vLocal = KLocal(freshName("captured"), vBinding.field.type)
+			mTemps += vLocal
+			mBlock += KLet(vLocal, KFieldRead(fieldTarget(KRead(vHolder ?: vSelf), vBinding.field), vBinding.field))
+			when (val vDeclaration = vBinding.declaration) {
+				is IrValueDeclaration -> {
+					mLocals[vDeclaration] = vLocal
+					vBinding.cell?.let { mCells[vDeclaration] = it }
+				}
+				is IrFunction -> mLocalFunctions[vDeclaration] = LocalFunction(vBinding.invoke!!, vLocal)
+			}
+		}
+		// A local `suspend` function that calls itself: through its closure, which the coroutine object is a copy of.
+		if (inSelfFunction != null && inSelfInvoke != null) mLocalFunctions[inSelfFunction] = LocalFunction(inSelfInvoke, vSelf)
+		buildBody(vIr)
+		if (mReturnsUnitObject && mFunction.body.lastOrNull() !is KReturn) mBlock += KReturn(unitObject())
+	}
+
+	/**
+	 * What follows a call that may suspend, whose result is in [inValue]: when it is
+	 * `COROUTINE_SUSPENDED` this function waits too. A state machine notes where (a suspension
+	 * point) and, resumed there, takes the value it waited for from the result it is given.
+	 */
+	private fun suspension(inValue: KLocal) {
+		val vContext = mSuspend!!
+		val vSelf = vContext.self
+		val vThen = if (vSelf == null) {
+			listOf(KReturn(suspended()))
+		} else {
+			val vLabel = vContext.nextLabel++
+			val vResume = internal("coroutineResult")
+			listOfNotNull(
+				KIf(suspendPoint(vLabel), listOf(KReturn(suspended())), emptyList()),
+				vResume?.let { KSet(inValue, KCall(it, listOf(coerce(KRead(vContext.result!!), it.params[0].type)))) },
+			)
+		}
+		mBlock += KIf(KRefEquals(KRead(inValue), suspended()), vThen, emptyList())
+	}
+
+	/** A call to a `suspend` function, given the continuation, followed by what a suspension needs. Its value is the result as an object. */
+	private fun suspendCall(inElement: IrElement, inCall: KCall): KExpr {
+		val vContext = mSuspend ?: return fail(inElement, "call to a suspend function outside of a coroutine")
+		val vValue = newTemp(KObjType)
+		mBlock += KLet(vValue, KCall(inCall.function, inCall.arguments + coerce(vContext.continuation, inCall.function.params.last().type)))
+		suspension(vValue)
+		return KRead(vValue)
+	}
+
+	/** [inCall], a call of [inCallee]; when that is a `suspend` function, a suspension too. */
+	private fun maybeSuspending(inElement: IrElement, inCallee: IrFunction, inCall: KCall): KExpr =
+		if (inCallee is IrSimpleFunction && inCallee.isSuspend && inCall.arguments.size == inCall.function.params.size - 1) suspendCall(inElement, inCall) else inCall
+
+	/** `suspendCoroutineUninterceptedOrReturn { c -> … }`: the block is expanded here with the continuation, and its value may be `COROUTINE_SUSPENDED`. */
+	private fun lowerSuspendIntrinsic(inCall: IrCall): KExpr {
+		val vContext = mSuspend ?: return fail(inCall, "suspendCoroutineUninterceptedOrReturn outside of a coroutine")
+		val vLambda = when (val vArgument = inCall.arguments.firstOrNull()) {
+			is IrFunctionExpression -> InlineLambda(vArgument, mSubst)
+			is IrGetValue -> mInlineLambdas[vArgument.symbol.owner]
+			else -> null
+		} ?: return fail(inCall, "suspendCoroutineUninterceptedOrReturn without a lambda")
+		val vResult = under(vLambda.subst) { inlineLambda(vLambda.expression, listOf(vContext.continuation), KObjType) }
+		val vValue = newTemp(KObjType)
+		mBlock += KLet(vValue, coerce(vResult, KObjType))
+		suspension(vValue)
+		return KRead(vValue)
+	}
+
+	/** `f(x)` of a `suspend` function value: the `invoke` of the `FunctionN` it is, with the continuation last. */
+	private fun callSuspendFunctionValue(inCall: IrCall, inOwner: IrClass, inArity: Int): KExpr {
+		val vReceiver = inCall.arguments.firstOrNull() ?: return fail(inCall, "call of a suspend function value")
+		val vArguments = mImporter.superArguments(closed(vReceiver.type), inOwner)
+		val vAny = mImporter.mBuiltIns.anyNType
+		val vInvoke = mImporter.mBuiltIns.functionN(inArity + 1).declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "invoke" }
+			?: return fail(inCall, "call of a suspend function value")
+		val vTarget = mImporter.dispatcherFor(vInvoke, mImporter.substFor(vInvoke, vArguments.take(inArity) + vAny + vAny, emptyList()))
+			?: return fail(inCall, "call of a suspend function value")
+		val vValues = lowerOperands(inCall.arguments.map { it!! })
+		return suspendCall(inCall, KCall(vTarget, vValues.mapIndexed { vIndex, vValue -> coerce(vValue, vTarget.params[vIndex].type) }))
+	}
+
+	/**
+	 * A `suspend` lambda (or local function, or reference to a `suspend` function): a coroutine
+	 * class, of which the closure object is one instance with only the captured values. Its
+	 * `invoke` (the parameters, then the continuation) `create`s a new coroutine object, a copy of
+	 * the closure with the parameters, and runs its state machine.
+	 */
+	private fun makeSuspendLambda(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?, inBound: List<KLocal>): Pair<KLocal, KFunction>? {
+		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
+
+		val vSet = CaptureSet()
+		collectCaptures(mImporter.captures.freeVariables(inFunction), vSet)
+		val vCaptures = ArrayList<Capture>()
+		inBound.forEachIndexed { vIndex, vLocal -> vCaptures += Capture(inFunction.parameters[vIndex], "bound$vIndex", vLocal, null, null) }
+		for ((vDeclaration, vLocal) in vSet.values) {
+			val vName = if (vDeclaration is IrValueParameter && vDeclaration.kind != IrParameterKind.Regular) "self" else vDeclaration.name.asString()
+			vCaptures += Capture(vDeclaration, vName, vLocal, mCells[vDeclaration], null)
+		}
+		for ((vLocalFunction, vHolder) in vSet.functions) {
+			vCaptures += Capture(vLocalFunction, vLocalFunction.name.asString(), vHolder.holder, null, vHolder.invoke)
+		}
+		val vIrParams = inFunction.parameters.drop(inBound.size)
+		val vParamTypes = vIrParams.map { vParam ->
+			kType(vParam.type)?.takeIf { it != KUnitType && it != KNothingType } ?: run {
+				fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
+				return null
+			}
+		}
+		val vNames = HashSet<String>()
+		val vParamNames = vIrParams.map { vParam ->
+			var vName = cIdentifier(if (vParam.kind == IrParameterKind.Regular) vParam.name.asString().trim('<', '>') else "receiver")
+			while (!vNames.add(vName) || vName == "self" || vName == "completion") vName += "_"
+			vName
+		}
+		val vCoroutine = mImporter.newCoroutineClass(mFile, "lambda", vCaptures.map { it.name to it.source.type } + vParamNames.zip(vParamTypes))
+			?: return fail(inElement, "suspend lambda").let { null }
+		val vClass = vCoroutine.cls
+		val vCaptureFields = vCoroutine.fields.take(vCaptures.size)
+		val vParamFields = vCoroutine.fields.drop(vCaptures.size)
+		fun parameters() = listOf(KLocal("self", KClassType(vClass))) + vParamNames.zip(vParamTypes).map { (vName, vType) -> KLocal(vName, vType) } + KLocal("completion", KObjType)
+
+		// create: a new coroutine object, a copy of the closure with the parameters.
+		val vCreate = KFunction("${vClass.cName}_create", vClass.unit, parameters(), KClassType(vClass))
+		vClass.unit.functions += vCreate
+		val vInvoke = KFunction("${vClass.cName}_invoke", vClass.unit, parameters(), KObjType)
+		vClass.unit.functions += vInvoke
+		mImporter.registerClosure(vClass, vInvoke)
+		mImporter.implementFunction(vClass, vParamTypes.size + 1)
+		BodyBuilder(mImporter, vCreate, null, mFile, mSubst).buildCoroutineCreate(vCoroutine, vCaptureFields, vParamFields, vIrParams)
+		BodyBuilder(mImporter, vInvoke, null, mFile, mSubst).buildCoroutineInvoke(vCoroutine, vCreate)
+		// What `createCoroutineUnintercepted` calls: `create(completion)` and `create(value, completion)` of `BaseContinuationImpl`.
+		if (vParamTypes.size <= 1) {
+			val vBase = mImporter.internalClass("BaseContinuationImpl")
+			val vDeclaration = mImporter.memberOf(vBase, "create", vParamTypes.size + 2)
+			val vDispatcher = vDeclaration?.let { mImporter.dispatcherFor(it) }
+			if (vDeclaration != null && vDispatcher != null) {
+				val vParams = listOf(KLocal("self", KClassType(vClass))) + vDispatcher.params.drop(1).map { KLocal(it.cName, it.type) }
+				val vOverride = KFunction("${vClass.cName}_create${vParamTypes.size}", vClass.unit, vParams, vDispatcher.returnType)
+				vClass.unit.functions += vOverride
+				BodyBuilder(mImporter, vOverride, null, mFile, mSubst).buildCoroutineCreateOverride(vCreate)
+				mImporter.overrideIn(vClass, vDeclaration, vOverride)
+			}
+		}
+		val vBindings = vCaptures.mapIndexed { vIndex, vCapture -> Binding(vCapture.declaration, vCaptureFields[vIndex], vCapture.cell, vCapture.invoke) }
+		val vLambdas = HashMap(vSet.lambdas)
+		val vSubst = mSubst
+		mImporter.later {
+			BodyBuilder(mImporter, vCoroutine.invokeSuspend, inFunction, mFile, vSubst)
+				.buildStateMachine(vCoroutine, vIrParams.zip(vParamFields), vBindings, false, vLambdas, inSelf, vInvoke)
+		}
+
+		val vObject = newTemp(KClassType(vClass))
+		mBlock += KLet(vObject, KAlloc(vClass))
+		vCaptures.forEachIndexed { vIndex, vCapture -> mBlock += KFieldSet(KRead(vObject), vCaptureFields[vIndex], KRead(vCapture.source)) }
+		return vObject to vInvoke
+	}
+
+	/** Body of a `suspend` lambda's `create`: a coroutine object with the closure's captured values and the parameters. */
+	fun buildCoroutineCreate(inCoroutine: KirImporter.CoroutineClass, inCaptured: List<KField>, inParamFields: List<KField>, inIrParams: List<IrValueParameter>) {
+		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
+		val vSelf = KRead(mFunction.params[0])
+		val vCompletion = KRead(mFunction.params.last())
+		val vObject = newCoroutineObject(inCoroutine, vCompletion, inCaptured, vSelf)
+		storeCoroutineParams(vObject, inCoroutine, inParamFields, mFunction.params.drop(1).dropLast(1).map { KRead(it) }, inIrParams, vCompletion)
+		mBlock += KReturn(KRead(vObject))
+	}
+
+	/** Body of a `suspend` lambda's `invoke`: a new coroutine, run from the start. */
+	fun buildCoroutineInvoke(inCoroutine: KirImporter.CoroutineClass, inCreate: KFunction) {
+		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
+		val vObject = newTemp(KClassType(inCoroutine.cls))
+		mBlock += KLet(vObject, KCall(inCreate, mFunction.params.map { KRead(it) }))
+		val vResult = newTemp(KObjType)
+		mBlock += KLet(vResult, KCall(inCoroutine.invokeSuspend, listOf(KRead(vObject), KNull(inCoroutine.invokeSuspend.params[1].type))))
+		mBlock += KReturn(KRead(vResult))
+	}
+
+	/** Body of `create(completion)` or `create(value, completion)` of a `suspend` lambda: its own `create`. */
+	fun buildCoroutineCreateOverride(inCreate: KFunction) {
+		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
+		val vArguments = mFunction.params.mapIndexed { vIndex, vParam -> coerce(KRead(vParam), inCreate.params[vIndex].type) }
+		val vObject = newTemp(inCreate.returnType)
+		mBlock += KLet(vObject, KCall(inCreate, vArguments))
+		mBlock += KReturn(coerce(KRead(vObject), mFunction.returnType))
 	}
 
 	// ==================
@@ -685,6 +1019,10 @@ internal class BodyBuilder(
 
 	private fun emitReturn(inValue: IrExpression?) {
 		if (tailCall(inValue)) return
+		if (inValue == null && mReturnsUnitObject) {
+			mBlock += KReturn(unitObject())
+			return
+		}
 		if (inValue == null || mFunction.returnType == KUnitType) {
 			inValue?.let { discard(lowerRhs(it)) }
 			mBlock += KReturn(null)
@@ -814,7 +1152,7 @@ internal class BodyBuilder(
 					spill(coerce(lowerRhs(vResultExpression), mFunction.returnType))
 				}
 				runFinallys { false }
-				mBlock += KReturn(vValue)
+				mBlock += KReturn(if (vValue == null && mReturnsUnitObject) unitObject() else vValue)
 			} else {
 				val vValue = lowerRhs(inExpression.value)
 				if (vInline.result != null && vValue !== KUnitValue) mBlock += KSet(vInline.result, coerce(vValue, vInline.result.type)) else discard(vValue)
@@ -943,6 +1281,8 @@ internal class BodyBuilder(
 		if (vBase.isString()) return KStringTarget
 		(kType(vBase) as? KPrimType)?.let { return KBoxTarget(it.prim) }
 		val vClass = vBase.classOrNull?.owner ?: return null
+		// A `suspend` function value is a `FunctionN` that takes the continuation last.
+		suspendFunctionArity(vClass)?.let { return KInterfaceTarget(mImporter.interfaceFor(mImporter.mBuiltIns.functionN(it + 1))) }
 		if (vClass.isInterface || isNumberClass(vClass)) return KInterfaceTarget(mImporter.interfaceFor(vClass))
 		if (vClass.kotlinFqName.asString() == "kotlin.Enum") return KClassTarget(mImporter.enumBase())
 		// An object holding a struct is its box.
@@ -1929,7 +2269,7 @@ internal class BodyBuilder(
 		val vOffset = if (inPrefix != null) 1 else 0
 		if (inArguments.any { it == null }) return callWithDefaults(inCall, inTarget, inCallee, inArguments, inPrefix, inCalleeSubst)
 		val vArguments = lowerOperands(inArguments.map { it!! })
-		return KCall(inTarget, listOfNotNull(inPrefix) + vArguments.mapIndexed { vIndex, vValue -> argument(vValue, inArguments[vIndex]!!, inTarget.params[vIndex + vOffset].type) })
+		return maybeSuspending(inCall, inCallee, KCall(inTarget, listOfNotNull(inPrefix) + vArguments.mapIndexed { vIndex, vValue -> argument(vValue, inArguments[vIndex]!!, inTarget.params[vIndex + vOffset].type) }))
 	}
 
 	/**
@@ -1994,7 +2334,7 @@ internal class BodyBuilder(
 			if (vLocal == null) mLocals.remove(vParam) else mLocals[vParam] = vLocal
 		}
 		if (vFailed) return fail(inCall, "call with a missing argument")
-		return KCall(inTarget, listOfNotNull(inPrefix) + vBound.map { KRead(it!!) })
+		return maybeSuspending(inCall, inCallee, KCall(inTarget, listOfNotNull(inPrefix) + vBound.map { KRead(it!!) }))
 	}
 
 	/**
@@ -2110,6 +2450,14 @@ internal class BodyBuilder(
 		}
 		// A call into a `companion { }` block has no receiver: it is a call to a top-level function.
 		val vOwner = (vCallee.parent as? IrClass)?.takeUnless { isStaticMember(vCallee) }
+		// The coroutine intrinsics: the continuation, and its context.
+		if (vOwner == null && isSuspendIntrinsic(vCallee)) return adapt(lowerSuspendIntrinsic(inCall), inCall)
+		if (vOwner == null && isContextIntrinsic(vCallee)) {
+			val vContinuation = mSuspend?.continuation ?: return fail(inCall, "coroutineContext outside of a coroutine")
+			val vContext = internal("coroutineContextOf") ?: return fail(inCall, "coroutineContext")
+			return adapt(spill(KCall(vContext, listOf(coerce(vContinuation, vContext.params[0].type)))), inCall)
+		}
+		if (vOwner != null && vCallee.name.asString() == "invoke") suspendFunctionArity(vOwner)?.let { return adapt(callSuspendFunctionValue(inCall, vOwner, it), inCall) }
 		if (vOwner == null && vCallee.name.asString() == "newArray" && vCallee.kotlinFqName.asString() == "ktc2.internal.newArray") {
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, "newArray of '${inCall.type.render()}'")
 			return KArrayNew(lowerPure(inCall.arguments[0]!!), vType)
@@ -2364,6 +2712,10 @@ internal class BodyBuilder(
 		/** The values bound to the first parameters of [inFunction] (a function reference `x::f`). */
 		inBound: List<KLocal> = emptyList(),
 	): Pair<KLocal, KFunction>? {
+		if (inFunction.isSuspend) {
+			if (inSam != null) return fail(inElement, "suspend fun interface").let { null }
+			return makeSuspendLambda(inElement, inFunction, inSelf, inBound)
+		}
 		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
 
 		val vSet = CaptureSet()

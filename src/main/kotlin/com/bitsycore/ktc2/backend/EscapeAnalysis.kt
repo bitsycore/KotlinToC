@@ -155,7 +155,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 		// Not known yet: a call to itself inside the function is left as it is.
 		mInPlace[inFunction] = null
 		// The result may be declared as an interface (`iterator()`): what counts is that the one object returned is built here.
-		if (inFunction.isExternal || inFunction.dispatch != null || (inFunction.returnType !is KClassType && inFunction.returnType != KObjType)) return null
+		if (inFunction.isExternal || inFunction.dispatch != null || inFunction.coroutine != null || (inFunction.returnType !is KClassType && inFunction.returnType != KObjType)) return null
 		val vForm = FunctionScan(inFunction).buildInPlaceForm() ?: return null
 		mInPlace[inFunction] = vForm
 		mNewFunctions += vForm.first
@@ -550,6 +550,15 @@ class EscapeAnalysis(private val mModule: KModule) {
 		 */
 		fun markEscapes(): Boolean {
 			scanAll()
+			// A coroutine's state machine keeps what it is given in its object, which lives as long as anyone waits for it.
+			if (mFunction.coroutine != null) {
+				for (vParam in mFunction.params) {
+					if (vParam !in mEscaping) {
+						mEscaping[vParam] = "kept by a coroutine"
+						mChanged = true
+					}
+				}
+			}
 			// The locals whose object goes somewhere else than back to the caller: kept, copied into one
 			// that is, or held by one that is.
 			val vKept = HashSet(mKept)
@@ -800,6 +809,8 @@ class EscapeAnalysis(private val mModule: KModule) {
 
 		/** Moves to the stack the allocations whose object provably dies with its block; reports the others. */
 		fun promote(inReports: Boolean = true) {
+			// The frame of a state machine is gone while the coroutine waits: nothing of it can be there.
+			if (mFunction.coroutine != null) return
 			mIsPromoting = true
 			scanAll()
 			mRoomsUsed.forEach { (vClass, vRooms) -> declareRooms(vClass, vRooms) }

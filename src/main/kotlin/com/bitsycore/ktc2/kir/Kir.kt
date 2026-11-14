@@ -167,6 +167,13 @@ class KField(val cName: String, val type: KType, val owner: KClass? = null, val 
 
 	/** Set for an `@Acyclic` property: the cycle lint does not follow it. */
 	var isAcyclic: Boolean = false
+
+	/**
+	 * Set for a field that holds a local of a coroutine's state machine ([KCoroutine]): what it
+	 * holds is counted by the state machine, not by the object, so the object's `destroy` does
+	 * not give it up (the coroutine's cleanup does, for the place it waits at).
+	 */
+	var isFrame: Boolean = false
 }
 
 /**
@@ -264,7 +271,52 @@ class KFunction(
 	 * other implementations are called as they are and return an object of the heap.
 	 */
 	var slotClasses: Map<KFunction, KClass>? = null
+
+	/**
+	 * Set on the `invokeSuspend` of a coroutine class: the function is a state machine. Its
+	 * locals are fields of the coroutine object, and each suspension point (a [KIf] whose
+	 * condition is [isSuspendPoint]) leaves it and is where it comes back. No pass may make
+	 * another form of it (`__o`, `__b`, `__m`, `__into`, `__cN`): the form would not be the
+	 * state machine the coroutine resumes.
+	 */
+	var coroutine: KCoroutine? = null
 }
+
+/**
+ * What makes a function the state machine of a coroutine: the class of the coroutine object
+ * (its first parameter) and the field that says where it waits. The C emitter writes the jump
+ * to that place at the start, and the end of each suspension; [cleanups] is filled by it.
+ */
+class KCoroutine(val cls: KClass, val label: KField) {
+	/** For each suspension point, what the coroutine owns while it waits there: given up if it is dropped then. */
+	val cleanups = LinkedHashMap<Int, List<KStmt>>()
+
+	/**
+	 * The fields of parameters that may hold the coroutine's driver without counting it, with the
+	 * bit of [drivers] that says they do: `destroy` then leaves them alone.
+	 */
+	val driverFields = LinkedHashMap<KField, Int>()
+
+	/** The field of those bits. */
+	var drivers: KField? = null
+}
+
+/**
+ * The condition of the [KIf] that is a suspension point: true when the coroutine waits there.
+ * Its then-block returns `COROUTINE_SUSPENDED`; what comes after the [KIf] runs when the
+ * coroutine is resumed. To the passes it is a condition no one knows (and a point where any
+ * code may run: [Effects]).
+ */
+fun suspendPoint(inLabel: Int): KIntrinsic = KIntrinsic(kSuspendPoint, listOf(KConst(inLabel, KPrimType(KPrim.INT))), KPrimType(KPrim.BOOLEAN))
+
+/** The name of the intrinsic [suspendPoint] makes. */
+const val kSuspendPoint = "ktc2_suspend_point"
+
+/** True for the condition of a suspension point. */
+fun KExpr.isSuspendPoint(): Boolean = this is KIntrinsic && name == kSuspendPoint
+
+/** The label of a suspension point's condition. */
+fun KExpr.suspendLabel(): Int = ((this as KIntrinsic).arguments[0] as KConst).value as Int
 
 class KLocal(val cName: String, val type: KType) {
 	/**

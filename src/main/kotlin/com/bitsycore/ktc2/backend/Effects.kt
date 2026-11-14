@@ -233,6 +233,8 @@ class Effects(inModule: KModule) {
 					is KIntrinsic -> when {
 						// C written by the program, or a call through a C pointer: it may call back into anything.
 						vNode.template != null || vNode.functions.isNotEmpty() || vNode.name == "ktc2_call_pointer" -> outSummary.all = true
+						// While a coroutine waits, anything may run.
+						vNode.isSuspendPoint() -> outSummary.all = true
 						!vNode.isPure && kHarmless.none { vNode.name.startsWith(it) } -> {
 							outSummary.elements = true
 							// Storing over elements gives up the ones that were there.

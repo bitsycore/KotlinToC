@@ -162,6 +162,14 @@ commonMain/kotlin/coroutines/CoroutineContextImpl.kt
 commonMain/kotlin/coroutines/ContinuationInterceptor.kt
 commonMain/kotlin/coroutines/cancellation/CancellationExceptionH.kt
 Ktc2Cancellation.kt
+commonMain/kotlin/coroutines/Continuation.kt
+commonMain/kotlin/coroutines/CoroutinesH.kt
+commonMain/kotlin/coroutines/CoroutinesIntrinsicsH.kt
+commonMain/kotlin/coroutines/intrinsics/Intrinsics.kt
+Ktc2Coroutines.kt
+Ktc2CoroutineIntrinsics.kt
+Ktc2CoroutineSupport.kt
+commonMain/kotlin/util/DeepRecursive.kt
 commonMain/kotlin/text/CharacterCodingException.kt
 commonMain/kotlin/comparisons/compareTo.kt
 Ktc2UHex.kt
