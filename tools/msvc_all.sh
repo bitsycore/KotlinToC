@@ -64,7 +64,7 @@ for vDir in build/integration/*/; do
 		done < "$vVary"
 	done
 	# program.out has Unix line ends: the two are compared without carriage returns.
-	for vOut in "$vDir/gcc.out" "$vDir/msvc.out"; do tr -d '' < "$vOut" > "$vOut.lf" && mv "$vOut.lf" "$vOut"; done
+	for vOut in "$vDir/gcc.out" "$vDir/msvc.out"; do tr -d '\r' < "$vOut" > "$vOut.lf" && mv "$vOut.lf" "$vOut"; done
 	if [ "$vExpected" != "$vActual" ] || ! cmp -s "$vDir/gcc.out" "$vDir/msvc.out" || grep -q "$vLeaks" "$vDir/msvc.err"; then
 		vFailed=$((vFailed + 1)); echo "== $vName: exit $vActual (gcc: $vExpected)"
 		diff "$vDir/gcc.out" "$vDir/msvc.out" | head -6 | cut -c1-240

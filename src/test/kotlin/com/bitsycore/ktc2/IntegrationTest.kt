@@ -24,6 +24,14 @@ private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1
  * a program, so not in a run of the whole suite. A run of a part of it (`KTC2_TEST_FILTER`)
  * has them, since that is how a failure is looked at; `KTC2_TEST_DUMP=1` or `=0` says so directly.
  */
+/**
+ * `KTC2_TEST_STEPS`: what is done with each program, of `translate` (to C), `jvm` (compiled and
+ * run on the JVM, what it prints being what the C must print) and `c` (built with gcc and run).
+ * All three by default. A CI job that only needs the C (AddressSanitizer) or what the program
+ * prints (MSVC) leaves the others out: the comparison is then made where both are there.
+ */
+private val kSteps = System.getenv("KTC2_TEST_STEPS")?.split(',')?.map { it.trim() }?.toSet() ?: setOf("translate", "jvm", "c")
+
 private val kDumps = System.getenv("KTC2_TEST_DUMP")?.let { it != "0" } ?: (System.getenv("KTC2_TEST_FILTER") != null)
 
 /** How many C compilers work on one program at once (`KTC2_TEST_JOBS`; 1: one compiler for all its files). */
@@ -334,6 +342,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		}
 		assertTrue(translate(inSources + mCExtra, vOutDir), "ktc2 failed on $inName")
 		lap("translate")
+		if ("jvm" !in kSteps && "c" !in kSteps) return
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
 		val vJvmMain = vManifest.first { it.startsWith("jvmMain=") }.substringAfter('=')
@@ -344,6 +353,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 		val vExpected = if (inExpected != null) {
 			inExpected.readText().replace("\r\n", "\n")
+		} else if ("jvm" !in kSteps) {
+			null
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
 			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" } + mJvmExtra, vJvmDir, mJvmOptions), "kotlinc failed on $inName")
@@ -353,6 +364,11 @@ abstract class IntegrationPart(private val mShard: Int) {
 			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File(".")).also { lap("jvmRun") }
 		}
 
+		if ("c" !in kSteps) {
+			// What the program has to print, for a job that builds it with another compiler (tools/msvc_all.sh).
+			vExpected?.let { File(vOutDir, "program.out").writeText(it) }
+			return
+		}
 		val vExe = File(vOutDir, "program.exe")
 		val vOptions = listOf(mCompiler, "-std=c11", "-O1", "-ffp-contract=off", "-DKTC2_LEAK_CHECK", "-DKTC2_ARC_STATS", "-Wall", "-Werror", "-Wno-unused-variable", "-Wno-unused-but-set-variable") + kSystemLibraries.take(1)
 		val vAll = File(vCDir, "ktc2_all.c")
@@ -396,7 +412,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		File(vOutDir, "program.out").writeText(vActual)
 		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")
 
-		assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
+		if (vExpected != null) assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
 	}
 
 	/** Lines of the output that differ from run to run (`<Name>.vary`): left out of the comparison. */
