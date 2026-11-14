@@ -353,6 +353,18 @@ of its own.
   nothing borrowed from a writable place is trusted across it. `EscapeAnalysis` puts nothing of
   a state machine in the frame and takes its parameters for escaping; no pass makes another
   form of it (`__o`, `__b`, `__m`, `__into`, `__cN`).
+- A coroutine may be resumed inside the call that suspends it: `resume` in the block of
+  `suspendCoroutineUninterceptedOrReturn` before it returns `COROUTINE_SUSPENDED`, which most of
+  Kotlin's own tests of coroutines do. The state machine then runs again, inside itself, from
+  the resume label, and may end the coroutine before the call returns. So the importer sets
+  `label` to N before the call (`markSuspension`), never after; in a state machine no call is
+  handed a local (`ArcInsert`: the local would be cleared after the call, which the inner run
+  does not wait for); and the emitter moves the test for `COROUTINE_SUSPENDED` to right after the
+  call (`withTestsAfterCalls`), before what the other passes put there (the release of the
+  call's arguments, the test for an exception). The run that made the call then only returns;
+  what followed the call runs once, in whichever run goes on (its releases also on resuming,
+  and in the cleanup of the case N). A coroutine created and then resumed with an exception
+  (`createCoroutine(...).resumeWithException(e)`) throws it before its first statement.
 - The driver. `sequence { }`, `iterator { }` and `DeepRecursiveFunction` start a coroutine whose
   receiver and completion are one object, the driver: it holds the coroutine while it waits and
   resumes it. Counted by the coroutine in turn, it would never be freed. So a coroutine refers to
@@ -583,7 +595,10 @@ Done in the platform layer, worth knowing:
 
 Known to differ from the JVM:
 - the last digit of `exp`, `ln`, `pow`, `sin` and the like is the C library's, which is not
-  everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library);
+  everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library). The
+  JVM's own is not one thing either: HotSpot computes `Math` with intrinsics of its own, which
+  differ from `StrictMath` (fdlibm) in 3 to 10 % of values on x86-64; mingw's C library differs
+  from them in 0.03 to 0.23 % (PLAN.md has the measure). As on Kotlin/Native, the C library;
 - an entry of a `HashMap` is a new object each time the map hands it out (as on
   Kotlin/Native; on the JVM it is the map's own node, the same every time): two entries for
   one key are equal, not identical, and what one is given by `setValue` after its key was
@@ -592,8 +607,9 @@ Known to differ from the JVM:
   the JVM's goes by hash. Kotlin promises neither;
 - of reflection there is a class as a value and `typeOf<T>()`, as on Kotlin/Native, and no more: `x::class` and `Name::class` can be
   compared, used as keys, asked for `simpleName` and `qualifiedName`, and asked `isInstance`
-  for a class (not for an interface: false) (`ClassReference` in `Ktc2Internal.kt`, by the
-  names the runtime's table of types has); everything else a `KClass` offers throws;
+  and `cast` for a class or an interface (`ClassReference` in `Ktc2Internal.kt`, by the names
+  the runtime's table of types has for each class: the classes it is and the interfaces they
+  implement); everything else a `KClass` offers throws;
 - what only the JDK has is not there, by the owner's decision: `toSortedMap`, `toSortedSet`,
   `String.format`, `getOrDefault` and `putIfAbsent` of a map, `setCharAt` and `deleteCharAt` of
   a `StringBuilder`. Kotlin/Native has none of them either; a compatibility layer in the

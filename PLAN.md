@@ -20,14 +20,16 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 301
-tests: 143 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 157 files of common tests under `tests/` (one of ktc2's own and 156 of
-the Kotlin standard library's, some 2230 `@Test` functions, with the helpers of the library's
-tests under `tests/support/`), and the showcase as a program of several modules. It passes
-on Windows (mingw gcc 15) in about five minutes (the library's large test files, `ArraysTest`
-and `CollectionTest`, take most of it), on Linux (Debian in WSL2, gcc 14) and, by the CI job,
-on macOS. AddressSanitizer is clean on every program on
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 722
+tests: 157 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 180 files of common tests under `tests/` (one of ktc2's own, 156 of
+the Kotlin standard library's, 3 of its JVM part and 20 of Kotlin/Native's that are about
+neither platform's own API, some 2450 `@Test` functions, with the helpers of the library's
+tests under `tests/support/`), 384 box tests of the Kotlin compiler (`tests/box/`, the
+coroutines' for now: `tests/README.md`), and the showcase as a program of several modules. It
+passes on Windows (mingw gcc 15) in about eight minutes (the library's large test files,
+`ArraysTest` and `CollectionTest`, take most of it; the box tests add three), on Linux (Debian
+in WSL2, gcc 14) and, by the CI job, on macOS. AddressSanitizer is clean on every program on
 Linux (the CI job's last step, `tools/asan_all.sh`).
 
 **The CI job** (`.github/workflows/test.yml`, on every push; see it with
@@ -134,12 +136,38 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `==` on a `T` that stands for `Double` is `equals`; `compareTo` of `Double` is a total order.
 
 **Known and not done**, besides what the parts below list:
-- a value of the wrong kind that reaches a function of a concrete class through an unchecked
-  cast (a `Comparator<Int>` handed a `String`) is answered with -1, false or null where the
-  JVM throws `ClassCastException`;
-- `KClass.isInstance` answers false for an interface;
-- two entries a `HashMap` hands out for one key are equal, not the same object as on the JVM;
+- a lambda kept in a property of the object whose members it calls (`val handler = { update() }`,
+  `val load = suspend { fetch() }`) holds that object: a cycle, never freed, and nothing warns
+  about it (the cycle lint does not follow fields of a function type). The lambdas given to
+  `lazy`, `observable` and `vetoable` hold it weakly (they cannot get out of the delegate); this
+  one can be read and kept, so a weak reference would change what the program does. Box test
+  `kt51718.kt` (pending) is the case;
+- the default `toString()` of a local or anonymous class names it with dots
+  (`AnyTest.testToString.Local1`), where the JVM and Kotlin/Native use `$`
+  (`AnyTest$testToString$Local1`): the runtime's table of types would need a second name per
+  class, the one of `qualifiedName` staying as it is (`tests/kotlin/AnyTest.skip`);
+- `assert()`, which the JVM and Kotlin/Native have outside common code, is not there. Both leave
+  it off unless asked (`-ea`, `-enable-assertions`): whether ktc2 checks it in `--debug` builds,
+  or behind an option of its own, is to decide;
 - the `.warnings` kind of test has no test since the one for `Deinit` went.
+
+Fixed on 2026-11-14 from that list: a value of the wrong class that reaches a function through an
+unchecked cast throws `ClassCastException`, as on the JVM and Kotlin/Native, except for the
+members of the collections that answer it (`contains` false, `indexOf` -1, `get` null, as Kotlin's
+bridges do) (`objects/WrongClassArguments`); `KClass.isInstance` and `cast` know interfaces, and a
+lambda is a `FunctionN` for `is` and `as` (`objects/ClassInstanceChecks`).
+
+Not differences after all, so not to be fixed (the owner's rule: where the JVM and Kotlin/Native
+differ, either is right):
+- two entries a `HashMap` hands out for one key are equal and not the same object. Kotlin/Native's
+  `HashMap` makes an `EntryRef` on every `next()` too;
+- the last digit of `exp`, `ln`, `pow`, `sin`, `cos`, `tan`, `log10` is the C library's. Measured
+  on Windows (mingw's C library, HotSpot 21 on x86-64, 100 000 values): the C library differs from
+  the JVM's `Math` in 0.03 to 0.23 % of them (`tan`: 4.7 %), and fdlibm (`StrictMath`, which the
+  plan was to carry) in 3.4 to 10 %: HotSpot computes `Math` with intrinsics of its own, which
+  also differ from one processor to another. Carrying fdlibm would make ktc2 differ from the JVM
+  far more often. Kotlin/Native uses the C library, as ktc2 does. A test still must not print
+  the last digit.
 
 **How the owner works.** They follow a run of the suite in a terminal (`./gradlew test
 --rerun`, a line per program with `KTC2_TEST_VERBOSE=1`). Never two runs of the suite at
@@ -412,9 +440,48 @@ write to an array of references.
 
 Decided, not started:
 
-- [ ] **Files, through kotlinx.io or okio.** Not an API of ktc2's own: compile the library's
-  common sources and write the platform part for ktc2, as was done for the standard library.
-  Later the same for kotlinx.serialization and other kotlinx libraries. Nothing of `java.*`.
+- [ ] **Files, through kotlinx.io, and kotlinx.coroutines.** Not an API of ktc2's own: compile
+  the libraries' sources as they are and write the platform part for ktc2, as was done for the
+  standard library. Later the same for kotlinx.serialization and other kotlinx libraries.
+  Nothing of `java.*`. The plan (owner's decision of 2026-11-14: a plan first, nothing built
+  before the choices below are made):
+  - **How they come in.** Gradle fetches the sources jars (`kotlinx-io-core`,
+    `kotlinx-io-bytestring`, `kotlinx-coroutines-core`, of the versions built for Kotlin 2.5) as
+    it fetches the standard library's. Each is a bundled module (`resources/ktc2/modules/`, as
+    `sdl3`), so a program asks for it in `module.ktc2.toml`, and its sources are compiled with
+    the library, kept between programs by the compiler process. A list of files per module, as
+    `stdlib/files.txt`, says which source sets are taken: `commonMain`, and the native ones
+    where they suit (`nativeMain`, `concurrentMain`), with `Ktc2*.kt` files for what is left.
+  - **kotlinx.io first** (smaller: about 5 000 lines). `Buffer`, `Segment`, `Source`, `Sink`,
+    `ByteString`, UTF-8: common code. Files (`kotlinx.io.files`: `Path`, `SystemFileSystem`,
+    `FileMetadata`): its `nativeMain` is written over `platform.posix` (`fopen`, `fread`,
+    `stat`, `opendir`), which ktc2 generates; to try as it is first, with a Windows part where
+    its `mingwMain` needs one. Tests: its common tests, taken in as the library's are
+    (`tests/kotlinx-io/`). Estimate: 2 to 4 days.
+  - **kotlinx.coroutines** (about 30 000 lines of common and concurrent code). What the
+    platform part has to give: `Dispatchers.Default` and `Dispatchers.IO` (threads of
+    `ktc2.concurrent`), `Dispatchers.Unconfined`, no `Dispatchers.Main` (it fails, as on
+    Kotlin/Native for Linux and Windows), `runBlocking` and its event loop, the thread that
+    runs `delay` and timeouts (`DefaultExecutor`), what is local to a thread (`ThreadLocal`:
+    a C `_Thread_local` behind a platform function), the handler of uncaught exceptions (it
+    prints them), and atomicfu: the library is written with `atomic(...)`, `AtomicRef`,
+    `SynchronizedObject` and `reentrantLock`, which a compatibility layer gives over
+    `kotlin.concurrent.atomics` and the monitors of `ktc2.concurrent`. Tests: its `commonTest`
+    (with its `TestBase`), as the library's are. Estimate: 2 to 3 weeks.
+  - **To decide (owner):**
+    1. `Dispatchers.Default`: a pool of as many threads as processors (as on the JVM and
+       Kotlin/Native), started on first use; or one thread, simpler to reason about.
+    2. `Dispatchers.IO`: the same pool with more threads (64, as on the JVM), or an alias of
+       `Default`.
+    3. Cycles. The library links a parent `Job` and its children both ways, and handlers,
+       channels and `select` hold continuations that hold them back. On the JVM and Kotlin/Native
+       the collector frees what is left when a coroutine is dropped without being completed or
+       cancelled. Here a completed coroutine detaches itself, but an abandoned one would stay
+       allocated. Either the sources are compiled as they are and the leaks measured on the
+       library's own tests first (the leak check of the suite says where), or ktc2 gets a way
+       to say, outside the sources, that some fields are `@Weak` (a list per module, as
+       `hidden.txt`).
+    4. Where the module's version is pinned, and how a program asks for another.
 - [ ] **Unit tests of the passes.** The ones of the first transpiler were thrown away on
   purpose. To be written fresh, on KIR: `EscapeAnalysis`, `ArcInsert`, `Effects`,
   `BorrowedReturns` are where a small wrong answer costs most.
@@ -427,9 +494,9 @@ Open:
   `next()`. The lists built on `AbstractMutableList` (`ArrayDeque`) check by `modCount`, as
   the JVM's `AbstractList` does, and `subList` is a view that fails once its list changed
   size another way.
-- [ ] **The last digit of `exp`, `ln`, `pow`, `sin`.** It is the C library's. To print what
-  the JVM prints on every system, the runtime would carry fdlibm's versions (what
-  `StrictMath` is); a few hundred lines of C. Until then DESIGN.md lists it as a difference.
+- [x] **The last digit of `exp`, `ln`, `pow`, `sin`.** Measured on 2026-11-14: the C library is
+  much closer to what the JVM prints than fdlibm would be ("Where the work stands", not
+  differences after all). It stays the C library's, as on Kotlin/Native.
 - [x] **An enum that is a number: `@SimpleEnum`** (`DESIGN.md`, section 4;
   `integration/values/SimpleEnums.kt`, `integration/errors/SimpleEnumState.kt`). A C `enum`;
   `@EnumValue` on an `Int` or `UInt` parameter of the constructor gives the numbers (a
