@@ -149,6 +149,9 @@ public actual fun Double.nextTowards(to: Double): Double = when {
 	else -> nextDown()
 }
 
+/** The remainder of IEEE 754, as `Math.IEEEremainder`: the quotient is rounded to the nearest integer, not toward zero. The JVM and Kotlin/Native have it, not common code. */
+public inline fun Double.IEEErem(divisor: Double): Double = cExpr("remainder($0, $1)", this, divisor)
+
 /** As `Math.round`: to the nearest integer, a tie going up; saturates. */
 public actual fun Double.roundToLong(): Long {
 	if (this != this) throw IllegalArgumentException("Cannot round NaN value.")
@@ -250,6 +253,40 @@ public actual fun Float.roundToInt(): Int {
 }
 
 public actual fun Float.roundToLong(): Long = toDouble().roundToLong()
+
+public inline fun Float.IEEErem(divisor: Float): Float = cExpr("(float)remainder((double)$0, (double)$1)", this, divisor)
+
+// The neighbours of a Float, from its bits as for Double. The JVM and Kotlin/Native have them, not common code.
+
+public val Float.ulp: Float
+	get() {
+		val vSize = if (this < 0.0f) -this else this
+		return when {
+			this != this -> this
+			vSize == Float.POSITIVE_INFINITY -> Float.POSITIVE_INFINITY
+			vSize == Float.MAX_VALUE -> vSize - vSize.nextDown()
+			else -> vSize.nextUp() - vSize
+		}
+	}
+
+public fun Float.nextUp(): Float = when {
+	this != this || this == Float.POSITIVE_INFINITY -> this
+	this == 0.0f -> Float.MIN_VALUE
+	else -> Float.fromBits(toRawBits() + (if (this > 0.0f) 1 else -1))
+}
+
+public fun Float.nextDown(): Float = when {
+	this != this || this == Float.NEGATIVE_INFINITY -> this
+	this == 0.0f -> -Float.MIN_VALUE
+	else -> Float.fromBits(toRawBits() + (if (this > 0.0f) -1 else 1))
+}
+
+public fun Float.nextTowards(to: Float): Float = when {
+	this != this || to != to -> Float.NaN
+	to == this -> to
+	to > this -> nextUp()
+	else -> nextDown()
+}
 
 // ==================
 // MARK: Int and Long

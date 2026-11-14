@@ -1124,6 +1124,8 @@ internal class BodyBuilder(
 				}
 			}
 			val vGetter = makeClosure(inExpression, inExpression.getterFunction, null, null, vBound)?.let { KRead(it.first) } ?: return KUnitValue
+				// A parameter of type Unit holds the Unit object: as a value it is Unit.
+				vLocal.type == KObjType && kType(inExpression.type) == KUnitType -> KUnitValue
 			val vSetter = inExpression.setterFunction
 			val vKind = closed(inExpression.type).classOrNull?.owner?.kotlinFqName?.asString()
 			if (vSetter == null || vKind == null || !vKind.startsWith("kotlin.reflect.KMutableProperty")) return vGetter
@@ -2727,8 +2729,9 @@ internal class BodyBuilder(
 		val vSavedCells = HashMap(mCells)
 		val vResult = under(inSubst) {
 			fun bind(inParam: IrValueParameter, inValue: KExpr) {
-				val vType = kType(inParam.type)
-				if (vType == null || vType == KUnitType || vType == KNothingType) {
+				// A parameter of type Unit holds the Unit object; one of type Nothing never receives a value.
+				val vType = kType(inParam.type)?.let { if (it == KUnitType || it == KNothingType) KObjType else it }
+				if (vType == null) {
 					fail(inParam, "inline parameter of type '${inParam.type.render()}'")
 					return
 				}
@@ -2800,8 +2803,8 @@ internal class BodyBuilder(
 		val vNames = HashSet<String>()
 		val vParams = ArrayList<KLocal>()
 		for (vParam in inFunction.parameters.drop(inBound.size)) {
-			val vType = kType(vParam.type)
-			if (vType == null || vType == KUnitType || vType == KNothingType) {
+			val vType = kType(vParam.type)?.let { if (it == KUnitType || it == KNothingType) KObjType else it }
+			if (vType == null) {
 				fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
 				return null
 			}
@@ -3474,6 +3477,8 @@ internal class BodyBuilder(
 	/** `a == b` on objects: identical, or both non-null and `a.equals(b)`. */
 	private fun objectEquals(inCall: IrCall, inLeftType: IrType, inLeft: KExpr, inRight: KExpr): KExpr {
 		val vEquals = anyMemberOf(inLeftType, "equals", 1) ?: return fail(inCall, "equals on '${inLeftType.render()}'")
+			// A String compared with anything else: through `equals` of Any, which a string answers.
+			vLeftType == KStringType -> objectEquals(inCall, mImporter.mBuiltIns.anyNType, spill(coerce(vLeft, KObjType)), spill(vRight))
 		val vTarget = memberTarget(vEquals, false, closed(inLeftType), emptyList())?.first ?: return fail(inCall, "equals on '${inLeftType.render()}'")
 		// A final class that does not override equals compares by identity.
 		if (vTarget.isExternal && vTarget.dispatch == null && inLeft.type is KClassType) return KRefEquals(inLeft, inRight)

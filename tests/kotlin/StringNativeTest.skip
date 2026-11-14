@@ -1,0 +1,1 @@
+lowercase: Kotlin/Native lowercases a final capital sigma as σ; the JVM, which ktc2 follows, as ς

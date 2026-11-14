@@ -1034,6 +1034,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		collectInterfaces(inClass, vClass.interfaces)
 		if (inClass.isInner) declareOuter(inClass, vClass, vSubst, vFile)
+		// Another instantiation of a generic local class captures what its declaration does.
+		if (!inFresh) mLocalTemplates[inClass]?.let { addLocalCaptures(vClass, it) }
 
 		if (inClass.isObject) {
 			val vInstance = KStatic("${vClass.cName}_instance", vClass, vUnit)
@@ -1111,6 +1113,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private val mLocalCaptures = HashMap<KClass, LocalCaptures>()
 	private val mLatestLocalClass = HashMap<IrClass, KClass>()
 
+	/** What a local class captures, as its latest declaration said: given to each instantiation of the class. */
+	private class LocalTemplate(
+		val captures: List<Triple<IrValueDeclaration, KType, KField?>>,
+		val lambdas: Map<IrValueDeclaration, BodyBuilder.InlineLambda>,
+		val weak: Set<IrValueDeclaration>,
+	)
+
+	private val mLocalTemplates = HashMap<IrClass, LocalTemplate>()
+
 	/**
 	 * Declares the local class [inClass] with one extra field per captured outer value.
 	 *
@@ -1127,16 +1138,24 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	): List<KField>? {
 		val vClass = classFor(inClass, inFresh = true) ?: return null
 		mLatestLocalClass[inClass] = vClass
-		val vNames = vClass.fields.map { it.cName }.toHashSet()
-		val vBindings = inCaptures.mapIndexed { vIndex, (vDeclaration, vType, vCell) ->
+		val vTemplate = LocalTemplate(inCaptures, inLambdas, inWeak)
+		mLocalTemplates[inClass] = vTemplate
+		return addLocalCaptures(vClass, vTemplate)
+	}
+
+	/** Gives [inClass] a field for each value [inTemplate] captures. */
+	private fun addLocalCaptures(inClass: KClass, inTemplate: LocalTemplate): List<KField> {
+		val vNames = inClass.fields.map { it.cName }.toHashSet()
+		val vBindings = inTemplate.captures.mapIndexed { vIndex, (vDeclaration, vType, vCell) ->
 			var vName = "captured$vIndex"
 			while (!vNames.add(vName)) vName += "_"
-			val vField = KField(vName, if (vDeclaration in inWeak) KObjType else vType, vClass)
-			if (vDeclaration in inWeak) vField.weakType = vType
-			vClass.fields += vField
+			val vWeak = vDeclaration in inTemplate.weak
+			val vField = KField(vName, if (vWeak) KObjType else vType, inClass)
+			if (vWeak) vField.weakType = vType
+			inClass.fields += vField
 			BodyBuilder.Binding(vDeclaration, vField, vCell, null)
 		}
-		mLocalCaptures[vClass] = LocalCaptures(vBindings, inLambdas)
+		mLocalCaptures[inClass] = LocalCaptures(vBindings, inTemplate.lambdas)
 		return vBindings.map { it.field }
 	}
 
@@ -1822,8 +1841,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vParams = ArrayList<KLocal>()
 		for (vParam in inFunction.parameters) {
 			// A parameter of type Nothing can never receive a value; it is declared as a plain reference.
-			val vType = kTypeOf(vParam.type, inSubst).let { if (it == KNothingType) KObjType else it }
-			if (vType == null || vType == KUnitType) {
+			// One of type Unit holds the Unit object (`fun f(u: Unit)`, a `(T) -> Unit` with T = Unit).
+			val vType = kTypeOf(vParam.type, inSubst).let { if (it == KNothingType || it == KUnitType) KObjType else it }
+			if (vType == null) {
 				unsupported(inFile, vParam, "parameter type '${vParam.type.render()}'")
 				vOk = false
 				continue
