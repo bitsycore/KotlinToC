@@ -149,11 +149,17 @@ public actual enum class CharCategory(public actual val code: String) {
 
 public actual fun String(chars: CharArray): String = stringOfChars(chars, 0, chars.size)
 
-public actual fun String(chars: CharArray, offset: Int, length: Int): String = stringOfChars(chars, offset, length)
+public actual fun String(chars: CharArray, offset: Int, length: Int): String {
+	if (offset < 0 || length < 0 || offset > chars.size - length) throw IndexOutOfBoundsException("offset: $offset, length: $length, size: ${chars.size}")
+	return stringOfChars(chars, offset, length)
+}
 
 public actual fun CharArray.concatToString(): String = stringOfChars(this, 0, size)
 
-public actual fun CharArray.concatToString(startIndex: Int, endIndex: Int): String = stringOfChars(this, startIndex, endIndex - startIndex)
+public actual fun CharArray.concatToString(startIndex: Int, endIndex: Int): String {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, size)
+	return stringOfChars(this, startIndex, endIndex - startIndex)
+}
 
 public actual fun String.toCharArray(): CharArray {
 	val vChars = CharArray(length)
@@ -162,25 +168,45 @@ public actual fun String.toCharArray(): CharArray {
 }
 
 public actual fun String.toCharArray(startIndex: Int, endIndex: Int): CharArray {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, length)
 	val vChars = CharArray(endIndex - startIndex)
 	for (vIndex in startIndex until endIndex) vChars[vIndex - startIndex] = this[vIndex]
 	return vChars
 }
 
 public actual fun String.toCharArray(destination: CharArray, destinationOffset: Int, startIndex: Int, endIndex: Int): CharArray {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, length)
+	AbstractList.checkBoundsIndexes(destinationOffset, destinationOffset + endIndex - startIndex, destination.size)
 	for (vIndex in startIndex until endIndex) destination[destinationOffset + vIndex - startIndex] = this[vIndex]
 	return destination
 }
 
+public actual open class CharacterCodingException(message: String?) : Exception(message) {
+	public actual constructor() : this(null)
+}
+
 public actual fun ByteArray.decodeToString(): String = stringOfUtf8(this, 0, size)
 
-public actual fun ByteArray.decodeToString(startIndex: Int, endIndex: Int, throwOnInvalidSequence: Boolean): String =
-	stringOfUtf8(this, startIndex, endIndex)
+public actual fun ByteArray.decodeToString(startIndex: Int, endIndex: Int, throwOnInvalidSequence: Boolean): String {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, size)
+	if (throwOnInvalidSequence && ktc2.internal.utf8Malformed(this, startIndex, endIndex)) throw CharacterCodingException("Malformed UTF-8 sequence")
+	return stringOfUtf8(this, startIndex, endIndex)
+}
 
 public actual fun String.encodeToByteArray(): ByteArray = stringUtf8(this)
 
-public actual fun String.encodeToByteArray(startIndex: Int, endIndex: Int, throwOnInvalidSequence: Boolean): ByteArray =
-	stringUtf8(stringSubstring(this, startIndex, endIndex))
+public actual fun String.encodeToByteArray(startIndex: Int, endIndex: Int, throwOnInvalidSequence: Boolean): ByteArray {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, length)
+	if (throwOnInvalidSequence) {
+		var vIndex = startIndex
+		while (vIndex < endIndex) {
+			val vChar = this[vIndex++]
+			if (!vChar.isSurrogate()) continue
+			if (!vChar.isHighSurrogate() || vIndex == endIndex || !this[vIndex++].isLowSurrogate()) throw CharacterCodingException("Malformed sequence of UTF-16 characters")
+		}
+	}
+	return stringUtf8(stringSubstring(this, startIndex, endIndex))
+}
 
 public actual fun String.substring(startIndex: Int): String = stringSubstring(this, startIndex, length)
 
@@ -199,10 +225,49 @@ public actual fun CharSequence.repeat(n: Int): String {
 // MARK: Case
 // ==================
 
+/** The lower case form of a letter outside the first 65536 characters: the scripts that have two cases there (Unicode 15, as the JVM the tests compare with). */
+private fun supplementaryLower(inCodePoint: Int): Int = when (inCodePoint) {
+	in 0x10400..0x10427, in 0x104B0..0x104D3 -> inCodePoint + 0x28
+	in 0x10570..0x1057A, in 0x1057C..0x1058A, in 0x1058C..0x10592, in 0x10594..0x10595 -> inCodePoint + 0x27
+	in 0x10C80..0x10CB2 -> inCodePoint + 0x40
+	in 0x118A0..0x118BF, in 0x16E40..0x16E5F -> inCodePoint + 0x20
+	in 0x1E900..0x1E921 -> inCodePoint + 0x22
+	else -> inCodePoint
+}
+
+private fun supplementaryUpper(inCodePoint: Int): Int = when (inCodePoint) {
+	in 0x10428..0x1044F, in 0x104D8..0x104FB -> inCodePoint - 0x28
+	in 0x10597..0x105A1, in 0x105A3..0x105B1, in 0x105B3..0x105B9, in 0x105BB..0x105BC -> inCodePoint - 0x27
+	in 0x10CC0..0x10CF2 -> inCodePoint - 0x40
+	in 0x118C0..0x118DF, in 0x16E60..0x16E7F -> inCodePoint - 0x20
+	in 0x1E922..0x1E943 -> inCodePoint - 0x22
+	else -> inCodePoint
+}
+
+/**
+ * When the two code units at [inIndex] of [inText] are one letter outside the first 65536 characters:
+ * that letter in the other case appended to [inBuilder], and true.
+ */
+private fun appendSupplementary(inText: String, inIndex: Int, inBuilder: StringBuilder, inIsUpper: Boolean): Boolean {
+	val vHigh = inText[inIndex]
+	if (!vHigh.isHighSurrogate() || inIndex + 1 >= inText.length) return false
+	val vLow = inText[inIndex + 1]
+	if (!vLow.isLowSurrogate()) return false
+	val vCodePoint = 0x10000 + ((vHigh.code - 0xD800) shl 10) + (vLow.code - 0xDC00)
+	val vOther = (if (inIsUpper) supplementaryUpper(vCodePoint) else supplementaryLower(vCodePoint)) - 0x10000
+	inBuilder.append((0xD800 + (vOther shr 10)).toChar()).append((0xDC00 + (vOther and 0x3FF)).toChar())
+	return true
+}
+
 public actual fun String.uppercase(): String {
 	val vBuilder = StringBuilder(length)
-	for (vIndex in 0 until length) {
+	var vIndex = -1
+	while (++vIndex < length) {
 		val vChar = this[vIndex]
+		if (vChar.isHighSurrogate() && appendSupplementary(this, vIndex, vBuilder, true)) {
+			vIndex++
+			continue
+		}
 		// ASCII, by far the most of what is converted, has no form of several characters.
 		val vSeveral = if (vChar.code < 0x80) null else unicodeUpperCaseString(vChar)
 		if (vSeveral != null) vBuilder.append(vSeveral) else vBuilder.append(vChar.uppercaseChar())
@@ -212,8 +277,13 @@ public actual fun String.uppercase(): String {
 
 public actual fun String.lowercase(): String {
 	val vBuilder = StringBuilder(length)
-	for (vIndex in 0 until length) {
+	var vIndex = -1
+	while (++vIndex < length) {
 		val vChar = this[vIndex]
+		if (vChar.isHighSurrogate() && appendSupplementary(this, vIndex, vBuilder, false)) {
+			vIndex++
+			continue
+		}
 		when {
 			vChar == '\u0130' -> vBuilder.append("i\u0307")
 			// A capital sigma that ends a word is written with the final form of the letter.

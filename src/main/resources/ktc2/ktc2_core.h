@@ -230,6 +230,7 @@ enum {
 	KTC2_TYPE_BOX_ULONG,
 	KTC2_TYPE_WEAK_CELL,    /* what a weak reference holds: see ktc2_weakCell */
 	KTC2_TYPE_UNIT,         /* kotlin.Unit, where it is needed as an object: ktc2_unit_object */
+	KTC2_TYPE_COMPANION,    /* the companion of a built-in class (`Int`), where it is used as a value: ktc2_companions */
 	KTC2_TYPE_FIRST_USER
 };
 
@@ -266,7 +267,7 @@ void ktc2_weak_cell_destroy(struct ktc2_Obj* object);
 	[KTC2_TYPE_BOX_UINT] = { "UInt", NULL, sizeof(ktc2_Box) }, \
 	[KTC2_TYPE_BOX_ULONG] = { "ULong", NULL, sizeof(ktc2_Box) }, \
 	[KTC2_TYPE_WEAK_CELL] = { "ktc2.WeakRef cell", ktc2_weak_cell_destroy }, \
-	[KTC2_TYPE_UNIT] = { "kotlin.Unit", NULL }
+	[KTC2_TYPE_UNIT] = { "kotlin.Unit", NULL }, 	[KTC2_TYPE_COMPANION] = { "Companion", NULL }
 
 /**
  * A new object of [typeId] holding a copy of the [size] bytes at [data], [offset] bytes into
@@ -795,6 +796,8 @@ ktc2_Array* ktc2_readLineBytes(void);
 ktc2_Array* ktc2_stringUtf8(ktc2_String* s);
 /** A string from the UTF-8 bytes [start, end) of a ByteArray. */
 ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end);
+/** True when the bytes from [start] to [end] are not all UTF-8. */
+bool ktc2_utf8Malformed(ktc2_Array* bytes, int32_t start, int32_t end);
 
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
@@ -807,6 +810,8 @@ ktc2_String* ktc2_className(ktc2_Obj* object);
 
 /** `kotlin.Unit` as an object: what a function without a result gives where an object is asked for. */
 extern ktc2_Obj ktc2_unit_object;
+/** The companions of the built-in classes as objects: Boolean, Byte, Short, Int, Long, Char, Float, Double, String, any other. */
+extern ktc2_Obj ktc2_companions[10];
 
 /** Defaults of kotlin.Any, also correct for strings. `toString` returns an owned reference. */
 ktc2_String* ktc2_any_toString(ktc2_Obj* object);

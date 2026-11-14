@@ -83,6 +83,12 @@ private fun isNull(inValue: KExpr): KExpr = when (inValue) {
 	else -> KRefEquals(inValue, KNull(inValue.type))
 }
 
+/** The built-in classes whose companion the runtime has an object for (`ktc2_companions`, and one more for any other). */
+private val kBuiltInCompanions = listOf("Boolean", "Byte", "Short", "Int", "Long", "Char", "Float", "Double", "String")
+
+/** Library functions written with `iterator { }` that the platform layer has under their name (`redirectToPlatform`). */
+private val kWithoutCoroutine = setOf("windowedIterator")
+
 /**
  * Lowers one function body from K2 IR to KIR statements. Every side effect becomes a statement
  * in evaluation order; what is left in expressions is pure.
@@ -92,9 +98,19 @@ internal class BodyBuilder(
 	private val mFunction: KFunction,
 	private val mIrFunction: IrFunction?,
 	private val mFile: IrFile,
-	/** What the type parameters in scope stand for in this instantiation. */
-	private var mSubst: Subst,
+	inSubst: Subst,
 ) {
+	/** What the type parameters in scope stand for in this instantiation. The importer is told: a local class is of the instantiation of the code around it. */
+	private var mSubst: Subst = inSubst
+		set(inValue) {
+			field = inValue
+			mImporter.contextSubst = inValue
+		}
+
+	init {
+		mImporter.contextSubst = inSubst
+	}
+
 	private fun kType(inType: IrType): KType? = mImporter.kTypeOf(inType, mSubst)
 
 	private fun closed(inType: IrType): IrType = mImporter.close(inType, mSubst)
@@ -832,7 +848,10 @@ internal class BodyBuilder(
 		is IrGetObjectValue -> lowerObject(inExpression)
 		// Under the name the runtime has for the class (an exception has the JVM's there), so that it equals what `x::class` gives.
 		is IrClassReference -> closed(inExpression.classType).classOrNull?.owner.let { vClass ->
-			classObject(inExpression, vClass?.takeIf { !it.isInterface && it.fileOrNull != null }?.let { mImporter.classFor(it)?.name } ?: vClass?.kotlinFqName?.asString())
+			// A class whose values are plain structs is, as an object, its box.
+			val vStruct = (kType(closed(inExpression.classType).makeNotNull()) as? KStructType)?.struct
+			classObject(inExpression, vStruct?.let { mImporter.boxFor(it).name }
+				?: vClass?.takeIf { !it.isInterface && it.fileOrNull != null }?.let { mImporter.classFor(it)?.name } ?: vClass?.kotlinFqName?.asString())
 		}
 		is IrGetClass -> {
 			// `x::class`: of an object, the class it is of; of a number or a text, the one its type names.
@@ -883,8 +902,14 @@ internal class BodyBuilder(
 
 	private fun lowerObject(inExpression: IrGetObjectValue): KExpr {
 		if (isUnitObject(inExpression)) return KUnitValue
-		// The companion of a built-in class is only a name to hang extensions on.
-		inExpression.symbol.owner.let { if (it.isCompanion && it.fileOrNull == null) return KNull(KObjType) }
+		// The companion of a built-in class is only a name to hang extensions on; as a value (`Int` passed as an
+		// `Any`) it is one object of the runtime, the same wherever it is named.
+		inExpression.symbol.owner.let {
+			if (it.isCompanion && it.fileOrNull == null) {
+				val vIndex = kBuiltInCompanions.indexOf(it.parentAsClass.name.asString()).let { vFound -> if (vFound < 0) kBuiltInCompanions.size else vFound }
+				return KIntrinsic("ktc2_companion", emptyList(), KObjType).also { vObject -> vObject.template = "(&ktc2_companions[$vIndex])" }
+			}
+		}
 		val vInstance = mImporter.objectFor(inExpression.symbol.owner) ?: return fail(inExpression, "object '${inExpression.symbol.owner.name}'")
 		ensureInitialized(inExpression.symbol.owner)
 		return KStaticRead(vInstance)
@@ -1101,6 +1126,12 @@ internal class BodyBuilder(
 			return
 		}
 		val vCondition = lowerPure(vBranch.condition)
+		// A branch this instantiation can never take (`is Array<*>` of what is an Int here): not lowered at all,
+		// for what it does with the value would not fit its type here.
+		if (vCondition === kFalse) {
+			lowerBranches(inBranches, inIndex + 1, inResult)
+			return
+		}
 		val vThen = inBlock { lowerBranchResult(vBranch.result, inResult) }
 		val vElse = inBlock { lowerBranches(inBranches, inIndex + 1, inResult) }
 		mBlock += KIf(vCondition, vThen, vElse)
@@ -1302,9 +1333,10 @@ internal class BodyBuilder(
 	private fun inlineLambda(inLambda: IrFunctionExpression, inArguments: List<KExpr>, inResultType: KType): KExpr {
 		val vFunction = inLambda.function
 		vFunction.parameters.forEachIndexed { vIndex, vParam ->
-			val vType = kType(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
+			// A parameter of type `Nothing` (the element of an `emptyList<Nothing>()`) never receives a value: it is declared as a plain reference.
+			val vType = (kType(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")).let { if (it == KNothingType) KObjType else it }
 			val vLocal = KLocal(freshName(vParam.name.asString().trim('<', '>')), vType)
-			mBlock += KLet(vLocal, coerce(inArguments[vIndex], vType))
+			mBlock += KLet(vLocal, if (inArguments[vIndex].type == KNothingType || inArguments[vIndex].type == KUnitType) KNull(KObjType) else coerce(inArguments[vIndex], vType))
 			mLocals[vParam] = vLocal
 		}
 		return expandBody(vFunction, inResultType)
@@ -1358,11 +1390,20 @@ internal class BodyBuilder(
 		mBlock += KLoop(vId, vBody, listOf(KSet(vCounter, KBinary(KBinaryOp.ADD, KRead(vCounter), KConst(1, kIntType), KPrim.INT, kIntType))))
 	}
 
+	/** [inLength] as the length of a new array: one below zero, when it can be, throws `NegativeArraySizeException`. */
+	private fun checkedLength(inLength: KExpr): KExpr {
+		if (((inLength as? KConst)?.value as? Int)?.let { it >= 0 } == true) return inLength
+		val vThrower = mImporter.internalFunction("throwNegativeArraySize")?.let { mImporter.functionFor(it) } ?: return inLength
+		val vLength = spill(inLength)
+		mBlock += KIf(KBinary(KBinaryOp.LT, vLength, KConst(0, kIntType), KPrim.INT, kBoolType), listOf(KEval(KCall(vThrower, listOf(vLength)))), emptyList())
+		return vLength
+	}
+
 	/** `IntArray(n)`, `IntArray(n) { ... }`, `Array(n) { ... }`. */
 	private fun lowerArrayConstructor(inCall: IrConstructorCall, inType: KArrayType): KExpr {
 		val vSize = inCall.arguments.getOrNull(0) ?: return fail(inCall, "array constructor")
 		val vInit = inCall.arguments.getOrNull(1)
-		val vLength = spill(lowerPure(vSize))
+		val vLength = checkedLength(spill(lowerPure(vSize)))
 		val vArray = newTemp(inType)
 		mBlock += KLet(vArray, KArrayNew(vLength, inType))
 		if (vInit != null) {
@@ -1404,7 +1445,15 @@ internal class BodyBuilder(
 
 	/** The empty array a `vararg` parameter receives when the call names no element; null for any other parameter. */
 	private fun emptyVararg(inParam: IrValueParameter, inType: KType): KExpr? {
-		if (inParam.varargElementType == null || inType !is KArrayType) return null
+		if (inParam.varargElementType == null) return null
+		// `vararg elements: UInt` is a UIntArray: the class around the signed array.
+		val vWrapper = (inType as? KStructType)?.struct?.takeIf { it.fields.size == 1 && it.fields[0].type is KArrayType }
+		if (vWrapper != null) {
+			val vArray = newTemp(vWrapper.fields[0].type)
+			mBlock += KLet(vArray, KArrayNew(KConst(0, kIntType), vWrapper.fields[0].type as KArrayType))
+			return KStructNew(vWrapper, listOf(KRead(vArray)))
+		}
+		if (inType !is KArrayType) return null
 		return KArrayNew(KConst(0, kIntType), inType)
 	}
 
@@ -1448,7 +1497,10 @@ internal class BodyBuilder(
 			// The platform layer's iterator class, for the element type of this array.
 			val vFunction = mImporter.internalFunction("arrayIterator")
 			val vElement = mImporter.argumentsOf(closed(inArguments[0].type)).firstOrNull()
-			val vTarget = if (vFunction == null || vElement == null) null else mImporter.functionFor(vFunction, mImporter.substFor(vFunction, emptyList(), listOf(vElement)))
+			// An array of numbers (`IntArray`) has the iterator of its kind (`IntIterator`).
+			val vOfNumbers = (inType.element as? KPrimType)?.takeIf { vElement == null }
+				?.let { mImporter.internalFunction(it.prim.name.lowercase() + "ArrayIterator") }?.let { mImporter.functionFor(it) }
+			val vTarget = vOfNumbers ?: if (vFunction == null || vElement == null) null else mImporter.functionFor(vFunction, mImporter.substFor(vFunction, emptyList(), listOf(vElement)))
 			if (vTarget == null) fail(inCall, "iterator() on this array") else adapt(KCall(vTarget, listOf(coerce(lowerPure(inArguments[0]), vTarget.params[0].type))), inCall)
 		}
 		"get" -> {
@@ -1476,6 +1528,13 @@ internal class BodyBuilder(
 			val vElement = inType.element
 			if (vElement.isCounted()) mBlock += KIndexSet(vOperands[0], vOperands[1], if (vElement is KRefType) KNull(vElement) else KZero(vElement))
 			KUnitValue
+		}
+		// An array is described, hashed and compared as an object that says nothing of itself.
+		"toString" -> KCall(mImporter.runtime("ktc2_any_toString", listOf(KObjType), KStringType), listOf(coerce(lowerPure(inArguments[0]), KObjType)))
+		"hashCode" -> KCall(mImporter.runtime("ktc2_any_hashCode", listOf(KObjType), kIntType), listOf(coerce(lowerPure(inArguments[0]), KObjType)))
+		"equals" -> {
+			val vOperands = lowerOperands(inArguments)
+			KCall(mImporter.runtime("ktc2_any_equals", listOf(KObjType, KObjType), kBoolType), listOf(coerce(vOperands[0], KObjType), coerce(vOperands[1], KObjType)))
 		}
 		else -> fail(inCall, "call to 'kotlin.Array.$inName'")
 	}
@@ -1751,6 +1810,12 @@ internal class BodyBuilder(
 					writeField(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vValue), vField.type))
 				}
 				is IrAnonymousInitializer -> vDeclaration.body.statements.forEach { lowerStatement(it) }
+				// What an interface is delegated to (`by list`), kept in a field of no property.
+				is IrField -> {
+					val vInit = vDeclaration.initializer?.expression ?: continue
+					val vField = mImporter.fieldIn((mFunction.params[0].type as? KClassType)?.cls, vDeclaration) ?: continue
+					writeField(fieldTarget(selfRead(), vField), vField, coerce(lowerRhs(vInit), vField.type))
+				}
 				else -> {}
 			}
 		}
@@ -1799,7 +1864,8 @@ internal class BodyBuilder(
 		}
 		// Of an object that may be of another instantiation of its class than this code was made for: through its getter.
 		if (vLate == null) erasedFieldRead(inExpression, false)?.let { return it }
-		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type)) ?: return fail(inExpression, "field access")
+		val vField = mImporter.fieldFor(inExpression.symbol.owner, closed(vReceiver.type))
+			?: return fail(inExpression, "access to the field '${inExpression.symbol.owner.name}' of '${closed(vReceiver.type).render()}'")
 		val vRead = readField(fieldTarget(lowerPure(vReceiver), vField), vField)
 		return adapt(if (vLate != null) initialized(vRead, vLate) else vRead, inExpression)
 	}
@@ -2096,6 +2162,20 @@ internal class BodyBuilder(
 				return KUnitValue
 			}
 			if (isExpanded(vCallee)) return expandInline(inCall, vCallee, exactSubst(vCallee, emptyList(), vOwnArguments))
+			// `enumEntries<T>()`: the enum class is known where the call is written, and these are its `entries`.
+			if (vCallee.name.asString() == "enumEntriesIntrinsic") {
+				val vEnum = vOwnArguments.firstOrNull()?.classOrNull?.owner
+				val vGetter = vEnum?.declarations?.flatMap { vDeclaration ->
+					when (vDeclaration) {
+						is IrProperty -> listOfNotNull(vDeclaration.getter)
+						is IrSimpleFunction -> listOf(vDeclaration)
+						else -> emptyList()
+					}
+				}?.firstOrNull { (it.body as? IrSyntheticBody)?.kind == IrSyntheticBodyKind.ENUM_ENTRIES }
+				vGetter?.let { mImporter.functionFor(it) }?.let { return adapt(spill(KCall(it, emptyList())), inCall) }
+			}
+			// A function the library writes as a coroutine and the platform layer without one.
+			if (vCallee.name.asString() in kWithoutCoroutine) redirectToPlatform(inCall)?.let { return it }
 			val vSubst = mImporter.substFor(vCallee, emptyList(), vOwnArguments)
 			val vTarget = mImporter.functionFor(vCallee, vSubst) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
 			return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
@@ -2643,7 +2723,7 @@ internal class BodyBuilder(
 		}
 		if (vParent == "kotlin" && vName == "arrayOfNulls" && vIrArguments.size == 1) {
 			val vType = typeOf(inCall) as? KArrayType ?: return fail(inCall, vWhat)
-			return KArrayNew(lowerPure(vIrArguments[0]), vType)
+			return KArrayNew(checkedLength(lowerPure(vIrArguments[0])), vType)
 		}
 		// String?.plus(Any?) is an extension in package kotlin.
 		if (vParent == "kotlin" && vName == "plus" && vIrArguments.size == 2 && kType(vIrArguments[0].type) == KStringType) {
@@ -2711,7 +2791,8 @@ internal class BodyBuilder(
 			}
 			return KBinary(vOp, convert(vOperands[0], vCommon), convert(vOperands[1], vCommon), vCommon, kBoolType)
 		}
-		if (kPrimByClass[vParent] != vFirst) return fail(inCall, vWhat)
+		// `key.hashCode()` where `K : Comparable<K>` is a number here: the number's own.
+		if (kPrimByClass[vParent] != vFirst && !(vParent == "kotlin.Comparable" && vName == "hashCode")) return fail(inCall, vWhat)
 
 		if (vOperands.size == 1) {
 			kConversionByName[vName]?.let { return convert(vOperands[0], it) }
@@ -2719,6 +2800,9 @@ internal class BodyBuilder(
 				return when (vFirst) {
 					KPrim.BOOLEAN, KPrim.LONG, KPrim.ULONG, KPrim.FLOAT, KPrim.DOUBLE ->
 						KIntrinsic("ktc2_hash_${vFirst.name.lowercase()}", listOf(vOperands[0]), kIntType)
+					// An unsigned number hashes as the signed one it is kept as: `UShort.MAX_VALUE` as -1.
+					KPrim.UBYTE -> convert(convert(vOperands[0], KPrim.BYTE), KPrim.INT)
+					KPrim.USHORT -> convert(convert(vOperands[0], KPrim.SHORT), KPrim.INT)
 					else -> convert(vOperands[0], KPrim.INT)
 				}
 			}
@@ -2977,6 +3061,8 @@ internal class BodyBuilder(
 				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
 				continue
 			}
+			// An array says nothing of itself: it is described as any object is.
+			if (vValue.type is KArrayType) vValue = spill(KCall(mImporter.runtime("ktc2_any_toString", listOf(KObjType), KStringType), listOf(coerce(vValue, KObjType))))
 			if (vValue.type is KClassType || vValue.type == KObjType || vValue.type is KStructType) {
 				vValue = spill(vValue)
 				vObjects += vValues.size to vPiece

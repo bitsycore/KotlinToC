@@ -110,7 +110,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun commonTestList(): List<DynamicTest> =
 		File("tests").walkTopDown()
 			// tests/pending holds those that do not pass yet (tests/README.md).
-			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" }
+			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && "support" !in it.invariantSeparatorsPath.split('/') }
 			.filter { vSource -> System.getenv("KTC2_TEST_FILTER")?.let { it in vSource.invariantSeparatorsPath } ?: true }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
@@ -122,6 +122,18 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** The sources compiled for the JVM besides the program's own. */
 	private var mJvmExtra: List<File> = emptyList()
 
+	/** Options of the JVM compilation besides the usual ones. */
+	private var mJvmOptions: List<String> = emptyList()
+
+	/** What the tests of the standard library opt in to (its `commonTestOptIns`). */
+	private val kLibraryOptIns = listOf("kotlin.ExperimentalUnsignedTypes", "kotlin.ExperimentalStdlibApi", "kotlin.io.encoding.ExperimentalEncodingApi", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime")
+
+	/** A declaration a file of tests leaves to the platform. */
+	private val kExpect = Regex("(?m)^(internal |public )?expect .*$")
+
+	/** Sources that are compiled for C only. */
+	private var mCExtra: List<File> = emptyList()
+
 	private fun checkCommon(inSource: File) {
 		mInput = null
 		mWarnings = emptyList()
@@ -131,12 +143,34 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
 		val vOutDir = File("build/integration/test-${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		val vMain = File("build/testmain/${inSource.nameWithoutExtension}Main.kt").apply { parentFile.mkdirs() }
-		vMain.writeText(testMain(inSource.readText()))
-		mJvmExtra = listOf(kTestLibrary)
+		// `<Name>.skip` names the tests of the file that are not run, one a line with the reason after a colon
+		// (`name: why`, or `Class.name: why`): what ktc2 does not do, said where it is left out. Neither side runs them.
+		val vSkipped = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile }?.readLines()
+			?.map { it.substringBefore(':').trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.toSet() ?: emptySet()
+		vMain.writeText(testMain(inSource.readText(), vSkipped))
+		// What the tests of the library share (tests/support): the common part for both, and for each side
+		// its answers to what the library's tests leave to the platform.
+		fun support(inPart: String): List<File> = File("tests/support/$inPart").listFiles { vFile -> vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList()
+		val vShared = if (inSource.parentFile.name == "kotlin") support("common") else emptyList()
+		// `<Name>.with` names other files of tests this one uses something of (a helper declared next to tests): compiled with it, their tests not run.
+		val vWith = File(inSource.parentFile, inSource.nameWithoutExtension + ".with").takeIf { it.isFile }?.readLines()
+			?.map { it.trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.map { File(inSource.parentFile, it) } ?: emptyList()
+		mJvmExtra = listOf(kTestLibrary) + if (vShared.isEmpty()) emptyList() else support("jvm")
+		mCExtra = if (vShared.isEmpty()) emptyList() else support("ktc2")
+		// `<Name>.jvm`: options of the compilation for the JVM that this file needs, one a line, with why in a comment.
+		val vJvmOptions = File(inSource.parentFile, inSource.nameWithoutExtension + ".jvm").takeIf { it.isFile }?.readLines()
+			?.map { it.trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
+		// The library's tests are of its own module: they opt in to what it calls experimental, and see what it keeps internal.
+		mJvmOptions = if (vShared.isEmpty()) emptyList() else kLibraryOptIns.map { "-opt-in=$it" } + vJvmOptions + "-Xfriend-paths=${K2Frontend.userClasspath().split(File.pathSeparator).first()}"
 		try {
-			verify("tests/${inSource.name}", listOf(inSource, vMain), vOutDir, null)
+			// A file that leaves something to the platform (`expect`) is compiled without those lines: tests/support answers them for each side.
+			val vText = inSource.readText()
+			val vSource = if (vShared.isEmpty() || !kExpect.containsMatchIn(vText)) inSource else File("build/testmain/${inSource.name}").apply { writeText(vText.replace(kExpect, "// (answered in tests/support)")) }
+			verify("tests/${inSource.name}", listOf(vSource, vMain) + vWith + vShared, vOutDir, null)
 		} finally {
 			mJvmExtra = emptyList()
+			mJvmOptions = emptyList()
+			mCExtra = emptyList()
 			mAllowsLeaks = false
 		}
 	}
@@ -244,7 +278,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			vTimes += "$inWhat=${(vNow - vSince) / 1000000}"
 			vSince = vNow
 		}
-		assertTrue(translate(inSources, vOutDir), "ktc2 failed on $inName")
+		assertTrue(translate(inSources + mCExtra, vOutDir), "ktc2 failed on $inName")
 		lap("translate")
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
@@ -258,7 +292,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			inExpected.readText().replace("\r\n", "\n")
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
-			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" } + mJvmExtra, vJvmDir), "kotlinc failed on $inName")
+			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" } + mJvmExtra, vJvmDir, mJvmOptions), "kotlinc failed on $inName")
 			lap("jvmCompile")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
 			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
@@ -322,7 +356,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vErrors = File.createTempFile("ktc2", ".err")
 		try {
 			// `<name>.in` next to a program is what it reads from its standard input; without one, there is nothing to read.
-			val vBuilder = ProcessBuilder(inCommand).directory(inDirectory).redirectError(vErrors)
+			val vBuilder = ProcessBuilder(startable(inCommand, inDirectory)).directory(inDirectory).redirectError(vErrors)
 			val vProcess = if (mInput != null) {
 				vBuilder.redirectInput(mInput).start()
 			} else {
@@ -356,10 +390,10 @@ abstract class IntegrationPart(private val mShard: Int) {
  * `@Ignore`d, or in a class that is, is left out. It prints a line for each test, and fails
  * when one of them did.
  */
-fun testMain(inSource: String): String {
+fun testMain(inSource: String, inSkipped: Set<String> = emptySet()): String {
 	val vPackage = Regex("^package\\s+([\\w.]+)", RegexOption.MULTILINE).find(inSource)?.groupValues?.get(1)
 	val vPrefix = if (vPackage == null) "" else "$vPackage."
-	class TestClass(val name: String?) {
+	class TestClass(val name: String?, val isAbstract: Boolean = false, val parent: String? = null) {
 		val tests = ArrayList<String>()
 		val before = ArrayList<String>()
 		val after = ArrayList<String>()
@@ -379,7 +413,10 @@ fun testMain(inSource: String): String {
 		val vClass = Regex("^(?:(?:internal|public|open|abstract|final)\\s+)*class\\s+(\\w+)").find(vLine)
 		if (vClass != null) {
 			vIsIgnoredClass = "Ignore" in vMarks
-			vCurrent = TestClass(vClass.groupValues[1]).also { vClasses += it }
+			// The class it extends, when that is a class of tests of this file: its tests are this one's too.
+			val vParent = Regex("\\)\\s*:\\s*(\\w+)\\s*[<(]").findAll(vLine).lastOrNull()?.groupValues?.get(1)
+				?: Regex("class\\s+\\w+\\s*:\\s*(\\w+)").find(vLine)?.groupValues?.get(1)
+			vCurrent = TestClass(vClass.groupValues[1], Regex("\\babstract\\b").containsMatchIn(vLine.substringBefore("class")), vParent).also { vClasses += it }
 			vMarks = HashSet()
 			continue
 		}
@@ -391,7 +428,7 @@ fun testMain(inSource: String): String {
 		if (vFunction != null) {
 			val vName = vFunction.groupValues[1]
 			when {
-				"Ignore" in vMarks || vIsIgnoredClass -> {}
+				"Ignore" in vMarks || vIsIgnoredClass || vName.trim('`') in inSkipped || "${vCurrent.name}.${vName.trim('`')}" in inSkipped -> {}
 				"Test" in vMarks -> vCurrent.tests += vName
 				"BeforeTest" in vMarks -> vCurrent.before += vName
 				"AfterTest" in vMarks -> vCurrent.after += vName
@@ -404,8 +441,15 @@ fun testMain(inSource: String): String {
 		append("fun main() {\n\tvar vCount = 0\n\tvar vFailed = 0\n")
 		append("\tfun test(inName: String, inBody: () -> Unit) {\n\t\tvCount++\n\t\ttry {\n\t\t\tinBody()\n\t\t\tprintln(\"ok \$inName\")\n")
 		append("\t\t} catch (inError: Throwable) {\n\t\t\tvFailed++\n\t\t\tprintln(\"FAILED \$inName: \$inError\")\n\t\t}\n\t}\n")
-		for (vClass in vClasses) {
-			for (vTest in vClass.tests) {
+		// A class runs the tests it inherits; one that is abstract runs none itself.
+		fun line(inClass: TestClass): List<TestClass> =
+			generateSequence(inClass) { vClass -> vClasses.firstOrNull { it.name != null && it.name == vClass.parent } }.take(8).toList().reversed()
+		for (vOwn in vClasses) {
+			if (vOwn.isAbstract) continue
+			val vLine = line(vOwn)
+			val vClass = TestClass(vOwn.name)
+			vLine.forEach { vClass.tests += it.tests; vClass.before += it.before; vClass.after += it.after }
+			for (vTest in vClass.tests.distinct()) {
 				val vShown = vTest.trim('`')
 				if (vClass.name == null) {
 					append("\ttest(\"$vShown\") { $vPrefix$vTest() }\n")

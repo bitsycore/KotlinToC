@@ -74,6 +74,7 @@ commonMain/kotlin/comparisons/Comparisons.kt
 commonMain/generated/_Comparisons.kt
 Ktc2Comparisons.kt
 commonMain/generated/_Arrays.kt
+commonMain/kotlin/collections/Arrays.kt
 commonMain/kotlin/collections/UByteValueSet.kt
 commonMain/kotlin/UByteArray.kt
 commonMain/kotlin/UShortArray.kt
@@ -128,6 +129,8 @@ commonMain/kotlin/random/XorWowRandom.kt
 commonMain/kotlin/random/URandom.kt
 commonMain/kotlin/UMath.kt
 commonMain/kotlin/util/KotlinVersion.kt
+commonMain/kotlin/util/Boolean.kt
+commonMain/kotlin/text/CharacterCodingException.kt
 commonMain/kotlin/comparisons/compareTo.kt
 Ktc2UHex.kt
 Ktc2Random.kt

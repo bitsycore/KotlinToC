@@ -17,9 +17,20 @@ in insertion order, which is what LinkedHashMap requires and HashMap permits.
 // MARK: HashMap
 // ==================
 
+/** As the JVM: a capacity below zero is refused, and a load factor that is not above zero. */
+internal fun checkedCapacity(initialCapacity: Int): Int {
+	if (initialCapacity < 0) throw IllegalArgumentException("Illegal initial capacity: $initialCapacity")
+	return initialCapacity
+}
+
+internal fun checkedCapacity(initialCapacity: Int, loadFactor: Float): Int {
+	if (!(loadFactor > 0)) throw IllegalArgumentException("Illegal load factor: $loadFactor")
+	return checkedCapacity(initialCapacity)
+}
+
 public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : MutableMap<K, V> {
 
-	private var keyArray: Storage<K> = Storage(if (initialCapacity > 8) initialCapacity else 8)
+	private var keyArray: Storage<K> = Storage(if (checkedCapacity(initialCapacity) > 8) initialCapacity else 8)
 	private var valueArray: Storage<V> = Storage(keyArray.size)
 	private var hashArray: Storage<Int> = Storage(keyArray.size)
 	private var liveArray: Storage<Boolean> = Storage(keyArray.size)
@@ -39,7 +50,7 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 
 	public actual constructor() : this(8)
 
-	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(initialCapacity)
+	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(checkedCapacity(initialCapacity, loadFactor))
 
 	public actual constructor(original: Map<out K, V>) : this(original.size) {
 		putAll(original)
@@ -237,9 +248,11 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 			if (!liveArray[vIndex]) continue
 			if (!vFirst) vText += ", "
 			vFirst = false
-			vText += keyArray[vIndex]
+			val vKey: Any? = keyArray[vIndex]
+			val vValue: Any? = valueArray[vIndex]
+			if (vKey === this) vText += "(this Map)" else vText += vKey
 			vText += "="
-			vText += valueArray[vIndex]
+			if (vValue === this) vText += "(this Map)" else vText += vValue
 		}
 		return vText + "}"
 	}
@@ -408,7 +421,7 @@ public actual class LinkedHashMap<K, V> actual constructor(initialCapacity: Int)
 
 	public actual constructor() : this(8)
 
-	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(initialCapacity)
+	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(checkedCapacity(initialCapacity, loadFactor))
 
 	public actual constructor(original: Map<out K, V>) : this(original.size) {
 		putAll(original)
@@ -427,7 +440,20 @@ public actual class LinkedHashMap<K, V> actual constructor(initialCapacity: Int)
 	actual override val values: MutableCollection<V> get() = map.values
 	actual override val entries: MutableSet<MutableMap.MutableEntry<K, V>> get() = map.entries
 
-	override fun toString(): String = map.toString()
+	override fun toString(): String {
+		var vText = "{"
+		var vFirst = true
+		for (vEntry in entries) {
+			if (!vFirst) vText += ", "
+			vFirst = false
+			val vKey: Any? = vEntry.key
+			val vValue: Any? = vEntry.value
+			if (vKey === this) vText += "(this Map)" else vText += vKey
+			vText += "="
+			if (vValue === this) vText += "(this Map)" else vText += vValue
+		}
+		return vText + "}"
+	}
 	override fun equals(other: Any?): Boolean = map == other
 	override fun hashCode(): Int = map.hashCode()
 }
@@ -442,7 +468,7 @@ public actual class HashSet<E> actual constructor(initialCapacity: Int) : Mutabl
 
 	public actual constructor() : this(8)
 
-	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(initialCapacity)
+	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(checkedCapacity(initialCapacity, loadFactor))
 
 	public actual constructor(elements: Collection<E>) : this(elements.size) {
 		addAll(elements)
@@ -496,7 +522,8 @@ public actual class HashSet<E> actual constructor(initialCapacity: Int) : Mutabl
 		for (vElement in this) {
 			if (!vFirst) vText += ", "
 			vFirst = false
-			vText += vElement
+			val vShown: Any? = vElement
+			if (vShown === this) vText += "(this Collection)" else vText += vShown
 		}
 		return vText + "]"
 	}
@@ -524,7 +551,7 @@ public actual class LinkedHashSet<E> actual constructor(initialCapacity: Int) : 
 
 	public actual constructor() : this(8)
 
-	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(initialCapacity)
+	public actual constructor(initialCapacity: Int, loadFactor: Float) : this(checkedCapacity(initialCapacity, loadFactor))
 
 	public actual constructor(elements: Collection<E>) : this(elements.size) {
 		addAll(elements)
@@ -542,7 +569,18 @@ public actual class LinkedHashSet<E> actual constructor(initialCapacity: Int) : 
 	actual override fun retainAll(elements: Collection<E>): Boolean = set.retainAll(elements)
 	actual override fun clear() = set.clear()
 
-	override fun toString(): String = set.toString()
+	override fun toString(): String {
+		// Its own loop: an element that is this set is named, not described (the set inside does not know it).
+		var vText = "["
+		var vFirst = true
+		for (vElement in this) {
+			if (!vFirst) vText += ", "
+			vFirst = false
+			val vShown: Any? = vElement
+			if (vShown === this) vText += "(this Collection)" else vText += vShown
+		}
+		return vText + "]"
+	}
 	override fun equals(other: Any?): Boolean = set == other
 	override fun hashCode(): Int = set.hashCode()
 }

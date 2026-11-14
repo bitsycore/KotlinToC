@@ -58,6 +58,112 @@ public class ArrayIterator<T>(private val array: Array<out T>) : Iterator<T> {
 
 public fun <T> arrayIterator(array: Array<out T>): Iterator<T> = ArrayIterator(array)
 
+// The iterators of the arrays of numbers: `array.iterator()` is lowered to the function of its kind.
+
+private class BooleanArrayIterator(private val array: BooleanArray) : BooleanIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextBoolean(): Boolean {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun booleanArrayIterator(array: BooleanArray): BooleanIterator = BooleanArrayIterator(array)
+
+private class ByteArrayIterator(private val array: ByteArray) : ByteIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextByte(): Byte {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun byteArrayIterator(array: ByteArray): ByteIterator = ByteArrayIterator(array)
+
+private class ShortArrayIterator(private val array: ShortArray) : ShortIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextShort(): Short {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun shortArrayIterator(array: ShortArray): ShortIterator = ShortArrayIterator(array)
+
+private class IntArrayIterator(private val array: IntArray) : IntIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextInt(): Int {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun intArrayIterator(array: IntArray): IntIterator = IntArrayIterator(array)
+
+private class LongArrayIterator(private val array: LongArray) : LongIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextLong(): Long {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun longArrayIterator(array: LongArray): LongIterator = LongArrayIterator(array)
+
+private class CharArrayIterator(private val array: CharArray) : CharIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextChar(): Char {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun charArrayIterator(array: CharArray): CharIterator = CharArrayIterator(array)
+
+private class FloatArrayIterator(private val array: FloatArray) : FloatIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextFloat(): Float {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun floatArrayIterator(array: FloatArray): FloatIterator = FloatArrayIterator(array)
+
+private class DoubleArrayIterator(private val array: DoubleArray) : DoubleIterator() {
+	private var index = 0
+
+	override fun hasNext(): Boolean = index < array.size
+
+	override fun nextDouble(): Double {
+		if (index >= array.size) throw NoSuchElementException()
+		return array[index++]
+	}
+}
+
+public fun doubleArrayIterator(array: DoubleArray): DoubleIterator = DoubleArrayIterator(array)
+
 /**
  * A String holding [length] UTF-16 code units of [chars] starting at [start].
  * Implemented by the C runtime (`ktc2_stringOfChars`), like every `external` function here.
@@ -95,6 +201,9 @@ public external fun stringUtf8(string: String): ByteArray
 
 /** A String from the UTF-8 bytes [startIndex, endIndex) of [bytes]. */
 public external fun stringOfUtf8(bytes: ByteArray, startIndex: Int, endIndex: Int): String
+
+/** True when the bytes from [startIndex] to [endIndex] are not all UTF-8. */
+public external fun utf8Malformed(bytes: ByteArray, startIndex: Int, endIndex: Int): Boolean
 
 /**
  * What kind of array [value] is: 0 when it is not one (or is an array of unsigned or nullable
@@ -159,6 +268,99 @@ public external fun arenaLeave(arena: Long)
 A library function that has no Kotlin body ktc2 can read (it is implemented on the JVM side)
 is redirected to the function here named after it, dots replaced by underscores.
 */
+
+/**
+ * `windowedIterator` of the library (behind `chunked` and `windowed` of what is not a list), which there is a
+ * coroutine: the same windows, from an iterator that keeps where it is in fields.
+ */
+public fun <T> kotlin_collections_windowedIterator(iterator: Iterator<T>, size: Int, step: Int, partialWindows: Boolean, reuseBuffer: Boolean): Iterator<List<T>> {
+	if (!iterator.hasNext()) return emptyList<List<T>>().iterator()
+	return WindowIterator(iterator, size, step, partialWindows, reuseBuffer)
+}
+
+private class WindowIterator<T>(
+	private val source: Iterator<T>,
+	private val size: Int,
+	private val step: Int,
+	private val partialWindows: Boolean,
+	private val reuseBuffer: Boolean,
+) : Iterator<List<T>> {
+	private var buffer = ArrayList<T>(if (size < 1024) size else 1024)
+
+	/** Elements of the source still to pass over before the next window starts (a step longer than a window). */
+	private var skip = 0
+
+	/** The window handed out last has not been moved on from yet: that is done when the next one is asked for. */
+	private var isHandedOut = false
+	private var isSourceDone = false
+	private var isDone = false
+	private var window: List<T>? = null
+
+	/** What follows a window once the caller comes back for more. */
+	private fun moveOn() {
+		if (!isHandedOut) return
+		isHandedOut = false
+		if (step >= size) {
+			if (reuseBuffer) buffer.clear() else buffer = ArrayList(size)
+			skip = step - size
+		} else {
+			// Windows that overlap: the next one keeps what the step does not pass.
+			val vKept = ArrayList<T>(size)
+			for (vIndex in step until buffer.size) vKept.add(buffer[vIndex])
+			if (reuseBuffer) {
+				buffer.clear()
+				buffer.addAll(vKept)
+			} else {
+				buffer = vKept
+			}
+		}
+	}
+
+	private fun find() {
+		if (window != null || isDone) return
+		moveOn()
+		while (!isSourceDone && source.hasNext()) {
+			val vElement = source.next()
+			if (skip > 0) {
+				skip--
+				continue
+			}
+			buffer.add(vElement)
+			if (buffer.size == size) {
+				window = buffer
+				isHandedOut = true
+				return
+			}
+		}
+		val vWasDone = isSourceDone
+		isSourceDone = true
+		if (step >= size) {
+			// What is left when the source ends, once.
+			if (!vWasDone && buffer.isNotEmpty() && partialWindows) {
+				window = buffer
+				return
+			}
+		} else if (partialWindows && buffer.isNotEmpty()) {
+			window = buffer
+			// More than a step of it left: another, shorter window follows; otherwise this is the last.
+			if (buffer.size > step) isHandedOut = true else isDone = true
+			return
+		}
+		isDone = true
+	}
+
+	override fun hasNext(): Boolean {
+		find()
+		return window != null
+	}
+
+	override fun next(): List<T> {
+		find()
+		val vWindow = window ?: throw NoSuchElementException()
+		window = null
+		return vWindow
+	}
+}
 
 /** `Array<out T>.asList()` */
 public fun <T> kotlin_collections_asList(array: Array<out T>): List<T> {
@@ -400,6 +602,15 @@ public fun throwUninitialized(name: String): Nothing =
 
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()
+
+/** An array asked for with a length below zero. */
+public fun throwNegativeArraySize(size: Int): Nothing = throw NegativeArraySizeException(size.toString())
+
+/** `containsAll` of a collection of numbers that is asked as a collection of objects: [elements] may hold anything. */
+public fun containsAllOfAny(collection: Collection<Any?>, elements: Collection<Any?>): Boolean {
+	for (vElement in elements) if (!collection.contains(vElement)) return false
+	return true
+}
 
 /**
  * What a cleaner that is kept as an object is (`ktc2.createCleaner`): the runtime calls [deinit]

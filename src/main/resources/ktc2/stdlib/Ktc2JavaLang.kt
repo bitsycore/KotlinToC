@@ -16,6 +16,11 @@ public open class ArrayIndexOutOfBoundsException : kotlin.IndexOutOfBoundsExcept
 	public constructor(message: kotlin.String?) : super(message)
 }
 
+public open class NegativeArraySizeException : kotlin.RuntimeException {
+	public constructor() : super()
+	public constructor(message: kotlin.String?) : super(message)
+}
+
 public open class StringIndexOutOfBoundsException : kotlin.IndexOutOfBoundsException {
 	public constructor() : super()
 	public constructor(message: kotlin.String?) : super(message)

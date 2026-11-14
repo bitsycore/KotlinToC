@@ -73,6 +73,12 @@ public actual open class NumberFormatException : IllegalArgumentException {
 	public actual constructor(message: String?) : super(message)
 }
 
+/** As on the JVM and on Kotlin/Native, where the standard library does not declare it for every platform. */
+public open class OutOfMemoryError : Error {
+	public constructor() : super()
+	public constructor(message: String?) : super(message)
+}
+
 public actual open class NullPointerException : RuntimeException {
 	public actual constructor() : super()
 	public actual constructor(message: String?) : super(message)

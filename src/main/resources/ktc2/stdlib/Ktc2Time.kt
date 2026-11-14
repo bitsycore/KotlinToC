@@ -76,13 +76,34 @@ internal actual fun formatToExactDecimals(value: Double, decimals: Int): String 
 	var vScale = 1L
 	repeat(decimals) { vScale *= 10L }
 	val vMagnitude = if (value < 0) -value else value
-	val vScaled = (vMagnitude * vScale + 0.5).toLong()
+	if (vMagnitude >= 9.0e18) {
+		// More than a Long holds: the digits the number is written with, then zeros.
+		val vShown = vMagnitude.toString()
+		val vDigits = vShown.substringBefore('E').replace(".", "")
+		val vExponent = vShown.substringAfter('E', "0").toInt()
+		val vLarge = StringBuilder()
+		if (value < 0) vLarge.append('-')
+		vLarge.append(vDigits)
+		repeat(vExponent + 1 - vDigits.length) { vLarge.append('0') }
+		if (decimals > 0) {
+			vLarge.append('.')
+			repeat(decimals) { vLarge.append('0') }
+		}
+		return vLarge.toString()
+	}
+	// The whole part and the decimals each by themselves: together they may be more than a Long holds.
+	var vWhole = vMagnitude.toLong()
+	var vDecimals = ((vMagnitude - vWhole) * vScale + 0.5).toLong()
+	if (vDecimals >= vScale) {
+		vDecimals -= vScale
+		vWhole++
+	}
 	val vText = StringBuilder()
-	if (value < 0 && vScaled != 0L) vText.append('-')
-	vText.append(vScaled / vScale)
+	if (value < 0 && (vWhole != 0L || vDecimals != 0L)) vText.append('-')
+	vText.append(vWhole)
 	if (decimals > 0) {
 		vText.append('.')
-		val vFraction = (vScaled % vScale).toString()
+		val vFraction = vDecimals.toString()
 		repeat(decimals - vFraction.length) { vText.append('0') }
 		vText.append(vFraction)
 	}

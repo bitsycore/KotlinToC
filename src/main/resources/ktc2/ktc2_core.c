@@ -1,5 +1,6 @@
 #include "ktc2_core.h"
 
+#include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1179,8 +1180,9 @@ int32_t ktc2_any_hashCode(ktc2_Obj* object)
 	case KTC2_TYPE_BOX_CHAR: return box->value.char_;
 	case KTC2_TYPE_BOX_FLOAT: return ktc2_hash_float(box->value.float_);
 	case KTC2_TYPE_BOX_DOUBLE: return ktc2_hash_double(box->value.double_);
-	case KTC2_TYPE_BOX_UBYTE: return box->value.ubyte_;
-	case KTC2_TYPE_BOX_USHORT: return box->value.ushort_;
+	/* An unsigned number hashes as the signed one it is kept as on the JVM. */
+	case KTC2_TYPE_BOX_UBYTE: return (int8_t)box->value.ubyte_;
+	case KTC2_TYPE_BOX_USHORT: return (int16_t)box->value.ushort_;
 	case KTC2_TYPE_BOX_UINT: return (int32_t)box->value.uint_;
 	case KTC2_TYPE_BOX_ULONG: return ktc2_hash_ulong(box->value.ulong_);
 	default: {
@@ -1216,6 +1218,12 @@ bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
 }
 
 ktc2_Obj ktc2_unit_object = { KTC2_IMMORTAL, KTC2_TYPE_UNIT };
+ktc2_Obj ktc2_companions[10] = {
+	{ KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION },
+	{ KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION },
+	{ KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION },
+	{ KTC2_IMMORTAL, KTC2_TYPE_COMPANION },
+};
 
 bool ktc2_classIsInstance(ktc2_Obj* object, ktc2_String* name)
 {
@@ -1694,6 +1702,20 @@ bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
 	/* strtod also takes "inf" and "nan"; Java only "Infinity" and "NaN". */
 	const char* digits = text + (text[0] == '-' || text[0] == '+');
 	if ((digits[0] < '0' || digits[0] > '9') && digits[0] != '.' && strcmp(digits, "Infinity") != 0 && strcmp(digits, "NaN") != 0) return false;
+	if (digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X')) {
+		/* In base 16 Java wants the exponent (`0x1.8p1`), which strtod leaves optional. */
+		const char* hex = digits + 2;
+		int count = 0;
+		while (isxdigit((unsigned char)*hex)) hex++, count++;
+		if (*hex == '.') {
+			hex++;
+			while (isxdigit((unsigned char)*hex)) hex++, count++;
+		}
+		if (count == 0 || (*hex != 'p' && *hex != 'P')) return false;
+		hex++;
+		if (*hex == '+' || *hex == '-') hex++;
+		if (*hex < '0' || *hex > '9') return false;
+	}
 	char* stop = NULL;
 	double value = strtod(text, &stop);
 	if (stop == text || *stop != 0) return false;
@@ -1720,18 +1742,94 @@ ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
 	return bytes;
 }
 
+/**
+ * The length of the well-formed UTF-8 sequence at [at], of which [left] bytes remain; or 0, with in
+ * [skip] how many bytes one replacement character stands for. The counts are the JVM's.
+ */
+static int32_t utf8_sequence(const unsigned char* at, int32_t left, int32_t* skip)
+{
+	unsigned char b1 = at[0];
+	if (b1 < 0x80) return 1;
+	*skip = 1;
+	if (b1 >= 0xC2 && b1 <= 0xDF) {
+		if (left < 2) return 0;
+		return (at[1] & 0xC0) == 0x80 ? 2 : 0;
+	}
+	if ((b1 & 0xF0) == 0xE0) {
+		if (left >= 2 && ((b1 == 0xE0 && (at[1] & 0xE0) == 0x80) || (at[1] & 0xC0) != 0x80)) return 0;
+		if (left < 3) { *skip = left; return 0; }
+		if ((at[2] & 0xC0) != 0x80) { *skip = 2; return 0; }
+		/* Half of a pair written as a character of its own: one replacement for the three bytes. */
+		if (b1 == 0xED && at[1] >= 0xA0) { *skip = 3; return 0; }
+		return 3;
+	}
+	if ((b1 & 0xF8) == 0xF0) {
+		if (b1 > 0xF4) return 0;
+		if (left >= 2 && ((b1 == 0xF0 && (at[1] < 0x90 || at[1] > 0xBF)) || (b1 == 0xF4 && (at[1] & 0xF0) != 0x80) || (at[1] & 0xC0) != 0x80)) return 0;
+		if (left < 3) { *skip = left; return 0; }
+		if ((at[2] & 0xC0) != 0x80) { *skip = 2; return 0; }
+		if (left < 4) { *skip = left; return 0; }
+		if ((at[3] & 0xC0) != 0x80) { *skip = 3; return 0; }
+		return 4;
+	}
+	return 0;
+}
+
+bool ktc2_utf8Malformed(ktc2_Array* bytes, int32_t start, int32_t end)
+{
+	if (start < 0 || end > bytes->length || start > end) fail_range(end, bytes->length);
+	const unsigned char* data = (const unsigned char*)(bytes + 1);
+	int32_t skip;
+	for (int32_t i = start; i < end;) {
+		int32_t count = utf8_sequence(data + i, end - i, &skip);
+		if (count == 0) return true;
+		i += count;
+	}
+	return false;
+}
+
 ktc2_String* ktc2_stringOfUtf8(ktc2_Array* bytes, int32_t start, int32_t end)
 {
 	if (start < 0 || end > bytes->length || start > end) fail_range(end, bytes->length);
-	const char* data = (const char*)(bytes + 1) + start;
+	const unsigned char* data = (const unsigned char*)(bytes + 1) + start;
 	int32_t size = end - start;
 	int32_t length = 0;
-	for (int32_t i = 0; i < size; i++) {
-		unsigned char byte = (unsigned char)data[i];
-		/* Count code units: one per lead byte, two for a four-byte sequence. */
-		if ((byte & 0xC0) != 0x80) length += byte >= 0xF0 ? 2 : 1;
+	int32_t replaced = 0;
+	int32_t dropped = 0;
+	int32_t skip;
+	for (int32_t i = 0; i < size;) {
+		int32_t count = utf8_sequence(data + i, size - i, &skip);
+		if (count == 0) {
+			replaced++;
+			dropped += skip;
+			length++;
+			i += skip;
+		} else {
+			/* Code units: two for a four-byte sequence. */
+			length += count == 4 ? 2 : 1;
+			i += count;
+		}
 	}
-	return new_string(data, size, length);
+	if (replaced == 0) return new_string((const char*)data, size, length);
+	/* As the JVM: U+FFFD for what is not UTF-8. */
+	ktc2_String* s = ktc2_alloc(sizeof(ktc2_String) + (size_t)(size - dropped + 3 * replaced) + 1, KTC2_TYPE_STRING);
+	s->size = size - dropped + 3 * replaced;
+	s->length = length;
+	char* out = s->bytes;
+	for (int32_t i = 0; i < size;) {
+		int32_t count = utf8_sequence(data + i, size - i, &skip);
+		if (count == 0) {
+			memcpy(out, "\xEF\xBF\xBD", 3);
+			out += 3;
+			i += skip;
+		} else {
+			memcpy(out, data + i, (size_t)count);
+			out += count;
+			i += count;
+		}
+	}
+	*out = 0;
+	return s;
 }
 
 /* ================== */

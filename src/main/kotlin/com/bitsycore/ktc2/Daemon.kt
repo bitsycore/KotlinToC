@@ -312,7 +312,20 @@ fun serveDaemon(inKey: String, inRun: (Array<String>, File) -> Pair<Int, List<St
  * @return its exit status
  * @throws IOException when it cannot be started
  */
-fun runTool(inCommand: List<String>, inDirectory: File?): Int {
+/**
+ * [inCommand] as it can be started: a command line has a longest length (32767 characters on Windows, which a
+ * program of a few hundred C files passes), so the arguments of a long one go to a file in [inDirectory] that
+ * the compiler reads (`@file`, which gcc and clang take).
+ */
+fun startable(inCommand: List<String>, inDirectory: File?): List<String> {
+	if (inDirectory == null || inCommand.sumOf { it.length + 3 } < 30000 || File(inCommand[0]).nameWithoutExtension == "cl") return inCommand
+	val vArguments = File(inDirectory, "ktc2_arguments.txt")
+	vArguments.writeText(inCommand.drop(1).joinToString("\n") { "\"" + it.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" })
+	return listOf(inCommand[0], "@" + vArguments.name)
+}
+
+fun runTool(inTyped: List<String>, inDirectory: File?): Int {
+	val inCommand = startable(inTyped, inDirectory)
 	val vBuilder = ProcessBuilder(inCommand)
 	inDirectory?.let { vBuilder.directory(it) }
 	if (!gIsDaemon) return vBuilder.inheritIO().start().waitFor()

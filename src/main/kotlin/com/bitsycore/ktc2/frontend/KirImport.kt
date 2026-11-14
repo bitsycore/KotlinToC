@@ -82,11 +82,22 @@ private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBo
 
 /**
  * The type parameters a class is instantiated with: its own, then - for an `inner` class,
- * whose members also use them - those of the classes around it. Types of the class list
- * their arguments in this order.
+ * whose members also use them - those of the classes around it; and for a local class (one
+ * declared in a function, or an anonymous object) those of the functions and classes around
+ * it. Types of the class list their arguments in this order, but for the last kind, which a
+ * type in the program does not list: [KirImporter.classFor] takes those from where it is met.
  */
-internal fun classParameters(inClass: IrClass): List<IrTypeParameter> =
-	inClass.typeParameters + if (inClass.isInner) classParameters(inClass.parentAsClass) else emptyList()
+internal fun classParameters(inClass: IrClass): List<IrTypeParameter> {
+	if (inClass.isInner) return inClass.typeParameters + classParameters(inClass.parentAsClass)
+	if (inClass.visibility != DescriptorVisibilities.LOCAL) return inClass.typeParameters
+	val vResult = ArrayList(inClass.typeParameters)
+	var vParent: IrDeclarationParent? = inClass.parent
+	while (vParent != null && vParent !is IrFile) {
+		if (vParent is IrTypeParametersContainer) vResult += vParent.typeParameters
+		vParent = (vParent as? IrDeclaration)?.parent
+	}
+	return vResult
+}
 
 /**
  * True for a function declared in a `companion { }` block: it sits in its class but has no
@@ -606,6 +617,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * reports where). A type parameter left unbound is treated as `Any?`.
 	 */
 	internal fun kTypeOf(inType: IrType, inSubst: Subst = emptyMap()): KType? {
+		if (inSubst.isEmpty() || inSubst === contextSubst) return kTypeIn(inType, inSubst)
+		// The substitution is also what a local class met in the type is an instantiation of.
+		val vSaved = contextSubst
+		contextSubst = inSubst
+		try {
+			return kTypeIn(inType, inSubst)
+		} finally {
+			contextSubst = vSaved
+		}
+	}
+
+	private fun kTypeIn(inType: IrType, inSubst: Subst): KType? {
 		val vType = close(inType, inSubst)
 		primOf(vType)?.let { return KPrimType(it) }
 		val vBase = vType.makeNotNull()
@@ -647,6 +670,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		KPtrType -> mPointerType ?: inType
 		// `Unit` as an argument (`List<Unit>`, a `Map<K, Unit>`) is an object like any other there.
 		KUnitType -> mBuiltIns.anyNType
+		// An `ArrayList<Nothing>` holds no element, and is laid out as one of objects.
+		KNothingType -> mBuiltIns.anyNType
 		else -> inType
 	}
 
@@ -820,13 +845,19 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return vClass
 	}
 
+	/** What the type parameters in scope stand for in the body being lowered ([BodyBuilder] says). */
+	internal var contextSubst: Subst = emptyMap()
+
 	/**
 	 * The reference class for [inClass] with [inArguments] for its type parameters, declared
 	 * (layout only) on first use.
 	 */
 	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList(), inFresh: Boolean = false): KClass? {
 		if (isThrowableClass(inClass)) return throwableBase()
-		val vArguments = classParameters(inClass).indices.map { canonical(inArguments.getOrNull(it) ?: mBuiltIns.anyNType) }
+		// A local class uses the type parameters of the code around it, which its type in the program does not
+		// list: they are what they are where it is met. The type of the class made here lists them, after its own.
+		val vOwn = classParameters(inClass)
+		val vArguments = vOwn.mapIndexed { vIndex, vParameter -> canonical(inArguments.getOrNull(vIndex) ?: contextSubst[vParameter.symbol] ?: mBuiltIns.anyNType) }
 		val vKey = Mono(inClass, vArguments.map { kTypeOf(it) ?: KObjType })
 		if (vKey in mClasses && !inFresh) return mClasses[vKey]
 		val vFile = inClass.fileOrNull
@@ -835,7 +866,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			return null
 		}
 		mClasses[vKey] = null
-		val vSubst = classParameters(inClass).map { it.symbol }.zip(vArguments).toMap()
+		val vSubst = vOwn.map { it.symbol }.zip(vArguments).toMap()
 		val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) && !isNumberClass(it) } == true }
 		val vSuperIr = vSuperType?.classOrNull?.owner
 		val vSuper = vSuperIr?.let {
@@ -890,6 +921,13 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			inlineSizeOf(vProperty, vBacking, vType, vClass, vFile)?.let { vField.inlineSize = it }
 			vClass.fields += vField
 			mFields[vBacking to vClass] = vField
+		}
+		// A field that is no property's: what an interface is delegated to (`object : List<String> by list`).
+		for (vBare in inClass.declarations.filterIsInstance<IrField>()) {
+			val vType = kTypeOf(vBare.type, vSubst)?.takeIf { it != KUnitType && it != KNothingType } ?: continue
+			val vField = KField(cIdentifier(vBare.name.asString()), vType, vClass, isImmutable = vBare.isFinal)
+			vClass.fields += vField
+			mFields[vBare to vClass] = vField
 		}
 		collectInterfaces(inClass, vClass.interfaces)
 		if (inClass.isInner) declareOuter(inClass, vClass, vSubst, vFile)
@@ -1932,6 +1970,17 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 					vDispatcher.target.dispatch!! += vConcrete to vDescribe
 					vChanged = true
 					continue
+				}
+				// `containsAll` of a collection of numbers, asked through a view of it as a collection of objects, may be
+				// handed a collection of anything (`List<Long>` is a `List<Any?>`): its own code would read each element
+				// as a number. It is answered one `contains` at a time, which takes anything.
+				if (vFunction.name.asString() == "containsAll" && vDispatcher.classArguments.zip(vSeenAs).any { (vView, vActual) -> vView == KObjType && (vActual is KPrimType || vActual is KOptType) }) {
+					val vGeneral = internalFunction("containsAllOfAny")?.let { functionFor(it, emptyMap()) }
+					if (vGeneral != null) {
+						vDispatcher.target.dispatch!! += vConcrete to vGeneral
+						vChanged = true
+						continue
+					}
 				}
 				val vOwnerClass = vConcrete.takeIf { it in mLocalCaptures && vImplementation.parent == vInfo.irClass }
 				val vTarget = functionFor(vImplementation, vSubst, vOwnerClass) ?: continue

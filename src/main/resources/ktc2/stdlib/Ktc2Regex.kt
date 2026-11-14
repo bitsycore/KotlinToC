@@ -138,7 +138,10 @@ private fun sameChar(inLeft: Char, inRight: Char, inCase: Int): Boolean {
 	if (inLeft == inRight) return true
 	if (inCase == kCaseExact) return false
 	if (inCase == kCaseAscii) return isAsciiLetter(inLeft) && isAsciiLetter(inRight) && (inLeft.code or 0x20) == (inRight.code or 0x20)
-	return inLeft.lowercaseChar() == inRight.lowercaseChar() || inLeft.uppercaseChar() == inRight.uppercaseChar()
+	// As Java: by the capital letters, and by what those are in lower case (`ϑ` and `ϴ` are both a `θ` then).
+	val vLeft = inLeft.uppercaseChar()
+	val vRight = inRight.uppercaseChar()
+	return vLeft == vRight || vLeft.lowercaseChar() == vRight.lowercaseChar()
 }
 
 /** What a `[…]`, a `\d` or a `.` accepts: ranges, named classes and nested sets, possibly negated. */
@@ -565,9 +568,12 @@ private class Parser(private val mPattern: String, inIgnoreCase: Boolean, inMult
 		'e' -> '\u001B'
 		'a' -> '\u0007'
 		'0' -> {
+			// As in Java: one to three digits in base 8, three only below 0400.
+			if (!more() || peek() !in '0'..'7') fail("Illegal octal escape sequence")
+			val vLimit = if (peek() <= '3') 3 else 2
 			var vValue = 0
 			var vDigits = 0
-			while (more() && vDigits < 3 && peek() in '0'..'7') {
+			while (more() && vDigits < vLimit && peek() in '0'..'7') {
 				vValue = vValue * 8 + (mPattern[mAt++] - '0')
 				vDigits++
 			}
@@ -710,8 +716,15 @@ private class SetNode(val set: CharSet?, val matchesLines: Boolean, val case: In
 	fun accepts(inChar: Char): Boolean =
 		if (set != null) set.accepts(inChar, case) else matchesLines || !isLineEnd(inChar, unixLines)
 
-	override fun match(inState: Matching, inAt: Int): Int =
-		if (inAt < inState.input.size && accepts(inState.input[inAt])) rest(inState, inAt + 1) else -1
+	override fun match(inState: Matching, inAt: Int): Int {
+		if (inAt >= inState.input.size) return -1
+		val vChar = inState.input[inAt]
+		// The two halves of a character outside the first 65536 are one character: taken together, or not at all.
+		if (vChar.isHighSurrogate() && inAt + 1 < inState.input.size && inState.input[inAt + 1].isLowSurrogate()) {
+			return if (set == null || (accepts(vChar) && accepts(inState.input[inAt + 1]))) rest(inState, inAt + 2) else -1
+		}
+		return if (accepts(vChar)) rest(inState, inAt + 1) else -1
+	}
 }
 
 /** What `\\b` takes for part of a word: what `\\w` accepts. */
@@ -766,6 +779,8 @@ private class BranchNode(val options: List<Node>) : Node() {
 
 private class BackReferenceNode(val group: Int, val case: Int) : Node() {
 	override fun match(inState: Matching, inAt: Int): Int {
+		// A group the pattern does not have matches nothing, as in Java.
+		if (group * 2 + 1 >= inState.groups.size) return -1
 		val vStart = inState.groups[group * 2]
 		val vEnd = inState.groups[group * 2 + 1]
 		// A group that did not take part matches nothing, as in Java.

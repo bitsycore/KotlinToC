@@ -71,6 +71,8 @@ tasks.test {
 	systemProperty("ktc2.testShards", vForks.toString())
 	// Each process analyses the library once, for all its programs (KTC2_KEEP_LIBRARY=0: once per program).
 	systemProperty("ktc2.keepLibrary", "true")
+	// What the tests of the standard library opt in to besides what the library itself does (tests/README.md).
+	systemProperty("ktc2.optIn", "kotlin.ExperimentalUnsignedTypes,kotlin.io.encoding.ExperimentalEncodingApi,kotlin.uuid.ExperimentalUuidApi,kotlin.time.ExperimentalTime")
 	maxHeapSize = "1g"
 	// Several compilers at once: each keeps to a few threads of its own, or they get in each other's way.
 	jvmArgs((System.getenv("KTC2_TEST_JVM") ?: "-XX:+UseParallelGC -XX:ParallelGCThreads=2 -XX:CICompilerCount=2 -Xms1g").split(" ").filter { it.isNotEmpty() })

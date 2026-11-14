@@ -1,6 +1,9 @@
 @file:Suppress("unused", "NOTHING_TO_INLINE")
+@file:OptIn(kotlin.contracts.ExperimentalContracts::class, ExperimentalUnsignedTypes::class)
 
 package kotlin.test
+
+import kotlin.contracts.contract
 
 /*
 `kotlin.test` for ktc2: the assertions of the Kotlin test library, so that a test written for
@@ -41,6 +44,7 @@ public fun fail(message: String? = null, cause: Throwable?): Nothing = throw Ass
 private fun prefix(message: String?): String = if (message == null) "" else "$message. "
 
 public fun assertTrue(actual: Boolean, message: String? = null) {
+	contract { returns() implies actual }
 	if (!actual) fail(message ?: "Expected value to be true.")
 }
 
@@ -49,6 +53,7 @@ public inline fun assertTrue(message: String? = null, block: () -> Boolean) {
 }
 
 public fun assertFalse(actual: Boolean, message: String? = null) {
+	contract { returns() implies !actual }
 	if (actual) fail(message ?: "Expected value to be false.")
 }
 
@@ -93,20 +98,24 @@ public fun assertNull(actual: Any?, message: String? = null) {
 }
 
 public fun <T : Any> assertNotNull(actual: T?, message: String? = null): T {
+	contract { returns() implies (actual != null) }
 	if (actual == null) fail(prefix(message) + "Expected value to be not null.")
 	return actual
 }
 
 public inline fun <T : Any, R> assertNotNull(actual: T?, message: String? = null, block: (T) -> R) {
+	contract { returns() implies (actual != null) }
 	block(assertNotNull(actual, message))
 }
 
 public inline fun <reified T> assertIs(value: Any?, message: String? = null): T {
+	contract { returns() implies (value is T) }
 	if (value !is T) fail((if (message == null) "" else "$message. ") + "Expected value to be of another type, actual <$value>.")
 	return value
 }
 
 public inline fun <reified T> assertIsNot(value: Any?, message: String? = null) {
+	contract { returns() implies (value !is T) }
 	if (value is T) fail((if (message == null) "" else "$message. ") + "Expected value to not be of that type, actual <$value>.")
 }
 
@@ -132,6 +141,22 @@ public fun assertContains(charSequence: CharSequence, char: Char, ignoreCase: Bo
 
 public fun assertContains(range: IntRange, value: Int, message: String? = null) {
 	if (value !in range) fail(prefix(message) + "Expected the range <$range> to contain the value <$value>.")
+}
+
+public fun assertContains(range: LongRange, value: Long, message: String? = null) {
+	if (value !in range) fail(prefix(message) + "Expected the range <$range> to contain the value <$value>.")
+}
+
+public fun assertContains(range: CharRange, value: Char, message: String? = null) {
+	if (value !in range) fail(prefix(message) + "Expected the range <$range> to contain the value <$value>.")
+}
+
+public fun <T : Comparable<T>> assertContains(range: ClosedRange<T>, value: T, message: String? = null) {
+	if (value !in range) fail(prefix(message) + "Expected the range <$range> to contain the value <$value>.")
+}
+
+public fun <T> assertContains(sequence: Sequence<T>, element: T, message: String? = null) {
+	if (!sequence.contains(element)) fail(prefix(message) + "Expected the sequence to contain the element.\nSequence <$sequence>, element <$element>.")
 }
 
 public fun <T> assertContentEquals(expected: Iterable<T>?, actual: Iterable<T>?, message: String? = null) {
@@ -177,6 +202,47 @@ public fun assertContentEquals(expected: CharArray?, actual: CharArray?, message
 
 public fun assertContentEquals(expected: BooleanArray?, actual: BooleanArray?, message: String? = null) {
 	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun assertContentEquals(expected: ShortArray?, actual: ShortArray?, message: String? = null) {
+	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun assertContentEquals(expected: FloatArray?, actual: FloatArray?, message: String? = null) {
+	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun assertContentEquals(expected: UByteArray?, actual: UByteArray?, message: String? = null) {
+	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun assertContentEquals(expected: UShortArray?, actual: UShortArray?, message: String? = null) {
+	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun assertContentEquals(expected: UIntArray?, actual: UIntArray?, message: String? = null) {
+	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun assertContentEquals(expected: ULongArray?, actual: ULongArray?, message: String? = null) {
+	assertContentEquals(expected?.asList(), actual?.asList(), message)
+}
+
+public fun <T> assertContentEquals(expected: Sequence<T>?, actual: Sequence<T>?, message: String? = null) {
+	if (expected == null || actual == null) {
+		if (expected != null || actual != null) fail(prefix(message) + "Expected <$expected>, actual <$actual>.")
+		return
+	}
+	val vExpected = expected.iterator()
+	val vActual = actual.iterator()
+	var vIndex = 0
+	while (vExpected.hasNext() && vActual.hasNext()) {
+		val vWanted = vExpected.next()
+		val vGot = vActual.next()
+		if (vWanted != vGot) fail(prefix(message) + "Sequence elements differ at index $vIndex. Expected element <$vWanted>, actual element <$vGot>.")
+		vIndex++
+	}
+	if (vExpected.hasNext() || vActual.hasNext()) fail(prefix(message) + "Sequence lengths differ.")
 }
 
 /** Checks that [block] gives [expected]. */

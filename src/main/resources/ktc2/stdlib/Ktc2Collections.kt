@@ -19,6 +19,10 @@ leaves to its platform (`expect`), and the collection classes the JVM takes from
  */
 public actual class ArrayList<E> actual constructor(initialCapacity: Int) : MutableList<E>, RandomAccess {
 
+	init {
+		if (initialCapacity < 0) throw IllegalArgumentException("Illegal Capacity: $initialCapacity")
+	}
+
 	/*
 	The elements. It is only ever replaced by a larger one, and every index used on it was below
 	`length` at some time: `at` and `put`, which do not test the index, are enough.
@@ -155,12 +159,15 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 
 	actual override fun addAll(elements: Collection<E>): Boolean {
 		ensureCapacity(length + elements.size)
+		// As the JVM's list: a change even when nothing is added.
+		if (elements.isEmpty()) changes++
 		for (vElement in elements) add(vElement)
 		return !elements.isEmpty()
 	}
 
 	actual override fun addAll(index: Int, elements: Collection<E>): Boolean {
 		checkPosition(index)
+		if (elements.isEmpty()) changes++
 		var vAt = index
 		for (vElement in elements) {
 			add(vAt, vElement)
@@ -251,7 +258,9 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		var vText = "["
 		for (vIndex in 0 until length) {
 			if (vIndex > 0) vText += ", "
-			vText += array.at(vIndex)
+			// A list that holds itself names itself, as on the JVM, instead of describing itself for ever.
+			val vElement: Any? = array.at(vIndex)
+			if (vElement === this) vText += "(this Collection)" else vText += vElement
 		}
 		return vText + "]"
 	}
@@ -442,7 +451,11 @@ internal actual fun checkCountOverflow(count: Int): Int {
 	return count
 }
 
-internal actual fun <T> terminateCollectionToArray(collectionSize: Int, array: Array<T>): Array<T> = array
+/** As the JVM: an array larger than the collection gets a null after the last element. */
+internal actual fun <T> terminateCollectionToArray(collectionSize: Int, array: Array<T>): Array<T> {
+	if (collectionSize < array.size) (array as Array<Any?>)[collectionSize] = null
+	return array
+}
 
 public actual fun <T> MutableList<T>.reverse() {
 	var vLow = 0
@@ -515,7 +528,12 @@ private class ListPart<E>(private val list: MutableList<E>, private val from: In
 
 	private fun changesOfList(): Int {
 		val vList = list
-		return if (vList is ArrayList<E>) vList.changes else 0
+		return when (vList) {
+			is ArrayList<E> -> vList.changes
+			// What a list of the library counts its changes with (`ArrayDeque`).
+			is AbstractMutableList<E> -> vList.changeCount()
+			else -> 0
+		}
 	}
 
 	private fun check() {
@@ -564,6 +582,21 @@ private class ListPart<E>(private val list: MutableList<E>, private val from: In
 			count--
 		}
 		seen = changesOfList()
+	}
+
+	override fun iterator(): MutableIterator<E> {
+		check()
+		return super.iterator()
+	}
+
+	override fun listIterator(): MutableListIterator<E> {
+		check()
+		return super.listIterator()
+	}
+
+	override fun listIterator(index: Int): MutableListIterator<E> {
+		check()
+		return super.listIterator(index)
 	}
 }
 
@@ -653,7 +686,7 @@ internal actual fun <T> collectionToArray(collection: Collection<*>, array: Arra
 		vTarget[vIndex] = vElement as T
 		vIndex++
 	}
-	return vTarget
+	return terminateCollectionToArray(collection.size, vTarget)
 }
 
 internal actual fun <T> arrayOfNulls(reference: Array<T>, size: Int): Array<T> = newArray(size)
@@ -717,7 +750,13 @@ internal actual inline fun <E> buildSetInternal(capacity: Int, builderAction: Mu
 
 public actual inline fun <reified T> Array<out T>?.orEmpty(): Array<out T> = this ?: emptyArray<T>()
 
+/** What [inCollection] makes for its array (`toArray`, protected: an inline function cannot call it itself). */
+@PublishedApi
+internal fun arrayOfCollection(inCollection: AbstractCollection<*>): Array<Any?> = inCollection.toArray()
+
 public actual inline fun <reified T> Collection<T>.toTypedArray(): Array<T> {
+	// As on Kotlin/Native: a collection of the library's makes the array itself (its `toArray`, which it may override).
+	if (this is AbstractCollection<T>) return arrayOfCollection(this) as Array<T>
 	val vArray = newArray<T>(size)
 	var vIndex = 0
 	for (vElement in this) {
@@ -799,7 +838,8 @@ public actual abstract class AbstractMutableCollection<E> protected actual const
 		for (vElement in this) {
 			if (!vFirst) vText += ", "
 			vFirst = false
-			vText += vElement
+			val vShown: Any? = vElement
+			if (vShown === this) vText += "(this Collection)" else vText += vShown
 		}
 		return vText + "]"
 	}
@@ -889,6 +929,7 @@ public actual abstract class AbstractMutableList<E> protected actual constructor
 	actual override fun addAll(elements: Collection<E>): Boolean = addAll(size, elements)
 
 	actual override fun addAll(index: Int, elements: Collection<E>): Boolean {
+		AbstractList.checkPositionIndex(index, size)
 		var vAt = index
 		for (vElement in elements) {
 			add(vAt, vElement)
@@ -907,7 +948,10 @@ public actual abstract class AbstractMutableList<E> protected actual constructor
 
 	actual override fun listIterator(): MutableListIterator<E> = ArrayListIterator(this, 0)
 
-	actual override fun listIterator(index: Int): MutableListIterator<E> = ArrayListIterator(this, index)
+	actual override fun listIterator(index: Int): MutableListIterator<E> {
+		AbstractList.checkPositionIndex(index, size)
+		return ArrayListIterator(this, index)
+	}
 
 	actual override fun subList(fromIndex: Int, toIndex: Int): MutableList<E> {
 		checkPart(fromIndex, toIndex, size)
@@ -981,17 +1025,71 @@ public actual abstract class AbstractMutableMap<K, V> protected actual construct
 		return null
 	}
 
-	actual override val keys: MutableSet<K>
-		get() {
-			val vKeys = LinkedHashSet<K>()
-			for (vEntry in entries) vKeys.add(vEntry.key)
-			return vKeys
-		}
+	actual override val keys: MutableSet<K> get() = MapKeysView(this)
 
-	actual override val values: MutableCollection<V>
-		get() {
-			val vValues = ArrayList<V>()
-			for (vEntry in entries) vValues.add(vEntry.value)
-			return vValues
+	actual override val values: MutableCollection<V> get() = MapValuesView(this)
+
+	override fun equals(other: Any?): Boolean {
+		if (other === this) return true
+		if (other !is Map<*, *>) return false
+		if (size != other.size) return false
+		val vSelf: Map<*, *> = this
+		for (vEntry in other.entries) {
+			val vOurs = vSelf[vEntry.key]
+			if (vEntry.value != vOurs) return false
+			if (vOurs == null && !vSelf.containsKey(vEntry.key)) return false
 		}
+		return true
+	}
+
+	override fun hashCode(): Int = entries.hashCode()
+
+	override fun toString(): String {
+		val vText = StringBuilder("{")
+		var vIsFirst = true
+		for (vEntry in entries) {
+			if (!vIsFirst) vText.append(", ")
+			vIsFirst = false
+			val vKey: Any? = vEntry.key
+			val vValue: Any? = vEntry.value
+			vText.append(if (vKey === this) "(this Map)" else vKey.toString()).append('=').append(if (vValue === this) "(this Map)" else vValue.toString())
+		}
+		return vText.append('}').toString()
+	}
+}
+
+/** The keys of a map that only says what its entries are: a view, what is removed from it leaves the map. */
+private class MapKeysView<K, V>(private val map: AbstractMutableMap<K, V>) : AbstractMutableSet<K>() {
+	override val size: Int get() = map.size
+	override fun add(element: K): Boolean = throw UnsupportedOperationException("Add is not supported on keys")
+	override fun clear() = map.clear()
+	override fun contains(element: K): Boolean = map.containsKey(element)
+	override fun iterator(): MutableIterator<K> = MapKeysIterator(map.entries.iterator())
+
+	override fun remove(element: K): Boolean {
+		if (!map.containsKey(element)) return false
+		map.remove(element)
+		return true
+	}
+}
+
+private class MapKeysIterator<K, V>(private val inner: MutableIterator<MutableMap.MutableEntry<K, V>>) : MutableIterator<K> {
+	override fun hasNext(): Boolean = inner.hasNext()
+	override fun next(): K = inner.next().key
+	override fun remove() = inner.remove()
+}
+
+/** The values of a map that only says what its entries are: a view, as its keys are. */
+private class MapValuesView<K, V>(private val map: AbstractMutableMap<K, V>) : AbstractMutableCollection<V>() {
+	override val size: Int get() = map.size
+	override fun add(element: V): Boolean = throw UnsupportedOperationException("Add is not supported on values")
+	override fun clear() = map.clear()
+	override fun contains(element: V): Boolean = map.containsValue(element)
+	override fun iterator(): MutableIterator<V> = MapValuesIterator(map.entries.iterator())
+}
+
+private class MapValuesIterator<K, V>(private val inner: MutableIterator<MutableMap.MutableEntry<K, V>>) : MutableIterator<V> {
+	override fun hasNext(): Boolean = inner.hasNext()
+	override fun next(): V = inner.next().value
+	override fun remove() = inner.remove()
 }

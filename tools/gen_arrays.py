@@ -54,14 +54,17 @@ public actual fun <T> Array<out T>.asList(): List<T> = ArrayAsList(this)
 public actual infix fun <T> Array<out T>?.contentEquals(other: Array<out T>?): Boolean {
 	if (this === other) return true
 	if (this == null || other == null || size != other.size) return false
-	for (vIndex in indices) if (this[vIndex] != other[vIndex]) return false
+	// Read as objects: an `Array<Int>` may hold null after `toArray(array)`, as on the JVM.
+	val vThis = this as Array<out Any?>
+	val vOther = other as Array<out Any?>
+	for (vIndex in indices) if (vThis[vIndex] != vOther[vIndex]) return false
 	return true
 }
 
 public actual fun <T> Array<out T>?.contentHashCode(): Int {
 	if (this == null) return 0
 	var vResult = 1
-	for (vElement in this) vResult = 31 * vResult + (vElement?.hashCode() ?: 0)
+	for (vElement in this as Array<out Any?>) vResult = 31 * vResult + (vElement?.hashCode() ?: 0)
 	return vResult
 }
 
@@ -70,7 +73,8 @@ public actual fun <T> Array<out T>?.contentToString(): String {
 	val vText = StringBuilder("[")
 	for (vIndex in indices) {
 		if (vIndex > 0) vText.append(", ")
-		vText.append(this[vIndex].toString())
+		val vElement: Any? = (this as Array<out Any?>)[vIndex]
+		vText.append(vElement.toString())
 	}
 	return vText.append("]").toString()
 }
@@ -119,12 +123,8 @@ private fun deepEquals(inLeft: Any?, inRight: Any?): Boolean {
 	}
 }
 
-public actual infix fun <T> Array<out T>.contentDeepEquals(other: Array<out T>): Boolean {
-	if (this === other) return true
-	if (size != other.size) return false
-	for (vIndex in indices) if (!deepEquals(this[vIndex], other[vIndex])) return false
-	return true
-}
+/** The library's own: arrays of unsigned numbers inside are compared by content too. */
+public actual infix fun <T> Array<out T>.contentDeepEquals(other: Array<out T>): Boolean = contentDeepEqualsImpl(other)
 
 @kotlin.jvm.JvmName("contentDeepEqualsNullable")
 public actual infix fun <T> Array<out T>?.contentDeepEquals(other: Array<out T>?): Boolean {
@@ -142,14 +142,8 @@ public actual fun <T> Array<out T>.contentDeepHashCode(): Int {
 @kotlin.jvm.JvmName("contentDeepHashCodeNullable")
 public actual fun <T> Array<out T>?.contentDeepHashCode(): Int = if (this == null) 0 else this.contentDeepHashCode()
 
-public actual fun <T> Array<out T>.contentDeepToString(): String {
-	val vText = StringBuilder("[")
-	for (vIndex in indices) {
-		if (vIndex > 0) vText.append(", ")
-		vText.append(deepToString(this[vIndex]))
-	}
-	return vText.append("]").toString()
-}
+/** The library's own: an array that holds itself, at any depth, is written `[...]`. */
+public actual fun <T> Array<out T>.contentDeepToString(): String = contentDeepToStringImpl()
 
 @kotlin.jvm.JvmName("contentDeepToStringNullable")
 public actual fun <T> Array<out T>?.contentDeepToString(): String = if (this == null) "null" else this.contentDeepToString()
@@ -168,6 +162,7 @@ public actual fun <T> Array<out T>.copyInto(destination: Array<T>, destinationOf
 public actual fun <T> Array<T>.copyOf(): Array<T> = copyOfRange(0, size)
 
 public actual fun <T> Array<T>.copyOf(newSize: Int): Array<T?> {
+	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
 	val vResult = newArray<T?>(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -309,6 +304,7 @@ public actual fun @Array.copyInto(destination: @Array, destinationOffset: Int, s
 public actual fun @Array.copyOf(): @Array = copyOf(size)
 
 public actual fun @Array.copyOf(newSize: Int): @Array {
+	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
 	val vResult = @Array(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]

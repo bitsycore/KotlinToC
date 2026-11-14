@@ -112,6 +112,8 @@ object K2Frontend {
 				add("-opt-in=kotlin.contracts.ExperimentalContracts")
 				add("-opt-in=kotlin.ExperimentalMultiplatform")
 				add("-opt-in=kotlin.ExperimentalStdlibApi")
+				// What the tests of the standard library are compiled with besides (`ktc2.optIn`, set by the suite).
+				System.getProperty("ktc2.optIn")?.split(',')?.forEach { add("-opt-in=$it") }
 				add("-Xreturn-value-checker=check")
 				add("-Xdont-warn-on-error-suppression")
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.
@@ -238,13 +240,13 @@ object K2Frontend {
 	 * Compiles [inSources] as ordinary Kotlin/JVM into [inOutDir], against the real standard
 	 * library and nothing of ktc2 but the `ktc2.` package: the reference build tests compare with.
 	 */
-	fun compileJvm(inSources: List<File>, inOutDir: File): Boolean {
+	fun compileJvm(inSources: List<File>, inOutDir: File, inOptions: List<String> = emptyList()): Boolean {
 		val vArgs = inSources.map { it.path } + listOf(
 			// (A test is compiled with ktc2's own `kotlin.test`, a source in a package of the library.)
 			"-d", inOutDir.path, "-no-stdlib", "-no-reflect", "-nowarn", "-Xallow-kotlin-package", "-cp", userClasspath(),
 			// The inline functions of the `ktc2.` package are built for the JVM this runs on.
 			"-jvm-target", System.getProperty("java.specification.version"),
-		) + kLanguageOptions
+		) + kLanguageOptions + inOptions
 		return K2JVMCompiler().exec(System.err, *vArgs.toTypedArray()) == ExitCode.OK
 	}
 

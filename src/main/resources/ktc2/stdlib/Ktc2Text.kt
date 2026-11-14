@@ -43,6 +43,12 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 
 	public actual fun capacity(): Int = chars.size
 
+	/** Makes room for [wanted] code units in all; a length past what an Int can say has no array. */
+	private fun grow(wanted: Int) {
+		if (wanted < 0) throw OutOfMemoryError()
+		ensureCapacity(wanted)
+	}
+
 	public actual fun ensureCapacity(minimumCapacity: Int) {
 		if (minimumCapacity <= chars.size) return
 		var vCapacity = chars.size * 2 + 2
@@ -59,7 +65,7 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 	//  append
 
 	actual override fun append(value: Char): StringBuilder {
-		ensureCapacity(count + 1)
+		grow(count + 1)
 		chars[count] = value
 		count++
 		return this
@@ -73,7 +79,8 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 
 	actual override fun append(value: CharSequence?, startIndex: Int, endIndex: Int): StringBuilder {
 		val vSource: CharSequence = value ?: "null"
-		ensureCapacity(count + endIndex - startIndex)
+		AbstractList.checkBoundsIndexes(startIndex, endIndex, vSource.length)
+		grow(count + endIndex - startIndex)
 		for (vIndex in startIndex until endIndex) {
 			chars[count] = vSource[vIndex]
 			count++
@@ -84,7 +91,7 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 	public actual fun append(value: String?): StringBuilder {
 		val vSource: String = value ?: "null"
 		val vLength = vSource.length
-		ensureCapacity(count + vLength)
+		grow(count + vLength)
 		ktc2.internal.stringToChars(vSource, chars, count)
 		count += vLength
 		return this
@@ -93,7 +100,7 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 	/** The digits of [value], written where they stay: no string in between. */
 	private fun appendNumber(value: Long): StringBuilder {
 		if (value == Long.MIN_VALUE) return append("-9223372036854775808")
-		ensureCapacity(count + 20)
+		grow(count + 20)
 		var vRest = value
 		if (vRest < 0) {
 			chars[count++] = '-'
@@ -127,7 +134,7 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 	public actual fun append(value: Double): StringBuilder = append("$value")
 
 	public actual fun append(value: CharArray): StringBuilder {
-		ensureCapacity(count + value.size)
+		grow(count + value.size)
 		for (vChar in value) {
 			chars[count] = vChar
 			count++
@@ -141,7 +148,7 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 	/** Opens a gap of [size] code units at [index]. */
 	private fun openGap(index: Int, size: Int) {
 		if (index < 0 || index > count) throw IndexOutOfBoundsException("index: $index, length: $count")
-		ensureCapacity(count + size)
+		grow(count + size)
 		var vIndex = count - 1
 		while (vIndex >= index) {
 			chars[vIndex + size] = chars[vIndex]
@@ -170,7 +177,15 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 		return this
 	}
 
-	public actual fun insert(index: Int, value: CharSequence?): StringBuilder = insert(index, "$value")
+	public actual fun insert(index: Int, value: CharSequence?): StringBuilder {
+		val vSource: CharSequence = value ?: "null"
+		// (A builder put into itself is read before the gap is opened in it.)
+		if (vSource is String || vSource is StringBuilder) return insert(index, vSource.toString())
+		val vLength = vSource.length
+		openGap(index, vLength)
+		for (vIndex in 0 until vLength) chars[index + vIndex] = vSource[vIndex]
+		return this
+	}
 
 	public actual fun insert(index: Int, value: Any?): StringBuilder = insert(index, "$value")
 
@@ -237,6 +252,8 @@ public actual class StringBuilder actual constructor(capacity: Int) : Appendable
 	public actual fun indexOf(string: String): Int = indexOf(string, 0)
 
 	public actual fun indexOf(string: String, startIndex: Int): Int {
+		// As the JVM: nothing is found at the end, and past it.
+		if (string.isEmpty() && startIndex >= count) return count
 		var vIndex = if (startIndex < 0) 0 else startIndex
 		while (vIndex + string.length <= count) {
 			if (matchesAt(string, vIndex)) return vIndex
@@ -301,7 +318,8 @@ public actual operator fun StringBuilder.set(index: Int, value: Char) {
 }
 
 public actual fun StringBuilder.setRange(startIndex: Int, endIndex: Int, value: String): StringBuilder {
-	removeRange(startIndex, endIndex)
+	// An end past the content is the end of the content.
+	removeRange(startIndex, if (endIndex > length) length else endIndex)
 	return insert(startIndex, value)
 }
 
@@ -311,15 +329,19 @@ public actual fun StringBuilder.deleteAt(index: Int): StringBuilder {
 }
 
 public actual fun StringBuilder.deleteRange(startIndex: Int, endIndex: Int): StringBuilder {
-	removeRange(startIndex, endIndex)
+	// An end past the content is the end of the content.
+	removeRange(startIndex, if (endIndex > length) length else endIndex)
 	return this
 }
 
 public actual fun StringBuilder.toCharArray(destination: CharArray, destinationOffset: Int, startIndex: Int, endIndex: Int) {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, length)
+	AbstractList.checkBoundsIndexes(destinationOffset, destinationOffset + endIndex - startIndex, destination.size)
 	copyInto(destination, destinationOffset, startIndex, endIndex)
 }
 
 public actual fun StringBuilder.appendRange(value: CharArray, startIndex: Int, endIndex: Int): StringBuilder {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, value.size)
 	for (vIndex in startIndex until endIndex) append(value[vIndex])
 	return this
 }
@@ -328,6 +350,8 @@ public actual fun StringBuilder.appendRange(value: CharSequence, startIndex: Int
 	append(value, startIndex, endIndex)
 
 public actual fun StringBuilder.insertRange(index: Int, value: CharArray, startIndex: Int, endIndex: Int): StringBuilder {
+	AbstractList.checkPositionIndex(index, length)
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, value.size)
 	var vAt = index
 	for (vIndex in startIndex until endIndex) {
 		insert(vAt, value[vIndex])
@@ -337,6 +361,8 @@ public actual fun StringBuilder.insertRange(index: Int, value: CharArray, startI
 }
 
 public actual fun StringBuilder.insertRange(index: Int, value: CharSequence, startIndex: Int, endIndex: Int): StringBuilder {
+	AbstractList.checkPositionIndex(index, length)
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, value.length)
 	var vAt = index
 	for (vIndex in startIndex until endIndex) {
 		insert(vAt, value[vIndex])
