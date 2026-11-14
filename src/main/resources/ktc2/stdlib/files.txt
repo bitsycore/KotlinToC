@@ -139,6 +139,9 @@ commonMain/kotlin/annotations/NativeConcurrentAnnotations.kt
 Ktc2NativeAnnotations.kt
 Ktc2Builders.kt
 commonMain/kotlin/reflect/KClasses.kt
+commonMain/kotlin/reflect/KVariance.kt
+commonMain/kotlin/reflect/KTypeProjection.kt
+commonMain/kotlin/reflect/typeOf.kt
 Ktc2Reflect.kt
 commonMain/kotlin/text/unicode/ExperimentalUnicodeApi.kt
 commonMain/kotlin/text/unicode/CodePoint.kt

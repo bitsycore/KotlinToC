@@ -54,7 +54,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - As in Kotlin/Native a program has no JDK: nothing of `java.*` (reported by `JavaUseCheck`). Do not add anything under `java.*` for programs to use; files and similar are to come from kotlinx libraries (kotlinx.io or okio) through ktc2 compatibility layers. The one platform file in package `java.lang`, `Ktc2JavaLang.kt`, is not an exception to this: it only declares the exception classes the runtime throws under their JVM names (`ArrayIndexOutOfBoundsException`...), which Kotlin code can catch by their Kotlin supertypes.
 - Memory: objects are references, counted; `EscapeAnalysis` moves them to the frame, `ArcInsert` leaves out the counting nobody can observe. Cycles are reported at compile time (`@Weak`, `WeakRef`, `@Acyclic`); there is no cycle collector.
 - Exceptions are a pending value tested after each call that can throw; no `setjmp`.
-- Not supported: coroutines (`sequence { }`, `iterator { }`: to come with `suspend` functions done in full), reflection beyond a class as a value (`x::class` compared and named), and what only the JDK has (`String.format`, `toSortedMap`...).
+- Not supported: coroutines (`sequence { }`, `iterator { }`: to come with `suspend` functions done in full), reflection beyond a class as a value (`x::class` compared and named) and `typeOf<T>()` (a `KType`: class, arguments, nullability, as on Kotlin/Native), and what only the JDK has (`String.format`, `toSortedMap`...).
 
 ## How to
 - **Fix a difference from Kotlin**: write the program under `integration/<group>/`, see it fail against the JVM, fix, run the whole suite, commit.

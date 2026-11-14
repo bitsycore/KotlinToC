@@ -492,7 +492,8 @@ The gate is the suite: run locally, and by the CI job on Linux, macOS and Window
 ---------------------------------------------------------------------------
 
 Not Kotlin, by design:
-- no coroutines (`sequence { }`, `iterator { }`, `suspend`), no reflection. A call into them
+- no coroutines (`sequence { }`, `iterator { }`, `suspend`); of reflection, a class as a value and
+  `typeOf<T>()` only, as Kotlin/Native has them. A call into them
   from the library compiles and throws `UnsupportedOperationException` when it is reached;
 - no JDK;
 - destruction is immediate, not deferred: visible only through weak references.
@@ -500,7 +501,6 @@ Not Kotlin, by design:
 Kotlin, but not done:
 - the coroutines themselves (`suspend`, `sequence { }` in a program, `DeepRecursiveFunction`);
   their context classes (`CoroutineContext`, `CancellationException`) are there;
-- reflection of types (`typeOf`, `KType`);
 - `@ThreadLocal` is there but changes nothing: a global is one for every thread, as on the JVM
   (on Kotlin/Native it would be one a thread);
 - `isDaemon`, names and priorities of threads;
@@ -520,6 +520,11 @@ Done in the platform layer, worth knowing:
   `shuffled`, `ifEmpty` of a sequence) are iterators of `Ktc2Internal.kt` that do the same
   steps; a call to one is lowered to the platform's of the same name and parameters
   (`kWithoutCoroutine` in `BodyLowering.kt`). `sequence { }` in a program still needs coroutines.
+- `typeOf<T>()` is built where it is written, T being reified and so known there: a
+  `TypeReference` of `Ktc2Internal.kt` (its class as `T::class` gives it, the projections of
+  its arguments, its nullability), written out and compared as on Kotlin/Native
+  (`kotlin.collections.List<kotlin.String>?`). `kotlin.system.exitProcess` is the C library's
+  `exit`, after what was printed is written out.
 - A reference to a `var` where a `KMutableProperty0` or `1` is wanted is a `MutableReference0`
   or `1` of the platform layer: the getter (its `invoke`, which `get()` is lowered to) with
   the setter beside it (`set` is lowered to `mutableReferenceSet0`/`1`).
@@ -533,7 +538,7 @@ Known to differ from the JVM:
   removed the other does not see;
 - a `HashMap` goes over its entries in the order they were put in, as Kotlin/Native's does;
   the JVM's goes by hash. Kotlin promises neither;
-- of reflection there is a class as a value, and no more: `x::class` and `Name::class` can be
+- of reflection there is a class as a value and `typeOf<T>()`, as on Kotlin/Native, and no more: `x::class` and `Name::class` can be
   compared, used as keys, asked for `simpleName` and `qualifiedName`, and asked `isInstance`
   for a class (not for an interface: false) (`ClassReference` in `Ktc2Internal.kt`, by the
   names the runtime's table of types has); everything else a `KClass` offers throws;

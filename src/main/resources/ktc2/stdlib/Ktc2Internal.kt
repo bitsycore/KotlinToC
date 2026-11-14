@@ -208,6 +208,9 @@ public external fun stringOfUtf8(bytes: ByteArray, startIndex: Int, endIndex: In
  */
 public external fun atomicInt(array: IntArray, index: Int, operation: Int, a: Int, b: Int): Int
 
+/** Ends the program with [status] (`kotlin.system.exitProcess`). */
+public external fun exitProcess(status: Int)
+
 /** Fills [bytes] with random bytes from the operating system, fit for secrets. */
 public external fun secureRandomBytes(bytes: ByteArray)
 
@@ -847,3 +850,46 @@ public fun <T> kotlin_sequences_shuffled(source: Sequence<T>, random: kotlin.ran
 
 public fun <T, C, R> kotlin_sequences_flatMapIndexed(source: Sequence<T>, transform: (Int, T) -> C, iterator: (C) -> Iterator<R>): Sequence<R> =
 	Sequence { FlatMapIndexed(source, transform, iterator) }
+
+// ==================
+// MARK: Types (typeOf)
+// ==================
+
+/**
+ * What `typeOf<T>()` gives: the class, the projections of the arguments and whether it may be null. The
+ * compiler builds it where `typeOf` is written, from the type T stands for there. It is written out as the
+ * JVM writes it (`kotlin.collections.List<kotlin.String>?`) and compared by what it is made of.
+ */
+public class TypeReference(
+	override val classifier: kotlin.reflect.KClassifier?,
+	override val arguments: List<kotlin.reflect.KTypeProjection>,
+	override val isMarkedNullable: Boolean,
+) : kotlin.reflect.KType {
+	override val annotations: List<Annotation> get() = emptyList()
+
+	override fun equals(other: Any?): Boolean =
+		other is TypeReference && classifier == other.classifier && arguments == other.arguments && isMarkedNullable == other.isMarkedNullable
+
+	override fun hashCode(): Int = (classifier.hashCode() * 31 + arguments.hashCode()) * 31 + isMarkedNullable.hashCode()
+
+	override fun toString(): String {
+		val vName = (classifier as? kotlin.reflect.KClass<*>)?.qualifiedName ?: classifier.toString()
+		val vArguments = if (arguments.isEmpty()) "" else arguments.joinToString(", ", "<", ">")
+		return vName + vArguments + if (isMarkedNullable) "?" else ""
+	}
+}
+
+/** A [TypeReference]: [arguments] holds KTypeProjections. */
+public fun typeReference(classifier: Any, nullable: Boolean, arguments: Array<Any?>): Any {
+	val vArguments = ArrayList<kotlin.reflect.KTypeProjection>(arguments.size)
+	for (vArgument in arguments) vArguments.add(vArgument as kotlin.reflect.KTypeProjection)
+	return TypeReference(classifier as kotlin.reflect.KClassifier, vArguments, nullable)
+}
+
+/** The projection of a type argument: [variance] -1 for a star, 0 invariant, 1 `in`, 2 `out`. */
+public fun typeProjection(variance: Int, type: Any?): Any = when (variance) {
+	-1 -> kotlin.reflect.KTypeProjection.STAR
+	1 -> kotlin.reflect.KTypeProjection.contravariant(type as kotlin.reflect.KType)
+	2 -> kotlin.reflect.KTypeProjection.covariant(type as kotlin.reflect.KType)
+	else -> kotlin.reflect.KTypeProjection.invariant(type as kotlin.reflect.KType)
+}

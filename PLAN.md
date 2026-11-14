@@ -20,9 +20,9 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 293
-tests: 139 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 153 files of common tests under `tests/` (one of ktc2's own and 152 of
+**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 296
+tests: 141 programs under `integration/` (compared with the JVM or an `.expected` file, or
+that must be refused), 154 files of common tests under `tests/` (one of ktc2's own and 153 of
 the Kotlin standard library's, some 2200 `@Test` functions, with the helpers of the library's
 tests under `tests/support/`), and the showcase as a program of several modules. It passes
 on Windows (mingw gcc 15) in about five minutes (the library's large test files, `ArraysTest`
@@ -76,7 +76,8 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   library's own functions that are written with them (`zipWithNext`, `chunked`, `windowed`,
   `scan`, `shuffled` of a sequence...) are plain iterators of the platform layer meanwhile;
 - a class as a value is in: `x::class`, `Name::class`, compared, as keys, `simpleName`,
-  `qualifiedName`, `isInstance` for a class. The rest of reflection is not;
+  `qualifiedName`, `isInstance`, `cast` for a class, and `typeOf<T>()` (2026-11-14), which is
+  what Kotlin/Native has. The rest of reflection is not;
 - what only the JDK has is not added (`toSortedMap`, `String.format`, `getOrDefault`,
   `setCharAt`...): a program has no JDK, as on Kotlin/Native. A compatibility layer in the
   `ktc2.` package may come later. `removeFirst` and `removeLast` of a list stay: they are
@@ -95,11 +96,10 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **How differences are found**, which is the work to go on with:
 1. *Tests of the Kotlin standard library* (`tests/kotlin/`, from `libraries/stdlib/test` of
-   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 152 files are
+   github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 153 files are
    in and pass (some 2200 tests), with the helpers of the library's tests under
    `tests/support/`; `tests/README.md` lists what they found (some fifty differences, all
-   fixed). What is left: 4 files in `tests/pending/` that need coroutines, and one that needs reflection
-   of types and 2 tests in `<Name>.skip` files, each with
+   fixed). What is left: 4 files in `tests/pending/`, which need coroutines, and 2 tests in `<Name>.skip` files, each with
    the reason. Every file of `libraries/stdlib/test` that
    does not need the library's `internal` declarations or JavaScript is in. Next: coroutines
    (`sequence { }`, `iterator { }`, part 8), then the tests of `libraries/stdlib/jvm/test`

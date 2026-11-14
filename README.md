@@ -27,7 +27,7 @@ build/install/ktc2/bin/ktc2 hello.kt --run
 - **The language**: classes, inheritance, interfaces, generics, lambdas and closures, data and
   enum classes, sealed types, objects, inner classes, extensions, operators, properties and
   delegation, exceptions, string templates, inline functions, `tailrec`, the features of
-  Kotlin 2.5. Not coroutines, and no reflection.
+  Kotlin 2.5. Not coroutines yet; of reflection, what Kotlin/Native has: a class as a value and `typeOf<T>()`.
 - **The standard library**, compiled from the sources of the real one: collections, sequences,
   strings and `Char` with Unicode, `Regex`, ranges, `kotlin.math`, `kotlin.time`, `Random`,
   `Result`, `lazy` and the other delegates.

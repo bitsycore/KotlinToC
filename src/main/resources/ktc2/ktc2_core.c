@@ -2434,6 +2434,17 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 #endif
 
 /* ================== */
+/* MARK: Process      */
+/* ================== */
+
+_Noreturn void ktc2_exitProcess(int32_t status)
+{
+	fflush(stdout);
+	fflush(stderr);
+	exit(status);
+}
+
+/* ================== */
 /* MARK: Random       */
 /* ================== */
 

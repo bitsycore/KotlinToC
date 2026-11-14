@@ -862,12 +862,7 @@ internal class BodyBuilder(
 		is IrTry -> lowerTry(inExpression)
 		is IrGetObjectValue -> lowerObject(inExpression)
 		// Under the name the runtime has for the class (an exception has the JVM's there), so that it equals what `x::class` gives.
-		is IrClassReference -> closed(inExpression.classType).classOrNull?.owner.let { vClass ->
-			// A class whose values are plain structs is, as an object, its box.
-			val vStruct = (kType(closed(inExpression.classType).makeNotNull()) as? KStructType)?.struct
-			classObject(inExpression, vStruct?.let { mImporter.boxFor(it).name }
-				?: vClass?.takeIf { !it.isInterface && it.fileOrNull != null }?.let { mImporter.classFor(it)?.name } ?: vClass?.kotlinFqName?.asString())
-		}
+		is IrClassReference -> classValueOf(inExpression, closed(inExpression.classType))
 		is IrGetClass -> {
 			// `x::class`: of an object, the class it is of; of a number or a text, the one its type names.
 			val vValue = lowerPure(inExpression.argument)
@@ -2148,6 +2143,11 @@ internal class BodyBuilder(
 				return KRead(vResult)
 			}
 		}
+		// `typeOf<T>()`: built where it is written, from the type T stands for there.
+		if (vOwner == null && vCallee.name.asString() == "typeOf" && vCallee.kotlinFqName.asString() == "kotlin.reflect.typeOf") {
+			val vType = inCall.typeArguments.firstOrNull()?.let { closed(it) } ?: return fail(inCall, "typeOf")
+			return adapt(typeValueOf(inCall, vType), inCall)
+		}
 		// `listOf(a, b, c)` is `elements.asList()` unless there is no element, which the call shows: the
 		// list is then of one class for the passes that follow the classes of values.
 		if (vOwner == null && vCallee.name.asString() == "listOf" && vCallee.kotlinFqName.asString() == "kotlin.collections.listOf") {
@@ -2478,6 +2478,47 @@ internal class BodyBuilder(
 	}
 
 	/** `Name::class` as a value: an object that knows the name of the class, there being no reflection. */
+	/** `Name::class` for the closed type [inType]. */
+	private fun classValueOf(inElement: IrElement, inType: IrType): KExpr {
+		val vClass = inType.classOrNull?.owner
+		// A class whose values are plain structs is, as an object, its box.
+		val vStruct = (kType(inType.makeNotNull()) as? KStructType)?.struct
+		return classObject(inElement, vStruct?.let { mImporter.boxFor(it).name }
+			?: vClass?.takeIf { !it.isInterface && it.fileOrNull != null }?.let { mImporter.classFor(it)?.name } ?: vClass?.kotlinFqName?.asString())
+	}
+
+	/**
+	 * `typeOf<T>()` for the closed type [inType], known where it is written (T is reified): its class, the
+	 * projections of its arguments, and whether it may be null (`ktc2.internal.TypeReference`).
+	 */
+	private fun typeValueOf(inElement: IrElement, inType: IrType): KExpr {
+		val vSimple = inType as? IrSimpleType ?: return fail(inElement, "typeOf of '${inType.render()}'")
+		if (vSimple.classOrNull == null) return fail(inElement, "typeOf of '${inType.render()}', which is not a class")
+		val vReference = mImporter.internalFunction("typeReference")?.let { mImporter.functionFor(it) } ?: return fail(inElement, "typeOf")
+		val vProjection = mImporter.internalFunction("typeProjection")?.let { mImporter.functionFor(it) } ?: return fail(inElement, "typeOf")
+		val vClassifier = spill(classValueOf(inElement, vSimple.makeNotNull()))
+		val vArgumentsType = vReference.params[2].type as KArrayType
+		val vArguments = newTemp(vArgumentsType)
+		mBlock += KLet(vArguments, KArrayNew(KConst(vSimple.arguments.size, kIntType), vArgumentsType))
+		vSimple.arguments.forEachIndexed { vIndex, vArgument ->
+			// Star -1, invariant 0, in 1, out 2: `typeProjection` in the platform layer.
+			val vProjected = when (vArgument) {
+				is IrTypeProjection -> {
+					val vVariance = when (vArgument.variance) {
+						org.jetbrains.kotlin.types.Variance.IN_VARIANCE -> 1
+						org.jetbrains.kotlin.types.Variance.OUT_VARIANCE -> 2
+						else -> 0
+					}
+					val vInner = spill(typeValueOf(inElement, vArgument.type))
+					spill(KCall(vProjection, listOf(KConst(vVariance, kIntType), coerce(vInner, vProjection.params[1].type))))
+				}
+				else -> spill(KCall(vProjection, listOf(KConst(-1, kIntType), KNull(vProjection.params[1].type))))
+			}
+			mBlock += KIndexSet(KRead(vArguments), KConst(vIndex, kIntType), coerce(vProjected, vArgumentsType.element))
+		}
+		return spill(KCall(vReference, listOf(coerce(vClassifier, vReference.params[0].type), KConst(vSimple.isMarkedNullable(), kBoolType), KRead(vArguments))))
+	}
+
 	private fun classObject(inElement: IrElement, inName: String?): KExpr {
 		val vFactory = mImporter.internalFunction("classReference")?.let { mImporter.functionFor(it) }
 		if (vFactory == null || inName == null) return fail(inElement, "class reference")
