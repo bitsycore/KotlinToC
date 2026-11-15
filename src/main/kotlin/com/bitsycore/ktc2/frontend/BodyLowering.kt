@@ -1151,13 +1151,17 @@ internal class BodyBuilder(
 			val vGetter = makeClosure(inExpression, inExpression.getterFunction, null, null, vBound)?.let { KRead(it.first) } ?: return KUnitValue
 			val vSetter = inExpression.setterFunction
 			val vKind = closed(inExpression.type).classOrNull?.owner?.kotlinFqName?.asString()
-			if (vSetter == null || vKind == null || !vKind.startsWith("kotlin.reflect.KMutableProperty")) return vGetter
-			// A reference to a `var` as a KMutableProperty: the getter, and the setter beside it (`MutableReference0`).
-			val vSetClosure = makeClosure(inExpression, vSetter, null, null, vBound)?.let { KRead(it.first) } ?: return vGetter
+			val vName = (inExpression.reflectionTargetSymbol?.owner as? IrDeclarationWithName)?.name?.asString()
 			val vArguments = mImporter.argumentsOf(closed(inExpression.type))
-			val vFactory = mImporter.internalFunction(if (vArguments.size == 1) "mutableReference0" else "mutableReference1") ?: return vGetter
+			if (vKind == null || vName == null || vArguments.size !in 1..2 || !(vKind.startsWith("kotlin.reflect.KProperty") || vKind.startsWith("kotlin.reflect.KMutableProperty"))) return vGetter
+			// The getter with the property's name (`Reference0`), and for a `var` as a KMutableProperty the setter beside it (`MutableReference0`).
+			val vIsMutable = vSetter != null && vKind.startsWith("kotlin.reflect.KMutableProperty")
+			val vSetClosure = if (vIsMutable) makeClosure(inExpression, vSetter!!, null, null, vBound)?.let { KRead(it.first) } ?: return vGetter else null
+			val vFactoryName = (if (vIsMutable) "mutableReference" else "reference") + (vArguments.size - 1)
+			val vFactory = mImporter.internalFunction(vFactoryName) ?: return vGetter
 			val vTarget = mImporter.functionFor(vFactory, mImporter.substFor(vFactory, emptyList(), vArguments)) ?: return vGetter
-			spill(KCall(vTarget, listOf(coerce(spill(vGetter), vTarget.params[0].type), coerce(spill(vSetClosure), vTarget.params[1].type))))
+			val vPassed = listOf(KStringLit(vName), coerce(spill(vGetter), vTarget.params[1].type)) + listOfNotNull(vSetClosure?.let { coerce(spill(it), vTarget.params[2].type) })
+			spill(KCall(vTarget, vPassed))
 		}
 		is IrPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
 		is IrLocalDelegatedPropertyReference -> propertyObject(inExpression, inExpression.symbol.owner.name.asString())
@@ -2546,6 +2550,22 @@ internal class BodyBuilder(
 			val vFunctionType = generateSequence(listOf(vCallee.parentAsClass)) { vLevel -> vLevel.flatMap { vClass -> vClass.superTypes.mapNotNull { it.classOrNull?.owner } }.takeIf { it.isNotEmpty() } }
 				.flatten().flatMap { it.superTypes }.firstOrNull { isFunctionType(it) }?.classOrNull?.owner
 			vFunctionType?.declarations?.filterIsInstance<IrSimpleFunction>()?.firstOrNull { it.name.asString() == "invoke" }?.let { vCallee = it }
+		}
+		// `name` of a reference: known here when the reference is written right there (`Builder::char.name`, as kotlinx-datetime
+		// writes a format as code), else the name a property reference holds (`Reference0`).
+		if (vCallee.name.asString() == "<get-name>" && vReflected != null && (vReflected == "kotlin.reflect.KCallable" || vReflected.startsWith("kotlin.reflect.KProperty") ||
+				vReflected.startsWith("kotlin.reflect.KMutableProperty") || vReflected.startsWith("kotlin.reflect.KFunction"))) {
+			val vWritten = when (val vReference = inCall.arguments.firstOrNull()) {
+				is IrRichFunctionReference -> vReference.takeIf { it.boundValues.isEmpty() }?.reflectionTargetSymbol?.owner
+				is IrRichPropertyReference -> vReference.takeIf { it.boundValues.isEmpty() }?.reflectionTargetSymbol?.owner
+				is IrFunctionReference -> vReference.takeIf { vRef -> vRef.arguments.all { it == null } }?.symbol?.owner
+				is IrPropertyReference -> vReference.takeIf { vRef -> vRef.arguments.all { it == null } }?.symbol?.owner
+				else -> null
+			}
+			(vWritten as? IrDeclarationWithName)?.let { return KStringLit(it.name.asString()) }
+			val vNameOf = mImporter.internalFunction("referenceName")?.let { mImporter.functionFor(it) }
+			val vReceiver = inCall.arguments.firstOrNull()
+			if (vNameOf != null && vReceiver != null) return spill(KCall(vNameOf, listOf(coerce(lowerPure(vReceiver), KObjType))))
 		}
 		// `set(value)` of a reference to a `var`: through the setter it holds (`MutableReference0`).
 		if (vCallee.name.asString() == "set" && (vReflected == "kotlin.reflect.KMutableProperty0" || vReflected == "kotlin.reflect.KMutableProperty1")) {

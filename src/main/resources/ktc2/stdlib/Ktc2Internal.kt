@@ -640,28 +640,47 @@ public interface Deinit {
 }
 
 // ==================
-// MARK: Mutable property references
+// MARK: Property references
 // ==================
 
 /*
-A reference to a `var` (`::top`, `data::count`) where Kotlin wants a KMutableProperty0 or 1: it reads as
-the function that reads the property (`get()` is lowered to `invoke`) and holds the function that writes it
-(`set` is lowered to [mutableReferenceSet0] and [mutableReferenceSet1]).
+A reference to a property (`::top`, `data::count`, `LocalDate::year`) where Kotlin wants a KProperty0 or 1,
+or a KMutableProperty0 or 1 for a `var`: it reads as the function that reads the property (`get()` is lowered
+to `invoke`), knows the property's name (`name` is lowered to [referenceName]), and for a `var` holds the
+function that writes it (`set` is lowered to [mutableReferenceSet0] and [mutableReferenceSet1]).
 */
 
-public class MutableReference0<V>(private val getter: () -> V, private val setter: (V) -> Unit) : () -> V {
+public open class Reference0<V>(public val name: String, private val getter: () -> V) : () -> V {
 	override fun invoke(): V = getter()
+}
+
+public open class Reference1<T, V>(public val name: String, private val getter: (T) -> V) : (T) -> V {
+	override fun invoke(receiver: T): V = getter(receiver)
+}
+
+public class MutableReference0<V>(name: String, getter: () -> V, private val setter: (V) -> Unit) : Reference0<V>(name, getter) {
 	public fun set(value: V): Unit = setter(value)
 }
 
-public class MutableReference1<T, V>(private val getter: (T) -> V, private val setter: (T, V) -> Unit) : (T) -> V {
-	override fun invoke(receiver: T): V = getter(receiver)
+public class MutableReference1<T, V>(name: String, getter: (T) -> V, private val setter: (T, V) -> Unit) : Reference1<T, V>(name, getter) {
 	public fun set(receiver: T, value: V): Unit = setter(receiver, value)
 }
 
-public fun <V> mutableReference0(getter: () -> V, setter: (V) -> Unit): Any = MutableReference0(getter, setter)
+public fun <V> reference0(name: String, getter: () -> V): Any = Reference0(name, getter)
 
-public fun <T, V> mutableReference1(getter: (T) -> V, setter: (T, V) -> Unit): Any = MutableReference1(getter, setter)
+public fun <T, V> reference1(name: String, getter: (T) -> V): Any = Reference1(name, getter)
+
+public fun <V> mutableReference0(name: String, getter: () -> V, setter: (V) -> Unit): Any = MutableReference0(name, getter, setter)
+
+public fun <T, V> mutableReference1(name: String, getter: (T) -> V, setter: (T, V) -> Unit): Any = MutableReference1(name, getter, setter)
+
+/** The name of the property [reference] refers to; a reference to a function has none here. */
+public fun referenceName(reference: Any): String = when (reference) {
+	is Reference0<*> -> reference.name
+	is Reference1<*, *> -> reference.name
+	is PropertyReference -> reference.name
+	else -> throw UnsupportedOperationException("Reflection is not available: the name of a function reference")
+}
 
 public fun <V> mutableReferenceSet0(reference: Any, value: V) {
 	(reference as MutableReference0<V>).set(value)
