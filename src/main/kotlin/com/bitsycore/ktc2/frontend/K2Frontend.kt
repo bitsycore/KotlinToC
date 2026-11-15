@@ -376,6 +376,30 @@ class Ktc2Registrar : CompilerPluginRegistrar() {
 
 	override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
 		IrGenerationExtension.registerExtension(Ktc2Extension())
+		org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrarAdapter.registerExtension(Ktc2FirRegistrar())
+	}
+}
+
+/** What ktc2 changes in the front end: see [Ktc2InlineChecks]. */
+class Ktc2FirRegistrar : org.jetbrains.kotlin.fir.extensions.FirExtensionRegistrar() {
+	override fun ExtensionRegistrarContext.configurePlugin() {
+		+::Ktc2InlineChecks
+	}
+}
+
+/**
+ * Puts the inline checks of no platform in the place of the JVM's, which ktc2's front end is: a local `inline fun`
+ * is refused only by the JVM (kotlinx-datetime has some, which Kotlin/Native compiles). The JVM side of the suite still
+ * compiles with the JVM's checks.
+ */
+@OptIn(org.jetbrains.kotlin.fir.SessionConfiguration::class)
+class Ktc2InlineChecks(inSession: org.jetbrains.kotlin.fir.FirSession) : org.jetbrains.kotlin.fir.extensions.FirExtensionSessionComponent(inSession) {
+	init {
+		inSession.register(
+			org.jetbrains.kotlin.fir.analysis.checkers.FirInlineCheckerPlatformSpecificComponent::class,
+			// As a plain component: the composable `register` would add it to the JVM's, whose check would still run.
+			object : org.jetbrains.kotlin.fir.analysis.checkers.FirInlineCheckerPlatformSpecificComponent() {} as org.jetbrains.kotlin.fir.FirSessionComponent,
+		)
 	}
 }
 
