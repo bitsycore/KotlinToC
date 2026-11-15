@@ -30,6 +30,13 @@ private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1
  * All three by default. A CI job that only needs the C (AddressSanitizer) or what the program
  * prints (MSVC) leaves the others out: the comparison is then made where both are there.
  */
+/**
+ * `KTC2_TEST_LIBRARIES=0` leaves out the own tests of the libraries that are bundled modules (`tests/<module>/`):
+ * most of the suite's time, and they change only with the library or its module. The CI job runs without them; the
+ * programs on each module (`integration/modules/`) stay.
+ */
+private val kRunsLibraryTests = System.getenv("KTC2_TEST_LIBRARIES") != "0"
+
 private val kSteps = System.getenv("KTC2_TEST_STEPS")?.split(',')?.map { it.trim() }?.toSet() ?: setOf("translate", "jvm", "c")
 
 private val kDumps = System.getenv("KTC2_TEST_DUMP")?.let { it != "0" } ?: (System.getenv("KTC2_TEST_FILTER") != null)
@@ -108,7 +115,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
-			.toList() + projectList() + commonTestList() + boxTestList() + moduleTestList()
+			.toList() + projectList() + commonTestList() + boxTestList() + (if (kRunsLibraryTests) moduleTestList() else emptyList())
 
 	// ==================
 	// MARK: Common tests

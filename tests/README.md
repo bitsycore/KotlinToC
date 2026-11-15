@@ -138,6 +138,9 @@ test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt
 
 ## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
+The libraries' own tests (`tests/<module>/`) run locally; `KTC2_TEST_LIBRARIES=0` leaves them out, as
+the CI job does. The programs on each module (`integration/modules/`) run everywhere.
+
 The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
 holds `commonTest` of kotlinx.collections.immutable 0.5.2 (from `core/commonTest/src`) and its
 helpers `nativeTest/testUtilsNative.kt` and `jvmTest/testUtilsJvm.kt`; the stress tests print their

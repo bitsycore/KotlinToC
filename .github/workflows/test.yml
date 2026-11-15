@@ -42,6 +42,8 @@ jobs:
         env:
           KTC2_TEST_VERBOSE: 1
           KTC2_TEST_STEPS: ${{ matrix.steps }}
+          # The libraries' own tests (tests/<module>/) are run on the machines where the work is done.
+          KTC2_TEST_LIBRARIES: 0
           # A runner has 7 to 16 GB: each process takes about 1 GB.
           KTC2_TEST_FORKS: 3
       - name: Failures
