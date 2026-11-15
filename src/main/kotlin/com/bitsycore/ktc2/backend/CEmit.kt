@@ -760,8 +760,16 @@ class CEmitter(private val mModule: KModule) {
 						// An object where the implementation takes one of its class only (`contains(element: E)` of a list of
 						// enum entries, asked about any object): as the JVM's bridge, what is not of that class is not looked at.
 						val vClass = (vTo.type as? KClassType)?.cls ?: vTo.boundClass
+						// Null passes, as a JVM `checkcast` lets it; the members that answer (the special bridges, `instanceof`) refuse it
+						// where the declared type does not admit it.
+						val vRefusesNull = inFunction.wrongClassThrower == null && vTo.boundIsNonNull
+						val vPresent = if (vRefusesNull) "!${vFrom.cName} ||" else "${vFrom.cName} &&"
 						if (vToPrim == null && vFrom.type == KObjType && vClass != null) {
-							vBefore.append("if (${vFrom.cName} && !${typeTest(KClassTarget(vClass, isAnyInstantiation = true), "(ktc2_Obj*)" + vFrom.cName)}) $vAbsent ")
+							vBefore.append("if ($vPresent !${typeTest(KClassTarget(vClass, isAnyInstantiation = true), "(ktc2_Obj*)" + vFrom.cName)}) $vAbsent ")
+						}
+						val vInterface = vTo.boundInterface
+						if (vToPrim == null && vFrom.type == KObjType && vClass == null && vInterface != null) {
+							vBefore.append("if ($vPresent !${typeTest(KInterfaceTarget(vInterface), "(ktc2_Obj*)" + vFrom.cName)}) $vAbsent ")
 						}
 						if (vFrom.type == KObjType && vTo.type == KStringType) {
 							vBefore.append("if (${vFrom.cName} && ((ktc2_Obj*)${vFrom.cName})->typeId != KTC2_TYPE_STRING) $vAbsent ")

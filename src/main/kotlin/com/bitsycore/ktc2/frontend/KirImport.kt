@@ -1862,6 +1862,38 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private class Signature(val params: List<KLocal>, val returnType: KType)
 
 	/** The class a type parameter is bounded by, as the JVM erases it (`E : Enum<E>` is an `Enum`); null for anything else. */
+	/**
+	 * The interface a parameter of type [inType] is declared as, or that its type parameter is bounded by:
+	 * what a dispatcher tests an object for before passing it on. Not those that values of the runtime
+	 * implement without a class of theirs (numbers, strings), nor function types.
+	 */
+	private fun boundInterfaceOf(inType: IrType): KInterface? {
+		val vParameter = (inType.classifierOrNull as? IrTypeParameterSymbol)?.owner
+		val vInterface = if (vParameter != null) {
+			vParameter.superTypes.firstNotNullOfOrNull { vBound -> vBound.classOrNull?.owner?.takeIf { it.isInterface } }
+		} else {
+			inType.classOrNull?.owner?.takeIf { it.isInterface }
+		} ?: return null
+		// On the JVM a mutable collection interface is the read-only one (`MutableEntry` is `java.util.Map.Entry`):
+		// the bridge tests that, and a read-only entry passes where a mutable one is declared.
+		var vTested: IrClass = vInterface
+		while (vTested.kotlinFqName.asString().startsWith("kotlin.collections.") && vTested.name.asString().startsWith("Mutable")) {
+			val vReadOnly = vTested.name.asString().removePrefix("Mutable")
+			vTested = vTested.superTypes.mapNotNull { it.classOrNull?.owner }.firstOrNull { it.name.asString() == vReadOnly } ?: break
+		}
+		return boundInterfaceTested(vTested)
+	}
+
+	private fun boundInterfaceTested(vInterface: IrClass): KInterface? {
+		val vName = vInterface.kotlinFqName.asString()
+		if (vName in kInterfacesOfValues || vName.startsWith("kotlin.Function") || vName.startsWith("kotlin.coroutines.SuspendFunction") || vName.startsWith("kotlin.SuspendFunction") || vName.startsWith("kotlin.jvm.functions.") || vName.startsWith("kotlin.reflect.")) return null
+		if (vInterface.isFun) return null
+		return interfaceFor(vInterface)
+	}
+
+	/** Interfaces that values of the runtime (strings, boxed numbers) implement without a class of theirs. */
+	private val kInterfacesOfValues = setOf("kotlin.Comparable", "kotlin.CharSequence", "kotlin.Number", "kotlin.Any")
+
 	private fun boundClassOf(inType: IrType): KClass? {
 		val vParameter = (inType.classifierOrNull as? IrTypeParameterSymbol)?.owner ?: return null
 		for (vBound in vParameter.superTypes) {
@@ -1890,7 +1922,11 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			var vName = if (vParam.kind == IrParameterKind.Regular) cIdentifier(vParam.name.asString()) else if (inFunction is IrConstructor) "outer" else "self"
 			while (!vNames.add(vName)) vName += "_"
 			vParams += KLocal(vName, vType).also { vLocal ->
-				if (vType == KObjType && vParam.kind == IrParameterKind.Regular) vLocal.boundClass = boundClassOf(vParam.type)
+				if (vType == KObjType && vParam.kind == IrParameterKind.Regular) {
+					vLocal.boundClass = boundClassOf(vParam.type)
+					vLocal.boundInterface = boundInterfaceOf(vParam.type)
+					vLocal.boundIsNonNull = !vParam.type.isNullable()
+				}
 			}
 		}
 		// A `suspend` function takes the continuation that waits for it last, and returns its result or `COROUTINE_SUSPENDED`.

@@ -312,6 +312,7 @@ fun testsArgument(inGiven: KType, inTaken: KLocal): Boolean {
 		inGiven is KOptType && vTaken is KPrimType -> true
 		inGiven == KObjType && vTaken == KStringType -> true
 		inGiven == KObjType && ((vTaken as? KClassType)?.cls ?: inTaken.boundClass) != null -> true
+		inGiven == KObjType && inTaken.boundInterface != null -> true
 		else -> false
 	}
 }
@@ -366,6 +367,20 @@ class KLocal(val cName: String, val type: KType) {
 	 * the type to its bound: a dispatcher hands it only an object of that class (`CEmitter.dispatcher`).
 	 */
 	var boundClass: KClass? = null
+
+	/**
+	 * The same for an interface: a parameter declared as one (`contains(element: Map.Entry<K, V>)` of a
+	 * set of entries, reached as `contains(Any?)`), or as a type parameter bounded by one. The JVM's
+	 * bridge tests that too.
+	 */
+	var boundInterface: KInterface? = null
+
+	/**
+	 * Set with [boundClass] or [boundInterface] when the declared type does not admit null: the members of the
+	 * collections that answer an argument of the wrong class (`contains`, `remove`...) answer null too, as the
+	 * JVM's special bridge does with `instanceof`.
+	 */
+	var boundIsNonNull: Boolean = false
 }
 
 /** A top-level property with storage. [constInit] is set when the initializer is a literal. */
