@@ -1,0 +1,3 @@
+Outer.key -> Outer.Key.outer -> Outer
+Outer.handler -> (lambda).self -> Outer
+Outer.listener -> (object).captured0 -> Outer
