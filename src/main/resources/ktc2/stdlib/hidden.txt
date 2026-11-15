@@ -26,3 +26,4 @@ kotlin/time/DurationJvmKt.class
 kotlin/time/MonotonicTimeSource.class
 kotlin/time/MonoTimeSourceKt.class
 kotlin/time/LongSaturatedMathKt.class
+kotlin/PreconditionsKt__AssertionsJVMKt.class

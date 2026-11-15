@@ -124,8 +124,11 @@ object K2Frontend {
 			System.err.println("ktc2: error: ${vError.message}")
 			return false
 		}
-		System.setProperty(kCompilerOptsProperty, vBindings.flatMap { it.compilerOpts }.distinct().joinToString("\n"))
-		System.setProperty(kLinkerOptsProperty, vBindings.flatMap { it.linkerOpts }.distinct().joinToString("\n"))
+		// What the command and the modules ask (-copt, -lopt, compilerOpts...) is for the whole program, with or without a .def.
+		val vCommandCompilerOpts = System.getProperty("ktc2.copt", "").lines().filter { it.isNotEmpty() }
+		val vCommandLinkerOpts = System.getProperty("ktc2.lopt", "").lines().filter { it.isNotEmpty() }
+		System.setProperty(kCompilerOptsProperty, (vCommandCompilerOpts + vBindings.flatMap { it.compilerOpts }).distinct().joinToString("\n"))
+		System.setProperty(kLinkerOptsProperty, (vCommandLinkerOpts + vBindings.flatMap { it.linkerOpts }).distinct().joinToString("\n"))
 		// The files that are not the program's: the library sources and the generated bindings.
 		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.invariantSeparatorsPath })
 		val vProgram = (vSources - vDefinitions.toSet()) + vBindings.map { it.source }

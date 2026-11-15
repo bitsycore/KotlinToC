@@ -161,6 +161,12 @@ static __inline int ktc2_ctz64(uint64_t value)
 #else
 #define KTC2_CPU_ARCHITECTURE 0
 #endif
+/* `assert` checks only in a program built with -DKTC2_ASSERTIONS, as the JVM's with -ea. */
+#ifdef KTC2_ASSERTIONS
+#define KTC2_ASSERTIONS_ON true
+#else
+#define KTC2_ASSERTIONS_ON false
+#endif
 #if defined(_WIN32) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
 #define KTC2_LITTLE_ENDIAN 1
 #else

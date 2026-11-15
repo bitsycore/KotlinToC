@@ -140,6 +140,7 @@ Ktc2NativeAnnotations.kt
 commonMain/kotlin/concurrent/Volatile.kt
 Ktc2Volatile.kt
 Ktc2Platform.kt
+Ktc2Assertions.kt
 Ktc2Builders.kt
 commonMain/kotlin/reflect/KClasses.kt
 commonMain/kotlin/reflect/KVariance.kt
