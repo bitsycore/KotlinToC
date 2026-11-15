@@ -446,6 +446,10 @@ write to an array of references.
 
 Decided, not started:
 
+- [ ] **The kotlinx libraries.** `KOTLINX.md` is the plan for kotlinx.collections.immutable,
+  kotlinx-datetime, kotlinx.serialization and kotlinx.coroutines (measured, with what each needs
+  of ktc2 and what is the owner's to decide). Below, kotlinx-io (done) and the first notes on
+  coroutines.
 - [ ] **Files, through kotlinx.io, and kotlinx.coroutines.** Not an API of ktc2's own: compile
   the libraries' sources as they are and write the platform part for ktc2, as was done for the
   standard library. Later the same for kotlinx.serialization and other kotlinx libraries.

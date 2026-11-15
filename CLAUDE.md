@@ -7,6 +7,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - `PLAN.md`, "Where the work stands": the state the last session left, what was not run on which system, and what waits for a decision.
 - `DESIGN.md`: how ktc2 works now. Meant to be read whole before changing anything; section 13 is the map of the code.
 - `PLAN.md`: what is left to do, with estimates, and what to do first.
+- `KOTLINX.md`: the plan for the kotlinx libraries after kotlinx-io (collections.immutable, datetime, serialization, coroutines).
 - `HISTORY.md`: the original design and the log of the work. Not reference: only for the reasoning behind a decision, or to see what was tried and dropped.
 - `tests/README.md`: the common tests, written as Kotlin Multiplatform's are, and the tests of the Kotlin standard library taken as they are.
 - `README.md`: the user's view.
