@@ -20,11 +20,11 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master`. The suite is 823 tests (2026-11-15, passing on Windows
-and Linux in WSL; the CI job is looked at once a day): 160 programs under `integration/`
+**State.** Everything is on `master`. The suite is 881 tests (2026-11-15, passing on Windows
+and Linux in WSL; the CI job is looked at once a day): 164 programs under `integration/`
 (compared with the JVM or an `.expected` file, or that must be refused), the own tests of the
 libraries that are bundled modules (32 of kotlinx-io, 21 of kotlinx.collections.immutable, 40 of
-atomicfu: `tests/README.md`), 180 files of common tests under `tests/` (one of ktc2's own, 156 of
+atomicfu, 51 of kotlinx-datetime: `tests/README.md`), 180 files of common tests under `tests/` (one of ktc2's own, 156 of
 the Kotlin standard library's, 3 of its JVM part and 20 of Kotlin/Native's that are about
 neither platform's own API, some 2450 `@Test` functions, with the helpers of the library's
 tests under `tests/support/`), 384 box tests of the Kotlin compiler (`tests/box/`, the

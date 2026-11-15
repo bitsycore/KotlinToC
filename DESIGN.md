@@ -41,6 +41,10 @@ sources + library sources + generated bindings
 
 - The plugin receives the module's IR after the compiler's front end and before any JVM
   lowering; when it is done it empties the module, so no JVM code is generated.
+- The front end is the JVM's, with one of its checks taken out: the inline checks of no
+  platform stand in for the JVM's (`Ktc2InlineChecks`, a front-end session component of the
+  plugin), so a local `inline fun`, which only the JVM refuses, compiles, as on Kotlin/Native
+  (kotlinx-datetime has some). The JVM side of the suite compiles with the JVM's checks.
 - **KIR** (`kir/Kir.kt`) is a small typed form: statements (`KLet`, `KSet`, `KFieldSet`,
   `KIf`, `KLoop`, `KReturn`...) over expressions. Calls and allocations are only ever the
   whole right-hand side of a statement, every temporary has a name, control flow is explicit.
@@ -454,7 +458,14 @@ the C preprocessor (gcc or clang) over them, `CHeaderParser` reads the declarati
 Kotlin file of bindings is generated and compiled with the program:
 
 - functions, including variadic ones; structs (fields as properties, by value as `CValue<T>`);
-  typedefs; constants and simple macros; global variables;
+  typedefs, as Kotlin/Native gives them (`typealias DWORD = UInt` with `DWORDVar`,
+  `typealias HKEY = CPointer<HKEY__>` with `HKEYVar`); constants and simple macros, a macro
+  that is a cast taking the cast's type (`(DWORD)0xFFFFFFFF` a `UInt`, `(HKEY)...` a pointer
+  `val`), and a macro that names a function being a pointer to it (`FormatMessage` for
+  `FormatMessageW`); global variables;
+- the wide strings of Windows: a `const WCHAR*` (or `wchar_t`) parameter takes a String, passed
+  as the UTF-16 copy `String.wcstr` makes (a `CValue`, whose data C is given);
+  `toKStringFromUtf16()` reads one back (`interop/WideStrings`);
 - enums: a Kotlin enum class when the constants are simply listed, integer constants when
   they are given values (`strictEnums` / `nonStrictEnums` in the `.def` decide otherwise);
 - callbacks: `staticCFunction`, also with structs by value (a small C function is generated
@@ -492,6 +503,14 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
   `build.gradle.kts`, the versions in `gradle/libs.versions.toml`) and puts next to the module
   file; its `files.txt` lists those it compiles (a module shipped with ktc2
   lists its files there or in `files`). What such sources expect of ktc2:
+  - a file of its list may be for some systems only (`windows: path`, `linux, macos: path`),
+    as a library's source sets are: the program is compiled with those of the system ktc2
+    runs on, whose headers its bindings are made from (kotlinx-datetime takes its `linuxMain`,
+    which reads `/usr/share/zoneinfo`, on Linux and macOS, and its `windowsMain`, which reads
+    the registry, on Windows, with the part of `<windows.h>` it uses declared in a `.def` of
+    the module that is Windows' only);
+  - a bundled module may depend on another (`dependencies`, kotlinx-datetime on
+    kotlinx-serialization, whose annotations and serializers its classes name);
   - its sources under a `commonMain` or `concurrentMain` directory (the latter shared by the
     JVM and Native) are common code: compiled as such
     (`-Xcommon-sources`), so that its `expect`s find the `actual`s beside them. Such a program
@@ -519,8 +538,8 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
     pthreads in `atomicfu.h`), with the little C that differs between Windows and the others in
     a `.def` of the module (`kotlinxio.def`, `kotlinxio.h`; the declarations of Windows it uses
     are in a header the `.def` does not list, so they get no binding);
-  - a source set between the common one and the platform's (`nativeMain`, which has `expect`s
-    of its own): the compiler is told the three levels with its fragments (`-Xfragments`,
+  - a source set between the common one and the platform's (`nativeMain`, or
+    kotlinx-datetime's `commonKotlinMain`, which have `expect`s of their own): the compiler is told the three levels with its fragments (`-Xfragments`,
     `-Xfragment-refines`), as Gradle tells it a hierarchy of source sets. What Kotlin/Native's
     platform libraries are to `nativeMain` (`kotlinx.cinterop`, `platform.posix`, `Platform`),
     ktc2's platform layer and the bindings are here: on that middle level;
@@ -555,6 +574,12 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
 
 C11, nothing beyond libc and the system's threads. Everything specific to one compiler is in
 one block at the top of `ktc2_core.h` (atomics, bit counts, `alloca`).
+
+Kotlin allows names that meet in C: a top-level property and a function of one name in a
+package (`val EmptySerializersModule` and `fun EmptySerializersModule()` of
+kotlinx.serialization), a function named as a class (`fun DayOfWeek(isoDayNumber: Int)` beside
+`enum class DayOfWeek` in kotlinx-datetime). The emitter renames the property (`_value`) or the
+function (`_fun`) before it writes anything (`renameClashingGlobals`).
 
 | | State |
 |---|---|
@@ -610,9 +635,9 @@ The gate is the suite: run locally, and by the CI job on Linux, macOS and Window
 ---------------------------------------------------------------------------
 
 Not Kotlin, by design:
-- of reflection, a class as a value and `typeOf<T>()` only, as Kotlin/Native has them. A call
-  into the rest from the library compiles and throws `UnsupportedOperationException` when it is
-  reached;
+- of reflection, a class as a value, `typeOf<T>()` and the name of a reference only, as
+  Kotlin/Native has them. A call into the rest from the library compiles and throws
+  `UnsupportedOperationException` when it is reached;
 - no JDK;
 - destruction is immediate, not deferred: visible only through weak references.
 
@@ -664,7 +689,10 @@ Known to differ from the JVM:
   compared, used as keys, asked for `simpleName` and `qualifiedName`, and asked `isInstance`
   and `cast` for a class or an interface (`ClassReference` in `Ktc2Internal.kt`, by the names
   the runtime's table of types has for each class: the classes it is and the interfaces they
-  implement); everything else a `KClass` offers throws;
+  implement); everything else a `KClass` offers throws. A property reference knows its name
+  (`Reference0`, `Reference1` in `Ktc2Internal.kt`: the getter with the name, and the setter
+  for a `var`), and the name of any reference written where it is read (`Builder::char.name`)
+  is a constant (`integration/stdlib/PropertyReferenceNames`);
 - what only the JDK has is not there, by the owner's decision: `toSortedMap`, `toSortedSet`,
   `String.format`, `getOrDefault` and `putIfAbsent` of a map, `setCharAt` and `deleteCharAt` of
   a `StringBuilder`. Kotlin/Native has none of them either; a compatibility layer in the

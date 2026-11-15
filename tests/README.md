@@ -136,7 +136,7 @@ test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt
 `bytestring/commonTest/samples/samples.skip` (a sample prints random bytes),
 `core/commonTest/samples/rawSourceSample.cycles` (an object holds an object of its inner class).
 
-## The tests of kotlinx.collections.immutable and atomicfu
+## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
 The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
 holds `commonTest` of kotlinx.collections.immutable 0.5.2 (from `core/commonTest/src`) and its
@@ -146,7 +146,18 @@ sizes and times, which `.vary` files leave out. All 21 pass. `atomicfu/atomicfu/
 the same way) and `jvmTest/TestThread.jvm.kt`; `nativeTest/TestThread.native.kt` is ktc2's own, a
 thread of `ktc2.concurrent` where atomicfu's starts a `kotlin.native.concurrent.Worker`, which ktc2
 does not have yet (`SynchronizedTest` of its `nativeTest`, written with workers, is not taken).
-All 40 pass.
+All 40 pass. `kotlinx-datetime/core/` holds `commonTest` of kotlinx-datetime 0.8.0 (from
+`core/common/test`): all 51 pass on Windows, where the time zones come from the registry; two of
+them print the time they run at (`.vary`). A module's tests are compiled with the bundled modules
+it depends on (kotlinx-datetime with kotlinx-serialization), and on the JVM with their jars. The
+tests of `commonKotlin/test`, which read datetime's internals that only Native and the web have,
+are not taken.
+
+They found, with datetime: a lambda's parameter of type Unit (`check(x).let { }`); `name` of a
+reference; an enum entry not seen as Comparable; a function or a property with the C name of a
+class or a function; a local `inline fun`, refused by the JVM's front end only; the shapes of
+`<windows.h>` the bindings did not know (typedefs, wide strings, cast macros); `@Test` functions
+of a nested class, which the suite's runner gave to the outer one.
 
 They found: a dispatcher that tested an argument against an interface that a lambda does not
 carry (`suspend` function types); a value of an instantiation of a generic class reached through a

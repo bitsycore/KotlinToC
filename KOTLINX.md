@@ -5,9 +5,11 @@ can become modules of ktc2, after kotlinx-io, which is one (2026-11-15). Written
 them was started: the numbers are measured on the libraries' published sources; the estimates
 are estimates. `PLAN.md` (part 8) points here.
 
-**Done since** (2026-11-15): kotlinx.collections.immutable and atomicfu are modules, with all of
-their own tests passing (`tests/README.md`); `@ThreadLocal` is local to a thread (point 2 of
-section 3); the versions are the latest, pinned in `gradle/libs.versions.toml`. Next: datetime.
+**Done since** (2026-11-15): kotlinx.collections.immutable, atomicfu and kotlinx-datetime are
+modules, with all of their own tests passing (`tests/README.md`); kotlinx.serialization's core is
+one too (`kotlinx-serialization`), without the compiler plugin yet, because datetime needs it;
+`@ThreadLocal` is local to a thread (point 2 of section 3); the versions are the latest, pinned in
+`gradle/libs.versions.toml`. Next: the serialization plugin and kotlinx-serialization-json.
 
 ---------------------------------------------------------------------------
 ## 1. How kotlinx-io was done, and what it left in place
@@ -118,7 +120,16 @@ HAMTs in common code. Nothing of the platform.
 - **Estimate**: one to two days. The first to do: it tests the method on a library with no
   platform part at all, and what it finds is in the compiler, not in a platform layer.
 
-### kotlinx-datetime 0.8.0
+### kotlinx-datetime 0.8.0 (done)
+
+Done in a day, not as planned below: its classes are `@Serializable(with = ...)`, so it needs
+kotlinx-serialization's core (a module of its own, which it depends on); its source sets are
+three levels as ktc2 has them (`commonKotlinMain` in the middle, as `nativeMain` is); each system
+takes its own source sets, unchanged (a file of the module's list may be for some systems only):
+`linuxMain` with `tzfileMain` and `tzdbOnFilesystemMain` on Linux and macOS, `windowsMain` on
+Windows, which reads the registry through `platform.windows`, declared in a `.def` of the module.
+That took typedefs, wide strings and macros of `<windows.h>` in the bindings. The packaged
+database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the web only.
 
 `Instant`, `LocalDateTime`, `TimeZone`, formats and parsing. The arithmetic is common Kotlin
 (`commonKotlinMain`); the platform gives the time zones.
@@ -175,5 +186,4 @@ Decided by the owner (2026-11-15): `@ThreadLocal` made real, as on Kotlin/Native
 its own sources; the latest version of each, pinned in `gradle/libs.versions.toml`.
 
 To decide:
-1. Time zones on Windows from the registry or from the packaged database (point 7).
-2. The choices for coroutines already listed in `PLAN.md` (dispatchers, `Dispatchers.IO`, cycles).
+1. The choices for coroutines already listed in `PLAN.md` (dispatchers, `Dispatchers.IO`, cycles).

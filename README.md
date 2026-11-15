@@ -69,8 +69,11 @@ dependencies = ["sdl3", "../engine", "https://github.com/user/repo.git#modules/u
 ```
 
 A dependency is a module shipped with ktc2 (`sdl3`, `kotlinx-io`, `kotlinx-collections-immutable`,
-`atomicfu`), a directory, or a place in a git repository. The three kotlinx libraries are compiled
-from their own sources, at the versions of `gradle/libs.versions.toml`: `kotlinx-io` (`Buffer`,
+`atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`), a directory, or a place in a git
+repository. The kotlinx libraries are compiled from their own sources, at the versions of
+`gradle/libs.versions.toml`: `kotlinx-datetime` (dates, times, formats and time zones: the
+system's files on Linux and macOS, the registry on Windows), `kotlinx-serialization` (its core,
+without the compiler plugin for `@Serializable` classes yet), `kotlinx-io` (`Buffer`,
 `Source`, `Sink`, UTF-8, `ByteString`, and files: `kotlinx.io.files`, for which a program is built
 with gcc or clang, not MSVC, whose C library has no `unistd.h` nor `dirent.h`),
 `kotlinx-collections-immutable` (persistent lists, sets and maps) and `atomicfu` (`atomic()`,
