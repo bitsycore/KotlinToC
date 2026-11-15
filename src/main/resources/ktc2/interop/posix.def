@@ -7,3 +7,6 @@ headers.mingw = io.h direct.h
 # mingw's struct stat is in a header of its own.
 headerFilter.mingw = _mingw_stat64.h
 package = platform.posix
+# All of what glibc declares, as Kotlin/Native's platform.posix has it: under -std=c11 it hides what is
+# not ISO C (realpath, strdup...) unless asked before any header.
+compilerOpts.linux = -D_DEFAULT_SOURCE

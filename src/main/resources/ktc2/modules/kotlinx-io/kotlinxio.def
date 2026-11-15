@@ -3,3 +3,5 @@
 # kotlinxio_win32.h, which is not listed here: they get no binding.
 package = ktc2.kotlinxio
 headers = kotlinxio.h
+# glibc hides what is not ISO C under -std=c11 (realpath, strdup, O_CLOEXEC) unless asked before any header.
+compilerOpts.linux = -D_DEFAULT_SOURCE
