@@ -1,0 +1,3 @@
+# Its tests print the time and the day of tomorrow, as they run.
+/[0-9]+h [0-9]+m/
+/(MON|TUES|WEDNES|THURS|FRI|SATUR|SUN)DAY/

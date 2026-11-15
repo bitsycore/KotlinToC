@@ -1,0 +1,6 @@
+# A program on the bundled module kotlinx-datetime (with kotlinx-serialization, which it needs), run
+# by the suite and compared with the same program on the JVM, there on the libraries' JVM jars.
+name         = "kotlinx-datetime-program"
+executable   = "kotlinx-datetime-program"
+sources      = ["Main.kt"]
+dependencies = ["kotlinx-datetime"]

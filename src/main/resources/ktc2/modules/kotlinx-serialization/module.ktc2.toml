@@ -1,0 +1,7 @@
+# kotlinx.serialization for ktc2: its core (KSerializer, encoders and decoders, the built-in
+# serializers, SerializersModule), from the sources of kotlinx-serialization-core 1.13.0 as they
+# are (files.txt lists them; Gradle puts them next to this file). Classes marked @Serializable get
+# their serializers from the compiler plugin, which ktc2 does not run yet.
+name = "kotlinx-serialization"
+# What its build opts every source set in to (buildSrc, source-sets-conventions).
+optIn = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.SealedSerializationApi", "kotlinx.serialization.internal.CoreFriendModuleApi", "kotlin.ExperimentalMultiplatform", "kotlin.ExperimentalSubclassOptIn", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.reflect.ExperimentalAssociatedObjects", "kotlin.ExperimentalUnsignedTypes"]

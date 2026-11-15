@@ -1,0 +1,7 @@
+# What kotlinx-datetime's windowsMain takes of Windows (the time zones in the registry), declared in
+# datetime_win32.h rather than read from <windows.h>, which is more than the header reader takes.
+# On Windows only (module.ktc2.toml): the package is Kotlin/Native's, platform.windows.
+package = platform.windows
+headers = datetime_win32.h
+# The registry functions are in advapi32, which mingw links by default and MSVC and clang do not.
+linkerOpts = -ladvapi32

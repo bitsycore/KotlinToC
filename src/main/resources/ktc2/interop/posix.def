@@ -1,13 +1,16 @@
 # The C library, as Kotlin/Native's platform.posix: generated when a program imports it.
 # And the headers of POSIX for files: what kotlinx-io's file system (its nativeMain) calls. mingw has
 # them; MSVC's C library has neither unistd.h nor dirent.h.
-headers = stdio.h stdlib.h string.h math.h time.h errno.h ctype.h signal.h fcntl.h sys/types.h sys/stat.h
+headers = stdio.h stdlib.h string.h math.h time.h errno.h ctype.h signal.h fcntl.h sys/types.h sys/stat.h limits.h
 # MSVC's C library has neither: a program that calls nothing of theirs still builds with it.
 optionalHeaders = unistd.h dirent.h
 # On Windows unistd.h has open, read, write, close and access from io.h, and rmdir from direct.h.
 headers.mingw = io.h direct.h
 # mingw's struct stat is in a header of its own.
 headerFilter.mingw = _mingw_stat64.h
+# PATH_MAX and its kin: in a header of Linux's own, of the BSD part on macOS.
+headerFilter.linux = linux/limits.h
+headerFilter.osx = sys/syslimits.h
 package = platform.posix
 # All of what glibc declares, as Kotlin/Native's platform.posix has it: under -std=c11 it hides what is
 # not ISO C (realpath, strdup...) unless asked before any header.

@@ -1,0 +1,4 @@
+# Its tests print the instant they run at, and what follows from it.
+/[0-9]{4}-[0-9]{2}-[0-9]{2}T.*/
+/[0-9]{10,}/
+this: 

@@ -254,7 +254,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * [kModuleTests] names the modules that have such tests.
 	 */
 	/** The bundled modules whose library's own tests are under `tests/<module>/`. */
-	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu")
+	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime")
 
 	/** The source sets of a module's tests that are common: run in C and on the JVM. */
 	private val kCommonTestSets = Regex("/(commonTest|concurrentTest)/")
@@ -266,6 +266,20 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkModuleTest(vSource) } }
 			.toList()
+
+	/** The bundled module [inName] as the build carries it, then the bundled modules it depends on, each once. */
+	private fun bundledWithDependencies(inName: String): List<com.bitsycore.ktc2.ModuleFile> {
+		val vResult = LinkedHashMap<String, com.bitsycore.ktc2.ModuleFile>()
+		fun add(inModule: String) {
+			if (inModule in vResult) return
+			val vDirectory = File("build/resources/main/ktc2/modules/$inModule")
+			val vModuleFile = com.bitsycore.ktc2.ModuleFile(vDirectory, File(vDirectory, "module.ktc2.toml").readText())
+			vResult[inModule] = vModuleFile
+			vModuleFile.dependencies.forEach { add(it) }
+		}
+		add(inName)
+		return vResult.values.toList()
+	}
 
 	private fun checkModuleTest(inSource: File) {
 		val vSet = kCommonTestSets.find(inSource.invariantSeparatorsPath)!!
@@ -287,23 +301,27 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vText = inSource.readText()
 		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
 		vMain.writeText((if (vPackage != null) "package $vPackage\n\n" else "") + testMain(vText, vSkipped))
-		// The module as ktc2 carries it (processResources puts the library's sources next to its own files).
-		val vModule = File("build/resources/main/ktc2/modules/$vModuleName")
-		val vModuleFile = com.bitsycore.ktc2.ModuleFile(vModule, File(vModule, "module.ktc2.toml").readText())
-		val vJars = System.getProperty("ktc2.jvmModule.$vModuleName", "")
-		mCExtra = vModule.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }.sortedBy { it.path }.toList() + sources("nativeTest")
+		// The module as ktc2 carries it (processResources puts the library's sources next to its own files), with
+		// the bundled modules it depends on (kotlinx-datetime on kotlinx-serialization), and their jars on the JVM.
+		val vModules = bundledWithDependencies(vModuleName)
+		val vJars = vModules.mapNotNull { System.getProperty("ktc2.jvmModule.${it.name}")?.takeIf { vJar -> vJar.isNotEmpty() } }.joinToString(File.pathSeparator)
+		val vFriendJars = System.getProperty("ktc2.jvmModule.$vModuleName", "")
+		mCExtra = vModules.flatMap { vModuleFile ->
+			vModuleFile.directory.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
+				.filter { it.relativeTo(vModuleFile.directory).invariantSeparatorsPath !in vModuleFile.elsewhere }.sortedBy { it.path }.toList()
+		} + sources("nativeTest")
 		mJvmExtra = listOf(kTestLibrary) + sources("jvmTest")
 		mJvmOptions = listOf(
 			// kotlin.test (ktc2's, compiled with the tests) is common too: the common tests use it.
 			"-Xmulti-platform", "-Xcommon-sources=" + (vCommon + kTestLibrary).joinToString(",") { it.path },
-			"-Xfriend-paths=" + vJars.split(File.pathSeparator).joinToString(","),
+			"-Xfriend-paths=" + vFriendJars.split(File.pathSeparator).joinToString(","),
 			"-classpath", K2Frontend.userClasspath() + File.pathSeparator + vJars,
 		)
 		mJvmClasspath = vJars
-		System.setProperty("ktc2.weak", vModuleFile.weak.joinToString("\n"))
-		System.setProperty("ktc2.acyclic", vModuleFile.acyclic.joinToString("\n"))
-		System.setProperty("ktc2.moduleOptIn", vModuleFile.optIn.joinToString("\n"))
-		mJvmOptions = mJvmOptions + vModuleFile.optIn.map { "-opt-in=$it" }
+		System.setProperty("ktc2.weak", vModules.flatMap { it.weak }.joinToString("\n"))
+		System.setProperty("ktc2.acyclic", vModules.flatMap { it.acyclic }.joinToString("\n"))
+		System.setProperty("ktc2.moduleOptIn", vModules.flatMap { it.optIn }.distinct().joinToString("\n"))
+		mJvmOptions = mJvmOptions + vModules.first().optIn.map { "-opt-in=$it" }
 		try {
 			verify("tests/$vModuleName/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
 		} finally {
@@ -324,7 +342,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * compiled as `ktc2 <directory>` compiles it. They are plain Kotlin, so they are compared with
 	 * the JVM like the single files.
 	 */
-	private val kProjects = listOf("examples/showcase/core", "integration/modules/kotlinx-io")
+	private val kProjects = listOf("examples/showcase/core", "integration/modules/kotlinx-io", "integration/modules/kotlinx-serialization", "integration/modules/kotlinx-datetime")
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects
@@ -592,6 +610,9 @@ fun testMain(inSource: String, inSkipped: Set<String> = emptySet()): String {
 	val vTopLevel = vCurrent
 	var vMarks = HashSet<String>()
 	var vIsIgnoredClass = false
+	// The classes nested in a top-level one (`class Formats` inside `LocalDateSamples`), with their indentation: `Outer.Inner`.
+	val vNested = ArrayList<Pair<Int, TestClass>>()
+	var vOuter: TestClass? = null
 	// What is in a comment is no test.
 	val vCode = inSource.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
 	for (vLine in vCode.lines()) {
@@ -599,6 +620,21 @@ fun testMain(inSource: String, inSkipped: Set<String> = emptySet()): String {
 		Regex("^@(Test|Ignore|BeforeTest|AfterTest)\\b").findAll(vText).forEach { vMarks += it.groupValues[1] }
 		// Marks may share a line with what they mark.
 		Regex("@(Test|Ignore|BeforeTest|AfterTest)\\b").findAll(vText).forEach { vMarks += it.groupValues[1] }
+		val vIndent = vLine.length - vLine.trimStart().length
+		val vNestedClass = if (vIndent > 0 && vOuter != null && '{' in vText) Regex("^(?:(?:internal|public|private|open|abstract|final)\\s+)*class\\s+(\\w+)").find(vText) else null
+		if (vNestedClass != null) {
+			while (vNested.isNotEmpty() && vNested.last().first >= vIndent) vNested.removeAt(vNested.size - 1)
+			val vName = (vNested.lastOrNull()?.second ?: vOuter!!).name + "." + vNestedClass.groupValues[1]
+			vCurrent = TestClass(vName, Regex("\\babstract\\b").containsMatchIn(vText.substringBefore("class"))).also { vClasses += it }
+			vNested += vIndent to vCurrent
+			vMarks = HashSet()
+			continue
+		}
+		if (vNested.isNotEmpty() && vText.startsWith("}") && vIndent <= vNested.last().first) {
+			vNested.removeAt(vNested.size - 1)
+			vCurrent = vNested.lastOrNull()?.second ?: vOuter!!
+			continue
+		}
 		val vClass = Regex("^(?:(?:internal|public|open|abstract|final)\\s+)*class\\s+(\\w+)").find(vLine)
 		if (vClass != null) {
 			vIsIgnoredClass = "Ignore" in vMarks
@@ -606,11 +642,15 @@ fun testMain(inSource: String, inSkipped: Set<String> = emptySet()): String {
 			val vParent = Regex("\\)\\s*:\\s*(\\w+)\\s*[<(]").findAll(vLine).lastOrNull()?.groupValues?.get(1)
 				?: Regex("class\\s+\\w+\\s*:\\s*(\\w+)").find(vLine)?.groupValues?.get(1)
 			vCurrent = TestClass(vClass.groupValues[1], Regex("\\babstract\\b").containsMatchIn(vLine.substringBefore("class")), vParent).also { vClasses += it }
+			vOuter = vCurrent
+			vNested.clear()
 			vMarks = HashSet()
 			continue
 		}
 		if (vLine.startsWith("}")) {
 			vCurrent = vTopLevel
+			vOuter = null
+			vNested.clear()
 			vIsIgnoredClass = false
 		}
 		val vFunction = Regex("\\bfun\\s+(`[^`]+`|\\w+)\\s*\\(").find(vText)

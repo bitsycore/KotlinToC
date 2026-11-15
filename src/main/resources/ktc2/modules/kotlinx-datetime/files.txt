@@ -1,0 +1,83 @@
+# The sources of kotlinx-datetime 0.8.0 (Apache 2.0) that the module compiles, as they are: fetched by Gradle
+# (build.gradle.kts, kLibraryModules) and put next to this list in ktc2's resources. The source sets
+# are those Kotlin/Native compiles for each system: commonMain, commonKotlinMain (its arithmetic in
+# Kotlin), then the time zones from the files of the system on Linux and macOS (tzfileMain,
+# tzdbOnFilesystemMain, linuxMain), from the registry on Windows (windowsMain, of the mingwX64 jar).
+commonKotlinMain/LocalDate.kt
+commonKotlinMain/LocalDateTime.kt
+commonKotlinMain/LocalTime.kt
+commonKotlinMain/Month.kt
+commonKotlinMain/TimeZone.kt
+commonKotlinMain/UtcOffset.kt
+commonKotlinMain/YearMonth.kt
+commonKotlinMain/internal/MonthDayTime.kt
+commonKotlinMain/internal/OffsetInfo.kt
+commonKotlinMain/internal/Platform.kt
+commonKotlinMain/internal/RegionTimeZone.kt
+commonKotlinMain/internal/TimeZoneDatabase.kt
+commonKotlinMain/internal/TimeZoneRules.kt
+commonKotlinMain/internal/Tzfile.kt
+commonKotlinMain/internal/dateCalculations.kt
+commonKotlinMain/internal/mathNative.kt
+commonMain/Clock.kt
+commonMain/DateTimePeriod.kt
+commonMain/DateTimeUnit.kt
+commonMain/DayOfWeek.kt
+commonMain/DeprecatedClock.kt
+commonMain/DeprecatedInstant.kt
+commonMain/Exceptions.kt
+commonMain/Instant.kt
+commonMain/LocalDate.kt
+commonMain/LocalDateRange.kt
+commonMain/LocalDateTime.kt
+commonMain/LocalIsoWeekDate.kt
+commonMain/LocalTime.kt
+commonMain/Month.kt
+commonMain/OverloadMarker.kt
+commonMain/TimeZone.kt
+commonMain/UtcOffset.kt
+commonMain/YearMonth.kt
+commonMain/YearMonthRange.kt
+commonMain/format/DateTimeComponents.kt
+commonMain/format/DateTimeFormat.kt
+commonMain/format/DateTimeFormatBuilder.kt
+commonMain/format/LocalDateFormat.kt
+commonMain/format/LocalDateTimeFormat.kt
+commonMain/format/LocalTimeFormat.kt
+commonMain/format/Unicode.kt
+commonMain/format/UtcOffsetFormat.kt
+commonMain/format/YearMonthFormat.kt
+commonMain/internal/BinaryDataReader.kt
+commonMain/internal/dateCalculations.kt
+commonMain/internal/format/Builder.kt
+commonMain/internal/format/FieldFormatDirective.kt
+commonMain/internal/format/FieldSpec.kt
+commonMain/internal/format/FormatStructure.kt
+commonMain/internal/format/Predicate.kt
+commonMain/internal/format/formatter/Formatter.kt
+commonMain/internal/format/formatter/FormatterOperation.kt
+commonMain/internal/format/parser/NumberConsumer.kt
+commonMain/internal/format/parser/ParseResult.kt
+commonMain/internal/format/parser/Parser.kt
+commonMain/internal/format/parser/ParserOperation.kt
+commonMain/internal/math.kt
+commonMain/internal/toKotlinCode.kt
+commonMain/internal/util.kt
+commonMain/serializers/DateTimePeriodSerializers.kt
+commonMain/serializers/DateTimeUnitSerializers.kt
+commonMain/serializers/DayOfWeekSerializers.kt
+commonMain/serializers/InstantSerializers.kt
+commonMain/serializers/LocalDateSerializers.kt
+commonMain/serializers/LocalDateTimeSerializers.kt
+commonMain/serializers/LocalTimeSerializers.kt
+commonMain/serializers/MonthSerializers.kt
+commonMain/serializers/TimeZoneSerializers.kt
+commonMain/serializers/UtcOffsetSerializers.kt
+commonMain/serializers/YearMonthSerializers.kt
+linux, macos: linuxMain/internal/TimeZoneNative.kt
+linux, macos: tzdbOnFilesystemMain/internal/TzdbOnFilesystem.kt
+linux, macos: tzdbOnFilesystemMain/internal/filesystem.kt
+linux, macos: tzfileMain/internal/filesystem.kt
+windows: mingw/windowsMain/internal/TimeZoneNative.kt
+windows: mingw/windowsMain/internal/TzdbInRegistry.kt
+windows: mingw/windowsMain/internal/WindowsZoneNames.kt

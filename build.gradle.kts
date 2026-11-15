@@ -53,6 +53,17 @@ val kLibraryModules = listOf(
 		listOf(libs.kotlinx.collections.immutable.jvm),
 	),
 	LibraryModule("atomicfu", mapOf("." to libs.atomicfu.asProvider()), listOf(libs.atomicfu.jvm)),
+	LibraryModule(
+		"kotlinx-serialization",
+		mapOf("core" to libs.kotlinx.serialization.core.asProvider()),
+		listOf(libs.kotlinx.serialization.core.jvm),
+	),
+	// The common jar has every source set but Windows' (windowsMain), which is in the jar of mingwX64.
+	LibraryModule(
+		"kotlinx-datetime",
+		mapOf("." to libs.kotlinx.datetime.asProvider(), "mingw" to libs.kotlinx.datetime.mingwx64),
+		listOf(libs.kotlinx.datetime.jvm),
+	),
 )
 
 dependencies {
@@ -130,7 +141,9 @@ tasks.test {
 	systemProperty("ktc2.keepLibrary", "true")
 	// What the tests of the standard library opt in to besides what the library itself does (tests/README.md).
 	systemProperty("ktc2.optIn", "kotlin.ExperimentalUnsignedTypes,kotlin.io.encoding.ExperimentalEncodingApi,kotlin.uuid.ExperimentalUuidApi,kotlin.time.ExperimentalTime")
-	maxHeapSize = "1g"
+	// A program compiled with the library sources and not on the kept library (kotlinx-datetime with kotlinx-serialization)
+	// takes more than 1 GB on Linux.
+	maxHeapSize = "1536m"
 	// Several compilers at once: each keeps to a few threads of its own, or they get in each other's way.
 	jvmArgs((System.getenv("KTC2_TEST_JVM") ?: "-XX:+UseParallelGC -XX:ParallelGCThreads=2 -XX:CICompilerCount=2 -Xms1g").split(" ").filter { it.isNotEmpty() })
 	// What each process wrote, put together: the counts (tools/arc_compare.py) and the times of each step.

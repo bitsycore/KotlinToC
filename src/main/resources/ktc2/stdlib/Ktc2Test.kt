@@ -155,6 +155,11 @@ public fun <T : Comparable<T>> assertContains(range: ClosedRange<T>, value: T, m
 	if (value !in range) fail(prefix(message) + "Expected the range <$range> to contain the value <$value>.")
 }
 
+@SinceKotlin("1.9")
+public fun <T : Comparable<T>> assertContains(range: OpenEndRange<T>, value: T, message: String? = null) {
+	if (value !in range) fail(prefix(message) + "Expected the range <$range> to contain the value <$value>.")
+}
+
 public fun <T> assertContains(sequence: Sequence<T>, element: T, message: String? = null) {
 	if (!sequence.contains(element)) fail(prefix(message) + "Expected the sequence to contain the element.\nSequence <$sequence>, element <$element>.")
 }
