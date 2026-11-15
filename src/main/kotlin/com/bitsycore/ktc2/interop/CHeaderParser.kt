@@ -637,6 +637,9 @@ class CHeaderParser(private val mText: String, private val mLongSize: Int) {
 	}
 
 	/** The value of an object-like macro whose body is an integer constant expression, with whether it is unsigned. */
+	/** The type a typedef of the headers names; null when there is no such typedef. */
+	fun typedefNamed(inName: String): CType? = mTypedefs[inName]
+
 	fun macroInteger(inBody: String): Pair<Long, Boolean>? {
 		val vSaved = ArrayList(mTokens)
 		val vSavedAt = mAt

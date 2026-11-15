@@ -117,6 +117,8 @@ public typealias COpaquePointer = CPointer<out CPointed>
 
 public typealias CArrayPointer<T> = CPointer<T>
 
+public typealias CArrayPointerVar<T> = CPointerVar<T>
+
 public typealias COpaquePointerVar = CPointerVarOf<COpaquePointer>
 
 public inline val CPointer<*>.rawValue: NativePtr get() = cExpr("$0", this)
@@ -668,6 +670,54 @@ public val String.utf8: CValues<ByteVar> get() = cExpr("$0", this)
 public fun CPointer<ByteVar>.toKString(): String = cExpr("ktc2_string_of_cstr((const char*)$0)", this)
 
 public fun CPointer<ByteVar>.toKStringFromUtf8(): String = toKString()
+
+/** The text of these UTF-8 bytes up to the first zero byte, or all of them, as Kotlin/Native reads a C string held in an array. */
+@kotlin.jvm.JvmName("toKStringOfBytes")
+public fun ByteArray.toKString(startIndex: Int = 0, endIndex: Int = size, throwOnInvalidSequence: Boolean = false): String {
+	var vEnd = startIndex
+	while (vEnd < endIndex && this[vEnd] != 0.toByte()) vEnd++
+	return decodeToString(startIndex, vEnd, throwOnInvalidSequence)
+}
+
+/** The [count] bytes this points at, copied into a new array. */
+public fun CPointer<*>.readBytes(count: Int): ByteArray {
+	val vBytes = ByteArray(count)
+	cExpr<Unit>("memcpy((ktc2_Array*)$0 + 1, $1, (size_t)$2)", vBytes, this, count)
+	return vBytes
+}
+
+/**
+ * The UTF-16 code units of this string, NUL-terminated, as the wide functions of Windows read them. A CValue (a
+ * CValues, as Kotlin/Native declares it): a counted copy, whose data is what C is given.
+ */
+public val String.wcstr: CValue<UShortVar>
+	get() {
+		val vUnits = CharArray(length + 1)
+		for (vIndex in indices) vUnits[vIndex] = this[vIndex]
+		return cExpr("ktc2_cvalue_copy((ktc2_Array*)$0 + 1, (int64_t)$1 * 2)", vUnits, vUnits.size)
+	}
+
+/** A String from the NUL-terminated UTF-16 text this points at. */
+public fun CPointer<UShortVar>.toKStringFromUtf16(): String {
+	val vText = StringBuilder()
+	var vIndex = 0
+	while (true) {
+		val vUnit = cExpr<Int>("(int32_t)((const uint16_t*)$0)[$1]", this, vIndex)
+		if (vUnit == 0) break
+		vText.append(vUnit.toChar())
+		vIndex++
+	}
+	return vText.toString()
+}
+
+@kotlin.jvm.JvmName("toKStringOfUShorts")
+public fun CPointer<UShortVar>.toKString(): String = toKStringFromUtf16()
+
+@kotlin.jvm.JvmName("toKStringFromUtf16OfShorts")
+public fun CPointer<ShortVar>.toKStringFromUtf16(): String = reinterpret<UShortVar>().toKStringFromUtf16()
+
+@kotlin.jvm.JvmName("toKStringOfShorts")
+public fun CPointer<ShortVar>.toKString(): String = toKStringFromUtf16()
 
 // ==================
 // MARK: Kotlin arrays and objects seen from C

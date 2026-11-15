@@ -49,3 +49,26 @@ public object Platform {
 	/** False: a ktc2 program reads a number only where it is aligned. */
 	public val canAccessUnaligned: Boolean get() = false
 }
+
+// ==================
+// MARK: Reading numbers out of byte arrays
+// ==================
+
+/** The Int whose bytes, in the order of the machine (little-endian on every system ktc2 compiles for), start at [index]. */
+public fun ByteArray.getIntAt(index: Int): Int {
+	if (index < 0 || index + 4 > size) throw IndexOutOfBoundsException("Index $index out of bounds for an Int in an array of size $size")
+	return (this[index].toInt() and 0xFF) or ((this[index + 1].toInt() and 0xFF) shl 8) or
+		((this[index + 2].toInt() and 0xFF) shl 16) or (this[index + 3].toInt() shl 24)
+}
+
+/** The Short whose bytes, in the order of the machine, start at [index]. */
+public fun ByteArray.getShortAt(index: Int): Short {
+	if (index < 0 || index + 2 > size) throw IndexOutOfBoundsException("Index $index out of bounds for a Short in an array of size $size")
+	return ((this[index].toInt() and 0xFF) or (this[index + 1].toInt() shl 8)).toShort()
+}
+
+/** The Long whose bytes, in the order of the machine, start at [index]. */
+public fun ByteArray.getLongAt(index: Int): Long {
+	if (index < 0 || index + 8 > size) throw IndexOutOfBoundsException("Index $index out of bounds for a Long in an array of size $size")
+	return (getIntAt(index).toLong() and 0xFFFFFFFFL) or (getIntAt(index + 4).toLong() shl 32)
+}

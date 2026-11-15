@@ -137,7 +137,16 @@ class BindingGenerator(
 ) {
 
 	private val mOut = StringBuilder()
+	/** The typedefs of the C library that a binding names as Kotlin/Native's platform libraries do, wherever they are declared. */
+	private val kStandardTypedefs = setOf(
+		"size_t", "ssize_t", "ptrdiff_t", "intptr_t", "uintptr_t", "off_t", "time_t", "clock_t", "pid_t", "uid_t", "gid_t", "mode_t",
+		"wchar_t", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t", "uint32_t", "uint64_t",
+	)
+
 	private val mDeclared = HashSet<String>()
+
+	/** The functions bound, by name: what a macro that names one of them points at. */
+	private val mFunctionTypes = HashMap<String, CFunctionType>()
 	private val mClassOf = HashMap<CRecord, String>()
 	private val mPendingRecords = ArrayDeque<CRecord>()
 	private val mEnumAlias = HashMap<CEnum, String>()
@@ -202,6 +211,8 @@ class BindingGenerator(
 		while (mPendingRecords.isNotEmpty()) record(mPendingRecords.removeFirst(), ::isWanted)
 		for (vVariable in vParser.variables.filter { isWanted(it.file) }) variable(vVariable)
 		while (mPendingRecords.isNotEmpty()) record(mPendingRecords.removeFirst(), ::isWanted)
+		// And the standard types of C that Kotlin/Native names (`size_t`, `off_t`...), wherever the system declares them.
+		for (vTypedef in vParser.typedefs.filter { isWanted(it.file) || it.name in kStandardTypedefs }.asReversed().distinctBy { it.name }.asReversed()) typedefAlias(vTypedef)
 		// A macro's value is what the preprocessor makes of it: each one is expanded by a second run.
 		val vMacros = vParser.macros.filter { isWanted(it.file) && it.body.isNotEmpty() && !it.name.startsWith("_") }.distinctBy { it.name }
 		val vProbe = File(inCDir, "ktc2_interop_probe.h")
@@ -317,6 +328,8 @@ class BindingGenerator(
 			val vVariable = variableType(vTarget)
 			when {
 				inIsParameter && vType.isTargetConst && vTarget is CPrim && vTarget.kotlin == "Byte" -> "String?"
+				// `const WCHAR*` (`LPCWSTR`) of Windows, as Kotlin/Native has it: given a String, passed as UTF-16.
+				inIsParameter && isWideString(vType) -> "String?"
 				vTarget is CUnsupported -> null
 				vVariable == null -> if (inIsParameter) "CValuesRef<*>?" else "COpaquePointer?"
 				// A function is only ever handled through its pointer.
@@ -359,6 +372,13 @@ class BindingGenerator(
 		}
 		is CEnum -> inType.tag?.let { "enum $it" } ?: inType.typedefName
 		is CArrayOf, is CFunctionType, is CUnsupported -> null
+	}
+
+	/** True for a pointer to constant 16-bit characters, `const WCHAR*` or `const wchar_t*` where those are 16 bits. */
+	private fun isWideString(inType: CType): Boolean {
+		val vPointer = inType.resolved() as? CPointerTo ?: return false
+		if (!vPointer.isTargetConst || (vPointer.target.resolved() as? CPrim)?.kotlin != "UShort") return false
+		return generateSequence(vPointer.target) { (it as? CTypedefRef)?.target }.any { it is CTypedefRef && (it.name == "WCHAR" || it.name == "wchar_t") }
 	}
 
 	private fun isPointer(inType: CType): Boolean = inType.resolved().let { it is CPointerTo || it is CArrayOf }
@@ -464,6 +484,7 @@ class BindingGenerator(
 
 	private fun function(inFunction: CFunctionDecl) {
 		val vName = inFunction.name
+		mFunctionTypes[vName] = inFunction.type
 		if (vName.startsWith("__builtin") || !mDeclared.add("fun $vName")) return
 		val vType = inFunction.type
 		val vIsVoid = vType.result.resolved() == CVoid
@@ -486,6 +507,8 @@ class BindingGenerator(
 			// A function pointer does not convert from void* in standard C: it is cast to its type.
 			val vCast = if (isFunctionPointer(vParam.type)) cSpelling(vParam.type)?.let { "($it)" } ?: "" else ""
 			// A struct by value is read out of the CValue that holds it.
+			// A String as wide characters is the data of the copy `wcstr` made.
+			if (isWideString(vParam.type)) return@mapIndexed "ktc2_cvalue_ptr(\$$vIndex)"
 			(vParam.type.resolved() as? CRecord)?.let { "(*(${it.spelling}*)ktc2_cvalue_data(\$$vIndex))" } ?: "$vCast\$$vIndex"
 		}
 		val vCall = "$vName(${vArguments.joinToString(", ")}${if (vType.isVariadic) "\$*" else ""})"
@@ -506,7 +529,11 @@ class BindingGenerator(
 		}
 		// An enum class goes to C as its value, and comes back as the entry with that value.
 		val vPassed = (listOf("\"$vText\"") + vNames.mapIndexed { vIndex, vParamName ->
-			identifier(vParamName) + if (strictEnum(vType.params[vIndex].type) != null) ".value" else ""
+			identifier(vParamName) + when {
+				strictEnum(vType.params[vIndex].type) != null -> ".value"
+				isWideString(vType.params[vIndex].type) -> "?.wcstr"
+				else -> ""
+			}
 		}).joinToString(", ")
 		val vResultEnum = strictEnum(vType.result)
 		if (vIsVoid) {
@@ -516,6 +543,25 @@ class BindingGenerator(
 			mOut.append("public fun ${identifier(vName)}(${vDeclared.joinToString(", ")}): $vResult = $vResultEnum.byValue(cExpr<$vRaw>($vPassed))\n")
 		} else {
 			mOut.append("public fun ${identifier(vName)}(${vDeclared.joinToString(", ")}): $vResult = cExpr($vPassed)\n")
+		}
+	}
+
+	/**
+	 * A typedef of the library as Kotlin/Native gives it: `typealias DWORD = UInt` with `DWORDVar` for a variable of it,
+	 * `typealias HKEY = CPointer<HKEY__>` with `HKEYVar`. The bindings themselves are written with what it stands for.
+	 */
+	private fun typedefAlias(inTypedef: CTypedefDecl) {
+		val vName = inTypedef.name
+		val vResolved = inTypedef.type.resolved()
+		if (vName.startsWith("_") || vResolved is CRecord || vResolved is CEnum || vResolved is CFunctionType) return
+		if (vName in mDeclared || "${vName}Var" in mDeclared || vName in mClassOf.values) return
+		val vValue = valueType(inTypedef.type, inIsParameter = false)?.removeSuffix("?") ?: return
+		val vVariable = variableType(inTypedef.type)
+		mDeclared += vName
+		mOut.append("\npublic typealias ${identifier(vName)} = $vValue\n")
+		if (vVariable != null && vResolved !is CArrayOf) {
+			mDeclared += "${vName}Var"
+			mOut.append("public typealias ${vName}Var = $vVariable\n")
 		}
 	}
 
@@ -560,6 +606,42 @@ class BindingGenerator(
 		val vFloat = Regex("^\\(?(-?(?:\\d+\\.\\d*|\\.\\d+|\\d+)(?:[eE][-+]?\\d+)?)([fF]?)\\)?$").find(vBody)
 		val vString = Regex("^\"((?:[^\"\\\\]|\\\\.)*)\"$").find(vBody)
 		val vInteger = inParser.macroInteger(vBody)
+		// `((DWORD)0xFFFFFFFF)`, `((HKEY)(ULONG_PTR)((LONG)0x80000002))`: the type of the outer cast decides, as in Kotlin/Native.
+		val vCast = Regex("^\\(*\\s*\\(\\s*([A-Za-z_]\\w*)\\s*\\)").find(vBody)?.groupValues?.get(1)?.let { inParser.typedefNamed(it) }
+		if (vCast != null && vCast.resolved() is CPointerTo) {
+			val vType = valueType(vCast, inIsParameter = false) ?: return
+			mDeclared += vName
+			mOut.append("\npublic val ${identifier(vName)}: $vType get() = cExpr(\"(void*)($vName)\")\n")
+			return
+		}
+		val vCastPrim = vCast?.resolved() as? CPrim
+		if (vInteger != null && vCastPrim != null) {
+			val vValue = vInteger.first
+			val vLiteral = when (vCastPrim.kotlin) {
+				"Int" -> "${vValue.toInt()}"
+				"UInt" -> "${vValue.toUInt()}u"
+				"Long" -> "${vValue}L"
+				"ULong" -> "${vValue.toULong()}uL"
+				"Short" -> "${vValue.toShort()}"
+				"UShort" -> "${vValue.toUShort()}u"
+				"Byte" -> "${vValue.toByte()}"
+				"UByte" -> "${vValue.toUByte()}u"
+				else -> null
+			}
+			if (vLiteral != null) {
+				mDeclared += vName
+				mOut.append("\npublic const val ${identifier(vName)}: ${vCastPrim.kotlin} = $vLiteral\n")
+				return
+			}
+		}
+		// `#define FormatMessage FormatMessageW`: a pointer to the function, as Kotlin/Native gives it.
+		val vFunction = mFunctionTypes[vBody]
+		if (vFunction != null) {
+			val vSignature = signature(vFunction) ?: return
+			mDeclared += vName
+			mOut.append("\npublic val ${identifier(vName)}: CPointer<CFunction<$vSignature>>? get() = cExpr(\"(void*)&$vBody\")\n")
+			return
+		}
 		val vDeclaration = when {
 			vInteger != null -> {
 				val (vValue, vIsUnsigned) = vInteger
