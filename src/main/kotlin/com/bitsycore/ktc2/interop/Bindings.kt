@@ -73,6 +73,10 @@ private val kGlibcPrivateHeaders = mapOf(
 	"time.h" to listOf("bits/time.h", "bits/types/struct_tm.h", "bits/types/struct_timespec.h", "bits/types/time_t.h", "bits/types/clock_t.h"),
 	"string.h" to listOf("strings.h"),
 	"stdlib.h" to listOf("bits/stdlib-float.h"),
+	"sys/stat.h" to listOf("bits/stat.h", "bits/struct_stat.h", "bits/types/struct_timespec.h"),
+	"fcntl.h" to listOf("bits/fcntl.h", "bits/fcntl-linux.h"),
+	"dirent.h" to listOf("bits/dirent.h"),
+	"unistd.h" to listOf("bits/confname.h"),
 	"signal.h" to listOf("bits/signum-generic.h", "bits/signum-arch.h"),
 )
 

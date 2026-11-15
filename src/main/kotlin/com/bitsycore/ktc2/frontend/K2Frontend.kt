@@ -143,7 +143,23 @@ object K2Frontend {
 				add("-Xmulti-platform")
 				// A module's own sources under a `commonMain` directory are common code too (kotlinx-io's: its `expect`s, with the `actual`s beside them).
 				val vCommonProgram = if (vKeepsLibrary) emptyList() else vProgram.filter { "/commonMain/" in it.invariantSeparatorsPath }
-				add("-Xcommon-sources=" + (vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") } + vCommonProgram).joinToString(",") { it.path })
+				val vCommon = vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") } + vCommonProgram
+				// Those of `nativeMain` are a level of their own between: they have `actual`s of the common
+				// `expect`s, and `expect`s whose `actual`s are below them (ktc2's part of the module). The
+				// compiler is then told the three levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
+				val vNative = if (vKeepsLibrary) emptyList() else vProgram.filter { "/nativeMain/" in it.invariantSeparatorsPath }
+				if (vNative.isEmpty()) {
+					add("-Xcommon-sources=" + vCommon.joinToString(",") { it.path })
+				} else {
+					// What Kotlin/Native's platform libraries are to `nativeMain`, ktc2's platform layer and the
+					// bindings (platform.posix) are here: on the level of `nativeMain`, which sees them. Below
+					// it, what refines it: the module's own part and the program.
+					val vSeenByNative = vNative + (vLibrary - vCommon.toSet()) + vBindings.map { it.source }
+					val vPlatform = vProgram.filter { it !in vCommon && it !in vSeenByNative }
+					add("-Xfragments=common,native,platform")
+					add("-Xfragment-sources=" + (vCommon.map { "common:" + it.path } + vSeenByNative.map { "native:" + it.path } + vPlatform.map { "platform:" + it.path }).joinToString(","))
+					add("-Xfragment-refines=native:common,platform:native")
+				}
 				add("-nowarn")
 			}
 			// Library sources are declared in the real kotlin.* packages and stand in for the jar's declarations.

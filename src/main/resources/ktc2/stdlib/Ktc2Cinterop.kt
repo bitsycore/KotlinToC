@@ -31,6 +31,41 @@ public annotation class ExperimentalForeignApi
 @Retention(AnnotationRetention.BINARY)
 public annotation class BetaInteropApi
 
+/** Marks code that relies on a C integer type having the size it has on one platform (`size_t`, `long`). */
+@RequiresOptIn
+@Retention(AnnotationRetention.BINARY)
+public annotation class UnsafeNumber(val actualPlatformTypes: Array<String>)
+
+// ==================
+// MARK: Numbers
+// ==================
+
+/** [inValue] as a number of the class [inTo], its bits kept or cut as a C cast does. */
+@PublishedApi
+@Suppress("UNCHECKED_CAST")
+internal fun <R : Any> convertNumber(inValue: Long, inTo: kotlin.reflect.KClass<R>): R = when (inTo) {
+	Byte::class -> inValue.toByte()
+	Short::class -> inValue.toShort()
+	Int::class -> inValue.toInt()
+	Long::class -> inValue
+	UByte::class -> inValue.toUByte()
+	UShort::class -> inValue.toUShort()
+	UInt::class -> inValue.toUInt()
+	ULong::class -> inValue.toULong()
+	Char::class -> inValue.toInt().toChar()
+	else -> throw IllegalArgumentException("convert() to ${inTo.simpleName}")
+} as R
+
+/** The number as the integer type the place it goes to wants (a C `size_t`, `long`...), as Kotlin/Native has it. */
+public inline fun <reified R : Any> Byte.convert(): R = convertNumber(toLong(), R::class)
+public inline fun <reified R : Any> Short.convert(): R = convertNumber(toLong(), R::class)
+public inline fun <reified R : Any> Int.convert(): R = convertNumber(toLong(), R::class)
+public inline fun <reified R : Any> Long.convert(): R = convertNumber(this, R::class)
+public inline fun <reified R : Any> UByte.convert(): R = convertNumber(toLong(), R::class)
+public inline fun <reified R : Any> UShort.convert(): R = convertNumber(toLong(), R::class)
+public inline fun <reified R : Any> UInt.convert(): R = convertNumber(toLong(), R::class)
+public inline fun <reified R : Any> ULong.convert(): R = convertNumber(toLong(), R::class)
+
 // ==================
 // MARK: Addresses
 // ==================
