@@ -108,7 +108,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
-			.toList() + projectList() + commonTestList() + boxTestList()
+			.toList() + projectList() + commonTestList() + boxTestList() + moduleTestList()
 
 	// ==================
 	// MARK: Common tests
@@ -125,7 +125,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun commonTestList(): List<DynamicTest> =
 		File("tests").walkTopDown()
 			// tests/pending holds those that do not pass yet (tests/README.md).
-			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" } }
+			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" || it == "kotlinx-io" } }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
@@ -238,6 +238,68 @@ abstract class IntegrationPart(private val mShard: Int) {
 		} finally {
 			mJvmExtra = emptyList()
 			mAllowsLeaks = false
+		}
+	}
+
+	// ==================
+	// MARK: Tests of a bundled module's library
+	// ==================
+
+	/**
+	 * The tests of kotlinx-io itself, under `tests/kotlinx-io/<library>/` as its repository has them
+	 * at the version the module compiles: `commonTest/`, and the helpers of each platform
+	 * (`nativeTest/`, `jvmTest/`). Each file of tests is a program, compiled with the other files of
+	 * its `commonTest` (their tests not run): in C with the module's sources and `nativeTest`, on the
+	 * JVM with kotlinx-io's jars, which it sees the internals of as a test of the library does, and `jvmTest`.
+	 */
+	private fun moduleTestList(): List<DynamicTest> =
+		File("tests/kotlinx-io").walkTopDown()
+			.filter { it.isFile && it.extension == "kt" && "/commonTest/" in it.invariantSeparatorsPath && "@Test" in it.readText() }
+			.filter { vSource -> selected(vSource) }
+			.sortedBy { it.path }
+			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkModuleTest(vSource) } }
+			.toList()
+
+	private fun checkModuleTest(inSource: File) {
+		val vRoot = File(inSource.invariantSeparatorsPath.substringBefore("/commonTest/"))
+		fun sources(inSet: String) = File(vRoot, inSet).walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
+		val vCommon = sources("commonTest")
+		val vName = "kotlinx-io-" + vRoot.name + "-" + inSource.invariantSeparatorsPath.substringAfter("/commonTest/").removeSuffix(".kt").replace('/', '-')
+		val vOutDir = File("build/integration/$vName").apply { deleteRecursively() }
+		mInput = null
+		mWarnings = emptyList()
+		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
+		val vSkipped = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile }?.readLines()
+			?.map { it.substringBefore(':').trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.toSet() ?: emptySet()
+		val vMain = File("build/testmain/${vName.replace('-', '_')}.kt").apply { parentFile.mkdirs() }
+		val vText = inSource.readText()
+		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
+		vMain.writeText((if (vPackage != null) "package $vPackage\n\n" else "") + testMain(vText, vSkipped))
+		// The module as ktc2 carries it (processResources puts kotlinx-io's sources next to its own files).
+		val vModule = File("build/resources/main/ktc2/modules/kotlinx-io")
+		val vModuleFile = com.bitsycore.ktc2.ModuleFile(vModule, File(vModule, "module.ktc2.toml").readText())
+		val vJars = System.getProperty("ktc2.jvmModule.kotlinx-io", "")
+		mCExtra = vModule.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }.sortedBy { it.path }.toList() + sources("nativeTest")
+		mJvmExtra = listOf(kTestLibrary) + sources("jvmTest")
+		mJvmOptions = listOf(
+			// kotlin.test (ktc2's, compiled with the tests) is common too: the common tests use it.
+			"-Xmulti-platform", "-Xcommon-sources=" + (vCommon + kTestLibrary).joinToString(",") { it.path },
+			"-Xfriend-paths=" + vJars.split(File.pathSeparator).joinToString(","),
+			"-classpath", K2Frontend.userClasspath() + File.pathSeparator + vJars,
+		)
+		mJvmClasspath = vJars
+		System.setProperty("ktc2.weak", vModuleFile.weak.joinToString("\n"))
+		System.setProperty("ktc2.acyclic", vModuleFile.acyclic.joinToString("\n"))
+		try {
+			verify("tests/kotlinx-io/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
+		} finally {
+			mCExtra = emptyList()
+			mJvmExtra = emptyList()
+			mJvmOptions = emptyList()
+			mJvmClasspath = ""
+			mAllowsLeaks = false
+			System.clearProperty("ktc2.weak")
+			System.clearProperty("ktc2.acyclic")
 		}
 	}
 

@@ -85,7 +85,10 @@ object K2Frontend {
 	}
 
 	/** A directory of sources written for Kotlin/Native. */
-	private val kNativeSourceSet = Regex("/(native|posix|unix|linux|mingw|apple|androidNative|nativeNon[A-Za-z]+)Main/")
+	private val kNativeSourceSet = Regex("/(native|posix|unix|linux|mingw|apple|androidNative|nativeNon[A-Za-z]+)(Main|Test)/")
+
+	/** True for a source of a common source set: its main code or its tests. */
+	private fun isCommonSource(inSource: File): Boolean = inSource.invariantSeparatorsPath.let { "/commonMain/" in it || "/commonTest/" in it }
 
 	fun compile(inGivenSources: List<File>, inOutDir: File, inDumpIr: Boolean): Boolean {
 		val vSources = withNativeImports(inGivenSources, inOutDir)
@@ -96,7 +99,7 @@ object K2Frontend {
 		// With the library kept between compilations, its sources are in a place of this process, not of this program.
 		// A program with common sources of its own (a module of `expect`s and `actual`s, as kotlinx-io) is compiled
 		// whole: the kept library takes the program as one part on top of it, which has no room for a common one.
-		val vKeepsLibrary = keepsLibrary() && vSources.none { "/commonMain/" in it.invariantSeparatorsPath }
+		val vKeepsLibrary = keepsLibrary() && vSources.none { isCommonSource(it) }
 		val vLibrary = librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
 		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
 		val vDefinitions = vSources.filter { it.extension == "def" }
@@ -142,8 +145,9 @@ object K2Frontend {
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.
 				add("-Xmulti-platform")
 				// A module's own sources under a `commonMain` directory are common code too (kotlinx-io's: its `expect`s, with the `actual`s beside them).
-				val vCommonProgram = if (vKeepsLibrary) emptyList() else vProgram.filter { "/commonMain/" in it.invariantSeparatorsPath }
-				val vCommon = vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") } + vCommonProgram
+				val vCommonProgram = if (vKeepsLibrary) emptyList() else vProgram.filter { isCommonSource(it) }
+				// `kotlin.test` (Ktc2Test.kt, plain Kotlin) is common too: common tests use it.
+				val vCommon = vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") || it.name == "Ktc2Test.kt" } + vCommonProgram
 				// Those of `nativeMain` are a level of their own between: they have `actual`s of the common
 				// `expect`s, and `expect`s whose `actual`s are below them (ktc2's part of the module). The
 				// compiler is then told the three levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
@@ -290,7 +294,7 @@ object K2Frontend {
 		) + kLanguageOptions + inOptions +
 			// Sources of a multiplatform module (the tests of the Kotlin library) are all its common part: an optional
 			// `expect` (`@ThreadLocal`) is allowed there without its `actual`.
-			(if ("-Xmulti-platform" in inOptions) listOf("-Xcommon-sources=" + inSources.joinToString(",") { it.path }) else emptyList())
+			(if ("-Xmulti-platform" in inOptions && inOptions.none { it.startsWith("-Xcommon-sources=") }) listOf("-Xcommon-sources=" + inSources.joinToString(",") { it.path }) else emptyList())
 		return K2JVMCompiler().exec(System.err, *vArgs.toTypedArray()) == ExitCode.OK
 	}
 
