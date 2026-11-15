@@ -169,6 +169,14 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		return vOld
 	}
 
+	/** Removes [key] only when it maps to [value]: `MutableMap.remove(key, value)`, a default method of the JDK's `Map`. */
+	override fun remove(key: K, value: V): Boolean {
+		val vIndex = find(key, hashOf(key))
+		if (vIndex < 0 || valueArray[vIndex] != value) return false
+		removeEntry(vIndex)
+		return true
+	}
+
 	actual override fun putAll(from: Map<out K, V>) {
 		for (vEntry in from.entries) put(vEntry.key, vEntry.value)
 	}
@@ -434,6 +442,7 @@ public actual class LinkedHashMap<K, V> actual constructor(initialCapacity: Int)
 	actual override fun get(key: K): V? = map[key]
 	actual override fun put(key: K, value: V): V? = map.put(key, value)
 	actual override fun remove(key: K): V? = map.remove(key)
+	override fun remove(key: K, value: V): Boolean = map.remove(key, value)
 	actual override fun putAll(from: Map<out K, V>) = map.putAll(from)
 	actual override fun clear() = map.clear()
 	actual override val keys: MutableSet<K> get() = map.keys
