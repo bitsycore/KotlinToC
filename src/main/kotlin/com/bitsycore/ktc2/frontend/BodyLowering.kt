@@ -750,7 +750,8 @@ internal class BodyBuilder(
 		}
 		val vIrParams = inFunction.parameters.drop(inBound.size)
 		val vParamTypes = vIrParams.map { vParam ->
-			kType(vParam.type)?.takeIf { it != KUnitType && it != KNothingType } ?: run {
+			// A parameter of type Unit (`DeepRecursiveFunction<Unit, R>`) is the Unit object, as in the other lambdas.
+			kType(vParam.type)?.let { if (it == KUnitType || it == KNothingType) KObjType else it } ?: run {
 				fail(vParam, "lambda parameter of type '${vParam.type.render()}'")
 				return null
 			}
@@ -1004,7 +1005,8 @@ internal class BodyBuilder(
 	private fun lowerStatement(inStatement: IrStatement) {
 		when (inStatement) {
 			is IrVariable -> {
-				val vType = kType(inStatement.type) ?: run {
+				// A `lateinit` number (`lateinit var data: T` with T an Int here) has room for "not set yet", as an Int? has.
+				val vType = kType(inStatement.type)?.let { if (inStatement.isLateinit && it is KPrimType) KOptType(it.prim) else it } ?: run {
 					fail(inStatement, "local of type '${inStatement.type.render()}'")
 					return
 				}
@@ -1130,7 +1132,14 @@ internal class BodyBuilder(
 				// A parameter of type Unit holds the Unit object: as a value it is Unit.
 				vLocal.type == KObjType && kType(inExpression.type) == KUnitType -> KUnitValue
 				else -> KRead(vLocal)
-			}.let { vRead -> if ((vDeclaration as? IrVariable)?.isLateinit == true && vLocal != null) initialized(vRead, vDeclaration.name.asString()) else vRead }
+			}.let { vRead ->
+				if ((vDeclaration as? IrVariable)?.isLateinit == true && vLocal != null) {
+					val vChecked = initialized(vRead, vDeclaration.name.asString())
+					if (vChecked.type is KOptType) kType(inExpression.type)?.let { coerce(vChecked, it) } ?: vChecked else vChecked
+				} else {
+					vRead
+				}
+			}
 		}
 		is IrFunctionExpression -> makeClosure(inExpression, inExpression.function, null)?.let { KRead(it.first) } ?: KUnitValue
 		is IrFunctionReference -> lowerFunctionReference(inExpression)
@@ -1404,6 +1413,11 @@ internal class BodyBuilder(
 		// So is a type parameter nothing here stands for (that of a class around a local object).
 		val vIsUnbound = vType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 		if (vType.makeNotNull().isAny() || vIsUnbound) return if (vType.isMarkedNullable()) kTrue else not(vIsNull)
+		// `x is Unit`: the Unit object, which the runtime knows by its kind.
+		if (vType.makeNotNull().isUnit()) {
+			val vIsUnit = KIntrinsic("ktc2_is_unit", listOf(inValue), kBoolType).also { it.template = "($0 != NULL && ((ktc2_Obj*)$0)->typeId == KTC2_TYPE_UNIT)" }
+			return if (vType.isMarkedNullable()) KSelect(vIsNull, kTrue, vIsUnit, kBoolType) else vIsUnit
+		}
 		// A `Number` is one of the boxed numbers: they have no class, the runtime knows them by their kind.
 		// A `Number` is a boxed number, which has no class (the runtime knows it by its kind), or an object of a class that extends it.
 		val vOfClass = KInstanceOf(inValue, typeTargetOf(vType) ?: return fail(inElement, "type test against '${inType.render()}'"))
@@ -1470,6 +1484,12 @@ internal class BodyBuilder(
 				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
 				if (vTest !== kTrue) mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
 				coerce(vValue, vTo)
+			} else if (vValue.type is KRefType && vTo == KUnitType) {
+				// `x as Unit`: x has to be the Unit object.
+				nullCastCheck(inExpression, vValue)
+				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
+				if (vTest !== kTrue) mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
+				KUnitValue
 			} else if (vValue.type !is KRefType || vTo !is KRefType) {
 				fail(inExpression, "cast to '${inExpression.typeOperand.render()}'")
 			} else {
@@ -1633,7 +1653,7 @@ internal class BodyBuilder(
 		val vValue = spill(inValue)
 		val vThrower = mImporter.internalFunction("throwUninitialized")?.let { mImporter.functionFor(it) }
 		val vFail: KStmt = if (vThrower != null) KEval(KCall(vThrower, listOf(KStringLit(inName)))) else KEval(KIntrinsic("ktc2_fail_null", emptyList(), KUnitType, isPure = false))
-		mBlock += KIf(isNull(vValue), listOf(vFail), emptyList())
+		mBlock += KIf(if (vValue.type is KOptType) not(KOptHas(vValue)) else isNull(vValue), listOf(vFail), emptyList())
 		return vValue
 	}
 
@@ -2539,6 +2559,10 @@ internal class BodyBuilder(
 
 	private fun lowerCall(inCall: IrCall): KExpr {
 		var vCallee = mImporter.sourceOf(inCall.symbol.owner)
+		// A member of Unit (`toString`, `equals`, `hashCode` of a Unit or Unit? value) is Any's: the Unit object is an object of the runtime.
+		if ((vCallee.parent as? IrClass)?.kotlinFqName?.asString() == "kotlin.Unit") {
+			anyMemberOf(mImporter.mBuiltIns.anyType, vCallee.name.asString(), vCallee.parameters.count { it.kind == IrParameterKind.Regular })?.let { vCallee = it }
+		}
 		// `f(x)` on a reference (`val f = ::name`, a KFunctionN; `String::length`, a KProperty1) is the `invoke` of the function type it extends.
 		if (vCallee.name.asString() == "invoke" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString()?.let { it.startsWith("kotlin.reflect.KFunction") || it.startsWith("kotlin.reflect.KProperty") || it.startsWith("kotlin.reflect.KMutableProperty") } == true) {
 			vCallee.overriddenSymbols.map { it.owner }.firstOrNull { isFunctionType(it.parentAsClass.symbol.typeWith()) }?.let { vCallee = it }
@@ -3590,6 +3614,8 @@ internal class BodyBuilder(
 		// The Unit object (a lambda's parameter of type Unit) says what it says on the JVM.
 		KUnitType -> KStringLit("kotlin.Unit")
 		is KRefType if closed(inType).isUnit() -> KStringLit("kotlin.Unit")
+		// A Unit? is the Unit object or null: described as any object is (the runtime names the Unit object).
+		is KRefType if closed(inType).makeNotNull().isUnit() -> toStringOf(inElement, inValue, mImporter.mBuiltIns.anyNType)
 		KStringType -> if (closed(inType).isMarkedNullable()) concat(listOf(KPrintValue(inValue))) else inValue
 		is KPrimType, is KOptType -> concat(listOf(KPrintValue(inValue)))
 		is KStructType -> {

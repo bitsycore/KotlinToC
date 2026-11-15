@@ -109,8 +109,19 @@ class KUnit(
 	/** Assigns the globals whose initializer is not a constant; run once before `main`, in unit order. */
 	var initializer: KFunction? = null
 
-	/** Path of the pair relative to the C output root, without extension. */
-	val path: String get() = if (pkg.isEmpty()) name else pkg.replace('.', '/') + "/" + name
+	/**
+	 * Path of the pair relative to the C output root, without extension. A name longer than [kMaxFileName] (a generic
+	 * class instantiated with long class names) is cut and given a hash of the whole, so that the paths stay within
+	 * what Windows takes (260 characters) under a deep directory.
+	 */
+	val path: String get() = if (pkg.isEmpty()) fileName else pkg.replace('.', '/') + "/" + fileName
+
+	private val fileName: String
+		get() = if (name.length <= kMaxFileName) name else name.take(kMaxFileName - 9) + "_" + "%08x".format(name.hashCode())
+
+	private companion object {
+		const val kMaxFileName = 64
+	}
 }
 
 class KStruct(

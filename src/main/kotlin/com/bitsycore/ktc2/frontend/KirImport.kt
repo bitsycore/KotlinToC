@@ -760,7 +760,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vBase = vType.makeNotNull()
 		if (vType.isMarkedNullable()) primOf(vBase)?.let { return KOptType(it) }
 		return when {
-			vBase.isUnit() -> KUnitType
+			// `Unit?` is the Unit object or null: an object.
+			vBase.isUnit() -> if (vType.isMarkedNullable()) KObjType else KUnitType
 			vBase.isNothing() -> if (vType.isMarkedNullable()) KObjType else KNothingType
 			vBase.isString() -> KStringType
 			vBase.isAny() -> KObjType
@@ -1053,8 +1054,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				later { BodyBuilder(this, vAction, vFolded.action, vFile!!, vSubst).buildClosure(emptyList(), null) }
 				continue
 			}
-			val vType = kTypeOf(vBacking.type, vSubst)
-			if (vType == null || vType == KUnitType || vType == KNothingType) {
+			// A property of type Unit holds the Unit object, as on the JVM.
+			val vType = kTypeOf(vBacking.type, vSubst)?.let { if (it == KUnitType) KObjType else it }
+			if (vType == null || vType == KNothingType) {
 				unsupported(vFile, vProperty, "property of type '${vBacking.type.render()}'")
 				continue
 			}

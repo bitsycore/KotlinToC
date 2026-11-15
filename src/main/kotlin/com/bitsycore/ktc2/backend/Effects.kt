@@ -104,9 +104,21 @@ class Effects(inModule: KModule) {
 				elements = true
 				vChanged = true
 			}
+			if (all) return vChanged
 			if (fields.addAll(inOther.fields)) vChanged = true
 			if (globals.addAll(inOther.globals)) vChanged = true
+			// A function that may write that much (the driver of a large program) is taken to write anything: the sets
+			// of every function, each with what its callees write, would otherwise grow with the square of the program.
+			if (fields.size + globals.size > kMaxTracked) {
+				all = true
+				fields.clear()
+				globals.clear()
+			}
 			return vChanged
+		}
+
+		private companion object {
+			const val kMaxTracked = 1024
 		}
 	}
 

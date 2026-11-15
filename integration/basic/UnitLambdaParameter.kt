@@ -14,9 +14,14 @@ fun main() {
 	println(same(4))
 	println(Unit.let { it.toString() })
 	validate(5).also { println("also $it") }
+	println(deep())
 	try {
 		describe(-1)
 	} catch (vError: IllegalArgumentException) {
 		println("caught ${vError.message}")
 	}
 }
+
+val depth = DeepRecursiveFunction<Unit, Int> { 3 }
+
+fun deep(): Int = depth(Unit)

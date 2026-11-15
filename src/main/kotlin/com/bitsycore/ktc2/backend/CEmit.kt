@@ -830,6 +830,8 @@ class CEmitter(private val mModule: KModule) {
 				}
 				val vCall = "${inTarget.cName}($vArguments)"
 				if (vIsVoid) return "{ $vBefore$vCall; ${vAfter}return; }"
+				// An implementation that returns Unit, called where an object is returned (`KSerializer<Unit>.deserialize`): the Unit object.
+				if (inTarget.returnType == KUnitType && inFunction.returnType is KRefType) return "{ $vBefore$vCall; ${vAfter}return (${cType(inFunction.returnType)})&ktc2_unit_object; }"
 				if (inTarget.returnType == KUnitType || inTarget.returnType == KNothingType) return "{ $vBefore$vCall; ${vAfter}return ${zero(inFunction.returnType)}; }"
 				if (inTarget.returnType is KRefType && isUnboxed(inFunction.returnType)) {
 					// The implementation returns a box it owns: its content is taken out and the box released.
@@ -849,7 +851,22 @@ class CEmitter(private val mModule: KModule) {
 				return "{ $vBefore${cType(inFunction.returnType)} result = $vResult; ${vAfter}return result; }"
 			}
 			line(1, "switch (((ktc2_Obj*)$vSelf)->typeId) {")
+			// An implementation that cannot take what the dispatcher passes (an instantiation of a generic interface for a number,
+			// `SerializationStrategy<ULong>`, and an implementation for a class or a value class): no value of the
+			// dispatcher reaches it, as in Kotlin, where its type argument is another.
+			fun incompatible(vFromType: KType, vToType: KType): Boolean =
+				when {
+					vFromType is KPrimType || vFromType is KOptType -> vToType is KStructType || vToType is KClassType
+					// A value class's value: an implementation for another value class, or for a class that is not its box.
+					vFromType is KStructType -> (vToType is KStructType && vToType != vFromType) ||
+						(vToType is KClassType && vFromType.struct.box?.let { vToType.cls.isSubclassOf(it) || it.isSubclassOf(vToType.cls) } == false)
+					else -> false
+				}
+			fun takes(inTarget: KFunction): Boolean =
+				inFunction.params.zip(inTarget.params).drop(1).none { (vFrom, vTo) -> incompatible(vFrom.type, vTo.type) } &&
+					!incompatible(inFunction.returnType, inTarget.returnType) && !incompatible(inTarget.returnType, inFunction.returnType)
 			for ((vClass, vTarget) in inFunction.dispatch!!) {
+				if (!takes(vTarget)) continue
 				mState.includes += vClass.unit
 				line(1, "case ${typeId(vClass)}: ${call(vTarget)}")
 			}
