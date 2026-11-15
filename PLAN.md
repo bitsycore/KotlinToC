@@ -71,6 +71,20 @@ common case covered. Where the JVM and Kotlin/Native themselves differ because o
 platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **Decided by the owner** (all on 2026-11-13 unless said):
+- (2026-11-15) ktc2 is Kotlin/Native as closely as it can be: where the JVM and Kotlin/Native
+  differ, ktc2 does as Kotlin/Native (it was the JVM until then); the JVM stays the oracle of
+  the suite where the two agree. Memory is the one difference allowed, never results: cycles
+  are answered by `weak`/`acyclic` where a library's design allows it, a bounded cache, or a
+  known leak written here, not by a weak reference that changes results. What ktc2 adds is in
+  `ktc2.` and changes storage and cost only. `DESIGN.md`, section 1. Still to align with it:
+  the support of the standard library's tests answers `TestPlatform.current` as `Jvm`
+  (`tests/support/ktc2/`), and the tests of Kotlin/Native's runtime where ktc2 sided with the
+  JVM are skipped (`StringNativeTest.skip`, `UnsignedArraysNativeTest.skip`): each is to be
+  looked at again, ktc2 following Kotlin/Native;
+- (2026-11-15) the serializers of generic classes (which refer to their descriptors and back)
+  are kept in a cache by class and arguments, in ktc2's part of the kotlinx-serialization
+  module, rather than freed through a weak reference that would change what a descriptor
+  answers;
 - `ktc2.Deinit` is removed: what runs when an object ends is a cleaner (`createCleaner`),
   which the JVM and Kotlin/Native have too, and which costs nothing in a private property.
   The runtime's hook is still there under it (`ktc2.internal.Deinit`, for the cleaner that is
@@ -138,6 +152,13 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `==` on a `T` that stands for `Double` is `equals`; `compareTo` of `Double` is a total order.
 
 **Known and not done**, besides what the parts below list:
+- the serializer of a generic class (`Box<T>`, its plugin-made `$serializer`, an instance made from the
+  serializers of the arguments) and its descriptor refer to each other
+  (`PluginGeneratedSerialDescriptor.generatedSerializer`): never freed. kotlinx.serialization on
+  Kotlin/Native makes a new one at each `serializer<Box<Int>>()` (it caches nothing there), so a
+  program that encodes such values in a loop grows. To decide: a cache of those serializers (by
+  class and arguments, as the JVM's), or the descriptor's reference made weak where the serializer
+  is the only one to make it (eight of the library's own tests have a `.cycles` for it);
 - a lambda kept in a property of the object whose members it calls (`val handler = { update() }`,
   `val load = suspend { fetch() }`) holds that object: a cycle, never freed. The cycle lint says
   so since 2026-11-15; there is no answer in the language but `@Weak` on a property of a nullable
@@ -207,6 +228,68 @@ command start another one, so a changed `SDKROOT` or `CPATH` is not seen until i
 C compiler objects to them in the headers.
 
 ---------------------------------------------------------------------------
+## Benchmarks against Kotlin/Native and the JVM: the plan (2026-11-15)
+---------------------------------------------------------------------------
+
+`tools/bench.py` measures ktc2 against itself: one build of the C, timed, with the counts of
+allocations and retains, to see what a change to the translation does. The plan: the same
+programs built three ways, ktc2, Kotlin/Native and the JVM, and four measures of each.
+
+**What is measured, on each target**
+
+| | ktc2 | Kotlin/Native | JVM |
+|---|---|---|---|
+| Compile time | `ktc2` to C (the compiler process cold, its first command, and warm, the next), then the C compiler and the linker (`-O2`, with and without LTO): each part apart, `KTC2_TIMING` gives the split | `kotlinc-native -opt`, cold (a new process; its caches of the library made once beforehand, not counted) | `kotlinc` to a jar, cold and warm (the compiler kept in a process, as the suite's `PhasedCompiler` and Gradle's daemon do) |
+| Size | the executable, as built and stripped (`strip`), `-O2` and LTO; the lines of C | the executable, as built and stripped | the jar; and what it needs to run: a JDK, or a runtime cut to the modules it uses (`jlink`), for a size comparable with the others |
+| Memory | peak resident memory of the process; with the allocations of the counted build beside it | peak resident memory, Native's collector as it comes | peak resident memory, the collector as it comes; and the same with `-XX:+UseSerialGC -Xmx` at a few times the program's need, closer to what a native program asks for |
+| Speed | the whole process, best and median of N runs | the same | the same, and the time the work takes once the JIT is warm, which the program measures itself (below) |
+
+**How**
+
+1. *The programs.* `benchmarks/*.kt` are the same file on the three targets, and may use what
+   the `ktc2.` package offers to make ktc2's code faster or smaller (`@Value`, `@Struct`,
+   `ValueArray`, `@Size`, `@Weak`, `arena`, `@SimpleEnum`, `ktc2.concurrent`; the owner,
+   2026-11-15): those change storage and cost, never results, so the program computes the same
+   on the three. On the JVM `ktc2.` is there already (`src/main/kotlin/ktc2/`, plain
+   definitions); for Kotlin/Native it is to be written the same way, plain Kotlin over what
+   Native has (the annotations doing nothing, `ValueArray` an array, `WeakRef` over
+   `kotlin.native.ref.WeakReference`, `createCleaner` Native's own, `ktc2.concurrent` over a
+   `Worker` or `pthread`, `arena` a plain block), compiled with each program. Where a program
+   uses them, it is measured twice on ktc2, with and without (the annotations stripped by the
+   tool), to show what they bring. Each program prints what it computes (the three must print
+   the same, which also checks Native and the JVM against ktc2) and, with `--self-timed`, runs
+   its work several times and prints the time of each run, measured with
+   `kotlin.time.TimeSource.Monotonic`, which all three have: the JVM's warm time, and the first
+   run against the others. To add, as the existing ones are about ktc2's own costs: a program
+   that does nothing (the floor of size, memory and start), the usual allocation tests (binary
+   trees, a map of many objects), and kotlinx.serialization's JSON on a model (the three have
+   the library; Native and the JVM with its plugin).
+2. *The compilers.* All three on the Kotlin of `gradle/libs.versions.toml`: ktc2 as installed;
+   Kotlin/Native's compiler of that version, fetched by Gradle into the build directory (not
+   whatever is in `~/.konan`), its target the machine's (`mingwX64`, `linuxX64`,
+   `macosArm64`); the JVM's compiler from the same embeddable jar ktc2 runs, and the JDK of the
+   toolchain (21).
+3. *The tool.* `tools/bench.py --targets ktc2,native,jvm --measure compile,size,memory,speed`,
+   the present behaviour being `--targets ktc2` with the counts. Peak memory: `/usr/bin/time`
+   on Linux (`-v`) and macOS (`-l`), and on Windows the process's `PeakWorkingSetSize`
+   (`GetProcessMemoryInfo`, through Python's `ctypes`, nothing to install). Each measure is
+   the best and the median of N runs (seven by default), on a quiet machine: not while the
+   suite runs, and not in the CI job, whose machines are shared and too noisy for times.
+4. *The report.* A table for each measure, the three targets side by side and ktc2's ratio to
+   each, printed and written to `build/bench/compare.txt` (`--save` and `--compare` as today, to
+   follow it over time); the numbers of a day go into "Where the benchmarks stand" below, with
+   the machine, the versions and what was not run.
+
+**Order and estimates**: `ktc2.` for Kotlin/Native (half a day); the programs made self-timing,
+with ktc2's features where they help, and the new ones written (half a day);
+the Kotlin/Native and JVM builds in the tool, with the compiler fetched by Gradle (a day); the
+peak memory on the three systems (half a day); the compile times cold and warm, and the
+report (half a day). About three days, of which nothing changes ktc2 itself.
+
+**To decide**: whether the JVM's speed is reported as the whole process (start and JIT
+included, as a user runs it) or warm, or both, as proposed; whether the comparison of size
+counts the JVM's runtime (proposed: both, the jar and the `jlink` runtime).
+
 ## Where the benchmarks stand
 ---------------------------------------------------------------------------
 

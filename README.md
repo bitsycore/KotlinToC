@@ -1,9 +1,11 @@
 # ktc2 - Kotlin to C
 
 ktc2 translates Kotlin to C11. The Kotlin is real Kotlin: the front end is the Kotlin compiler
-itself (K2), and a program behaves as it does on the JVM. The C has no garbage collector:
-objects are reference counted, and the compiler keeps them out of the heap where it can - in
-the frame, inside their owner, in an arena.
+itself (K2), and a program behaves as it does on Kotlin/Native (and so on the JVM, where the two
+agree). The C has no garbage collector: objects are reference counted, and the compiler keeps
+them out of the heap where it can - in the frame, inside their owner, in an arena. A cycle of
+objects is reported when the program is compiled, and never freed: the one difference from
+Kotlin/Native, of memory only.
 
 ```kotlin
 data class Point(val x: Int, val y: Int)

@@ -27,8 +27,9 @@ package). The same file runs:
   `CollectionBehaviors.kt`, `ComparisonDSL.kt`, `jsCollectionFactories.kt`,
   `DurationTestUtils.kt`); `support/jvm/` and `support/ktc2/` answer what they leave to the
   platform, for each side. ktc2 answers as the JVM does (`TestPlatform.current` is `Jvm`),
-  since where the JVM and Kotlin/Native differ ktc2 does as the JVM; only `assertTypeEquals`
-  differs, being `javaClass` there. A line `expect ...` of a test file is left out when it is
+  as it did while ktc2 sided with the JVM where the two differ; since 2026-11-15 ktc2 sides
+  with Kotlin/Native (`DESIGN.md`, section 1), and this is to be aligned (`PLAN.md`). Only
+  `assertTypeEquals` differs, being `javaClass` there. A line `expect ...` of a test file is left out when it is
   compiled (`support/*/Text.kt` answers those of `StringEncodingTest`).
 - `kotlin/<Name>.with`: other files of tests whose helpers `<Name>.kt` uses (`Sortable` of
   `IterableTests.kt`, `STRING_CASE_INSENSITIVE_ORDER` of `OrderingTest.kt`), one a line:
@@ -62,7 +63,8 @@ tag that are not about one platform's own API, unchanged:
 - of `kotlin-native/runtime/test`, the 20 that use nothing of Kotlin/Native's own API
   (`HashMapTest`, `ArrayListNativeTest`, `StringNativeTest`, `HarmonyMathTests`, `MathNativeTest`
   (its `MathTest.kt` renamed, the name being taken)...). Where Kotlin/Native and the JVM differ,
-  ktc2 is with the JVM, and the test is in the file's `.skip` with the reason
+  ktc2 was with the JVM until 2026-11-15, and the test is in the file's `.skip` with the reason
+  (to be looked at again now that ktc2 sides with Kotlin/Native)
   (`StringNativeTest.skip`, `UnsignedArraysNativeTest.skip`). Not taken: `CharNativeTest`
   (`Char.toChars` and the like, Kotlin/Native's only), `BitSetTest`, `ByteArrayTest`, the
   atomics, workers, `cinterop` and the other tests of Kotlin/Native's own API.

@@ -5,15 +5,30 @@ to do is in `PLAN.md`; why things are as they are, and what was tried on the way
 `HISTORY.md`.
 
 ---------------------------------------------------------------------------
-## 1. The two rules
+## 1. The rules
 ---------------------------------------------------------------------------
 
-1. **Plain Kotlin behaves as on the JVM.** The front end is the Kotlin compiler itself (K2),
-   so resolution and typing are Kotlin's. Every test program is run as C and on the JVM and
-   must print the same. A difference is a bug in ktc2.
-2. **A ktc2 feature changes storage and cost, never behavior.** Everything ktc2 adds is in
+1. **Plain Kotlin behaves as on Kotlin/Native.** ktc2 is a native target: the front end is the
+   Kotlin compiler itself (K2), so resolution and typing are Kotlin's, and what Kotlin/Native
+   gives native code (`@ThreadLocal`, associated objects, `kotlin.native.*`, the platform
+   libraries) ktc2 gives too, so that a library's `nativeMain` compiles as it is. Where the
+   JVM and Kotlin/Native agree, which is nearly always, every test program is run as C and on
+   the JVM and must print the same: the JVM is the oracle the suite checks against, for it runs
+   everywhere in seconds. Where they differ, ktc2 does as Kotlin/Native (decided by the owner on
+   2026-11-15; until then it was the JVM), and the test says so (an `.expected` file, or what
+   `samePlatform` in `IntegrationTest.kt` takes as the same); `tools/native.sh` checks against
+   Kotlin/Native itself. A difference from both is a bug in ktc2.
+2. **Memory is the one difference allowed, never results.** There is no collector of cycles: a
+   cycle Kotlin/Native would free is answered without changing what a program computes, by
+   `weak` and `acyclic` in a module file where the library's own design makes the reference
+   harmless to drop, by a bounded cache, or else by a known leak written down in `PLAN.md`;
+   never by a weak reference that would make a program answer otherwise. Optimizations
+   (escape analysis, borrowed references, devirtualization) are invisible.
+3. **A ktc2 feature changes storage and cost, never behavior.** Everything ktc2 adds is in
    the `ktc2.` package and has a plain definition for the JVM (`src/main/kotlin/ktc2/`), so a
-   program that uses it still runs on the JVM and prints the same.
+   program that uses it still runs on the JVM and prints the same. Code that uses none of it
+   behaves exactly as on Kotlin/Native. What stands in for a library ktc2 has not (the okio of
+   kotlinx.serialization's tests) belongs to a module or to the tests, not to `ktc2.`.
 
 What follows from them: no dialect, no annotations that change meaning, and nothing of the
 JDK (a program has no `java.*`, as in Kotlin/Native; `JavaUseCheck` reports uses).
