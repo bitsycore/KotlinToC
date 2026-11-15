@@ -1040,7 +1040,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vIsWeak = isWeak(vProperty, vBacking, vType, vFile)
 			val vField = KField(cIdentifier(vProperty.name.asString()), if (vIsWeak) KObjType else vType, vClass, isImmutable = !vProperty.isVar)
 			if (vIsWeak) vField.weakType = vType
-			vField.isAcyclic = vProperty.annotations.any { it.type.classFqName?.asString() == "ktc2.Acyclic" }
+			vField.isAcyclic = vProperty.annotations.any { it.type.classFqName?.asString() == "ktc2.Acyclic" } ||
+				inClass.kotlinFqName.child(vProperty.name).asString() in mAcyclicByModule
 			inlineSizeOf(vProperty, vBacking, vType, vClass, vFile)?.let { vField.inlineSize = it }
 			vClass.fields += vField
 			mFields[vBacking to vClass] = vField
@@ -1077,13 +1078,20 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	/** True for a property marked `@Weak`, which has to be a nullable reference. */
 	private fun isWeak(inProperty: IrProperty, inBacking: IrField, inType: KType, inFile: IrFile): Boolean {
-		if (inProperty.annotations.none { it.type.classFqName?.asString() == "ktc2.Weak" }) return false
+		val vNamed = inProperty.parent.let { it as? IrClass }?.kotlinFqName?.child(inProperty.name)?.asString() in mWeakByModule
+		if (!vNamed && inProperty.annotations.none { it.type.classFqName?.asString() == "ktc2.Weak" }) return false
 		if (inType !is KRefType || !inBacking.type.isMarkedNullable()) {
 			unsupported(inFile, inProperty, "@Weak on '${inProperty.name}' (it needs a nullable reference type)")
 			return false
 		}
 		return true
 	}
+
+	/** The properties the modules of the program say are `@Weak` (`weak = [...]` in `module.ktc2.toml`). */
+	private val mWeakByModule: Set<String> = System.getProperty("ktc2.weak", "").lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+	/** The properties they say are `@Acyclic` (`acyclic = [...]`). */
+	private val mAcyclicByModule: Set<String> = System.getProperty("ktc2.acyclic", "").lines().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
 
 	/** The runtime function giving the weak cell of an object. */
 	internal fun weakCellFunction(): KFunction = runtime("ktc2_weakCell", listOf(KObjType), KObjType)

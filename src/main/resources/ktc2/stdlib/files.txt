@@ -137,6 +137,9 @@ commonMain/kotlin/concurrent/atomics/AtomicArrays.common.kt
 Ktc2Atomics.kt
 commonMain/kotlin/annotations/NativeConcurrentAnnotations.kt
 Ktc2NativeAnnotations.kt
+commonMain/kotlin/concurrent/Volatile.kt
+Ktc2Volatile.kt
+Ktc2Platform.kt
 Ktc2Builders.kt
 commonMain/kotlin/reflect/KClasses.kt
 commonMain/kotlin/reflect/KVariance.kt

@@ -67,16 +67,39 @@ object K2Frontend {
 	 * @param inDumpIr also write the IR received from K2 (`ir.txt`, `ir.kt.txt`)
 	 * @return true when neither K2 nor the ktc2 back end reported an error
 	 */
-	fun compile(inSources: List<File>, inOutDir: File, inDumpIr: Boolean): Boolean {
+	/**
+	 * [inSources], where a file written for Kotlin/Native (under `nativeMain`, `posixMain`, `unixMain`,
+	 * `linuxMain`, `mingwMain` and the like) is replaced by a copy that imports `kotlin.native.*`, which
+	 * Kotlin/Native imports by default and the JVM's compiler does not. The import is put on the
+	 * `package` line, so that the lines of the copy are those of the file.
+	 */
+	private fun withNativeImports(inSources: List<File>, inOutDir: File): List<File> = inSources.map { vSource ->
+		val vPath = vSource.invariantSeparatorsPath
+		if (vSource.extension != "kt" || !kNativeSourceSet.containsMatchIn(vPath)) return@map vSource
+		val vText = vSource.readText()
+		val vPackage = Regex("(?m)^package [\\w.`]+").find(vText) ?: return@map vSource
+		val vCopy = File(inOutDir, "native-sources/" + vPath.substringAfterLast(":").trimStart('/').replace(':', '_'))
+		vCopy.parentFile.mkdirs()
+		vCopy.writeText(vText.replaceRange(vPackage.range, vPackage.value + "; import kotlin.native.*"))
+		vCopy
+	}
+
+	/** A directory of sources written for Kotlin/Native. */
+	private val kNativeSourceSet = Regex("/(native|posix|unix|linux|mingw|apple|androidNative|nativeNon[A-Za-z]+)Main/")
+
+	fun compile(inGivenSources: List<File>, inOutDir: File, inDumpIr: Boolean): Boolean {
+		val vSources = withNativeImports(inGivenSources, inOutDir)
 		inOutDir.mkdirs()
 		System.setProperty(kOutDirProperty, inOutDir.absolutePath)
 		System.setProperty(kDumpIrProperty, inDumpIr.toString())
 		System.setProperty(kErrorCountProperty, "0")
 		// With the library kept between compilations, its sources are in a place of this process, not of this program.
-		val vKeepsLibrary = keepsLibrary()
+		// A program with common sources of its own (a module of `expect`s and `actual`s, as kotlinx-io) is compiled
+		// whole: the kept library takes the program as one part on top of it, which has no room for a common one.
+		val vKeepsLibrary = keepsLibrary() && vSources.none { "/commonMain/" in it.invariantSeparatorsPath }
 		val vLibrary = librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
 		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
-		val vDefinitions = inSources.filter { it.extension == "def" }
+		val vDefinitions = vSources.filter { it.extension == "def" }
 		val vCompiler = com.bitsycore.ktc2.cCompiler()
 		val vBindings = try {
 			val vExtraCompilerOpts = System.getProperty("ktc2.copt", "").lines().filter { it.isNotEmpty() }
@@ -85,7 +108,7 @@ object K2Frontend {
 				BindingGenerator(DefFile(it), vCompiler, "", vExtraCompilerOpts, vExtraLinkerOpts).generate(File(inOutDir, "interop"), File(inOutDir, "c"))
 			}
 			// `import platform.posix.*` asks for the C library, described by a .def of ktc2's own.
-			val vUsesPosix = (inSources - vDefinitions.toSet()).any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
+			val vUsesPosix = (vSources - vDefinitions.toSet()).any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
 			if (vUsesPosix && vDefinitions.none { DefFile(it).packageName == "platform.posix" }) {
 				val vDefinition = File(inOutDir, "interop/posix.def")
 				vDefinition.parentFile.mkdirs()
@@ -102,7 +125,7 @@ object K2Frontend {
 		System.setProperty(kLinkerOptsProperty, vBindings.flatMap { it.linkerOpts }.distinct().joinToString("\n"))
 		// The files that are not the program's: the library sources and the generated bindings.
 		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.invariantSeparatorsPath })
-		val vProgram = (inSources - vDefinitions.toSet()) + vBindings.map { it.source }
+		val vProgram = (vSources - vDefinitions.toSet()) + vBindings.map { it.source }
 		val vArgs = buildList {
 			if (!vKeepsLibrary) vProgram.forEach { add(it.path) }
 			vLibrary.forEach { add(it.path) }
@@ -118,7 +141,9 @@ object K2Frontend {
 				add("-Xdont-warn-on-error-suppression")
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.
 				add("-Xmulti-platform")
-				add("-Xcommon-sources=" + vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") }.joinToString(",") { it.path })
+				// A module's own sources under a `commonMain` directory are common code too (kotlinx-io's: its `expect`s, with the `actual`s beside them).
+				val vCommonProgram = if (vKeepsLibrary) emptyList() else vProgram.filter { "/commonMain/" in it.invariantSeparatorsPath }
+				add("-Xcommon-sources=" + (vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") } + vCommonProgram).joinToString(",") { it.path })
 				add("-nowarn")
 			}
 			// Library sources are declared in the real kotlin.* packages and stand in for the jar's declarations.

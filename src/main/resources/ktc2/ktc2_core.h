@@ -129,6 +129,44 @@ static __inline int ktc2_ctz64(uint64_t value)
 #define ktc2_ctz32(value) ktc2_ctz64((uint32_t)(value))
 #endif
 
+/*
+ * What `kotlin.native.Platform` answers, from what the C compiler says of its target: the
+ * ordinals of `OsFamily` (UNKNOWN, MACOSX, IOS, LINUX, WINDOWS, ANDROID) and of `CpuArchitecture`
+ * (UNKNOWN, ARM32, ARM64, X86, X64), and whether the bytes of a number go from the lowest.
+ */
+#if defined(_WIN32)
+#define KTC2_OS_FAMILY 4
+#elif defined(__ANDROID__)
+#define KTC2_OS_FAMILY 5
+#elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#define KTC2_OS_FAMILY 2
+#else
+#define KTC2_OS_FAMILY 1
+#endif
+#elif defined(__linux__)
+#define KTC2_OS_FAMILY 3
+#else
+#define KTC2_OS_FAMILY 0
+#endif
+#if defined(__x86_64__) || defined(_M_X64)
+#define KTC2_CPU_ARCHITECTURE 4
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#define KTC2_CPU_ARCHITECTURE 2
+#elif defined(__i386__) || defined(_M_IX86)
+#define KTC2_CPU_ARCHITECTURE 3
+#elif defined(__arm__) || defined(_M_ARM)
+#define KTC2_CPU_ARCHITECTURE 1
+#else
+#define KTC2_CPU_ARCHITECTURE 0
+#endif
+#if defined(_WIN32) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#define KTC2_LITTLE_ENDIAN 1
+#else
+#define KTC2_LITTLE_ENDIAN 0
+#endif
+
 /* ================== */
 /* MARK: Threads      */
 /* ================== */

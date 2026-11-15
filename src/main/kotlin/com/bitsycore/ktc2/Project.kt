@@ -23,7 +23,14 @@ const val kModuleFileName = "module.ktc2.toml"
  * compilerOpts = ["-I${SDL3}/include"]   # for the C compiler; ${NAME} is where a fetched repository is
  * linkerOpts   = ["-L/opt/sdl/lib"]      # for the linker, when the program is built without CMake
  * cmake        = "module.cmake"          # included by the generated CMakeLists.txt
+ * weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that are @Weak
+ * acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
  * ```
+ *
+ * `weak` and `acyclic` are for sources the module takes as they are (a library written for the
+ * JVM or Kotlin/Native, where a collector frees cycles): the properties they name are as if
+ * annotated `@Weak` (they hold their object weakly, and form no cycle that is never freed) or
+ * `@Acyclic` (the cycle lint does not follow them: they cannot close a cycle).
  *
  * A git dependency is `url[#directory][@branch or tag]`. It, and what `fetch` names, is cloned
  * once into the cache (`~/.ktc2/cache`, or the directory `KTC2_CACHE` names).
@@ -44,6 +51,8 @@ class ModuleFile(val directory: File, inText: String) {
 	val linkerOpts: List<String> get() = mValues["linkerOpts"] ?: emptyList()
 	val cmake: String? get() = mValues["cmake"]?.firstOrNull()
 	val files: List<String> get() = mValues["files"] ?: emptyList()
+	val weak: List<String> get() = mValues["weak"] ?: emptyList()
+	val acyclic: List<String> get() = mValues["acyclic"] ?: emptyList()
 
 	init {
 		// The small part of TOML a module file needs: `key = "text"` and `key = ["a", "b"]`, with comments.
@@ -134,6 +143,10 @@ class Project(val name: String, val executable: String, val main: String?) {
 	val sources = LinkedHashSet<File>()
 	val compilerOpts = ArrayList<String>()
 
+	/** The properties the modules name in `weak` and `acyclic`: `@Weak` and `@Acyclic` as if annotated. */
+	val weak = ArrayList<String>()
+	val acyclic = ArrayList<String>()
+
 	/**
 	 * Options for the linker: [linkerOpts] when the program is built with CMake, where a module
 	 * that has a CMake file does its own linking, [directLinkerOpts] when the C compiler is called.
@@ -195,6 +208,8 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 		fun expanded(inOption: String): String =
 			vProject.fetched.entries.fold(inOption) { vText, (vName, vPlace) -> vText.replace("\${$vName}", vPlace.absoluteFile.invariantSeparatorsPath) }
 		vProject.compilerOpts += inModule.compilerOpts.map { expanded(it) }
+		vProject.weak += inModule.weak
+		vProject.acyclic += inModule.acyclic
 		val vCMake = inModule.cmake?.let { File(inModule.directory, it) }
 		if (vCMake != null) {
 			if (!vCMake.isFile) return fail("module '${inModule.name}': no such CMake file '${inModule.cmake}'")
@@ -233,7 +248,9 @@ private fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	val vDirectory = File(inOutDir, "modules/$inName")
 	vDirectory.mkdirs()
 	val vModule = ModuleFile(vDirectory, vText)
-	for (vFile in vModule.files + kModuleFileName + listOfNotNull(vModule.cmake)) {
+	// A module made of a library's sources lists them in files.txt, one a line (`#` for a comment).
+	val vListed = resource("files.txt")?.decodeToString()?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
+	for (vFile in vModule.files + vListed + kModuleFileName + listOfNotNull(vModule.cmake)) {
 		val vBytes = resource(vFile) ?: continue
 		val vTarget = File(vDirectory, vFile)
 		vTarget.parentFile.mkdirs()
