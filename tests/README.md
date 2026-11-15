@@ -123,6 +123,24 @@ They found, all fixed:
 - wrong results, not looked at yet: `unitTypeReturn/unitSafeCall.kt`, `varSpilling/safeCallElvis.kt`,
   `tailCallOptimizations/tryCatch.kt`.
 
+## kotlinx-io's tests
+
+`kotlinx-io/` holds the tests of kotlinx-io itself, as its repository has them at the version the
+bundled module compiles (0.9.3, Apache 2.0): `core/commonTest` and `bytestring/commonTest` (from
+`core/common/test` and `bytestring/common/test`), and the helpers of each platform for the common
+`expect`s, `core/nativeTest/util.kt` and `core/jvmTest/utilJVM.kt`. Each file of tests is a
+program, compiled with the other files of its `commonTest` (their tests not run): in C with the
+module's sources and `nativeTest`, on the JVM with kotlinx-io's jars, whose internals it sees as a
+test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt`). All 32 pass.
+`.skip` and `.cycles` next to a file say what they say for the library's tests:
+`bytestring/commonTest/samples/samples.skip` (a sample prints random bytes),
+`core/commonTest/samples/rawSourceSample.cycles` (an object holds an object of its inner class).
+
+They found: a file's unit named after it, with another file of the same name in the package
+(`util.kt` of `commonTest` and of `nativeTest`), wrote over the other's C; `main` was not looked
+for in a package whose name starts with `kotlin` (`kotlinx.io`); a value class passed between a
+dispatcher and an implementation, one as it is and the other as an object, had no box class.
+
 To take in more: `git sparse-checkout add compiler/testData/codegen/box/<dir>` in the clone, then
 `python -I tools/select_box.py <clone>/compiler/testData/codegen/box/<dir> tests/box/<dir>`.
 

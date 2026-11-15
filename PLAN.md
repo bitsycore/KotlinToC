@@ -149,6 +149,12 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `assert()`, which the JVM and Kotlin/Native have outside common code, is not there. Both leave
   it off unless asked (`-ea`, `-enable-assertions`): whether ktc2 checks it in `--debug` builds,
   or behind an option of its own, is to decide;
+- an object that holds an object of its own `inner` class (`private val key = Key()`, `Key`
+  being `inner`) is a cycle, never freed: the inner object holds its outer one. The cycle lint
+  does not say so: it takes a cycle to need a `var`, and both fields are `val`s (the inner object
+  is made while the outer one is). kotlinx-io's sample `rawSourceSample` is the case. The lint
+  should at least count the reference of an inner object to its outer one, and a lambda's
+  capture of `this`, as able to close a cycle;
 - the `.warnings` kind of test has no test since the one for `Deinit` went.
 
 Fixed on 2026-11-14 from that list: a value of the wrong class that reaches a function through an
@@ -460,7 +466,8 @@ Decided, not started:
     a class, and `weak`/`acyclic` in the module file (`Segment.prev`, which made every buffer of
     two segments a cycle). Files work too (`kotlinx.io.files`, kotlinx-io's own native code over
     POSIX, with what differs between Windows and the others in the module's C), except with MSVC
-    (no `unistd.h` nor `dirent.h`). Left: kotlinx-io's own tests.
+    (no `unistd.h` nor `dirent.h`). kotlinx-io's own tests (32 files, `tests/kotlinx-io/`) pass in
+    C and on the JVM. Done, but for what is listed under "Known and not done".
     `Buffer`, `Segment`, `Source`, `Sink`, `ByteString`, UTF-8: common code. Files (`kotlinx.io.files`: `Path`, `SystemFileSystem`,
     `FileMetadata`): its `nativeMain` is written over `platform.posix` (`fopen`, `fread`,
     `stat`, `opendir`), which ktc2 generates; to try as it is first, with a Windows part where
