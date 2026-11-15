@@ -1383,6 +1383,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vUnit = KUnit("kotlin", "Enum")
 		val vClass = KClass("kotlin_Enum", vUnit, null, "Enum")
 		vUnit.cls = vClass
+		// Every enum is a Comparable, as kotlin.Enum is: `x is Comparable<*>`, `compareValues` on entries.
+		vClass.interfaces += interfaceFor(mBuiltIns.comparableClass.owner)
 		enumNameField = KField("name", KStringType, vClass)
 		enumOrdinalField = KField("ordinal", KPrimType(KPrim.INT), vClass)
 		vClass.fields += enumNameField
