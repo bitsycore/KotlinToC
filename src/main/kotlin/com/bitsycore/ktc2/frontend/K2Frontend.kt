@@ -84,8 +84,14 @@ object K2Frontend {
 		vCopy
 	}
 
-	/** A directory of sources written for Kotlin/Native. */
-	private val kNativeSourceSet = Regex("/(native|posix|unix|linux|mingw|apple|androidNative|nativeNon[A-Za-z]+)(Main|Test)/")
+	/** A directory of sources written for Kotlin/Native (kotlinx-datetime's `tzfileMain`, `windowsMain`... are too). */
+	private val kNativeSourceSet = Regex("/(native|posix|unix|linux|mingw|windows|apple|darwin|tzfile|tzdbOnFilesystem|androidNative|nativeNon[A-Za-z]+)(Main|Test)/")
+
+	/**
+	 * A source set between the common one and the platform's, with `actual`s of the common `expect`s and `expect`s of
+	 * its own: `nativeMain`, or kotlinx-datetime's `commonKotlinMain` (its date arithmetic in Kotlin, shared by Native and the web).
+	 */
+	private val kMiddleSourceSet = Regex("/(native|commonKotlin)Main/")
 
 	/** True for a source of a common source set (its main code or its tests), or of `concurrent`, common to the JVM and Native. */
 	private fun isCommonSource(inSource: File): Boolean = kCommonSourceSet.containsMatchIn(inSource.invariantSeparatorsPath)
@@ -158,7 +164,7 @@ object K2Frontend {
 				// Those of `nativeMain` are a level of their own between: they have `actual`s of the common
 				// `expect`s, and `expect`s whose `actual`s are below them (ktc2's part of the module). The
 				// compiler is then told the three levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
-				val vNative = if (vKeepsLibrary) emptyList() else vProgram.filter { "/nativeMain/" in it.invariantSeparatorsPath }
+				val vNative = if (vKeepsLibrary) emptyList() else vProgram.filter { kMiddleSourceSet.containsMatchIn(it.invariantSeparatorsPath) }
 				if (vNative.isEmpty()) {
 					add("-Xcommon-sources=" + vCommon.joinToString(",") { it.path })
 				} else {

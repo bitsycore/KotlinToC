@@ -40,8 +40,18 @@ const val kModuleFileName = "module.ktc2.toml"
  *
  * A module shipped with ktc2 lists its files with `files = [...]`, since resources cannot be
  * enumerated; it is copied to `<out>/modules/<name>` when a program depends on it.
+ *
+ * A file of `files` or of `files.txt` may be for some systems only, as a library's source sets
+ * are: `windows: path`, `linux, macos: path`. The program is compiled with those of the system
+ * ktc2 runs on ([kHostSystem]), as its bindings are made from that system's headers.
  */
 class ModuleFile(val directory: File, inText: String) {
+	/** The files its lists name for other systems than this one: not part of the program here (paths relative to [directory]). */
+	val elsewhere: Set<String> by lazy {
+		val vListed = File(directory, "files.txt").takeIf { it.isFile }?.readLines() ?: emptyList()
+		(files + vListed).map { ListedFile.of(it) }.filter { it != null && !it.isHere }.map { it!!.path }.toSet()
+	}
+
 	private val mValues = HashMap<String, List<String>>()
 
 	val name: String get() = mValues["name"]?.firstOrNull() ?: directory.name
@@ -198,6 +208,7 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 					// Build output and the examples of a module are not part of it, nor is a module inside it.
 					.onEnter { it == vFile || (it.name != "build" && it.name != "out" && it.name != "example" && it.name != "examples" && !File(it, kModuleFileName).isFile) }
 					.filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
+					.filter { it.relativeTo(inModule.directory).invariantSeparatorsPath !in inModule.elsewhere }
 					.sortedBy { it.path }
 					.forEach { vProject.sources += it }
 				else -> return fail("module '${inModule.name}': no such source '$vEntry'")
@@ -257,14 +268,43 @@ private fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	vDirectory.mkdirs()
 	val vModule = ModuleFile(vDirectory, vText)
 	// A module made of a library's sources lists them in files.txt, one a line (`#` for a comment).
-	val vListed = resource("files.txt")?.decodeToString()?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
-	for (vFile in vModule.files + vListed + kModuleFileName + listOfNotNull(vModule.cmake)) {
+	val vListed = resource("files.txt")?.decodeToString()?.lines()?.mapNotNull { ListedFile.of(it) } ?: emptyList()
+	val vFiles = vModule.files.mapNotNull { ListedFile.of(it) } + vListed
+	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + listOfNotNull(vModule.cmake)) {
 		val vBytes = resource(vFile) ?: continue
 		val vTarget = File(vDirectory, vFile)
 		vTarget.parentFile.mkdirs()
 		if (!vTarget.isFile || !vTarget.readBytes().contentEquals(vBytes)) vTarget.writeBytes(vBytes)
 	}
-	return vModule
+	// What another system's compilation left here.
+	vFiles.filter { !it.isHere }.forEach { File(vDirectory, it.path).delete() }
+	return ModuleFile(vDirectory, vText)
+}
+
+/** The system ktc2 runs on, as a module's lists name it: `windows`, `macos` or `linux`. */
+val kHostSystem: String = System.getProperty("os.name").lowercase().let {
+	when {
+		"win" in it -> "windows"
+		"mac" in it || "darwin" in it -> "macos"
+		else -> "linux"
+	}
+}
+
+/** A line of a module's list of files: `path`, or `windows: path`, `linux, macos: path` for a file of those systems only. */
+class ListedFile(val path: String, val systems: Set<String>?) {
+	val isHere: Boolean get() = systems == null || kHostSystem in systems
+
+	companion object {
+		private val kForSystems = Regex("^([a-z]+(?:\\s*,\\s*[a-z]+)*)\\s*:\\s*(.+)$")
+
+		/** The file of [inLine]; null for an empty line or a comment. */
+		fun of(inLine: String): ListedFile? {
+			val vLine = inLine.trim()
+			if (vLine.isEmpty() || vLine.startsWith("#")) return null
+			val vMatch = kForSystems.find(vLine) ?: return ListedFile(vLine, null)
+			return ListedFile(vMatch.groupValues[2].trim(), vMatch.groupValues[1].split(',').map { it.trim() }.toSet())
+		}
+	}
 }
 
 // ==================

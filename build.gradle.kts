@@ -97,7 +97,8 @@ tasks.processResources {
 	// And the sources each bundled module of a library compiles (modules/<name>/files.txt).
 	for (vModule in kLibraryModules) {
 		val vList = file("src/main/resources/ktc2/modules/${vModule.name}/files.txt")
-		val vModuleListed = vList.readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
+		// A line `windows: path` or `linux, macos: path` is a file of those systems only: all are carried.
+		val vModuleListed = vList.readLines().map { it.trim().replace(Regex("^[a-z]+(\\s*,\\s*[a-z]+)*\\s*:\\s*"), "") }.filter { it.contains('/') && !it.startsWith("#") }
 		inputs.file(vList)
 		from(layout.buildDirectory.dir("modules-src/${vModule.name}")) {
 			include(vModuleListed)
