@@ -452,8 +452,14 @@ Decided, not started:
     the library, kept between programs by the compiler process. A list of files per module, as
     `stdlib/files.txt`, says which source sets are taken: `commonMain`, and the native ones
     where they suit (`nativeMain`, `concurrentMain`), with `Ktc2*.kt` files for what is left.
-  - **kotlinx.io first** (smaller: about 5 000 lines). `Buffer`, `Segment`, `Source`, `Sink`,
-    `ByteString`, UTF-8: common code. Files (`kotlinx.io.files`: `Path`, `SystemFileSystem`,
+  - **kotlinx.io first** (smaller: about 5 000 lines). Started on 2026-11-15: the bundled module
+    `kotlinx-io` compiles kotlinx-io 0.9.3's `commonMain` and `nativeMain` (core and bytestring)
+    as they are, and `integration/modules/kotlinx-io` passes, compared with the same program on
+    kotlinx-io's JVM jars. What it took of ktc2: common sources in a module, Kotlin/Native's
+    default import `kotlin.native.*`, `kotlin.native.Platform`, `kotlin.concurrent.Volatile` as
+    a class, and `weak`/`acyclic` in the module file (`Segment.prev`, which made every buffer of
+    two segments a cycle). Left: files, then kotlinx-io's own tests.
+    `Buffer`, `Segment`, `Source`, `Sink`, `ByteString`, UTF-8: common code. Files (`kotlinx.io.files`: `Path`, `SystemFileSystem`,
     `FileMetadata`): its `nativeMain` is written over `platform.posix` (`fopen`, `fread`,
     `stat`, `opendir`), which ktc2 generates; to try as it is first, with a Windows part where
     its `mingwMain` needs one. Tests: its common tests, taken in as the library's are

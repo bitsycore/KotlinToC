@@ -467,11 +467,35 @@ compilerOpts = ["-I${SDL3}/include"]
 linkerOpts   = ["-L/opt/lib"]
 cmake        = "module.cmake"
 files        = ["Api.kt", "lib.def"]      # only in a module shipped with ktc2: its files, since resources cannot be listed
+weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that are @Weak
+acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
 ```
 
 - A dependency is a module shipped with ktc2 (`src/main/resources/ktc2/modules/`, today
-  `sdl3`), a directory, or a place in a git repository. Repositories are cloned once into
-  `~/.ktc2/cache` (`KTC2_CACHE`).
+  `sdl3` and `kotlinx-io`), a directory, or a place in a git repository. Repositories are
+  cloned once into `~/.ktc2/cache` (`KTC2_CACHE`).
+- A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
+  the sources of kotlinx-io 0.9.3, which Gradle fetches (`unpackKotlinxIoSources`) and puts
+  next to the module file; its `files.txt` lists those it compiles (a module shipped with ktc2
+  lists its files there or in `files`). What such sources expect of ktc2:
+  - its sources under a `commonMain` directory are common code: compiled as such
+    (`-Xcommon-sources`), so that its `expect`s find the `actual`s beside them. Such a program
+    is compiled whole, without the library kept by the compiler process (which takes the
+    program as one part on top of the library, with no room for a common part of its own);
+  - a file of a source set written for Kotlin/Native (`nativeMain`, `posixMain`, `mingwMain`...)
+    is compiled from a copy that imports `kotlin.native.*`, which Kotlin/Native imports by
+    default (`K2Frontend.withNativeImports`; the import is put on the `package` line, so lines
+    stay where they are);
+  - what Kotlin/Native gives such code and the JVM does not: `kotlin.native.Platform` (its
+    `osFamily`, `cpuArchitecture`, `isLittleEndian`, from what the C compiler says of its
+    target), and `kotlin.concurrent.Volatile` as an annotation class;
+  - a cycle the library makes, which a collector would free: `weak` and `acyclic` in the
+    module file name properties of its sources that are then as if annotated `@Weak` or
+    `@Acyclic` (`Segment.prev` of kotlinx-io: a segment of a buffer refers to the next one and
+    to the one before);
+  - what the library gives each platform apart: a file of the module's own (`Ktc2KotlinxIo.kt`).
+- The test suite compiles such a program for the JVM with the library's JVM jars instead of
+  the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `integration/modules/kotlinx-io`.
 - Output goes to `<module>/build` (or `./out`, or `-o`): `c/` with one `.h`/`.c` per unit
   under its package (a unit is a class, the top-level declarations of one file as `<File>Kt`,
   a lambda, or the box of a `@Struct`), `ktc2_core.h/.c`, `ktc2_config.h` (what this program

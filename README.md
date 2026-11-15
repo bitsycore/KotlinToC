@@ -68,8 +68,9 @@ sources      = ["src"]
 dependencies = ["sdl3", "../engine", "https://github.com/user/repo.git#modules/ui@v1.2"]
 ```
 
-A dependency is a module shipped with ktc2 (`sdl3`), a directory, or a place in a git
-repository. Every compilation writes a `CMakeLists.txt` next to the generated C, and a module
+A dependency is a module shipped with ktc2 (`sdl3`, `kotlinx-io`), a directory, or a place in
+a git repository. `kotlinx-io` is kotlinx-io 0.9.3, compiled from its own sources: `Buffer`,
+`Source`, `Sink`, UTF-8, `ByteString` (not yet `kotlinx.io.files`). Every compilation writes a `CMakeLists.txt` next to the generated C, and a module
 can bring a CMake file of its own: the `sdl3` module fetches SDL3 from GitHub and builds it,
 so nothing has to be installed.
 
