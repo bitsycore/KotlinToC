@@ -1,0 +1,31 @@
+# Every version ktc2 pins, in one place: the Kotlin compiler it runs, and the libraries whose sources
+# it compiles (the standard library with every program, the others as bundled modules). The rule
+# (owner, 2026-11-15): the latest release of each, moved up when a new one comes out.
+#
+# Moving one up: change it here; for a library, check its files list (resources/ktc2/modules/<name>/files.txt)
+# against the new sources, and take its tests again at the new tag (tests/README.md). Kotlin is more:
+# the tests of the standard library are of its tag (tests/kotlin, v<kotlin>), and PhasedCompiler.kt
+# calls the compiler's internals, to be gone over (CLAUDE.md, "Things that cost time before").
+
+[versions]
+# The Kotlin compiler (K2) ktc2 runs, and the standard library it compiles from source.
+kotlin = "2.5.0-RC"
+# Bundled modules, compiled from their own sources.
+kotlinx-io = "0.9.3"
+kotlinx-collections-immutable = "0.5.2"
+atomicfu = "0.33.0"
+
+[libraries]
+kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
+kotlinx-io-bytestring = { module = "org.jetbrains.kotlinx:kotlinx-io-bytestring", version.ref = "kotlinx-io" }
+kotlinx-io-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-io-core-jvm", version.ref = "kotlinx-io" }
+kotlinx-io-bytestring-jvm = { module = "org.jetbrains.kotlinx:kotlinx-io-bytestring-jvm", version.ref = "kotlinx-io" }
+kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "kotlinx-collections-immutable" }
+kotlinx-collections-immutable-jvm = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm", version.ref = "kotlinx-collections-immutable" }
+atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
+atomicfu-jvm = { module = "org.jetbrains.kotlinx:atomicfu-jvm", version.ref = "atomicfu" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

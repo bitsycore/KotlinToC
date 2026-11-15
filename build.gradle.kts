@@ -1,5 +1,6 @@
 plugins {
-	kotlin("jvm") version "2.5.0-RC"
+	// Every version is in gradle/libs.versions.toml.
+	alias(libs.plugins.kotlin.jvm)
 	application
 }
 
@@ -40,13 +41,13 @@ val kotlinxIoSources: Configuration = configurations.create("kotlinxIoSources") 
 }
 
 dependencies {
-	stdlibSources("org.jetbrains.kotlin:kotlin-stdlib:2.5.0-RC:sources")
-	kotlinxIoSources("org.jetbrains.kotlinx:kotlinx-io-core:0.9.3:sources")
-	kotlinxIoSources("org.jetbrains.kotlinx:kotlinx-io-bytestring:0.9.3:sources")
-	kotlinxIoJvm("org.jetbrains.kotlinx:kotlinx-io-core-jvm:0.9.3")
-	kotlinxIoJvm("org.jetbrains.kotlinx:kotlinx-io-bytestring-jvm:0.9.3")
+	stdlibSources(variantOf(libs.kotlin.stdlib) { classifier("sources") })
+	kotlinxIoSources(variantOf(libs.kotlinx.io.core) { classifier("sources") })
+	kotlinxIoSources(variantOf(libs.kotlinx.io.bytestring) { classifier("sources") })
+	kotlinxIoJvm(libs.kotlinx.io.core.jvm)
+	kotlinxIoJvm(libs.kotlinx.io.bytestring.jvm)
 	// Frontend: the Kotlin K2 compiler. Pinned - its IR API is experimental.
-	implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.5.0-RC")
+	implementation(libs.kotlin.compiler.embeddable)
 	testImplementation(kotlin("test"))
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
