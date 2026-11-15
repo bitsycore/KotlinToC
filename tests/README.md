@@ -34,7 +34,7 @@ package). The same file runs:
   `IterableTests.kt`, `STRING_CASE_INSENSITIVE_ORDER` of `OrderingTest.kt`), one a line:
   compiled with it, their tests not run.
 - `kotlin/<Name>.jvm`: options the compilation for the JVM needs for that file, one a line.
-- `kotlin/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison.
+- `kotlin/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison. A line `/regex/` names whole lines (a duration, which has no fixed beginning).
 - `kotlin/<Name>.skip`: tests of `<Name>.kt` that are not run, one a line, `name: why` (or
   `Class.name: why`). Neither side runs them.
 - `kotlin/<Name>.cycles`: says, with the reason, that the tests of `<Name>.kt` build objects
@@ -136,7 +136,26 @@ test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt
 `bytestring/commonTest/samples/samples.skip` (a sample prints random bytes),
 `core/commonTest/samples/rawSourceSample.cycles` (an object holds an object of its inner class).
 
-They found: a file's unit named after it, with another file of the same name in the package
+## The tests of kotlinx.collections.immutable and atomicfu
+
+The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
+holds `commonTest` of kotlinx.collections.immutable 0.5.2 (from `core/commonTest/src`) and its
+helpers `nativeTest/testUtilsNative.kt` and `jvmTest/testUtilsJvm.kt`; the stress tests print their
+sizes and times, which `.vary` files leave out. All 21 pass. `atomicfu/atomicfu/` holds
+`commonTest` and `concurrentTest` of atomicfu 0.33.0 (the latter common to the JVM and Native, run
+the same way) and `jvmTest/TestThread.jvm.kt`; `nativeTest/TestThread.native.kt` is ktc2's own, a
+thread of `ktc2.concurrent` where atomicfu's starts a `kotlin.native.concurrent.Worker`, which ktc2
+does not have yet (`SynchronizedTest` of its `nativeTest`, written with workers, is not taken).
+All 40 pass.
+
+They found: a dispatcher that tested an argument against an interface that a lambda does not
+carry (`suspend` function types); a value of an instantiation of a generic class reached through a
+star projection, which `Devirtualize` took for the one instantiation it knew; `HashMap.remove(key,
+value)`; cycles that the cycle lint did not see (an `inner` object kept by its outer one, a lambda
+that captures `this`), and a thread that kept its block after it ended (`Fut` of atomicfu's tests,
+whose thread runs a lambda that holds it); a `return` of an endless `loop { }`.
+
+They found (kotlinx-io): a file's unit named after it, with another file of the same name in the package
 (`util.kt` of `commonTest` and of `nativeTest`), wrote over the other's C; `main` was not looked
 for in a package whose name starts with `kotlin` (`kotlinx.io`); a value class passed between a
 dispatcher and an implementation, one as it is and the other as an object, had no box class.

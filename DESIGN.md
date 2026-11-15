@@ -273,7 +273,13 @@ object may have a cleaner and a local that borrows from a writable place is stil
 (`mPlaceBorrowers`).
 
 **Cycles** are not collected. `CycleLint` warns at compile time about classes that can reach
-themselves through strong references; `@Weak`, `WeakRef` or `@Acyclic` answer the warning.
+themselves through strong references; `@Weak`, `WeakRef` or `@Acyclic` answer the warning. It
+follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner
+gives an object it makes and hands its own `this` to: an `inner` object (`val key = Key()`), a
+lambda or an object expression that captures `this` (`val handler = { update() }`), `Child(this)`.
+Those are found in the bodies (`let t = new C; t.outer = self; self.key = t`), and a field typed
+as a function or an interface is then followed to the class stored in it
+(`integration/objects/SelfCycles`).
 
 Checking it: test builds define `KTC2_LEAK_CHECK` (a report at exit of objects still alive,
 and freed objects are overwritten so a wrong borrow fails) and `KTC2_ARC_STATS` (counts of
@@ -316,6 +322,13 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
 - **Objects, enum classes and the top-level properties of a file** are initialized on first
   use, as Kotlin says. When an initializer only computes and stores, it runs at startup
   instead and costs nothing later. First use from several threads is synchronized.
+- **`@ThreadLocal`** (`kotlin.native.concurrent`) is as on Kotlin/Native: a property or an
+  `object` marked so is the thread's own (`KTC2_TLS` storage, with the flags of its
+  initialization), initialized the first time each thread uses it, without a lock: the
+  properties of a file that are so have an initializer of their own, apart from the file's
+  others. What they hold is given up when the thread ends (`ktc2_thread_end`, a function `main`
+  writes and sets), and by `main` for its own thread at the end. On the JVM, where it does not
+  exist, a test of it has an `.expected` file (`integration/stdlib/ThreadLocals`).
 
 **Coroutines** are done as on Kotlin/Native: a `suspend` function is a state machine, not a stack
 of its own.
@@ -472,13 +485,15 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
 ```
 
 - A dependency is a module shipped with ktc2 (`src/main/resources/ktc2/modules/`, today
-  `sdl3` and `kotlinx-io`), a directory, or a place in a git repository. Repositories are
+  `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable` and `atomicfu`), a directory, or a place in a git repository. Repositories are
   cloned once into `~/.ktc2/cache` (`KTC2_CACHE`).
 - A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
-  the sources of kotlinx-io 0.9.3, which Gradle fetches (`unpackKotlinxIoSources`) and puts
-  next to the module file; its `files.txt` lists those it compiles (a module shipped with ktc2
+  the sources of kotlinx-io 0.9.3, which Gradle fetches (`kLibraryModules` in
+  `build.gradle.kts`, the versions in `gradle/libs.versions.toml`) and puts next to the module
+  file; its `files.txt` lists those it compiles (a module shipped with ktc2
   lists its files there or in `files`). What such sources expect of ktc2:
-  - its sources under a `commonMain` directory are common code: compiled as such
+  - its sources under a `commonMain` or `concurrentMain` directory (the latter shared by the
+    JVM and Native) are common code: compiled as such
     (`-Xcommon-sources`), so that its `expect`s find the `actual`s beside them. Such a program
     is compiled whole, without the library kept by the compiler process (which takes the
     program as one part on top of the library, with no room for a common part of its own);
@@ -488,13 +503,20 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
     stay where they are);
   - what Kotlin/Native gives such code and the JVM does not: `kotlin.native.Platform` (its
     `osFamily`, `cpuArchitecture`, `isLittleEndian`, from what the C compiler says of its
-    target), and `kotlin.concurrent.Volatile` as an annotation class;
+    target), `kotlin.concurrent.Volatile` as an annotation class, the older atomics of
+    `kotlin.concurrent` (`AtomicInt`, `AtomicLong`, `AtomicReference` with `value` and
+    `compareAndSet`, over those of `kotlin.concurrent.atomics`), `kotlin.native.ref.createCleaner`
+    (ktc2's), and `freeze`/`isFrozen` (nothing is frozen);
   - a cycle the library makes, which a collector would free: `weak` and `acyclic` in the
     module file name properties of its sources that are then as if annotated `@Weak` or
     `@Acyclic` (`Segment.prev` of kotlinx-io: a segment of a buffer refers to the next one and
-    to the one before);
+    to the one before). A property named there may be of a type without null. The reference of
+    an `inner` object to its outer one is named as the JVM names it, `Outer.Inner.this$0`
+    (atomicfu's queue of waiting threads, an inner class of its mutex);
+  - what the library's build opts its sources in to: `optIn` in the module file;
   - what the library gives each platform apart: files of the module's own (`Ktc2KotlinxIo.kt`,
-    `Ktc2KotlinxIoFiles.kt`), with the little C that differs between Windows and the others in
+    `Ktc2KotlinxIoFiles.kt`; atomicfu's `Ktc2Atomicfu.kt`, its lock and condition over Win32 or
+    pthreads in `atomicfu.h`), with the little C that differs between Windows and the others in
     a `.def` of the module (`kotlinxio.def`, `kotlinxio.h`; the declarations of Windows it uses
     are in a header the `.def` does not list, so they get no binding);
   - a source set between the common one and the platform's (`nativeMain`, which has `expect`s
@@ -599,8 +621,6 @@ Kotlin, but not done:
   `suspend fun interface`; a coroutine whose receiver is also its completion is held by it
   without a count also where suspension is not restricted to it (`startCoroutine(x, x)` with no
   other reference to `x`);
-- `@ThreadLocal` is there but changes nothing: a global is one for every thread, as on the JVM
-  (on Kotlin/Native it would be one a thread);
 - `isDaemon`, names and priorities of threads;
 - files (to come from kotlinx.io or okio, through a ktc2 compatibility layer).
 

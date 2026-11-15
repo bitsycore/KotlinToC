@@ -2,8 +2,12 @@
 
 How kotlinx.collections.immutable, kotlinx-datetime, kotlinx.serialization and kotlinx.coroutines
 can become modules of ktc2, after kotlinx-io, which is one (2026-11-15). Written before any of
-them is started: the numbers are measured on the libraries' published sources; the estimates
+them was started: the numbers are measured on the libraries' published sources; the estimates
 are estimates. `PLAN.md` (part 8) points here.
+
+**Done since** (2026-11-15): kotlinx.collections.immutable and atomicfu are modules, with all of
+their own tests passing (`tests/README.md`); `@ThreadLocal` is local to a thread (point 2 of
+section 3); the versions are the latest, pinned in `gradle/libs.versions.toml`. Next: datetime.
 
 ---------------------------------------------------------------------------
 ## 1. How kotlinx-io was done, and what it left in place
@@ -52,7 +56,8 @@ Kotlin/Native target compiles (from the sources jars), and what their native cod
 
 Some of it is shared; done once, it serves several.
 
-1. **atomicfu** (coroutines). The library is written with `atomic(0)`, `AtomicRef`,
+1. **atomicfu** (coroutines; done: the module `atomicfu`, its own sources, with
+   `Ktc2Atomicfu.kt` for its systems' part over a lock and a condition of Win32 or pthreads). The library is written with `atomic(0)`, `AtomicRef`,
    `atomicArrayOfNulls`, `SynchronizedObject`, `reentrantLock()` and `synchronized`; on Kotlin/Native
    atomicfu's runtime implements them over `kotlin.concurrent.AtomicInt`/`AtomicReference` and
    pthread locks. ktc2 has `kotlin.concurrent.atomics` (atomics of the C compiler) and the
@@ -61,7 +66,7 @@ Some of it is shared; done once, it serves several.
    compatibility module of ktc2's with the same API over what ktc2 has. Its compiler plugin
    (which rewrites the atomic fields into plain ones on the JVM) is not needed: on Native the
    library runs without it.
-2. **`@ThreadLocal` that is local to a thread** (coroutines: the event loop of `runBlocking` and
+2. **`@ThreadLocal` that is local to a thread** (done, `DESIGN.md` section 6; coroutines: the event loop of `runBlocking` and
    of each thread; serialization and datetime declare caches with it). In ktc2 it changes nothing
    today, as on the JVM, where it does not exist. A global or an `object` marked so would become a
    C `_Thread_local` (`KTC2_TLS`), with its initialization on each thread's first use. This changes
@@ -96,7 +101,11 @@ Some of it is shared; done once, it serves several.
 ## 4. Each library
 ---------------------------------------------------------------------------
 
-### kotlinx.collections.immutable 0.5.2
+### kotlinx.collections.immutable 0.5.2 (done)
+
+Done in a day. What it took: one cycle (the iterator of a builder's entries and its iterators of
+each level, `weak` in the module file), and five fixes of the compiler that its tests found
+(`tests/README.md`).
 
 Persistent lists, sets and maps (`persistentListOf`, `toImmutableList`, builders): tries and
 HAMTs in common code. Nothing of the platform.
@@ -162,12 +171,9 @@ Proposed order: collections.immutable, then datetime, then serialization, then c
 The first two need little of the platform and test the method; serialization brings the one
 new kind of thing (a compiler plugin); coroutines needs everything else and is the largest.
 
+Decided by the owner (2026-11-15): `@ThreadLocal` made real, as on Kotlin/Native; atomicfu from
+its own sources; the latest version of each, pinned in `gradle/libs.versions.toml`.
+
 To decide:
-1. `@ThreadLocal` made real (point 2): it is what Kotlin/Native does, and what these libraries
-   rely on; on the JVM it does not exist. A program of ktc2 that marks something `@ThreadLocal`
-   would then behave as on Kotlin/Native.
-2. atomicfu from its own sources, or a compatibility layer of ktc2's (point 1).
-3. Time zones on Windows from the registry or from the packaged database (point 7).
-4. The versions: the latest of each, pinned in `build.gradle.kts` like kotlinx-io's, or the ones
-   built with the Kotlin version ktc2 runs.
-5. The choices for coroutines already listed in `PLAN.md` (dispatchers, `Dispatchers.IO`, cycles).
+1. Time zones on Windows from the registry or from the packaged database (point 7).
+2. The choices for coroutines already listed in `PLAN.md` (dispatchers, `Dispatchers.IO`, cycles).

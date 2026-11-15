@@ -13,16 +13,18 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-14)
+## Where the work stands (2026-11-15)
 ---------------------------------------------------------------------------
 
 For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
-**State.** Everything is on `master` and pushed; the working tree is clean. The suite is 722
-tests: 157 programs under `integration/` (compared with the JVM or an `.expected` file, or
-that must be refused), 180 files of common tests under `tests/` (one of ktc2's own, 156 of
+**State.** Everything is on `master`. The suite is 823 tests (2026-11-15, passing on Windows
+and Linux in WSL; the CI job is looked at once a day): 160 programs under `integration/`
+(compared with the JVM or an `.expected` file, or that must be refused), the own tests of the
+libraries that are bundled modules (32 of kotlinx-io, 21 of kotlinx.collections.immutable, 40 of
+atomicfu: `tests/README.md`), 180 files of common tests under `tests/` (one of ktc2's own, 156 of
 the Kotlin standard library's, 3 of its JVM part and 20 of Kotlin/Native's that are about
 neither platform's own API, some 2450 `@Test` functions, with the helpers of the library's
 tests under `tests/support/`), 384 box tests of the Kotlin compiler (`tests/box/`, the
@@ -137,25 +139,23 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **Known and not done**, besides what the parts below list:
 - a lambda kept in a property of the object whose members it calls (`val handler = { update() }`,
-  `val load = suspend { fetch() }`) holds that object: a cycle, never freed, and nothing warns
-  about it (the cycle lint does not follow fields of a function type). The lambdas given to
-  `lazy`, `observable` and `vetoable` hold it weakly (they cannot get out of the delegate); this
-  one can be read and kept, so a weak reference would change what the program does. Box test
-  `kt51718.kt` (pending) is the case;
+  `val load = suspend { fetch() }`) holds that object: a cycle, never freed. The cycle lint says
+  so since 2026-11-15; there is no answer in the language but `@Weak` on a property of a nullable
+  type. The lambdas given to `lazy`, `observable` and `vetoable` hold it weakly (they cannot get
+  out of the delegate); this one can be read and kept, so a weak reference would change what the
+  program does. Box test `kt51718.kt` (pending) is the case;
 - the default `toString()` of a local or anonymous class names it with dots
   (`AnyTest.testToString.Local1`), where the JVM and Kotlin/Native use `$`
   (`AnyTest$testToString$Local1`): the runtime's table of types would need a second name per
   class, the one of `qualifiedName` staying as it is (`tests/kotlin/AnyTest.skip`);
-- `assert()`, which the JVM and Kotlin/Native have outside common code, is not there. Both leave
-  it off unless asked (`-ea`, `-enable-assertions`): whether ktc2 checks it in `--debug` builds,
-  or behind an option of its own, is to decide;
+- `assert()` is there (`Ktc2Assertions.kt`), off unless the C is compiled with
+  `-DKTC2_ASSERTIONS` (`-copt -DKTC2_ASSERTIONS`), as the JVM and Kotlin/Native leave it off
+  unless asked (`-ea`, `-enable-assertions`). Whether `--debug` should turn it on is to decide;
 - an object that holds an object of its own `inner` class (`private val key = Key()`, `Key`
   being `inner`) is a cycle, never freed: the inner object holds its outer one. The cycle lint
-  does not say so: it takes a cycle to need a `var`, and both fields are `val`s (the inner object
-  is made while the outer one is). kotlinx-io's sample `rawSourceSample` is the case. The lint
-  should at least count the reference of an inner object to its outer one, and a lambda's
-  capture of `this`, as able to close a cycle;
-- the `.warnings` kind of test has no test since the one for `Deinit` went.
+  says so since 2026-11-15 (`integration/objects/SelfCycles`, which is also the test of the
+  `.warnings` kind); a library taken as a module answers it in its module file
+  (`weak = ["Outer.Inner.this$0"]`), a program has no way yet (`@Weak` is for properties).
 
 Fixed on 2026-11-14 from that list: a value of the wrong class that reaches a function through an
 unchecked cast throws `ClassCastException`, as on the JVM and Kotlin/Native, except for the
