@@ -70,7 +70,8 @@ dependencies = ["sdl3", "../engine", "https://github.com/user/repo.git#modules/u
 
 A dependency is a module shipped with ktc2 (`sdl3`, `kotlinx-io`), a directory, or a place in
 a git repository. `kotlinx-io` is kotlinx-io 0.9.3, compiled from its own sources: `Buffer`,
-`Source`, `Sink`, UTF-8, `ByteString` (not yet `kotlinx.io.files`). Every compilation writes a `CMakeLists.txt` next to the generated C, and a module
+`Source`, `Sink`, UTF-8, `ByteString`, and files (`kotlinx.io.files`: a program using them is built
+with gcc or clang, not MSVC, whose C library has no `unistd.h` nor `dirent.h`). Every compilation writes a `CMakeLists.txt` next to the generated C, and a module
 can bring a CMake file of its own: the `sdl3` module fetches SDL3 from GitHub and builds it,
 so nothing has to be installed.
 

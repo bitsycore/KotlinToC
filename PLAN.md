@@ -458,7 +458,9 @@ Decided, not started:
     kotlinx-io's JVM jars. What it took of ktc2: common sources in a module, Kotlin/Native's
     default import `kotlin.native.*`, `kotlin.native.Platform`, `kotlin.concurrent.Volatile` as
     a class, and `weak`/`acyclic` in the module file (`Segment.prev`, which made every buffer of
-    two segments a cycle). Left: files, then kotlinx-io's own tests.
+    two segments a cycle). Files work too (`kotlinx.io.files`, kotlinx-io's own native code over
+    POSIX, with what differs between Windows and the others in the module's C), except with MSVC
+    (no `unistd.h` nor `dirent.h`). Left: kotlinx-io's own tests.
     `Buffer`, `Segment`, `Source`, `Sink`, `ByteString`, UTF-8: common code. Files (`kotlinx.io.files`: `Path`, `SystemFileSystem`,
     `FileMetadata`): its `nativeMain` is written over `platform.posix` (`fopen`, `fread`,
     `stat`, `opendir`), which ktc2 generates; to try as it is first, with a Windows part where

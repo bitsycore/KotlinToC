@@ -493,7 +493,18 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
     module file name properties of its sources that are then as if annotated `@Weak` or
     `@Acyclic` (`Segment.prev` of kotlinx-io: a segment of a buffer refers to the next one and
     to the one before);
-  - what the library gives each platform apart: a file of the module's own (`Ktc2KotlinxIo.kt`).
+  - what the library gives each platform apart: files of the module's own (`Ktc2KotlinxIo.kt`,
+    `Ktc2KotlinxIoFiles.kt`), with the little C that differs between Windows and the others in
+    a `.def` of the module (`kotlinxio.def`, `kotlinxio.h`; the declarations of Windows it uses
+    are in a header the `.def` does not list, so they get no binding);
+  - a source set between the common one and the platform's (`nativeMain`, which has `expect`s
+    of its own): the compiler is told the three levels with its fragments (`-Xfragments`,
+    `-Xfragment-refines`), as Gradle tells it a hierarchy of source sets. What Kotlin/Native's
+    platform libraries are to `nativeMain` (`kotlinx.cinterop`, `platform.posix`, `Platform`),
+    ktc2's platform layer and the bindings are here: on that middle level;
+  - `platform.posix` has the headers of POSIX for files besides the C library's (`fcntl.h`,
+    `unistd.h`, `sys/stat.h`, `dirent.h`; on Windows `io.h` and `direct.h` too), and
+    `kotlinx.cinterop` has `convert()` and `UnsafeNumber`, as Kotlin/Native's.
 - The test suite compiles such a program for the JVM with the library's JVM jars instead of
   the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `integration/modules/kotlinx-io`.
 - Output goes to `<module>/build` (or `./out`, or `-o`): `c/` with one `.h`/`.c` per unit
