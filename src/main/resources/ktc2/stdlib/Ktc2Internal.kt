@@ -262,7 +262,7 @@ public fun newObject(): Any = PlainObject()
 
 /** Where the runtime enters a new thread. */
 public fun threadEntry(thread: Any) {
-	(thread as ktc2.concurrent.Thread).run()
+	(thread as ktc2.concurrent.Thread).runOnThread()
 }
 
 /** Takes the program-wide lock behind `synchronized`; recursive. */

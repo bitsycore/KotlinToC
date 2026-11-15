@@ -78,6 +78,9 @@ internal fun cHeadersOf(inFile: IrFile?): List<String> {
 }
 
 /** The functions of `ktc2.internal` that throw for the language's own checks. */
+/** `createCleaner` of ktc2 and of Kotlin/Native, which is the same. */
+private val kCleanerMakers = setOf("ktc2.createCleaner", "kotlin.native.ref.createCleaner")
+
 private val kThrowers = listOf("throwIndexOutOfBounds", "throwStringIndexOutOfBounds", "throwSubstringRange", "throwDivideByZero")
 
 /**
@@ -639,7 +642,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mFoldedCleaners[inBacking] = null
 		if (inProperty.isVar || inProperty.isDelegated || inProperty.visibility != DescriptorVisibilities.PRIVATE) return null
 		val vCall = inBacking.initializer?.expression as? IrCall ?: return null
-		if (vCall.symbol.owner.kotlinFqName.asString() != "ktc2.createCleaner") return null
+		if (vCall.symbol.owner.kotlinFqName.asString() !in kCleanerMakers) return null
 		val vResource = vCall.arguments.getOrNull(0) ?: return null
 		val vAction = (vCall.arguments.getOrNull(1) as? IrFunctionExpression)?.function ?: return null
 		val vType = vCall.typeArguments.getOrNull(0) ?: return null

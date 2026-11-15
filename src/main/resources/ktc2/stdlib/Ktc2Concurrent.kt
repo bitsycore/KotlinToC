@@ -41,6 +41,15 @@ public open class Thread() {
 		mBlock?.invoke()
 	}
 
+	/** What the new thread runs: [run], after which the block is let go, as the JVM does (it may hold this thread). */
+	internal fun runOnThread() {
+		try {
+			run()
+		} finally {
+			mBlock = null
+		}
+	}
+
 	public fun start() {
 		if (mStarted) throw IllegalStateException("Thread already started")
 		mStarted = true
