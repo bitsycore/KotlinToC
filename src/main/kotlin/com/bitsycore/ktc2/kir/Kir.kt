@@ -254,11 +254,14 @@ class KInterface(
 }
 
 class KFunction(
-	val cName: String,
+	cName: String,
 	val unit: KUnit,
 	val params: List<KLocal>,
 	val returnType: KType,
 ) {
+	/** Its name in C; the emitter changes it when a class has the same one (`fun DayOfWeek(n: Int)` beside `enum class DayOfWeek`). */
+	var cName: String = cName
+
 	val body = mutableListOf<KStmt>()
 
 	/** Implemented in the C runtime; only called, never emitted. A reference result is owned by the caller. */
@@ -394,7 +397,9 @@ class KLocal(val cName: String, val type: KType) {
 }
 
 /** A top-level property with storage. [constInit] is set when the initializer is a literal. */
-class KGlobal(val cName: String, val type: KType, val unit: KUnit) {
+class KGlobal(cName: String, val type: KType, val unit: KUnit) {
+	/** Its name in C; the emitter changes it when a function has the same one (a property and a function of one name in a package). */
+	var cName: String = cName
 	var constInit: KConst? = null
 
 	/** Set for a property marked `@ThreadLocal` (and the flags of its initialization): each thread has its own. */

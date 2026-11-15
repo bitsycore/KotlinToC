@@ -39,6 +39,7 @@ class CEmitter(private val mModule: KModule) {
 
 	fun emit(inRoot: File): List<String> {
 		prepareCoroutines()
+		renameClashingGlobals()
 		val vSources = ArrayList<String>()
 		write(File(inRoot, "ktc2_types.h"), typeIds())
 		write(File(inRoot, "ktc2_config.h"), config())
@@ -135,6 +136,31 @@ class CEmitter(private val mModule: KModule) {
 	// ==================
 	// MARK: Units
 	// ==================
+
+	/**
+	 * A top-level property and a top-level function of one name in a package (`val EmptySerializersModule` and the
+	 * function `EmptySerializersModule()` of kotlinx.serialization), or a function and a class, are legal in Kotlin and
+	 * get one name in C: the property's, or the function's, is changed.
+	 */
+	private fun renameClashingGlobals() {
+		// A function named as a class of its package (`fun DayOfWeek(isoDayNumber: Int)` beside `enum class DayOfWeek`)
+		// meets the C type of that class: the function's name is changed.
+		val vTypes = (mModule.classes.map { it.cName } + mModule.units.mapNotNull { it.struct?.cName }).toHashSet()
+		for (vFunction in mModule.units.flatMap { it.functions }) {
+			if (vFunction.cName !in vTypes) continue
+			var vName = vFunction.cName + "_fun"
+			while (vName in vTypes) vName += "_"
+			vFunction.cName = vName
+		}
+		val vTaken = mModule.units.flatMap { it.functions + listOfNotNull(it.initializer) }.map { it.cName }.toHashSet()
+		for (vGlobal in mModule.units.flatMap { it.globals }) {
+			if (vGlobal.cName !in vTaken) continue
+			var vName = vGlobal.cName + "_value"
+			while (vName in vTaken) vName += "_"
+			vGlobal.cName = vName
+			vTaken += vName
+		}
+	}
 
 	/** The storage class of a `@ThreadLocal` global or object: the thread's own (when the program has threads). */
 	private fun tls(inThreadLocal: Boolean): String = if (inThreadLocal) "KTC2_TLS " else ""
