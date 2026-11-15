@@ -112,8 +112,8 @@ after half an hour without a command; `KTC2_DAEMON=0` does without it.
 
 The generated C is C11. On Windows the whole test suite runs with gcc, and the showcase's
 tests also pass with clang and with MSVC. On macOS (ARM64) the whole suite runs with Apple
-clang, and the showcase with SDL3. On Linux the suite runs with gcc in the CI job and
-passes but for the bindings of `platform.posix`. Android is not there yet.
+clang, and the showcase with SDL3. On Linux the suite runs with gcc, and the CI job runs every
+program again with AddressSanitizer. Android is not there yet.
 
 ## Working on ktc2
 
