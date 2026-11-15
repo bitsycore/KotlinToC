@@ -239,7 +239,10 @@ class KClass(
 }
 
 /** A static, immortal instance of [cls]: an `object`, or an enum entry. Defined in [unit]. */
-class KStatic(val cName: String, val cls: KClass, val unit: KUnit)
+class KStatic(val cName: String, val cls: KClass, val unit: KUnit) {
+	/** Set for an `object` marked `@ThreadLocal`: each thread has its own instance. */
+	var isThreadLocal = false
+}
 
 /** An interface, identified for `is` checks. [supers] are the interfaces it extends, transitively. */
 class KInterface(
@@ -393,6 +396,9 @@ class KLocal(val cName: String, val type: KType) {
 /** A top-level property with storage. [constInit] is set when the initializer is a literal. */
 class KGlobal(val cName: String, val type: KType, val unit: KUnit) {
 	var constInit: KConst? = null
+
+	/** Set for a property marked `@ThreadLocal` (and the flags of its initialization): each thread has its own. */
+	var isThreadLocal = false
 }
 
 // ==================

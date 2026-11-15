@@ -905,11 +905,19 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			}
 		}
 		inFile.declarations.filterIsInstance<IrClass>().forEach { declareStatics(it) }
-		if (vStartup.isNotEmpty()) {
+		// The properties marked `@ThreadLocal` get their values in each thread, the first time it uses one of them.
+		val (vThreadStartup, vSharedStartup) = vStartup.partition { it.first.isThreadLocal }
+		if (vSharedStartup.isNotEmpty()) {
 			val vInit = KFunction("${cPrefix(vUnit.pkg)}${vUnit.name}_init", vUnit, emptyList(), KUnitType)
 			vUnit.initializer = vInit
 			mFileEnsures[vUnit] = newEnsure("${cPrefix(vUnit.pkg)}${vUnit.name}", vUnit, vInit, vUnit)
-			mPending += { BodyBuilder(this, vInit, null, inFile, emptyMap()).buildGlobalInitializer(vStartup) }
+			mPending += { BodyBuilder(this, vInit, null, inFile, emptyMap()).buildGlobalInitializer(vSharedStartup) }
+		}
+		if (vThreadStartup.isNotEmpty()) {
+			val vInit = KFunction("${cPrefix(vUnit.pkg)}${vUnit.name}_thread_init", vUnit, emptyList(), KUnitType)
+			vUnit.functions += vInit
+			mThreadFileEnsures[vUnit] = newEnsure("${cPrefix(vUnit.pkg)}${vUnit.name}_thread", vUnit, vInit, vUnit, inThreadLocal = true)
+			mPending += { BodyBuilder(this, vInit, null, inFile, emptyMap()).buildGlobalInitializer(vThreadStartup) }
 		}
 		return vUnit
 	}
@@ -1070,6 +1078,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 		if (inClass.isObject) {
 			val vInstance = KStatic("${vClass.cName}_instance", vClass, vUnit)
+			vInstance.isThreadLocal = isThreadLocal(inClass)
 			vUnit.statics += vInstance
 			mObjectStatics[inClass] = vInstance
 			instantiate(vClass)
@@ -1078,8 +1087,13 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			if (vInit != null) {
 				val vStartup = KFunction("${vClass.cName}_static_init", vUnit, emptyList(), KUnitType)
 				vStartup.body += KEval(KCall(vInit, listOf(KStaticRead(vInstance))))
-				vUnit.initializer = vStartup
-				declareEnsure(vClass, vUnit, vStartup)
+				if (vInstance.isThreadLocal) {
+					vUnit.functions += vStartup
+					mEnsures[vClass] = newEnsure(vClass.cName, vUnit, vStartup, null, inThreadLocal = true)
+				} else {
+					vUnit.initializer = vStartup
+					declareEnsure(vClass, vUnit, vStartup)
+				}
 			}
 		}
 		if (inClass.kind == ClassKind.ENUM_CLASS) declareEnumEntries(inClass, vClass, vFile)
@@ -1636,20 +1650,32 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * @property flag set when the initializer starts, [done] when it has finished
 	 * @property ownUnit for a file: its unit, whose properties the initializer may read as it goes
 	 */
-	private class Ensure(val function: KFunction, val flag: KGlobal, val done: KGlobal, val unit: KUnit, val initializer: KFunction, val ownUnit: KUnit?)
+	private class Ensure(val function: KFunction, val flag: KGlobal, val done: KGlobal, val unit: KUnit, val initializer: KFunction, val ownUnit: KUnit?) {
+		/** For what is `@ThreadLocal`: the flags are the thread's, and the initializer always runs on first use. */
+		val isThreadLocal: Boolean get() = done.isThreadLocal
+	}
 
 	private val mEnsures = LinkedHashMap<KClass, Ensure>()
 	private val mFileEnsures = LinkedHashMap<KUnit, Ensure>()
+
+	/** For a file with `@ThreadLocal` properties: their initialization, apart from the file's other properties. */
+	private val mThreadFileEnsures = LinkedHashMap<KUnit, Ensure>()
+
+	/** True for a property or an `object` marked `@ThreadLocal`, which Kotlin/Native gives each thread its own of. */
+	private fun isThreadLocal(inDeclaration: IrDeclaration): Boolean =
+		inDeclaration.annotations.any { it.type.classFqName?.asString() == "kotlin.native.concurrent.ThreadLocal" }
 
 	private fun declareEnsure(inClass: KClass, inUnit: KUnit, inInitializer: KFunction) {
 		mEnsures[inClass] = newEnsure(inClass.cName, inUnit, inInitializer, null)
 	}
 
-	private fun newEnsure(inName: String, inUnit: KUnit, inInitializer: KFunction, inOwnUnit: KUnit?): Ensure {
+	private fun newEnsure(inName: String, inUnit: KUnit, inInitializer: KFunction, inOwnUnit: KUnit?, inThreadLocal: Boolean = false): Ensure {
 		val vBoolean = KPrimType(KPrim.BOOLEAN)
 		val vFlag = KGlobal("${inName}_ready", vBoolean, inUnit)
+		vFlag.isThreadLocal = inThreadLocal
 		inUnit.globals += vFlag
 		val vDone = KGlobal("${inName}_done", vBoolean, inUnit)
+		vDone.isThreadLocal = inThreadLocal
 		inUnit.globals += vDone
 		val vFunction = KFunction("${inName}_ensure", inUnit, emptyList(), KUnitType)
 		// `ready` is set first: an initializer that comes back to its own object finds it as far as it got.
@@ -1659,13 +1685,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			listOf(KGlobalSet(vFlag, KConst(true, vBoolean)), KEval(KCall(inInitializer, emptyList())), KGlobalSet(vDone, KConst(true, vBoolean))),
 			emptyList(),
 		)
+		// What is the thread's own needs no lock.
 		vFunction.body += KIf(
 			KUnary(KUnaryOp.NOT, KGlobalRead(vDone), vBoolean),
-			listOf(
-				KEval(KIntrinsic("ktc2_initEnter", emptyList(), KUnitType, isPure = false)),
-				vInitialize,
-				KEval(KIntrinsic("ktc2_initExit", emptyList(), KUnitType, isPure = false)),
-			),
+			if (inThreadLocal) {
+				listOf(vInitialize)
+			} else {
+				listOf(
+					KEval(KIntrinsic("ktc2_initEnter", emptyList(), KUnitType, isPure = false)),
+					vInitialize,
+					KEval(KIntrinsic("ktc2_initExit", emptyList(), KUnitType, isPure = false)),
+				)
+			},
 			emptyList(),
 		)
 		inUnit.functions += vFunction
@@ -1683,6 +1714,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	internal fun fileEnsureFor(inUnit: KUnit, inFrom: KFunction): KFunction? =
 		mFileEnsures[inUnit]?.takeIf { it.initializer !== inFrom && it.function !== inFrom }?.function
 
+	/** As [fileEnsureFor], for the `@ThreadLocal` properties of the file. */
+	internal fun threadFileEnsureFor(inUnit: KUnit, inFrom: KFunction): KFunction? =
+		mThreadFileEnsures[inUnit]?.takeIf { it.initializer !== inFrom && it.function !== inFrom }?.function
+
 	/**
 	 * True when running [inFunction] earlier than Kotlin would cannot be observed: it only
 	 * computes and stores. It may read the top-level properties of [inOwnUnit], the file whose
@@ -1694,7 +1729,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		// A function that leads back to itself is taken to be observable.
 		inKnown[inFunction] = false
 		if (inFunction.isExternal || inFunction.dispatch != null) return false
-		val vIsEnsure = mEnsures.values.any { it.function === inFunction } || mFileEnsures.values.any { it.function === inFunction }
+		val vIsEnsure = mEnsures.values.any { it.function === inFunction } || mFileEnsures.values.any { it.function === inFunction } ||
+			mThreadFileEnsures.values.any { it.function === inFunction }
 		val vHolds = !vIsEnsure && !inFunction.body.anyStatement { vStatement ->
 			vStatement is KPrint || vStatement is KThrow || vStatement is KTryRegion || vStatement is KGlobalSet ||
 				vStatement.ownExpressions().any { vRoot ->
@@ -1729,12 +1765,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun settleInitialization() {
 		val vEager = HashSet<KFunction>()
 		val vLazy = HashMap<KFunction, KGlobal>()
-		for (vEnsure in mEnsures.values + mFileEnsures.values) {
+		for (vEnsure in mEnsures.values + mFileEnsures.values + mThreadFileEnsures.values) {
 			// The initializer may come back to what it initializes: that call finds it under way and returns.
 			val vKnown = HashMap<KFunction, Boolean>()
 			vKnown[vEnsure.function] = true
 			// The file initializer writes the properties of its file: that is its job, not something to observe.
-			val vIsQuiet = if (vEnsure.ownUnit != null) isQuietFileInitializer(vEnsure, vKnown) else isUnobservable(vEnsure.initializer, vKnown)
+			// What is `@ThreadLocal` is initialized on first use in every thread, the first one included.
+			val vIsQuiet = !vEnsure.isThreadLocal &&
+				if (vEnsure.ownUnit != null) isQuietFileInitializer(vEnsure, vKnown) else isUnobservable(vEnsure.initializer, vKnown)
 			if (vIsQuiet) {
 				vEager += vEnsure.function
 				vEnsure.unit.functions -= vEnsure.function
@@ -1827,6 +1865,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		val vScope = cPrefix(inUnit.pkg) + (inOwner?.let { cSuffix(nestedName(it)) + "_" } ?: "")
 		val vGlobal = KGlobal(vScope + cSuffix(inProperty.name.asString()), vType, inUnit)
+		vGlobal.isThreadLocal = isThreadLocal(inProperty)
 		inUnit.globals += vGlobal
 		mGlobals[vBacking] = vGlobal
 		for (vAccessor in listOfNotNull(inProperty.getter, inProperty.setter)) {

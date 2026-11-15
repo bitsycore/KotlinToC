@@ -85,9 +85,11 @@ class CEmitter(private val mModule: KModule) {
 
 	private fun program(inEntry: KFunction): String = buildString {
 		val vStartup = mModule.units.mapNotNull { it.initializer }
-		val vGlobals = mModule.units.flatMap { it.globals }.filter { it.type.isCounted() }
-		val vStatics = mModule.units.flatMap { it.statics }
-		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vStatics.flatMap { listOf(it.unit, it.cls.unit) } + vGlobals.map { it.unit } + inEntry.unit
+		val vAllGlobals = mModule.units.flatMap { it.globals }.filter { it.type.isCounted() }
+		val vAllStatics = mModule.units.flatMap { it.statics }
+		val (vThreadGlobals, vGlobals) = vAllGlobals.partition { it.isThreadLocal }
+		val (vThreadStatics, vStatics) = vAllStatics.partition { it.isThreadLocal }
+		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vAllStatics.flatMap { listOf(it.unit, it.cls.unit) } + vAllGlobals.map { it.unit } + inEntry.unit
 		append("#include \"ktc2_types.h\"\n")
 		vUnits.distinct().forEach { append("#include \"${it.path}.h\"\n") }
 
@@ -101,9 +103,18 @@ class CEmitter(private val mModule: KModule) {
 			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)} },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
+		val vHasThreadLocals = vThreadGlobals.isNotEmpty() || vThreadStatics.isNotEmpty()
+		if (vHasThreadLocals) {
+			// What the `@ThreadLocal` properties and objects of a thread hold, given up when it ends.
+			append("\nstatic void thread_locals_end(void)\n{\n")
+			vThreadGlobals.asReversed().forEach { append("\t${releaseText(it.type, it.cName)};\n") }
+			vThreadStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
+			append("}\n")
+		}
 
 		val vTakesArguments = inEntry.params.isNotEmpty()
 		append(if (vTakesArguments) "\nint main(int argc, char** argv)\n{\n" else "\nint main(void)\n{\n")
+		if (vHasThreadLocals) append("\tktc2_thread_end = thread_locals_end;\n")
 		// An exception that reaches main unhandled ends the program, as on the JVM.
 		vStartup.forEach { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
 		if (vTakesArguments) {
@@ -115,6 +126,7 @@ class CEmitter(private val mModule: KModule) {
 		}
 		// What the top-level properties and the objects still hold is given up without `deinit`.
 		append("\tktc2_ending();\n")
+		if (vHasThreadLocals) append("\tthread_locals_end();\n")
 		vGlobals.asReversed().forEach { append("\t${releaseText(it.type, it.cName)};\n") }
 		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
 		append("\treturn ktc2_exit();\n}\n")
@@ -123,6 +135,9 @@ class CEmitter(private val mModule: KModule) {
 	// ==================
 	// MARK: Units
 	// ==================
+
+	/** The storage class of a `@ThreadLocal` global or object: the thread's own (when the program has threads). */
+	private fun tls(inThreadLocal: Boolean): String = if (inThreadLocal) "KTC2_TLS " else ""
 
 	private fun unitOf(inType: KType): KUnit? = (inType as? KStructType)?.struct?.unit
 
@@ -357,8 +372,8 @@ class CEmitter(private val mModule: KModule) {
 				append("void ${vClass.cName}__assign(${vClass.cName}* slot, const ${vClass.cName}* source);\n")
 			}
 		}
-		inUnit.statics.forEach { append("extern ${it.cls.cName} ${it.cName};\n") }
-		inUnit.globals.forEach { append("extern ${cType(it.type)} ${it.cName};\n") }
+		inUnit.statics.forEach { append("extern ${tls(it.isThreadLocal)}${it.cls.cName} ${it.cName};\n") }
+		inUnit.globals.forEach { append("extern ${tls(it.isThreadLocal)}${cType(it.type)} ${it.cName};\n") }
 		val vInHeader = inHeader(inUnit)
 		allFunctions(inUnit).forEach { append(if (it in vInHeader) "static inline " else "").append(signature(it)).append(";\n") }
 		for ((vFunction, vBody) in vInHeader) append("\nstatic inline ").append(signature(vFunction)).append("\n{\n").append(vBody).append("}\n")
@@ -440,7 +455,7 @@ class CEmitter(private val mModule: KModule) {
 		for (vStatic in inUnit.statics) {
 			vState.includes += vStatic.cls.unit
 			val vPath = generateSequence(vStatic.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
-			vBodies.append("\n${vStatic.cls.cName} ${vStatic.cName} = { $vPath = { KTC2_IMMORTAL, ${typeId(vStatic.cls)} } };\n")
+			vBodies.append("\n${tls(vStatic.isThreadLocal)}${vStatic.cls.cName} ${vStatic.cName} = { $vPath = { KTC2_IMMORTAL, ${typeId(vStatic.cls)} } };\n")
 		}
 		inUnit.cls?.let { vClass ->
 			vBodies.append("\nvoid ${vClass.cName}__destroy(ktc2_Obj* object)\n{\n")
@@ -519,7 +534,7 @@ class CEmitter(private val mModule: KModule) {
 		if (inUnit.globals.isNotEmpty()) vBodies.append("\n")
 		for (vGlobal in inUnit.globals) {
 			val vInit = vGlobal.constInit?.let { " = ${vPrinter.constant(it)}" } ?: ""
-			vBodies.append("${cType(vGlobal.type)} ${vGlobal.cName}$vInit;\n")
+			vBodies.append("${tls(vGlobal.isThreadLocal)}${cType(vGlobal.type)} ${vGlobal.cName}$vInit;\n")
 		}
 		val vInHeader = inHeader(inUnit)
 		for (vFunction in allFunctions(inUnit)) {

@@ -1,0 +1,11 @@
+names made
+cache made
+names made
+thread sees counter = 0
+thread names = [worker]
+cache made
+thread cache = {b=2}
+main counter = 5
+main names = [main]
+main cache = {a=1}
+shared = [main, worker]

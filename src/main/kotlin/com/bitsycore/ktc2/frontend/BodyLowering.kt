@@ -1291,7 +1291,10 @@ internal class BodyBuilder(
 	/** An `object` or an enum class is created when it is first used: here, if not before. */
 	/** [inGlobal], after making sure the top-level properties of its file have their values (a constant needs none). */
 	private fun ensuredFile(inGlobal: KGlobal): KGlobal {
-		if (inGlobal.constInit == null) mImporter.fileEnsureFor(inGlobal.unit, mFunction)?.let { mBlock += KEval(KCall(it, emptyList())) }
+		if (inGlobal.constInit == null) {
+			val vEnsure = if (inGlobal.isThreadLocal) mImporter.threadFileEnsureFor(inGlobal.unit, mFunction) else mImporter.fileEnsureFor(inGlobal.unit, mFunction)
+			vEnsure?.let { mBlock += KEval(KCall(it, emptyList())) }
+		}
 		return inGlobal
 	}
 

@@ -368,6 +368,12 @@ void ktc2_destroy(ktc2_Obj* object);
  */
 void ktc2_ending(void);
 
+/**
+ * Set by `main` when the program has `@ThreadLocal` properties or objects: gives up what those
+ * of the calling thread hold. Each thread calls it as it ends, `main` after [ktc2_ending].
+ */
+extern void (*ktc2_thread_end)(void);
+
 /* With KTC2_ARC_STATS the runtime counts reference-count operations and reports them at exit. */
 #ifdef KTC2_ARC_STATS
 extern uint64_t ktc2_stat_retains;

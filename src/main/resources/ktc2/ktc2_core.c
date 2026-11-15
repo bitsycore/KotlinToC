@@ -489,6 +489,8 @@ static void threads_wait(void);
 /** Set when the program is over: see ktc2_ending. */
 static int ending;
 
+void (*ktc2_thread_end)(void);
+
 void ktc2_ending(void)
 {
 	threads_wait();
@@ -2155,6 +2157,7 @@ static void thread_body(ktc2_Obj* thread)
 			exception->message ? ": " : "", exception->message ? exception->message->bytes : "");
 		ktc2_release(exception);
 	}
+	if (ktc2_thread_end) ktc2_thread_end();
 	ktc2_release(thread);
 	pool_leave();
 	free(destroy_later);
