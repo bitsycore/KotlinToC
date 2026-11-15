@@ -2464,7 +2464,7 @@ internal class BodyBuilder(
 	private fun receiverView(inReceiver: IrExpression?, inFunction: IrSimpleFunction, inClosed: IrType?): IrType? {
 		if (!isUncertain(inReceiver)) return inClosed
 		val vReal = if (inFunction.isFakeOverride) inFunction.resolveFakeOverride() ?: inFunction else inFunction
-		return mImporter.anyViewOf(vReal.parentAsClass)
+		return mImporter.anyViewOf(vReal.parentAsClass).also { vView -> (kType(vView) as? KClassType)?.cls?.isErasedView = true }
 	}
 
 	/**
@@ -2477,6 +2477,8 @@ internal class BodyBuilder(
 		val vReceiver = inRead.receiver ?: return null
 		val vGetter = inRead.symbol.owner.correspondingPropertySymbol?.owner?.getter ?: return null
 		if (!isErasedReceiver(vReceiver, vGetter)) return null
+		// The receiver's type does not settle its instantiation: Devirtualize must not take it for its class.
+		(kType(vReceiver.type) as? KClassType)?.cls?.isErasedView = true
 		val vTarget = memberTarget(vGetter, false, receiverView(vReceiver, vGetter, closed(vReceiver.type)), emptyList(), true)?.first ?: return null
 		val vCall = spill(KCall(vTarget, listOf(coerce(lowerPure(vReceiver), vTarget.params[0].type))))
 		return if (inAsObject) vCall else adapt(vCall, inRead)

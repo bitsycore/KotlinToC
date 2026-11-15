@@ -193,6 +193,13 @@ class KClass(
 	/** Set when the program constructs this class; only such classes get a type id. */
 	var isInstantiated = false
 
+	/**
+	 * Set on the instantiation of a generic class with `Any?` for every argument when the program
+	 * reaches objects through it whose instantiation the type does not settle (`other as Box<*>`):
+	 * a value of this type may be of any instantiation, and `Devirtualize` does not take the type for its class.
+	 */
+	var isErasedView = false
+
 	/** Set when a `@Value` field holds this class inline: it then gets copy and assign helpers. */
 	var isUsedInline = false
 

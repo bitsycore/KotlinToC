@@ -92,7 +92,8 @@ class Devirtualize(private val mModule: KModule) {
 	/** The classes the program creates that a reference of static type [inClass] can point to. */
 	private fun createdBelow(inClass: KClass): List<KClass> {
 		val vFamily = familyOf(inClass)
-		if (vFamily !in mMixed) return mConcrete.filter { it.isSubclassOf(inClass) }
+		// A value reached as any instantiation (`other as Box<*>`) may be of any class of the family.
+		if (vFamily !in mMixed && !inClass.isErasedView) return mConcrete.filter { it.isSubclassOf(inClass) }
 		return mConcrete.filter { vConcrete -> generateSequence(vConcrete) { it.superClass }.any { familyOf(it) === vFamily } }
 	}
 
@@ -350,6 +351,8 @@ class Devirtualize(private val mModule: KModule) {
 		// Nothing was learnt from where the value comes from (`this` in a method, say), but its type
 		// may leave no choice: a class nothing extends, or with one subclass the program creates.
 		val vStatic = (inValue.type as? KClassType)?.cls ?: return vFollowed
+		// The type of a value reached as any instantiation (`other as Box<*>`) does not say which one it is.
+		if (vStatic.isErasedView) return vFollowed
 		return mOnly.getOrPut(vStatic) { createdBelow(vStatic).singleOrNull() } ?: vFollowed
 	}
 
@@ -446,6 +449,11 @@ class Devirtualize(private val mModule: KModule) {
 	private fun takes(inTo: KLocal, inFrom: KType, inArgument: KExpr): Boolean {
 		// A String where any object can come: direct only when it is known to be one.
 		if (inTo.type == KStringType && inFrom == KObjType) return inArgument is KNull || isString(inArgument)
+		val vInterface = inTo.boundInterface
+		if (vInterface != null && inTo.boundClass == null && inTo.type !is KClassType) {
+			if (inFrom != KObjType || inArgument is KNull) return true
+			return (classOf(inArgument) as? KClass)?.implements(vInterface) == true
+		}
 		val vClass = (inTo.type as? KClassType)?.cls ?: inTo.boundClass ?: return true
 		if (inFrom != KObjType || inArgument is KNull) return true
 		val vKnown = classOf(inArgument) as? KClass ?: return false
