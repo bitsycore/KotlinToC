@@ -1,0 +1,6 @@
+# The C that ktc2's part of atomicfu calls (Ktc2Atomicfu.kt): a lock with a condition, over Win32
+# or pthreads, in atomicfu.h. The declarations of Windows it needs are in atomicfu_win32.h, which
+# is not listed here: they get no binding.
+package = ktc2.atomicfu
+headers = atomicfu.h
+compilerOpts.linux = -D_DEFAULT_SOURCE

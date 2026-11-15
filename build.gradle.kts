@@ -30,22 +30,37 @@ val stdlibSources: Configuration = configurations.create("stdlibSources") {
 	isTransitive = false
 }
 
-/** kotlinx-io for the JVM: what a program that uses the bundled module `kotlinx-io` is compared with, in the suite. */
-val kotlinxIoJvm: Configuration = configurations.create("kotlinxIoJvm") {
-	isTransitive = false
+/**
+ * A bundled module made of a library's own sources (all Apache-2): its sources jars, each unpacked
+ * under `build/modules-src/<name>/<directory>` (the module's `files.txt` lists what it compiles as
+ * `<directory>/<source set>/...`, or `<source set>/...` for the directory "."), and the library's jars
+ * for the JVM, which the suite compiles the JVM side of a program on the module with.
+ */
+class LibraryModule(val name: String, val sources: Map<String, Provider<MinimalExternalModuleDependency>>, val jvm: List<Provider<MinimalExternalModuleDependency>>) {
+	val sourcesConfiguration: Configuration = configurations.create("moduleSources-$name") { isTransitive = false }
+	val jvmConfiguration: Configuration = configurations.create("moduleJvm-$name") { isTransitive = false }
 }
 
-/** The sources of kotlinx-io (Apache-2), compiled with the programs that use the bundled module `kotlinx-io`. */
-val kotlinxIoSources: Configuration = configurations.create("kotlinxIoSources") {
-	isTransitive = false
-}
+val kLibraryModules = listOf(
+	LibraryModule(
+		"kotlinx-io",
+		mapOf("core" to libs.kotlinx.io.core.asProvider(), "bytestring" to libs.kotlinx.io.bytestring.asProvider()),
+		listOf(libs.kotlinx.io.core.jvm, libs.kotlinx.io.bytestring.jvm),
+	),
+	LibraryModule(
+		"kotlinx-collections-immutable",
+		mapOf("." to libs.kotlinx.collections.immutable.asProvider()),
+		listOf(libs.kotlinx.collections.immutable.jvm),
+	),
+	LibraryModule("atomicfu", mapOf("." to libs.atomicfu.asProvider()), listOf(libs.atomicfu.jvm)),
+)
 
 dependencies {
 	stdlibSources(variantOf(libs.kotlin.stdlib) { classifier("sources") })
-	kotlinxIoSources(variantOf(libs.kotlinx.io.core) { classifier("sources") })
-	kotlinxIoSources(variantOf(libs.kotlinx.io.bytestring) { classifier("sources") })
-	kotlinxIoJvm(libs.kotlinx.io.core.jvm)
-	kotlinxIoJvm(libs.kotlinx.io.bytestring.jvm)
+	for (vModule in kLibraryModules) {
+		for (vSource in vModule.sources.values) add(vModule.sourcesConfiguration.name, variantOf(vSource) { classifier("sources") })
+		for (vJar in vModule.jvm) add(vModule.jvmConfiguration.name, vJar)
+	}
 	// Frontend: the Kotlin K2 compiler. Pinned - its IR API is experimental.
 	implementation(libs.kotlin.compiler.embeddable)
 	testImplementation(kotlin("test"))
@@ -62,23 +77,32 @@ val unpackStdlibSources = tasks.register("unpackStdlibSources", Sync::class) {
 	into(layout.buildDirectory.dir("stdlib-src"))
 }
 
-val unpackKotlinxIoSources = tasks.register("unpackKotlinxIoSources", Sync::class) {
-	description = "Unpack the sources of kotlinx-io (Apache-2) into the build directory, for the bundled module kotlinx-io."
-	// Each library in a directory of its own: both have a commonMain, a nativeMain...
-	from({ kotlinxIoSources.filter { "bytestring" !in it.name }.map { vJar -> zipTree(vJar) } }) { into("core") }
-	from({ kotlinxIoSources.filter { "bytestring" in it.name }.map { vJar -> zipTree(vJar) } }) { into("bytestring") }
-	into(layout.buildDirectory.dir("kotlinx-io-src"))
+val unpackModuleSources = tasks.register("unpackModuleSources", Sync::class) {
+	description = "Unpack the sources of the libraries that are bundled modules (Apache-2) into the build directory."
+	for (vModule in kLibraryModules) {
+		for ((vDirectory, vSource) in vModule.sources) {
+			// Each jar in a directory of its own: they all have a commonMain, a nativeMain...
+			val vArtifact = vSource.get().module.name
+			from({ vModule.sourcesConfiguration.filter { it.name.startsWith("$vArtifact-") && it.name.removePrefix("$vArtifact-").first().isDigit() }.map { vJar -> zipTree(vJar) } }) {
+				into("${vModule.name}/$vDirectory")
+			}
+		}
+	}
+	into(layout.buildDirectory.dir("modules-src"))
 }
 
 /** The installed ktc2 carries the standard library sources it compiles with every program (those of files.txt). */
 tasks.processResources {
-	dependsOn(unpackStdlibSources, unpackKotlinxIoSources)
-	// And the sources of kotlinx-io its bundled module compiles (modules/kotlinx-io/files.txt).
-	val vIoListed = file("src/main/resources/ktc2/modules/kotlinx-io/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
-	inputs.file("src/main/resources/ktc2/modules/kotlinx-io/files.txt")
-	from(layout.buildDirectory.dir("kotlinx-io-src")) {
-		include(vIoListed)
-		into("ktc2/modules/kotlinx-io")
+	dependsOn(unpackStdlibSources, unpackModuleSources)
+	// And the sources each bundled module of a library compiles (modules/<name>/files.txt).
+	for (vModule in kLibraryModules) {
+		val vList = file("src/main/resources/ktc2/modules/${vModule.name}/files.txt")
+		val vModuleListed = vList.readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
+		inputs.file(vList)
+		from(layout.buildDirectory.dir("modules-src/${vModule.name}")) {
+			include(vModuleListed)
+			into("ktc2/modules/${vModule.name}")
+		}
 	}
 	val vListed = file("src/main/resources/ktc2/stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
 	inputs.file("src/main/resources/ktc2/stdlib/files.txt")
@@ -93,7 +117,7 @@ tasks.test {
 	dependsOn(unpackStdlibSources)
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// A program that uses a bundled module made of a library's sources is compiled for the JVM with the library's JVM jars.
-	systemProperty("ktc2.jvmModule.kotlinx-io", kotlinxIoJvm.files.joinToString(File.pathSeparator))
+	for (vModule in kLibraryModules) systemProperty("ktc2.jvmModule.${vModule.name}", vModule.jvmConfiguration.files.joinToString(File.pathSeparator))
 	// The integration programs and the bundled runtime are inputs of the oracle test.
 	inputs.dir("integration")
 	// The programs are shared between several processes (see IntegrationTest): KTC2_TEST_FORKS says how many,

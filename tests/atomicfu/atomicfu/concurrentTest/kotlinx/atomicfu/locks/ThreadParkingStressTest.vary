@@ -1,0 +1,2 @@
+# Each of its tests prints how long it took.
+/[0-9.]+(ns|us|ms|s|m)/

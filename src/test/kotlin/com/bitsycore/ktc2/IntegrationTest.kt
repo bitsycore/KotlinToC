@@ -125,7 +125,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun commonTestList(): List<DynamicTest> =
 		File("tests").walkTopDown()
 			// tests/pending holds those that do not pass yet (tests/README.md).
-			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" || it == "kotlinx-io" } }
+			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" || it in kModuleTests } }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
@@ -246,39 +246,51 @@ abstract class IntegrationPart(private val mShard: Int) {
 	// ==================
 
 	/**
-	 * The tests of kotlinx-io itself, under `tests/kotlinx-io/<library>/` as its repository has them
-	 * at the version the module compiles: `commonTest/`, and the helpers of each platform
-	 * (`nativeTest/`, `jvmTest/`). Each file of tests is a program, compiled with the other files of
-	 * its `commonTest` (their tests not run): in C with the module's sources and `nativeTest`, on the
-	 * JVM with kotlinx-io's jars, which it sees the internals of as a test of the library does, and `jvmTest`.
+	 * The tests of a library that is a bundled module, under `tests/<module>/<library>/` as its repository has them
+	 * at the version the module compiles: `commonTest/` and `concurrentTest/` (common to the JVM and Native), and the
+	 * helpers of each platform (`nativeTest/`, `jvmTest/`). Each file of tests is a program, compiled with the other
+	 * files of those two (their tests not run): in C with the module's sources and `nativeTest`, on the
+	 * JVM with the library's jars, which it sees the internals of as a test of the library does, and `jvmTest`.
+	 * [kModuleTests] names the modules that have such tests.
 	 */
+	/** The bundled modules whose library's own tests are under `tests/<module>/`. */
+	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu")
+
+	/** The source sets of a module's tests that are common: run in C and on the JVM. */
+	private val kCommonTestSets = Regex("/(commonTest|concurrentTest)/")
+
 	private fun moduleTestList(): List<DynamicTest> =
-		File("tests/kotlinx-io").walkTopDown()
-			.filter { it.isFile && it.extension == "kt" && "/commonTest/" in it.invariantSeparatorsPath && "@Test" in it.readText() }
+		kModuleTests.asSequence().flatMap { File("tests/$it").walkTopDown() }
+			.filter { it.isFile && it.extension == "kt" && kCommonTestSets.containsMatchIn(it.invariantSeparatorsPath) && "@Test" in it.readText() }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
 			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkModuleTest(vSource) } }
 			.toList()
 
 	private fun checkModuleTest(inSource: File) {
-		val vRoot = File(inSource.invariantSeparatorsPath.substringBefore("/commonTest/"))
+		val vSet = kCommonTestSets.find(inSource.invariantSeparatorsPath)!!
+		val vRoot = File(inSource.invariantSeparatorsPath.substring(0, vSet.range.first))
 		fun sources(inSet: String) = File(vRoot, inSet).walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
-		val vCommon = sources("commonTest")
-		val vName = "kotlinx-io-" + vRoot.name + "-" + inSource.invariantSeparatorsPath.substringAfter("/commonTest/").removeSuffix(".kt").replace('/', '-')
+		val vCommon = sources("commonTest") + sources("concurrentTest")
+		val vModuleName = vRoot.parentFile.name
+		val vName = vModuleName + "-" + vRoot.name + "-" + inSource.invariantSeparatorsPath.substring(vSet.range.last + 1).removeSuffix(".kt").replace('/', '-')
 		val vOutDir = File("build/integration/$vName").apply { deleteRecursively() }
 		mInput = null
 		mWarnings = emptyList()
 		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
 		val vSkipped = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile }?.readLines()
 			?.map { it.substringBefore(':').trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.toSet() ?: emptySet()
+		// `<Name>.vary`: the beginnings of the lines it prints that differ on every run (a size drawn at random, a time).
+		mVarying = File(inSource.parentFile, inSource.nameWithoutExtension + ".vary").takeIf { it.isFile }?.readLines()
+			?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
 		val vMain = File("build/testmain/${vName.replace('-', '_')}.kt").apply { parentFile.mkdirs() }
 		val vText = inSource.readText()
 		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
 		vMain.writeText((if (vPackage != null) "package $vPackage\n\n" else "") + testMain(vText, vSkipped))
-		// The module as ktc2 carries it (processResources puts kotlinx-io's sources next to its own files).
-		val vModule = File("build/resources/main/ktc2/modules/kotlinx-io")
+		// The module as ktc2 carries it (processResources puts the library's sources next to its own files).
+		val vModule = File("build/resources/main/ktc2/modules/$vModuleName")
 		val vModuleFile = com.bitsycore.ktc2.ModuleFile(vModule, File(vModule, "module.ktc2.toml").readText())
-		val vJars = System.getProperty("ktc2.jvmModule.kotlinx-io", "")
+		val vJars = System.getProperty("ktc2.jvmModule.$vModuleName", "")
 		mCExtra = vModule.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }.sortedBy { it.path }.toList() + sources("nativeTest")
 		mJvmExtra = listOf(kTestLibrary) + sources("jvmTest")
 		mJvmOptions = listOf(
@@ -290,16 +302,20 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mJvmClasspath = vJars
 		System.setProperty("ktc2.weak", vModuleFile.weak.joinToString("\n"))
 		System.setProperty("ktc2.acyclic", vModuleFile.acyclic.joinToString("\n"))
+		System.setProperty("ktc2.moduleOptIn", vModuleFile.optIn.joinToString("\n"))
+		mJvmOptions = mJvmOptions + vModuleFile.optIn.map { "-opt-in=$it" }
 		try {
-			verify("tests/kotlinx-io/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
+			verify("tests/$vModuleName/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
 		} finally {
 			mCExtra = emptyList()
 			mJvmExtra = emptyList()
 			mJvmOptions = emptyList()
 			mJvmClasspath = ""
 			mAllowsLeaks = false
+			mVarying = emptyList()
 			System.clearProperty("ktc2.weak")
 			System.clearProperty("ktc2.acyclic")
+			System.clearProperty("ktc2.moduleOptIn")
 		}
 	}
 
@@ -331,12 +347,14 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// What the modules say is @Weak or @Acyclic, as `ktc2` passes it on.
 		System.setProperty("ktc2.weak", vProject.weak.joinToString("\n"))
 		System.setProperty("ktc2.acyclic", vProject.acyclic.joinToString("\n"))
+		System.setProperty("ktc2.moduleOptIn", vProject.optIn.joinToString("\n"))
 		try {
 			verify(vName, vProject.sources.toList(), vOutDir, null)
 		} finally {
 			System.clearProperty("ktc2.main")
 			System.clearProperty("ktc2.weak")
 			System.clearProperty("ktc2.acyclic")
+			System.clearProperty("ktc2.moduleOptIn")
 			mJvmExcluded = { false }
 			mJvmClasspath = ""
 		}
@@ -514,7 +532,11 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 */
 	private fun samePlatform(inOutput: String): String =
 		kotlinNames(inOutput)
-			.lines().filter { vLine -> mVarying.none { vLine.startsWith(it) } }.joinToString("\n")
+			.lines().filter { vLine -> mVarying.none { varies(vLine, it) } }.joinToString("\n")
+
+	/** True when [inLine] is one [inEntry] of a `.vary` file names: by its beginning, or all of it by a `/regex/`. */
+	private fun varies(inLine: String, inEntry: String): Boolean =
+		if (inEntry.length > 1 && inEntry.startsWith("/") && inEntry.endsWith("/")) Regex(inEntry.substring(1, inEntry.length - 1)).matches(inLine) else inLine.startsWith(inEntry)
 
 	/** [inOutput] with the JVM's names of the standard exceptions (`java.lang.IllegalStateException`) as Kotlin's, which ktc2 uses. */
 	private fun kotlinNames(inOutput: String): String = inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")

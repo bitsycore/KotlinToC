@@ -1,0 +1,6 @@
+# kotlinx-collections-immutable for ktc2: persistent lists, sets and maps (kotlinx.collections.immutable),
+# from the library's own sources as they are (files.txt lists them; Gradle puts them next to this
+# file). It is common code: there is no part of ktc2's own.
+name = "kotlinx-collections-immutable"
+# The iterator of a builder's entries holds an iterator for each level of the trie, which refers back to it.
+weak = ["kotlinx.collections.immutable.implementations.immutableMap.TrieNodeMutableEntriesIterator.parentIterator"]

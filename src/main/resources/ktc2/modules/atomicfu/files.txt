@@ -1,0 +1,22 @@
+# The sources of atomicfu 0.33.0 (Apache 2.0) that the module compiles, as they are: fetched by Gradle
+# (build.gradle.kts, kLibraryModules) and put next to this list in ktc2's resources. What atomicfu
+# gives each system apart (mingwMain, linuxMain, appleMain) is in Ktc2Atomicfu.kt.
+commonMain/kotlinx/atomicfu/AtomicFU.common.kt
+commonMain/kotlinx/atomicfu/MangledJsNames.kt
+commonMain/kotlinx/atomicfu/OptionalJsName.kt
+commonMain/kotlinx/atomicfu/Trace.common.kt
+commonMain/kotlinx/atomicfu/TraceFormat.kt
+commonMain/kotlinx/atomicfu/locks/Synchronized.common.kt
+commonMain/kotlinx/atomicfu/locks/SynchronousMutex.kt
+concurrentMain/kotlinx/atomicfu/locks/NativeMutex.kt
+concurrentMain/kotlinx/atomicfu/locks/ParkingDelegator.kt
+concurrentMain/kotlinx/atomicfu/locks/ParkingSupport.kt
+concurrentMain/kotlinx/atomicfu/locks/ThreadParker.kt
+nativeMain/kotlinx/atomicfu/AtomicFU.kt
+nativeMain/kotlinx/atomicfu/Trace.kt
+nativeMain/kotlinx/atomicfu/locks/NativeMutexNode.kt
+nativeMain/kotlinx/atomicfu/locks/NativeParkingUtils.kt
+nativeMain/kotlinx/atomicfu/locks/ParkingSupport.kt
+nativeMain/kotlinx/atomicfu/locks/Synchronized.kt
+nativeMain/kotlinx/atomicfu/locks/SynchronousMutex.kt
+nativeMain/kotlinx/atomicfu/locks/ThreadId.kt
