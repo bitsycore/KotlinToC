@@ -1,0 +1,6 @@
+# JSON on the streams of kotlinx-io (Json.encodeToSink, decodeFromSource), from the sources of
+# kotlinx-serialization-json-io 1.13.0 as they are (files.txt lists them; Gradle puts them next to
+# this file).
+name         = "kotlinx-serialization-json-io"
+dependencies = ["kotlinx-serialization", "kotlinx-io"]
+optIn        = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.json.internal.JsonFriendModuleApi", "kotlinx.io.unsafe.UnsafeIoApi"]

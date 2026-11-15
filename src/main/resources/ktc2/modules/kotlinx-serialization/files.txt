@@ -1,4 +1,4 @@
-# The sources of kotlinx-serialization-core 1.13.0 (Apache 2.0) that the module compiles, as they are:
+# The sources of kotlinx-serialization-core and kotlinx-serialization-json 1.13.0 (Apache 2.0) that the module compiles, as they are:
 # fetched by Gradle (build.gradle.kts, kLibraryModules) and put next to this list in ktc2's resources.
 core/commonMain/kotlinx/serialization/Annotations.kt
 core/commonMain/kotlinx/serialization/ApiLevels.kt
@@ -52,3 +52,46 @@ core/commonMain/kotlinx/serialization/modules/SerializersModuleBuilders.kt
 core/commonMain/kotlinx/serialization/modules/SerializersModuleCollector.kt
 core/nativeMain/kotlinx/serialization/Serializers.kt
 core/nativeMain/kotlinx/serialization/internal/Platform.kt
+json/commonMain/kotlinx/serialization/json/Json.kt
+json/commonMain/kotlinx/serialization/json/JsonAnnotations.kt
+json/commonMain/kotlinx/serialization/json/JsonConfiguration.kt
+json/commonMain/kotlinx/serialization/json/JsonContentPolymorphicSerializer.kt
+json/commonMain/kotlinx/serialization/json/JsonDecoder.kt
+json/commonMain/kotlinx/serialization/json/JsonElement.kt
+json/commonMain/kotlinx/serialization/json/JsonElementBuilders.kt
+json/commonMain/kotlinx/serialization/json/JsonElementSerializers.kt
+json/commonMain/kotlinx/serialization/json/JsonEncoder.kt
+json/commonMain/kotlinx/serialization/json/JsonExceptions.kt
+json/commonMain/kotlinx/serialization/json/JsonNamingStrategy.kt
+json/commonMain/kotlinx/serialization/json/JsonTransformingSerializer.kt
+json/commonMain/kotlinx/serialization/json/internal/CharArrayPool.common.kt
+json/commonMain/kotlinx/serialization/json/internal/Composers.kt
+json/commonMain/kotlinx/serialization/json/internal/FormatLanguage.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonElementMarker.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonExceptions.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonIterator.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonNamesMap.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonPath.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonSerializersModuleValidator.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonStreams.kt
+json/commonMain/kotlinx/serialization/json/internal/JsonTreeReader.kt
+json/commonMain/kotlinx/serialization/json/internal/LexerMode.kt
+json/commonMain/kotlinx/serialization/json/internal/Polymorphic.kt
+json/commonMain/kotlinx/serialization/json/internal/PolymorphicJsonDecoder.kt
+json/commonMain/kotlinx/serialization/json/internal/SchemaCache.kt
+json/commonMain/kotlinx/serialization/json/internal/StreamingJsonDecoder.kt
+json/commonMain/kotlinx/serialization/json/internal/StreamingJsonEncoder.kt
+json/commonMain/kotlinx/serialization/json/internal/StringJsonWriter.kt
+json/commonMain/kotlinx/serialization/json/internal/StringOps.kt
+json/commonMain/kotlinx/serialization/json/internal/SuppressAnimalSniffer.kt
+json/commonMain/kotlinx/serialization/json/internal/TreeJsonDecoder.kt
+json/commonMain/kotlinx/serialization/json/internal/TreeJsonEncoder.kt
+json/commonMain/kotlinx/serialization/json/internal/lexer/AbstractJsonLexer.kt
+json/commonMain/kotlinx/serialization/json/internal/lexer/BufferedJsonLexer.kt
+json/commonMain/kotlinx/serialization/json/internal/lexer/CommentLexers.kt
+json/commonMain/kotlinx/serialization/json/internal/lexer/StringJsonLexer.kt
+json/nativeMain/kotlinx/serialization/json/JsonSchemaCache.kt
+json/nativeMain/kotlinx/serialization/json/internal/CharArrayPool.kt
+json/nativeMain/kotlinx/serialization/json/internal/FormatLanguage.kt
+json/nativeMain/kotlinx/serialization/json/internal/StringJsonWriter.kt
+json/nativeMain/kotlinx/serialization/json/internal/createMapForCache.kt

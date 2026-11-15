@@ -261,7 +261,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * [kModuleTests] names the modules that have such tests.
 	 */
 	/** The bundled modules whose library's own tests are under `tests/<module>/`. */
-	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime")
+	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io")
 
 	/** The source sets of a module's tests that are common: run in C and on the JVM. */
 	private val kCommonTestSets = Regex("/(commonTest|concurrentTest)/")
@@ -294,7 +294,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		fun sources(inSet: String) = File(vRoot, inSet).walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
 		val vCommon = sources("commonTest") + sources("concurrentTest")
 		val vModuleName = vRoot.parentFile.name
-		val vName = vModuleName + "-" + vRoot.name + "-" + inSource.invariantSeparatorsPath.substring(vSet.range.last + 1).removeSuffix(".kt").replace('/', '-')
+		// The test's file name and a hash of its path: the build directory has to leave room for the C's own paths (Windows: 260).
+		val vRelative = inSource.invariantSeparatorsPath.substring(vSet.range.last + 1).removeSuffix(".kt")
+		val vName = vModuleName + "-" + vRelative.substringAfterLast('/') + "-" + "%04x".format(vRelative.hashCode() and 0xFFFF)
 		val vOutDir = File("build/integration/$vName").apply { deleteRecursively() }
 		mInput = null
 		mWarnings = emptyList()
@@ -304,7 +306,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// `<Name>.vary`: the beginnings of the lines it prints that differ on every run (a size drawn at random, a time).
 		mVarying = File(inSource.parentFile, inSource.nameWithoutExtension + ".vary").takeIf { it.isFile }?.readLines()
 			?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
-		val vMain = File("build/testmain/${vName.replace('-', '_')}.kt").apply { parentFile.mkdirs() }
+		val vMain = File("build/testmain/${vName.replace('-', '_')}/Main.kt").apply { parentFile.mkdirs() }
 		val vText = inSource.readText()
 		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
 		vMain.writeText((if (vPackage != null) "package $vPackage\n\n" else "") + testMain(vText, vSkipped))
@@ -316,7 +318,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mCExtra = vModules.flatMap { vModuleFile ->
 			vModuleFile.directory.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
 				.filter { it.relativeTo(vModuleFile.directory).invariantSeparatorsPath !in vModuleFile.elsewhere }.sortedBy { it.path }.toList()
-		} + sources("nativeTest")
+		} + sources("nativeTest") + sources("nativeCommonTest")
 		mJvmExtra = listOf(kTestLibrary) + sources("jvmTest")
 		mJvmOptions = listOf(
 			// kotlin.test (ktc2's, compiled with the tests) is common too: the common tests use it.

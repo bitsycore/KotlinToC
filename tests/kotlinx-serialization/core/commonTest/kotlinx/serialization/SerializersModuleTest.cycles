@@ -1,0 +1,2 @@
+The serializer of a generic class (its $serializer) and its descriptor refer to each other
+(PluginGeneratedSerialDescriptor.generatedSerializer): a collector frees them, reference counts do not (PLAN.md).

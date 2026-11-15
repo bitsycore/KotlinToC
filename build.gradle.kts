@@ -55,8 +55,14 @@ val kLibraryModules = listOf(
 	LibraryModule("atomicfu", mapOf("." to libs.atomicfu.asProvider()), listOf(libs.atomicfu.jvm)),
 	LibraryModule(
 		"kotlinx-serialization",
-		mapOf("core" to libs.kotlinx.serialization.core.asProvider()),
-		listOf(libs.kotlinx.serialization.core.jvm),
+		mapOf("core" to libs.kotlinx.serialization.core.asProvider(), "json" to libs.kotlinx.serialization.json.asProvider()),
+		listOf(libs.kotlinx.serialization.core.jvm, libs.kotlinx.serialization.json.jvm),
+	),
+	// JSON on the streams of kotlinx-io; on the JVM, json-okio and okio too, which only its tests use.
+	LibraryModule(
+		"kotlinx-serialization-json-io",
+		mapOf("." to libs.kotlinx.serialization.json.io.asProvider()),
+		listOf(libs.kotlinx.serialization.json.io.jvm, libs.kotlinx.serialization.json.okio.jvm, libs.okio.jvm),
 	),
 	// The common jar has every source set but Windows' (windowsMain), which is in the jar of mingwX64.
 	LibraryModule(
@@ -74,6 +80,8 @@ dependencies {
 	}
 	// Frontend: the Kotlin K2 compiler. Pinned - its IR API is experimental.
 	implementation(libs.kotlin.compiler.embeddable)
+	// Run with ktc2's plugin in the compilations of programs that use kotlinx.serialization (K2Frontend.pluginClasspath).
+	implementation(libs.kotlin.serialization.plugin)
 	testImplementation(kotlin("test"))
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -141,9 +149,9 @@ tasks.test {
 	systemProperty("ktc2.keepLibrary", "true")
 	// What the tests of the standard library opt in to besides what the library itself does (tests/README.md).
 	systemProperty("ktc2.optIn", "kotlin.ExperimentalUnsignedTypes,kotlin.io.encoding.ExperimentalEncodingApi,kotlin.uuid.ExperimentalUuidApi,kotlin.time.ExperimentalTime")
-	// A program compiled with the library sources and not on the kept library (kotlinx-datetime with kotlinx-serialization)
-	// takes more than 1 GB on Linux.
-	maxHeapSize = "1536m"
+	// A program compiled with the library sources and not on the kept library takes more than 1 GB on Linux (kotlinx-datetime
+	// with kotlinx-serialization), more than 1.5 (kotlinx.serialization's JSON tests: JSON, its io, kotlinx-io).
+	maxHeapSize = "2g"
 	// Several compilers at once: each keeps to a few threads of its own, or they get in each other's way.
 	jvmArgs((System.getenv("KTC2_TEST_JVM") ?: "-XX:+UseParallelGC -XX:ParallelGCThreads=2 -XX:CICompilerCount=2 -Xms1g").split(" ").filter { it.isNotEmpty() })
 	// What each process wrote, put together: the counts (tools/arc_compare.py) and the times of each step.

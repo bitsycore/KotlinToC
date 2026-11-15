@@ -16,10 +16,14 @@ kotlinx-collections-immutable = "0.5.2"
 atomicfu = "0.33.0"
 kotlinx-datetime = "0.8.0"
 kotlinx-serialization = "1.13.0"
+# Only for the JVM side of kotlinx.serialization's own tests, which run a mode on okio (ktc2 has no okio module).
+okio = "3.18.2"
 
 [libraries]
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+# The compiler plugin of kotlinx.serialization, run with ktc2's own: the serializers of @Serializable classes.
+kotlin-serialization-plugin = { module = "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable", version.ref = "kotlin" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 kotlinx-io-bytestring = { module = "org.jetbrains.kotlinx:kotlinx-io-bytestring", version.ref = "kotlinx-io" }
 kotlinx-io-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-io-core-jvm", version.ref = "kotlinx-io" }
@@ -29,6 +33,12 @@ kotlinx-collections-immutable-jvm = { module = "org.jetbrains.kotlinx:kotlinx-co
 atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
 atomicfu-jvm = { module = "org.jetbrains.kotlinx:atomicfu-jvm", version.ref = "atomicfu" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-serialization-json-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm", version.ref = "kotlinx-serialization" }
+kotlinx-serialization-json-io = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-io", version.ref = "kotlinx-serialization" }
+kotlinx-serialization-json-io-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-io-jvm", version.ref = "kotlinx-serialization" }
+kotlinx-serialization-json-okio-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json-okio-jvm", version.ref = "kotlinx-serialization" }
+okio-jvm = { module = "com.squareup.okio:okio-jvm", version.ref = "okio" }
 kotlinx-serialization-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core-jvm", version.ref = "kotlinx-serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-datetime-mingwx64 = { module = "org.jetbrains.kotlinx:kotlinx-datetime-mingwx64", version.ref = "kotlinx-datetime" }

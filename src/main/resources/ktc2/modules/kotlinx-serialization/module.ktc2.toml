@@ -1,7 +1,11 @@
 # kotlinx.serialization for ktc2: its core (KSerializer, encoders and decoders, the built-in
-# serializers, SerializersModule), from the sources of kotlinx-serialization-core 1.13.0 as they
-# are (files.txt lists them; Gradle puts them next to this file). Classes marked @Serializable get
-# their serializers from the compiler plugin, which ktc2 does not run yet.
+# serializers, SerializersModule) and JSON (Json, JsonElement), from the sources of
+# kotlinx-serialization-core and -json 1.13.0 as they are (files.txt lists them; Gradle puts them
+# next to this file). Classes marked @Serializable get their serializers from the compiler plugin,
+# which ktc2 runs with its own when a program uses kotlinx.serialization.
 name = "kotlinx-serialization"
+files = ["Ktc2Serialization.kt"]
+# The encoders of one call to Json share an array of them, which each refers to: the call holds the array.
+weak = ["kotlinx.serialization.json.internal.StreamingJsonEncoder.modeReuseCache"]
 # What its build opts every source set in to (buildSrc, source-sets-conventions).
-optIn = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.SealedSerializationApi", "kotlinx.serialization.internal.CoreFriendModuleApi", "kotlin.ExperimentalMultiplatform", "kotlin.ExperimentalSubclassOptIn", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.reflect.ExperimentalAssociatedObjects", "kotlin.ExperimentalUnsignedTypes"]
+optIn = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.SealedSerializationApi", "kotlinx.serialization.internal.CoreFriendModuleApi", "kotlinx.serialization.json.internal.JsonFriendModuleApi", "kotlin.ExperimentalMultiplatform", "kotlin.ExperimentalSubclassOptIn", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.reflect.ExperimentalAssociatedObjects", "kotlin.ExperimentalUnsignedTypes"]

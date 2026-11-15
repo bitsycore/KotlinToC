@@ -2,9 +2,33 @@ import kotlinx.serialization.*
 import kotlinx.serialization.builtins.*
 import kotlinx.serialization.descriptors.*
 import kotlinx.serialization.encoding.*
+import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.*
 
 class Point(val x: Int, val y: Int)
+
+@Serializable
+data class Person(val name: String, val age: Int, val tags: List<String> = emptyList(), val address: Address? = null)
+
+@Serializable
+data class Address(val city: String, val zip: String? = null)
+
+@Serializable
+data class Box<T>(val value: T, val label: String)
+
+@Serializable
+sealed class Shape {
+	@Serializable
+	@SerialName("circle")
+	data class Circle(val radius: Double) : Shape()
+
+	@Serializable
+	@SerialName("rect")
+	data class Rect(val w: Int, val h: Int) : Shape()
+}
+
+@Serializable
+enum class Role { ADMIN, USER }
 
 object PointSerializer : KSerializer<Point> {
 	override val descriptor: SerialDescriptor = buildClassSerialDescriptor("Point") {
@@ -45,4 +69,20 @@ fun main() {
 	println(show(ListSerializer(PointSerializer.nullable), listOf(Point(3, 4), null)))
 	println(ListSerializer(Int.serializer()).descriptor.serialName)
 	println(PointSerializer.descriptor.elementNames.toList())
+	// With the compiler plugin: classes marked @Serializable, to and from JSON.
+	val vPerson = Person("Ada", 36, listOf("math", "code"), Address("London"))
+	val vText = Json.encodeToString(vPerson)
+	println(vText)
+	println(Json.decodeFromString<Person>(vText) == vPerson)
+	println(Json.decodeFromString<Person>("""{"name":"Bob","age":7}"""))
+	println(Json { prettyPrint = true }.encodeToString(listOf(Role.ADMIN, Role.USER)))
+	println(Json.encodeToString(Box(3, "three")))
+	println(Json.decodeFromString<Box<String>>("""{"value":"x","label":"y"}"""))
+	println(Json.encodeToString<List<Shape>>(listOf(Shape.Circle(1.5), Shape.Rect(2, 3))))
+	println(Json.parseToJsonElement("""{"x":[1,2,{"y":null}],"z":true}""").jsonObject["x"]!!.jsonArray.size)
+	try {
+		Json.decodeFromString<Person>("""{"name":"X"}""")
+	} catch (vError: SerializationException) {
+		println("error: ${vError.message?.lineSequence()?.first()}")
+	}
 }

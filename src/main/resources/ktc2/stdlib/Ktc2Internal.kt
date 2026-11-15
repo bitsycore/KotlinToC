@@ -674,6 +674,12 @@ public fun <V> mutableReference0(name: String, getter: () -> V, setter: (V) -> U
 
 public fun <T, V> mutableReference1(name: String, getter: (T) -> V, setter: (T, V) -> Unit): Any = MutableReference1(name, getter, setter)
 
+/**
+ * The object associated with the class named [className] by an annotation named [keyName] (`findAssociatedObject`):
+ * its body is written by ktc2 when it compiles the program, from the classes it has (`AssociatedObjects.kt`).
+ */
+public fun associatedObject(className: String, keyName: String): Any? = null
+
 /** The name of the property [reference] refers to; a reference to a function has none here. */
 public fun referenceName(reference: Any): String = when (reference) {
 	is Reference0<*> -> reference.name

@@ -1,0 +1,1 @@
+testOverwriteWithDifferentClass: the message names classes as the JVM does without kotlin-reflect, which the suite's JVM side has not ("class java.lang.Object (Kotlin reflection is not available)")

@@ -93,10 +93,14 @@ object K2Frontend {
 	 */
 	private val kMiddleSourceSet = Regex("/(native|commonKotlin)Main/")
 
-	/** True for a source of a common source set (its main code or its tests), or of `concurrent`, common to the JVM and Native. */
+	/**
+	 * True for a source of a common source set (its main code or its tests), of `concurrent`, common to the JVM and
+	 * Native, or of `nativeCommonTest`: what the suite puts in the place of a library ktc2 has not, on the level of the
+	 * common tests that use it (okio for kotlinx.serialization's tests), where the JVM has the library itself.
+	 */
 	private fun isCommonSource(inSource: File): Boolean = kCommonSourceSet.containsMatchIn(inSource.invariantSeparatorsPath)
 
-	private val kCommonSourceSet = Regex("/(common|concurrent)(Main|Test)/")
+	private val kCommonSourceSet = Regex("/(common|concurrent|nativeCommon)(Main|Test)/")
 
 	fun compile(inGivenSources: List<File>, inOutDir: File, inDumpIr: Boolean): Boolean {
 		val vSources = withNativeImports(inGivenSources, inOutDir)
@@ -188,7 +192,7 @@ object K2Frontend {
 			add("-d"); add(File(if (vKeepsLibrary) kLibraryDir else inOutDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
 			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, if (vKeepsLibrary) keptCopy(codeSourceOf(ktc2.Struct::class.java)) else codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
-			add("-Xplugin=${pluginClasspath()}")
+			add("-Xplugin=${pluginClasspath(usesSerialization(inGivenSources))}")
 			// KTC2_TIMING: also the compiler's own account of its phases.
 			if (System.getenv("KTC2_TIMING") != null && !vKeepsLibrary) add("-Xdump-perf=" + File(inOutDir, "perf.log").path)
 		}
@@ -305,6 +309,7 @@ object K2Frontend {
 			// The inline functions of the `ktc2.` package are built for the JVM this runs on.
 			"-jvm-target", System.getProperty("java.specification.version"),
 		) + kLanguageOptions + inOptions +
+			(if (usesSerialization(inSources)) listOf("-Xplugin=${serializationPlugin()}") else emptyList()) +
 			// Sources of a multiplatform module (the tests of the Kotlin library) are all its common part: an optional
 			// `expect` (`@ThreadLocal`) is allowed there without its `actual`.
 			(if ("-Xmulti-platform" in inOptions && inOptions.none { it.startsWith("-Xcommon-sources=") }) listOf("-Xcommon-sources=" + inSources.joinToString(",") { it.path }) else emptyList())
@@ -355,8 +360,21 @@ object K2Frontend {
 	 * Where the compiler finds [Ktc2Registrar] and its service file: this jar, or the classes
 	 * and resources directories when running unpackaged.
 	 */
-	private fun pluginClasspath(): String {
-		val vRoots = linkedSetOf(codeSourceOf(Ktc2Registrar::class.java))
+	/** True when a program's sources use kotlinx.serialization: its compiler plugin then runs with ktc2's. */
+	fun usesSerialization(inSources: List<File>): Boolean =
+		inSources.any { it.extension == "kt" && it.isFile && "kotlinx.serialization" in it.readText() }
+
+	/** The jar of kotlinx.serialization's compiler plugin, which ktc2 carries. */
+	fun serializationPlugin(): String = codeSourceOf(Class.forName("org.jetbrains.kotlinx.serialization.compiler.extensions.SerializationComponentRegistrar"))
+
+	/**
+	 * The plugins of a compilation: ktc2's, after kotlinx.serialization's when [inSerialization], so that the serializers
+	 * the latter writes are in the IR ktc2's receives.
+	 */
+	private fun pluginClasspath(inSerialization: Boolean): String {
+		val vRoots = linkedSetOf<String>()
+		if (inSerialization) vRoots += serializationPlugin()
+		vRoots += codeSourceOf(Ktc2Registrar::class.java)
 		val vService = "META-INF/services/${CompilerPluginRegistrar::class.java.name}"
 		for (vUrl in Ktc2Registrar::class.java.classLoader.getResources(vService)) {
 			if (vUrl.protocol != "file" || Ktc2Registrar::class.java.name !in vUrl.readText()) continue
@@ -435,6 +453,7 @@ class Ktc2Extension : IrGenerationExtension {
 			File(vOutDir, "ir.kt.txt").writeText(moduleFragment.dumpKotlinLike())
 		}
 
+		writeAssociatedObjects(moduleFragment, pluginContext)
 		val vImporter = KirImporter(pluginContext.irBuiltIns)
 		val vJavaUses = JavaUseCheck(System.getProperty(kLibraryFilesProperty, "").lines().toSet()).also { it.check(moduleFragment.files) }
 		if (vJavaUses.errors.isNotEmpty()) {

@@ -1,6 +1,6 @@
-# A program on the bundled module kotlinx-serialization (its core: built-in serializers, one written by
-# hand, an encoder of its own), run by the suite and compared with the same program on the JVM, there
-# on the library's JVM jars.
+# A program on the bundled module kotlinx-serialization (its core: built-in serializers, one written
+# by hand, an encoder of its own; JSON, with classes marked @Serializable and the compiler plugin),
+# run by the suite and compared with the same program on the JVM, there on the library's JVM jars.
 name         = "kotlinx-serialization-program"
 executable   = "kotlinx-serialization-program"
 sources      = ["Main.kt"]
