@@ -218,7 +218,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mInput = null
 		mWarnings = emptyList()
 		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
-		val vName = "box-" + inSource.relativeTo(File("tests/box")).invariantSeparatorsPath.removeSuffix(".kt").replace('/', '-')
+		// A long name is cut, with a hash of the whole: the C files of the program are named after it, and a path of
+		// Windows has at most 260 characters (the checkout of a CI machine is deeper than one's own).
+		val vFull = "box-" + inSource.relativeTo(File("tests/box")).invariantSeparatorsPath.removeSuffix(".kt").replace('/', '-')
+		val vName = if (vFull.length <= 60) vFull else vFull.take(50) + "-" + vFull.hashCode().toUInt().toString(16)
 		val vText = inSource.readText()
 		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
 		// The name of the file of `main` is the name of its class on the JVM: no '-' there.
@@ -387,7 +390,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 		if ("c" !in kSteps) {
 			// What the program has to print, for a job that builds it with another compiler (tools/msvc_all.sh).
-			vExpected?.let { File(vOutDir, "program.out").writeText(it) }
+			vExpected?.let { File(vOutDir, "program.out").writeText(kotlinNames(it)) }
 			return
 		}
 		val vExe = File(vOutDir, "program.exe")
@@ -430,7 +433,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vActual = run(listOf(vExe.absolutePath), File("."))
 		lap("cRun")
 		// What the C program printed: what `tools/msvc_all.sh` compares MSVC's build with on a machine that has the C and not the program.
-		File(vOutDir, "program.out").writeText(vActual)
+		File(vOutDir, "program.out").writeText(kotlinNames(vActual))
 		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")
 
 		if (vExpected != null) assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
@@ -446,8 +449,11 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * here and on Kotlin/Native: a program that prints one prints either name.
 	 */
 	private fun samePlatform(inOutput: String): String =
-		inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")
+		kotlinNames(inOutput)
 			.lines().filter { vLine -> mVarying.none { vLine.startsWith(it) } }.joinToString("\n")
+
+	/** [inOutput] with the JVM's names of the standard exceptions (`java.lang.IllegalStateException`) as Kotlin's, which ktc2 uses. */
+	private fun kotlinNames(inOutput: String): String = inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")
 
 	private fun run(inCommand: List<String>, inDirectory: File): String {
 		val vErrors = File.createTempFile("ktc2", ".err")
