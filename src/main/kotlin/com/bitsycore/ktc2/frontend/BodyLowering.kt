@@ -1738,9 +1738,15 @@ internal class BodyBuilder(
 		val vFunction = inLambda.function
 		vFunction.parameters.forEachIndexed { vIndex, vParam ->
 			// A parameter of type `Nothing` (the element of an `emptyList<Nothing>()`) never receives a value: it is declared as a plain reference.
-			val vType = (kType(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")).let { if (it == KNothingType) KObjType else it }
+			val vType = (kType(vParam.type) ?: return fail(vParam, "lambda parameter of type '${vParam.type.render()}'")).let { if (it == KNothingType || it == KUnitType) KObjType else it }
 			val vLocal = KLocal(freshName(vParam.name.asString().trim('<', '>')), vType)
-			mBlock += KLet(vLocal, if (inArguments[vIndex].type == KNothingType || inArguments[vIndex].type == KUnitType) KNull(KObjType) else coerce(inArguments[vIndex], vType))
+			// A parameter of type Unit (`check(x).let { ... }`) holds the Unit object, as the JVM's would.
+			val vValue = when (inArguments[vIndex].type) {
+				KNothingType -> KNull(KObjType)
+				KUnitType -> unitObject()
+				else -> coerce(inArguments[vIndex], vType)
+			}
+			mBlock += KLet(vLocal, vValue)
 			mLocals[vParam] = vLocal
 		}
 		return expandBody(vFunction, inResultType)
@@ -3561,6 +3567,9 @@ internal class BodyBuilder(
 
 	/** A String for [inValue] (already stable), calling `toString()` on objects; "null" for null. */
 	private fun toStringOf(inElement: IrElement, inValue: KExpr, inType: IrType): KExpr = when (inValue.type) {
+		// The Unit object (a lambda's parameter of type Unit) says what it says on the JVM.
+		KUnitType -> KStringLit("kotlin.Unit")
+		is KRefType if closed(inType).isUnit() -> KStringLit("kotlin.Unit")
 		KStringType -> if (closed(inType).isMarkedNullable()) concat(listOf(KPrintValue(inValue))) else inValue
 		is KPrimType, is KOptType -> concat(listOf(KPrintValue(inValue)))
 		is KStructType -> {
