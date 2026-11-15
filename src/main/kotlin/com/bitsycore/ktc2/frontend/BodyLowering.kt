@@ -1066,6 +1066,9 @@ internal class BodyBuilder(
 		if (inValue == null || mFunction.returnType == KUnitType) {
 			inValue?.let { discard(lowerRhs(it)) }
 			mBlock += KReturn(null)
+		} else if (inValue.type.isNothing()) {
+			// It never gives a value (an endless `loop { }`, a call that throws): nothing is returned after it.
+			discard(lowerRhs(inValue))
 		} else {
 			mBlock += KReturn(coerce(lowerRhs(inValue), mFunction.returnType))
 		}
