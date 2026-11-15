@@ -1,0 +1,38 @@
+# The sources of kotlinx-io 0.9.3 (kotlinx-io-core and kotlinx-io-bytestring, Apache 2.0) that
+# the module compiles, as they are: fetched by Gradle (build.gradle.kts, unpackKotlinxIoSources)
+# and put next to this list in ktc2's resources. Those of nativeMain are what Kotlin/Native
+# compiles for every system; what kotlinx-io gives each system apart is in Ktc2KotlinxIo.kt.
+core/commonMain/-CommonPlatform.kt
+core/commonMain/-Util.kt
+core/commonMain/Annotations.kt
+core/commonMain/Buffer.kt
+core/commonMain/Buffers.kt
+core/commonMain/ByteStrings.kt
+core/commonMain/Core.kt
+core/commonMain/PeekSource.kt
+core/commonMain/RawSink.kt
+core/commonMain/RawSource.kt
+core/commonMain/RealSink.kt
+core/commonMain/RealSource.kt
+core/commonMain/Segment.kt
+core/commonMain/SegmentPool.kt
+core/commonMain/Sink.kt
+core/commonMain/Sinks.kt
+core/commonMain/Source.kt
+core/commonMain/Sources.kt
+core/commonMain/Utf8.kt
+core/commonMain/internal/-Utf8.kt
+core/commonMain/unsafe/UnsafeBufferOperations.kt
+core/nativeMain/-NonJvmPlatform.kt
+core/nativeMain/RawSink.kt
+core/nativeMain/SegmentPool.kt
+core/nativeMain/UtilsNative.kt
+bytestring/commonMain/-Platform.kt
+bytestring/commonMain/Base64.kt
+bytestring/commonMain/ByteString.kt
+bytestring/commonMain/ByteStringBuilder.kt
+bytestring/commonMain/Hex.kt
+bytestring/commonMain/Random.kt
+bytestring/commonMain/unsafe/Annotations.kt
+bytestring/commonMain/unsafe/UnsafeByteStringOperations.kt
+bytestring/nativeMain/-PlatformNative.kt

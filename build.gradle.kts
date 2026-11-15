@@ -29,8 +29,22 @@ val stdlibSources: Configuration = configurations.create("stdlibSources") {
 	isTransitive = false
 }
 
+/** kotlinx-io for the JVM: what a program that uses the bundled module `kotlinx-io` is compared with, in the suite. */
+val kotlinxIoJvm: Configuration = configurations.create("kotlinxIoJvm") {
+	isTransitive = false
+}
+
+/** The sources of kotlinx-io (Apache-2), compiled with the programs that use the bundled module `kotlinx-io`. */
+val kotlinxIoSources: Configuration = configurations.create("kotlinxIoSources") {
+	isTransitive = false
+}
+
 dependencies {
 	stdlibSources("org.jetbrains.kotlin:kotlin-stdlib:2.5.0-RC:sources")
+	kotlinxIoSources("org.jetbrains.kotlinx:kotlinx-io-core:0.9.3:sources")
+	kotlinxIoSources("org.jetbrains.kotlinx:kotlinx-io-bytestring:0.9.3:sources")
+	kotlinxIoJvm("org.jetbrains.kotlinx:kotlinx-io-core-jvm:0.9.3")
+	kotlinxIoJvm("org.jetbrains.kotlinx:kotlinx-io-bytestring-jvm:0.9.3")
 	// Frontend: the Kotlin K2 compiler. Pinned - its IR API is experimental.
 	implementation("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.5.0-RC")
 	testImplementation(kotlin("test"))
@@ -47,9 +61,24 @@ val unpackStdlibSources = tasks.register("unpackStdlibSources", Sync::class) {
 	into(layout.buildDirectory.dir("stdlib-src"))
 }
 
+val unpackKotlinxIoSources = tasks.register("unpackKotlinxIoSources", Sync::class) {
+	description = "Unpack the sources of kotlinx-io (Apache-2) into the build directory, for the bundled module kotlinx-io."
+	// Each library in a directory of its own: both have a commonMain, a nativeMain...
+	from({ kotlinxIoSources.filter { "bytestring" !in it.name }.map { vJar -> zipTree(vJar) } }) { into("core") }
+	from({ kotlinxIoSources.filter { "bytestring" in it.name }.map { vJar -> zipTree(vJar) } }) { into("bytestring") }
+	into(layout.buildDirectory.dir("kotlinx-io-src"))
+}
+
 /** The installed ktc2 carries the standard library sources it compiles with every program (those of files.txt). */
 tasks.processResources {
-	dependsOn(unpackStdlibSources)
+	dependsOn(unpackStdlibSources, unpackKotlinxIoSources)
+	// And the sources of kotlinx-io its bundled module compiles (modules/kotlinx-io/files.txt).
+	val vIoListed = file("src/main/resources/ktc2/modules/kotlinx-io/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
+	inputs.file("src/main/resources/ktc2/modules/kotlinx-io/files.txt")
+	from(layout.buildDirectory.dir("kotlinx-io-src")) {
+		include(vIoListed)
+		into("ktc2/modules/kotlinx-io")
+	}
 	val vListed = file("src/main/resources/ktc2/stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
 	inputs.file("src/main/resources/ktc2/stdlib/files.txt")
 	from(layout.buildDirectory.dir("stdlib-src")) {
@@ -62,6 +91,8 @@ tasks.test {
 	useJUnitPlatform()
 	dependsOn(unpackStdlibSources)
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
+	// A program that uses a bundled module made of a library's sources is compiled for the JVM with the library's JVM jars.
+	systemProperty("ktc2.jvmModule.kotlinx-io", kotlinxIoJvm.files.joinToString(File.pathSeparator))
 	// The integration programs and the bundled runtime are inputs of the oracle test.
 	inputs.dir("integration")
 	// The programs are shared between several processes (see IntegrationTest): KTC2_TEST_FORKS says how many,

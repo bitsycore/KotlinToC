@@ -1,0 +1,6 @@
+# A program on the bundled module kotlinx-io, run by the suite and compared with the same program
+# on the JVM, there on kotlinx-io's JVM jars.
+name         = "kotlinx-io-program"
+executable   = "kotlinx-io-program"
+sources      = ["Main.kt"]
+dependencies = ["kotlinx-io"]

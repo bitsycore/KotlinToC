@@ -102,7 +102,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 	private fun programList(): List<DynamicTest> =
 		File("integration").walkTopDown()
-			.filter { it.isFile && it.extension == "kt" }
+			// A file in the directory of a module (integration/modules/) is a part of that program (kProjects).
+			.filter { it.isFile && it.extension == "kt" && !File(it.parentFile, "module.ktc2.toml").isFile }
 			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text (several, separated by commas).
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
@@ -242,7 +243,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * compiled as `ktc2 <directory>` compiles it. They are plain Kotlin, so they are compared with
 	 * the JVM like the single files.
 	 */
-	private val kProjects = listOf("examples/showcase/core")
+	private val kProjects = listOf("examples/showcase/core", "integration/modules/kotlinx-io")
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects
@@ -256,12 +257,31 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mInput = null
 		System.clearProperty("ktc2.main")
 		vProject.main?.let { System.setProperty("ktc2.main", it) }
+		// A bundled module made of a library's sources (kotlinx-io) is, on the JVM, that library's jars.
+		val vJvmModules = vProject.sources.mapNotNull { vSource ->
+			vSource.absoluteFile.relativeToOrNull(File(vOutDir, "modules").absoluteFile)?.invariantSeparatorsPath?.substringBefore('/')?.takeIf { !it.startsWith("..") }
+		}.toSet().mapNotNull { vModule -> System.getProperty("ktc2.jvmModule.$vModule")?.takeIf { it.isNotEmpty() }?.let { vModule to it } }.toMap()
+		mJvmExcluded = { vSource -> vJvmModules.keys.any { vModule -> vSource.absoluteFile.relativeToOrNull(File(vOutDir, "modules/$vModule").absoluteFile)?.path?.startsWith("..") == false } }
+		mJvmClasspath = vJvmModules.values.joinToString(File.pathSeparator)
+		// What the modules say is @Weak or @Acyclic, as `ktc2` passes it on.
+		System.setProperty("ktc2.weak", vProject.weak.joinToString("\n"))
+		System.setProperty("ktc2.acyclic", vProject.acyclic.joinToString("\n"))
 		try {
 			verify(vName, vProject.sources.toList(), vOutDir, null)
 		} finally {
 			System.clearProperty("ktc2.main")
+			System.clearProperty("ktc2.weak")
+			System.clearProperty("ktc2.acyclic")
+			mJvmExcluded = { false }
+			mJvmClasspath = ""
 		}
 	}
+
+	/** The sources the JVM compilation leaves out: those of a module that is a library's jars there. */
+	private var mJvmExcluded: (File) -> Boolean = { false }
+
+	/** What the JVM compilation and run have on their class path besides the usual: those jars. */
+	private var mJvmClasspath = ""
 
 	/** The standard input of the program being checked; null when it has none. */
 	private var mInput: File? = null
@@ -357,10 +377,11 @@ abstract class IntegrationPart(private val mShard: Int) {
 			null
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
-			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" } + mJvmExtra, vJvmDir, mJvmOptions), "kotlinc failed on $inName")
+			val vClasspathOptions = if (mJvmClasspath.isEmpty()) emptyList() else listOf("-classpath", K2Frontend.userClasspath() + File.pathSeparator + mJvmClasspath)
+			assertTrue(K2Frontend.compileJvm(inSources.filter { it.extension == "kt" && !mJvmExcluded(it) } + mJvmExtra, vJvmDir, mJvmOptions + vClasspathOptions), "kotlinc failed on $inName")
 			lap("jvmCompile")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
-			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath()
+			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath() + (if (mJvmClasspath.isEmpty()) "" else File.pathSeparator + mJvmClasspath)
 			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File(".")).also { lap("jvmRun") }
 		}
 

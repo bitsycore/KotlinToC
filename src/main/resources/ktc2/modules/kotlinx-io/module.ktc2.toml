@@ -1,0 +1,10 @@
+# kotlinx-io for ktc2: kotlinx.io (Buffer, Source, Sink, UTF-8) and kotlinx.io.bytestring
+# (ByteString), from the sources of kotlinx-io 0.9.3 as they are (files.txt lists them; Gradle
+# puts them next to this file), and Ktc2KotlinxIo.kt for what each platform of kotlinx-io gives.
+# Not there yet: kotlinx.io.files (PLAN.md).
+name    = "kotlinx-io"
+files   = ["Ktc2KotlinxIo.kt"]
+# A segment of a buffer refers to the next and to the one before: the one before holds it, so
+# that reference is weak, and the chain forward ends at the last segment.
+weak    = ["kotlinx.io.Segment.prev"]
+acyclic = ["kotlinx.io.Segment.next"]
