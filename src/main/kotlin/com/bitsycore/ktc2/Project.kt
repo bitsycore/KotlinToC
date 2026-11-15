@@ -25,12 +25,15 @@ const val kModuleFileName = "module.ktc2.toml"
  * cmake        = "module.cmake"          # included by the generated CMakeLists.txt
  * weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that are @Weak
  * acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
+ * optIn        = ["kotlinx.cinterop.ExperimentalForeignApi"]   # what its sources are compiled opted in to
  * ```
  *
  * `weak` and `acyclic` are for sources the module takes as they are (a library written for the
  * JVM or Kotlin/Native, where a collector frees cycles): the properties they name are as if
  * annotated `@Weak` (they hold their object weakly, and form no cycle that is never freed) or
  * `@Acyclic` (the cycle lint does not follow them: they cannot close a cycle).
+ * The reference of an `inner` object to its outer one is named as the JVM names it:
+ * `Outer.Inner.this$0`.
  *
  * A git dependency is `url[#directory][@branch or tag]`. It, and what `fetch` names, is cloned
  * once into the cache (`~/.ktc2/cache`, or the directory `KTC2_CACHE` names).
@@ -53,6 +56,7 @@ class ModuleFile(val directory: File, inText: String) {
 	val files: List<String> get() = mValues["files"] ?: emptyList()
 	val weak: List<String> get() = mValues["weak"] ?: emptyList()
 	val acyclic: List<String> get() = mValues["acyclic"] ?: emptyList()
+	val optIn: List<String> get() = mValues["optIn"] ?: emptyList()
 
 	init {
 		// The small part of TOML a module file needs: `key = "text"` and `key = ["a", "b"]`, with comments.
@@ -147,6 +151,9 @@ class Project(val name: String, val executable: String, val main: String?) {
 	val weak = ArrayList<String>()
 	val acyclic = ArrayList<String>()
 
+	/** The opt-ins the modules name in `optIn`, as their builds give them to the compiler (`-opt-in`). */
+	val optIn = ArrayList<String>()
+
 	/**
 	 * Options for the linker: [linkerOpts] when the program is built with CMake, where a module
 	 * that has a CMake file does its own linking, [directLinkerOpts] when the C compiler is called.
@@ -210,6 +217,7 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 		vProject.compilerOpts += inModule.compilerOpts.map { expanded(it) }
 		vProject.weak += inModule.weak
 		vProject.acyclic += inModule.acyclic
+		vProject.optIn += inModule.optIn
 		val vCMake = inModule.cmake?.let { File(inModule.directory, it) }
 		if (vCMake != null) {
 			if (!vCMake.isFile) return fail("module '${inModule.name}': no such CMake file '${inModule.cmake}'")

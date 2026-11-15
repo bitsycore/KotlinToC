@@ -87,8 +87,10 @@ object K2Frontend {
 	/** A directory of sources written for Kotlin/Native. */
 	private val kNativeSourceSet = Regex("/(native|posix|unix|linux|mingw|apple|androidNative|nativeNon[A-Za-z]+)(Main|Test)/")
 
-	/** True for a source of a common source set: its main code or its tests. */
-	private fun isCommonSource(inSource: File): Boolean = inSource.invariantSeparatorsPath.let { "/commonMain/" in it || "/commonTest/" in it }
+	/** True for a source of a common source set (its main code or its tests), or of `concurrent`, common to the JVM and Native. */
+	private fun isCommonSource(inSource: File): Boolean = kCommonSourceSet.containsMatchIn(inSource.invariantSeparatorsPath)
+
+	private val kCommonSourceSet = Regex("/(common|concurrent)(Main|Test)/")
 
 	fun compile(inGivenSources: List<File>, inOutDir: File, inDumpIr: Boolean): Boolean {
 		val vSources = withNativeImports(inGivenSources, inOutDir)
@@ -143,6 +145,8 @@ object K2Frontend {
 				add("-opt-in=kotlin.ExperimentalStdlibApi")
 				// What the tests of the standard library are compiled with besides (`ktc2.optIn`, set by the suite).
 				System.getProperty("ktc2.optIn")?.split(',')?.forEach { add("-opt-in=$it") }
+				// What the modules' files name in `optIn`.
+				System.getProperty("ktc2.moduleOptIn")?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }?.forEach { add("-opt-in=$it") }
 				add("-Xreturn-value-checker=check")
 				add("-Xdont-warn-on-error-suppression")
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.

@@ -1107,7 +1107,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private fun isWeak(inProperty: IrProperty, inBacking: IrField, inType: KType, inFile: IrFile): Boolean {
 		val vNamed = inProperty.parent.let { it as? IrClass }?.kotlinFqName?.child(inProperty.name)?.asString() in mWeakByModule
 		if (!vNamed && inProperty.annotations.none { it.type.classFqName?.asString() == "ktc2.Weak" }) return false
-		if (inType !is KRefType || !inBacking.type.isMarkedNullable()) {
+		// A property a module names (a library taken as it is) may be of a type without null: the library's design keeps
+		// its object alive while it is used, which a collector would have done.
+		if (inType !is KRefType || (!vNamed && !inBacking.type.isMarkedNullable())) {
 			unsupported(inFile, inProperty, "@Weak on '${inProperty.name}' (it needs a nullable reference type)")
 			return false
 		}
@@ -1239,7 +1241,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		var vName = "outer"
 		while (inClass.fields.any { it.cName == vName }) vName += "_"
-		val vField = KField(vName, vType, inClass, isImmutable = true)
+		// A module may name it as the JVM does, `Inner.this$0`, to have it held weakly: the outer object holds the inner one.
+		val vWeak = "${inIrClass.kotlinFqName.asString()}.this\$0" in mWeakByModule
+		val vField = KField(vName, if (vWeak) KObjType else vType, inClass, isImmutable = true)
+		if (vWeak) vField.weakType = vType
 		inClass.fields += vField
 		mLocalCaptures[inClass] = LocalCaptures(listOf(BodyBuilder.Binding(vOuterThis, vField, null, null)), emptyMap())
 	}

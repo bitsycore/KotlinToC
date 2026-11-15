@@ -22,7 +22,7 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
 private class Exit(val status: Int) : RuntimeException()
 
 /** The options a command leaves in system properties: forgotten before the next one. */
-private val kCommandProperties = listOf("ktc2.warnHeap", "ktc2.checks", "ktc2.warnCycles", "ktc2.copt", "ktc2.lopt", "ktc2.main", "ktc2.weak", "ktc2.acyclic")
+private val kCommandProperties = listOf("ktc2.warnHeap", "ktc2.checks", "ktc2.warnCycles", "ktc2.copt", "ktc2.lopt", "ktc2.main", "ktc2.weak", "ktc2.acyclic", "ktc2.moduleOptIn")
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC - see DESIGN.md).
@@ -112,6 +112,7 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 		vEach.compilerOpts.forEach { addOption("ktc2.copt", it) }
 		vEach.weak.forEach { addOption("ktc2.weak", it) }
 		vEach.acyclic.forEach { addOption("ktc2.acyclic", it) }
+		vEach.optIn.forEach { addOption("ktc2.moduleOptIn", it) }
 		(if (vUsesCMake) vEach.linkerOpts else vEach.directLinkerOpts).forEach { addOption("ktc2.lopt", it) }
 	}
 	if (vSources.isEmpty()) fail("no source file")
