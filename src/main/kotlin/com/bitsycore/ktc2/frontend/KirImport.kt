@@ -507,7 +507,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		mCoroutineSingletons = inModule.files.filter { it.packageFqName.asString() == "kotlin.coroutines.intrinsics" }
 			.flatMap { it.declarations.filterIsInstance<IrClass>() }.firstOrNull { it.name.asString() == "CoroutineSingletons" }
-		val vMain = inModule.files.filter { !it.packageFqName.asString().startsWith("kotlin") }.firstNotNullOfOrNull { vFile ->
+		// Not in the library's own packages (kotlin, kotlin.*): kotlinx.* is a program's or a module's.
+		val vMain = inModule.files.filter { it.packageFqName.asString().let { vPackage -> vPackage != "kotlin" && !vPackage.startsWith("kotlin.") } }.firstNotNullOfOrNull { vFile ->
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { isEntryPoint(it) }
 		}
 		val vEntry = vMain?.let { functionFor(it) }
@@ -876,10 +877,19 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	// ==================
 
 	/** The unit holding the top-level declarations of [inFile]; touching it brings in the file's properties. */
+	/** The units of files already named, as `package/name`. */
+	private val mFacadeNames = HashSet<String>()
+
 	private fun facadeFor(inFile: IrFile): KUnit {
 		mFacades[inFile]?.let { return it }
 		val vBase = File(inFile.fileEntry.name).nameWithoutExtension
-		val vUnit = KUnit(inFile.packageFqName.asString(), cIdentifier(vBase.replaceFirstChar { it.uppercase() }) + "Kt")
+		// Two files of one name in one package (a common util.kt and a platform's) are two units: the second is UtilKt_2.
+		val vPackage = inFile.packageFqName.asString()
+		var vName = cIdentifier(vBase.replaceFirstChar { it.uppercase() }) + "Kt"
+		var vNumber = 1
+		while (!mFacadeNames.add("$vPackage/$vName" + (if (vNumber > 1) "_$vNumber" else ""))) vNumber++
+		if (vNumber > 1) vName += "_$vNumber"
+		val vUnit = KUnit(vPackage, vName)
 		mFacades[inFile] = vUnit
 		mUnits += vUnit
 
@@ -2175,6 +2185,22 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				(vTarget.returnType as? KStructType)?.let { instantiate(boxFor(it.struct)) }
 				vDispatcher.target.dispatch!! += vConcrete to vTarget
 				vChanged = true
+			}
+		}
+		// A value class that crosses between a dispatcher and an implementation (one returns it as it is,
+		// the other as an object) is boxed there: its box class has to be there before the C is written.
+		for (vDispatcher in mDispatchers.values) {
+			val vTarget = vDispatcher.target
+			for ((_, vImplementation) in vTarget.dispatch.orEmpty().toList()) {
+				val vPairs = vTarget.params.zip(vImplementation.params).map { it.first.type to it.second.type } + (vTarget.returnType to vImplementation.returnType)
+				for ((vOne, vOther) in vPairs) {
+					val vStruct = ((vOne as? KStructType) ?: (vOther as? KStructType))?.struct ?: continue
+					if ((vOne is KRefType || vOther is KRefType) && vStruct.box == null && vStruct.boxFunction == null && vStruct in mStructClasses) {
+						// The dispatcher makes objects of it.
+						instantiate(boxFor(vStruct))
+						vChanged = true
+					}
+				}
 			}
 		}
 		return vChanged
