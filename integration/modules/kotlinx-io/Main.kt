@@ -1,9 +1,11 @@
 import kotlinx.io.*
 import kotlinx.io.bytestring.*
+import kotlinx.io.files.*
 
 // kotlinx-io as ordinary code uses it: a Buffer written and read in every way, numbers in both
 // byte orders, UTF-8 with code points beyond U+FFFF, lines, peeking, copying, a Source and a Sink
-// of the program's own, ByteString and its builder, hex and Base64, and buffers of many segments.
+// of the program's own, ByteString and its builder, hex and Base64, buffers of many segments, and
+// files: written, read, appended to, listed, moved and deleted, in a directory of their own.
 
 class Upper(private val inner: RawSink) : RawSink {
 	override fun write(source: Buffer, byteCount: Long) {
@@ -103,4 +105,42 @@ fun main() {
 	withString.writeString(" and more")
 	println(withString.readByteString(3) == bytes)
 	println(withString.readString())
+
+	files()
+}
+
+fun files() {
+	val root = Path(SystemTemporaryDirectory, "ktc2-kotlinx-io-" + kotlin.random.Random.nextInt(1_000_000))
+	val nested = Path(root, "a", "b")
+	SystemFileSystem.createDirectories(nested)
+	println(SystemFileSystem.metadataOrNull(nested)?.isDirectory)
+	val file = Path(nested, "data.txt")
+	SystemFileSystem.sink(file).buffered().use { sink ->
+		sink.writeString("first\n")
+		sink.writeInt(42)
+	}
+	SystemFileSystem.sink(file, append = true).buffered().use { it.writeString("\nappended\n") }
+	val metadata = SystemFileSystem.metadataOrNull(file)!!
+	println("${metadata.isRegularFile} ${metadata.isDirectory} ${metadata.size}")
+	SystemFileSystem.source(file).buffered().use { source ->
+		println(source.readLine())
+		println(source.readInt())
+		println(source.readLine())
+		println(source.readLine())
+		println(source.exhausted())
+	}
+	val bytes = Path(nested, "bytes.bin")
+	SystemFileSystem.sink(bytes).buffered().use { sink -> repeat(20_000) { sink.writeByte((it % 256).toByte()) } }
+	println(SystemFileSystem.metadataOrNull(bytes)?.size)
+	println(SystemFileSystem.source(bytes).buffered().use { it.readByteArray().sumOf { b -> b.toInt() and 0xFF } })
+	println(SystemFileSystem.list(nested).map { it.name }.sorted())
+	val moved = Path(nested, "moved.txt")
+	SystemFileSystem.atomicMove(file, moved)
+	println("${SystemFileSystem.exists(file)} ${SystemFileSystem.exists(moved)}")
+	println("${moved.name} ${moved.parent?.name} ${moved.parent?.parent?.name} ${moved.isAbsolute}")
+	println(Path("relative", "name.txt").isAbsolute)
+	println(runCatching { SystemFileSystem.source(Path(nested, "missing")) }.exceptionOrNull()?.let { it::class.simpleName })
+	println(SystemFileSystem.metadataOrNull(Path(nested, "missing")))
+	for (path in listOf(moved, bytes, nested, Path(root, "a"), root)) SystemFileSystem.delete(path)
+	println(SystemFileSystem.exists(root))
 }

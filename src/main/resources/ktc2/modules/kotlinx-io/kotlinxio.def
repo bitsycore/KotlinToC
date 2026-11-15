@@ -1,0 +1,5 @@
+# The C that ktc2's part of kotlinx-io calls (Ktc2KotlinxIoFiles.kt): what differs between Windows
+# and the other systems, in kotlinxio.h. The declarations of Windows it needs are in
+# kotlinxio_win32.h, which is not listed here: they get no binding.
+package = ktc2.kotlinxio
+headers = kotlinxio.h

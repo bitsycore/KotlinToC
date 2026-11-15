@@ -27,6 +27,12 @@ core/nativeMain/-NonJvmPlatform.kt
 core/nativeMain/RawSink.kt
 core/nativeMain/SegmentPool.kt
 core/nativeMain/UtilsNative.kt
+core/commonMain/files/FileSystem.kt
+core/commonMain/files/Paths.kt
+core/nativeMain/files/FileSystemNative.kt
+core/nativeMain/files/PathsNative.kt
+core/nativeNonAndroidMain/files/FileSystemNativeNonAndroid.kt
+core/nativeNonAppleMain/files/FileSystemNativeNonApple.kt
 bytestring/commonMain/-Platform.kt
 bytestring/commonMain/Base64.kt
 bytestring/commonMain/ByteString.kt
