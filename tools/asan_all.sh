@@ -20,7 +20,8 @@ check() {
 	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated: not looked for there.
 	local vLeaks="AddressSanitizer|LeakSanitizer|ktc2: leak|ktc2: .*freed"
 	local vOptions=${ASAN_OPTIONS:-}
-	if [ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ]; then vLeaks="AddressSanitizer|ktc2: .*freed"; vOptions="detect_leaks=0:$vOptions"; fi
+	# The suite says so in the build directory (cycles-allowed); a .cycles of tests/ by the name, for an older run.
+	if [ -f "$vDir/cycles-allowed" ] || [ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ]; then vLeaks="AddressSanitizer|ktc2: .*freed"; vOptions="detect_leaks=0:$vOptions"; fi
 	local vLimit=()
 	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-1200}")
 	local vResult

@@ -425,6 +425,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 			vTimes += "$inWhat=${(vNow - vSince) / 1000000}"
 			vSince = vNow
 		}
+		// For tools/asan_all.sh and tools/msvc_all.sh: this program may leave cycles allocated (a `.cycles` file).
+		if (mAllowsLeaks) File(vOutDir, "cycles-allowed").apply { parentFile.mkdirs() }.writeText("")
 		assertTrue(translate(inSources + mCExtra, vOutDir), "ktc2 failed on $inName")
 		lap("translate")
 		if ("jvm" !in kSteps && "c" !in kSteps) return

@@ -35,7 +35,7 @@ for vDir in build/integration/*/; do
 	vNames="$vNames $vName"
 	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated.
 	vLeaks="ktc2: leak\|ktc2: .*freed"
-	for vMarker in tests/*/"${vName#test-}.cycles"; do [ -f "$vMarker" ] && vLeaks="ktc2: .*freed"; done
+	for vMarker in "$vDir/cycles-allowed" tests/*/"${vName#test-}.cycles"; do [ -f "$vMarker" ] && vLeaks="ktc2: .*freed"; done
 	# The standard input of the test, when it has one.
 	vInput=
 	for vFile in integration/*/"$vName.in"; do [ -f "$vFile" ] && vInput=$vFile; done
