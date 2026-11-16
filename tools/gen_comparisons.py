@@ -1,5 +1,5 @@
 """
-Writes src/main/resources/ktc2/stdlib/Ktc2Comparisons.kt: the platform side of the
+Writes stdlib/Ktc2Comparisons.kt: the platform side of the
 standard library's _Comparisons.kt (`minOf` and `maxOf`).
 
 Usage (from the repository root): python tools/gen_comparisons.py
@@ -31,4 +31,4 @@ for vName, vKeepsFirst, vMath in (('maxOf', '>=', 'max'), ('minOf', '<=', 'min')
 		vOut += 'public actual inline fun %s(a: %s, b: %s, c: %s): %s = %s(a, %s(b, c))\n\n' % (vName, vType, vType, vType, vType, vName, vName)
 		vOut += 'public actual fun %s(a: %s, vararg other: %s): %s {\n\tvar vBest = a\n\tfor (vValue in other) vBest = %s(vBest, vValue)\n\treturn vBest\n}\n' % (vName, vType, vType, vType, vName)
 
-io.open('src/main/resources/ktc2/stdlib/Ktc2Comparisons.kt', 'w', encoding='utf-8', newline='\n').write(vOut)
+io.open('stdlib/Ktc2Comparisons.kt', 'w', encoding='utf-8', newline='\n').write(vOut)

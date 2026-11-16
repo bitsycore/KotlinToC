@@ -160,11 +160,15 @@ tasks.processResources {
 			into("ktc2/modules/${vModule.name}")
 		}
 	}
-	val vListed = file("src/main/resources/ktc2/stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
-	inputs.file("src/main/resources/ktc2/stdlib/files.txt")
+	val vListed = file("stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
+	inputs.file("stdlib/files.txt")
 	from(layout.buildDirectory.dir("stdlib-src")) {
 		include(vListed)
 		into("ktc2/kotlin-stdlib")
+	}
+	// ktc2's platform layer, a directory of its own (stdlib/) that an IDE sees as Kotlin (ide/), carried as resources.
+	from("stdlib") {
+		into("ktc2/stdlib")
 	}
 }
 

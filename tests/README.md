@@ -30,7 +30,7 @@ package). The same file runs:
 - on Kotlin/Native, by `tools/native.sh tests/` after a run of the suite, with Kotlin/Native's
   own `kotlin.test`.
 
-`kotlin.test` here is `src/main/resources/ktc2/stdlib/Ktc2Test.kt`: the assertions, `@Test`,
+`kotlin.test` here is `stdlib/Ktc2Test.kt`: the assertions, `@Test`,
 `@Ignore`, `@BeforeTest`, `@AfterTest`.
 
 - `common/`: tests written for ktc2.

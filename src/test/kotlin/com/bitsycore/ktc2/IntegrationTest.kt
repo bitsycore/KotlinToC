@@ -195,7 +195,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.toList()
 
 	/** `kotlin.test` as ktc2 has it: compiled with a test for the JVM too, so that both run the same assertions. */
-	private val kTestLibrary = File("src/main/resources/ktc2/stdlib/Ktc2Test.kt")
+	private val kTestLibrary = File("stdlib/Ktc2Test.kt")
 
 	/** The sources compiled for the JVM besides the program's own. */
 	private var mJvmExtra: List<File> = emptyList()

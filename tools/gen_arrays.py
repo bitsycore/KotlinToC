@@ -1,4 +1,4 @@
-"""Writes resources/ktc2/stdlib/Ktc2Arrays.kt: the platform side of the standard library's generated _Arrays.kt."""
+"""Writes stdlib/Ktc2Arrays.kt: the platform side of the standard library's generated _Arrays.kt."""
 import io
 
 vPrims = ['Boolean', 'Byte', 'Short', 'Int', 'Long', 'Float', 'Double', 'Char']
@@ -421,4 +421,4 @@ public actual fun @Array.asList(): List<@> = @ArrayAsList(this)
 for vPrim in ['UByte', 'UShort', 'UInt', 'ULong']:
 	vOut += vUnsigned.replace('@', vPrim)
 
-io.open('src/main/resources/ktc2/stdlib/Ktc2Arrays.kt', 'w', encoding='utf-8', newline='\n').write(vOut)
+io.open('stdlib/Ktc2Arrays.kt', 'w', encoding='utf-8', newline='\n').write(vOut)
