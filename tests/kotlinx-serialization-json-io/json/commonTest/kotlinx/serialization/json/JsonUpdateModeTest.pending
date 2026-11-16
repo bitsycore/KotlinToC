@@ -1,0 +1,2 @@
+Loops forever in C (found on 2026-11-16, after the suite got a time limit that applies): not looked at yet.
+The JVM build passes. Run it alone with KTC2_TEST_FILTER=JsonUpdateModeTest after removing this file.

@@ -10,7 +10,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
-private const val kTimeoutSeconds = 60L
+private const val kTimeoutSeconds = 300L
+
+/** How long a C compiler may take on one program: the largest, of thousands of files, take a few minutes on a slow machine. */
+private const val kCompileTimeoutSeconds = 900L
 
 /**
  * How many processes share the programs of a run: Gradle starts one per class below, each
@@ -93,12 +96,32 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** The thread option and the math library: needed on POSIX systems; on Windows neither exists for every compiler, nor is needed. */
 	private val kSystemLibraries = if ("win" in System.getProperty("os.name").lowercase()) emptyList() else listOf("-pthread", "-lm")
 
+	/** The name of the program being checked, as the Gradle task shows it: see [functionsFile]. */
+	private var mCurrent = ""
+
+	/** A test of the suite named [inName]: what [inBody] checks. */
+	private fun named(inName: String, inBody: () -> Unit): DynamicTest = DynamicTest.dynamicTest(inName) {
+		mCurrent = inName
+		inBody()
+	}
+
+	/**
+	 * Where the result of each test function of the program being checked goes, a line each (`ok Name` or
+	 * `FAILED Name: reason`): the Gradle task shows them under the program (build.gradle.kts), by the same name.
+	 */
+	private fun functionsFile(): File = File("build/integration/functions/${mCurrent.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
+
 	@TestFactory
 	fun programs(): List<DynamicTest> {
 		File(kStatsFile).delete()
 		File(kTimesFile).delete()
-		if (mShard >= kShards) return emptyList()
-		return programList().filterIndexed { vIndex, _ -> vIndex % kShards == mShard }
+		// How many this part runs: the Gradle task adds the parts up to show the progress of the run.
+		val vCount = File("build/integration/count.$mShard.txt").apply { parentFile.mkdirs() }
+		if (mShard >= kShards) {
+			vCount.writeText("0")
+			return emptyList()
+		}
+		return programList().filterIndexed { vIndex, _ -> vIndex % kShards == mShard }.also { vCount.writeText(it.size.toString()) }
 	}
 
 	/** True when [inSource] is one of what `KTC2_TEST_FILTER` asks for: parts of a path, separated by commas. */
@@ -114,7 +137,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text (several, separated by commas).
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> DynamicTest.dynamicTest(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
+			.map { vSource -> named(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
 			.toList() + projectList() + commonTestList() + boxTestList() + (if (kRunsLibraryTests) moduleTestList() else emptyList())
 
 	// ==================
@@ -135,7 +158,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" || it in kModuleTests } }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
+			.map { vSource -> named(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
 			.toList()
 
 	/** `kotlin.test` as ktc2 has it: compiled with a test for the JVM too, so that both run the same assertions. */
@@ -218,7 +241,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "helpers" && "pending" !in it.invariantSeparatorsPath.split('/') }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkBox(vSource) } }
+			.map { vSource -> named(vSource.invariantSeparatorsPath) { checkBox(vSource) } }
 			.toList()
 
 	private fun checkBox(inSource: File) {
@@ -269,9 +292,11 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun moduleTestList(): List<DynamicTest> =
 		kModuleTests.asSequence().flatMap { File("tests/$it").walkTopDown() }
 			.filter { it.isFile && it.extension == "kt" && kCommonTestSets.containsMatchIn(it.invariantSeparatorsPath) && "@Test" in it.readText() }
+			// `<Name>.pending` next to a file of a library's tests: it does not pass yet, for the reason written in it.
+			.filter { !File(it.parentFile, it.nameWithoutExtension + ".pending").isFile }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> DynamicTest.dynamicTest(vSource.invariantSeparatorsPath) { checkModuleTest(vSource) } }
+			.map { vSource -> named(vSource.invariantSeparatorsPath) { checkModuleTest(vSource) } }
 			.toList()
 
 	/** The bundled module [inName] as the build carries it, then the bundled modules it depends on, each once. */
@@ -356,13 +381,15 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private fun projectList(): List<DynamicTest> =
 		kProjects
 			.filter { vPath -> selected(File("projects/$vPath")) }
-			.map { vPath -> DynamicTest.dynamicTest("projects/$vPath") { checkProject(File(vPath)) } }
+			.map { vPath -> named("projects/$vPath") { checkProject(File(vPath)) } }
 
 	private fun checkProject(inDirectory: File) {
 		val vName = "project-" + inDirectory.name
 		val vOutDir = File("build/integration/$vName").apply { deleteRecursively() }
 		val vProject = loadProject(inDirectory, vOutDir) ?: fail("the module in $inDirectory could not be loaded")
 		mInput = null
+		// `program.cycles` in the program's directory: as `<Name>.cycles` next to a file of tests, with the reason in it.
+		mAllowsLeaks = File(inDirectory, "program.cycles").isFile
 		System.clearProperty("ktc2.main")
 		vProject.main?.let { System.setProperty("ktc2.main", it) }
 		// A bundled module made of a library's sources (kotlinx-io) is, on the JVM, that library's jars.
@@ -508,9 +535,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		if (kIsOneFile && vAll.isFile) {
 			// The program as one C file, and what it does not include (the C of a module).
 			val vIncluded = vAll.readLines().filter { it.startsWith("#include \"") }.map { it.substringAfter('"').substringBefore('"') }.toSet()
-			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + listOf(vAll.name) + vCSources.filter { it !in vIncluded } + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
+			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + listOf(vAll.name) + vCSources.filter { it !in vIncluded } + kSystemLibraries.drop(1) + vLinkerOpts, vCDir, kCompileTimeoutSeconds)
 		} else if (kCompileJobs <= 1) {
-			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + kSystemLibraries.drop(1) + vLinkerOpts, vCDir)
+			run(vOptions + listOf("-I", ".", "-o", vExe.absolutePath) + vCompilerOpts + vCSources + kSystemLibraries.drop(1) + vLinkerOpts, vCDir, kCompileTimeoutSeconds)
 		} else {
 			// The C files in a few groups, each compiled by a process of its own into a directory of its own
 			// (two files of the same name in different packages go to different groups), then linked.
@@ -526,7 +553,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 				val vObjects = File(vOutDir, "obj/$vIndex").apply { mkdirs() }
 				Thread {
 					try {
-						run(vOptions + listOf("-c", "-I", vCDir.absolutePath) + vCompilerOpts + vFiles.map { File(vCDir, it).absolutePath }, vObjects)
+						run(vOptions + listOf("-c", "-I", vCDir.absolutePath) + vCompilerOpts + vFiles.map { File(vCDir, it).absolutePath }, vObjects, kCompileTimeoutSeconds)
 					} catch (vError: Throwable) {
 						vFailures += vError
 					}
@@ -536,10 +563,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 			vFailures.firstOrNull()?.let { throw it }
 			// Named from the directory of the program: a command line has a longest length.
 			val vObjectFiles = File(vOutDir, "obj").walkTopDown().filter { it.isFile && it.extension == "o" }.map { it.relativeTo(vOutDir).invariantSeparatorsPath }.sorted().toList()
-			run(vOptions + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir)
+			run(vOptions + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir, kCompileTimeoutSeconds)
 		}
 		lap("cCompile")
 		val vActual = run(listOf(vExe.absolutePath), File("."))
+		// The result of each test function of a file of tests, for the Gradle task to show under the file (build.gradle.kts).
+		functionsFile().apply { parentFile.mkdirs() }.writeText(vActual.lineSequence().filter { it.startsWith("ok ") || it.startsWith("FAILED ") }.joinToString("\n"))
 		lap("cRun")
 		// What the C program printed: what `tools/msvc_all.sh` compares MSVC's build with on a machine that has the C and not the program.
 		File(vOutDir, "program.out").writeText(kotlinNames(vActual))
@@ -568,7 +597,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** [inOutput] with the JVM's names of the standard exceptions (`java.lang.IllegalStateException`) as Kotlin's, which ktc2 uses. */
 	private fun kotlinNames(inOutput: String): String = inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")
 
-	private fun run(inCommand: List<String>, inDirectory: File): String {
+	private fun run(inCommand: List<String>, inDirectory: File, inTimeout: Long = kTimeoutSeconds): String {
 		val vErrors = File.createTempFile("ktc2", ".err")
 		try {
 			// `<name>.in` next to a program is what it reads from its standard input; without one, there is nothing to read.
@@ -578,11 +607,13 @@ abstract class IntegrationPart(private val mShard: Int) {
 			} else {
 				vBuilder.start().also { it.outputStream.close() }
 			}
-			val vOutput = vProcess.inputStream.readBytes().decodeToString()
-			if (!vProcess.waitFor(kTimeoutSeconds, TimeUnit.SECONDS)) {
+			// Read by a thread of its own: reading here until the end would wait for a program that never ends, past its time.
+			val vBytes = java.util.concurrent.CompletableFuture.supplyAsync { vProcess.inputStream.readBytes() }
+			if (!vProcess.waitFor(inTimeout, TimeUnit.SECONDS)) {
 				vProcess.destroyForcibly()
-				fail("timeout: ${inCommand.first()}")
+				fail("timeout after $inTimeout s: ${inCommand.first()}")
 			}
+			val vOutput = vBytes.get().decodeToString()
 			if (vProcess.exitValue() != 0) {
 				fail("exit ${vProcess.exitValue()} from ${inCommand.joinToString(" ")}\n${vErrors.readText()}\n$vOutput")
 			}

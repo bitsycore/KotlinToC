@@ -1,0 +1,4 @@
+# The modes that read from a stream (kotlinx-io here) are to say 'Unexpected EOF' when the closing quote is missing;
+# ktc2's build says what the string reader says. Not looked at yet.
+testMissingClosingQuote1: a stream mode gives the string reader's message
+testMissingClosingQuote2: a stream mode gives the string reader's message

@@ -1,0 +1,4 @@
+The serializers of Box<Int> and Box<String> (their $serializer) and their descriptors refer to each other
+(PluginGeneratedSerialDescriptor.generatedSerializer). ktc2's part of the module keeps one of each in a
+cache for the life of the program (PLAN.md, decided on 2026-11-15); at the end the cache lets go, and the
+cycle is what reference counts cannot free.
