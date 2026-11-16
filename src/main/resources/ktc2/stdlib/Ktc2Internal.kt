@@ -545,7 +545,8 @@ public external fun className(value: Any): String
 public class ClassReference(private val mName: String) : kotlin.reflect.KClass<Any> {
 	private fun unavailable(): Nothing = throw UnsupportedOperationException("Reflection is not available: class '$mName'")
 
-	override val simpleName: String? get() = mName.substringAfterLast('.')
+	// An object expression has no name: null, as on Kotlin/Native (the JVM's names it after its place).
+	override val simpleName: String? get() = mName.substringAfterLast('.').takeIf { it != "<no name provided>" }
 	override val qualifiedName: String? get() = mName
 
 	override val members: Collection<kotlin.reflect.KCallable<*>> get() = unavailable()
