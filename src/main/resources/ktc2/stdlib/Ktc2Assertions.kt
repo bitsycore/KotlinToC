@@ -4,7 +4,7 @@ import kotlinx.cinterop.internal.cExpr
 
 /*
 ktc2 platform layer: `assert`, which the JVM and Kotlin/Native have outside common code. As on both,
-assertions are off unless asked for: built with -DKTC2_ASSERTIONS (`-copt -DKTC2_ASSERTIONS`), as
+assertions are off unless asked for: `ktc2 -ea` (Kotlin/Native's `-enable-assertions`), which builds with -DKTC2_ASSERTIONS, as
 the JVM runs with -ea and Kotlin/Native compiles with -enable-assertions. The condition is
 evaluated either way; the message only when the assertion fails.
 */

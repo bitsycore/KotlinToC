@@ -105,6 +105,7 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
   --run              build, then run the program
   --debug            no optimization, debug information, and a report of what was left allocated
   -copt <option>     an option for the C compiler; -lopt <option> one for the linker
+  -ea                assert() checks (-enable-assertions, as Kotlin/Native's; off otherwise, --debug included)
   --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
   --warn-heap        list every allocation left on the heap, with the reason
   --no-warn-cycles   do not report classes that can form reference cycles

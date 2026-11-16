@@ -12,6 +12,7 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
   --run              build, then run the program with the arguments after --
   --debug            build without optimization, with debug information and the leak report
   -copt <option>     an option for the C compiler; -lopt <option> one for the linker
+  -ea                assert() checks (-enable-assertions, as Kotlin/Native's; off otherwise, --debug included)
   --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
   --warn-heap        list every allocation left on the heap, with the reason
   --no-warn-cycles   do not report classes that can form reference cycles
@@ -88,6 +89,8 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 			vArg == "--checks=throw" -> System.setProperty("ktc2.checks", "throw")
 			vArg == "--no-warn-cycles" -> System.setProperty("ktc2.warnCycles", "false")
 			vArg == "-copt" && vIndex < args.size -> addOption("ktc2.copt", args[vIndex++])
+			// As Kotlin/Native's compiler: assertions are checked when asked for, in any build.
+			vArg == "-ea" || vArg == "-enable-assertions" || vArg == "--enable-assertions" -> addOption("ktc2.copt", "-DKTC2_ASSERTIONS")
 			vArg == "-lopt" && vIndex < args.size -> addOption("ktc2.lopt", args[vIndex++])
 			vArg.endsWith(".kt") || vArg.endsWith(".def") -> vSources += path(vArg)
 			File(path(vArg), kModuleFileName).isFile -> vModules += path(vArg)

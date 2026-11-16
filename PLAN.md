@@ -198,9 +198,9 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   (`AnyTest.testToString.Local1`), where the JVM and Kotlin/Native use `$`
   (`AnyTest$testToString$Local1`): the runtime's table of types would need a second name per
   class, the one of `qualifiedName` staying as it is (`tests/kotlin/AnyTest.skip`);
-- `assert()` is there (`Ktc2Assertions.kt`), off unless the C is compiled with
-  `-DKTC2_ASSERTIONS` (`-copt -DKTC2_ASSERTIONS`), as the JVM and Kotlin/Native leave it off
-  unless asked (`-ea`, `-enable-assertions`). Whether `--debug` should turn it on is to decide;
+- `assert()` is there (`Ktc2Assertions.kt`), off unless asked for, as on Kotlin/Native: `ktc2 -ea`
+  (Native's `-enable-assertions`) turns it on, in any build; `--debug` does not (decided by the
+  owner on 2026-11-16: follow Native).
 - an object that holds an object of its own `inner` class (`private val key = Key()`, `Key`
   being `inner`) is a cycle, never freed: the inner object holds its outer one. The cycle lint
   says so since 2026-11-15 (`integration/objects/SelfCycles`, which is also the test of the
@@ -706,8 +706,8 @@ Open:
    so what they print where the JVM and Native differ is the JVM's; `tools/native.sh` lists those
    programs (the text of exceptions, `Float` as text, the order of a template's parts...), each to
    be made to print the same on both or to follow Native.
-3. The decisions waiting in "Known and not done": whether `--debug` turns `assert()` on; how a
-   program breaks the cycle of an object that holds an object of its own `inner` class.
+3. The decision waiting in "Known and not done": how a program breaks the cycle of an object
+   that holds an object of its own `inner` class (proposals given to the owner on 2026-11-16).
 4. The benchmarks against Kotlin/Native and the JVM ("Benchmarks against Kotlin/Native and the
    JVM: the plan"), about three days, nothing of ktc2 itself changed.
 5. More tests taken as they are: what is left of `kotlin-native/runtime/test`, the box tests
