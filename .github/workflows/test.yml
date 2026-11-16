@@ -40,8 +40,6 @@ jobs:
       - name: Suite
         run: ./gradlew test --rerun
         env:
-          # A line for each program, not for each of its test functions: the log stays readable.
-          KTC2_TEST_FUNCTIONS: 0
           KTC2_TEST_STEPS: ${{ matrix.steps }}
           # The libraries' own tests (tests/<module>/) are run on the machines where the work is done.
           KTC2_TEST_LIBRARIES: 0

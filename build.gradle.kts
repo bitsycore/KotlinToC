@@ -241,12 +241,12 @@ tasks.test {
 			vFunctionsFile.delete()
 			val vFunctionsFailed = vFunctions.count { it.startsWith("FAILED ") }
 			val vCounts = if (vFunctions.isEmpty()) "" else paint("2", " (${vFunctions.size - vFunctionsFailed}/${vFunctions.size} tests)")
-			// As an IDE shows them: each class of tests, then its test functions under it.
-			fun functions(inAll: Boolean) {
+			// As an IDE shows them: each class of tests, then its test functions under it. Only for a file where one
+			// failed (all of them then), or for every file with KTC2_TEST_FUNCTIONS=1.
+			fun functions() {
 				var vClass: String? = null
 				for (vFunction in vFunctions) {
 					val vPassed = vFunction.startsWith("ok ")
-					if (vPassed && !inAll) continue
 					val vText = vFunction.removePrefix("ok ").removePrefix("FAILED ")
 					val vName = vText.substringBefore(": ")
 					val vOwner = vName.substringBeforeLast('.', "")
@@ -262,13 +262,13 @@ tasks.test {
 			when (inResult.resultType) {
 				TestResult.ResultType.SUCCESS -> if (!vQuiet) {
 					println("$vProgress $vTag ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime")
-					if (System.getenv("KTC2_TEST_FUNCTIONS") != "0") functions(true)
+					if (System.getenv("KTC2_TEST_FUNCTIONS") == "1") functions()
 				}
 				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress $vTag ${paint("33", "⏭")} ${inTest.displayName}")
 				else -> {
 					vFailed += inTest.displayName
 					println("$vProgress $vTag ${paint("1;31", "✘ ${inTest.displayName}")}$vCounts $vTime")
-					functions(false)
+					functions()
 					// The reason, as the assertion has it, and what the program wrote: a few lines of each.
 					inResult.exceptions.firstOrNull()?.message?.lines()?.take(12)?.forEach { println(paint("31", "      $it")) }
 					vOutput?.lines()?.filter { it.isNotBlank() }?.take(20)?.forEach { println(paint("2", "      | $it")) }
