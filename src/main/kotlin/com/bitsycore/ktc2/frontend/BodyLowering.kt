@@ -1213,7 +1213,7 @@ internal class BodyBuilder(
 				mBlock += KReturn(if (vValue == null && mReturnsUnitObject) unitObject() else vValue)
 			} else {
 				val vValue = lowerRhs(inExpression.value)
-				if (vInline.result != null && vValue !== KUnitValue) mBlock += KSet(vInline.result, coerce(vValue, vInline.result.type)) else discard(vValue)
+				if (vInline.result != null) storeResult(vValue, vInline.result) else discard(vValue)
 				runFinallys { it is InlineMark && it.symbol === inExpression.returnTargetSymbol }
 				mBlock += KBreak(vInline.blockId)
 			}
@@ -1565,14 +1565,25 @@ internal class BodyBuilder(
 		mBlock += KIf(vCondition, vThen, vElse)
 	}
 
+	/**
+	 * Stores [inValue], the value of a branch or of an inline block, into [inTarget]. A value that is Unit is the Unit
+	 * object where the target holds objects (`x?.let { f() }`, a `Unit?`, a `T` that is `Unit`), as in Kotlin, where it
+	 * is then no null; where the target is not an object, there is nothing to store.
+	 */
+	private fun storeResult(inValue: KExpr, inTarget: KLocal) {
+		val vIsUnit = inValue === KUnitValue || inValue.type == KUnitType
+		if (!vIsUnit) {
+			mBlock += KSet(inTarget, coerce(inValue, inTarget.type))
+			return
+		}
+		discard(inValue)
+		if (inTarget.type is KRefType) mBlock += KSet(inTarget, unitObject().let { if (inTarget.type == KObjType) it else KRefCast(it, inTarget.type) })
+	}
+
 	private fun lowerBranchResult(inResult: IrExpression, inTarget: KLocal?) {
 		val vValue = lowerRhs(inResult)
 		// A branch of type Unit in a `when` whose value is not used (its other branches give something else) has nothing to store.
-		if (inTarget != null && !inResult.type.isNothing() && vValue !== KUnitValue && vValue.type != KUnitType && vValue.type != KNothingType) {
-			mBlock += KSet(inTarget, coerce(vValue, inTarget.type))
-		} else {
-			discard(vValue)
-		}
+		if (inTarget != null && !inResult.type.isNothing() && vValue.type != KNothingType) storeResult(vValue, inTarget) else discard(vValue)
 	}
 
 	/** A `when` whose conditions and results are all pure becomes a `?:` chain. */
@@ -1698,7 +1709,7 @@ internal class BodyBuilder(
 		vResult?.let { mBlock += KLet(it, null) }
 		fun assign(inExpression: IrExpression) {
 			val vValue = lowerRhs(inExpression)
-			if (vResult != null && !inExpression.type.isNothing() && vValue !== KUnitValue) mBlock += KSet(vResult, coerce(vValue, vResult.type)) else discard(vValue)
+			if (vResult != null && !inExpression.type.isNothing()) storeResult(vValue, vResult) else discard(vValue)
 		}
 
 		fun handlers(inCaught: KExpr, inIndex: Int) {
