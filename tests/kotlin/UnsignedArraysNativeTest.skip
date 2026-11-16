@@ -1,8 +1,0 @@
-ubyteArray: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-ubyteArrayInit: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-ushortArray: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-ushortArrayInit: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-uintArray: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-uintArrayInit: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-ulongArray: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows
-ulongArrayInit: a negative size throws IllegalArgumentException on Kotlin/Native and NegativeArraySizeException on the JVM, which ktc2 follows

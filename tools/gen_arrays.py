@@ -162,7 +162,7 @@ public actual fun <T> Array<out T>.copyInto(destination: Array<T>, destinationOf
 public actual fun <T> Array<T>.copyOf(): Array<T> = copyOfRange(0, size)
 
 public actual fun <T> Array<T>.copyOf(newSize: Int): Array<T?> {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = newArray<T?>(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -304,7 +304,7 @@ public actual fun @Array.copyInto(destination: @Array, destinationOffset: Int, s
 public actual fun @Array.copyOf(): @Array = copyOf(size)
 
 public actual fun @Array.copyOf(newSize: Int): @Array {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = @Array(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]

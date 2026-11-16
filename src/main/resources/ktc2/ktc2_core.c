@@ -650,7 +650,7 @@ ktc2_Array* ktc2_array_new(int32_t length, size_t elementSize, uint32_t typeId)
 	if (length < 0) {
 		char text[16];
 		snprintf(text, sizeof text, "%" PRId32, length);
-		fail("kotlin.NegativeArraySizeException", text);
+		fail("kotlin.IllegalArgumentException", text);
 	}
 	/* Room for at least one element, so that a read with a bad index has something to yield. */
 	ktc2_Array* array = ktc2_alloc(sizeof(ktc2_Array) + (size_t)(length > 0 ? length : 1) * elementSize, typeId);

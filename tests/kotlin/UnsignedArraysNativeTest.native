@@ -1,0 +1,3 @@
+A test of Kotlin/Native's own runtime (kotlin-native/runtime/test): ktc2 does as Kotlin/Native does, and the
+JVM, where it differs (a negative array size, a final capital sigma), fails these tests: it is the reference only
+for the others.

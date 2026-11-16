@@ -621,8 +621,8 @@ public fun throwUninitialized(name: String): Nothing =
 /** A failed `as` cast. */
 public fun throwClassCast(): Nothing = throw ClassCastException()
 
-/** An array asked for with a length below zero. */
-public fun throwNegativeArraySize(size: Int): Nothing = throw NegativeArraySizeException(size.toString())
+/** An array made with a negative size: IllegalArgumentException, as on Kotlin/Native (the JVM: NegativeArraySizeException). */
+public fun throwNegativeArraySize(size: Int): Nothing = throw IllegalArgumentException()
 
 /** `containsAll` of a collection of numbers that is asked as a collection of objects: [elements] may hold anything. */
 public fun containsAllOfAny(collection: Collection<Any?>, elements: Collection<Any?>): Boolean {

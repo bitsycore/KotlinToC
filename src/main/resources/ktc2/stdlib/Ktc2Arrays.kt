@@ -157,7 +157,7 @@ public actual fun <T> Array<out T>.copyInto(destination: Array<T>, destinationOf
 public actual fun <T> Array<T>.copyOf(): Array<T> = copyOfRange(0, size)
 
 public actual fun <T> Array<T>.copyOf(newSize: Int): Array<T?> {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = newArray<T?>(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -297,7 +297,7 @@ public actual fun BooleanArray.copyInto(destination: BooleanArray, destinationOf
 public actual fun BooleanArray.copyOf(): BooleanArray = copyOf(size)
 
 public actual fun BooleanArray.copyOf(newSize: Int): BooleanArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = BooleanArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -393,7 +393,7 @@ public actual fun ByteArray.copyInto(destination: ByteArray, destinationOffset: 
 public actual fun ByteArray.copyOf(): ByteArray = copyOf(size)
 
 public actual fun ByteArray.copyOf(newSize: Int): ByteArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = ByteArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -531,7 +531,7 @@ public actual fun ShortArray.copyInto(destination: ShortArray, destinationOffset
 public actual fun ShortArray.copyOf(): ShortArray = copyOf(size)
 
 public actual fun ShortArray.copyOf(newSize: Int): ShortArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = ShortArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -669,7 +669,7 @@ public actual fun IntArray.copyInto(destination: IntArray, destinationOffset: In
 public actual fun IntArray.copyOf(): IntArray = copyOf(size)
 
 public actual fun IntArray.copyOf(newSize: Int): IntArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = IntArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -807,7 +807,7 @@ public actual fun LongArray.copyInto(destination: LongArray, destinationOffset: 
 public actual fun LongArray.copyOf(): LongArray = copyOf(size)
 
 public actual fun LongArray.copyOf(newSize: Int): LongArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = LongArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -945,7 +945,7 @@ public actual fun FloatArray.copyInto(destination: FloatArray, destinationOffset
 public actual fun FloatArray.copyOf(): FloatArray = copyOf(size)
 
 public actual fun FloatArray.copyOf(newSize: Int): FloatArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = FloatArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -1083,7 +1083,7 @@ public actual fun DoubleArray.copyInto(destination: DoubleArray, destinationOffs
 public actual fun DoubleArray.copyOf(): DoubleArray = copyOf(size)
 
 public actual fun DoubleArray.copyOf(newSize: Int): DoubleArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = DoubleArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
@@ -1221,7 +1221,7 @@ public actual fun CharArray.copyInto(destination: CharArray, destinationOffset: 
 public actual fun CharArray.copyOf(): CharArray = copyOf(size)
 
 public actual fun CharArray.copyOf(newSize: Int): CharArray {
-	if (newSize < 0) throw NegativeArraySizeException(newSize.toString())
+	if (newSize < 0) throw IllegalArgumentException() // As on Kotlin/Native (the JVM: NegativeArraySizeException).
 	val vResult = CharArray(newSize)
 	val vCount = if (newSize < size) newSize else size
 	for (vIndex in 0 until vCount) vResult[vIndex] = this[vIndex]
