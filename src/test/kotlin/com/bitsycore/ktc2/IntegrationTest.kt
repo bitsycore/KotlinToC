@@ -102,6 +102,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** A test of the suite named [inName]: what [inBody] checks. */
 	private fun named(inName: String, inBody: () -> Unit): DynamicTest = DynamicTest.dynamicTest(inName) {
 		mCurrent = inName
+		mNativeReference = false
+		mHasTestFunctions = false
 		inBody()
 	}
 
@@ -189,6 +191,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// refer to each other in a circle: those are never freed (there is no collector of cycles), which
 		// for this one file is not a failure.
 		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
+		mNativeReference = File(inSource.parentFile, inSource.nameWithoutExtension + ".native").isFile
+		mHasTestFunctions = true
 		// `<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed), one a line.
 		mVarying = File(inSource.parentFile, inSource.nameWithoutExtension + ".vary").takeIf { it.isFile }?.readLines()
 			?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()
@@ -317,6 +321,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	}
 
 	private fun checkModuleTest(inSource: File) {
+		mHasTestFunctions = true
 		val vSet = kCommonTestSets.find(inSource.invariantSeparatorsPath)!!
 		val vRoot = File(inSource.invariantSeparatorsPath.substring(0, vSet.range.first))
 		fun sources(inSet: String) = File(vRoot, inSet).walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
@@ -524,7 +529,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			lap("jvmCompile")
 			val vJava = File(System.getProperty("java.home"), "bin/java").path
 			val vClasspath = vJvmDir.path + File.pathSeparator + K2Frontend.userClasspath() + (if (mJvmClasspath.isEmpty()) "" else File.pathSeparator + mJvmClasspath)
-			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File(".")).also { lap("jvmRun") }
+			run(listOf(vJava, "-Dstdout.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US", "-cp", vClasspath, vJvmMain), File("."), inAllowsFailure = mNativeReference).also { lap("jvmRun") }
 		}
 
 		if ("c" !in kSteps) {
@@ -569,15 +574,46 @@ abstract class IntegrationPart(private val mShard: Int) {
 			run(vOptions + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir, kCompileTimeoutSeconds)
 		}
 		lap("cCompile")
-		val vActual = run(listOf(vExe.absolutePath), File("."))
-		// The result of each test function of a file of tests, for the Gradle task to show under the file (build.gradle.kts).
-		functionsFile().apply { parentFile.mkdirs() }.writeText(vActual.lineSequence().filter { it.startsWith("ok ") || it.startsWith("FAILED ") }.joinToString("\n"))
+		val vActual = run(listOf(vExe.absolutePath), File("."), inAllowsFailure = true)
+		// The result of each test function of a file of tests, for the Gradle task to show under the file (build.gradle.kts),
+		// written before a failure of the program is reported, so that the functions that failed are shown with it.
+		if (mHasTestFunctions) functionsFile().apply { parentFile.mkdirs() }.writeText(vActual.lineSequence().filter { it.startsWith("ok ") || it.startsWith("FAILED ") }.joinToString("\n"))
+		if (mLastExit != 0) fail("exit $mLastExit from ${vExe.absolutePath}\n$mLastErrors\n$vActual")
 		lap("cRun")
 		// What the C program printed: what `tools/msvc_all.sh` compares MSVC's build with on a machine that has the C and not the program.
 		File(vOutDir, "program.out").writeText(kotlinNames(vActual))
 		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")
 
-		if (vExpected != null) assertEquals(samePlatform(vExpected), samePlatform(vActual), "C output differs from the JVM for $inName")
+		val vReference = if (vExpected != null && mNativeReference) asOnNative(vExpected, vActual) else vExpected
+		if (vReference != null) assertEquals(samePlatform(vReference), samePlatform(vActual), "C output differs from the JVM for $inName")
+	}
+
+	/**
+	 * True for a file of Kotlin/Native's own tests (`<Name>.native` next to it): ktc2 does as Kotlin/Native does, and
+	 * where the JVM differs its run fails those tests. The JVM is the reference only for the others ([asOnNative]).
+	 */
+	private var mNativeReference = false
+
+	/** True for a file of tests whose `main` the suite wrote: what it prints says how each test function went. */
+	private var mHasTestFunctions = false
+
+	/** The exit code and the standard error of the last process [run] ran. */
+	private var mLastExit = 0
+	private var mLastErrors = ""
+
+	/**
+	 * What the JVM printed for a file of Kotlin/Native's tests, [inJvm], with each test the JVM failed and C passed
+	 * counted as passed, and the count of failures that follows: what is left to compare is what the two agree on.
+	 */
+	private fun asOnNative(inJvm: String, inC: String): String {
+		val vPassedInC = inC.lines().filter { it.startsWith("ok ") }.map { it.removePrefix("ok ") }.toSet()
+		val vLines = inJvm.lines().map { vLine ->
+			val vName = vLine.removePrefix("FAILED ").substringBefore(": ")
+			if (vLine.startsWith("FAILED ") && vName in vPassedInC) "ok $vName" else vLine
+		}
+		val vFailed = vLines.count { it.startsWith("FAILED ") }
+		return vLines.map { vLine -> Regex("^(\\d+) tests, \\d+ failed$").find(vLine)?.let { "${it.groupValues[1]} tests, $vFailed failed" } ?: vLine }
+			.joinToString("\n")
 	}
 
 	/** Lines of the output that differ from run to run (`<Name>.vary`): left out of the comparison. */
@@ -600,7 +636,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** [inOutput] with the JVM's names of the standard exceptions (`java.lang.IllegalStateException`) as Kotlin's, which ktc2 uses. */
 	private fun kotlinNames(inOutput: String): String = inOutput.replace(Regex("\\bjava\\.(lang|util)\\.(?=[A-Z])"), "kotlin.")
 
-	private fun run(inCommand: List<String>, inDirectory: File, inTimeout: Long = kTimeoutSeconds): String {
+	private fun run(inCommand: List<String>, inDirectory: File, inTimeout: Long = kTimeoutSeconds, inAllowsFailure: Boolean = false): String {
 		val vErrors = File.createTempFile("ktc2", ".err")
 		try {
 			// `<name>.in` next to a program is what it reads from its standard input; without one, there is nothing to read.
@@ -617,7 +653,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 				fail("timeout after $inTimeout s: ${inCommand.first()}")
 			}
 			val vOutput = vBytes.get().decodeToString()
-			if (vProcess.exitValue() != 0) {
+			mLastExit = vProcess.exitValue()
+			mLastErrors = vErrors.readText()
+			if (vProcess.exitValue() != 0 && !inAllowsFailure) {
 				fail("exit ${vProcess.exitValue()} from ${inCommand.joinToString(" ")}\n${vErrors.readText()}\n$vOutput")
 			}
 			// Reference-count statistics of each program, for comparing optimizations: build/integration/arc-stats.txt

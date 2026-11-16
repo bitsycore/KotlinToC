@@ -7,11 +7,10 @@ package test
 
 import kotlin.test.*
 
-// What the library's tests declare `expect`. Where the JVM and Kotlin/Native differ ktc2 does as the JVM does,
-// so it answers as the JVM's tests do (libraries/stdlib/jvm/test/testUtilsJVM.kt), but for the comparison of two
-// classes, which there is `javaClass`.
+// What the library's tests declare `expect`. Where the JVM and Kotlin/Native differ ktc2 does as Kotlin/Native does
+// (DESIGN.md, section 1), so it answers as Kotlin/Native's tests do (kotlin-native/runtime/test/utils.kt).
 
-public val TestPlatform.Companion.current: TestPlatform get() = TestPlatform.Jvm
+public val TestPlatform.Companion.current: TestPlatform get() = TestPlatform.Native
 
 public fun assertTypeEquals(expected: Any?, actual: Any?) {
 	if (expected != null && actual != null) {
@@ -32,10 +31,10 @@ public val regexSplitUnicodeCodePointHandling: Boolean get() = false
 public object BackReferenceHandling {
 	val captureLargestValidIndex: Boolean get() = true
 
-	val notYetDefinedGroup: HandlingOption = HandlingOption.MATCH_NOTHING
+	val notYetDefinedGroup: HandlingOption = HandlingOption.THROW
 	val notYetDefinedNamedGroup: HandlingOption = HandlingOption.THROW
 	val enclosingGroup: HandlingOption = HandlingOption.MATCH_NOTHING
-	val nonExistentGroup: HandlingOption = HandlingOption.MATCH_NOTHING
+	val nonExistentGroup: HandlingOption = HandlingOption.THROW
 	val nonExistentNamedGroup: HandlingOption = HandlingOption.THROW
 	val groupZero: HandlingOption = HandlingOption.THROW
 }
