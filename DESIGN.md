@@ -294,8 +294,10 @@ object may have a cleaner and a local that borrows from a writable place is stil
 **Cycles** are not collected, but for one shape. Two objects that hold each other through their
 own fields (an object and its `inner` object, or the lambda in one of its properties that calls
 its members, or two objects whose `var`s point at each other) are freed when nothing else holds
-them: `CycleLint` lists those cycles of two in `KClass.pairCycles` (when the partner's class is
-known exactly), objects of such a class carry `KTC2_PAIRED` in their header, and a release that
+them: `CycleLint` lists those cycles of two in `KClass.pairCycles`, one entry for each pair of
+classes the two fields can hold (the runtime compares the partner's class exactly), and for each
+field of one that may hold the other with each field of the other that may hold it back (a cache's
+`posValue` and `negValue`); the library's classes too. Objects of such a class carry `KTC2_PAIRED` in their header, and a release that
 leaves no more references than the class has pairs calls `ktc2_pair_check`, which asks the
 class's `__collect`: when every reference left is held by a partner that it alone holds, the
 partners give theirs up without a release and the object goes, taking them with it. It is exact:
@@ -308,7 +310,20 @@ gives an object it makes and hands its own `this` to: an `inner` object (`val ke
 lambda or an object expression that captures `this` (`val handler = { update() }`), `Child(this)`.
 Those are found in the bodies (`let t = new C; t.outer = self; self.key = t`), and a field typed
 as a function or an interface is then followed to the class stored in it
-(`integration/objects/SelfCycles`).
+(`integration/objects/SelfCycles`). A field typed as an interface or `Any` is also followed to the
+class of a value stored in it whose class is known (`left.other = right`), and to the caller's own
+class when a member keeps one of its parameters there and the caller hands it `this`
+(`PluginGeneratedSerialDescriptor(name, this)`, kotlinx.serialization's serializer and its
+descriptor; through a superclass's constructor too): `integration/objects/InterfacePairCycles`. A
+warning names the property to mark `@Weak`: the one that leads back to where the cycle starts (an
+`inner` class's outer reference: `@Weak inner class`; a lambda's capture: a `WeakRef` in it).
+`KTC2_DEBUG_CYCLES=1` reports the library's own cycles too.
+
+`Regex` is Kotlin/Native's engine (Harmony's), whose graph of a pattern has cycles of three
+objects (a quantified group's end points back at its quantifier): a cleaner that Gradle adds to
+Native's `Regex.kt` as it unpacks it calls `breakPatternCycles` (`Ktc2RegexCycles.kt`) when the
+`Regex` ends, which cuts the `next` of every set and what a class of characters built with an
+operation (`&&`) holds back; a match result holds its `Regex`, so nothing uses the graph then.
 
 Checking it: test builds define `KTC2_LEAK_CHECK` (a report at exit of objects still alive,
 and freed objects are overwritten so a wrong borrow fails) and `KTC2_ARC_STATS` (counts of
@@ -428,7 +443,7 @@ of its own.
 
 The library is the real one, compiled from source with every program:
 
-- `src/main/resources/ktc2/stdlib/files.txt` lists the files of the Kotlin stdlib sources
+- `stdlib/files.txt` lists the files of the Kotlin stdlib sources
   that are used unmodified (Gradle fetches the sources jar; the installed tool carries the
   files it needs).
 - Some of `files.txt` is what Kotlin/Native shares with Wasm, which no jar for Native or the
@@ -442,10 +457,12 @@ The library is the real one, compiled from source with every program:
   compiler their levels as Kotlin's build has them (`-Xfragments`): common, then
   `commonNonJvmMain` ("nonJvm"), then `nativeWasmMain` ("nativeWasm"), then the platform layer
   and the program (with a module's `nativeMain` as one more level between). Taking more of those
-  directories (Native's `Regex`, its collections) is a line in `files.txt` and the `actual`s
-  they leave to the platform.
+  directories (Native's collections) is a line in `files.txt` and the `actual`s they leave to the
+  platform. `Regex` is taken that way, with the few files of `wasmCommonMain` it needs (its
+  `BitSet`, the canonical decomposition of characters: Native's runtime has them in C++, Wasm in
+  Kotlin), which are `actual`s of the platform level.
 - The `Ktc2*.kt` files next to that list are the **platform layer**: what the JVM normally
-  provides (`String`, arrays, `ArrayList`, `HashMap`, `StringBuilder`, `Regex`, math, time,
+  provides (`String`, arrays, `ArrayList`, `HashMap`, `StringBuilder`, math, time,
   threads) and what Kotlin/Native's runtime adds to the shared code (`Ktc2CharNative.kt`,
   `Ktc2NumberText.kt`), written in Kotlin over a few runtime functions (`ktc2.internal`,
   implemented in `ktc2_core.c`).
@@ -471,8 +488,7 @@ remembered, for code that reads two strings side by side. A `StringBuilder` take
 at once and writes the digits of a number itself; integers are formatted without `printf`.
 
 An `ArrayList` is sorted in its own storage (a stable merge sort that does nothing to runs
-already in order); `subList` is a view of its list (`ListPart`), as on the JVM. A `Regex`
-that starts with a character, exactly, only tries to match where that character is.
+already in order); `subList` is a view of its list (`ListPart`), as on the JVM.
 
 Every `Float` and `Double` the runtime writes (a template, `println`, a `StringBuilder`, a boxed
 number's `toString`) goes through one C function, `format_real`, which calls
@@ -484,7 +500,7 @@ and ten times faster than the `snprintf` loop it replaced; values with extreme e
 the big-number path, about three times Native's time.
 
 What is there: collections and sequences (`sequence { }` and `iterator { }` included), coroutines (`kotlin.coroutines`: `startCoroutine`, `createCoroutine`, `suspendCoroutine`, the intrinsics; `DeepRecursiveFunction`), strings, `Char` and `CodePoint` with
-Kotlin/Native's Unicode tables, `Regex` with Java's syntax (the `U` flag and scripts by their four-letter codes included), ranges, `kotlin.math`,
+Kotlin/Native's Unicode tables, `Regex` as Kotlin/Native has it (its engine: no `U` flag, no scripts, fewer classes than Java's), ranges, `kotlin.math`,
 `kotlin.time` (`Duration`, `TimeSource`, `measureTime`; not `Clock` and `Instant`),
 `kotlin.random`, `Result`, the property delegates, `readln`.
 
@@ -495,7 +511,6 @@ Several files are generated; change the generator, not the file:
 | `Ktc2Arrays.kt` | `tools/gen_arrays.py` |
 | `Ktc2Math.kt` | `tools/gen_math.py` |
 | `Ktc2Comparisons.kt` | `tools/gen_comparisons.py` |
-| `Ktc2Unicode.kt` | `tools/GenUnicode.java`, run with the JDK 21 of the build. Only `Regex` uses it now (its classes, blocks, scripts); `Char` and `CodePoint` use Native's tables |
 
 ---------------------------------------------------------------------------
 ## 8. C interop
@@ -680,10 +695,11 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   suite, and lists what prints something else there.
 - There are no unit tests of the passes: everything is tested through whole programs.
 
-`examples/showcase` is the program that uses a bit of everything, with an SDL3 window. It is
+`examples/showcase` is the program that uses a bit of everything, with an SDL3 window of several
+pages (`src/scenes/`: sprites in batches, threads, arenas, the kotlinx libraries, the self-tests). It is
 not in the suite (it fetches and builds SDL3). `--headless` runs its tests with no window;
-`--auto` opens the window and clicks by itself, which with `SDL_VIDEODRIVER=dummy` needs no
-screen, and `--shot file.bmp` saves what it drew.
+`--auto` goes through every page, acting on each as a user would, which with `SDL_VIDEODRIVER=dummy` needs no
+screen, and `--shot <directory>` saves a picture of each page.
 
 `benchmarks/` holds seven programs (objects, collections, strings, numbers, dispatch,
 threads, ordinary code) that `python tools/bench.py` builds at `-O2` and times, with their counts of

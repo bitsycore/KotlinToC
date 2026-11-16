@@ -16,11 +16,72 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-16, end of the day)
 ---------------------------------------------------------------------------
 
+**State at the end of 2026-11-16 (Windows, late evening).** Start here. `git log bd6b7d2..` is
+the evening's work, all on `master` and pushed:
+- `93b1f7f` the suite in four categories (`KTC2_TEST_CATEGORIES`: `integration`, `kotlin`, `box`,
+  `libraries`; `KTC2_TEST_NO_JVM`); library tests under `tests/libraries/`, ktc2's own common test
+  under `tests/common/`, the stdlib tests' helpers under `tests/kotlin/support/`; the showcase left
+  the suite. The CI job runs `integration`, and `kotlin` in C only (macOS had run out of its 90
+  minutes); `tools/msvc_all.sh` checks such a file of tests by how it ends. `interop/Geometry`:
+  `selectany` on Windows (two copies of a variable before);
+- `31a4165` `Regex` is Kotlin/Native's engine (owner's choice), compiled from the Wasm sources jar;
+  a cleaner Gradle adds to Native's `Regex.kt` cuts its pattern's cycles (`stdlib/Ktc2RegexCycles.kt`;
+  owner's choice over a bounded cycle collector). Naming `ArrayIndexOutOfBoundsException`,
+  `StringIndexOutOfBoundsException`, `NegativeArraySizeException` is refused as on Native;
+- `0d3005b` cycles of two objects through interface-typed fields are freed (a serializer and its
+  descriptor, `left.other = right`), every pair of classes, the library's classes too; a cycle
+  warning names the property to mark `@Weak`. `tools/bench.py` counts unchanged;
+- `487dda1` the platform layer is `stdlib/` (was `src/main/resources/ktc2/stdlib`), carried as
+  resources by `processResources`;
+- `3d78f05` the showcase is one SDL3 program of 8 pages (`examples/showcase`, see its module file);
+  `--auto` runs every page as a user would, checked here with `SDL_VIDEODRIVER=dummy` and `--shot`:
+  all pages, no leak, self-tests green. Built with gcc through Ninja (kotlinx-io's files are POSIX);
+- `70605f0` `listOf(a, b...)` is a read-only view of its array as on Native (`ArrayAsList`, which
+  `ListLoops` now writes out); Ordinary of `tools/bench.py` is 9 % slower for it (item 4 below);
+- `612f37c` `ide/`: source sets an IDE resolves (`stdlib/` read only, `tests/kotlin` read only,
+  `tests/box`, `integration/` in parts where each name is once); `./gradlew :ide:compileIntegrationObjectsKotlin`;
+- `6f48035` `tools/compare.py`: ktc2 against Kotlin/Native and the JVM (compile, size, peak memory,
+  speed). First figures, Numeric, Windows: ktc2 0.252 s / 23 MB / 0.1 MB stripped; Native 2.4.21
+  0.276 s / 37 MB / 0.4 MB; JVM 0.290 s / 84 MB / 1.8 MB of jars.
+
+**What was run.** The whole suite (1039: integration 176, kotlin 180, box 384, libraries 299) was
+green on Windows on everything up to `0d3005b`. After it, only filtered runs: the `stdlib/` move
+(Kotlin tests, regex, pair cycles), `listOf` (collections, list loops, `CollectionTest`,
+generics, `ListOfViews`). Not run on WSL/Linux nor the Mac; the CI job of the push is the first
+look at them. `bench.py` before/after: in `build/bench/` of the Windows machine only.
+
+**What to do next, in order** (each: a test, the change, the tests that cover it, a commit):
+1. Read the CI run of the push (`gh run list --repo bitsycore/KotlinToC`); fix what is red. The
+   first suspects: the `stdlib/` move (a path somewhere that still says `src/main/resources/ktc2/stdlib`)
+   and `listOf` as a view (code that cast `listOf` to `MutableList` or `ArrayList`).
+2. MSVC for kotlinx-io's files (agreed with the owner): a header of ktc2's own that `platform.posix`
+   includes under `_MSC_VER` (`posix.def`): `<io.h>` and `<direct.h>` (`open`, `read`, `write`,
+   `close`, `access`, `rmdir` under their POSIX names), `O_CLOEXEC` as `_O_NOINHERIT`, and
+   `opendir`/`readdir`/`closedir` with `DIR` and `struct dirent { d_name }` over
+   `FindFirstFileA`/`FindNextFileA`. Then take `project-kotlinx-io` and the `SmokeFileTest`s out of
+   `tools/msvc_known.txt`, check with `tools/msvc_all.sh` and `tools/try_cmake.sh`, and the showcase
+   builds with CMake's default (MSVC) on Windows. About half a day.
+3. The showcase on a real screen and GPU (only `SDL_VIDEODRIVER=dummy`, the software renderer, was
+   seen): frame rates, input on each page, F2. Then the `--shot` pictures in the README.
+4. `listOf` cost: a parameter that receives several classes of list (`ArrayList` and the view of an
+   array) makes its iterator on the heap; Ordinary +9 %. Part 2 of this plan, "iterators in the frame".
+5. The speed of Native's regex engine against ktc2's former one: a benchmark of regex for
+   `tools/bench.py` and `tools/compare.py`; then speed it up (it is Native's code: change only the
+   platform layer or the passes).
+6. `tools/compare.py` on all of `benchmarks/` with Kotlin/Native 2.5.0-RC (`./gradlew
+   fetchKotlinNative`: about 1 GB with its dependencies, the first compilation fetches them), then
+   the new programs the benchmark plan lists (an empty program, binary trees, a map of many objects,
+   JSON); numbers into "Where the benchmarks stand". The programs printing their own warm times
+   (`--self-timed`) is not done.
+7. Pair cycles in programs with threads (the check reads two counts another thread could change):
+   kotlinx.serialization's serializers in a threaded program still warn (the showcase shows it).
+8. What "What I would do first" lists below from item 5 on.
+
 For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`.
 
-**First thing to do.** The last push (`ec18f49` and this document's commit) went out without
+**(Earlier, the Mac, 2026-11-16 afternoon; done since.)** The push of `ec18f49` went out without
 the whole suite having run on its last changes: read its CI run first (`gh run list --repo
 bitsycore/KotlinToC`, then `gh run view <id> --log-failed`). The whole suite (1037 tests) was
 green on the Mac with everything up to Native's `NumberConverter`; what came after it (Kotlin/
@@ -732,21 +793,16 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
+The order to follow is "What to do next, in order" at the top of this file; this list is the
+older one it continues (its items 1 to 4 are done or carried over there).
+
 1. Read the CI run of the last push (see "Where the work stands"); fix what it shows, with a
    targeted run, before anything else.
 2. What is left of Kotlin/Native's behavior (`tools/native.sh`, 2026-11-16):
-   - `Regex`: ktc2 has its own engine (`Ktc2Regex.kt`, with the JDK's tables in
-     `Ktc2Unicode.kt`); Native's is Harmony's port, in the same Wasm sources jar
-     (`nativeWasmMain/kotlin/text/regex/`): no `(?U)`, other classes (`RegexExtras`,
-     `RegexUnicodeClasses` print other things there). Proposed to the owner: list every pattern
-     where the two differ, align what Native answers, and bring the cases where following Native
-     removes a feature (`(?U)`) to the owner. Taking Native's engine whole is the other way;
-     compare its speed first;
-   - `listOf(a, b)` is an `ArrayList` here (for `ListLoops`), so an index outside it has a
-     message, where Native's array view (`asList`) has none; and a cast of it to `MutableList`
-     can change it;
-   - naming `ArrayIndexOutOfBoundsException` or `StringIndexOutOfBoundsException` is an error on
-     Native (deprecated since 2.1); here it compiles (`Ktc2JavaLang.kt`);
+   - (done 2026-11-16) `Regex` is Native's engine; naming the JVM's exceptions is refused;
+     `listOf(a, b)` checked against Native (`stdlib/ListOfViews`);
+   - the speed of Native's regex engine against ktc2's former one: to measure
+     (`tools/bench.py`, a benchmark of regex to add);
    - not to follow: `readLine()` after `readln()` finds nothing on Native (one reads stdin
      directly, the other through `stdio`'s buffer), and a stack trace's frames.
 3. Memory, proposed on 2026-11-16: the pair freeing through a field typed by an interface or
