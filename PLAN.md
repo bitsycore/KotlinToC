@@ -188,12 +188,6 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   program that encodes such values in a loop grows. To decide: a cache of those serializers (by
   class and arguments, as the JVM's), or the descriptor's reference made weak where the serializer
   is the only one to make it (eight of the library's own tests have a `.cycles` for it);
-- a lambda kept in a property of the object whose members it calls (`val handler = { update() }`,
-  `val load = suspend { fetch() }`) holds that object: a cycle, never freed. The cycle lint says
-  so since 2026-11-15; there is no answer in the language but `@Weak` on a property of a nullable
-  type. The lambdas given to `lazy`, `observable` and `vetoable` hold it weakly (they cannot get
-  out of the delegate); this one can be read and kept, so a weak reference would change what the
-  program does. Box test `kt51718.kt` (pending) is the case;
 - the default `toString()` of a local or anonymous class names it with dots
   (`AnyTest.testToString.Local1`), where the JVM and Kotlin/Native use `$`
   (`AnyTest$testToString$Local1`): the runtime's table of types would need a second name per
@@ -201,11 +195,17 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `assert()` is there (`Ktc2Assertions.kt`), off unless asked for, as on Kotlin/Native: `ktc2 -ea`
   (Native's `-enable-assertions`) turns it on, in any build; `--debug` does not (decided by the
   owner on 2026-11-16: follow Native).
-- an object that holds an object of its own `inner` class (`private val key = Key()`, `Key`
-  being `inner`) is a cycle, never freed: the inner object holds its outer one. The cycle lint
-  says so since 2026-11-15 (`integration/objects/SelfCycles`, which is also the test of the
-  `.warnings` kind); a library taken as a module answers it in its module file
-  (`weak = ["Outer.Inner.this$0"]`), a program has no way yet (`@Weak` is for properties).
+- (done 2026-11-16, the owner's choice of two proposals) a cycle of two objects that hold each
+  other through their own fields is freed by the runtime when nothing else holds either: an
+  object and its `inner` object (`private val key = Key()`), its lambda or object expression that
+  calls its members (`val handler = { update() }`), two objects that point at each other through
+  `var`s; a star of them around one object too. No annotation and nothing changes in what the
+  program computes: the objects go only when no reference from outside is left (`KClass.pairCycles`,
+  `CycleLint`, `ktc2_pair_check`). Not in a program with threads yet (the cycle is still reported
+  there). A cycle ktc2 cannot see this way (three objects or more) is answered by `@Weak` on a
+  property, or now on an `inner` class (`@Weak inner class Entry`: its outer object is not owned,
+  and an inner object that outlives it throws `NullPointerException` where it uses it).
+  `integration/objects/PairCycles`, `SelfCycles`, `integration/values/WeakInner`.
 
 Fixed on 2026-11-14 from that list: a value of the wrong class that reaches a function through an
 unchecked cast throws `ClassCastException`, as on the JVM and Kotlin/Native, except for the
@@ -706,8 +706,8 @@ Open:
    so what they print where the JVM and Native differ is the JVM's; `tools/native.sh` lists those
    programs (the text of exceptions, `Float` as text, the order of a template's parts...), each to
    be made to print the same on both or to follow Native.
-3. The decision waiting in "Known and not done": how a program breaks the cycle of an object
-   that holds an object of its own `inner` class (proposals given to the owner on 2026-11-16).
+3. Pair cycles in a program with threads (part 3): the check reads two counts that another
+   thread could be changing; atomic loads and a second look after clearing the link would do.
 4. The benchmarks against Kotlin/Native and the JVM ("Benchmarks against Kotlin/Native and the
    JVM: the plan"), about three days, nothing of ktc2 itself changed.
 5. More tests taken as they are: what is left of `kotlin-native/runtime/test`, the box tests

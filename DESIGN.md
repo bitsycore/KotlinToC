@@ -291,8 +291,18 @@ one release `Effects` does not place: `ArcInsert` leaves it to the end of the bl
 object may have a cleaner and a local that borrows from a writable place is still in use
 (`mPlaceBorrowers`).
 
-**Cycles** are not collected. `CycleLint` warns at compile time about classes that can reach
-themselves through strong references; `@Weak`, `WeakRef` or `@Acyclic` answer the warning. It
+**Cycles** are not collected, but for one shape. Two objects that hold each other through their
+own fields (an object and its `inner` object, or the lambda in one of its properties that calls
+its members, or two objects whose `var`s point at each other) are freed when nothing else holds
+them: `CycleLint` lists those cycles of two in `KClass.pairCycles` (when the partner's class is
+known exactly), objects of such a class carry `KTC2_PAIRED` in their header, and a release that
+leaves no more references than the class has pairs calls `ktc2_pair_check`, which asks the
+class's `__collect`: when every reference left is held by a partner that it alone holds, the
+partners give theirs up without a release and the object goes, taking them with it. It is exact:
+nothing is freed while a reference from outside is left, so nothing a program can see changes.
+Not in a program with threads (`KTC2_THREADS`), where the cycle is reported instead. `CycleLint` warns at compile time about the other classes that can reach
+themselves through strong references; `@Weak` (on a property, or on an `inner` class for its
+outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner
 gives an object it makes and hands its own `this` to: an `inner` object (`val key = Key()`), a
 lambda or an object expression that captures `this` (`val handler = { update() }`), `Child(this)`.
