@@ -1,9 +1,12 @@
 @file:OptIn(ExperimentalForeignApi::class)
 
-package showcase.app
+package showcase.scenes
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import ktc2.sdl3.*
+import sdl3.SDL_Event
+import showcase.app.Scene
+import showcase.core.allGroups
 import showcase.core.Group
 import showcase.core.Outcome
 import showcase.core.kFailedMark
@@ -17,11 +20,13 @@ import showcase.core.summary
 
 /*
 Everything is drawn at twice its size: the text of SDL's built-in font is 8 pixels high. The
-positions below are in those doubled units.
+positions below are in those doubled units, in a viewport of the window ([kLeft], [kTop]).
 */
-internal const val kScale = 2.0f
-internal const val kWidth = 460.0f
-internal const val kHeight = 300.0f
+private const val kScale = 2.0f
+private const val kWidth = 460.0f
+private const val kHeight = 300.0f
+private const val kLeft = 180
+private const val kTop = 50
 private const val kButtonLeft = 8.0f
 private const val kButtonWidth = 132.0f
 private const val kButtonHeight = 20.0f
@@ -53,11 +58,11 @@ private val kTitle = SDL3.Color(0xFFD479FFu)
 enum class State { IDLE, PASSED, FAILED }
 
 /** What the buttons that are not a group stand for. */
-internal const val kRunAll = -1
-internal const val kClearLog = -2
+private const val kRunAll = -1
+private const val kClearLog = -2
 
 /** Something to click. [action] is the place of its group among the groups, or [kRunAll] or [kClearLog]. */
-class Button(val label: String, val action: Int, val bounds: SDL3.FRect) {
+private class Button(val label: String, val action: Int, val bounds: SDL3.FRect) {
 	var state = State.IDLE
 
 	fun contains(inX: Float, inY: Float): Boolean = bounds.contains(SDL3.FPoint(inX, inY))
@@ -68,7 +73,7 @@ class Button(val label: String, val action: Int, val bounds: SDL3.FRect) {
 // ==================
 
 /** The buttons, the log of what the clicks did, and how to draw both. */
-class Screen(private val mGroups: List<Group>) {
+private class Screen(private val mGroups: List<Group>) {
 	val buttons = ArrayList<Button>()
 
 	/** Every line logged since the start or the last clearing, already cut to the width of the panel. */
@@ -215,10 +220,8 @@ class Screen(private val mGroups: List<Group>) {
 	//  Drawing
 
 	fun draw(inRenderer: SDL3.Renderer) {
-		inRenderer.setDrawColor(kBackground)
-		inRenderer.clear()
 		inRenderer.setDrawColor(kText)
-		inRenderer.drawDebugText(kButtonLeft, 8.0f, "ktc2 showcase")
+		inRenderer.drawDebugText(kButtonLeft, 8.0f, "Self-tests")
 
 		buttons.forEachIndexed { vIndex, vButton ->
 			val vColor = when {
@@ -264,6 +267,71 @@ class Screen(private val mGroups: List<Group>) {
 			inRenderer.setDrawColor(if (mIsDragging) kText else kHover)
 			inRenderer.fillRoundedRect(SDL3.FRect(kTrack.x, kTrack.y + vOffset, kTrack.w, vLength), 3.0f)
 		}
-		inRenderer.present()
 	}
+}
+
+// ==================
+// MARK: The page
+// ==================
+
+/**
+ * The checks of the showcase: the language, the library, the runtime, each group a button; a click
+ * runs it and adds everything it did to a log that can be scrolled. The same groups run without a
+ * window with `--headless`.
+ */
+class TestsScene : Scene {
+	override val title = "Self-tests"
+	override val summary = "The language and library checks, run by a click, with their log"
+	override val help = "Click a group   Wheel/arrows/PgUp/PgDn scroll"
+
+	private val mScreen = Screen(allGroups())
+
+	/** A place of the window in the units of the page. */
+	private fun x(inX: Float): Float = (inX - kLeft) / kScale
+
+	private fun y(inY: Float): Float = (inY - kTop) / kScale
+
+	override fun event(event: SDL_Event) {
+		when (event.kind) {
+			SDL3.Event.KeyDown -> when (event.key.code) {
+				SDL3.Scancode.Up -> mScreen.scroll(-1)
+				SDL3.Scancode.Down -> mScreen.scroll(1)
+				SDL3.Scancode.PageUp -> mScreen.page(-1)
+				SDL3.Scancode.PageDown -> mScreen.page(1)
+				SDL3.Scancode.Home -> mScreen.scrollToStart()
+				SDL3.Scancode.End -> mScreen.scrollToEnd()
+				else -> {}
+			}
+			SDL3.Event.MouseWheel -> mScreen.scroll(-(event.wheel.y * 3.0f).toInt())
+			SDL3.Event.MouseMotion -> mScreen.move(x(event.motion.x), y(event.motion.y))
+			SDL3.Event.MouseButtonDown -> if (event.button.pressed == SDL3.MouseButton.Left) mScreen.press(x(event.button.x), y(event.button.y))
+			SDL3.Event.MouseButtonUp -> mScreen.release()
+			else -> {}
+		}
+	}
+
+	override fun update(seconds: Float) {}
+
+	override fun draw(renderer: SDL3.Renderer) {
+		// The viewport is in the units of the scale: set after it.
+		renderer.setScale(kScale, kScale)
+		renderer.setViewport(SDL3.Rect((kLeft / kScale).toInt(), (kTop / kScale).toInt(), kWidth.toInt(), kHeight.toInt()))
+		mScreen.draw(renderer)
+		renderer.clearViewport()
+		renderer.setScale(1.0f, 1.0f)
+	}
+
+	override fun status(): String = "${mScreen.groupsRun} groups run   ${mScreen.failures} failures"
+
+	override fun autoStep(frame: Int): Boolean {
+		// Run all, then walk down the log.
+		if (frame == 10) {
+			val vRunAll = mScreen.buttons.first { it.action == kRunAll }.bounds.center()
+			mScreen.press(vRunAll.x, vRunAll.y)
+		}
+		if (frame in 30..90 && frame % 10 == 0) mScreen.page(1)
+		return frame < 100
+	}
+
+	override fun report(): String = "${mScreen.groupsRun} groups run, ${mScreen.failures} failures"
 }

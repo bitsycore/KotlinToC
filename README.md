@@ -88,8 +88,14 @@ so nothing has to be installed.
 build/install/ktc2/bin/ktc2 examples/showcase --run
 ```
 
-That opens the showcase: a window with a button for each group of its tests and a log of
-what they did. `-- --headless` opens no window and prints the results instead.
+That opens the showcase, one program of several pages: a million bouncing sprites drawn in
+batches and moved by threads, fireworks of short-lived objects (with `arena`), colliding balls
+found through a grid built in an arena each frame, a Mandelbrot set computed by threads, the
+game of life, the kotlinx libraries together (JSON into a file, dates, immutable undo, Regex),
+and the self-tests with their log. `-- --auto` goes through every page by itself and reports;
+`-- --headless` opens no window and prints the self-tests instead. It writes a file with
+kotlinx-io, so on Windows it is built with gcc or clang rather than MSVC:
+`KTC2_CC=gcc KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>"`.
 
 ## What you need
 

@@ -1,12 +1,23 @@
-# The showcase: a window with a button for each group of tests; a click runs the group and
-# adds everything it did to a log that can be scrolled. Several modules (this one, its tests in core/, a small library in
-# shapes/), SDL3 fetched from GitHub and built by CMake.
-#   ktc2 examples/showcase --run                 the window
-#   ktc2 examples/showcase --run -- --auto       clicks every button by itself, then closes
-#   ktc2 examples/showcase --run -- --headless   no window: the tests, printed
-#   ktc2 examples/showcase --run -- --headless --log   the same, with every check and what it found
+# The showcase: one program that uses a bit of everything ktc2 compiles, in an SDL3 window of several
+# pages. A menu leads to each; Escape comes back to it, 1 to 8 go straight to a page.
+#   Bunnies     a million sprites bouncing, drawn in batches, moved by several threads
+#   Particles   fireworks: many short-lived objects, the work of the allocator and the counts
+#   Physics     balls that collide, found through a grid of buckets (HashMap, ArrayList)
+#   Fractal     the Mandelbrot set, computed by threads into a texture; the wheel zooms
+#   Life        Conway's game of life on a large grid, drawn into a texture
+#   Data        kotlinx.serialization (JSON), kotlinx-io (a file), kotlinx-datetime,
+#               kotlinx.collections.immutable (undo), Regex, sequences
+#   Self-tests  the language and library checks of the showcase, with their log
+#
+#   ktc2 examples/showcase --run                          the window
+#   ktc2 examples/showcase --run -- --auto                every page for a few seconds, then a report
+#   ktc2 examples/showcase --run -- --auto --shot dir     the same, saving a picture of each page into dir
+#   ktc2 examples/showcase --run -- --headless            no window: the self-tests, printed
+#
+# SDL3 is fetched from GitHub and built by CMake the first time. On Windows, CMake's default is MSVC:
+# for gcc, KTC2_CC=gcc KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>".
 name         = "showcase"
 executable   = "showcase"
 main         = "showcase.app.start"
 sources      = ["src"]
-dependencies = ["core", "sdl3"]
+dependencies = ["sdl3", "kotlinx-serialization-json-io", "kotlinx-datetime", "kotlinx-collections-immutable"]

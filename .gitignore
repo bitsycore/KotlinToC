@@ -30,3 +30,7 @@ out/
 ### Python ###
 __pycache__/
 *.pyc
+
+### The showcase ###
+# What its Data page saves where it is run.
+showcase-board.json
