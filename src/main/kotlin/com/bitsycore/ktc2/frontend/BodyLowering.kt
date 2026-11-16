@@ -356,6 +356,11 @@ internal class BodyBuilder(
 			val vRead = KFieldRead(fieldTarget(KRead(mFunction.params[0]), vBinding.field), vBinding.field)
 			// A capture held weakly is asked for its object: alive whenever the lambda runs (mWeakCaptures).
 			mBlock += KLet(vLocal, if (vWeakType != null) coerce(KCall(mImporter.weakGetFunction(), listOf(vRead)), vWeakType) else vRead)
+			// The outer object of an inner class held weakly (`@Weak inner class`) that is gone: used, it is a NullPointerException.
+			val vDeclared = (vBinding.declaration as? IrValueDeclaration)?.type
+			if (vWeakType != null && vDeclared != null && !vDeclared.isMarkedNullable()) {
+				mBlock += KIf(isNull(KRead(vLocal)), listOf(failure("throwNullPointer", "ktc2_fail_null")), emptyList())
+			}
 			when (val vDeclaration = vBinding.declaration) {
 				is IrValueDeclaration -> {
 					mLocals[vDeclaration] = vLocal

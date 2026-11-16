@@ -9,8 +9,14 @@ import java.lang.ref.WeakReference
 /**
  * Marks a nullable reference property as non-owning: it does not keep its target alive and
  * reads as `null` once the target is destroyed. Used to break reference cycles.
+ *
+ * On an `inner` class, its reference to its outer object is non-owning: an inner object kept by
+ * its outer one is then freed with it. An inner object that outlives its outer one throws
+ * `NullPointerException` where it uses it (on the JVM it keeps it alive). ktc2 frees the usual
+ * case without it (an inner object the outer one holds and nothing else does); this is for a
+ * cycle it cannot see.
  */
-@Target(AnnotationTarget.PROPERTY)
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.SOURCE)
 annotation class Weak
 

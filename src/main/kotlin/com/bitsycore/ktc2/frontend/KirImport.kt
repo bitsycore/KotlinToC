@@ -1246,7 +1246,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		var vName = "outer"
 		while (inClass.fields.any { it.cName == vName }) vName += "_"
 		// A module may name it as the JVM does, `Inner.this$0`, to have it held weakly: the outer object holds the inner one.
-		val vWeak = "${inIrClass.kotlinFqName.asString()}.this\$0" in mWeakByModule
+		// A program says so with `@Weak inner class`.
+		val vWeak = "${inIrClass.kotlinFqName.asString()}.this\$0" in mWeakByModule || inIrClass.annotations.any { it.type.classFqName?.asString() == "ktc2.Weak" }
 		val vField = KField(vName, if (vWeak) KObjType else vType, inClass, isImmutable = true)
 		if (vWeak) vField.weakType = vType
 		inClass.fields += vField
