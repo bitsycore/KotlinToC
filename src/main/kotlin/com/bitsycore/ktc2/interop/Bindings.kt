@@ -64,7 +64,7 @@ private val kApplePrivateHeaders = mapOf(
 	"stat.h" to listOf("sys/_types/_s_ifmt.h"),
 	"dirent.h" to listOf("sys/dirent.h"),
 	"stdlib.h" to listOf("_malloc.h", "_abort.h"),
-	"stdio.h" to listOf("_printf.h", "_ctermid.h"),
+	"stdio.h" to listOf("_printf.h", "_ctermid.h", "sys/_types/_seek_set.h"),
 	"string.h" to listOf("_strings.h"),
 )
 
