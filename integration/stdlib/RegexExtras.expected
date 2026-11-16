@@ -1,0 +1,28 @@
+false true abcc
+false 12345 hello!
+"one"|"two" xx aaab|ab
+[aa, a] abcc ababa|
+d|c|t|n|s|v|ryth|ng ab|cd de|ghijklm
+nop|q e|o|o|é
+ab|aB ab|Ab ab|Ab abc|aBc
+a
+b|a-b a-b one|four 
+1|a2
+ 4cd a b cx 
+ad|AD|bcd|Bcd xy|xY|xz
+Straße|ÉCOLE|École ÉCOLE|École
+ÉCOLE|Ωμέγα|ЖУК|жук Привет|МИР
+éÉ true DEADbeef
+Ünï|cödé|ǅ|Σίσυφος|мир|a|b|c
+Ü|Σ / nï|cödé|ίσυφος|мир|a|b|c / ǅ / 123|٤٥|ⅷ / 123|٤٥ / ⅷ
+-|,|«|»|!|_ / «|» / $|+ / $ / 19 / 1
+refused / refused / refused / refused
+n|c|d|a|b|c /  / n|c|d|a|b|c / n|c|d|123|a|b|c / -|123|,|!|$|+|_ / 0|CAFE
+refused / refused / refused / 7 / 7
+12 |! /  |! / refused / refused / Hello|World
+|été| |déjà_vu| |x| / t|d|j|_vu|x / naïve|café|ok
+1999000 14000 2001 9
+refused / Ελληνικά / refused / refused / refused
+Ελληνικά / refused / a| b / refused / refused / refused
+a<r>b / a / c|d
+true true true true true true true true

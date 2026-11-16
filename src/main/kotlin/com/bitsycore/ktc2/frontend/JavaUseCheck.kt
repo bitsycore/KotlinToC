@@ -33,6 +33,16 @@ class JavaUseCheck(private val mLibraryFiles: Set<String>) {
 	/** Functions of the Kotlin library that exist on the JVM only, with what a program uses instead. */
 	private val kJvmOnly = mapOf("kotlin.synchronized" to "ktc2.concurrent.synchronized")
 
+	/**
+	 * The exceptions the platform layer declares under their JVM names for the runtime to throw (`Ktc2JavaLang.kt`),
+	 * which a program cannot name on Kotlin/Native, with what Kotlin/Native says then.
+	 */
+	private val kNotNamedOnNative = mapOf(
+		"java.lang.ArrayIndexOutOfBoundsException" to "'ArrayIndexOutOfBoundsException' is deprecated on Kotlin/Native: use IndexOutOfBoundsException instead",
+		"java.lang.StringIndexOutOfBoundsException" to "'StringIndexOutOfBoundsException' does not exist on Kotlin/Native: use IndexOutOfBoundsException instead",
+		"java.lang.NegativeArraySizeException" to "'NegativeArraySizeException' does not exist on Kotlin/Native: a negative size is IllegalArgumentException there",
+	)
+
 	fun check(inFiles: List<IrFile>) {
 		for (vFile in inFiles) {
 			if (File(vFile.fileEntry.name).absoluteFile.invariantSeparatorsPath in mLibraryFiles) continue
@@ -92,14 +102,15 @@ class JavaUseCheck(private val mLibraryFiles: Set<String>) {
 		private fun report(inElement: IrElement, inDeclaration: IrDeclaration) {
 			val vFragment = runCatching { inDeclaration.getPackageFragment() }.getOrNull() ?: return
 			val vPackage = vFragment.packageFqName.asString()
-			// A declaration with a file is compiled from source: the platform layer's, not the JDK's.
-			if (vFragment is IrFile || !(vPackage == "java" || vPackage.startsWith("java.") || vPackage.startsWith("javax."))) return
+			if (!(vPackage == "java" || vPackage.startsWith("java.") || vPackage.startsWith("javax."))) return
 			val vOwner = generateSequence(inDeclaration) { it.parent as? IrDeclaration }.filterIsInstance<IrClass>().lastOrNull()
 			val vName = vOwner?.kotlinFqName?.asString() ?: vPackage
+			// A declaration with a file is compiled from source: the platform layer's, not the JDK's.
+			val vMessage = if (vFragment is IrFile) kNotNamedOnNative[vName] ?: return else "'$vName' is not available: a program has no JDK, as in Kotlin/Native"
 			if (inElement.startOffset < 0) return
 			val vLine = mFile.fileEntry.getLineNumber(inElement.startOffset) + 1
 			if (mReported.add("$vLine $vName")) {
-				errors += "${File(mFile.fileEntry.name).name}:$vLine: '$vName' is not available: a program has no JDK, as in Kotlin/Native"
+				errors += "${File(mFile.fileEntry.name).name}:$vLine: $vMessage"
 			}
 		}
 	}

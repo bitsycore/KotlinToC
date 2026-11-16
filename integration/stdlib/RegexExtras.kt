@@ -1,7 +1,13 @@
 // Regex: atomic groups, possessive quantifiers, class intersection, flags inside the pattern,
-// the classes of Unicode, and case without regard to it beyond ASCII.
+// the classes of Unicode, and case without regard to it beyond ASCII. The engine is Kotlin/Native's
+// (Harmony's), which knows fewer classes than the JVM's: RegexExtras.expected is Kotlin/Native's output.
 
-fun all(inPattern: String, inText: String): String = Regex(inPattern).findAll(inText).joinToString("|") { it.value }
+/** What [inPattern] finds in [inText]; "refused" for a pattern Kotlin/Native does not know (the JVM knows more classes). */
+fun all(inPattern: String, inText: String): String = try {
+	Regex(inPattern).findAll(inText).joinToString("|") { it.value }
+} catch (vError: IllegalArgumentException) {
+	"refused"
+}
 
 fun all(inRegex: Regex, inText: String): String = inRegex.findAll(inText).joinToString("|") { it.value }
 
@@ -61,6 +67,6 @@ fun main() {
 	// Lines that end with a line feed only.
 	println(all("(?d).+", "a\rb\nc").replace("\r", "<r>") + " / " + all(".+", "a\rb\nc") + " / " + all("(?dm)^\\w$", "a\rb\nc\nd"))
 
-	// Refused, here as on the JVM.
+	// Refused, here as on Kotlin/Native.
 	println(refused("\\p{Nope}").toString() + " " + refused("\\p{IsNope}") + " " + refused("\\p{InNowhere}") + " " + refused("a**") + " " + refused("(?>a") + " " + refused("[a-") + " " + refused("x{2,1}") + " " + refused("(?q)a"))
 }

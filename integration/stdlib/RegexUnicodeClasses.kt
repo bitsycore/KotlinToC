@@ -1,6 +1,14 @@
-/** The flag U of a regex (Unicode classes for \w, \d, \s, \b and the POSIX names), and scripts by their four-letter codes. */
+/*
+The flag U of a regex (Unicode classes for \w, \d, \s, \b and the POSIX names), and scripts by their four-letter
+codes: what the JVM has. The engine is Kotlin/Native's (Harmony's), which has neither: it refuses those patterns,
+and RegexUnicodeClasses.expected is Kotlin/Native's output.
+*/
 fun show(inPattern: String, inText: String) {
-	val vFound = Regex(inPattern).findAll(inText).map { it.value }.toList()
+	val vFound = try {
+		Regex(inPattern).findAll(inText).map { it.value }.toList().toString()
+	} catch (vError: IllegalArgumentException) {
+		"refused"
+	}
 	println("$inPattern on $inText: $vFound")
 }
 

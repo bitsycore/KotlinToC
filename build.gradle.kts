@@ -39,7 +39,8 @@ val stdlibSources: Configuration = configurations.create("stdlibSources") {
 /**
  * The sources of the standard library for Wasm (Apache-2), for the part of them ktc2 takes:
  * `commonNonJvmMain` and `nativeWasmMain`, which Kotlin/Native compiles too and which no other
- * published jar holds (`NumberConverter`, the Unicode tables and the code that reads them...).
+ * published jar holds (`NumberConverter`, the Unicode tables and the code that reads them, the regex
+ * engine...), and the few files of `wasmCommonMain` that the regex engine needs.
  */
 val nativeWasmSources: Configuration = configurations.create("nativeWasmSources") {
 	isTransitive = false
@@ -110,7 +111,23 @@ val unpackStdlibSources = tasks.register("unpackStdlibSources", Sync::class) {
 	description = "Unpack the Kotlin standard library sources (Apache-2) into the build directory, so that they can be bundled with user programs."
 	from({ stdlibSources.map { zipTree(it) } })
 	from({ nativeWasmSources.map { zipTree(it) } }) {
-		include("commonNonJvmMain/**", "nativeWasmMain/**")
+		// wasmCommonMain: of it, only what Kotlin/Native's regex engine needs and its runtime has in C++ (BitSet's actual,
+		// the canonical decomposition of characters), here in Kotlin as Wasm has it.
+		include("commonNonJvmMain/**", "nativeWasmMain/**", "wasmCommonMain/kotlin/text/regex/**")
+		// Kotlin/Native's Regex as it is, with a cleaner: its pattern's graph has cycles (a quantified group's end points
+		// back at the quantifier), which Native's collector frees and reference counting does not. The cleaner cuts them
+		// when the Regex ends (Ktc2RegexCycles.kt, which has the `actual`).
+		filesMatching("nativeWasmMain/kotlin/text/Regex.kt") {
+			filter { vLine ->
+				when (vLine) {
+					"import kotlin.text.regex.*" -> vLine + "\n\n/** ktc2: what cuts the cycles of [pattern] when its Regex ends (Ktc2RegexCycles.kt). */\n" +
+						"internal expect fun ktc2RegexCleaner(pattern: Pattern): Any"
+					"    private val startNode = nativePattern.startNode" -> vLine + "\n\n    // ktc2: see ktc2RegexCleaner.\n" +
+						"    private val ktc2Cleaner = ktc2RegexCleaner(nativePattern)"
+					else -> vLine
+				}
+			}
+		}
 	}
 	into(layout.buildDirectory.dir("stdlib-src"))
 }

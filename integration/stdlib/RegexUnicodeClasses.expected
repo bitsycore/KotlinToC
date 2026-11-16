@@ -1,0 +1,40 @@
+\w+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, _1, x, y, z, a]
+(?U)\w+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, _1, x, y, z, a]
+\d+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [1]
+(?U)\d+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [1]
+\s+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [ ,  ,  ,  ,  ,  ,  ,  ,  ,  ]
+(?U)\s+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [ ,  ,  ,  ,  ,  ,  ,  ,  ,  ]
+\b\w on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [c, x, y, z]
+(?U)\b\w on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [c, x, y, z]
+\p{Alpha}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, x, y, z, a]
+(?U)\p{Alpha}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, x, y, z, a]
+\p{Lower}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, x, y, z, a]
+(?U)\p{Lower}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, x, y, z, a]
+\p{Upper}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: []
+(?U)\p{Upper}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: []
+\p{Alnum}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, 1, x, y, z, a]
+(?U)\p{Alnum}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, 1, x, y, z, a]
+\p{Punct}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [_1]
+(?U)\p{Punct}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [_1]
+\p{Space}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [ ,  ,  ,  ,  ,  ,  ,  ,  ,  ]
+(?U)\p{Space}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [ ,  ,  ,  ,  ,  ,  ,  ,  ,  ]
+\p{Blank}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [ ,  ,  ,  ,  ,  ,  ,  ,  ,  ]
+(?U)\p{Blank}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [ ,  ,  ,  ,  ,  ,  ,  ,  ,  ]
+\p{XDigit}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, 1, a]
+(?U)\p{XDigit}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, 1, a]
+\p{Graph}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, _1, x, y, z, a]
+(?U)\p{Graph}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [caf, _1, x, y, z, a]
+\p{Print}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [é, Ωμέγα, ٣٤,  ,  , ᰀ, ̀, ½, Ⅻ, ẞ, ǅ, ‍]
+(?U)\p{Print}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: [é, Ωμέγα, ٣٤,  ,  , ᰀ, ̀, ½, Ⅻ, ẞ, ǅ, ‍]
+\p{Cntrl}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: []
+(?U)\p{Cntrl}+ on café_1 Ωμέγα ٣٤ x y z ᰀ ̀a ½ Ⅻ ẞ ǅ ‍: []
+(?U:\w+)-\w+ on été-été: []
+\p{IsAlphabetic}+ on aͅbⅠ: refused
+\p{IsWhite_Space}+ on abc d: refused
+\p{IsLatin}+ on abc Ωμέγα: refused
+\p{sc=Latn}+ on abc Ωμέγα: refused
+\p{script=Grek}+ on abc Ωμέγα: refused
+\p{IsCyrl}+ on abc Привет: refused
+\p{sc=Hani}+ on 漢字 kana かな: refused
+\P{sc=Latn}+ on abcΩμ: refused
+(?Ui)ÉTÉ on été: [été]

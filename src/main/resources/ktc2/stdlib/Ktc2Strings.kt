@@ -16,8 +16,8 @@ ktc2 platform layer for kotlin.text: the String and Char functions the common st
 library leaves to its platform.
 
 Classification and case of characters are Kotlin/Native's own code (commonNonJvmMain and
-nativeWasmMain of the standard library, with their tables). Regex is in Ktc2Regex.kt, with the
-tables of Ktc2Unicode.kt.
+nativeWasmMain of the standard library, with their tables). Regex is Kotlin/Native's engine too
+(nativeWasmMain), with Ktc2RegexCycles.kt.
 */
 
 // ==================

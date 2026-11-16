@@ -1,0 +1,3 @@
+'ArrayIndexOutOfBoundsException' is deprecated on Kotlin/Native
+'StringIndexOutOfBoundsException' does not exist on Kotlin/Native
+'NegativeArraySizeException' does not exist on Kotlin/Native
