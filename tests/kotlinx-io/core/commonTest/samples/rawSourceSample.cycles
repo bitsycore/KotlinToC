@@ -1,1 +1,0 @@
-RC4DecryptingSource holds its RC4Key, an inner class, which holds it back: a cycle of two vals that only a collector frees (PLAN.md, known and not done)
