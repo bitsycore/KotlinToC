@@ -1,5 +1,6 @@
 // A bad index or range on a string is an exception that can be caught, also when the string
-// is seen as a CharSequence, and with the message the JVM gives.
+// is seen as a CharSequence. As on Kotlin/Native it has no message (`.expected` is what Kotlin/Native
+// prints; the JVM gives one).
 
 fun at(inText: CharSequence, inIndex: Int): Char = inText[inIndex]
 

@@ -541,12 +541,29 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			} while (resolveDispatch() || mPending.isNotEmpty())
 		}
 
+		// A program with a Float or a Double needs the function the runtime writes them with.
+		var vFormatter: KFunction? = null
+		val vHasReals = mUnits.any { vUnit ->
+			vUnit.functions.any { vFunction ->
+				vFunction.body.anyStatement { vStatement ->
+					vStatement.ownExpressions().any { vRoot -> vRoot.anyNode { (it.type as? KPrimType)?.prim.let { vPrim -> vPrim == KPrim.FLOAT || vPrim == KPrim.DOUBLE } } }
+				}
+			}
+		}
+		if (vHasReals) {
+			vFormatter = internalFunction("formatReal")?.let { functionFor(it) }
+			do {
+				while (mPending.isNotEmpty()) mPending.removeFirst().invoke()
+			} while (resolveDispatch() || mPending.isNotEmpty())
+		}
+
 		settleDeinit()
 		settleInitialization()
 		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
 		return KModule(mUnits, vEntry, mClassList).also {
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
+			it.realFormatter = vFormatter
 		}
 	}
 

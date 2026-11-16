@@ -469,20 +469,31 @@ public fun kotlin_ULong_rangeUntil(start: ULong, end: ULong): kotlin.ranges.ULon
 /** `x!!` on null. */
 public fun throwNullPointer(): Nothing = throw NullPointerException()
 
+// As on Kotlin/Native, these exceptions have no message, and an index outside a string is an
+// ArrayIndexOutOfBoundsException as one outside an array is. The arguments are for the C runtime's
+// report when checks abort.
+
 /** An array index outside the array. */
-public fun throwIndexOutOfBounds(index: Int, size: Int): Nothing =
-	throw ArrayIndexOutOfBoundsException("Index $index out of bounds for length $size")
+@Suppress("UNUSED_PARAMETER")
+public fun throwIndexOutOfBounds(index: Int, size: Int): Nothing = throw ArrayIndexOutOfBoundsException()
 
 /** A string index outside the string. */
-public fun throwStringIndexOutOfBounds(index: Int, length: Int): Nothing =
-	throw StringIndexOutOfBoundsException("Index $index out of bounds for length $length")
+@Suppress("UNUSED_PARAMETER")
+public fun throwStringIndexOutOfBounds(index: Int, length: Int): Nothing = throw ArrayIndexOutOfBoundsException()
 
 /** A range that is not inside the string, given to `substring` or `subSequence`. */
-public fun throwSubstringRange(begin: Int, end: Int, length: Int): Nothing =
-	throw StringIndexOutOfBoundsException("Range [$begin, $end) out of bounds for length $length")
+@Suppress("UNUSED_PARAMETER")
+public fun throwSubstringRange(begin: Int, end: Int, length: Int): Nothing = throw ArrayIndexOutOfBoundsException()
 
 /** An integer division or remainder by zero. */
-public fun throwDivideByZero(): Nothing = throw ArithmeticException("/ by zero")
+public fun throwDivideByZero(): Nothing = throw ArithmeticException()
+
+/**
+ * [value] as text, as a `Float` when [isFloat]: what Kotlin/Native writes, by its own code
+ * (`NumberConverter`, nativeWasmMain). The runtime writes every `Float` and `Double` with it.
+ */
+public fun formatReal(value: Double, isFloat: Boolean): String =
+	if (isFloat) kotlin.internal.NumberConverter.convert(value.toFloat()) else kotlin.internal.NumberConverter.convert(value)
 
 /**
  * What [of] holds of the exceptions that were suppressed for it (`addSuppressed`): a list, or

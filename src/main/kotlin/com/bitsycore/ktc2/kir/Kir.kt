@@ -93,6 +93,13 @@ class KModule(
 	 * check or is built with `--checks=abort`: those failures then end the program.
 	 */
 	var throwers: Map<String, KFunction> = emptyMap()
+
+	/**
+	 * The platform layer's `formatReal`, which writes a `Float` or `Double` as Kotlin/Native does
+	 * (its `NumberConverter`): the runtime formats every one through it. Null when the program
+	 * has no such number.
+	 */
+	var realFormatter: KFunction? = null
 }
 
 /** One generated `.h` / `.c` pair: a class, or the top-level declarations of one file. */

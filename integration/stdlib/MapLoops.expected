@@ -1,0 +1,15 @@
+one=1 two=2 three=3 four=4 ottf1234
+40
+0
+two=2 three=3 five=5 589
+33 0 0 33
+ac 16
+3 2 {two=20, three=30, five=50}
+3 two two=22 22
+put a new key: ConcurrentModificationException
+put a new key at the last entry: ConcurrentModificationException
+remove a key going over the keys: ConcurrentModificationException
+clear going over the values: a
+grow far beyond the storage: ConcurrentModificationException
+a set changed on the way: ConcurrentModificationException
+changed in a function the loop calls: ConcurrentModificationException

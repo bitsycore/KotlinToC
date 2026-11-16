@@ -822,24 +822,25 @@ bool ktc2_str_equals(const ktc2_String* a, const ktc2_String* b)
 	return a->size == b->size && memcmp(a->bytes, b->bytes, (size_t)a->size) == 0;
 }
 
+/** `a.compareTo(b)` by UTF-16 code units: -1, 0 or 1, as on Kotlin/Native (the JVM answers the difference). */
 int32_t ktc2_str_compare(const ktc2_String* a, const ktc2_String* b)
 {
 	if (a->size == a->length && b->size == b->length) {
 		/* ASCII: a character is a byte. */
 		int32_t shared = a->length < b->length ? a->length : b->length;
 		for (int32_t index = 0; index < shared; index++) {
-			if (a->bytes[index] != b->bytes[index]) return (unsigned char)a->bytes[index] - (unsigned char)b->bytes[index];
+			if (a->bytes[index] != b->bytes[index]) return KTC2_CMP((unsigned char)a->bytes[index], (unsigned char)b->bytes[index]);
 		}
-		return a->length - b->length;
+		return KTC2_CMP(a->length, b->length);
 	}
 	UnitCursor ca = cursor_of(a);
 	UnitCursor cb = cursor_of(b);
 	while (cursor_has(&ca) && cursor_has(&cb)) {
 		int32_t ua = cursor_next(&ca);
 		int32_t ub = cursor_next(&cb);
-		if (ua != ub) return ua - ub;
+		if (ua != ub) return KTC2_CMP(ua, ub);
 	}
-	return a->length - b->length;
+	return KTC2_CMP(a->length, b->length);
 }
 
 int32_t ktc2_str_hashCode(const ktc2_String* s)
@@ -1003,8 +1004,19 @@ static int format_bool(char* out, bool v)
  * digit is enough the two digits nearest the value are taken: Double.MIN_VALUE
  * is 4.9E-324, not 5.0E-324.
  */
+struct ktc2_String* (*ktc2_real_formatter)(double value, bool is_float) = NULL;
+
 static int format_real(char* out, double v, bool is_float)
 {
+	if (ktc2_real_formatter) {
+		/* Kotlin/Native's own conversion, compiled with the program: ASCII, short. */
+		ktc2_String* text = ktc2_real_formatter(v, is_float);
+		int size = text->size < 47 ? text->size : 47;
+		memcpy(out, text->bytes, (size_t)size);
+		out[size] = 0;
+		ktc2_release((ktc2_Obj*)text);
+		return size;
+	}
 	if (v != v) return sprintf(out, "NaN");
 	if (isinf(v)) return sprintf(out, v > 0 ? "Infinity" : "-Infinity");
 	if (v == 0) return sprintf(out, signbit(v) ? "-0.0" : "0.0");
@@ -1324,12 +1336,12 @@ int32_t ktc2_any_compareTo(ktc2_Obj* a, ktc2_Obj* b)
 	switch (a->typeId) {
 	case KTC2_TYPE_STRING: return ktc2_str_compare((ktc2_String*)a, (ktc2_String*)b);
 	case KTC2_TYPE_BOX_BOOLEAN: return KTC2_CMP(x->value.boolean_, y->value.boolean_);
-	/* As java.lang.Byte, Short and Character, which answer the difference. */
-	case KTC2_TYPE_BOX_BYTE: return x->value.byte_ - y->value.byte_;
-	case KTC2_TYPE_BOX_SHORT: return x->value.short_ - y->value.short_;
+	/* As on Kotlin/Native, -1, 0 or 1 for every kind (java.lang.Byte, Short and Character answer the difference). */
+	case KTC2_TYPE_BOX_BYTE: return KTC2_CMP(x->value.byte_, y->value.byte_);
+	case KTC2_TYPE_BOX_SHORT: return KTC2_CMP(x->value.short_, y->value.short_);
 	case KTC2_TYPE_BOX_INT: return KTC2_CMP(x->value.int_, y->value.int_);
 	case KTC2_TYPE_BOX_LONG: return KTC2_CMP(x->value.long_, y->value.long_);
-	case KTC2_TYPE_BOX_CHAR: return x->value.char_ - y->value.char_;
+	case KTC2_TYPE_BOX_CHAR: return KTC2_CMP(x->value.char_, y->value.char_);
 	case KTC2_TYPE_BOX_FLOAT: return ktc2_cmp_double(x->value.float_, y->value.float_);
 	case KTC2_TYPE_BOX_DOUBLE: return ktc2_cmp_double(x->value.double_, y->value.double_);
 	case KTC2_TYPE_BOX_UBYTE: return KTC2_CMP(x->value.ubyte_, y->value.ubyte_);
@@ -1419,11 +1431,11 @@ float ktc2_number_toFloat(ktc2_Obj* number)
 	}
 
 KTC2_BOX_COMPARE(boolean, bool, KTC2_TYPE_BOX_BOOLEAN, boolean_, KTC2_CMP(x, y))
-KTC2_BOX_COMPARE(byte, int8_t, KTC2_TYPE_BOX_BYTE, byte_, x - y)
-KTC2_BOX_COMPARE(short, int16_t, KTC2_TYPE_BOX_SHORT, short_, x - y)
+KTC2_BOX_COMPARE(byte, int8_t, KTC2_TYPE_BOX_BYTE, byte_, KTC2_CMP(x, y))
+KTC2_BOX_COMPARE(short, int16_t, KTC2_TYPE_BOX_SHORT, short_, KTC2_CMP(x, y))
 KTC2_BOX_COMPARE(int, int32_t, KTC2_TYPE_BOX_INT, int_, KTC2_CMP(x, y))
 KTC2_BOX_COMPARE(long, int64_t, KTC2_TYPE_BOX_LONG, long_, KTC2_CMP(x, y))
-KTC2_BOX_COMPARE(char, uint16_t, KTC2_TYPE_BOX_CHAR, char_, x - y)
+KTC2_BOX_COMPARE(char, uint16_t, KTC2_TYPE_BOX_CHAR, char_, KTC2_CMP(x, y))
 KTC2_BOX_COMPARE(float, float, KTC2_TYPE_BOX_FLOAT, float_, ktc2_cmp_double(x, y))
 KTC2_BOX_COMPARE(double, double, KTC2_TYPE_BOX_DOUBLE, double_, ktc2_cmp_double(x, y))
 KTC2_BOX_COMPARE(ubyte, uint8_t, KTC2_TYPE_BOX_UBYTE, ubyte_, KTC2_CMP(x, y))

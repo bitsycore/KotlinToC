@@ -113,6 +113,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 */
 	private fun functionsFile(): File = File("build/integration/functions/${mCurrent.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
 
+	/**
+	 * The milliseconds of the steps of the current program, for the Gradle task to show on its line and add up
+	 * (build.gradle.kts): `kotlinToIr irToC cToExe run`, written once it has run.
+	 */
+	private fun stepsFile(): File = File("build/integration/steps/${mCurrent.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
+
 	@TestFactory
 	fun programs(): List<DynamicTest> {
 		File(kStatsFile).delete()
@@ -384,7 +390,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * compiled as `ktc2 <directory>` compiles it. They are plain Kotlin, so they are compared with
 	 * the JVM like the single files.
 	 */
-	private val kProjects = listOf("examples/showcase/core", "integration/modules/kotlinx-io", "integration/modules/kotlinx-serialization", "integration/modules/kotlinx-datetime")
+	private val kProjects = listOf("examples/showcase/core", "integration/modules/kotlinx-io", "integration/modules/kotlinx-serialization", "integration/modules/kotlinx-datetime", "integration/modules/private-names")
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects
@@ -507,8 +513,13 @@ abstract class IntegrationPart(private val mShard: Int) {
 		}
 		// For tools/asan_all.sh and tools/msvc_all.sh: this program may leave cycles allocated (a `.cycles` file).
 		if (mAllowsLeaks) File(vOutDir, "cycles-allowed").apply { parentFile.mkdirs() }.writeText("")
+		K2Frontend.lastFrontEndNanos = 0
+		K2Frontend.lastTranslationNanos = 0
 		assertTrue(translate(inSources + mCExtra, vOutDir), "ktc2 failed on $inName")
 		lap("translate")
+		// Of that, the Kotlin front end and ktc2's own translation; the rest (bindings, writing files) counts with the latter.
+		val vTranslated = vTimes.last().substringAfter('=').toLong()
+		val vKotlinToIr = (K2Frontend.lastFrontEndNanos / 1_000_000).coerceAtMost(vTranslated)
 		if ("jvm" !in kSteps && "c" !in kSteps) return
 
 		val vManifest = File(vOutDir, kManifestName).readLines()
@@ -574,12 +585,14 @@ abstract class IntegrationPart(private val mShard: Int) {
 			run(vOptions + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir, kCompileTimeoutSeconds)
 		}
 		lap("cCompile")
+		val vCompiled = vTimes.last().substringAfter('=').toLong()
 		val vActual = run(listOf(vExe.absolutePath), File("."), inAllowsFailure = true)
 		// The result of each test function of a file of tests, for the Gradle task to show under the file (build.gradle.kts),
 		// written before a failure of the program is reported, so that the functions that failed are shown with it.
 		if (mHasTestFunctions) functionsFile().apply { parentFile.mkdirs() }.writeText(vActual.lineSequence().filter { it.startsWith("ok ") || it.startsWith("FAILED ") }.joinToString("\n"))
 		if (mLastExit != 0) fail("exit $mLastExit from ${vExe.absolutePath}\n$mLastErrors\n$vActual")
 		lap("cRun")
+		stepsFile().apply { parentFile.mkdirs() }.writeText("$vKotlinToIr ${vTranslated - vKotlinToIr} $vCompiled ${vTimes.last().substringAfter('=')}\n")
 		// What the C program printed: what `tools/msvc_all.sh` compares MSVC's build with on a machine that has the C and not the program.
 		File(vOutDir, "program.out").writeText(kotlinNames(vActual))
 		File(kTimesFile).appendText("$inName ${vTimes.joinToString(" ")}\n")

@@ -1,0 +1,5 @@
+# Two files of one package, each with private top-level declarations of the same names (a property and a
+# function): each file sees its own, as in Kotlin. Run by the suite and compared with the JVM.
+name         = "private-names"
+executable   = "private-names"
+sources      = ["Main.kt", "Other.kt"]

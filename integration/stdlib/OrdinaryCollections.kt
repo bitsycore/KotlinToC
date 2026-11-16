@@ -1,4 +1,6 @@
 // What ordinary code does with lists, sets, maps, arrays and sequences.
+// `.expected` is what Kotlin/Native prints: a template turns each object into text as it reaches
+// it, where the JVM evaluates every part first.
 
 data class Item(val name: String, val price: Double, val count: Int)
 

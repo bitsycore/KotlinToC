@@ -19,14 +19,14 @@ import com.bitsycore.ktc2.kir.*
  * ```
  * let l = list; let i = 0; let seen = l.changes
  * loop {
- *     if (i == l.length) break
+ *     if (i >= l.length) break
  *     if (l.changes != seen) checkChanges(l, seen)        // throws
  *     let x = l.array[i]; i = i + 1; body
  * }
  * ```
  *
  * which is the iterator of the platform layer (`ArrayListCursor`) written out: `hasNext`
- * compares the index with the size, `next` first fails with `ConcurrentModificationException`
+ * is `index < size`, as on Kotlin/Native, `next` first fails with `ConcurrentModificationException`
  * when the list was changed, then hands out the element. The index needs no test against the
  * storage: it started at zero, is below the size, and the size cannot have gone down without
  * the count of changes going up. What is saved is the iterator, two calls per element and the
@@ -43,7 +43,7 @@ import com.bitsycore.ktc2.kir.*
  * ```
  * let m = it.owner; let seen = m.changes; let coming = liveFrom(m, 0)
  * loop {
- *     if (coming < 0) break
+ *     if (coming >= m.used) break
  *     if (m.changes != seen) checkChanges(m, seen)        // throws
  *     let at = coming; coming = liveFrom(m, at + 1)
  *     let k = m.keyArray[at]; let v = m.valueArray[at]; body
@@ -253,7 +253,7 @@ class ListLoops(private val mModule: KModule) {
 		val vRead = KIndexRead(KFieldRead(list(), vList.array), KRead(vAt), vElement).also { it.isChecked = true }
 		fun inPlace(inValue: KExpr): KExpr = if (inValue is KRefCast) KRefCast(inPlace(inValue.operand), inValue.type) else vRead
 		val vBody = listOf(
-			KIf(KBinary(KBinaryOp.EQ, KRead(vAt), KFieldRead(list(), vList.length), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
+			KIf(KBinary(KBinaryOp.GE, KRead(vAt), KFieldRead(list(), vList.length), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
 			KIf(
 				KBinary(KBinaryOp.NE, KFieldRead(list(), vList.changes), KRead(vSeen), KPrim.INT, kBool),
 				listOf(KEval(KCall(vList.check, listOf(list(), KRead(vSeen))))),
@@ -276,7 +276,7 @@ class ListLoops(private val mModule: KModule) {
 	// ==================
 
 	/** What the loop needs of a map class and of the class of one of its iterators. */
-	private class MapClass(val owner: KField, val keys: KField, val values: KField, val changes: KField, val liveFrom: KFunction, val check: KFunction)
+	private class MapClass(val owner: KField, val keys: KField, val values: KField, val changes: KField, val used: KField, val liveFrom: KFunction, val check: KFunction)
 
 	private val mMapClasses = HashMap<KClass, MapClass?>()
 
@@ -290,9 +290,10 @@ class ListLoops(private val mModule: KModule) {
 		val vKeys = array("keyArray") ?: return@getOrPut null
 		val vValues = array("valueArray") ?: return@getOrPut null
 		val vChanges = vMap.fields.firstOrNull { it.cName == "changes" && it.type == kInt } ?: return@getOrPut null
+		val vUsed = vMap.fields.firstOrNull { it.cName == "used" && it.type == kInt } ?: return@getOrPut null
 		val vLiveFrom = vMap.unit.functions.firstOrNull { it.cName == vName + "_liveFrom" && it.params.size == 2 && it.returnType == kInt } ?: return@getOrPut null
 		val vCheck = vMap.unit.functions.firstOrNull { it.cName == vName + "_checkChanges" && it.params.size == 2 } ?: return@getOrPut null
-		MapClass(vOwner, vKeys, vValues, vChanges, vLiveFrom, vCheck)
+		MapClass(vOwner, vKeys, vValues, vChanges, vUsed, vLiveFrom, vCheck)
 	}
 
 	/** Which of the three iterators of a map the class named [inName] is: "Entry", "Key", "Value"; null for another class. */
@@ -400,7 +401,7 @@ class ListLoops(private val mModule: KModule) {
 			listOf<KStmt>(KLet(vTake.local, inPlace(vTake.init!!))) + vRest
 		}
 		val vBody = listOf(
-			KIf(KBinary(KBinaryOp.LT, KRead(vComing), KConst(0, kInt), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
+			KIf(KBinary(KBinaryOp.GE, KRead(vComing), KFieldRead(map(), vMap.used), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
 			KIf(
 				KBinary(KBinaryOp.NE, KFieldRead(map(), vMap.changes), KRead(vSeen), KPrim.INT, kBool),
 				listOf(KEval(KCall(vMap.check, listOf(map(), KRead(vSeen))))),

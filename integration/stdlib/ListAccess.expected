@@ -1,0 +1,29 @@
+first: 10
+last: 30
+at size: out of bounds, index: 3, size: 3
+negative: out of bounds, index: -1, size: 3
+far: out of bounds, index: 2147483647, size: 3
+set at size: out of bounds, index: 3, size: 3
+set negative: out of bounds, index: -2, size: 3
+sum of 3: 60
+sum of 4: out of bounds, index: 3, size: 3
+empty: out of bounds, index: 0, size: 0
+counted: 30
+counted out: out of bounds, index: 7, size: 3
+[400, 20, 30] 5
+[30, 26, 50] 3
+shrinking: out of bounds, index: 4, size: 0
+0
+other list: 10
+other list, out: out of bounds, index: 1, size: 1
+n1 [n0, replaced, n3, n3] 4
+n3 n1 0
+cleared: out of bounds, index: 0, size: 0
+interface: again1
+interface out: out of bounds, index: 1, size: 1
+[[0, 1, 2], [3, 8, 5], [6, 7, 8]] 3 3
+grid row out: out of bounds, index: 3, size: 3
+grid column out: out of bounds, index: 3, size: 3
+[null, 5, 3] true 4
+[ba, b] 2
+[1.5, 3.75]

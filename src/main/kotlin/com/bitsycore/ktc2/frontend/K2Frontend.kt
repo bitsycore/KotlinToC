@@ -165,21 +165,48 @@ object K2Frontend {
 				val vCommonProgram = if (vKeepsLibrary) emptyList() else vProgram.filter { isCommonSource(it) }
 				// `kotlin.test` (Ktc2Test.kt, plain Kotlin) is common too: common tests use it.
 				val vCommon = vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") || it.name == "Ktc2Test.kt" } + vCommonProgram
+				// What Kotlin/Native shares with other targets below the common code, taken from the Wasm sources jar:
+				// commonNonJvmMain, then nativeWasmMain below it. Each has `actual`s of the `expect`s above it and
+				// `expect`s whose `actual`s are below it (in ktc2's platform layer): levels of their own, as those
+				// source sets are in the standard library's build.
+				val vNonJvm = vLibrary.filter { "commonNonJvmMain" in it.invariantSeparatorsPath }
+				val vNativeWasm = vLibrary.filter { "nativeWasmMain" in it.invariantSeparatorsPath }
+				val vShared = vNonJvm + vNativeWasm
 				// Those of `nativeMain` are a level of their own between: they have `actual`s of the common
 				// `expect`s, and `expect`s whose `actual`s are below them (ktc2's part of the module). The
-				// compiler is then told the three levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
+				// compiler is then told the levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
 				val vNative = if (vKeepsLibrary) emptyList() else vProgram.filter { kMiddleSourceSet.containsMatchIn(it.invariantSeparatorsPath) }
-				if (vNative.isEmpty()) {
+				val vOwnProgram = if (vKeepsLibrary) emptyList() else vProgram
+				if (vNative.isEmpty() && vShared.isEmpty()) {
 					add("-Xcommon-sources=" + vCommon.joinToString(",") { it.path })
 				} else {
-					// What Kotlin/Native's platform libraries are to `nativeMain`, ktc2's platform layer and the
-					// bindings (platform.posix) are here: on the level of `nativeMain`, which sees them. Below
-					// it, what refines it: the module's own part and the program.
-					val vSeenByNative = vNative + (vLibrary - vCommon.toSet()) + vBindings.map { it.source }
-					val vPlatform = vProgram.filter { it !in vCommon && it !in vSeenByNative }
-					add("-Xfragments=common,native,platform")
-					add("-Xfragment-sources=" + (vCommon.map { "common:" + it.path } + vSeenByNative.map { "native:" + it.path } + vPlatform.map { "platform:" + it.path }).joinToString(","))
-					add("-Xfragment-refines=native:common,platform:native")
+					val vFragments = ArrayList<Pair<String, List<File>>>()
+					val vRefines = ArrayList<String>()
+					vFragments += "common" to vCommon
+					var vAbove = "common"
+					for ((vName, vFiles) in listOf("nonJvm" to vNonJvm, "nativeWasm" to vNativeWasm)) {
+						if (vFiles.isEmpty()) continue
+						vFragments += vName to vFiles
+						vRefines += "$vName:$vAbove"
+						vAbove = vName
+					}
+					val vLayer = vLibrary - vCommon.toSet() - vShared.toSet()
+					if (vNative.isNotEmpty()) {
+						// What Kotlin/Native's platform libraries are to `nativeMain`, ktc2's platform layer and the
+						// bindings (platform.posix) are here: on the level of `nativeMain`, which sees them. Below
+						// it, what refines it: the module's own part and the program.
+						val vSeenByNative = vNative + vLayer + vBindings.map { it.source }
+						vFragments += "native" to vSeenByNative
+						vFragments += "platform" to vOwnProgram.filter { it !in vCommon && it !in vSeenByNative }
+						vRefines += "native:$vAbove"
+						vRefines += "platform:native"
+					} else {
+						vFragments += "platform" to (vLayer + vOwnProgram.filter { it !in vCommon })
+						vRefines += "platform:$vAbove"
+					}
+					add("-Xfragments=" + vFragments.joinToString(",") { it.first })
+					add("-Xfragment-sources=" + vFragments.flatMap { (vName, vFiles) -> vFiles.map { "$vName:" + it.path } }.joinToString(","))
+					add("-Xfragment-refines=" + vRefines.joinToString(","))
 				}
 				add("-nowarn")
 			}
@@ -244,6 +271,16 @@ object K2Frontend {
 		}
 		return vCopy.path
 	}
+
+	/**
+	 * How long the last compilation spent in the Kotlin front end (Kotlin to IR) and in ktc2's translation of the IR to
+	 * C, in nanoseconds: what the suite shows of each program's steps.
+	 */
+	@Volatile
+	var lastFrontEndNanos: Long = 0
+
+	@Volatile
+	var lastTranslationNanos: Long = 0
 
 	/** With `KTC2_TIMING` set, prints how long the step [inWhat] took since [inSince] (a `System.nanoTime()`). */
 	internal fun reportTime(inWhat: String, inSince: Long) {
@@ -436,9 +473,11 @@ class Ktc2Extension : IrGenerationExtension {
 	override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
 		K2Frontend.reportTime("Kotlin front end", System.getProperty(kStartProperty).toLong())
 		val vStart = System.nanoTime()
+		K2Frontend.lastFrontEndNanos = vStart - System.getProperty(kStartProperty).toLong()
 		try {
 			translate(moduleFragment, pluginContext)
 		} finally {
+			K2Frontend.lastTranslationNanos = System.nanoTime() - vStart
 			K2Frontend.reportTime("translation to C", vStart)
 			// The compiler would go on to produce JVM classes of the program and the library sources,
 			// which nobody wants: with no file left, it has nothing to produce.

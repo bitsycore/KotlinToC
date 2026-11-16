@@ -37,6 +37,15 @@ val stdlibSources: Configuration = configurations.create("stdlibSources") {
 }
 
 /**
+ * The sources of the standard library for Wasm (Apache-2), for the part of them ktc2 takes:
+ * `commonNonJvmMain` and `nativeWasmMain`, which Kotlin/Native compiles too and which no other
+ * published jar holds (`NumberConverter`, the Unicode tables and the code that reads them...).
+ */
+val nativeWasmSources: Configuration = configurations.create("nativeWasmSources") {
+	isTransitive = false
+}
+
+/**
  * A bundled module made of a library's own sources (all Apache-2): its sources jars, each unpacked
  * under `build/modules-src/<name>/<directory>` (the module's `files.txt` lists what it compiles as
  * `<directory>/<source set>/...`, or `<source set>/...` for the directory "."), and the library's jars
@@ -80,6 +89,7 @@ val kLibraryModules = listOf(
 
 dependencies {
 	stdlibSources(variantOf(libs.kotlin.stdlib) { classifier("sources") })
+	nativeWasmSources(variantOf(libs.kotlin.stdlib.wasm.js) { classifier("sources") })
 	for (vModule in kLibraryModules) {
 		for (vSource in vModule.sources.values) add(vModule.sourcesConfiguration.name, variantOf(vSource) { classifier("sources") })
 		for (vJar in vModule.jvm) add(vModule.jvmConfiguration.name, vJar)
@@ -98,7 +108,10 @@ kotlin {
 
 val unpackStdlibSources = tasks.register("unpackStdlibSources", Sync::class) {
 	description = "Unpack the Kotlin standard library sources (Apache-2) into the build directory, so that they can be bundled with user programs."
-    from({ stdlibSources.map { zipTree(it) } })
+	from({ stdlibSources.map { zipTree(it) } })
+	from({ nativeWasmSources.map { zipTree(it) } }) {
+		include("commonNonJvmMain/**", "nativeWasmMain/**")
+	}
 	into(layout.buildDirectory.dir("stdlib-src"))
 }
 
@@ -177,6 +190,7 @@ tasks.test {
 	doFirst {
 		vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.forEach { it.delete() }
 		File(vResults, "functions").deleteRecursively()
+		File(vResults, "steps").deleteRecursively()
 		vStart.set(System.nanoTime())
 	}
 	testLogging { events(); showStandardStreams = false }
@@ -200,6 +214,11 @@ tasks.test {
 	}
 	val vKindColors = mapOf("box" to "35", "library" to "36", "common" to "34", "project" to "33", "integration" to "37")
 	val vByKind = ConcurrentHashMap<String, IntArray>()
+	// The steps of a program, each program's on its line and their totals in the summary (IntegrationTest.stepsFile):
+	// the Kotlin front end, ktc2's translation of its IR to C, the C compiler and linker, and the run of the program.
+	val kStepNames = listOf("Kotlin → IR", "IR → C", "C → exe", "run")
+	val vStepTotals = Array(kStepNames.size) { AtomicLong() }
+	fun seconds(inMillis: Long): String = if (inMillis >= 60_000) "${inMillis / 60_000} min ${inMillis % 60_000 / 1000} s" else "%.1f s".format(Locale.ROOT, inMillis / 1000.0)
 	addTestOutputListener(object : TestOutputListener {
 		override fun onOutput(inTest: TestDescriptor, inEvent: TestOutputEvent) {
 			vOutputs.getOrPut(keyOf(inTest)) { StringBuilder() }.append(inEvent.message)
@@ -219,6 +238,11 @@ tasks.test {
 				val vCounts = vByKind[vKind] ?: continue
 				val vText = "   ${vLabel}s".padEnd(22) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
 				println(if (vCounts[1] > 0) paint("31", vText) else paint(vKindColors.getValue(vKind), vText))
+			}
+			// Where the time went, added up over the programs (several run at once: more than the run's own time).
+			if (vStepTotals.any { it.get() > 0 }) {
+				println(paint("1", "   time of each step, all programs together:"))
+				kStepNames.forEachIndexed { vIndex, vName -> println(paint("2", "      ${vName.padEnd(14)}${seconds(vStepTotals[vIndex].get())}")) }
 			}
 			vFailed.forEach { println(paint("31", "   ❌ $it")) }
 		}
@@ -241,6 +265,12 @@ tasks.test {
 			vFunctionsFile.delete()
 			val vFunctionsFailed = vFunctions.count { it.startsWith("FAILED ") }
 			val vCounts = if (vFunctions.isEmpty()) "" else paint("2", " (${vFunctions.size - vFunctionsFailed}/${vFunctions.size} tests)")
+			// The milliseconds of its four steps, when it got to the end of them.
+			val vStepsFile = File(vResults, "steps/${inTest.displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
+			val vSteps = vStepsFile.takeIf { it.isFile }?.readText()?.trim()?.split(' ')?.mapNotNull { it.toLongOrNull() }?.takeIf { it.size == kStepNames.size }
+			vStepsFile.delete()
+			vSteps?.forEachIndexed { vIndex, vMillis -> vStepTotals[vIndex].addAndGet(vMillis) }
+			val vStepText = if (vSteps == null) "" else paint("2", "  " + kStepNames.indices.joinToString(" · ") { "${kStepNames[it]} ${"%.1f".format(Locale.ROOT, vSteps[it] / 1000.0)}" })
 			// As an IDE shows them: each class of tests, then its test functions under it. Only for a file where one
 			// failed (all of them then), or for every file with KTC2_TEST_FUNCTIONS=1.
 			fun functions() {
@@ -261,7 +291,7 @@ tasks.test {
 			}
 			when (inResult.resultType) {
 				TestResult.ResultType.SUCCESS -> if (!vQuiet) {
-					println("$vProgress $vTag ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime")
+					println("$vProgress $vTag ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime$vStepText")
 					if (System.getenv("KTC2_TEST_FUNCTIONS") == "1") functions()
 				}
 				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress $vTag ${paint("33", "⏭")} ${inTest.displayName}")

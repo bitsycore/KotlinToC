@@ -97,7 +97,7 @@ class CEmitter(private val mModule: KModule) {
 		val vAllStatics = mModule.units.flatMap { it.statics }
 		val (vThreadGlobals, vGlobals) = vAllGlobals.partition { it.isThreadLocal }
 		val (vThreadStatics, vStatics) = vAllStatics.partition { it.isThreadLocal }
-		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vAllStatics.flatMap { listOf(it.unit, it.cls.unit) } + vAllGlobals.map { it.unit } + inEntry.unit
+		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vAllStatics.flatMap { listOf(it.unit, it.cls.unit) } + vAllGlobals.map { it.unit } + inEntry.unit + listOfNotNull(mModule.realFormatter?.unit)
 		append("#include \"ktc2_types.h\"\n")
 		vUnits.distinct().forEach { append("#include \"${it.path}.h\"\n") }
 
@@ -124,6 +124,8 @@ class CEmitter(private val mModule: KModule) {
 		val vTakesArguments = inEntry.params.isNotEmpty()
 		append(if (vTakesArguments) "\nint main(int argc, char** argv)\n{\n" else "\nint main(void)\n{\n")
 		if (vHasThreadLocals) append("\tktc2_thread_end = thread_locals_end;\n")
+		// Every Float and Double is written as Kotlin/Native writes it, by its NumberConverter.
+		mModule.realFormatter?.let { append("\tktc2_real_formatter = ${it.cName};\n") }
 		// An exception that reaches main unhandled ends the program, as on the JVM.
 		vStartup.forEach { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
 		if (vTakesArguments) {
@@ -159,6 +161,17 @@ class CEmitter(private val mModule: KModule) {
 			var vName = vFunction.cName + "_fun"
 			while (vName in vTypes) vName += "_"
 			vFunction.cName = vName
+		}
+		// Private top-level declarations of one name in two files of a package (`private val rangeStart` in each
+		// table of the standard library) are two things in Kotlin and one name in C: each takes its file's name too.
+		fun fileSuffix(inUnit: KUnit): String = "__" + inUnit.name.replace(Regex("[^A-Za-z0-9_]"), "_")
+		for (vSame in mModule.units.flatMap { vUnit -> vUnit.globals }.groupBy { it.cName }.values) {
+			if (vSame.map { it.unit }.distinct().size < 2) continue
+			for (vGlobal in vSame) vGlobal.cName += fileSuffix(vGlobal.unit)
+		}
+		for (vSame in mModule.units.flatMap { vUnit -> vUnit.functions.map { vUnit to it } }.groupBy { it.second.cName }.values) {
+			if (vSame.map { it.first }.distinct().size < 2 || vSame.map { it.second }.distinct().size < 2) continue
+			for ((vUnit, vFunction) in vSame) vFunction.cName += fileSuffix(vUnit)
 		}
 		val vTaken = mModule.units.flatMap { it.functions + listOfNotNull(it.initializer) }.map { it.cName }.toHashSet()
 		for (vGlobal in mModule.units.flatMap { it.globals }) {

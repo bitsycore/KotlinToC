@@ -4,6 +4,8 @@
 // `maxWith`, `binarySearch` with a comparator, stability of sorting, `compareValues`,
 // `Comparable` classes in sorted collections, and comparators made from lambdas and references.
 
+import kotlin.math.sign
+
 data class Person(val name: String, val age: Int, val city: String?, val score: Double)
 
 class Version(val text: String) : Comparable<Version> {
@@ -88,7 +90,7 @@ fun main() {
 	mutable.sortDescending()
 	println(mutable)
 	println(compareValues(1, 2).toString() + compareValues(null, 1) + compareValues("b", "a") + compareValues<Int>(null, null))
-	println(compareValuesBy(people[0], people[2], { it.age }, { it.name }))
+	println(compareValuesBy(people[0], people[2], { it.age }, { it.name }).sign)
 	println(maxOf("a", "B", String.CASE_INSENSITIVE_ORDER))
 	println(minOf(3, 1, 2))
 	println(listOf(1.5, -0.0, 0.0, Double.NaN, -1.0).sortedWith(naturalOrder()))

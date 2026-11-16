@@ -1,5 +1,6 @@
-// Every part of a string template, or of a chain of +, is evaluated before the first toString
-// runs; and Any() makes an object.
+// Each part of a string template, or of a chain of +, is turned into text before the next is
+// evaluated, as on Kotlin/Native (the JVM evaluates every part first): `.expected` is what
+// Kotlin/Native prints for it. And Any() makes an object.
 
 import ktc2.concurrent.synchronized
 

@@ -59,9 +59,9 @@ fun errorsGroup(): Group = Group("Errors") { r ->
 	r.expect("finally always runs", "[took 30, checked 30, checked 500]", vAccount.log.toString())
 	r.fails("require", "amount must be positive") { vAccount.withdraw(0) }
 	r.fails("check", "not ready") { check(vAccount.balance > 1000) { "not ready" } }
-	r.fails("index out of bounds", "Index 5 out of bounds for length 3") { listOf(1, 2, 3)[5] }
-	r.fails("division by zero", "/ by zero") { println(10 / (vAccount.balance - 70)) }
-	r.fails("number format", "For input string: \"12x\"") { "12x".toInt() }
+	r.failsWith("index out of bounds", { it is IndexOutOfBoundsException }) { listOf(1, 2, 3)[5] }
+	r.failsWith("division by zero", { it is ArithmeticException }) { println(10 / (vAccount.balance - 70)) }
+	r.failsWith("number format", { it is NumberFormatException }) { "12x".toInt() }
 	r.fails("null assertion", null) { val vNothing: String? = null; vNothing!!.length }
 
 	var vKept = 5

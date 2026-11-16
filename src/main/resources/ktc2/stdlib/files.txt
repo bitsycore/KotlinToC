@@ -88,7 +88,6 @@ Ktc2Arrays.kt
 Ktc2HashMap.kt
 Ktc2Text.kt
 Ktc2Strings.kt
-Ktc2Casing.kt
 Ktc2Unicode.kt
 commonMain/kotlin/text/regex/MatchResult.kt
 commonMain/kotlin/text/regex/RegexExtensions.kt
@@ -126,6 +125,13 @@ commonMain/kotlin/internal/serializationUtil.kt
 commonMain/kotlin/enums/EnumEntries.kt
 Ktc2Enums.kt
 Ktc2Numbers.kt
+# Kotlin/Native's conversion of Float and Double to text (from the Wasm sources jar, which holds
+# what Native and Wasm share), with the array accesses it declares expect (Ktc2NumberText.kt).
+nativeWasmMain/kotlin/internal/NumberConverter.kt
+nativeWasmMain/kotlin/internal/dtoa/UnsafeArrays.kt
+nativeWasmMain/kotlin/internal/dtoa/cbigint.kt
+nativeWasmMain/kotlin/internal/dtoa/dblparse.kt
+Ktc2NumberText.kt
 commonMain/kotlin/random/Random.kt
 commonMain/kotlin/random/XorWowRandom.kt
 commonMain/kotlin/random/URandom.kt
@@ -158,7 +164,30 @@ commonMain/kotlin/text/unicode/CodePointCasing.kt
 commonMain/kotlin/text/unicode/CodePointIteration.kt
 commonMain/kotlin/text/unicode/CodePointProperties.kt
 commonMain/kotlin/text/unicode/CodePointRange.kt
-Ktc2CodePoint.kt
+# Kotlin/Native's own classification and case of characters and code points, with its tables
+# (the part of the library Native shares with Wasm: commonNonJvmMain, nativeWasmMain).
+commonNonJvmMain/kotlin/text/Char.kt
+commonNonJvmMain/kotlin/text/CharCategory.kt
+commonNonJvmMain/kotlin/text/UnicodeProperties.kt
+commonNonJvmMain/kotlin/text/unicode/CodePointCasing.kt
+commonNonJvmMain/kotlin/text/unicode/CodePointIteration.kt
+commonNonJvmMain/kotlin/text/unicode/CodePointProperties.kt
+nativeWasmMain/kotlin/text/Char.kt
+nativeWasmMain/kotlin/text/StringCasing.kt
+nativeWasmMain/kotlin/text/unicode/CodePointCasing.kt
+nativeWasmMain/generated/_CharCategories.kt
+nativeWasmMain/generated/_DigitChars.kt
+nativeWasmMain/generated/_LetterChars.kt
+nativeWasmMain/generated/_LowercaseMappings.kt
+nativeWasmMain/generated/_OneToManyLowercaseMappings.kt
+nativeWasmMain/generated/_OneToManyUppercaseMappings.kt
+nativeWasmMain/generated/_OtherLowercaseChars.kt
+nativeWasmMain/generated/_OtherUppercaseChars.kt
+nativeWasmMain/generated/_StringLowercase.kt
+nativeWasmMain/generated/_TitlecaseMappings.kt
+nativeWasmMain/generated/_UppercaseMappings.kt
+nativeWasmMain/generated/_WhitespaceChars.kt
+Ktc2CharNative.kt
 commonMain/kotlin/uuid/ExperimentalUuidApi.kt
 commonMain/kotlin/uuid/Uuid.kt
 Ktc2Uuid.kt

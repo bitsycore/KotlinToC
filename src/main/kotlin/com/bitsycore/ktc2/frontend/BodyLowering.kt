@@ -3665,7 +3665,6 @@ internal class BodyBuilder(
 		val vParts = ArrayList<KPrintPart>()
 		val vValues = ArrayList<KExpr>()
 		val vSlots = ArrayList<Int>()
-		val vObjects = ArrayList<Pair<Int, IrExpression>>()
 		for (vPiece in inPieces) {
 			if (vPiece is IrConst && vPiece.value is String) {
 				vParts += KPrintText(vPiece.value as String)
@@ -3684,26 +3683,20 @@ internal class BodyBuilder(
 			}
 			// An array says nothing of itself: it is described as any object is.
 			if (vValue.type is KArrayType) vValue = spill(KCall(mImporter.runtime("ktc2_any_toString", listOf(KObjType), KStringType), listOf(coerce(vValue, KObjType))))
+			// As on Kotlin/Native, an object is turned into text before the next piece is evaluated: a
+			// piece that changes it does not change what it shows. (The JVM evaluates every piece first.)
 			if (vValue.type is KClassType || vValue.type == KObjType || vValue.type is KStructType) {
-				vValue = spill(vValue)
-				vObjects += vValues.size to vPiece
+				val vText = toStringOf(vPiece, spill(vValue), vPiece.type)
+				if (vText === KUnitValue) {
+					fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
+					continue
+				}
+				vValue = vText
 			}
 			protect(vValues, vMark)
 			vSlots += vParts.size
 			vValues += vValue
 			vParts += KPrintValue(vValue)
-		}
-		// As on the JVM, every part is evaluated before the first `toString` runs: a `toString` that
-		// changes something does not change what the parts after it show.
-		for ((vIndex, vPiece) in vObjects) {
-			val vMark = mBlock.size
-			val vText = toStringOf(vPiece, vValues[vIndex], vPiece.type)
-			if (vText === KUnitValue) {
-				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
-				continue
-			}
-			protect(vValues, vMark)
-			vValues[vIndex] = vText
 		}
 		vSlots.forEachIndexed { vIndex, vSlot -> vParts[vSlot] = KPrintValue(vValues[vIndex]) }
 		return vParts

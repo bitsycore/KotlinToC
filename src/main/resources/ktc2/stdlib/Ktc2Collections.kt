@@ -49,9 +49,9 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	internal fun held(index: Int): E = array.at(index)
 
 	/**
-	 * Sorts the elements where they are, with a stable merge sort as the JVM's is. As there, a
-	 * comparator that changed the list is reported when the sort is over, and the sort itself
-	 * counts as a change.
+	 * Sorts the elements where they are, with a stable merge sort. As on Kotlin/Native, a
+	 * comparator that changed the list is reported when the sort is over, and the sort itself is
+	 * no change (it only sets elements).
 	 */
 	internal fun sortStorage(comparator: Comparator<in E>) {
 		val vCount = length
@@ -59,7 +59,6 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 		val vSeen = changes
 		mergeSort(array, Storage(vCount), 0, vCount, comparator)
 		if (changes != vSeen) throw ConcurrentModificationException()
-		changes++
 	}
 
 	/** Sorts `[from, to)` of [values], which only ever holds what it held when the sort began, in another order. */
@@ -103,11 +102,11 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	actual override fun isEmpty(): Boolean = length == 0
 
 	private fun checkIndex(index: Int) {
-		if (index < 0 || index >= length) throw IndexOutOfBoundsException("Index $index out of bounds for length $length")
+		if (index < 0 || index >= length) throw IndexOutOfBoundsException("index: $index, size: $length")
 	}
 
 	private fun checkPosition(index: Int) {
-		if (index < 0 || index > length) throw IndexOutOfBoundsException("Index: $index, Size: $length")
+		if (index < 0 || index > length) throw IndexOutOfBoundsException("index: $index, size: $length")
 	}
 
 	public actual fun ensureCapacity(minCapacity: Int) {
@@ -215,6 +214,8 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 	actual override fun retainAll(elements: Collection<E>): Boolean = filterInPlace(elements, true)
 
 	actual override fun clear() {
+		// As on Kotlin/Native, clearing an empty list is no change.
+		if (length == 0) return
 		for (vIndex in 0 until length) array.drop(vIndex)
 		length = 0
 		changes++
@@ -286,10 +287,10 @@ public actual class ArrayList<E> actual constructor(initialCapacity: Int) : Muta
 }
 
 /**
- * The iterator of an [ArrayList]. As on the JVM it fails with `ConcurrentModificationException`
+ * The iterator of an [ArrayList], as Kotlin/Native's: it fails with `ConcurrentModificationException`
  * when the list was changed otherwise than through it, and tests that before anything else;
- * `hasNext` does not test, and compares with the size as the JVM does (so removing the last
- * but one element inside a `for` ends the loop without an exception, there as here).
+ * `hasNext` does not test, and is `index < size` (so removing or clearing inside a `for` that
+ * leaves no element after the index ends the loop without an exception).
  */
 private class ArrayListCursor<E>(private val list: ArrayList<E>, private var index: Int) : MutableListIterator<E> {
 	private var last = -1
@@ -299,7 +300,7 @@ private class ArrayListCursor<E>(private val list: ArrayList<E>, private var ind
 		list.checkChanges(expected)
 	}
 
-	override fun hasNext(): Boolean = index != list.size
+	override fun hasNext(): Boolean = index < list.size
 
 	override fun next(): E {
 		check()
@@ -309,7 +310,7 @@ private class ArrayListCursor<E>(private val list: ArrayList<E>, private var ind
 		return list.held(last)
 	}
 
-	override fun hasPrevious(): Boolean = index != 0
+	override fun hasPrevious(): Boolean = index > 0
 
 	override fun previous(): E {
 		check()
@@ -324,8 +325,8 @@ private class ArrayListCursor<E>(private val list: ArrayList<E>, private var ind
 	override fun previousIndex(): Int = index - 1
 
 	override fun remove() {
-		if (last < 0) throw IllegalStateException()
 		check()
+		check(last >= 0) { "Call next() or previous() before removing element from the iterator." }
 		list.removeAt(last)
 		index = last
 		last = -1
@@ -333,8 +334,8 @@ private class ArrayListCursor<E>(private val list: ArrayList<E>, private var ind
 	}
 
 	override fun set(element: E) {
-		if (last < 0) throw IllegalStateException()
 		check()
+		check(last >= 0) { "Call next() or previous() before replacing element from the iterator." }
 		list[last] = element
 	}
 
@@ -361,7 +362,7 @@ private class ArrayListIterator<E>(private val list: AbstractMutableList<E>, pri
 		if (list.changeCount() != seen) throw ConcurrentModificationException()
 	}
 
-	override fun hasNext(): Boolean = index != list.size
+	override fun hasNext(): Boolean = index < list.size
 
 	override fun next(): E {
 		check()
@@ -371,7 +372,7 @@ private class ArrayListIterator<E>(private val list: AbstractMutableList<E>, pri
 		return list[last]
 	}
 
-	override fun hasPrevious(): Boolean = index != 0
+	override fun hasPrevious(): Boolean = index > 0
 
 	override fun previous(): E {
 		check()
@@ -386,8 +387,8 @@ private class ArrayListIterator<E>(private val list: AbstractMutableList<E>, pri
 	override fun previousIndex(): Int = index - 1
 
 	override fun remove() {
-		if (last < 0) throw IllegalStateException()
 		check()
+		check(last >= 0) { "Call next() or previous() before removing element from the iterator." }
 		list.removeAt(last)
 		if (last < index) index--
 		last = -1
@@ -395,8 +396,8 @@ private class ArrayListIterator<E>(private val list: AbstractMutableList<E>, pri
 	}
 
 	override fun set(element: E) {
-		if (last < 0) throw IllegalStateException()
 		check()
+		check(last >= 0) { "Call next() or previous() before updating element value with the iterator." }
 		list[last] = element
 		seen = list.changeCount()
 	}
@@ -507,11 +508,10 @@ internal fun containsEach(all: Collection<*>, elements: Collection<*>): Boolean 
 	return true
 }
 
-/** Fails as the JVM does for a `subList` that is not inside a list of [size] elements. */
+/** Fails as Kotlin/Native does (`AbstractList.checkRangeIndexes`) for a part that is not inside a list of [size] elements. */
 private fun checkPart(fromIndex: Int, toIndex: Int, size: Int) {
-	if (fromIndex < 0) throw IndexOutOfBoundsException("fromIndex = $fromIndex")
-	if (toIndex > size) throw IndexOutOfBoundsException("toIndex = $toIndex")
-	if (fromIndex > toIndex) throw IllegalArgumentException("fromIndex($fromIndex) > toIndex($toIndex)")
+	if (fromIndex < 0 || toIndex > size) throw IndexOutOfBoundsException("fromIndex: $fromIndex, toIndex: $toIndex, size: $size")
+	if (fromIndex > toIndex) throw IllegalArgumentException("fromIndex: $fromIndex > toIndex: $toIndex")
 }
 
 /**
@@ -545,19 +545,19 @@ private class ListPart<E>(private val list: MutableList<E>, private val from: In
 
 	override fun get(index: Int): E {
 		check()
-		if (index < 0 || index >= count) throw IndexOutOfBoundsException("Index $index out of bounds for length $count")
+		if (index < 0 || index >= count) throw IndexOutOfBoundsException("index: $index, size: $count")
 		return list[from + index]
 	}
 
 	override fun set(index: Int, element: E): E {
 		check()
-		if (index < 0 || index >= count) throw IndexOutOfBoundsException("Index $index out of bounds for length $count")
+		if (index < 0 || index >= count) throw IndexOutOfBoundsException("index: $index, size: $count")
 		return list.set(from + index, element)
 	}
 
 	override fun add(index: Int, element: E) {
 		check()
-		if (index < 0 || index > count) throw IndexOutOfBoundsException("Index: $index, Size: $count")
+		if (index < 0 || index > count) throw IndexOutOfBoundsException("index: $index, size: $count")
 		list.add(from + index, element)
 		count++
 		seen = changesOfList()
@@ -588,7 +588,7 @@ private class ListPart<E>(private val list: MutableList<E>, private val from: In
 
 	override fun addAll(index: Int, elements: Collection<E>): Boolean {
 		check()
-		if (index < 0 || index > count) throw IndexOutOfBoundsException("Index: $index, Size: $count")
+		if (index < 0 || index > count) throw IndexOutOfBoundsException("index: $index, size: $count")
 		val vSize = elements.size
 		val vChanged = list.addAll(from + index, elements)
 		count += vSize
@@ -598,7 +598,7 @@ private class ListPart<E>(private val list: MutableList<E>, private val from: In
 
 	override fun removeAt(index: Int): E {
 		check()
-		if (index < 0 || index >= count) throw IndexOutOfBoundsException("Index $index out of bounds for length $count")
+		if (index < 0 || index >= count) throw IndexOutOfBoundsException("index: $index, size: $count")
 		val vRemoved = list.removeAt(from + index)
 		count--
 		seen = changesOfList()

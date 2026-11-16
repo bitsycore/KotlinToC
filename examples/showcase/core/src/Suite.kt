@@ -45,6 +45,22 @@ class Recorder {
 		}
 		checks.add(Check(name, vWrong.isEmpty(), vWrong, vThrown))
 	}
+
+	/**
+	 * Verifies that [block] throws an exception [isExpected] accepts. For the failures whose
+	 * message the platforms word differently (Kotlin/Native gives none for an index or a division).
+	 */
+	fun failsWith(name: String, isExpected: (Exception) -> Boolean, block: () -> Unit) {
+		var vThrown = "nothing thrown"
+		val vWrong = try {
+			block()
+			"nothing thrown"
+		} catch (vError: Exception) {
+			vThrown = "throws: ${vError::class.simpleName}"
+			if (isExpected(vError)) "" else "thrown: ${vError::class.simpleName}"
+		}
+		checks.add(Check(name, vWrong.isEmpty(), vWrong, vThrown))
+	}
 }
 
 // ==================

@@ -1,4 +1,5 @@
 // `Number` as a type of its own: any of the numbers, converted by what it is.
+// `.expected` is what Kotlin/Native prints: it writes some Float values with more digits than the JVM.
 
 fun describe(inValue: Any?): String = when (inValue) {
 	is Number -> "number ${inValue.toInt()} ${inValue.toLong()} ${inValue.toDouble()} ${inValue.toShort()} ${inValue.toByte()} ${inValue.toFloat()}"

@@ -1,5 +1,6 @@
 // `list[i]`, `list[i] = x` and `list.size` on a list known to be an ArrayList, with indices in
-// range and out of it, and with the list changed on the way.
+// range and out of it, and with the list changed on the way. `.expected` is what Kotlin/Native
+// prints: the JVM words the exceptions otherwise.
 
 class Name(val text: String) {
 	override fun toString(): String = text

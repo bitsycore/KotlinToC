@@ -1,4 +1,5 @@
-// Sorting a list where it is: stable, by any comparator, and reported as a change.
+// Sorting a list where it is: stable, by any comparator, and no change for an iterator, as on
+// Kotlin/Native. `.expected` is what Kotlin/Native prints (the JVM words its errors otherwise).
 
 class Card(val rank: Int, val label: String) {
 	override fun toString(): String = "$rank$label"

@@ -1,6 +1,8 @@
 // Halves of a surrogate pair on their own: a string holds any sequence of characters. What is
 // printed are numbers and lengths: a half on its own has no form outside the program.
 
+import kotlin.math.sign
+
 fun codes(inText: String): String = inText.map { it.code.toString(16) }.joinToString(" ") + " (" + inText.length + ")"
 
 fun main() {
@@ -42,7 +44,7 @@ fun main() {
 	println(vText.map { it.isSurrogate() })
 
 	// Compared, hashed, searched.
-	println("${vOnlyHigh == vOnlyLow} ${vOnlyHigh == "\uD83D"} ${vOnlyHigh < vOnlyLow} ${vOnlyHigh.compareTo("z")} ${vOnlyHigh.hashCode()} ${vOnlyLow.hashCode()}")
+	println("${vOnlyHigh == vOnlyLow} ${vOnlyHigh == "\uD83D"} ${vOnlyHigh < vOnlyLow} ${vOnlyHigh.compareTo("z").sign} ${vOnlyHigh.hashCode()} ${vOnlyLow.hashCode()}")
 	println("${vText.indexOf(vHigh)} ${vText.indexOf(vLow)} ${vText.lastIndexOf(vHigh)} ${vText.indexOf(vOnlyHigh)} ${vText.indexOf(vOnlyLow)} ${vText.lastIndexOf(vOnlyLow)}")
 	println("${vText.indexOf(vOnlyLow + "b")} ${vText.indexOf("a" + vOnlyHigh)} ${vText.contains(vOnlyHigh + "b")} ${vText.startsWith("a" + vOnlyHigh)} ${vText.endsWith(vFace[1] + "b😁c")}")
 	val vHalves = "x" + vOnlyHigh + "y" + vOnlyLow + "z" + vOnlyHigh

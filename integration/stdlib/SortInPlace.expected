@@ -1,0 +1,43 @@
+0: ordered true sum kept true []
+0: down []
+1: ordered true sum kept true [32]
+1: down [32]
+2: ordered true sum kept true [6, 32]
+2: down [32, 6]
+3: ordered true sum kept true [6, 18, 32]
+3: down [32, 18, 6]
+8: ordered true sum kept true [6, 18, 24, 31, 32, 33]
+8: down [40, 34, 33, 32, 31, 24]
+9: ordered true sum kept true [6, 18, 24, 31, 32, 33]
+9: down [40, 35, 34, 33, 32, 31]
+17: ordered true sum kept true [6, 13, 17, 18, 22, 24]
+17: down [42, 40, 35, 35, 34, 33]
+100: ordered true sum kept true [0, 1, 2, 3, 4, 4]
+100: down [48, 47, 47, 47, 47, 46]
+1000: ordered true sum kept true [0, 0, 0, 0, 0, 0]
+1000: down [49, 49, 49, 49, 49, 49]
+[0h7, 0i8, 0m12, 0q16, 0u20, 0f31, 0j35, 0l37, 1b1, 1e4, 1j9, 1l11, 1x23, 1y24, 1b27, 1e30, 1n39, 2a0, 2n13, 2o14, 2p15, 2v21, 2c28, 2m38, 3c2, 3f5, 3k10, 3s18, 3t19, 3d29, 3g32, 3h33, 3i34, 3k36, 4d3, 4g6, 4r17, 4w22, 4z25, 4a26]
+[4a26, 4d3, 4g6, 4r17, 4w22, 4z25, 3c2, 3d29, 3f5, 3g32, 3h33, 3i34, 3k10, 3k36, 3s18, 3t19, 2a0, 2c28, 2m38, 2n13, 2o14, 2p15, 2v21, 1b1, 1b27, 1e30, 1e4, 1j9, 1l11, 1n39, 1x23, 1y24, 0f31, 0h7, 0i8, 0j35, 0l37, 0m12, 0q16, 0u20]
+[4d3, 4g6, 3c2, 3f5, 2a0, 1b1, 1e4, 1j9, 0h7, 0i8, 4a26, 4r17, 4w22, 4z25, 3d29, 3g32, 3h33, 3i34, 3k10, 3k36, 3s18, 3t19, 2c28, 2m38, 2n13, 2o14, 2p15, 2v21, 1b27, 1e30, 1l11, 1n39, 1x23, 1y24, 0f31, 0j35, 0l37, 0m12, 0q16, 0u20]
+[apple, date, fig, grape, kiwi, lime, melon, nut, pear, plum]
+[fig, nut, date, kiwi, lime, pear, plum, apple, grape, melon]
+[-Infinity, -1.0, -0.0, 0.0, 2.5, 9.75, NaN]
+[1, 2, 3, null, null]
+1|2|3|null|null
+true true false false
+[32, 6, 18, 24, 31, 33, 34, 35, 40, 31, 13, 31]
+[c, d, e, f] 4 2 false f
+[y, d, f, x] [a, b, y, d, f, x, g, h]
+[] [y, x] [a, b, y, x, g, h]
+[a, g, h] [] true
+true
+a g h 
+the part is stale
+out of bounds: fromIndex: -1, toIndex: 2, size: 4
+out of bounds: fromIndex: 2, toIndex: 99, size: 4
+illegal: fromIndex: 3 > toIndex: 1
+caught stop, 30 elements
+noticed, 31 elements
+not noticed
+0c0 0c3 0c7 0c17 0c19 0c20 0c25 0c29 0c33 0c34 0c37 0c40 0c43 0c47 1c5 1c10 1c14 1c21 1c22 1c27 1c30 1c45 2c1 2c2 2c6 2c12 2c13 2c15 2c18 2c23 2c28 2c31 2c32 2c38 2c39 2c41 2c42 2c46 3c4 3c8 3c9 3c11 3c16 3c24 3c26 3c35 3c36 3c44 3c48 3c49
+1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12

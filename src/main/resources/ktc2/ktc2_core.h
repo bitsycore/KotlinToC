@@ -389,6 +389,13 @@ void ktc2_ending(void);
  */
 extern void (*ktc2_thread_end)(void);
 
+/**
+ * Writes a Float (when is_float) or a Double as text, as Kotlin/Native does: the platform
+ * layer's `formatReal`, set by `main` when the program has such numbers. NULL: the runtime's
+ * own shortest form.
+ */
+extern struct ktc2_String* (*ktc2_real_formatter)(double value, bool is_float);
+
 /* With KTC2_ARC_STATS the runtime counts reference-count operations and reports them at exit. */
 #ifdef KTC2_ARC_STATS
 extern uint64_t ktc2_stat_retains;

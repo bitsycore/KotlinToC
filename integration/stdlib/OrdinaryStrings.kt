@@ -1,4 +1,6 @@
 // What ordinary code does with text.
+// `.expected` is what Kotlin/Native prints: a template turns each object into text as it reaches
+// it, where the JVM evaluates every part first.
 
 fun main() {
 	val vText = "  The quick brown fox, the lazy dog.  "
@@ -36,7 +38,7 @@ fun main() {
 	println("a\tb\\n\"q\" \$x é ${'$'}{y} ${"nested ${"inner ${1 + 1}"}"}")
 	println("${"hello world".split(" ").joinToString(" ") { vWord -> vWord.replaceFirstChar { it.uppercase() } }} ${"camelCaseText".map { if (it.isUpperCase()) "_${it.lowercase()}" else it.toString() }.joinToString("")} ${"a1b2".filter { it.isDigit() }.toInt() * 2} ${"hello".toList()} ${"hello".toSet().size} ${"hello".toCharArray().sorted().joinToString("")} ${"hello".zip("world").count { it.first == it.second }} ${"hello".chunked(2)} ${"hello".windowed(2).size} ${"hello".withIndex().filter { it.index % 2 == 0 }.map { it.value }} ${"hello".any { it == 'l' }} ${"hello".all { it.isLetter() }} ${"hello".none { it == 'z' }} ${"hello".firstOrNull { it > 'k' }} ${"hello".lastOrNull { it < 'f' }} ${"hello".maxOrNull()} ${"hello".indices} ${"hello".lastIndex} ${"hello".getOrNull(9)} ${"hello".getOrElse(9) { '?' }} ${"hello".single { it == 'h' }} ${"hello".partition { it in "aeiou" }} ${"hello".associateWith { it.code }.size} ${"hello".groupBy { it }.mapValues { it.value.size }} ${"hello".fold(0) { vSum, vChar -> vSum + vChar.code }} ${"hello".sumOf { it.code }} ${"hello".toList().distinct()} ${"a,b".splitToSequence(",").toList()} ${"hello".commonPrefixWith("help")} ${"hello".endsWith('o')} ${"Hello".replaceFirstChar { it.lowercaseChar() }} ${"hello".toCharArray().concatToString(1, 3)} ${"h".single()} ${"hello".subSequence(1, 3)} ${"hello".asIterable().count()} ${"hello".reversed().asSequence().take(2).toList()}")
 	println("${"%d items".replace("%d", 3.toString())} ${"abc".encodeToByteArray().toList()} ${byteArrayOf(104, 105).decodeToString()} ${"é😀".encodeToByteArray().size} ${"é😀".length} ${"é😀".codePointCount()} ${"tab\there".contains('\t')} ${"line1\nline2".lines()} ${"a\r\nb".lines()} ${"x".compareTo("y") < 0} ${"abc".regionMatches(1, "xbc", 1, 2)} ${"Hello".equals("hello")} ${"a".plus("b").plus(1)} ${"" + 1 + 2} ${1.toString() + 2} ${"null" == null.toString()} ${"a" + null} ${"x".let { it + it }} ${"abc".ifEmpty { "none" }} ${"".ifEmpty { "none" }} ${" ".ifBlank { "blank" }} ${"abc".takeIf { it.length > 5 } ?: "short"} ${"text".orEmpty()} ${(null as String?).orEmpty().length} ${(null as String?).isNullOrEmpty()} ${"".isNullOrBlank()} ${(null as String?)?.length ?: -1}")
-	try { "abc".toInt() } catch (inError: NumberFormatException) { println(inError.message) }
+	try { "abc".toInt() } catch (inError: NumberFormatException) { println(inError::class.simpleName) }
 	try { "abc"[5] } catch (inError: IndexOutOfBoundsException) { println("index") }
 	try { "abc".substring(2, 1) } catch (inError: IndexOutOfBoundsException) { println("range") }
 	try { "".first() } catch (inError: NoSuchElementException) { println(inError.message) }

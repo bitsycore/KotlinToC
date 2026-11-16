@@ -1,6 +1,7 @@
 // `for` over a map, its keys or its values is written as a loop over the map's storage. It
 // has to see what the iterator sees: every live entry once, in order, the holes left by
 // removals skipped, and a change of the map as ConcurrentModificationException.
+// `.expected` is what Kotlin/Native prints: the JVM notices other changes.
 
 fun attempt(inWhat: String, inBlock: () -> Any?) {
 	try {

@@ -1,5 +1,6 @@
 // A list or a map changed while it is gone over, otherwise than through the iterator, fails
-// at the next step - except where the JVM does not notice either.
+// at the next step, except where Kotlin/Native does not notice either. `.expected` is what
+// Kotlin/Native prints: the JVM notices other changes.
 
 fun attempt(inWhat: String, inBlock: () -> Any?) {
 	try {

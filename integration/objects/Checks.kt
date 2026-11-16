@@ -18,14 +18,11 @@ fun average(inValues: IntArray, inCount: Int): Int {
 
 fun describe(inAction: () -> Any?): String = try {
 	"ok ${inAction()}"
-} catch (vError: ArrayIndexOutOfBoundsException) {
-	"array: ${vError.message}"
-} catch (vError: StringIndexOutOfBoundsException) {
-	"string: ${vError.message}"
 } catch (vError: IndexOutOfBoundsException) {
+	// The JVM and Kotlin/Native name and word it differently (stdlib/StringRanges, ListAccess have Native's).
 	"index"
 } catch (vError: ArithmeticException) {
-	"arithmetic: ${vError.message}"
+	"arithmetic"
 }
 
 fun firstMatch(inValues: IntArray, inFrom: Int, inWanted: Int): Boolean =

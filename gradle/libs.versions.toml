@@ -22,6 +22,8 @@ okio = "3.18.2"
 [libraries]
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
+# Only for its sources: they hold the part Kotlin/Native shares with Wasm (nativeWasmMain).
+kotlin-stdlib-wasm-js = { module = "org.jetbrains.kotlin:kotlin-stdlib-wasm-js", version.ref = "kotlin" }
 # The compiler plugin of kotlinx.serialization, run with ktc2's own: the serializers of @Serializable classes.
 kotlin-serialization-plugin = { module = "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable", version.ref = "kotlin" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }

@@ -1,5 +1,7 @@
 package objects
 
+import kotlin.math.sign
+
 class Tag(val name: String) {
 	override fun toString(): String = "#$name"
 }
@@ -79,7 +81,8 @@ fun main() {
 	println("日本語".length)
 	println("日本語"[2])
 	println("héllo".hashCode())
-	println("é".compareTo("z"))
+	// The sign: Kotlin/Native answers -1 or 1, the JVM the difference of the characters.
+	println("é".compareTo("z").sign)
 	println(vAccent + vEmoji)
 
 	// A long string outgrows the builder's stack buffer.

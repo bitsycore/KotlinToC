@@ -1,5 +1,7 @@
 package basic
 
+// `.expected` is what Kotlin/Native prints: it writes some Float values with more digits than the JVM.
+
 fun square(x: Int): Int = x * x
 
 fun mix(a: Int, b: Long, c: Double): Double = a + b + c

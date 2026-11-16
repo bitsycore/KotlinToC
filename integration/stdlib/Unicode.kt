@@ -1,4 +1,5 @@
-// Characters beyond ASCII: what they are, their case, their value as digits.
+// Characters beyond ASCII: what they are, their case, their value as digits. `.expected` is what
+// Kotlin/Native prints: its Unicode tables are of another version than the JVM's.
 
 fun describe(inChar: Char): String {
 	val vWhat = StringBuilder()

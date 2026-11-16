@@ -1,5 +1,6 @@
 // `for` over a list that is known to be an ArrayList is written as a loop over its storage.
 // Whatever the loop does, it has to end, skip, fail and see changes as the iterator would.
+// `.expected` is what Kotlin/Native prints: the JVM notices other changes.
 
 class Point(val x: Int, val y: Int)
 

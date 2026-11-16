@@ -15,9 +15,9 @@ import ktc2.internal.stringUtf8
 ktc2 platform layer for kotlin.text: the String and Char functions the common standard
 library leaves to its platform.
 
-Classification and case of characters follow Unicode for everything a Char can hold, from the
-tables of Ktc2Unicode.kt, with a short way for ASCII. Characters beyond U+FFFF, which a string
-holds as two Chars, are left as they are by the case functions. Regex is in Ktc2Regex.kt.
+Classification and case of characters are Kotlin/Native's own code (commonNonJvmMain and
+nativeWasmMain of the standard library, with their tables). Regex is in Ktc2Regex.kt, with the
+tables of Ktc2Unicode.kt.
 */
 
 // ==================
@@ -28,120 +28,7 @@ public actual fun Char.isHighSurrogate(): Boolean = this >= '\uD800' && this <= 
 
 public actual fun Char.isLowSurrogate(): Boolean = this >= '\uDC00' && this <= '\uDFFF'
 
-public actual fun Char.lowercaseChar(): Char {
-	val vCode = code
-	if (vCode < 0x80) return if (vCode >= 'A'.code && vCode <= 'Z'.code) (vCode + 32).toChar() else this
-	return unicodeToLowerCase(this)
-}
-
-public actual fun Char.uppercaseChar(): Char {
-	val vCode = code
-	if (vCode < 0x80) return if (vCode >= 'a'.code && vCode <= 'z'.code) (vCode - 32).toChar() else this
-	return unicodeToUpperCase(this)
-}
-
-public actual fun Char.toLowerCase(): Char = lowercaseChar()
-
-public actual fun Char.toUpperCase(): Char = uppercaseChar()
-
-/** The lowercase form as a string: one character, except for `İ`, which gives an `i` and a dot above. */
-public actual fun Char.lowercase(): String = if (this == '\u0130') "i\u0307" else lowercaseChar().toString()
-
-/** The uppercase form as a string, which for some characters is several (`ß` gives `SS`). */
-public actual fun Char.uppercase(): String = unicodeUpperCaseString(this) ?: uppercaseChar().toString()
-
-public actual fun Char.titlecaseChar(): Char {
-	val vCode = code
-	if (vCode < 0x80) return if (vCode >= 'a'.code && vCode <= 'z'.code) (vCode - 32).toChar() else this
-	return unicodeToTitleCase(this)
-}
-
-public actual fun Char.isDigit(): Boolean {
-	if (code < 0x80) return this >= '0' && this <= '9'
-	return unicodeCategory(this) == kDecimalDigit
-}
-
-public actual fun Char.isUpperCase(): Boolean {
-	val vCode = code
-	if (vCode < 0x80) return vCode >= 'A'.code && vCode <= 'Z'.code
-	return unicodeIsUpperCase(this)
-}
-
-public actual fun Char.isLowerCase(): Boolean {
-	val vCode = code
-	if (vCode < 0x80) return vCode >= 'a'.code && vCode <= 'z'.code
-	return unicodeIsLowerCase(this)
-}
-
-public actual fun Char.isTitleCase(): Boolean = code >= 0x80 && unicodeCategory(this) == kTitlecaseLetter
-
-public actual fun Char.isLetter(): Boolean {
-	val vCode = code
-	if (vCode < 0x80) return (vCode >= 'A'.code && vCode <= 'Z'.code) || (vCode >= 'a'.code && vCode <= 'z'.code)
-	val vCategory = unicodeCategory(this)
-	return vCategory >= kUppercaseLetter && vCategory <= kOtherLetter
-}
-
-public actual fun Char.isLetterOrDigit(): Boolean = isLetter() || isDigit()
-
-public actual fun Char.isDefined(): Boolean = code < 0x80 || unicodeCategory(this) != kUnassigned
-
 public actual fun Char.isISOControl(): Boolean = code <= 0x1F || (code >= 0x7F && code <= 0x9F)
-
-public actual fun Char.isWhitespace(): Boolean {
-	val vCode = code
-	if (vCode < 0x80) return (vCode >= 0x09 && vCode <= 0x0D) || (vCode >= 0x1C && vCode <= 0x20)
-	return unicodeIsWhitespace(this)
-}
-
-public actual val Char.category: CharCategory get() = CharCategory.entries[unicodeCategory(this)]
-
-// Ordinals of CharCategory, which is what the tables hold.
-private const val kUnassigned = 0
-private const val kUppercaseLetter = 1
-private const val kTitlecaseLetter = 3
-private const val kOtherLetter = 5
-internal const val kNonSpacingMark = 6
-internal const val kEnclosingMark = 7
-private const val kDecimalDigit = 9
-internal const val kFormat = 16
-internal const val kModifierLetter = 4
-internal const val kModifierSymbol = 26
-
-public actual enum class CharCategory(public actual val code: String) {
-	UNASSIGNED("Cn"),
-	UPPERCASE_LETTER("Lu"),
-	LOWERCASE_LETTER("Ll"),
-	TITLECASE_LETTER("Lt"),
-	MODIFIER_LETTER("Lm"),
-	OTHER_LETTER("Lo"),
-	NON_SPACING_MARK("Mn"),
-	ENCLOSING_MARK("Me"),
-	COMBINING_SPACING_MARK("Mc"),
-	DECIMAL_DIGIT_NUMBER("Nd"),
-	LETTER_NUMBER("Nl"),
-	OTHER_NUMBER("No"),
-	SPACE_SEPARATOR("Zs"),
-	LINE_SEPARATOR("Zl"),
-	PARAGRAPH_SEPARATOR("Zp"),
-	CONTROL("Cc"),
-	FORMAT("Cf"),
-	PRIVATE_USE("Co"),
-	SURROGATE("Cs"),
-	DASH_PUNCTUATION("Pd"),
-	START_PUNCTUATION("Ps"),
-	END_PUNCTUATION("Pe"),
-	CONNECTOR_PUNCTUATION("Pc"),
-	OTHER_PUNCTUATION("Po"),
-	MATH_SYMBOL("Sm"),
-	CURRENCY_SYMBOL("Sc"),
-	MODIFIER_SYMBOL("Sk"),
-	OTHER_SYMBOL("So"),
-	INITIAL_QUOTE_PUNCTUATION("Pi"),
-	FINAL_QUOTE_PUNCTUATION("Pf");
-
-	public actual operator fun contains(char: Char): Boolean = char.category == this
-}
 
 // ==================
 // MARK: String construction and conversion
@@ -225,55 +112,10 @@ public actual fun CharSequence.repeat(n: Int): String {
 // MARK: Case
 // ==================
 
-/**
- * When the two code units at [inIndex] of [inText] are one letter outside the first 65536 characters:
- * that letter in the other case appended to [inBuilder], and true.
- */
-private fun appendSupplementary(inText: String, inIndex: Int, inBuilder: StringBuilder, inIsUpper: Boolean): Boolean {
-	val vHigh = inText[inIndex]
-	if (!vHigh.isHighSurrogate() || inIndex + 1 >= inText.length) return false
-	val vLow = inText[inIndex + 1]
-	if (!vLow.isLowSurrogate()) return false
-	val vCodePoint = 0x10000 + ((vHigh.code - 0xD800) shl 10) + (vLow.code - 0xDC00)
-	val vOther = (if (inIsUpper) supplementaryToUpperCase(vCodePoint) else supplementaryToLowerCase(vCodePoint)) - 0x10000
-	inBuilder.append((0xD800 + (vOther shr 10)).toChar()).append((0xDC00 + (vOther and 0x3FF)).toChar())
-	return true
-}
+// As Kotlin/Native: its own code, from nativeWasmMain (StringCasing.kt, with the tables of its generated files).
+public actual fun String.uppercase(): String = uppercaseImpl()
 
-public actual fun String.uppercase(): String {
-	val vBuilder = StringBuilder(length)
-	var vIndex = -1
-	while (++vIndex < length) {
-		val vChar = this[vIndex]
-		if (vChar.isHighSurrogate() && appendSupplementary(this, vIndex, vBuilder, true)) {
-			vIndex++
-			continue
-		}
-		// ASCII, by far the most of what is converted, has no form of several characters.
-		val vSeveral = if (vChar.code < 0x80) null else unicodeUpperCaseString(vChar)
-		if (vSeveral != null) vBuilder.append(vSeveral) else vBuilder.append(vChar.uppercaseChar())
-	}
-	return vBuilder.toString()
-}
-
-public actual fun String.lowercase(): String {
-	val vBuilder = StringBuilder(length)
-	var vIndex = -1
-	while (++vIndex < length) {
-		val vChar = this[vIndex]
-		if (vChar.isHighSurrogate() && appendSupplementary(this, vIndex, vBuilder, false)) {
-			vIndex++
-			continue
-		}
-		when {
-			vChar == '\u0130' -> vBuilder.append("i\u0307")
-			// A capital sigma that ends a word is the final form, by Kotlin/Native's rule (Ktc2Casing.kt).
-			vChar == '\u03A3' && isFinalSigmaAt(this, vIndex) -> vBuilder.append('\u03C2')
-			else -> vBuilder.append(vChar.lowercaseChar())
-		}
-	}
-	return vBuilder.toString()
-}
+public actual fun String.lowercase(): String = lowercaseImpl()
 
 public actual fun String.toUpperCase(): String = uppercase()
 
@@ -332,9 +174,10 @@ public actual fun String.compareTo(other: String, ignoreCase: Boolean): Int {
 	for (vIndex in 0 until vLimit) {
 		val vMine = this[vIndex].uppercaseChar().lowercaseChar()
 		val vTheirs = other[vIndex].uppercaseChar().lowercaseChar()
-		if (vMine != vTheirs) return vMine.code - vTheirs.code
+		// -1, 0 or 1, as on Kotlin/Native.
+		if (vMine != vTheirs) return if (vMine < vTheirs) -1 else 1
 	}
-	return length - other.length
+	return if (length == other.length) 0 else if (length < other.length) -1 else 1
 }
 
 private object CaseInsensitiveOrder : Comparator<String> {
@@ -473,11 +316,7 @@ public actual fun String.replaceFirst(oldValue: String, newValue: String, ignore
 // MARK: Numbers
 // ==================
 
-@PublishedApi
-internal actual fun checkRadix(radix: Int): Int {
-	if (radix < 2 || radix > 36) throw IllegalArgumentException("radix $radix was not in valid range 2..36")
-	return radix
-}
+// checkRadix is Kotlin/Native's (nativeWasmMain/kotlin/text/Char.kt).
 
 internal actual fun digitOf(char: Char, radix: Int): Int {
 	val vCode = char.code
@@ -486,33 +325,35 @@ internal actual fun digitOf(char: Char, radix: Int): Int {
 		vCode >= 'a'.code && vCode <= 'z'.code -> vCode - 'a'.code + 10
 		vCode >= 'A'.code && vCode <= 'Z'.code -> vCode - 'A'.code + 10
 		vCode < 0x80 -> -1
-		// The letters of full width count as the plain ones do; the digits of every script as digits.
+		// The letters of full width count as the plain ones do; the digits of every script as digits, by
+		// Kotlin/Native's table (nativeWasmMain/generated/_DigitChars.kt).
 		vCode >= 0xFF21 && vCode <= 0xFF3A -> vCode - 0xFF21 + 10
 		vCode >= 0xFF41 && vCode <= 0xFF5A -> vCode - 0xFF41 + 10
-		else -> unicodeDigit(char)
+		else -> digitToIntImpl(vCode)
 	}
 	return if (vDigit >= radix) -1 else vDigit
 }
 
-private fun numberFormatError(input: String): Nothing = throw NumberFormatException("For input string: \"$input\"")
+/** A text that is no whole number: as on Kotlin/Native, the exception has no message. */
+private fun numberFormatError(): Nothing = throw NumberFormatException()
 
-/** Parses a whole number in [min, max]; fails as `Long.parseLong` does. */
+/** Parses a whole number in [min, max]; fails as Kotlin/Native does. */
 private fun parseWhole(input: String, radix: Int, min: Long, max: Long): Long {
 	checkRadix(radix)
-	if (input.length == 0) numberFormatError(input)
+	if (input.length == 0) numberFormatError()
 	var vIndex = 0
 	var vNegative = false
 	if (input[0] == '-' || input[0] == '+') {
 		vNegative = input[0] == '-'
 		vIndex = 1
-		if (input.length == 1) numberFormatError(input)
+		if (input.length == 1) numberFormatError()
 	}
 	// Accumulate negatively: the magnitude of the minimum is one more than the maximum.
 	val vLimit = if (vNegative) min else -max
 	var vResult = 0L
 	while (vIndex < input.length) {
 		val vDigit = digitOf(input[vIndex], radix)
-		if (vDigit < 0 || vResult < (vLimit + vDigit) / radix) numberFormatError(input)
+		if (vDigit < 0 || vResult < (vLimit + vDigit) / radix) numberFormatError()
 		vResult = vResult * radix - vDigit
 		vIndex++
 	}
@@ -540,7 +381,8 @@ public actual fun String.toDoubleOrNull(): Double? {
 	return if (stringToDouble(this, vResult)) vResult[0] else null
 }
 
-public actual fun String.toDouble(): Double = toDoubleOrNull() ?: numberFormatError(this)
+// As on Kotlin/Native, the message is the text without the blanks around it.
+public actual fun String.toDouble(): Double = toDoubleOrNull() ?: throw NumberFormatException(trim { it <= ' ' })
 
 public actual fun String.toFloatOrNull(): Float? = toDoubleOrNull()?.toFloat()
 

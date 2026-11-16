@@ -1,0 +1,14 @@
+substring: cd
+substring beyond the end: null
+substring from beyond the end: null
+substring backwards: null
+substring from a negative index: null
+subSequence: bc
+subSequence beyond the end: null
+character of a CharSequence: b
+character beyond a CharSequence: null
+part of a CharSequence: cde
+part beyond a CharSequence: null
+character of a StringBuilder: z
+take and drop: abcdef
+end

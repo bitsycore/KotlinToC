@@ -56,7 +56,7 @@ fun risky(inStep: Int): String {
 	} catch (inError: NumberFormatException) {
 		return "format"
 	} catch (inError: ArithmeticException) {
-		return "arithmetic: ${inError.message}"
+		return "arithmetic: ${inError::class.simpleName}"
 	} finally {
 		print("[finally $inStep] ")
 	}
@@ -134,7 +134,7 @@ fun results() {
 	val vC = runCatching { error("e") }.getOrElse { "recovered" }
 	println(vC)
 	val vD: Result<Int> = runCatching { "x".toInt() }
-	println("${vD.isSuccess} ${vD.getOrDefault(-1)} ${vD.exceptionOrNull()?.message} ${vD.getOrElse { 7 }} ${vD.fold({ "ok" }, { "bad" })} ${vD.recover { 3 }.getOrThrow()}")
+	println("${vD.isSuccess} ${vD.getOrDefault(-1)} ${vD.exceptionOrNull()?.let { it::class.simpleName }} ${vD.getOrElse { 7 }} ${vD.fold({ "ok" }, { "bad" })} ${vD.recover { 3 }.getOrThrow()}")
 	val vE = Result.success("s")
 	vE.onSuccess { println("got $it") }.onFailure { println("never") }
 	println("${vE.getOrThrow()} $vE ${Result.failure<Int>(IllegalStateException("f")).exceptionOrNull()?.message}")

@@ -277,6 +277,7 @@ class Devirtualize(private val mModule: KModule) {
 		val vOpen = HashSet<KFunction>()
 		mModule.entry?.let { vOpen += it }
 		vOpen += mModule.throwers.values
+		mModule.realFormatter?.let { vOpen += it }
 		// The runtime calls these when an object ends.
 		vOpen += mModule.classes.mapNotNull { it.deinit }
 		for (vFunction in inFunctions) {

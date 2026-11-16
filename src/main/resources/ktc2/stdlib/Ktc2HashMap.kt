@@ -201,16 +201,16 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	internal fun entryLimit(): Int = used
 
 	/**
-	 * The index of the first live entry at or after [from] (which is not negative), or -1. For
-	 * the cursor, and for the loop ktc2 writes in its place (`ListLoops`), which finds this
-	 * function and [checkChanges] by their names.
+	 * The index of the first live entry at or after [from] (which is not negative), or [used]
+	 * when there is none. For the cursor, and for the loop ktc2 writes in its place
+	 * (`ListLoops`), which finds this function, [used] and [checkChanges] by their names.
 	 */
 	internal fun liveFrom(from: Int): Int {
 		val vLive = liveArray
 		val vLimit = used
 		var vIndex = from
 		while (vIndex < vLimit && !vLive.at(vIndex)) vIndex++
-		return if (vIndex < vLimit) vIndex else -1
+		return vIndex
 	}
 
 	/** Fails when a key was added or removed since [expected] was read from [changes]. */
@@ -281,9 +281,10 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 }
 
 /**
- * Walks the live entries of a map; [next] yields the entry index. As on the JVM the entry
- * after the one handed out is found at once, so `hasNext` answers from what the map held
- * then, and `next` fails with `ConcurrentModificationException` when a key was added or
+ * Walks the live entries of a map; [next] yields the entry index. As on Kotlin/Native the entry
+ * after the one handed out is found at once, and `hasNext` compares it with the entries the map
+ * holds now: a key added after the last one makes it true (and `next` then fails), a `clear`
+ * makes it false. `next` fails with `ConcurrentModificationException` when a key was added or
  * removed otherwise than through this cursor.
  */
 private class HashMapCursor<K, V>(private val map: HashMap<K, V>) {
@@ -291,19 +292,19 @@ private class HashMapCursor<K, V>(private val map: HashMap<K, V>) {
 	private var last = -1
 	private var expected = map.changes
 
-	fun hasNext(): Boolean = coming >= 0
+	fun hasNext(): Boolean = coming < map.entryLimit()
 
 	fun next(): Int {
 		map.checkChanges(expected)
-		if (coming < 0) throw NoSuchElementException()
+		if (coming >= map.entryLimit()) throw NoSuchElementException()
 		last = coming
 		coming = map.liveFrom(coming + 1)
 		return last
 	}
 
 	fun remove() {
-		if (last < 0) throw IllegalStateException()
-		if (map.changes != expected) throw ConcurrentModificationException()
+		map.checkChanges(expected)
+		check(last >= 0) { "Call next() before removing element from the iterator." }
 		map.removeEntry(last)
 		last = -1
 		expected = map.changes

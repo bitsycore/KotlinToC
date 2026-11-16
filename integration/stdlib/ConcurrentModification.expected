@@ -1,0 +1,25 @@
+add while iterating: ConcurrentModificationException
+remove while iterating: ConcurrentModificationException
+remove the last but one: [1, 3]
+remove the last: [1, 2]
+clear while iterating: []
+set while iterating: [1, 2, 30]
+remove through the iterator: [1, 3]
+add through the list iterator: [1, 2, 20, 3]
+two iterators, one removes: ConcurrentModificationException
+removeAll that removes nothing: 6
+sort while iterating: [1, 2, 3]
+sort a list of one while iterating: [1]
+put a new key while iterating: ConcurrentModificationException
+put an existing key while iterating: {a=10, b=10, c=10}
+remove a key while iterating: ConcurrentModificationException
+put a new key at the last entry: ConcurrentModificationException
+remove through the entries: {a=1, c=3}
+a set changed while iterating: ConcurrentModificationException
+a hash map with one key: ConcurrentModificationException
+a deque changed while iterating: ConcurrentModificationException
+a deque, the last but one removed: [2, 3]
+a deque, set while iterating: [1, 2, 30]
+a deque through its iterator: [10, 3, 50]
+a deque, two iterators: ConcurrentModificationException
+a part of a list while the list grows: ConcurrentModificationException
