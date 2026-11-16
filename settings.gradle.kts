@@ -3,3 +3,6 @@ plugins {
 }
 
 rootProject.name = "ktc2"
+
+// The tests and the programs of the suite as modules for an IDE (ide/build.gradle.kts).
+include("ide")
