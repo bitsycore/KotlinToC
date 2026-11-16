@@ -487,9 +487,9 @@ class Ktc2Extension : IrGenerationExtension {
 			}
 		}
 		dumpKir("Import: as the importer wrote it")
-		if (System.getProperty("ktc2.warnCycles") != "false") {
-			CycleLint(vModule).also { it.run() }.warnings.forEach { System.err.println("ktc2: warning: $it") }
-		}
+		// Run always: it also finds the cycles of two objects that the runtime frees (KClass.pairCycles).
+		val vCycles = CycleLint(vModule).also { it.run() }
+		if (System.getProperty("ktc2.warnCycles") != "false") vCycles.warnings.forEach { System.err.println("ktc2: warning: $it") }
 		// KTC2_SKIP names optimizations to leave out (devirtualize, ranges, handover, brief), to find which one a wrong program comes from.
 		val vSkipped = (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }.toSet()
 		val vDirect = Devirtualize(vModule).also { if ("devirtualize" !in vSkipped) it.run() }

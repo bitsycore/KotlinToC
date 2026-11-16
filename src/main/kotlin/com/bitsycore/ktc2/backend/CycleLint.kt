@@ -67,6 +67,14 @@ class CycleLint(private val mModule: KModule) {
 				// The same cycle is found from each of its `var` fields, and once per instantiation of a generic class.
 				val vKey = vCycle.map { "${(it.field.owner ?: it.from).name}.${it.field.cName}" }.sorted().joinToString(",")
 				if (!vSeen.add(vKey)) continue
+				// Two objects that hold each other, of classes known exactly: the runtime frees them when nothing else holds
+				// either (KClass.pairCycles). Not in a program with threads, where another thread may be taking one of them.
+				if (vCycle.size == 2 && !mModule.usesThreads && isPairable(vCycle[0]) && isPairable(vCycle[1])) {
+					val (vThere, vBack) = vCycle
+					vThere.from.pairCycles += KPairCycle(vThere.field, vThere.to, vBack.field)
+					if (vBack.from !== vThere.from) vBack.from.pairCycles += KPairCycle(vBack.field, vBack.to, vThere.field)
+					continue
+				}
 				val vPath = vCycle.joinToString(" -> ") { "${shownName(it.field.owner ?: it.from)}.${it.field.cName}" } + " -> ${shownName(vClass)}"
 				warnings += "reference cycle possible: $vPath (never freed if it forms; use @Weak or WeakRef, or @Acyclic if it cannot)"
 			}
@@ -110,6 +118,13 @@ class CycleLint(private val mModule: KModule) {
 				false
 			}
 		}
+	}
+
+	/** True when [inEdge] is a plain reference field to a class no other class extends: what a pair check can read. */
+	private fun isPairable(inEdge: Edge): Boolean {
+		val vType = inEdge.field.type
+		if (vType !is KClassType && vType != KObjType) return false
+		return mModule.classes.none { it !== inEdge.to && it.isInstantiated && it.isSubclassOf(inEdge.to) }
 	}
 
 	/** The name of [inClass] in a warning: a lambda and an object expression have none of their own. */

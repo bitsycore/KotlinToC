@@ -224,8 +224,14 @@ typedef struct ktc2_Obj {
 /** Flag in `rc` of an object allocated in an `arena { }` block: its memory belongs to the arena. */
 #define KTC2_ARENA UINT32_C(0x20000000)
 
+/**
+ * Flag in `rc` of an object of a class that can be in a cycle of two objects (KClass.pairCycles): a release that
+ * leaves few references asks its type whether the cycle can be freed. Set where the object is made.
+ */
+#define KTC2_PAIRED UINT32_C(0x10000000)
+
 /** The bits of `rc` that count references. */
-#define KTC2_COUNT_MASK UINT32_C(0x1FFFFFFF)
+#define KTC2_COUNT_MASK UINT32_C(0x0FFFFFFF)
 
 /**
  * Per-type data. `destroy` releases the references an instance holds; NULL when it holds none.
@@ -241,7 +247,17 @@ typedef struct ktc2_TypeInfo {
 	void (*deinit)(ktc2_Obj* object);
 	/* The names of the class and of the classes above it, each between two '|': what `KClass.isInstance` looks in. NULL for a built-in type. */
 	const char* ancestors;
+	/* Called when the count of an instance comes down to [pairs] or less: frees the objects it is in a cycle of two with, and itself, when nothing else holds them. */
+	void (*pair)(ktc2_Obj* object);
+	/* How many of them [pair] looks at: it is called when the count comes down to that many or fewer. */
+	uint32_t pairs;
 } ktc2_TypeInfo;
+
+/** The table of types, written for each program (ktc2_main.c). */
+extern const ktc2_TypeInfo ktc2_types[];
+
+/** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */
+void ktc2_pair_check(ktc2_Obj* object, uint32_t left);
 
 enum {
 	KTC2_TYPE_NONE = 0,
@@ -346,13 +362,12 @@ static inline void* ktc2_slot_reuse(void* a, void* b, size_t size, uint32_t type
 		if (slot->rc & KTC2_COUNT_MASK) return NULL;
 	}
 	memset(slot, 0, size);
-	slot->rc = KTC2_STACK | 1;
+	slot->rc = KTC2_STACK | 1 | (ktc2_types[typeId].pairs ? KTC2_PAIRED : 0);
 	slot->typeId = typeId;
 	return slot;
 }
 
 /** Generated in ktc2_main.c. */
-extern const ktc2_TypeInfo ktc2_types[];
 extern const uint32_t ktc2_type_count;
 
 /** A zeroed object of [size] bytes with a count of 1. */
@@ -412,7 +427,18 @@ static inline void ktc2_release(void* pointer)
 	if (object) {
 		KTC2_CHECK_LIVE(object);
 		uint32_t count = KTC2_RC_LOAD(object);
-		if (count != KTC2_IMMORTAL && (KTC2_RC_DEC(object, count) & KTC2_COUNT_MASK) == 0) ktc2_destroy(object);
+		if (count != KTC2_IMMORTAL) {
+			uint32_t left = KTC2_RC_DEC(object, count) & KTC2_COUNT_MASK;
+			if (left == 0) {
+				ktc2_destroy(object);
+			}
+#ifndef KTC2_THREADS
+			/* As few references left as objects of its own fields may hold it by: KClass.pairCycles. */
+			else if (count & KTC2_PAIRED) {
+				ktc2_pair_check(object, left);
+			}
+#endif
+		}
 	}
 }
 

@@ -355,6 +355,12 @@ static void pool_leave(void)
 }
 #endif
 
+void ktc2_pair_check(ktc2_Obj* object, uint32_t left)
+{
+	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
+	if (left <= type->pairs && type->pair) type->pair(object);
+}
+
 void* ktc2_alloc(size_t size, uint32_t typeId)
 {
 #ifdef KTC2_ARC_STATS
@@ -385,6 +391,7 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 		object->rc = 1;
 	}
 	object->typeId = typeId;
+	if (typeId >= KTC2_TYPE_FIRST_USER && ktc2_types[typeId].pairs) object->rc |= KTC2_PAIRED;
 	count_live(typeId, 1);
 	return object;
 }

@@ -108,7 +108,8 @@ class CEmitter(private val mModule: KModule) {
 			val vChain = generateSequence(vClass) { it.superClass }.toList()
 			val vInterfaces = vChain.flatMap { vLevel -> vLevel.interfaces.flatMap { listOf(it) + it.supers } }.map { it.qualifiedName }
 			val vAncestors = (vChain.map { it.name } + vInterfaces).distinct().joinToString("|", "|", "|")
-			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)} },\n")
+			val vPair = if (vClass.pairCycles.isNotEmpty()) "${vClass.cName}__pair" else "NULL"
+			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, ${vClass.pairCycles.size} },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 		val vHasThreadLocals = vThreadGlobals.isNotEmpty() || vThreadStatics.isNotEmpty()
@@ -398,6 +399,12 @@ class CEmitter(private val mModule: KModule) {
 				append("/** Calls `deinit` of an instance nothing refers to any more. */\n")
 				append("void ${vClass.cName}__deinit(ktc2_Obj* object);\n")
 			}
+			if (vClass.pairCycles.isNotEmpty()) {
+				append("/** Frees an instance held only by objects it holds itself, which only it holds, and them with it; 1 when it did. */\n")
+				append("int ${vClass.cName}__collect(ktc2_Obj* object);\n")
+				append("/** Called when the count of an instance came down to its number of pair cycles or less: [__collect] for it and its partners. */\n")
+				append("void ${vClass.cName}__pair(ktc2_Obj* object);\n")
+			}
 			if (vClass.isUsedInline) {
 				append("/** A heap copy of an instance (the boxed form of an inline value). */\n")
 				append("${vClass.cName}* ${vClass.cName}__clone(const ${vClass.cName}* source);\n")
@@ -532,6 +539,38 @@ class CEmitter(private val mModule: KModule) {
 			}
 			if (vOwn.isEmpty() && vClass.superClass == null) vBodies.append("\t(void)object;\n")
 			vBodies.append("}\n")
+			if (vClass.pairCycles.isNotEmpty()) {
+				// What is left of the count of this object: when each of those references is held by an object of one of its
+				// own fields that this object is all that holds, nothing else reaches any of them. Those give their reference
+				// up without releasing it, and this object goes, taking them with it.
+				vBodies.append("\nint ${vClass.cName}__collect(ktc2_Obj* object)\n{\n\tuint32_t explained = 0;\n")
+				fun partner(inIndex: Int, inPair: KPairCycle): String {
+					vState.includes += inPair.partner.unit
+					inPair.field.owner?.let { vState.includes += it.unit }
+					inPair.back.owner?.let { vState.includes += it.unit }
+					return "(ktc2_Obj*)((${(inPair.field.owner ?: vClass).cName}*)object)->${inPair.field.cName}"
+				}
+				fun back(inPair: KPairCycle, inPartner: String): String = "((${(inPair.back.owner ?: inPair.partner).cName}*)$inPartner)->${inPair.back.cName}"
+				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
+					vBodies.append("\tktc2_Obj* partner$vIndex = ${partner(vIndex, vPair)};\n")
+					vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (partner$vIndex->rc & KTC2_COUNT_MASK) == 1 && (ktc2_Obj*)${back(vPair, "partner$vIndex")} == object;\n")
+					vBodies.append("\tif (held$vIndex) explained++;\n")
+				}
+				vBodies.append("\tif (explained == 0 || (object->rc & KTC2_COUNT_MASK) != explained) return 0;\n")
+				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
+					vBodies.append("\tif (held$vIndex) ${back(vPair, "partner$vIndex")} = NULL;\n")
+				}
+				vBodies.append("\tobject->rc = (object->rc & ~KTC2_COUNT_MASK) | 1;\n\tktc2_release(object);\n\treturn 1;\n}\n")
+				// The check above, and then the same for each partner: the count that came down may be what was left of
+				// one partner's references to another object of the pair.
+				vBodies.append("\nvoid ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tif (${vClass.cName}__collect(object)) return;\n")
+				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
+					if (vPair.partner.pairCycles.isEmpty()) continue
+					vBodies.append("\tktc2_Obj* other$vIndex = ${partner(vIndex, vPair)};\n")
+					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex)) return;\n")
+				}
+				vBodies.append("}\n")
+			}
 			vClass.deinit?.let { vDeinit ->
 				vState.includes += vDeinit.unit
 				vBodies.append("\nvoid ${vClass.cName}__deinit(ktc2_Obj* object)\n{\n")
@@ -775,7 +814,7 @@ class CEmitter(private val mModule: KModule) {
 				if (vBuilt != null) {
 					mState.includes += vBuilt.unit
 					val vSlot = inFunction.params.last().cName
-					vBefore.append("memset($vSlot, 0, sizeof(${vBuilt.cName})); *(ktc2_Obj*)$vSlot = (ktc2_Obj){ KTC2_STACK | 1, ${typeId(vBuilt)} }; ")
+					vBefore.append("memset($vSlot, 0, sizeof(${vBuilt.cName})); *(ktc2_Obj*)$vSlot = (ktc2_Obj){ KTC2_STACK | 1${if (vBuilt.pairCycles.isNotEmpty()) " | KTC2_PAIRED" else ""}, ${typeId(vBuilt)} }; ")
 					vRoom = "(${vBuilt.cName}*)$vSlot, "
 				}
 				/*
@@ -1284,14 +1323,14 @@ class CEmitter(private val mModule: KModule) {
 			} else {
 				mState.includes += inExpr.cls.unit
 				val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
-				"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1, ${typeId(inExpr.cls)} } })"
+				"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1${if (inExpr.cls.pairCycles.isNotEmpty()) " | KTC2_PAIRED" else ""}, ${typeId(inExpr.cls)} } })"
 			}
 			is KAlloc -> {
 				mState.includes += inExpr.cls.unit
 				if (inExpr.onStack) {
 					// The object lives in the enclosing block: a compound literal, zeroed each time it is reached.
 					val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
-					"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1, ${typeId(inExpr.cls)} } })"
+					"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1${if (inExpr.cls.pairCycles.isNotEmpty()) " | KTC2_PAIRED" else ""}, ${typeId(inExpr.cls)} } })"
 				} else {
 					"ktc2_alloc(sizeof(${inExpr.cls.cName}), ${typeId(inExpr.cls)})"
 				}

@@ -161,6 +161,9 @@ class KStruct(
  * [owner] is the class declaring the field, or null for a `@Struct` field. [isImmutable] is set
  * for a field that is never reassigned once its object is constructed (a `val`).
  */
+/** One of [KClass.pairCycles]. */
+class KPairCycle(val field: KField, val partner: KClass, val back: KField)
+
 class KField(val cName: String, val type: KType, val owner: KClass? = null, val isImmutable: Boolean = false) {
 	/**
 	 * Inline storage: the object (`@Value`, [inlineSize] = 0) or the array of that many elements
@@ -213,6 +216,13 @@ class KClass(
 
 	/** Set when a `@Value` field holds this class inline: it then gets copy and assign helpers. */
 	var isUsedInline = false
+
+	/**
+	 * The cycles of two objects this class's instances can form through their own fields (`CycleLint`): an object
+	 * of [KPairCycle.partner] in [KPairCycle.field] whose [KPairCycle.back] holds this one. The runtime frees such a pair
+	 * when the two are all that refer to each other (`<class>__pair`, called when a count comes down to 1).
+	 */
+	val pairCycles = ArrayList<KPairCycle>()
 
 	/**
 	 * What the instantiations of one generic class have in common: the same value for all of
