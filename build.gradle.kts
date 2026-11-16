@@ -217,7 +217,7 @@ tasks.test {
 			println(if (inResult.failedTestCount == 0L) paint("1;32", "✅ $vLine") else paint("1;31", "❌ $vLine"))
 			for ((vKind, vLabel) in kKinds) {
 				val vCounts = vByKind[vKind] ?: continue
-				val vText = "   ${vLabel}s".padEnd(18) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
+				val vText = "   ${vLabel}s".padEnd(22) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
 				println(if (vCounts[1] > 0) paint("31", vText) else paint(vKindColors.getValue(vKind), vText))
 			}
 			vFailed.forEach { println(paint("31", "   ❌ $it")) }
