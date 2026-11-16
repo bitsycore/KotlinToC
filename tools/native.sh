@@ -6,7 +6,7 @@
 # same on the JVM, on Kotlin/Native and here.
 # Needs a Kotlin/Native compiler: KTC2_KONAN names its directory, else the newest one under
 # ~/.konan is used (Gradle puts them there for multiplatform projects). About 10 seconds a
-# program, four at a time. The common tests (tests/*.kt) are run there too, with the `main`
+# program, four at a time. The common tests (tests/common/*.kt, tests/kotlin/*.kt) are run there too, with the `main`
 # the suite wrote for each. The report is build/native/report.txt.
 cd "$(dirname "$0")/.." || exit 1
 vKonan=${KTC2_KONAN:-$(ls -d ~/.konan/kotlin-native-prebuilt-* 2>/dev/null | sort -V | tail -1)}
@@ -37,7 +37,7 @@ one() {
 	fi
 	rm -f "$vOut.kexe"
 }
-# A file of common tests (tests/*.kt): with the `main` the suite wrote for it, and Kotlin/Native's own kotlin.test.
+# A file of common tests (tests/common, tests/kotlin): with the `main` the suite wrote for it, and Kotlin/Native's own kotlin.test.
 common() {
 	vFile=$1
 	vName=$(basename "$vFile" .kt)
@@ -68,7 +68,7 @@ vFiles=$(for vFile in integration/basic/*.kt integration/objects/*.kt integratio
 	[[ "$vFile" == *"$1"* ]] && echo "$vFile"
 done)
 echo "$vFiles" | xargs -P 4 -I{} bash -c 'one "$1" "$2"' _ {} "$vKonan"
-for vFile in tests/*.kt tests/kotlin/*.kt; do [[ "$vFile" == *"$1"* ]] && echo "$vFile"; done | xargs -P 4 -I{} bash -c 'common "$1" "$2"' _ {} "$vKonan"
+for vFile in tests/common/*.kt tests/kotlin/*.kt; do [[ "$vFile" == *"$1"* ]] && echo "$vFile"; done | xargs -P 4 -I{} bash -c 'common "$1" "$2"' _ {} "$vKonan"
 cat build/native/*.result | sort > build/native/report.txt
 echo "Kotlin/Native $(basename "$vKonan"): $(grep -c "^same" build/native/report.txt) the same, $(grep -c "^differs" build/native/report.txt) differ, $(grep -c "^does not compile" build/native/report.txt) do not compile there, $(grep -c "^skipped" build/native/report.txt) skipped"
 grep -v "^same" build/native/report.txt

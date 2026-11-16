@@ -7,6 +7,18 @@ package = geometry
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * One definition of a variable for the whole program, whichever files include this. On Windows a weak
+ * definition is a weak external with a default of its own in each object file, which the linker may not
+ * merge (two files including this, two variables): there, one picked among several is selectany
+ * (geometry.h says so on the declarations too).
+ */
+#if defined(_WIN32)
+#define GEOMETRY_ONE_DEFINITION __declspec(selectany)
+#else
+#define GEOMETRY_ONE_DEFINITION __attribute__((weak))
+#endif
+
 struct canvas {
 	int width;
 	int height;
@@ -105,8 +117,7 @@ static inline scaler geometry_scaler(void)
 	return geometry_scale;
 }
 
-/* One definition for the whole program, whichever files include this. */
-__attribute__((weak)) int geometry_counter = 0;
+GEOMETRY_ONE_DEFINITION int geometry_counter = 0;
 
 static inline int geometry_format(char* buffer, size_t size, const char* format, ...)
 {
@@ -117,8 +128,8 @@ static inline int geometry_format(char* buffer, size_t size, const char* format,
 	return written;
 }
 
-__attribute__((weak)) geometry_log geometry_log_storage = { 0 };
-__attribute__((weak)) geometry_log* geometry_main_log = 0;
+GEOMETRY_ONE_DEFINITION geometry_log geometry_log_storage = { 0 };
+GEOMETRY_ONE_DEFINITION geometry_log* geometry_main_log = 0;
 
 static inline void geometry_log_open(void)
 {

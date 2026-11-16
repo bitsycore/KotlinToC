@@ -44,8 +44,19 @@ typedef int (*point_visitor)(const struct point* point, void* user_data);
 
 typedef double (*scaler)(double value, float factor);
 
+/*
+The variables are defined in the header of the .def, once for the whole program whichever files
+include it (GEOMETRY_ONE_DEFINITION there). On Windows that is selectany, which gcc keeps only when
+the declaration before the definition says it too.
+*/
+#if defined(_WIN32) && defined(__GNUC__)
+#define GEOMETRY_DECLARED_ONCE __declspec(selectany)
+#else
+#define GEOMETRY_DECLARED_ONCE
+#endif
+
 /* A variable of the library. */
-extern int geometry_counter;
+extern GEOMETRY_DECLARED_ONCE int geometry_counter;
 
 /*
 A type with a private name declared before its public one, a variable of that type, and a
@@ -57,7 +68,7 @@ typedef struct _geometry_log geometry_log;
 struct _geometry_log {
 	int lines;
 };
-extern geometry_log* geometry_main_log;
+extern GEOMETRY_DECLARED_ONCE geometry_log* geometry_main_log;
 #define geometry_main_log geometry_main_log
 
 /* The functions are defined in Geometry.def, as a library with inline functions would. */

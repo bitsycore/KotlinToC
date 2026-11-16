@@ -19,7 +19,7 @@ public enum class TestPlatform {
     companion object
 }
 
-// (`TestPlatform.current` is in the platform part: tests/support/jvm or tests/support/ktc2.)
+// (`TestPlatform.current` is in the platform part: tests/kotlin/support/jvm or tests/kotlin/support/ktc2.)
 
 public fun testOn(platformPredicate: (TestPlatform) -> Boolean, action: () -> Unit) {
     if (platformPredicate(TestPlatform.current)) action()

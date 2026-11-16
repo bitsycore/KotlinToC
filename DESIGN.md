@@ -657,17 +657,21 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   the Kotlin front end (Kotlin → IR, `K2Frontend.lastFrontEndNanos`), ktc2's translation
   (IR → C), the C compiler and linker, and the run; the summary adds each step up. The first
   program of each process carries the analysis of the library in its first step.
-- `examples/showcase/core` is run the same way as a program of several modules.
+- The suite is in four categories (`KTC2_TEST_CATEGORIES`): `integration` (the programs of
+  `integration/`), `kotlin` (`tests/kotlin/`, `tests/common/`), `box` (`tests/box/`) and
+  `libraries` (`tests/libraries/`). `KTC2_TEST_NO_JVM` names categories run in C only; the CI
+  job runs `integration`, and `kotlin` in C only.
 - Test builds (`KTC2_LEAK_CHECK`) fill a freed object with `0xDD` and keep the last few
   thousand of them aside: a retain or a release of one ends the program with "use of a freed
   object", on every system. AddressSanitizer (`-fsanitize=address -DKTC2_NO_POOL` on the C of
   `build/integration/<Name>/c`) finds the reads the fill does not.
 - `integration/ported/` are the plain-Kotlin tests of the first transpiler.
-- `tests/**/*.kt` are common tests, written as Kotlin Multiplatform's are: classes of `@Test`
+- `tests/kotlin/` and `tests/common/` hold common tests, written as Kotlin Multiplatform's are: classes of `@Test`
   functions that assert with `kotlin.test` (`stdlib/Ktc2Test.kt` here), and no `main`. The
   suite writes the `main` that calls each test (`testMain` in `IntegrationTest.kt`, which
   reads the source as text), runs it in C and on the JVM, and fails when a test fails on
-  either. `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged. See
+  either. `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged, and
+  `tests/common/` ktc2's own. See
   `tests/README.md`.
 - The comparison with the JVM counts the two names of a standard exception as one
   (`java.lang.IllegalStateException` there, `kotlin.IllegalStateException` here and on

@@ -34,11 +34,23 @@ private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1
  * prints (MSVC) leaves the others out: the comparison is then made where both are there.
  */
 /**
- * `KTC2_TEST_LIBRARIES=0` leaves out the own tests of the libraries that are bundled modules (`tests/<module>/`):
- * most of the suite's time, and they change only with the library or its module. The CI job runs without them; the
- * programs on each module (`integration/modules/`) stay.
+ * The categories of the suite, each run unless `KTC2_TEST_CATEGORIES` names the ones to run (separated by commas):
+ * - `integration`: the programs under `integration/`, and the programs of several files under `integration/modules/`;
+ * - `kotlin`: the tests of the Kotlin standard library and of Kotlin/Native's runtime (`tests/kotlin/`), and ktc2's own
+ *   common tests (`tests/common/`);
+ * - `box`: the box tests of the Kotlin compiler (`tests/box/`);
+ * - `libraries`: the own tests of the libraries that are bundled modules (`tests/libraries/<module>/`): most of the
+ *   suite's time, and they change only with the library or its module.
+ * The CI job runs `integration` and `kotlin`.
  */
-private val kRunsLibraryTests = System.getenv("KTC2_TEST_LIBRARIES") != "0"
+private val kCategories = System.getenv("KTC2_TEST_CATEGORIES")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+	?: setOf("integration", "kotlin", "box", "libraries")
+
+/**
+ * `KTC2_TEST_NO_JVM`: the categories whose tests run in C only, not compared with the JVM (separated by commas). A file
+ * of tests checks itself (its `main` fails when a test fails), so it needs the JVM only to be compared with it.
+ */
+private val kNoJvm = System.getenv("KTC2_TEST_NO_JVM")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
 
 private val kSteps = System.getenv("KTC2_TEST_STEPS")?.split(',')?.map { it.trim() }?.toSet() ?: setOf("translate", "jvm", "c")
 
@@ -99,9 +111,13 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** The name of the program being checked, as the Gradle task shows it: see [functionsFile]. */
 	private var mCurrent = ""
 
-	/** A test of the suite named [inName]: what [inBody] checks. */
-	private fun named(inName: String, inBody: () -> Unit): DynamicTest = DynamicTest.dynamicTest(inName) {
+	/** The category of the test being checked (see [kCategories]). */
+	private var mCategory = ""
+
+	/** A test of the suite named [inName], of [inCategory]: what [inBody] checks. */
+	private fun named(inName: String, inCategory: String, inBody: () -> Unit): DynamicTest = DynamicTest.dynamicTest(inName) {
 		mCurrent = inName
+		mCategory = inCategory
 		mNativeReference = false
 		mHasTestFunctions = false
 		inBody()
@@ -142,21 +158,27 @@ abstract class IntegrationPart(private val mShard: Int) {
 	}
 
 	private fun programList(): List<DynamicTest> =
+		(if ("integration" in kCategories) integrationList() + projectList() else emptyList()) +
+			(if ("kotlin" in kCategories) commonTestList() else emptyList()) +
+			(if ("box" in kCategories) boxTestList() else emptyList()) +
+			(if ("libraries" in kCategories) moduleTestList() else emptyList())
+
+	private fun integrationList(): List<DynamicTest> =
 		File("integration").walkTopDown()
 			// A file in the directory of a module (integration/modules/) is a part of that program (kProjects).
 			.filter { it.isFile && it.extension == "kt" && !File(it.parentFile, "module.ktc2.toml").isFile }
 			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text (several, separated by commas).
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> named(vSource.relativeTo(File("integration")).invariantSeparatorsPath) { check(vSource) } }
-			.toList() + projectList() + commonTestList() + boxTestList() + (if (kRunsLibraryTests) moduleTestList() else emptyList())
+			.map { vSource -> named(vSource.relativeTo(File("integration")).invariantSeparatorsPath, "integration") { check(vSource) } }
+			.toList()
 
 	// ==================
 	// MARK: Common tests
 	// ==================
 
 	/**
-	 * The files under `tests/` are tests as Kotlin Multiplatform's common tests are written:
+	 * The files under `tests/kotlin/` and `tests/common/` are tests as Kotlin Multiplatform's common tests are written:
 	 * classes with `@Test` functions that assert with `kotlin.test`, and no `main`. They say what
 	 * must hold on every platform and nothing of what a platform is free in. The suite writes
 	 * the `main` that calls each test ([testMain]), runs the program in C and on the JVM, and
@@ -164,12 +186,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * runs them with Kotlin/Native, whose own `kotlin.test` they then use.
 	 */
 	private fun commonTestList(): List<DynamicTest> =
-		File("tests").walkTopDown()
-			// tests/pending holds those that do not pass yet (tests/README.md).
-			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "pending" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "box" || it in kModuleTests } }
+		listOf(File("tests/kotlin"), File("tests/common")).asSequence().flatMap { it.walkTopDown() }
+			// tests/kotlin/support holds the helpers of the library's tests; a directory `pending` those that do not pass yet.
+			.filter { it.isFile && it.extension == "kt" && it.invariantSeparatorsPath.split('/').none { it == "support" || it == "pending" } }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> named(vSource.invariantSeparatorsPath) { checkCommon(vSource) } }
+			.map { vSource -> named(vSource.invariantSeparatorsPath, "kotlin") { checkCommon(vSource) } }
 			.toList()
 
 	/** `kotlin.test` as ktc2 has it: compiled with a test for the JVM too, so that both run the same assertions. */
@@ -209,9 +231,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vSkipped = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile }?.readLines()
 			?.map { it.substringBefore(':').trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.toSet() ?: emptySet()
 		vMain.writeText(testMain(inSource.readText(), vSkipped))
-		// What the tests of the library share (tests/support): the common part for both, and for each side
+		// What the tests of the library share (tests/kotlin/support): the common part for both, and for each side
 		// its answers to what the library's tests leave to the platform.
-		fun support(inPart: String): List<File> = File("tests/support/$inPart").listFiles { vFile -> vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList()
+		fun support(inPart: String): List<File> = File("tests/kotlin/support/$inPart").listFiles { vFile -> vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList()
 		val vShared = if (inSource.parentFile.name == "kotlin") support("common") else emptyList()
 		// `<Name>.with` names other files of tests this one uses something of (a helper declared next to tests): compiled with it, their tests not run.
 		val vWith = File(inSource.parentFile, inSource.nameWithoutExtension + ".with").takeIf { it.isFile }?.readLines()
@@ -224,9 +246,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// The library's tests are of its own module: they opt in to what it calls experimental, and see what it keeps internal.
 		mJvmOptions = if (vShared.isEmpty()) emptyList() else kLibraryOptIns.map { "-opt-in=$it" } + vJvmOptions + "-Xmulti-platform" + "-Xfriend-paths=${K2Frontend.userClasspath().split(File.pathSeparator).first()}"
 		try {
-			// A file that leaves something to the platform (`expect`) is compiled without those lines: tests/support answers them for each side.
+			// A file that leaves something to the platform (`expect`) is compiled without those lines: tests/kotlin/support answers them for each side.
 			val vText = inSource.readText()
-			val vSource = if (vShared.isEmpty() || !kExpect.containsMatchIn(vText)) inSource else File("build/testmain/${inSource.name}").apply { writeText(vText.replace(kExpect, "// (answered in tests/support)")) }
+			val vSource = if (vShared.isEmpty() || !kExpect.containsMatchIn(vText)) inSource else File("build/testmain/${inSource.name}").apply { writeText(vText.replace(kExpect, "// (answered in tests/kotlin/support)")) }
 			verify("tests/${inSource.name}", listOf(vSource, vMain) + vWith + vShared, vOutDir, null)
 		} finally {
 			mJvmExtra = emptyList()
@@ -254,7 +276,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "helpers" && "pending" !in it.invariantSeparatorsPath.split('/') }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> named(vSource.invariantSeparatorsPath) { checkBox(vSource) } }
+			.map { vSource -> named(vSource.invariantSeparatorsPath, "box") { checkBox(vSource) } }
 			.toList()
 
 	private fun checkBox(inSource: File) {
@@ -289,27 +311,27 @@ abstract class IntegrationPart(private val mShard: Int) {
 	// ==================
 
 	/**
-	 * The tests of a library that is a bundled module, under `tests/<module>/<library>/` as its repository has them
+	 * The tests of a library that is a bundled module, under `tests/libraries/<module>/<library>/` as its repository has them
 	 * at the version the module compiles: `commonTest/` and `concurrentTest/` (common to the JVM and Native), and the
 	 * helpers of each platform (`nativeTest/`, `jvmTest/`). Each file of tests is a program, compiled with the other
 	 * files of those two (their tests not run): in C with the module's sources and `nativeTest`, on the
 	 * JVM with the library's jars, which it sees the internals of as a test of the library does, and `jvmTest`.
 	 * [kModuleTests] names the modules that have such tests.
 	 */
-	/** The bundled modules whose library's own tests are under `tests/<module>/`. */
+	/** The bundled modules whose library's own tests are under `tests/libraries/<module>/`. */
 	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io")
 
 	/** The source sets of a module's tests that are common: run in C and on the JVM. */
 	private val kCommonTestSets = Regex("/(commonTest|concurrentTest)/")
 
 	private fun moduleTestList(): List<DynamicTest> =
-		kModuleTests.asSequence().flatMap { File("tests/$it").walkTopDown() }
+		kModuleTests.asSequence().flatMap { File("tests/libraries/$it").walkTopDown() }
 			.filter { it.isFile && it.extension == "kt" && kCommonTestSets.containsMatchIn(it.invariantSeparatorsPath) && "@Test" in it.readText() }
 			// `<Name>.pending` next to a file of a library's tests: it does not pass yet, for the reason written in it.
 			.filter { !File(it.parentFile, it.nameWithoutExtension + ".pending").isFile }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> named(vSource.invariantSeparatorsPath) { checkModuleTest(vSource) } }
+			.map { vSource -> named(vSource.invariantSeparatorsPath, "libraries") { checkModuleTest(vSource) } }
 			.toList()
 
 	/** The bundled module [inName] as the build carries it, then the bundled modules it depends on, each once. */
@@ -371,7 +393,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		System.setProperty("ktc2.moduleOptIn", vModules.flatMap { it.optIn }.distinct().joinToString("\n"))
 		mJvmOptions = mJvmOptions + vModules.first().optIn.map { "-opt-in=$it" }
 		try {
-			verify("tests/$vModuleName/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
+			verify("tests/libraries/$vModuleName/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
 		} finally {
 			mCExtra = emptyList()
 			mJvmExtra = emptyList()
@@ -388,14 +410,15 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/**
 	 * Programs of several files and modules: each directory named here has a module file, and is
 	 * compiled as `ktc2 <directory>` compiles it. They are plain Kotlin, so they are compared with
-	 * the JVM like the single files.
+	 * the JVM like the single files. The examples (`examples/`) are not here: they are programs for a
+	 * desktop, built and run by hand.
 	 */
-	private val kProjects = listOf("examples/showcase/core", "integration/modules/kotlinx-io", "integration/modules/kotlinx-serialization", "integration/modules/kotlinx-datetime", "integration/modules/private-names")
+	private val kProjects = listOf("integration/modules/kotlinx-io", "integration/modules/kotlinx-serialization", "integration/modules/kotlinx-datetime", "integration/modules/private-names")
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects
 			.filter { vPath -> selected(File("projects/$vPath")) }
-			.map { vPath -> named("projects/$vPath") { checkProject(File(vPath)) } }
+			.map { vPath -> named("projects/$vPath", "integration") { checkProject(File(vPath)) } }
 
 	private fun checkProject(inDirectory: File) {
 		val vName = "project-" + inDirectory.name
@@ -531,7 +554,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 		val vExpected = if (inExpected != null) {
 			inExpected.readText().replace("\r\n", "\n")
-		} else if ("jvm" !in kSteps) {
+		} else if ("jvm" !in kSteps || mCategory in kNoJvm) {
 			null
 		} else {
 			val vJvmDir = File(vOutDir, "jvm")
@@ -545,7 +568,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 		if ("c" !in kSteps) {
 			// What the program has to print, for a job that builds it with another compiler (tools/msvc_all.sh).
-			vExpected?.let { File(vOutDir, "program.out").writeText(kotlinNames(it)) }
+			// A file of tests not compared with the JVM checks itself: that job only needs it to end well.
+			if (vExpected != null) File(vOutDir, "program.out").writeText(kotlinNames(vExpected))
+			else if (mHasTestFunctions) File(vOutDir, "self-checking").writeText("")
 			return
 		}
 		val vExe = File(vOutDir, "program.exe")

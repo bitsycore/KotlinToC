@@ -7,7 +7,8 @@
 # Needs `cl` on the path: a "Developer Command Prompt", or after vcvars64.bat, as in
 #   cmd //c "call \"<Visual Studio>/VC/Auxiliary/Build/vcvars64.bat\" && bash tools/msvc_all.sh"
 # Where the programs are not there, only their C (a CI job given what the suite's job generated),
-# what each printed is in its program.out, written by the suite. KTC2_SHARD=i/n takes the i-th
+# what each printed is in its program.out, written by the suite; a file of tests the suite did not
+# compare with the JVM (`self-checking`) has to end well, its own assertions deciding. KTC2_SHARD=i/n takes the i-th
 # of n shares of the programs (from 0), for several machines at once.
 cd "$(dirname "$0")/.." || exit 1
 command -v cl > /dev/null || { echo "cl is not on the path"; exit 1; }
@@ -23,7 +24,7 @@ for vDir in build/integration/*/; do
 	case "$vName" in *"$1"*) ;; *) continue ;; esac
 	vIndex=$((${vIndex:--1} + 1))
 	if [ -n "$KTC2_SHARD" ] && [ $((vIndex % ${KTC2_SHARD#*/})) -ne "${KTC2_SHARD%/*}" ]; then continue; fi
-	if [ ! -f "$vDir/c/ktc2_all.c" ] || { [ ! -f "$vDir/program.exe" ] && [ ! -f "$vDir/program.out" ]; }; then
+	if [ ! -f "$vDir/c/ktc2_all.c" ] || { [ ! -f "$vDir/program.exe" ] && [ ! -f "$vDir/program.out" ] && [ ! -f "$vDir/self-checking" ]; }; then
 		# Said, not passed over in silence: a run that compares nothing must not look like one that found nothing.
 		vSkipped=$((vSkipped + 1)); [ "$vSkipped" -le 3 ] && echo "skipped $vName: $(ls "$vDir" | tr '
 ' ' ')"
@@ -35,7 +36,7 @@ for vDir in build/integration/*/; do
 	vNames="$vNames $vName"
 	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated.
 	vLeaks="ktc2: leak\|ktc2: .*freed"
-	for vMarker in "$vDir/cycles-allowed" tests/*/"${vName#test-}.cycles"; do [ -f "$vMarker" ] && vLeaks="ktc2: .*freed"; done
+	for vMarker in "$vDir/cycles-allowed" tests/kotlin/"${vName#test-}.cycles" tests/common/"${vName#test-}.cycles"; do [ -f "$vMarker" ] && vLeaks="ktc2: .*freed"; done
 	# The standard input of the test, when it has one.
 	vInput=
 	for vFile in integration/*/"$vName.in"; do [ -f "$vFile" ] && vInput=$vFile; done
@@ -47,15 +48,20 @@ for vDir in build/integration/*/; do
 		vFailed=$((vFailed + 1)); echo "== $vName: does not compile"; grep -m 6 "error" "$vDir/msvc.log" | cut -c1-240
 		continue
 	fi
+	vSelfChecking=
 	if [ -f "$vDir/program.exe" ]; then
 		"$vDir/program.exe" < "${vInput:-/dev/null}" > "$vDir/gcc.out" 2> "$vDir/gcc.err"; vExpected=$?
+	elif [ ! -f "$vDir/program.out" ]; then
+		vSelfChecking=1; vExpected=0
 	else
 		# The suite's run of the program ended with 0, or the suite failed.
 		cp "$vDir/program.out" "$vDir/gcc.out"; vExpected=0
 	fi
 	"$vDir/msvc.exe" < "${vInput:-/dev/null}" > "$vDir/msvc.out" 2> "$vDir/msvc.err"; vActual=$?
+	# Nothing to compare with: what it prints is its own, and only how it ends is checked.
+	[ -n "$vSelfChecking" ] && cp "$vDir/msvc.out" "$vDir/gcc.out"
 	# The lines a file of tests says differ on every run (`<Name>.vary`: a time, an address) are not compared.
-	for vVary in tests/*/"${vName#test-}.vary"; do
+	for vVary in tests/kotlin/"${vName#test-}.vary" tests/common/"${vName#test-}.vary"; do
 		[ -f "$vVary" ] || continue
 		while IFS= read -r vPrefix || [ -n "$vPrefix" ]; do
 			vPrefix=${vPrefix%$'\r'}
@@ -70,6 +76,7 @@ for vDir in build/integration/*/; do
 	if [ "$vExpected" != "$vActual" ] || ! cmp -s "$vDir/gcc.out" "$vDir/msvc.out" || grep -q "$vLeaks" "$vDir/msvc.err"; then
 		vFailed=$((vFailed + 1)); echo "== $vName: exit $vActual (gcc: $vExpected)"
 		diff "$vDir/gcc.out" "$vDir/msvc.out" | head -6 | cut -c1-240
+		grep -m 6 "^FAILED" "$vDir/msvc.out" | cut -c1-240
 		grep -m 4 "ktc2:" "$vDir/msvc.err" | grep -v "ktc2: arc" | cut -c1-240
 	fi
 done

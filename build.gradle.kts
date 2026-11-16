@@ -204,15 +204,15 @@ tasks.test {
 	fun total(): Int = File(vResults, "count.total.txt").takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull()
 		?: vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.sumOf { it.readText().trim().toIntOrNull() ?: 0 } ?: 0
 	// What kind of test a program is, from its name: shown on its line, and counted apart in the summary.
-	val kKinds = listOf("box" to "box test", "library" to "library test", "common" to "common test", "project" to "project", "integration" to "integration test")
+	// The categories of IntegrationTest (KTC2_TEST_CATEGORIES), in the order the summary shows them.
+	val kKinds = listOf("integration" to "integration tests", "kotlin" to "Kotlin tests", "box" to "box tests", "libraries" to "library tests")
 	fun kindOf(inName: String): String = when {
 		inName.startsWith("tests/box/") -> "box"
-		inName.startsWith("tests/kotlinx-") || inName.startsWith("tests/atomicfu/") -> "library"
-		inName.startsWith("tests/") -> "common"
-		inName.startsWith("projects/") -> "project"
+		inName.startsWith("tests/libraries/") -> "libraries"
+		inName.startsWith("tests/") -> "kotlin"
 		else -> "integration"
 	}
-	val vKindColors = mapOf("box" to "35", "library" to "36", "common" to "34", "project" to "33", "integration" to "37")
+	val vKindColors = mapOf("box" to "35", "libraries" to "36", "kotlin" to "34", "integration" to "37")
 	val vByKind = ConcurrentHashMap<String, IntArray>()
 	// The steps of a program, each program's on its line and their totals in the summary (IntegrationTest.stepsFile):
 	// the Kotlin front end, ktc2's translation of its IR to C, the C compiler and linker, and the run of the program.
@@ -236,7 +236,7 @@ tasks.test {
 			println(if (inResult.failedTestCount == 0L) paint("1;32", "✅ $vLine") else paint("1;31", "❌ $vLine"))
 			for ((vKind, vLabel) in kKinds) {
 				val vCounts = vByKind[vKind] ?: continue
-				val vText = "   ${vLabel}s".padEnd(22) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
+				val vText = "   $vLabel".padEnd(22) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
 				println(if (vCounts[1] > 0) paint("31", vText) else paint(vKindColors.getValue(vKind), vText))
 			}
 			// Where the time went, added up over the programs (several run at once: more than the run's own time).
