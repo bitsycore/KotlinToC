@@ -279,3 +279,8 @@ a private property read on another instance of a class below its own (`generics/
 
 On Kotlin/Native 2.4.21 some of these files do not compile ("name based destructuring is only
 available since language version 2.5"): they need the compiler of their own version.
+
+A file of a library's own tests (`tests/<module>/`) that does not pass yet is kept out of the
+suite by a `<Name>.pending` next to it, which says why; moved files would no longer be where
+the library has them. `tests/kotlinx-serialization-json-io/.../JsonUpdateModeTest.pending` is
+the first (2026-11-16: it loops in C).

@@ -20,6 +20,29 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
+**On 2026-11-16** (on the Mac): the last push of 2026-11-15 (`6867a48`) was red on all five
+CI jobs, and fixed that day: `399cab7` paired the parameters of a dispatcher that builds its
+result in the caller's room wrongly when it left out the implementations that cannot take
+its values, so those that build in place were left out too (`AbstractMethodError: …__into`,
+some twelve programs on every system); the bindings of `platform.posix` on macOS lacked
+`SEEK_SET` and `SEEK_END` (kotlinx-datetime's `tzfile` part); the program of the
+kotlinx-serialization module leaves the decided cycle of its cached generic serializers, which
+a project can now say (`program.cycles`); and MSVC compiled the runtime in one file with a C
+library's header that declares a part of `<windows.h>` (`WideStrings`, kotlinx-datetime on
+Windows). The whole suite on the Mac, which the CI job does not do (it leaves out the
+libraries' own tests), then found: a safe call whose block gives `Unit` (`x?.let { f() } ?:
+fail()`) gave null (kotlinx-datetime's `orNull` tests); `e.printStackTrace()` on a class that
+extends an exception was refused (the member the JVM's `Throwable` has: `Exception` and
+`Error` have it now, and it writes to the standard error, as on the JVM and Kotlin/Native); a
+`@Serializable` class declared in a function had no serializer to be found (associated
+objects are collected from function bodies too), and two classes inside local classes of one
+name had one C name; and a program's time limit never applied (the output was read to its end
+first), so `JsonUpdateModeTest`, which loops in C, held the suite for half an hour. Of the
+kotlinx-serialization JSON tests (152 files), 19 more have a `.cycles` for the decided cycle
+of the cached serializers, two functions are in a `.skip`, and `JsonUpdateModeTest` waits in a
+`.pending` (the new kind of file: a library's test that does not pass yet, with the reason).
+The suite on the Mac: about 1030 tests, some 50 minutes.
+
 **State.** Everything is on `master`. The suite is 881 tests (2026-11-15, passing on Windows
 and Linux in WSL; the CI job is looked at once a day): 164 programs under `integration/`
 (compared with the JVM or an `.expected` file, or that must be refused), the own tests of the
@@ -51,7 +74,9 @@ Linux (the CI job's last step, `tools/asan_all.sh`).
   from the Windows checkout, whose `build/` it shares, so never at the same time as a run on
   Windows). `.gitattributes` keeps the shell scripts with Unix line ends for that;
 - MSVC is in the job since 2026-11-13: on Windows, after the suite, `tools/msvc_all.sh`
-  compiles the one C file of every program (`ktc2_all.c`) with MSVC and compares what it
+  compiles the one C file of every program (`ktc2_all.c`, with the runtime `ktc2_core.c`
+  beside it: since 2026-11-16 the runtime is not in that file, because a C library's own small
+  header may declare a part of `<windows.h>` that the runtime includes) with MSVC and compares what it
   prints with gcc's build. Run by hand that day: 166 of 168 programs the same, the two others
   left out with their reason in `tools/msvc_known.txt` (the last digit of `pow` in MSVC's C
   library, and a test whose own C uses a gcc attribute).
@@ -197,7 +222,7 @@ differ, either is right):
   the last digit.
 
 **How the owner works.** They follow a run of the suite in a terminal (`./gradlew test
---rerun`, a line per program with `KTC2_TEST_VERBOSE=1`). Never two runs of the suite at
+--rerun`, a line per program with its progress). Never two runs of the suite at
 once: they share `build/integration`. A targeted run (`KTC2_TEST_FILTER`) after each change
 and the whole suite after two or three, the whole suite before a commit that touches a pass.
 They push to `master` directly, from several machines: pull first. Commits are by
@@ -671,19 +696,21 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. `interop/Posix` on Linux, so that the CI job is green and its AddressSanitizer step runs
-   ("Where the work stands").
-2. What the files of `tests/pending/` and the `.skip` files wait for (`tests/README.md`):
-   `buildList` and the others read-only once built, `KClass.cast`, `CodePoint`, then more
-   of the library's tests (`libraries/stdlib/jvm/test` where it is not about the JDK).
-3. Another program of ordinary code compared with the JVM, on what was not looked at yet.
-4. The differences `DESIGN.md` still lists in section 12 (paths on Windows, the last digit of
-   `exp` and the like).
-5. `suspend` functions in full, which `sequence { }` and `iterator { }` wait for (part 8).
-6. Unit tests of the passes; files through kotlinx.io or okio (part 8).
-7. Speed, last: `Double` as text without `snprintf`, `sortedBy` without boxing its keys, an
-   object that never leaves its function as plain locals (parts 2 and 6); a program of small
-   loops over what ordinary code does, timed, as an eighth benchmark.
+1. The CI job green on all five jobs after each push (it went red on 2026-11-15 with `399cab7`:
+   see "Where the work stands").
+2. Align with the owner's rule of 2026-11-15, Kotlin/Native where it and the JVM differ: the
+   support of the library's tests answers `TestPlatform.current` as `Jvm`
+   (`tests/support/ktc2/`), and `StringNativeTest.skip`, `UnsignedArraysNativeTest.skip` are
+   where ktc2 sided with the JVM; each is looked at again, ktc2 following Kotlin/Native.
+3. The decisions waiting in "Known and not done": whether `--debug` turns `assert()` on; how a
+   program breaks the cycle of an object that holds an object of its own `inner` class.
+4. The benchmarks against Kotlin/Native and the JVM ("Benchmarks against Kotlin/Native and the
+   JVM: the plan"), about three days, nothing of ktc2 itself changed.
+5. More tests taken as they are: what is left of `kotlin-native/runtime/test`, the box tests
+   of the Kotlin compiler beyond the coroutines'.
+6. Unit tests of the passes (part 8).
+7. Speed: `Double` as text without `snprintf`, `sortedBy` without boxing its keys, an object
+   that never leaves its function as plain locals (parts 2 and 6).
 
 ---------------------------------------------------------------------------
 ## Measuring

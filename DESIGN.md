@@ -878,8 +878,9 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   is at most four lines of C and needs nothing but what that header declares (`inHeader`):
   it prints the body once to find out. A body that would need another unit's header, a
   string or a type id stays in the C file. The names a C file keeps to itself (`lit_3_0`,
-  `is_3_0`) carry the number of the unit, so that `ktc2_all.c`, which includes every C file,
-  compiles.
+  `is_3_0`) carry the number of the unit, so that `ktc2_all.c`, which includes every C file
+  but the runtime (compiled beside it: it includes the system's headers, which a C library's
+  own header may partly declare again), compiles.
 - `kotlin.Number` is an abstract class without a class here: the boxed numbers extend it and
   have none. The importer treats it as an interface (`isNumberClass`): a class of the program
   that extends it implements it; a call on a `Number` goes through a dispatcher whose default,
