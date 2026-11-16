@@ -1,0 +1,15 @@
+get out: ArrayIndexOutOfBoundsException: null
+get -1: ArrayIndexOutOfBoundsException: null
+is MutableList: false
+cast and add: refused
+contents: [1, 2]
+one get out: IndexOutOfBoundsException: index: 3, size: 1
+one is MutableList: true
+asList get out: ArrayIndexOutOfBoundsException: null
+mutableListOf get out: IndexOutOfBoundsException: index: 4, size: 2
+emptyList get: IndexOutOfBoundsException: Empty list doesn't contain element at index 0.
+subList out: IndexOutOfBoundsException: fromIndex: 0, toIndex: 3, size: 2
+toList get out: IndexOutOfBoundsException: index: 7, size: 3
+first of empty: NoSuchElementException: List is empty.
+string get out: ArrayIndexOutOfBoundsException: null
+array get out: ArrayIndexOutOfBoundsException: null

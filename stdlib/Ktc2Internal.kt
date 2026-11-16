@@ -380,12 +380,11 @@ private class WindowIterator<T>(
 	}
 }
 
-/** `Array<out T>.asList()` */
-public fun <T> kotlin_collections_asList(array: Array<out T>): List<T> {
-	val vList = ArrayList<T>(array.size)
-	for (vElement in array) vList.add(vElement)
-	return vList
-}
+/**
+ * `listOf(a, b...)`, which is `elements.asList()`: a read-only view of the array of its elements, as on
+ * Kotlin/Native (no MutableList; an index outside it is the array's error), of one class the passes know.
+ */
+public fun <T> kotlin_collections_asList(array: Array<out T>): List<T> = ArrayAsList(array)
 
 /** `Array<out T>.toSet()` */
 public fun <T> kotlin_collections_toSet(array: Array<out T>): Set<T> {

@@ -35,11 +35,26 @@ private fun checkCopy(startIndex: Int, endIndex: Int, size: Int, destinationOffs
 // MARK: Array<T>
 // ==================
 
-/** A list that is a view of an array: it reads the array's elements, as `asList` promises. */
-private class ArrayAsList<T>(private val mArray: Array<out T>) : AbstractList<T>(), RandomAccess {
+/** What `asList()` and `listOf(a, b...)` give: a read-only view of the array, which reads its elements. */
+internal class ArrayAsList<T>(private val mArray: Array<out T>) : AbstractList<T>(), RandomAccess {
 	override val size: Int get() = mArray.size
 
 	override fun get(index: Int): T = mArray[index]
+
+	/** Its own, so that a loop over the list is seen to be over the array (`ListLoops`). */
+	override fun iterator(): Iterator<T> = ArrayAsListIterator(mArray)
+}
+
+/** The iterator of [ArrayAsList]: the elements of the array in order. */
+private class ArrayAsListIterator<T>(private val mArray: Array<out T>) : Iterator<T> {
+	private var mIndex = 0
+
+	override fun hasNext(): Boolean = mIndex < mArray.size
+
+	override fun next(): T {
+		if (mIndex >= mArray.size) throw NoSuchElementException()
+		return mArray[mIndex++]
+	}
 }
 
 public actual fun <T> Array<out T>.elementAt(index: Int): T = get(index)

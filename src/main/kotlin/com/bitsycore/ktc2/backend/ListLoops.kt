@@ -53,8 +53,13 @@ import com.bitsycore.ktc2.kir.*
  * which is `HashMapCursor` written out. For the entries, the entry object is not made: the
  * loop must only ask it for its key and its value (`component1`, `component2`, `key`, `value`).
  *
+ * The read-only view of an array that `asList()` and `listOf(a, b...)` give (`ArrayAsList`) gets the
+ * same, simpler: it never changes, so there is no count of changes to compare, and its size is the
+ * length of its array.
+ *
  * And `list[i]`, `list[i] = x` and `list.size` on a list known to be an `ArrayList`, wherever
- * they are, are written out as what `get`, `set` and `size` do:
+ * they are, are written out as what `get`, `set` and `size` do (`get` and `size` of the view of an
+ * array as a read of the array, whose error is the view's):
  *
  * ```
  * if ((i < 0) | (i >= l.length)) checkIndex(l, i)         // throws
@@ -74,8 +79,16 @@ class ListLoops(private val mModule: KModule) {
 
 	private var mNext = 0
 
-	/** What the loop needs of a list class. */
-	private class ListClass(val cls: KClass, val length: KField, val changes: KField, val array: KField, val check: KFunction, val checkIndex: KFunction?)
+	/**
+	 * What the loop needs of a list class. For the view of an array, [length], [changes] and [check] are
+	 * null: its size is the length of [array], which does not change.
+	 */
+	private class ListClass(val cls: KClass, val length: KField?, val changes: KField?, val array: KField, val check: KFunction?, val checkIndex: KFunction?) {
+		val isView: Boolean get() = length == null
+
+		/** The size of the list [inList]. */
+		fun size(inList: KExpr): KExpr = if (length != null) KFieldRead(inList, length) else KIntrinsic("ktc2_array_length", listOf(KFieldRead(inList, array)), kInt)
+	}
 
 	private val mClasses = HashMap<KFunction, ListClass?>()
 
@@ -113,6 +126,10 @@ class ListLoops(private val mModule: KModule) {
 	private fun listClass(inClass: KClass): ListClass? = mListClasses.getOrPut(inClass) {
 		val vClass = inClass
 		val vName = vClass.cName
+		if (vName == "kotlin_collections_ArrayAsList" || vName.startsWith("kotlin_collections_ArrayAsList__")) {
+			val vArray = vClass.fields.singleOrNull { it.type is KArrayType && !it.isInline } ?: return@getOrPut null
+			return@getOrPut ListClass(vClass, null, null, vArray, null, null)
+		}
 		if (vName != "kotlin_collections_ArrayList" && !vName.startsWith("kotlin_collections_ArrayList__")) return@getOrPut null
 		fun field(inName: String): KField? = vClass.fields.firstOrNull { it.cName == inName }
 		val vLength = field("length")?.takeIf { it.type == kInt } ?: return@getOrPut null
@@ -149,7 +166,13 @@ class ListLoops(private val mModule: KModule) {
 		val vListType = KClassType(vList.cls)
 		if (vName == "__get_size_" && vCall.arguments.size == 1 && vFunction.returnType == kInt) {
 			accesses++
-			return listOf(withValue(inStatement, inPlace(vGiven, KFieldRead(vCall.arguments[0], vList.length)))!!)
+			return listOf(withValue(inStatement, inPlace(vGiven, vList.size(vCall.arguments[0])))!!)
+		}
+		if (vList.isView) {
+			// `get` of the view of an array is the array's own read, checked by it: its error is the view's.
+			if (vName != "_get" || vCall.arguments.size != 2 || vFunction.returnType != vElement || vFunction.params[1].type != kInt) return null
+			accesses++
+			return listOf(withValue(inStatement, inPlace(vGiven, KIndexRead(KFieldRead(vCall.arguments[0], vList.array), vCall.arguments[1], vElement)))!!)
 		}
 		val vCheckIndex = vList.checkIndex ?: return null
 		val vIsGet = vName == "_get" && vCall.arguments.size == 2 && vFunction.returnType == vElement
@@ -162,7 +185,7 @@ class ListLoops(private val mModule: KModule) {
 			KBinary(
 				KBinaryOp.OR,
 				KBinary(KBinaryOp.LT, vAt(), KConst(0, kInt), KPrim.INT, kBool),
-				KBinary(KBinaryOp.GE, vAt(), KFieldRead(vHeld(), vList.length), KPrim.INT, kBool),
+				KBinary(KBinaryOp.GE, vAt(), vList.size(vHeld()), KPrim.INT, kBool),
 				KPrim.BOOLEAN, kBool,
 			),
 			listOf(KEval(KCall(vCheckIndex, listOf(vHeld(), vAt())))),
@@ -252,13 +275,19 @@ class ListLoops(private val mModule: KModule) {
 		// The element, where the call to `next` was: under the same casts.
 		val vRead = KIndexRead(KFieldRead(list(), vList.array), KRead(vAt), vElement).also { it.isChecked = true }
 		fun inPlace(inValue: KExpr): KExpr = if (inValue is KRefCast) KRefCast(inPlace(inValue.operand), inValue.type) else vRead
-		val vBody = listOf(
-			KIf(KBinary(KBinaryOp.GE, KRead(vAt), KFieldRead(list(), vList.length), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
+		// The view of an array does not change: nothing to compare with what was seen.
+		val vChanges = vList.changes
+		val vCheck = vList.check
+		val vWatch = if (vChanges != null && vCheck != null) listOf(
 			KIf(
-				KBinary(KBinaryOp.NE, KFieldRead(list(), vList.changes), KRead(vSeen), KPrim.INT, kBool),
-				listOf(KEval(KCall(vList.check, listOf(list(), KRead(vSeen))))),
+				KBinary(KBinaryOp.NE, KFieldRead(list(), vChanges), KRead(vSeen), KPrim.INT, kBool),
+				listOf(KEval(KCall(vCheck, listOf(list(), KRead(vSeen))))),
 				emptyList(),
 			),
+		) else emptyList()
+		val vBody = listOf<KStmt>(
+			KIf(KBinary(KBinaryOp.GE, KRead(vAt), vList.size(list()), KPrim.INT, kBool), listOf(KBreak(inLoop.id)), emptyList()),
+		) + vWatch + listOf(
 			KLet(vTake.local, inPlace(vTake.init!!)),
 			KSet(vAt, KBinary(KBinaryOp.ADD, KRead(vAt), KConst(1, kInt), KPrim.INT, kInt)),
 		) + inLoop.body.drop(3)
@@ -266,7 +295,7 @@ class ListLoops(private val mModule: KModule) {
 		return listOf(
 			KLet(vHeld, if (vGiven.type == vHeld.type) vGiven else KRefCast(vGiven, vHeld.type)),
 			KLet(vAt, KConst(0, kInt)),
-			KLet(vSeen, KFieldRead(list(), vList.changes)),
+		) + (if (vChanges != null) listOf(KLet(vSeen, KFieldRead(list(), vChanges))) else emptyList()) + listOf(
 			KLoop(inLoop.id, vBody, inLoop.latch),
 		)
 	}
