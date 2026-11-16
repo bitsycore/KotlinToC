@@ -20,6 +20,15 @@ For whoever picks this up next, on any machine. `CLAUDE.md` says how to build an
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
 not say. Start with `git pull`, then `./gradlew test --rerun`.
 
+**Last, on 2026-11-16 (end of the day, on the Mac)**: pushed without the whole suite having run
+on the last changes. The whole suite (1037) was green with the alignment on Kotlin/Native's
+messages, iteration, templates and comparisons and with Native's `NumberConverter`; after it
+came Native's Unicode code and tables, the fragment levels of `K2Frontend` that compile them,
+the C names of private declarations of one name in two files (`integration/modules/private-names`),
+and the times of each step in the test log: those were checked on the integration programs,
+the projects and the tests of characters, strings, numbers and regex (190, green), not on the
+libraries' tests or the box tests. The CI job of that push is the first whole run: read it first.
+
 **On 2026-11-16** (on the Mac): the last push of 2026-11-15 (`6867a48`) was red on all five
 CI jobs, and fixed that day: `399cab7` paired the parameters of a dispatcher that builds its
 result in the caller's room wrongly when it left out the implementations that cannot take
@@ -110,6 +119,18 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   `ConcurrentModificationException` once a key was added or removed, a back reference to a group
   not opened yet is an error, an object expression's `simpleName` is null. A test of Kotlin/Native's
   own runtime says so with `<Name>.native`: the JVM is not its reference where the two differ;
+  aligned on 2026-11-16 from `tools/native.sh` (checked against the sources of Kotlin/Native
+  2.5.0-RC): an index outside an array or a string, `substring` out of range, a division by zero
+  and `toInt()` of no number throw without a message (a string's index error is
+  `ArrayIndexOutOfBoundsException`); a list says `index: 3, size: 3` and a range
+  `fromIndex: .., toIndex: .., size: ..`; `toDouble()` of no number has the text as message;
+  `ArrayList` and `HashMap` notice changes while they are gone over as Native's do (`hasNext` is
+  `index < size`, `clear()` of an empty list and a sort are no change, a key added after the last
+  entry is noticed, a `clear` ends the loop); a template turns each object into text as it reaches
+  it; `String.compareTo` (also ignoring case) and a boxed `Char`, `Short`, `Byte` compared answer
+  -1, 0 or 1. Programs that print those have Native's output as `.expected` (ListAccess,
+  ListIndexMessages, StringRanges, ConcurrentModification, ListLoops, MapLoops, SortInPlace,
+  OrdinaryCollections, OrdinaryStrings, objects/Templates); the others print what both agree on;
 - (2026-11-15) the serializers of generic classes (which refer to their descriptors and back)
   are kept in a cache by class and arguments, in ktc2's part of the kotlinx-serialization
   module, rather than freed through a weak reference that would change what a descriptor
@@ -702,10 +723,18 @@ Open:
 
 1. The CI job green on all five jobs after each push (it went red on 2026-11-15 with `399cab7`:
    see "Where the work stands").
-2. More of the owner's rule of 2026-11-15: the integration programs are compared with the JVM,
-   so what they print where the JVM and Native differ is the JVM's; `tools/native.sh` lists those
-   programs (the text of exceptions, `Float` as text, the order of a template's parts...), each to
-   be made to print the same on both or to follow Native.
+2. What is left of the owner's rule of 2026-11-15 after 2026-11-16 (`tools/native.sh`). Done that
+   day: `Float` and `Double` as text are Kotlin/Native's own code (`NumberConverter`, Harmony's
+   algorithm: `1.5E10f` is `1.5000001E10`; the same as Native on 400 000 values checked, and ten
+   times faster than the C formatter for ordinary values), and so are the classification and case
+   of characters with Native's Unicode tables (`commonNonJvmMain`, `nativeWasmMain`, from the
+   sources jar of `kotlin-stdlib-wasm-js`, which holds what Native shares with Wasm: DESIGN.md).
+   Left: `Regex` (Native's is Harmony's port, in the same jar: no `(?U)`, other classes; ktc2's own
+   engine still uses `Ktc2Unicode.kt`, the JDK's tables, for its classes); `listOf(a, b)` is an `ArrayList` here (its index error has a
+   message, Native's array view has none). Not to follow: `readLine()` after `readln()` on Native
+   finds nothing (one reads stdin directly, the other through `stdio`'s buffer), a stack trace's
+   frames. A use of `ArrayIndexOutOfBoundsException` or `StringIndexOutOfBoundsException` by name
+   is an error on Native (deprecated since 2.1); here it compiles.
 3. Pair cycles in a program with threads (part 3): the check reads two counts that another
    thread could be changing; atomic loads and a second look after clearing the link would do.
 4. The benchmarks against Kotlin/Native and the JVM ("Benchmarks against Kotlin/Native and the
