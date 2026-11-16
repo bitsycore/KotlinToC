@@ -862,9 +862,15 @@ class CEmitter(private val mModule: KModule) {
 						(vToType is KClassType && vFromType.struct.box?.let { vToType.cls.isSubclassOf(it) || it.isSubclassOf(vToType.cls) } == false)
 					else -> false
 				}
-			fun takes(inTarget: KFunction): Boolean =
-				inFunction.params.zip(inTarget.params).drop(1).none { (vFrom, vTo) -> incompatible(vFrom.type, vTo.type) } &&
+			fun takes(inTarget: KFunction): Boolean {
+				// Paired as `call` pairs them: in a dispatcher that hands a room, the room is its last parameter and the
+				// first of an implementation that builds in it (`__into`), and is no value of the program.
+				val vBuilds = inFunction.slotClasses?.get(inTarget) != null
+				val vOwn = if (inFunction.slotClasses != null) inFunction.params.dropLast(1) else inFunction.params
+				val vTheirs = if (vBuilds) inTarget.params.drop(1) else inTarget.params
+				return vOwn.zip(vTheirs).drop(1).none { (vFrom, vTo) -> incompatible(vFrom.type, vTo.type) } &&
 					!incompatible(inFunction.returnType, inTarget.returnType) && !incompatible(inTarget.returnType, inFunction.returnType)
+			}
 			for ((vClass, vTarget) in inFunction.dispatch!!) {
 				if (!takes(vTarget)) continue
 				mState.includes += vClass.unit
