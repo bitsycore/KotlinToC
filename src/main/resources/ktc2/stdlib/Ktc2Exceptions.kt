@@ -12,6 +12,15 @@ public actual open class Error : Throwable {
 	public actual constructor(message: String?) : super(message)
 	public actual constructor(message: String?, cause: Throwable?) : super(message, cause)
 	public actual constructor(cause: Throwable?) : super(cause)
+
+	/*
+	A member, as the JVM's Throwable has it: a program compiled for the JVM calls that member on its own exceptions,
+	which have no other to be found by. It does what the library's extension does.
+	*/
+	@Suppress("ACCIDENTAL_OVERRIDE", "NOTHING_TO_OVERRIDE")
+	public override fun printStackTrace() {
+		ktc2.internal.throwablePrintStackTrace(this)
+	}
 }
 
 public actual open class Exception : Throwable {
@@ -19,6 +28,15 @@ public actual open class Exception : Throwable {
 	public actual constructor(message: String?) : super(message)
 	public actual constructor(message: String?, cause: Throwable?) : super(message, cause)
 	public actual constructor(cause: Throwable?) : super(cause)
+
+	/*
+	A member, as the JVM's Throwable has it: a program compiled for the JVM calls that member on its own exceptions,
+	which have no other to be found by. It does what the library's extension does.
+	*/
+	@Suppress("ACCIDENTAL_OVERRIDE", "NOTHING_TO_OVERRIDE")
+	public override fun printStackTrace() {
+		ktc2.internal.throwablePrintStackTrace(this)
+	}
 }
 
 public actual open class RuntimeException : Exception {
@@ -136,8 +154,9 @@ private fun Throwable.describeTo(text: StringBuilder, indent: String, caption: S
 	cause?.describeTo(text, indent, "Caused by: ", seen)
 }
 
+/** As on the JVM and Kotlin/Native: what [stackTraceToString] gives, on the standard error. */
 public actual fun Throwable.printStackTrace() {
-	println(toString())
+	ktc2.internal.throwablePrintStackTrace(this)
 }
 
 public actual fun Throwable.addSuppressed(exception: Throwable) {

@@ -1366,6 +1366,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				val vDescribe = runtime("ktc2_throwable_toString", listOf(KObjType, KStringType), KStringType)
 				define("toString", KStringType, KCall(vDescribe, listOf(KRefCast(KRead(vSelf), KObjType), KFieldRead(KRead(vSelf), throwableMessageField))))
 			}
+			// The JVM's Throwable has it as a member; the library as an extension, which this calls.
+			"printStackTrace" -> internalFunction("throwablePrintStackTrace")?.let { functionFor(it) }
 			else -> anyDefault(inName)
 		}
 	}

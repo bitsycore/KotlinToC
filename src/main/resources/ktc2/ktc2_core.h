@@ -865,6 +865,9 @@ bool ktc2_classIsInstance(ktc2_Obj* object, ktc2_String* name);
 /** The Kotlin name of the class of an object: `x::class`. Owned by the caller. */
 ktc2_String* ktc2_className(ktc2_Obj* object);
 
+/** Writes a string to stderr, after flushing stdout. */
+void ktc2_printError(ktc2_String* text);
+
 /** `kotlin.Unit` as an object: what a function without a result gives where an object is asked for. */
 extern ktc2_Obj ktc2_unit_object;
 /** The companions of the built-in classes as objects: Boolean, Byte, Short, Int, Long, Char, Float, Double, String, any other. */

@@ -918,3 +918,14 @@ public fun typeProjection(variance: Int, type: Any?): Any = when (variance) {
 	2 -> kotlin.reflect.KTypeProjection.covariant(type as kotlin.reflect.KType)
 	else -> kotlin.reflect.KTypeProjection.invariant(type as kotlin.reflect.KType)
 }
+
+/** Writes [text] to the standard error, after what the standard output still holds. */
+public external fun printError(text: String)
+
+/**
+ * `printStackTrace()` of an exception: also what a call to the member the JVM's `Throwable` has
+ * (`e.printStackTrace()` on a subclass, which a program compiled for the JVM calls) is made into.
+ */
+public fun throwablePrintStackTrace(error: Throwable) {
+	printError(error.stackTraceToString())
+}

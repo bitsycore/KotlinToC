@@ -1230,6 +1230,13 @@ bool ktc2_any_equals(ktc2_Obj* a, ktc2_Obj* b)
 }
 
 ktc2_Obj ktc2_unit_object = { KTC2_IMMORTAL, KTC2_TYPE_UNIT };
+
+void ktc2_printError(ktc2_String* text)
+{
+	fflush(stdout);
+	fwrite(text->bytes, 1, (size_t)text->size, stderr);
+	fflush(stderr);
+}
 ktc2_Obj ktc2_companions[10] = {
 	{ KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION },
 	{ KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION }, { KTC2_IMMORTAL, KTC2_TYPE_COMPANION },
