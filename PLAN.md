@@ -101,11 +101,15 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   the suite where the two agree. Memory is the one difference allowed, never results: cycles
   are answered by `weak`/`acyclic` where a library's design allows it, a bounded cache, or a
   known leak written here, not by a weak reference that changes results. What ktc2 adds is in
-  `ktc2.` and changes storage and cost only. `DESIGN.md`, section 1. Still to align with it:
-  the support of the standard library's tests answers `TestPlatform.current` as `Jvm`
-  (`tests/support/ktc2/`), and the tests of Kotlin/Native's runtime where ktc2 sided with the
-  JVM are skipped (`StringNativeTest.skip`, `UnsignedArraysNativeTest.skip`): each is to be
-  looked at again, ktc2 following Kotlin/Native;
+  `ktc2.` and changes storage and cost only. `DESIGN.md`, section 1. Aligned on 2026-11-16:
+  the support of the library's tests answers as Kotlin/Native's (`TestPlatform.Native`, its
+  back-reference handling), and what that showed ktc2 doing as the JVM now does as Native: a
+  negative array size is `IllegalArgumentException`, a capital sigma at the end of a word is ς
+  by Native's rule over code points (`Ktc2Casing.kt`, with its tables), `toArray(dest)` leaves
+  `dest` as it was after the last element, a map's entry fails with
+  `ConcurrentModificationException` once a key was added or removed, a back reference to a group
+  not opened yet is an error, an object expression's `simpleName` is null. A test of Kotlin/Native's
+  own runtime says so with `<Name>.native`: the JVM is not its reference where the two differ;
 - (2026-11-15) the serializers of generic classes (which refer to their descriptors and back)
   are kept in a cache by class and arguments, in ktc2's part of the kotlinx-serialization
   module, rather than freed through a weak reference that would change what a descriptor
@@ -698,10 +702,10 @@ Open:
 
 1. The CI job green on all five jobs after each push (it went red on 2026-11-15 with `399cab7`:
    see "Where the work stands").
-2. Align with the owner's rule of 2026-11-15, Kotlin/Native where it and the JVM differ: the
-   support of the library's tests answers `TestPlatform.current` as `Jvm`
-   (`tests/support/ktc2/`), and `StringNativeTest.skip`, `UnsignedArraysNativeTest.skip` are
-   where ktc2 sided with the JVM; each is looked at again, ktc2 following Kotlin/Native.
+2. More of the owner's rule of 2026-11-15: the integration programs are compared with the JVM,
+   so what they print where the JVM and Native differ is the JVM's; `tools/native.sh` lists those
+   programs (the text of exceptions, `Float` as text, the order of a template's parts...), each to
+   be made to print the same on both or to follow Native.
 3. The decisions waiting in "Known and not done": whether `--debug` turns `assert()` on; how a
    program breaks the cycle of an object that holds an object of its own `inner` class.
 4. The benchmarks against Kotlin/Native and the JVM ("Benchmarks against Kotlin/Native and the
