@@ -7,7 +7,9 @@ package). The same file runs:
 
 - in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/`): it
   writes the `main` that calls each test (`build/testmain/`), and a test that fails on either
-  fails the suite;
+  fails the suite. The log has a line per file (its tests passed out of how many, its time and
+  the time of each step), and lists the test functions of a file only when one of them failed
+  (`KTC2_TEST_FUNCTIONS=1`: always);
 - on Kotlin/Native, by `tools/native.sh tests/` after a run of the suite, with Kotlin/Native's
   own `kotlin.test`.
 
@@ -65,8 +67,9 @@ tag that are not about one platform's own API, unchanged:
   (its `MathTest.kt` renamed, the name being taken)...). Where Kotlin/Native and the JVM differ,
   ktc2 does as Kotlin/Native (since 2026-11-16), and the file has a `<Name>.native`: its run on
   the JVM may fail those tests, and the JVM is the reference only for the others
-  (`StringNativeTest.native`, `UnsignedArraysNativeTest.native`). Not taken: `CharNativeTest`
-  (`Char.toChars` and the like, Kotlin/Native's only), `BitSetTest`, `ByteArrayTest`, the
+  (`StringNativeTest.native`, `UnsignedArraysNativeTest.native`). Not taken yet: `CharNativeTest`
+  (`Char.toChars` and the like, Kotlin/Native's only: there since 2026-11-16, `Ktc2CharNative.kt`,
+  so it can be taken now), `BitSetTest`, `ByteArrayTest`, the
   atomics, workers, `cinterop` and the other tests of Kotlin/Native's own API.
 
 ## Box tests

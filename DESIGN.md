@@ -431,10 +431,24 @@ The library is the real one, compiled from source with every program:
 - `src/main/resources/ktc2/stdlib/files.txt` lists the files of the Kotlin stdlib sources
   that are used unmodified (Gradle fetches the sources jar; the installed tool carries the
   files it needs).
+- Some of `files.txt` is what Kotlin/Native shares with Wasm, which no jar for Native or the
+  JVM holds: `commonNonJvmMain` and `nativeWasmMain`, taken from the sources jar of
+  `kotlin-stdlib-wasm-js` (Gradle unpacks those two directories beside the others, into
+  `build/stdlib-src`). They are Kotlin/Native's own code, so what they give is Native's by
+  construction: `NumberConverter` and its `dtoa` helpers (`Float` and `Double` as text), and the
+  classification and case of characters and code points with Native's generated Unicode tables
+  (`Char.kt`, `CharCategory.kt`, `UnicodeProperties.kt`, `StringCasing.kt`, `generated/_*.kt`).
+  Each has `actual`s of the common `expect`s and `expect`s of its own, so `K2Frontend` gives the
+  compiler their levels as Kotlin's build has them (`-Xfragments`): common, then
+  `commonNonJvmMain` ("nonJvm"), then `nativeWasmMain` ("nativeWasm"), then the platform layer
+  and the program (with a module's `nativeMain` as one more level between). Taking more of those
+  directories (Native's `Regex`, its collections) is a line in `files.txt` and the `actual`s
+  they leave to the platform.
 - The `Ktc2*.kt` files next to that list are the **platform layer**: what the JVM normally
-  provides (`String`, arrays, `ArrayList`, `HashMap`, `StringBuilder`, `Regex`, `Char`
-  classification, math, time, threads), written in Kotlin over a few runtime functions
-  (`ktc2.internal`, implemented in `ktc2_core.c`).
+  provides (`String`, arrays, `ArrayList`, `HashMap`, `StringBuilder`, `Regex`, math, time,
+  threads) and what Kotlin/Native's runtime adds to the shared code (`Ktc2CharNative.kt`,
+  `Ktc2NumberText.kt`), written in Kotlin over a few runtime functions (`ktc2.internal`,
+  implemented in `ktc2_core.c`).
 - The stdlib jar is still on the compiler's class path, for what is not compiled from source.
   Two mechanisms keep it from getting in the way. Where a file of `files.txt` is compiled from
   source, the jar's class holding the same top-level declarations is hidden automatically, and
@@ -460,8 +474,17 @@ An `ArrayList` is sorted in its own storage (a stable merge sort that does nothi
 already in order); `subList` is a view of its list (`ListPart`), as on the JVM. A `Regex`
 that starts with a character, exactly, only tries to match where that character is.
 
-What is there: collections and sequences (`sequence { }` and `iterator { }` included), coroutines (`kotlin.coroutines`: `startCoroutine`, `createCoroutine`, `suspendCoroutine`, the intrinsics; `DeepRecursiveFunction`), strings, `Char` with Unicode
-for the 16-bit range, `Regex` with Java's syntax (the `U` flag and scripts by their four-letter codes included), ranges, `kotlin.math`,
+Every `Float` and `Double` the runtime writes (a template, `println`, a `StringBuilder`, a boxed
+number's `toString`) goes through one C function, `format_real`, which calls
+`ktc2_real_formatter`: `main` sets it to the platform layer's `formatReal`
+(`Ktc2Internal.kt`, over Native's `NumberConverter`) when the program has such numbers
+(`KModule.realFormatter`, found by the importer); a program without any keeps the runtime's
+own shortest form and none of that code. For ordinary values it is as fast as Kotlin/Native
+and ten times faster than the `snprintf` loop it replaced; values with extreme exponents take
+the big-number path, about three times Native's time.
+
+What is there: collections and sequences (`sequence { }` and `iterator { }` included), coroutines (`kotlin.coroutines`: `startCoroutine`, `createCoroutine`, `suspendCoroutine`, the intrinsics; `DeepRecursiveFunction`), strings, `Char` and `CodePoint` with
+Kotlin/Native's Unicode tables, `Regex` with Java's syntax (the `U` flag and scripts by their four-letter codes included), ranges, `kotlin.math`,
 `kotlin.time` (`Duration`, `TimeSource`, `measureTime`; not `Clock` and `Instant`),
 `kotlin.random`, `Result`, the property delegates, `readln`.
 
@@ -472,7 +495,7 @@ Several files are generated; change the generator, not the file:
 | `Ktc2Arrays.kt` | `tools/gen_arrays.py` |
 | `Ktc2Math.kt` | `tools/gen_math.py` |
 | `Ktc2Comparisons.kt` | `tools/gen_comparisons.py` |
-| `Ktc2Unicode.kt` | `tools/GenUnicode.java`, run with the JDK 21 of the build so the tables match what the tests compare with |
+| `Ktc2Unicode.kt` | `tools/GenUnicode.java`, run with the JDK 21 of the build. Only `Regex` uses it now (its classes, blocks, scripts); `Char` and `CodePoint` use Native's tables |
 
 ---------------------------------------------------------------------------
 ## 8. C interop
@@ -623,8 +646,17 @@ function (`_fun`) before it writes anything (`renameClashingGlobals`).
 translated, built with gcc (`-O1 -Wall -Werror`, leak check, counts) and run; the same file
 is compiled and run on the JVM; the outputs must be equal and nothing may leak.
 
-- `<Name>.expected` replaces the JVM for programs that use C (`integration/interop/`);
-  `<Name>.def` is the C library of the test; `<Name>.in` its standard input.
+- `<Name>.expected` replaces the JVM for programs that use C (`integration/interop/`) and for
+  those that print what the JVM and Kotlin/Native do differently: there it is Kotlin/Native's
+  own output (made with `kotlinc-native`, each differing line checked against Native's sources),
+  and the first lines of the program say so; `<Name>.def` is the C library of the test;
+  `<Name>.in` its standard input.
+- A program of several files is a directory with a `module.ktc2.toml` under
+  `integration/modules/`, named in `kProjects` of `IntegrationTest.kt`.
+- The log (`build.gradle.kts`) has a line for each program with the time of its four steps:
+  the Kotlin front end (Kotlin → IR, `K2Frontend.lastFrontEndNanos`), ktc2's translation
+  (IR → C), the C compiler and linker, and the run; the summary adds each step up. The first
+  program of each process carries the analysis of the library in its first step.
 - `examples/showcase/core` is run the same way as a program of several modules.
 - Test builds (`KTC2_LEAK_CHECK`) fill a freed object with `0xDD` and keep the last few
   thousand of them aside: a retain or a release of one ends the program with "use of a freed
@@ -681,8 +713,9 @@ Done in the platform layer, worth knowing:
   which costs nothing in a program without threads.
 - What `buildList`, `buildSet` and `buildMap` give (`Ktc2Builders.kt`) refuses every change
   once built, through itself, its views, iterators and parts; the empty one is one object.
-- Unicode beyond U+FFFF (`CodePoint`, `lowercase` of a string): the tables of `Ktc2Unicode.kt`,
-  generated from the JDK with the others.
+- Unicode (`Char`, `CodePoint`, `lowercase` of a string): Kotlin/Native's own code and tables
+  (section 7), of another version than the JDK's: some categories and cases differ from the
+  JVM's, as they do on Native.
 - The functions of the library written with `sequence { }` or `iterator { }` (`windowed`,
   `chunked`, `scan`, `runningFold`, `runningReduce`, `zipWithNext`, `flatMapIndexed`,
   `shuffled`, `ifEmpty` of a sequence) are iterators of `Ktc2Internal.kt` that do the same
@@ -698,7 +731,20 @@ Done in the platform layer, worth knowing:
   or `1` of the platform layer: the getter (its `invoke`, which `get()` is lowered to) with
   the setter beside it (`set` is lowered to `mutableReferenceSet0`/`1`).
 
-Known to differ from the JVM:
+Known to differ from the JVM, as Kotlin/Native does (decided by the owner on 2026-11-15: where
+the two differ, ktc2 is Native):
+- the exceptions of the language's checks have Native's messages: none for an index outside an
+  array or a string (both `ArrayIndexOutOfBoundsException`), a range of `substring`, a division
+  by zero and `toInt()` of no number; `index: i, size: n` for a list;
+- `ArrayList` and `HashMap` notice a change while they are gone over where Native's do
+  (`hasNext` is `index < size`; clearing an empty list or sorting is no change; a key added
+  after the last entry is noticed; a `clear` ends the loop);
+- a string template turns each object into text as it reaches it (the JVM evaluates every part
+  first);
+- `String.compareTo` and a boxed `Char`, `Short` or `Byte` compared answer -1, 0 or 1;
+- `Float` and `Double` as text are Native's (`1.5E10f` is `1.5000001E10`).
+
+Known to differ from the JVM, otherwise:
 - the last digit of `exp`, `ln`, `pow`, `sin` and the like is the C library's, which is not
   everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library). The
   JVM's own is not one thing either: HotSpot computes `Math` with intrinsics of its own, which
@@ -727,8 +773,9 @@ Known to differ from the JVM:
   with -1, false or null where the JVM throws `ClassCastException`;
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
 
-A difference from the JVM in plain Kotlin is a bug to fix, not a line for this list: what may
-be limited is only what a program asks for with an annotation of the `ktc2.` package.
+A difference from both the JVM and Kotlin/Native in plain Kotlin is a bug to fix, not a line for
+this list: what may be limited is only what a program asks for with an annotation of the
+`ktc2.` package.
 
 ---------------------------------------------------------------------------
 ## 13. Inside the code
@@ -749,7 +796,13 @@ nearly every function; this is the map.
   that compiles once, or through `frontend/PhasedCompiler.kt` in one that compiles again and
   again, which runs the compiler's phases itself so that the library is resolved only once.
   Either way the compiler calls `Ktc2Extension.generate` with the IR of the library and the
-  program together, and everything below starts there.
+  program together, and everything below starts there. It also sorts the sources into the
+  compiler's levels (`-Xfragments`: common, nonJvm, nativeWasm, a module's native, platform;
+  section 7) and keeps the time of the front end and of the translation for the suite.
+- `CEmitter.renameClashingGlobals` gives distinct C names to declarations that are distinct in
+  Kotlin and met in C: a function named as a class of its package, a property named as a
+  function, and private top-level declarations of one name in two files of a package (each
+  takes its file's name: `kotlin_text_rangeStart__CharCategoriesKt`).
 - `kir/Kir.kt` is KIR; `KirDump.kt` writes it as text, `KirCopy.kt` copies a function.
 
 **`KirImporter`** (`frontend/KirImport.kt`) owns everything that exists once per program:

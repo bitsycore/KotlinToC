@@ -13,58 +13,57 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-15)
+## Where the work stands (2026-11-16, end of the day)
 ---------------------------------------------------------------------------
 
 For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,
 `DESIGN.md` how it works, `tests/README.md` how the common tests work; this is what those do
-not say. Start with `git pull`, then `./gradlew test --rerun`.
+not say. Start with `git pull`.
 
-**Last, on 2026-11-16 (end of the day, on the Mac)**: pushed without the whole suite having run
-on the last changes. The whole suite (1037) was green with the alignment on Kotlin/Native's
-messages, iteration, templates and comparisons and with Native's `NumberConverter`; after it
-came Native's Unicode code and tables, the fragment levels of `K2Frontend` that compile them,
-the C names of private declarations of one name in two files (`integration/modules/private-names`),
-and the times of each step in the test log: those were checked on the integration programs,
-the projects and the tests of characters, strings, numbers and regex (190, green), not on the
-libraries' tests or the box tests. The CI job of that push is the first whole run: read it first.
+**First thing to do.** The last push (`ec18f49` and this document's commit) went out without
+the whole suite having run on its last changes: read its CI run first (`gh run list --repo
+bitsycore/KotlinToC`, then `gh run view <id> --log-failed`). The whole suite (1037 tests) was
+green on the Mac with everything up to Native's `NumberConverter`; what came after it (Kotlin/
+Native's Unicode code and tables, the fragment levels of `K2Frontend.kt` that compile them,
+distinct C names for private declarations of one name in two files, the time of each step in
+the test log) was checked on the 170 integration programs, the 5 projects and the common tests
+of characters, strings, numbers, code points and regex (all green), not on the libraries' own
+tests (`tests/kotlinx-*`, `tests/atomicfu`) nor the box tests. If the CI job is red, the first
+suspects are those: a library that uses `Char` classification or case (kotlinx-datetime's
+parsing, kotlinx-serialization's JSON names) or code that depends on a `private` name in C.
 
-**On 2026-11-16** (on the Mac): the last push of 2026-11-15 (`6867a48`) was red on all five
-CI jobs, and fixed that day: `399cab7` paired the parameters of a dispatcher that builds its
-result in the caller's room wrongly when it left out the implementations that cannot take
-its values, so those that build in place were left out too (`AbstractMethodError: …__into`,
-some twelve programs on every system); the bindings of `platform.posix` on macOS lacked
-`SEEK_SET` and `SEEK_END` (kotlinx-datetime's `tzfile` part); the program of the
-kotlinx-serialization module leaves the decided cycle of its cached generic serializers, which
-a project can now say (`program.cycles`); and MSVC compiled the runtime in one file with a C
-library's header that declares a part of `<windows.h>` (`WideStrings`, kotlinx-datetime on
-Windows). The whole suite on the Mac, which the CI job does not do (it leaves out the
-libraries' own tests), then found: a safe call whose block gives `Unit` (`x?.let { f() } ?:
-fail()`) gave null (kotlinx-datetime's `orNull` tests); `e.printStackTrace()` on a class that
-extends an exception was refused (the member the JVM's `Throwable` has: `Exception` and
-`Error` have it now, and it writes to the standard error, as on the JVM and Kotlin/Native); a
-`@Serializable` class declared in a function had no serializer to be found (associated
-objects are collected from function bodies too), and two classes inside local classes of one
-name had one C name; and a program's time limit never applied (the output was read to its end
-first), so `JsonUpdateModeTest`, which loops in C, held the suite for half an hour. Of the
-kotlinx-serialization JSON tests (152 files), 19 more have a `.cycles` for the decided cycle
-of the cached serializers, two functions are in a `.skip`, and `JsonUpdateModeTest` waits in a
-`.pending` (the new kind of file: a library's test that does not pass yet, with the reason).
-The suite on the Mac: about 1030 tests, some 50 minutes.
+**What 2026-11-16 did** (on the Mac, `git log 9aa6bbc~1..ec18f49`):
+- the CI of 2026-11-15 was red on all jobs; fixed (`399cab7`'s dispatcher pairing, `SEEK_SET` on
+  macOS, the runtime out of `ktc2_all.c` for MSVC) and green again (`d567946`);
+- the whole suite on the Mac found and fixed: a safe call whose block gives `Unit`, `printStackTrace`
+  as a member, `@Serializable` local classes, two local classes of one name, a time limit that
+  never applied (`JsonUpdateModeTest` is `.pending`, the new marker);
+- the test log was rewritten as an IDE shows tests (`build.gradle.kts`): a line per program with
+  its progress, kind, ✔/✘, time and the time of each step (Kotlin → IR, IR → C, C → exe, run),
+  the test functions only under a file where one failed, a summary per kind and the total of
+  each step;
+- `ktc2 -ea` (Kotlin/Native's `-enable-assertions`) turns `assert()` on; `--debug` does not;
+- cycles of two objects (an object and its `inner` object or self-calling lambda, two objects
+  through `var`s) are freed by the runtime when nothing else holds them (`KClass.pairCycles`,
+  `ktc2_pair_check`; not with threads); `@Weak inner class` for the rest;
+- plain Kotlin aligned on Kotlin/Native where the JVM differs, checked against Native's 2.5.0-RC
+  sources (below, "Decided by the owner"), and the standard library now takes Kotlin/Native's own
+  code for `Float`/`Double` as text and for `Char` classification and case, from the sources jar
+  of `kotlin-stdlib-wasm-js` (`DESIGN.md`, "The standard library");
+- `tools/native.sh` (Kotlin/Native 2.4.21 under `~/.konan` on the Mac) was run on every plain
+  program: what is left of its differences is in "What I would do first", item 2.
 
-**State.** Everything is on `master`. The suite is 881 tests (2026-11-15, passing on Windows
-and Linux in WSL; the CI job is looked at once a day): 164 programs under `integration/`
-(compared with the JVM or an `.expected` file, or that must be refused), the own tests of the
-libraries that are bundled modules (32 of kotlinx-io, 21 of kotlinx.collections.immutable, 40 of
-atomicfu, 51 of kotlinx-datetime: `tests/README.md`), 180 files of common tests under `tests/` (one of ktc2's own, 156 of
-the Kotlin standard library's, 3 of its JVM part and 20 of Kotlin/Native's that are about
-neither platform's own API, some 2450 `@Test` functions, with the helpers of the library's
-tests under `tests/support/`), 384 box tests of the Kotlin compiler (`tests/box/`, the
-coroutines' for now: `tests/README.md`), and the showcase as a program of several modules. It
-passes on Windows (mingw gcc 15) in about eight minutes (the library's large test files,
-`ArraysTest` and `CollectionTest`, take most of it; the box tests add three), on Linux (Debian
-in WSL2, gcc 14) and, by the CI job, on macOS. AddressSanitizer is clean on every program on
-Linux (the CI job's last step, `tools/asan_all.sh`).
+**State.** Everything is on `master`. The suite is 1038 tests: 170 programs under
+`integration/` (compared with the JVM, with an `.expected` file, which for 13 of them is
+Kotlin/Native's own output, or that must be refused), 5 projects (the showcase and four
+programs of several files under `integration/modules/`), 180 files of common tests under
+`tests/` (one of ktc2's own, 156 of the Kotlin standard library's, 3 of its JVM part and 20 of
+Kotlin/Native's), 299 files of the libraries' own tests (`tests/kotlinx-io`,
+`kotlinx-collections-immutable`, `atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`,
+`kotlinx-serialization-json-io`) and 384 box tests of the Kotlin compiler (`tests/box/`). About
+28 minutes on the Mac (M-series, 8 processes), most of it the libraries' tests; the integration
+programs alone take about 2 minutes. AddressSanitizer is clean on every program on Linux (the
+CI job's last step).
 
 **The CI job** (`.github/workflows/test.yml`, on every push; see it with
 `gh run list --repo bitsycore/KotlinToC`) runs the suite on Linux, macOS and Windows:
@@ -114,7 +113,7 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   the support of the library's tests answers as Kotlin/Native's (`TestPlatform.Native`, its
   back-reference handling), and what that showed ktc2 doing as the JVM now does as Native: a
   negative array size is `IllegalArgumentException`, a capital sigma at the end of a word is ς
-  by Native's rule over code points (`Ktc2Casing.kt`, with its tables), `toArray(dest)` leaves
+  by Native's rule over code points (now Native's own `StringCasing.kt`), `toArray(dest)` leaves
   `dest` as it was after the last element, a map's entry fails with
   `ConcurrentModificationException` once a key was added or removed, a back reference to a group
   not opened yet is an error, an object expression's `simpleName` is null. A test of Kotlin/Native's
@@ -130,7 +129,11 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   it; `String.compareTo` (also ignoring case) and a boxed `Char`, `Short`, `Byte` compared answer
   -1, 0 or 1. Programs that print those have Native's output as `.expected` (ListAccess,
   ListIndexMessages, StringRanges, ConcurrentModification, ListLoops, MapLoops, SortInPlace,
-  OrdinaryCollections, OrdinaryStrings, objects/Templates); the others print what both agree on;
+  OrdinaryCollections, OrdinaryStrings, objects/Templates, and for the next point Arithmetic,
+  NumberType, Unicode); the others print what both agree on. Then `Float` and `Double` as text are
+  Native's `NumberConverter` (Harmony's algorithm, not always the shortest: `1.5E10f` is
+  `1.5000001E10`) and `Char` classification and case are Native's code with its Unicode tables,
+  both compiled from Native's own sources (`DESIGN.md`, "The standard library");
 - (2026-11-15) the serializers of generic classes (which refer to their descriptors and back)
   are kept in a cache by class and arguments, in ktc2's part of the kotlinx-serialization
   module, rather than freed through a weak reference that would change what a descriptor
@@ -183,13 +186,16 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
    limits, `Comparable` and `Comparator` in depth.
 3. *Kotlin/Native as a third opinion* (`tools/native.sh`, after a run of the suite; it needs a
    Kotlin/Native compiler under `~/.konan` or named by `KTC2_KONAN`, which a Mac with a
-   multiplatform project has and another machine may not). With Kotlin/Native 2.4.21, of 97
-   programs that are plain Kotlin 73 print the same on all three, 18 differ and 6 do not
-   compile there; in the 18 it is the JVM and Kotlin/Native that differ (the text of
-   exceptions, what a collection notices of a change while it is gone over, `Float` as text,
-   the order in which a template turns its parts into text, the Unicode tables), ktc2 being
-   with the JVM. Of the 7 files of common tests 4 pass there and 3 need the compiler of
-   Kotlin 2.5. Not part of the suite or of the CI job.
+   multiplatform project has and another machine may not; the Mac has 2.4.21, Kotlin 2.5's
+   features fail there). Run on 2026-11-16: 18 programs differed, all where the JVM and
+   Native differ; all were aligned on Native that day but those listed in "What I would do
+   first", item 2. Native 2.4.21 and the 2.5.0-RC sources ktc2 follows differ in places
+   (`String.compareTo` answers the difference in 2.4.21, -1/0/1 in 2.5): the sources win; they
+   are at github.com/JetBrains/kotlin, tag `v2.5.0-RC` (`kotlin-native/runtime/src/main`,
+   `libraries/stdlib/native-wasm`), and a sparse clone of them takes a minute. To make a
+   program's `.expected` from Native: `kotlinc-native <file> -o out && ./out.kexe > <Name>.expected`,
+   after checking each differing line against those sources. Not part of the suite or of the CI
+   job.
 
 **What the fixes of that day changed in the design**, to know before touching the importer
 (each is in `DESIGN.md`, "Where a small mistake costs most"):
@@ -202,13 +208,12 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 - `==` on a `T` that stands for `Double` is `equals`; `compareTo` of `Double` is a total order.
 
 **Known and not done**, besides what the parts below list:
-- the serializer of a generic class (`Box<T>`, its plugin-made `$serializer`, an instance made from the
-  serializers of the arguments) and its descriptor refer to each other
-  (`PluginGeneratedSerialDescriptor.generatedSerializer`): never freed. kotlinx.serialization on
-  Kotlin/Native makes a new one at each `serializer<Box<Int>>()` (it caches nothing there), so a
-  program that encodes such values in a loop grows. To decide: a cache of those serializers (by
-  class and arguments, as the JVM's), or the descriptor's reference made weak where the serializer
-  is the only one to make it (eight of the library's own tests have a `.cycles` for it);
+- the serializer of a generic class and its descriptor refer to each other
+  (`PluginGeneratedSerialDescriptor.generatedSerializer`): decided on 2026-11-15, they are kept in
+  a cache by class and arguments (`Ktc2Serialization.kt` of the module), so a program has one for
+  each type it serializes; the tests that make them have a `.cycles`. The field is typed by an
+  interface, so the pair freeing of 2026-11-16 does not see it: extending it to a field whose
+  class is checked at run time would free most of those (35 programs still have a `.cycles`);
 - the default `toString()` of a local or anonymous class names it with dots
   (`AnyTest.testToString.Local1`), where the JVM and Kotlin/Native use `$`
   (`AnyTest$testToString$Local1`): the runtime's table of types would need a second name per
@@ -246,13 +251,19 @@ differ, either is right):
   far more often. Kotlin/Native uses the C library, as ktc2 does. A test still must not print
   the last digit.
 
-**How the owner works.** They follow a run of the suite in a terminal (`./gradlew test
---rerun`, a line per program with its progress). Never two runs of the suite at
-once: they share `build/integration`. A targeted run (`KTC2_TEST_FILTER`) after each change
-and the whole suite after two or three, the whole suite before a commit that touches a pass.
-They push to `master` directly, from several machines: pull first. Commits are by
-`Bitsy <bitsydoge@proton.me>` with no mention of an assistant (`CLAUDE.md`, "Conventions"):
-on a new machine set `user.name` and `user.email` in the checkout before the first commit.
+**How the owner works** (as said on 2026-11-16). They follow a run in a terminal tab (`./gradlew
+test --rerun 2>&1 | tee build/suite.log`, a line per program with its progress): run the suite
+where they can see it. While developing, run the smallest set that covers the change: the
+integration programs are the workspace for quick checks (`KTC2_TEST_FILTER=integration/`, about
+2 minutes), with the few common tests that matter (`tests/kotlin/String`...), never the
+libraries' own tests (`KTC2_TEST_LIBRARIES=0`; the whole suite is 28 minutes). The whole suite
+before a commit that touches a pass or the platform layer broadly. Never two runs at once: they
+share `build/integration`. No push and no waiting on the CI job during the work ("CI is too
+long"): commit locally, push when the owner asks. They push to `master` directly, from several
+machines: pull first. Commits are by `Bitsy <bitsydoge@proton.me>` with no mention of an
+assistant (`CLAUDE.md`, "Conventions"): on a new machine set `user.name` and `user.email` in the
+checkout before the first commit. They decide by short answers to proposals: give two or three
+options with a recommendation, and follow Kotlin/Native when in doubt.
 
 **How the work went, and should go on.** One item at a time: a test that shows it (a common
 test under `tests/` when it is about what must hold everywhere, a program under
@@ -721,29 +732,36 @@ Open:
 ## What I would do first
 ---------------------------------------------------------------------------
 
-1. The CI job green on all five jobs after each push (it went red on 2026-11-15 with `399cab7`:
-   see "Where the work stands").
-2. What is left of the owner's rule of 2026-11-15 after 2026-11-16 (`tools/native.sh`). Done that
-   day: `Float` and `Double` as text are Kotlin/Native's own code (`NumberConverter`, Harmony's
-   algorithm: `1.5E10f` is `1.5000001E10`; the same as Native on 400 000 values checked, and ten
-   times faster than the C formatter for ordinary values), and so are the classification and case
-   of characters with Native's Unicode tables (`commonNonJvmMain`, `nativeWasmMain`, from the
-   sources jar of `kotlin-stdlib-wasm-js`, which holds what Native shares with Wasm: DESIGN.md).
-   Left: `Regex` (Native's is Harmony's port, in the same jar: no `(?U)`, other classes; ktc2's own
-   engine still uses `Ktc2Unicode.kt`, the JDK's tables, for its classes); `listOf(a, b)` is an `ArrayList` here (its index error has a
-   message, Native's array view has none). Not to follow: `readLine()` after `readln()` on Native
-   finds nothing (one reads stdin directly, the other through `stdio`'s buffer), a stack trace's
-   frames. A use of `ArrayIndexOutOfBoundsException` or `StringIndexOutOfBoundsException` by name
-   is an error on Native (deprecated since 2.1); here it compiles.
-3. Pair cycles in a program with threads (part 3): the check reads two counts that another
-   thread could be changing; atomic loads and a second look after clearing the link would do.
+1. Read the CI run of the last push (see "Where the work stands"); fix what it shows, with a
+   targeted run, before anything else.
+2. What is left of Kotlin/Native's behavior (`tools/native.sh`, 2026-11-16):
+   - `Regex`: ktc2 has its own engine (`Ktc2Regex.kt`, with the JDK's tables in
+     `Ktc2Unicode.kt`); Native's is Harmony's port, in the same Wasm sources jar
+     (`nativeWasmMain/kotlin/text/regex/`): no `(?U)`, other classes (`RegexExtras`,
+     `RegexUnicodeClasses` print other things there). Proposed to the owner: list every pattern
+     where the two differ, align what Native answers, and bring the cases where following Native
+     removes a feature (`(?U)`) to the owner. Taking Native's engine whole is the other way;
+     compare its speed first;
+   - `listOf(a, b)` is an `ArrayList` here (for `ListLoops`), so an index outside it has a
+     message, where Native's array view (`asList`) has none; and a cast of it to `MutableList`
+     can change it;
+   - naming `ArrayIndexOutOfBoundsException` or `StringIndexOutOfBoundsException` is an error on
+     Native (deprecated since 2.1); here it compiles (`Ktc2JavaLang.kt`);
+   - not to follow: `readLine()` after `readln()` finds nothing on Native (one reads stdin
+     directly, the other through `stdio`'s buffer), and a stack trace's frames.
+3. Memory, proposed on 2026-11-16: the pair freeing through a field typed by an interface or
+   an open class (the partner's class checked at run time), which would free the serializers'
+   cycle of kotlinx-serialization; and pair cycles in a program with threads (part 3: the check
+   reads two counts another thread could change; atomic loads and a second look would do).
 4. The benchmarks against Kotlin/Native and the JVM ("Benchmarks against Kotlin/Native and the
-   JVM: the plan"), about three days, nothing of ktc2 itself changed.
+   JVM: the plan"), about three days, nothing of ktc2 itself changed. Number formatting is now
+   Native's code: ordinary values as fast as Native, extreme exponents (the big-number path)
+   three times slower (array accesses with checks, functions not inlined across files).
 5. More tests taken as they are: what is left of `kotlin-native/runtime/test`, the box tests
    of the Kotlin compiler beyond the coroutines'.
 6. Unit tests of the passes (part 8).
-7. Speed: `Double` as text without `snprintf`, `sortedBy` without boxing its keys, an object
-   that never leaves its function as plain locals (parts 2 and 6).
+7. Speed: `sortedBy` without boxing its keys, an object that never leaves its function as
+   plain locals (parts 2 and 6).
 
 ---------------------------------------------------------------------------
 ## Measuring

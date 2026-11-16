@@ -3,9 +3,10 @@
 ktc2 translates Kotlin to C11. The Kotlin is real Kotlin: the front end is the Kotlin compiler
 itself (K2), and a program behaves as it does on Kotlin/Native (and so on the JVM, where the two
 agree). The C has no garbage collector: objects are reference counted, and the compiler keeps
-them out of the heap where it can - in the frame, inside their owner, in an arena. A cycle of
-objects is reported when the program is compiled, and never freed: the one difference from
-Kotlin/Native, of memory only.
+them out of the heap where it can - in the frame, inside their owner, in an arena. Two objects
+that hold each other (an object and its inner object or its own lambda) are freed when nothing
+else holds them; a longer cycle of objects is reported when the program is compiled, and never
+freed: the one difference from Kotlin/Native, of memory only.
 
 ```kotlin
 data class Point(val x: Int, val y: Int)
@@ -31,7 +32,7 @@ build/install/ktc2/bin/ktc2 hello.kt --run
   delegation, exceptions, string templates, inline functions, `tailrec`, the features of
   Kotlin 2.5. Coroutines: `suspend` functions, `sequence { }`, `iterator { }`, `DeepRecursiveFunction` (no kotlinx.coroutines yet). Of reflection, what Kotlin/Native has: a class as a value and `typeOf<T>()`.
 - **The standard library**, compiled from the sources of the real one: collections, sequences,
-  strings and `Char` with Unicode, `Regex`, ranges, `kotlin.math`, `kotlin.time`, `Random`,
+  strings and `Char` with Unicode (Kotlin/Native's own code and tables, as is `Double` as text), `Regex`, ranges, `kotlin.math`, `kotlin.time`, `Random`,
   `Result`, `lazy` and the other delegates.
 - **No JDK**: as in Kotlin/Native, nothing of `java.*`.
 
