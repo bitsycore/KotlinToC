@@ -16,7 +16,9 @@ import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.builders.irString
 import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrConstructor
-import org.jetbrains.kotlin.ir.declarations.IrDeclarationContainer
+import org.jetbrains.kotlin.ir.IrElement
+import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
+import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.declarations.IrParameterKind
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
@@ -56,13 +58,15 @@ internal fun writeAssociatedObjects(inModule: IrModuleFragment, inContext: IrPlu
 	val vFactory = topLevel("kotlinx.serialization.internal", "").filterIsInstance<IrClass>().firstOrNull { it.name.asString() == "Ktc2SerializerFactory" }
 	val vEntries = ArrayList<AssociatedEntry>()
 	val vGenerics = ArrayList<GenericSerializer>()
-	fun visit(inContainer: IrDeclarationContainer) {
-		for (vClass in inContainer.declarations.filterIsInstance<IrClass>()) {
-			entriesOf(vClass, vEntries, vGenerics, vFactory)
-			visit(vClass)
+	// Every class, local ones included (a class declared in a function body is serializable too).
+	inModule.acceptChildrenVoid(object : IrVisitorVoid() {
+		override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
+
+		override fun visitClass(declaration: IrClass) {
+			entriesOf(declaration, vEntries, vGenerics, vFactory)
+			declaration.acceptChildrenVoid(this)
 		}
-	}
-	inModule.files.forEach { visit(it) }
+	})
 	topLevel("kotlinx.serialization.internal", "").filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "ktc2GenericSerializer" }
 		?.let { writeGenericSerializers(it, vGenerics, inContext) }
 	val vParams = vFunction.parameters.filter { it.kind == IrParameterKind.Regular }

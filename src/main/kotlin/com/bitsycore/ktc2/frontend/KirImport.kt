@@ -1022,7 +1022,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		var vSuffix = if (vKey.arguments.isEmpty()) "" else "__" + vKey.arguments.joinToString("_") { mangle(it) }
 		// A local class has no name of its own that is unique in the program.
-		if (inClass.parent !is IrClass && inClass.parent !is IrFile) vSuffix += "__local${mClassList.size}"
+		// Nor a class inside one (the companion of a local class): its name is made of its outer classes' names only.
+		val vIsInLocal = generateSequence(inClass.parent) { (it as? IrClass)?.parent }.firstOrNull { it !is IrClass } !is IrFile
+		if (vIsInLocal) vSuffix += "__local${mClassList.size}"
 		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
 		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, jvmNameOf(inClass))
 		vClass.family = inClass
