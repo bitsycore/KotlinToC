@@ -330,3 +330,52 @@ tasks.test {
 	// Gradle's own report of the failures stays: build/reports/tests/test/index.html.
 	reports.html.required.set(true)
 }
+
+// ==================
+// MARK: Comparison with Kotlin/Native and the JVM (tools/compare.py)
+// ==================
+
+/** The JVM's Kotlin compiler, as ktc2 runs it, and the Kotlin library's jar: what tools/compare.py builds the JVM side with. */
+val kotlincJvm: Configuration = configurations.create("kotlincJvm")
+
+dependencies {
+	"kotlincJvm"(libs.kotlin.compiler.embeddable)
+}
+
+tasks.register("compareClasspath") {
+	description = "Write the class path of the JVM's Kotlin compiler and the Kotlin library's jar for tools/compare.py."
+	val vCompiler: FileCollection = kotlincJvm
+	val vStdlib: FileCollection = kotlincJvm.filter { it.name.startsWith("kotlin-stdlib-") && !it.name.contains("common") }
+	val vOut = layout.buildDirectory.file("compare/kotlinc.classpath")
+	inputs.files(vCompiler)
+	outputs.file(vOut)
+	doLast {
+		vOut.get().asFile.apply { parentFile.mkdirs() }.writeText(vCompiler.files.joinToString(File.pathSeparator) + "\n" + vStdlib.files.first().path + "\n")
+	}
+}
+
+/**
+ * Kotlin/Native's compiler of the Kotlin version ktc2 follows, put under ~/.konan as Kotlin/Native's own tools put it,
+ * for tools/compare.py and tools/native.sh. Its first compilation fetches the rest it needs (LLVM, the system's libraries).
+ */
+val kotlinNativeCompiler: Configuration = configurations.create("kotlinNativeCompiler") { isTransitive = false }
+
+dependencies {
+	val vHost = System.getProperty("os.name").lowercase().let { vName ->
+		val vArm = System.getProperty("os.arch").let { it == "aarch64" || it == "arm64" }
+		when {
+			"win" in vName -> "windows-x86_64"
+			"mac" in vName -> if (vArm) "macos-aarch64" else "macos-x86_64"
+			else -> if (vArm) "linux-aarch64" else "linux-x86_64"
+		}
+	}
+	val vExtension = if (vHost.startsWith("windows")) "zip" else "tar.gz"
+	"kotlinNativeCompiler"("org.jetbrains.kotlin:kotlin-native-prebuilt:${libs.versions.kotlin.get()}:$vHost@$vExtension")
+}
+
+tasks.register<Copy>("fetchKotlinNative") {
+	description = "Fetch Kotlin/Native's compiler of the Kotlin version ktc2 follows into ~/.konan."
+	val vArchive: FileCollection = kotlinNativeCompiler
+	from({ vArchive.files.map { if (it.name.endsWith(".zip")) zipTree(it) else tarTree(it) } })
+	into(File(System.getProperty("user.home"), ".konan"))
+}
