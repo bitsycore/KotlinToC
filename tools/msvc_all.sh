@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: tools/msvc_all.sh [part of a name]
 # After a run of the suite on Windows: compiles the generated C of every program under
-# build/integration with MSVC, as one file (ktc2_all.c), runs it, and compares what it prints
+# build/integration with MSVC, as one file (ktc2_all.c) and the runtime (ktc2_core.c), runs it, and compares what it prints
 # with what the program the suite built (gcc) prints. Fails when one does not compile, does not
 # end as the other does, or prints something else.
 # Needs `cl` on the path: a "Developer Command Prompt", or after vcvars64.bat, as in
@@ -41,7 +41,7 @@ for vDir in build/integration/*/; do
 	for vFile in integration/*/"$vName.in"; do [ -f "$vFile" ] && vInput=$vFile; done
 	vOptions=$(grep "^cflag=" "$vDir/ktc2_build.txt" | cut -d= -f2- | tr '\n' ' ')
 	# cl takes its options with a dash too; MSYS must not take /Fe and the like for paths.
-	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -DKTC2_LEAK_CHECK -I . $vOptions ktc2_all.c -Fe:../msvc.exe -Fo:../msvc.obj > ../msvc.log 2>&1); then
+	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -DKTC2_LEAK_CHECK -I . $vOptions ktc2_all.c ktc2_core.c -Fe:../msvc.exe -Fo:../ > ../msvc.log 2>&1); then
 		vFailed=$((vFailed + 1)); echo "== $vName: does not compile"; grep -m 6 "error" "$vDir/msvc.log" | cut -c1-240
 		continue
 	fi
