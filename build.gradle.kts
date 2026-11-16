@@ -1,3 +1,9 @@
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+
 plugins {
 	// Every version is in gradle/libs.versions.toml.
 	alias(libs.plugins.kotlin.jvm)
@@ -164,7 +170,92 @@ tasks.test {
 			vParts.forEach { it.delete() }
 		}
 	}
-	// KTC2_TEST_VERBOSE=1 prints a line for each program as it passes, to follow a run in a terminal.
-	val vEvents = if (System.getenv("KTC2_TEST_VERBOSE") != null) arrayOf("passed", "failed", "skipped") else arrayOf("failed")
-	testLogging { events(*vEvents); showStandardStreams = true; exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+	// A line for each program as it ends, with the progress of the run: what passed in green, what failed in red with its
+	// reason and what it printed. KTC2_TEST_QUIET=1 prints only the failures and the summary; NO_COLOR=1 leaves the colors out.
+	// From when the tests start, not from when the build was configured.
+	val vStart = AtomicLong(System.nanoTime())
+	doFirst {
+		vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.forEach { it.delete() }
+		File(vResults, "functions").deleteRecursively()
+		vStart.set(System.nanoTime())
+	}
+	testLogging { events(); showStandardStreams = false }
+	val vQuiet = System.getenv("KTC2_TEST_QUIET") == "1"
+	val vColor = System.getenv("NO_COLOR") == null
+	fun paint(inCode: String, inText: String) = if (vColor) "\u001b[${inCode}m$inText\u001b[0m" else inText
+	val vOutputs = ConcurrentHashMap<String, StringBuilder>()
+	val vDone = AtomicInteger()
+	val vFailed = ConcurrentLinkedQueue<String>()
+	fun keyOf(inTest: TestDescriptor) = "${inTest.className}/${inTest.displayName}"
+	fun total(): Int = vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.sumOf { it.readText().trim().toIntOrNull() ?: 0 } ?: 0
+	addTestOutputListener(object : TestOutputListener {
+		override fun onOutput(inTest: TestDescriptor, inEvent: TestOutputEvent) {
+			vOutputs.getOrPut(keyOf(inTest)) { StringBuilder() }.append(inEvent.message)
+		}
+	})
+	addTestListener(object : TestListener {
+		override fun beforeSuite(inSuite: TestDescriptor) {}
+		override fun beforeTest(inTest: TestDescriptor) {}
+		override fun afterSuite(inSuite: TestDescriptor, inResult: TestResult) {
+			if (inSuite.parent != null) return
+			val vSeconds = (System.nanoTime() - vStart.get()) / 1_000_000_000
+			val vPassed = inResult.successfulTestCount
+			val vLine = "${vPassed} passed, ${inResult.failedTestCount} failed, ${inResult.skippedTestCount} skipped in ${vSeconds / 60} min ${vSeconds % 60} s"
+			println()
+			println(if (inResult.failedTestCount == 0L) paint("1;32", "✅ $vLine") else paint("1;31", "❌ $vLine"))
+			vFailed.forEach { println(paint("31", "   ❌ $it")) }
+		}
+		override fun afterTest(inTest: TestDescriptor, inResult: TestResult) {
+			// The parts' own test (`programs()`) is the container of the programs: only the programs are counted.
+			if (inTest.displayName == "programs()") return
+			val vIndex = vDone.incrementAndGet()
+			val vTotal = total().coerceAtLeast(vIndex)
+			val vWidth = vTotal.toString().length
+			val vProgress = paint("2", "[${vIndex.toString().padStart(vWidth)}/$vTotal ${(vIndex * 100 / vTotal).toString().padStart(3)}%]")
+			val vTime = paint("2", "%5.1f s".format(Locale.ROOT, (inResult.endTime - inResult.startTime) / 1000.0))
+			val vOutput = vOutputs.remove(keyOf(inTest))
+			// A file of tests runs several test functions: each is a line under the file, as an IDE shows them.
+			// Written by the test, by the name of the program (IntegrationTest.functionsFile).
+			val vFunctionsFile = File(vResults, "functions/${inTest.displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
+			val vFunctions = vFunctionsFile.takeIf { it.isFile }?.readLines()?.filter { it.isNotBlank() } ?: emptyList()
+			vFunctionsFile.delete()
+			val vFunctionsFailed = vFunctions.count { it.startsWith("FAILED ") }
+			val vCounts = if (vFunctions.isEmpty()) "" else paint("2", " (${vFunctions.size - vFunctionsFailed}/${vFunctions.size} tests)")
+			// As an IDE shows them: each class of tests, then its test functions under it.
+			fun functions(inAll: Boolean) {
+				var vClass: String? = null
+				for (vFunction in vFunctions) {
+					val vPassed = vFunction.startsWith("ok ")
+					if (vPassed && !inAll) continue
+					val vText = vFunction.removePrefix("ok ").removePrefix("FAILED ")
+					val vName = vText.substringBefore(": ")
+					val vOwner = vName.substringBeforeLast('.', "")
+					val vShort = if (vOwner.isEmpty()) vText else vText.removePrefix("$vOwner.")
+					if (vOwner.isNotEmpty() && vOwner != vClass) {
+						vClass = vOwner
+						println("      ${paint("1", vOwner)}")
+					}
+					val vIndent = if (vOwner.isEmpty()) "      " else "         "
+					println(if (vPassed) "$vIndent${paint("32", "✔")} ${paint("2", vShort)}" else "$vIndent${paint("31", "✘")} ${paint("31", vShort)}")
+				}
+			}
+			when (inResult.resultType) {
+				TestResult.ResultType.SUCCESS -> if (!vQuiet) {
+					println("$vProgress ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime")
+					if (System.getenv("KTC2_TEST_FUNCTIONS") != "0") functions(true)
+				}
+				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress ${paint("33", "⏭")} ${inTest.displayName}")
+				else -> {
+					vFailed += inTest.displayName
+					println("$vProgress ${paint("1;31", "✘ ${inTest.displayName}")}$vCounts $vTime")
+					functions(false)
+					// The reason, as the assertion has it, and what the program wrote: a few lines of each.
+					inResult.exceptions.firstOrNull()?.message?.lines()?.take(12)?.forEach { println(paint("31", "      $it")) }
+					vOutput?.lines()?.filter { it.isNotBlank() }?.take(20)?.forEach { println(paint("2", "      | $it")) }
+				}
+			}
+		}
+	})
+	// Gradle's own report of the failures stays: build/reports/tests/test/index.html.
+	reports.html.required.set(true)
 }
