@@ -101,12 +101,12 @@ private const val kUnassigned = 0
 private const val kUppercaseLetter = 1
 private const val kTitlecaseLetter = 3
 private const val kOtherLetter = 5
-private const val kNonSpacingMark = 6
-private const val kEnclosingMark = 7
+internal const val kNonSpacingMark = 6
+internal const val kEnclosingMark = 7
 private const val kDecimalDigit = 9
-private const val kFormat = 16
-private const val kModifierLetter = 4
-private const val kModifierSymbol = 26
+internal const val kFormat = 16
+internal const val kModifierLetter = 4
+internal const val kModifierSymbol = 26
 
 public actual enum class CharCategory(public actual val code: String) {
 	UNASSIGNED("Cn"),
@@ -267,32 +267,12 @@ public actual fun String.lowercase(): String {
 		}
 		when {
 			vChar == '\u0130' -> vBuilder.append("i\u0307")
-			// A capital sigma that ends a word is written with the final form of the letter.
-			vChar == '\u03A3' && isFinalSigma(this, vIndex) -> vBuilder.append('\u03C2')
+			// A capital sigma that ends a word is the final form, by Kotlin/Native's rule (Ktc2Casing.kt).
+			vChar == '\u03A3' && isFinalSigmaAt(this, vIndex) -> vBuilder.append('\u03C2')
 			else -> vBuilder.append(vChar.lowercaseChar())
 		}
 	}
 	return vBuilder.toString()
-}
-
-private fun isCased(inChar: Char): Boolean = inChar.isUpperCase() || inChar.isLowerCase() || inChar.isTitleCase()
-
-/** True for what does not count when looking for the letters around a sigma: marks, format characters, some punctuation. */
-private fun isCaseIgnorable(inChar: Char): Boolean {
-	if (inChar == '\'' || inChar == '.' || inChar == ':' || inChar == '^' || inChar == '`' || inChar == '\u00B7' || inChar == '\u2019') return true
-	if (inChar.code < 0x80) return false
-	val vCategory = unicodeCategory(inChar)
-	return vCategory == kNonSpacingMark || vCategory == kEnclosingMark || vCategory == kFormat || vCategory == kModifierLetter || vCategory == kModifierSymbol
-}
-
-/** True when the sigma at [inIndex] of [inText] comes after a letter and no letter comes after it. */
-private fun isFinalSigma(inText: String, inIndex: Int): Boolean {
-	var vBefore = inIndex - 1
-	while (vBefore >= 0 && isCaseIgnorable(inText[vBefore])) vBefore--
-	if (vBefore < 0 || !isCased(inText[vBefore])) return false
-	var vAfter = inIndex + 1
-	while (vAfter < inText.length && isCaseIgnorable(inText[vAfter])) vAfter++
-	return vAfter >= inText.length || !isCased(inText[vAfter])
 }
 
 public actual fun String.toUpperCase(): String = uppercase()
