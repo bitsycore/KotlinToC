@@ -121,7 +121,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 			vCount.writeText("0")
 			return emptyList()
 		}
-		return programList().filterIndexed { vIndex, _ -> vIndex % kShards == mShard }.also { vCount.writeText(it.size.toString()) }
+		val vAll = programList()
+		// Every part has the whole list: the first to get here says how many the run has, before any program ends.
+		File("build/integration/count.total.txt").writeText(vAll.size.toString())
+		return vAll.filterIndexed { vIndex, _ -> vIndex % kShards == mShard }.also { vCount.writeText(it.size.toString()) }
 	}
 
 	/** True when [inSource] is one of what `KTC2_TEST_FILTER` asks for: parts of a path, separated by commas. */

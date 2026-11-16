@@ -187,7 +187,19 @@ tasks.test {
 	val vDone = AtomicInteger()
 	val vFailed = ConcurrentLinkedQueue<String>()
 	fun keyOf(inTest: TestDescriptor) = "${inTest.className}/${inTest.displayName}"
-	fun total(): Int = vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.sumOf { it.readText().trim().toIntOrNull() ?: 0 } ?: 0
+	fun total(): Int = File(vResults, "count.total.txt").takeIf { it.isFile }?.readText()?.trim()?.toIntOrNull()
+		?: vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.sumOf { it.readText().trim().toIntOrNull() ?: 0 } ?: 0
+	// What kind of test a program is, from its name: shown on its line, and counted apart in the summary.
+	val kKinds = listOf("box" to "box test", "library" to "library test", "common" to "common test", "project" to "project", "integration" to "integration test")
+	fun kindOf(inName: String): String = when {
+		inName.startsWith("tests/box/") -> "box"
+		inName.startsWith("tests/kotlinx-") || inName.startsWith("tests/atomicfu/") -> "library"
+		inName.startsWith("tests/") -> "common"
+		inName.startsWith("projects/") -> "project"
+		else -> "integration"
+	}
+	val vKindColors = mapOf("box" to "35", "library" to "36", "common" to "34", "project" to "33", "integration" to "37")
+	val vByKind = ConcurrentHashMap<String, IntArray>()
 	addTestOutputListener(object : TestOutputListener {
 		override fun onOutput(inTest: TestDescriptor, inEvent: TestOutputEvent) {
 			vOutputs.getOrPut(keyOf(inTest)) { StringBuilder() }.append(inEvent.message)
@@ -203,11 +215,19 @@ tasks.test {
 			val vLine = "${vPassed} passed, ${inResult.failedTestCount} failed, ${inResult.skippedTestCount} skipped in ${vSeconds / 60} min ${vSeconds % 60} s"
 			println()
 			println(if (inResult.failedTestCount == 0L) paint("1;32", "✅ $vLine") else paint("1;31", "❌ $vLine"))
+			for ((vKind, vLabel) in kKinds) {
+				val vCounts = vByKind[vKind] ?: continue
+				val vText = "   ${vLabel}s".padEnd(18) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
+				println(if (vCounts[1] > 0) paint("31", vText) else paint(vKindColors.getValue(vKind), vText))
+			}
 			vFailed.forEach { println(paint("31", "   ❌ $it")) }
 		}
 		override fun afterTest(inTest: TestDescriptor, inResult: TestResult) {
 			// The parts' own test (`programs()`) is the container of the programs: only the programs are counted.
 			if (inTest.displayName == "programs()") return
+			val vKind = kindOf(inTest.displayName)
+			vByKind.getOrPut(vKind) { IntArray(2) }.let { if (inResult.resultType == TestResult.ResultType.FAILURE) it[1]++ else it[0]++ }
+			val vTag = paint(vKindColors.getValue(vKind), vKind.padEnd(11))
 			val vIndex = vDone.incrementAndGet()
 			val vTotal = total().coerceAtLeast(vIndex)
 			val vWidth = vTotal.toString().length
@@ -241,13 +261,13 @@ tasks.test {
 			}
 			when (inResult.resultType) {
 				TestResult.ResultType.SUCCESS -> if (!vQuiet) {
-					println("$vProgress ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime")
+					println("$vProgress $vTag ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime")
 					if (System.getenv("KTC2_TEST_FUNCTIONS") != "0") functions(true)
 				}
-				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress ${paint("33", "⏭")} ${inTest.displayName}")
+				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress $vTag ${paint("33", "⏭")} ${inTest.displayName}")
 				else -> {
 					vFailed += inTest.displayName
-					println("$vProgress ${paint("1;31", "✘ ${inTest.displayName}")}$vCounts $vTime")
+					println("$vProgress $vTag ${paint("1;31", "✘ ${inTest.displayName}")}$vCounts $vTime")
 					functions(false)
 					// The reason, as the assertion has it, and what the program wrote: a few lines of each.
 					inResult.exceptions.firstOrNull()?.message?.lines()?.take(12)?.forEach { println(paint("31", "      $it")) }
