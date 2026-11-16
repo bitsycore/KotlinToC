@@ -694,6 +694,9 @@ private class Parser(private val mPattern: String, inOptions: Set<RegexOption>) 
 			// As many digits as still name an existing group.
 			var vGroup = vChar - '0'
 			while (more() && peek() in '0'..'9' && vGroup * 10 + (peek() - '0') <= groupCount) vGroup = vGroup * 10 + (mPattern[mAt++] - '0')
+			// As on Kotlin/Native: a group that is not opened yet, or that the pattern does not have, is an error (the JVM's
+			// matches nothing there).
+			if (vGroup > groupCount) fail("Back reference to the group $vGroup, which does not come before it")
 			return BackReference(vGroup, case())
 		}
 		return Literal(literalEscape(vChar), case())
