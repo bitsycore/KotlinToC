@@ -451,11 +451,8 @@ internal actual fun checkCountOverflow(count: Int): Int {
 	return count
 }
 
-/** As the JVM: an array larger than the collection gets a null after the last element. */
-internal actual fun <T> terminateCollectionToArray(collectionSize: Int, array: Array<T>): Array<T> {
-	if (collectionSize < array.size) (array as Array<Any?>)[collectionSize] = null
-	return array
-}
+/** As on Kotlin/Native: an array larger than the collection keeps what it held after the last element (the JVM writes a null there). */
+internal actual fun <T> terminateCollectionToArray(collectionSize: Int, array: Array<T>): Array<T> = array
 
 public actual fun <T> MutableList<T>.reverse() {
 	var vLow = 0
