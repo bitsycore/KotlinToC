@@ -1704,20 +1704,10 @@ ktc2_String* ktc2_stringSubstring(ktc2_String* s, int32_t start, int32_t end)
 	return ktc2_sb_finish(&sb);
 }
 
-bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
+/** Parses the [size] bytes at [text], ended by a zero byte, as Double.parseDouble does. */
+static bool parse_double(char* text, size_t size, ktc2_Array* result)
 {
-	const char* at = s->bytes;
-	const char* last = s->bytes + s->size;
-	while (at < last && (unsigned char)*at <= ' ') at++;
-	while (last > at && (unsigned char)last[-1] <= ' ') last--;
-	if (at == last) return false;
-	/* Java accepts a trailing type suffix. */
-	if (last - at > 1 && (last[-1] == 'd' || last[-1] == 'D' || last[-1] == 'f' || last[-1] == 'F')) last--;
-	char text[400];
-	size_t size = (size_t)(last - at);
-	if (size >= sizeof text) return false;
-	memcpy(text, at, size);
-	text[size] = 0;
+	(void)size;
 	/* strtod also takes "inf" and "nan"; Java only "Infinity" and "NaN". */
 	const char* digits = text + (text[0] == '-' || text[0] == '+');
 	if ((digits[0] < '0' || digits[0] > '9') && digits[0] != '.' && strcmp(digits, "Infinity") != 0 && strcmp(digits, "NaN") != 0) return false;
@@ -1740,6 +1730,27 @@ bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
 	if (stop == text || *stop != 0) return false;
 	((double*)(result + 1))[0] = value;
 	return true;
+}
+
+bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
+{
+	const char* at = s->bytes;
+	const char* last = s->bytes + s->size;
+	while (at < last && (unsigned char)*at <= ' ') at++;
+	while (last > at && (unsigned char)last[-1] <= ' ') last--;
+	if (at == last) return false;
+	/* Java accepts a trailing type suffix. */
+	if (last - at > 1 && (last[-1] == 'd' || last[-1] == 'D' || last[-1] == 'f' || last[-1] == 'F')) last--;
+	size_t size = (size_t)(last - at);
+	/* A number of any length: a long run of digits is a number too. */
+	char local[400];
+	char* text = size < sizeof local ? local : malloc(size + 1);
+	if (!text) fail("kotlin.OutOfMemoryError", NULL);
+	memcpy(text, at, size);
+	text[size] = 0;
+	bool parsed = parse_double(text, size, result);
+	if (text != local) free(text);
+	return parsed;
 }
 
 ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
