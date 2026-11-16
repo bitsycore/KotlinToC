@@ -45,8 +45,6 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	/** How many times a key was added or removed, as `modCount` on the JVM: see [HashMapCursor]. */
 	internal var changes: Int = 0
 
-	/** How many times the storage was replaced (a rebuild, `clear`): an entry index is good for one of them. */
-	internal var epoch: Int = 0
 
 	public actual constructor() : this(8)
 
@@ -98,7 +96,6 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 
 	/** Drops the holes and makes room for at least one more entry. */
 	private fun rebuild() {
-		epoch++
 		val vCapacity = if (live * 2 > keyArray.size) keyArray.size * 2 else keyArray.size
 		val vKeys = Storage<K>(vCapacity)
 		val vValues = Storage<V>(vCapacity)
@@ -182,7 +179,6 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 	}
 
 	actual override fun clear() {
-		epoch++
 		keyArray = Storage(8)
 		valueArray = Storage(8)
 		hashArray = Storage(8)
@@ -243,11 +239,6 @@ public actual class HashMap<K, V> actual constructor(initialCapacity: Int) : Mut
 		valueArray.drop(index)
 	}
 
-	/** True when the map still has the entry it had at [index] since the storage was last replaced. */
-	internal fun isLiveAt(index: Int): Boolean = index < used && liveArray[index]
-
-	/** The index of the entry for [key], or -1. */
-	internal fun indexOfKey(key: K): Int = find(key, hashOf(key))
 
 	override fun toString(): String {
 		var vText = "{"
@@ -320,39 +311,32 @@ private class HashMapCursor<K, V>(private val map: HashMap<K, V>) {
 }
 
 /**
- * An entry a map handed out. As on the JVM it keeps its key; its value is the one the map has
- * for it while the map has the entry, and what it last was once the entry is gone from the map.
+ * An entry a map handed out. As on Kotlin/Native it reads the map's storage while the map has not been changed in
+ * its keys since; after a key was added or removed (through an iterator too), each of its functions fails with
+ * `ConcurrentModificationException`. (On the JVM the entry is the map's own node and goes on working.)
  */
-private class HashMapEntry<K, V>(private val map: HashMap<K, V>, private var index: Int) : MutableMap.MutableEntry<K, V> {
-	override val key: K = map.keyAt(index)
-	private var held: V = map.valueAt(index)
-	private var epoch = map.epoch
+private class HashMapEntry<K, V>(private val map: HashMap<K, V>, private val index: Int) : MutableMap.MutableEntry<K, V> {
+	private val expected = map.changes
 
-	/** Where the map has this entry now; -1 when it no longer has it. */
-	private fun place(): Int {
-		if (index < 0) return -1
-		if (map.epoch != epoch) {
-			// The storage was replaced: the entry is where its key is now.
-			epoch = map.epoch
-			index = map.indexOfKey(key)
-		} else if (!map.isLiveAt(index)) {
-			index = -1
-		}
-		return index
+	private fun check() {
+		map.checkChanges(expected)
 	}
+
+	override val key: K
+		get() {
+			check()
+			return map.keyAt(index)
+		}
 
 	override val value: V
 		get() {
-			val vAt = place()
-			if (vAt >= 0) held = map.valueAt(vAt)
-			return held
+			check()
+			return map.valueAt(index)
 		}
 
 	override fun setValue(newValue: V): V {
-		val vOld = value
-		if (index >= 0) map.setValueAt(index, newValue)
-		held = newValue
-		return vOld
+		check()
+		return map.setValueAt(index, newValue)
 	}
 
 	override fun toString(): String = "$key=$value"
