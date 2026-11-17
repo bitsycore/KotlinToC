@@ -194,11 +194,13 @@ extern int ktc2_threaded;
 #define KTC2_RC_ALONE(count) (!ktc2_threaded || ((count) & KTC2_STACK))
 #define KTC2_RC_INC(object, count) (KTC2_RC_ALONE(count) ? (void)(object)->rc++ : (void)ktc2_atomic_add(&(object)->rc, 1))
 #define KTC2_RC_DEC(object, count) (KTC2_RC_ALONE(count) ? --(object)->rc : ktc2_atomic_sub(&(object)->rc, 1))
+#define KTC2_RC_SET(object, value) ((void)ktc2_atomic_exchange(&(object)->rc, (value)))
 #define KTC2_STAT_INC(counter) ((void)ktc2_atomic_add64(&(counter), 1))
 #else
 #define KTC2_TLS
 #define KTC2_RC_LOAD(object) ((object)->rc)
 #define KTC2_RC_INC(object, count) ((void)(object)->rc++)
+#define KTC2_RC_SET(object, value) ((void)((object)->rc = (value)))
 #define KTC2_RC_DEC(object, count) (--(object)->rc)
 #define KTC2_STAT_INC(counter) ((void)(counter)++)
 #endif
@@ -247,8 +249,8 @@ typedef struct ktc2_TypeInfo {
 	void (*deinit)(ktc2_Obj* object);
 	/* The names of the class and of the classes above it, each between two '|': what `KClass.isInstance` looks in. NULL for a built-in type. */
 	const char* ancestors;
-	/* Called when the count of an instance comes down to [pairs] or less: frees the objects it is in a cycle of two with, and itself, when nothing else holds them. */
-	void (*pair)(ktc2_Obj* object);
+	/* Called when the count of an instance comes down to [pairs] or less: when nothing else holds it and the objects it is in a cycle of two with, it unlinks them and returns the one to release, which frees them all; NULL otherwise. */
+	ktc2_Obj* (*pair)(ktc2_Obj* object);
 	/* How many of them [pair] looks at: it is called when the count comes down to that many or fewer. */
 	uint32_t pairs;
 } ktc2_TypeInfo;
@@ -258,6 +260,7 @@ extern const ktc2_TypeInfo ktc2_types[];
 
 /** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left);
+
 
 enum {
 	KTC2_TYPE_NONE = 0,
@@ -413,6 +416,17 @@ void ktc2_fail_freed(void);
 #define KTC2_CHECK_LIVE(object) ((void)0)
 #endif
 
+#ifdef KTC2_THREADS
+/**
+ * A reference to an object of a class with pair cycles, counted or given up once threads run. A
+ * release and its check of the pair are one step that no other count of such an object enters (the
+ * check needs counts that do not move, and another thread's check could free the object between the
+ * two); a reference counted meanwhile waits.
+ */
+void ktc2_retain_paired(ktc2_Obj* object);
+void ktc2_release_paired(ktc2_Obj* object);
+#endif
+
 /** Null-safe; returns its argument so it can wrap an expression. */
 static inline void* ktc2_retain(void* pointer)
 {
@@ -421,7 +435,15 @@ static inline void* ktc2_retain(void* pointer)
 	if (object) {
 		KTC2_CHECK_LIVE(object);
 		uint32_t count = KTC2_RC_LOAD(object);
-		if (count != KTC2_IMMORTAL) KTC2_RC_INC(object, count);
+		if (count != KTC2_IMMORTAL) {
+#ifdef KTC2_THREADS
+			if ((count & KTC2_PAIRED) && !KTC2_RC_ALONE(count)) {
+				ktc2_retain_paired(object);
+				return pointer;
+			}
+#endif
+			KTC2_RC_INC(object, count);
+		}
 	}
 	return pointer;
 }
@@ -435,16 +457,20 @@ static inline void ktc2_release(void* pointer)
 		KTC2_CHECK_LIVE(object);
 		uint32_t count = KTC2_RC_LOAD(object);
 		if (count != KTC2_IMMORTAL) {
+#ifdef KTC2_THREADS
+			if ((count & KTC2_PAIRED) && !KTC2_RC_ALONE(count)) {
+				ktc2_release_paired(object);
+				return;
+			}
+#endif
 			uint32_t left = KTC2_RC_DEC(object, count) & KTC2_COUNT_MASK;
 			if (left == 0) {
 				ktc2_destroy(object);
 			}
-#ifndef KTC2_THREADS
 			/* As few references left as objects of its own fields may hold it by: KClass.pairCycles. */
 			else if (count & KTC2_PAIRED) {
 				ktc2_pair_check(object, left);
 			}
-#endif
 		}
 	}
 }

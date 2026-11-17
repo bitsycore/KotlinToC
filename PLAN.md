@@ -101,8 +101,15 @@ look at them. `bench.py` before/after: in `build/bench/` of the Windows machine 
    (`benchmarks/native/ktc2/Lifetime.kt`: Native's takes only a lambda that captures nothing) and
    the version the report names. Left: the JSON program (a library for a program, on the three
    targets), `--self-timed`, the same on Windows and Linux.
-7. Pair cycles in programs with threads (the check reads two counts another thread could change):
-   kotlinx.serialization's serializers in a threaded program still warn (the showcase shows it).
+7. (done 2026-11-17, Mac) Pair cycles in programs with threads: a release of a paired object and its
+   check are one step under a lock (`ktc2_release_paired`), and a reference counted to such an object
+   meanwhile waits (`ktc2_retain_paired`); `__pair` now only decides and returns what to free, which is
+   released after the lock. The first try (a lock around the check alone) was wrong and
+   `integration/objects/PairCyclesThreads` found it at once: a thread waiting to check an object it had
+   just released met it freed by another thread's check. That test, 20 times under AddressSanitizer and
+   50 times plain, passes; the benchmarks are unchanged (none has a paired object in a threaded part).
+   The cost: a global lock for each release of a paired object once threads run. Not tried with
+   ThreadSanitizer.
 8. What "What I would do first" lists below from item 5 on.
 
 For whoever picks this up next, on any machine. `CLAUDE.md` says how to build and test,

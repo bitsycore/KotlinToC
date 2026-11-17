@@ -355,10 +355,62 @@ static void pool_leave(void)
 }
 #endif
 
+#ifdef KTC2_THREADS
+/** Set while a thread checks a pair cycle; how many references to paired objects are being counted. */
+static uint32_t pair_checking;
+static uint32_t pair_counting;
+
+/** A full barrier: what was written before is seen by every thread before what is read after. */
+static void pair_fence(void)
+{
+#if defined(_MSC_VER) && !defined(__clang__)
+	static volatile long fence;
+	_InterlockedOr(&fence, 0);
+#else
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+#endif
+}
+
+void ktc2_retain_paired(ktc2_Obj* object)
+{
+	for (;;) {
+		ktc2_atomic_add(&pair_counting, 1);
+		pair_fence();
+		if (!ktc2_atomic_load(&pair_checking)) {
+			ktc2_atomic_add(&object->rc, 1);
+			ktc2_atomic_sub(&pair_counting, 1);
+			return;
+		}
+		ktc2_atomic_sub(&pair_counting, 1);
+		while (ktc2_atomic_load(&pair_checking)) thread_yield();
+	}
+}
+
+void ktc2_release_paired(ktc2_Obj* object)
+{
+	/* No count of a paired object moves meanwhile, and no weak reference is read (the runtime's lock). */
+	while (ktc2_atomic_exchange(&pair_checking, 1)) thread_yield();
+	pair_fence();
+	while (ktc2_atomic_load(&pair_counting)) thread_yield();
+	runtime_enter();
+	uint32_t left = ktc2_atomic_sub(&object->rc, 1) & KTC2_COUNT_MASK;
+	ktc2_Obj* freed = NULL;
+	if (left != 0) {
+		const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
+		if (left <= type->pairs && type->pair) freed = type->pair(object);
+	}
+	runtime_leave();
+	ktc2_atomic_exchange(&pair_checking, 0);
+	/* Destroyed after: its destruction releases other objects, paired ones among them. */
+	if (left == 0) ktc2_destroy(object);
+	else if (freed) ktc2_release(freed);
+}
+#endif
+
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left)
 {
 	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
-	if (left <= type->pairs && type->pair) type->pair(object);
+	if (left <= type->pairs && type->pair) ktc2_release(type->pair(object));
 }
 
 void* ktc2_alloc(size_t size, uint32_t typeId)

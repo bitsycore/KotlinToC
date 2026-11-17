@@ -302,7 +302,13 @@ leaves no more references than the class has pairs calls `ktc2_pair_check`, whic
 class's `__collect`: when every reference left is held by a partner that it alone holds, the
 partners give theirs up without a release and the object goes, taking them with it. It is exact:
 nothing is freed while a reference from outside is left, so nothing a program can see changes.
-Not in a program with threads (`KTC2_THREADS`), where the cycle is reported instead. `CycleLint` warns at compile time about the other classes that can reach
+In a program with threads (`KTC2_THREADS`) the same, once threads run, with one more rule: a release of an
+object of a paired class and its check are one step under a lock (`ktc2_release_paired`: the runtime's lock,
+which also keeps weak references from being read, and a flag that a reference counted to such an object
+meanwhile waits for, `ktc2_retain_paired`). Counted apart, another thread could take a reference through a
+partner's field between the reads of two counts, or free the pair under a check that has not run yet. The
+objects are destroyed after the lock is given up. It costs a lock for each release of a paired object in a
+threaded program (`integration/objects/PairCyclesThreads`). `CycleLint` warns at compile time about the other classes that can reach
 themselves through strong references; `@Weak` (on a property, or on an `inner` class for its
 outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner

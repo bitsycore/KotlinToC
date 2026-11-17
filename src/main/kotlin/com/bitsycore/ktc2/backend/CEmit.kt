@@ -418,8 +418,8 @@ class CEmitter(private val mModule: KModule) {
 			if (vClass.pairCycles.isNotEmpty()) {
 				append("/** Frees an instance held only by objects it holds itself, which only it holds, and them with it; 1 when it did. */\n")
 				append("int ${vClass.cName}__collect(ktc2_Obj* object);\n")
-				append("/** Called when the count of an instance came down to its number of pair cycles or less: [__collect] for it and its partners. */\n")
-				append("void ${vClass.cName}__pair(ktc2_Obj* object);\n")
+				append("/** Called when the count of an instance came down to its number of pair cycles or less: [__collect] for it and its partners; the object to release, or NULL. */\n")
+				append("ktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object);\n")
 			}
 			if (vClass.isUsedInline) {
 				append("/** A heap copy of an instance (the boxed form of an inline value). */\n")
@@ -569,23 +569,25 @@ class CEmitter(private val mModule: KModule) {
 				fun back(inPair: KPairCycle, inPartner: String): String = "((${(inPair.back.owner ?: inPair.partner).cName}*)$inPartner)->${inPair.back.cName}"
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					vBodies.append("\tktc2_Obj* partner$vIndex = ${partner(vIndex, vPair)};\n")
-					vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (partner$vIndex->rc & KTC2_COUNT_MASK) == 1 && (ktc2_Obj*)${back(vPair, "partner$vIndex")} == object;\n")
+					vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1 && (ktc2_Obj*)${back(vPair, "partner$vIndex")} == object;\n")
 					vBodies.append("\tif (held$vIndex) explained++;\n")
 				}
-				vBodies.append("\tif (explained == 0 || (object->rc & KTC2_COUNT_MASK) != explained) return 0;\n")
+				vBodies.append("\tif (explained == 0 || (KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return 0;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					vBodies.append("\tif (held$vIndex) ${back(vPair, "partner$vIndex")} = NULL;\n")
 				}
-				vBodies.append("\tobject->rc = (object->rc & ~KTC2_COUNT_MASK) | 1;\n\tktc2_release(object);\n\treturn 1;\n}\n")
+				// The object is then this function's alone (its count one): the caller releases it, which frees the pair.
+				vBodies.append("\tKTC2_RC_SET(object, (KTC2_RC_LOAD(object) & ~KTC2_COUNT_MASK) | 1);\n\treturn 1;\n}\n")
 				// The check above, and then the same for each partner: the count that came down may be what was left of
-				// one partner's references to another object of the pair.
-				vBodies.append("\nvoid ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tif (${vClass.cName}__collect(object)) return;\n")
+				// one partner's references to another object of the pair. What it returns the runtime releases, after the
+				// step a program with threads takes under its lock (ktc2_release_paired).
+				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tif (${vClass.cName}__collect(object)) return object;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					if (vPair.partner.pairCycles.isEmpty()) continue
 					vBodies.append("\tktc2_Obj* other$vIndex = ${partner(vIndex, vPair)};\n")
-					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex)) return;\n")
+					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex)) return other$vIndex;\n")
 				}
-				vBodies.append("}\n")
+				vBodies.append("\treturn NULL;\n}\n")
 			}
 			vClass.deinit?.let { vDeinit ->
 				vState.includes += vDeinit.unit

@@ -81,10 +81,9 @@ class CycleLint(private val mModule: KModule) {
 				val vKey = vCycle.map { "${(it.field.owner ?: it.from).name}.${it.field.cName}" }.sorted().joinToString(",")
 				if (!vSeen.add(vKey)) continue
 				// Two objects that hold each other: the runtime frees them when nothing else holds either (KClass.pairCycles),
-				// whichever classes of the two fields' types they are. Not in a program with threads, where another thread
-				// may be taking one of them.
+				// whichever classes of the two fields' types they are; with threads too (ktc2_release_paired in the runtime).
 				val vPairable = vCycle.size == 2 && isPairable(vCycle[0]) && isPairable(vCycle[1])
-				if (vPairable && !mModule.usesThreads) {
+				if (vPairable) {
 					// Every field of one that may hold the other, with every field of the other that may hold it back: an
 					// object may be held by several of its partner's (`posValue` and `negValue` of the same cache).
 					val (vThere, vBack) = vCycle
@@ -96,7 +95,7 @@ class CycleLint(private val mModule: KModule) {
 				// The library's own cycles are its design, answered in the library: not the program's to change.
 				if (isLibrary(vClass)) continue
 				val vPath = vCycle.joinToString(" -> ") { "${shownName(it.field.owner ?: it.from)}.${it.field.cName}" } + " -> ${shownName(vClass)}"
-				warnings += "reference cycle possible: $vPath (never freed if it forms): ${advice(vCycle.last(), vPairable)}"
+				warnings += "reference cycle possible: $vPath (never freed if it forms): ${advice(vCycle.last())}"
 			}
 		}
 	}
@@ -263,7 +262,7 @@ class CycleLint(private val mModule: KModule) {
 	}
 
 	/** What a warning of a cycle asks of the program: [inBack] is the reference that closes it. */
-	private fun advice(inBack: Edge, inPairable: Boolean): String {
+	private fun advice(inBack: Edge): String {
 		val vOwner = shownName(inBack.field.owner ?: inBack.from)
 		val vName = inBack.field.cName
 		val vWhat = when {
@@ -272,8 +271,7 @@ class CycleLint(private val mModule: KModule) {
 			vName.trimEnd('_') == "outer" && inBack.field.isImmutable -> "mark the inner class $vOwner @Weak (its reference to the outer object)"
 			else -> "mark $vOwner.$vName @Weak if it does not own what it refers to"
 		}
-		val vThreads = if (inPairable) "; a cycle of two objects is freed by itself only in a program without threads" else ""
-		return "$vWhat, use WeakRef, or @Acyclic if the cycle cannot form$vThreads"
+		return "$vWhat, use WeakRef, or @Acyclic if the cycle cannot form"
 	}
 
 	/** The name of [inClass] in a warning: a lambda and an object expression have none of their own. */
