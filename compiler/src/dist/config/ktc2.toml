@@ -1,0 +1,73 @@
+# ktc2's settings. Each comes from the first of: the command (--set key=value, or its option), its environment
+# variable, this file, the default shown here. `ktc2 --settings` prints them all with where each comes from.
+# KTC2_CONFIG names another file to read instead of this one. A text may say ${env:NAME}.
+
+# Where the sources ktc2 fetches are kept (KTC2_CACHE).
+# cache = "~/.ktc2/cache"
+
+# The Maven repositories sources are fetched from, in order (KTC2_MAVEN: addresses separated by commas).
+# A module's own repositories are tried before these. An entry gives what a repository is entered with: `user` and
+# `password` (or a `token`, sent as a bearer). An entry of the same address here gives them to a module's repository,
+# or to one of KTC2_MAVEN, that says nothing of them.
+# [[maven]]
+# url = "https://repo1.maven.org/maven2"
+#
+# [[maven]]
+# url = "https://maven.pkg.github.com/owner/repository"
+# user = "${env:GITHUB_ACTOR}"
+# password = "${env:GITHUB_TOKEN}"
+
+[build]
+# The C compiler (KTC2_CC); empty: the first of gcc, clang, cc on the path.
+# cc = ""
+# Build with CMake (KTC2_CMAKE, --cmake).
+# cmake = false
+# More arguments for CMake's configuration (KTC2_CMAKE_ARGS).
+# cmakeArgs = ["-G", "Ninja"]
+# Link-time optimization of a release (KTC2_LTO): true, false, or auto.
+# lto = "auto"
+# Build without optimization, with debug information and the leak report (KTC2_BUILD_DEBUG, --debug).
+# debug = false
+# Options for the C compiler and the linker; those of the environment and the command are added to these
+# (KTC2_COPT, -copt; KTC2_LOPT, -lopt).
+# compilerOpts = []
+# linkerOpts = []
+
+[checks]
+# assert() is checked (KTC2_ASSERTIONS, -ea).
+# assertions = false
+# An index out of bounds or a division by zero: "throw", or "abort" the program (KTC2_CHECKS, --checks=).
+# failure = "throw"
+
+[warnings]
+# List every allocation left on the heap, with the reason (KTC2_WARN_HEAP, --warn-heap).
+# heap = false
+# Report classes that can form reference cycles (KTC2_WARN_CYCLES, --no-warn-cycles).
+# cycles = true
+
+[output]
+# No line for each step (KTC2_QUIET, -q).
+# quiet = false
+
+[daemon]
+# Hand commands to a compiler process that stays between them (KTC2_DAEMON).
+# enabled = true
+# Keep the analysed library between compilations: true, false, or auto (KTC2_KEEP_LIBRARY).
+# keepLibrary = "auto"
+
+[debug]
+# Also write the IR of the Kotlin compiler and ktc2's after each pass (KTC2_DUMP_IR, --dump-ir).
+# dumpIr = false
+# The functions whose KIR is written, by a part of their C name; "all": every one (KTC2_DUMP_KIR).
+# dumpKir = ""
+# Optimizations left out (KTC2_SKIP): devirtualize, copies, listloops, ranges, handover, brief, walk, owned,
+# slots, rooms, inline.
+# skip = []
+# Print where compile time goes (KTC2_TIMING).
+# timing = false
+# Explain reference-count decisions (KTC2_DEBUG_BORROW).
+# borrow = false
+# Report the cycles of the library's own classes too (KTC2_DEBUG_CYCLES).
+# cycles = false
+# Print how many calls were made direct and array accesses proven in range (KTC2_DEBUG_PASSES).
+# passes = false

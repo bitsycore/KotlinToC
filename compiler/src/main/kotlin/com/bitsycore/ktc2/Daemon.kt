@@ -36,7 +36,7 @@ the process.
 // ==================
 
 /*
-The command sends the secret, its working directory and its arguments. The process answers
+The command sends the secret, its working directory, its arguments and its environment. The process answers
 with parts, each a byte saying what it is: text for standard output or for standard error (a
 length and that many bytes), a program for the command to run in the process's place (its
 path and arguments, for `--run`: the program has to have the terminal of the command), or the
@@ -81,6 +81,8 @@ private fun daemonKey(): String {
 	}
 	vText.append(System.getProperty("java.home")).append(';')
 	System.getProperties().stringPropertyNames().filter { it.startsWith("ktc2.") }.sorted().forEach { vText.append(it).append('=').append(System.getProperty(it)).append(';') }
+	// A process started before the configuration file changed would keep what it read of it in passes it has loaded.
+	vText.append(Settings.configFile?.path).append('=').append(Settings.configText.hashCode()).append(';')
 	System.getenv().filterKeys { it.startsWith("KTC2_") || it.equals("PATH", ignoreCase = true) }.toSortedMap().forEach { (vName, vValue) -> vText.append(vName).append('=').append(vValue).append(';') }
 	return MessageDigest.getInstance("SHA-256").digest(vText.toString().toByteArray()).joinToString("") { "%02x".format(it) }.take(32)
 }
@@ -113,7 +115,7 @@ fun runThroughDaemon(inArguments: Array<String>): Int? {
 		readState()?.let { send(it, arrayOf(kStopDaemon)) }
 		return 0
 	}
-	if (System.getenv("KTC2_DAEMON") == "0") return null
+	if (!Settings.flag("daemon.enabled")) return null
 	return try {
 		val vKey = daemonKey()
 		var vState = readState()
@@ -171,6 +173,13 @@ private fun send(inState: State, inArguments: Array<String>): Int? {
 			vTo.writeUTF(File("").absolutePath)
 			vTo.writeInt(inArguments.size)
 			inArguments.forEach { vTo.writeUTF(it) }
+			// The command's environment: what `${env:NAME}` in a configuration or a module file stands for is the command's.
+			val vEnvironment = System.getenv()
+			vTo.writeInt(vEnvironment.size)
+			vEnvironment.forEach { (vName, vValue) ->
+				vTo.writeUTF(vName)
+				vTo.writeUTF(vValue)
+			}
 			vTo.flush()
 			val vFrom = DataInputStream(vSocket.getInputStream().buffered())
 			while (vStatus == null) {
@@ -258,6 +267,7 @@ fun serveDaemon(inKey: String, inRun: (Array<String>, File) -> Pair<Int, List<St
 					if (vFrom.readUTF() != vSecret) return@use
 					val vDirectory = File(vFrom.readUTF())
 					val vArguments = Array(vFrom.readInt()) { vFrom.readUTF() }
+					Settings.commandEnvironment = HashMap<String, String>().also { vMap -> repeat(vFrom.readInt()) { vMap[vFrom.readUTF()] = vFrom.readUTF() } }
 					if (vArguments.firstOrNull() == kStopDaemon) {
 						vStops = true
 						vTo.writeByte(kExit)

@@ -18,7 +18,12 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
   --no-warn-cycles   do not report classes that can form reference cycles
   --dump-ir          also write the IR received from the Kotlin compiler, and ktc2's own after each pass (kir/)
   -q, --quiet        no line for each step (fetching, translating, compiling); KTC2_QUIET=1 the same
-  --stop-daemon      end the compiler process that ktc2 keeps running between commands (KTC2_DAEMON=0: none is used)"""
+  --set <key=value>  a setting for this command only (ktc2 --settings lists them)
+  --settings         print every setting, its value, and where the value comes from
+  --stop-daemon      end the compiler process that ktc2 keeps running between commands (KTC2_DAEMON=0: none is used)
+
+Every setting comes from the first of: the command (--set, or the option above that stands for it), its KTC2_
+environment variable, the configuration file (KTC2_CONFIG, else config/ktc2.toml of the installation), the default."""
 
 /** Ends the command being run, with the status it exits with. */
 private class Exit(val status: Int) : RuntimeException()
@@ -39,6 +44,14 @@ fun main(args: Array<String>) {
 		serveDaemon(args.getOrElse(1) { "" }) { vArguments, vDirectory -> runCommand(vArguments, vDirectory) }
 		exitProcess(0)
 	}
+	// Whether a process stays to serve commands is a setting too: of the configuration, the environment or `--set`.
+	Settings.reset()
+	args.forEachIndexed { vIndex, vArg ->
+		if (vArg == "--set" && args.getOrNull(vIndex + 1)?.startsWith("daemon.") == true) {
+			val vSetting = args[vIndex + 1]
+			Settings.set(vSetting.substringBefore('='), vSetting.substringAfter('=', ""))
+		}
+	}
 	// The process that runs the command, here or the one that stays, is told whether it may rewrite a line in place.
 	val vInTerminal = System.console() != null && System.getenv("TERM") != "dumb" && args.firstOrNull() != kStopDaemon
 	val vArguments = if (vInTerminal) arrayOf(kTerminalArgument) + args else args
@@ -57,11 +70,18 @@ fun main(args: Array<String>) {
 fun runCommand(args: Array<String>, inDirectory: File?): Pair<Int, List<String>?> {
 	kCommandProperties.forEach { System.clearProperty(it) }
 	Progress.isTerminal = false
-	Progress.isShown = System.getenv("KTC2_QUIET") != "1"
+	Progress.isShown = false
+	Settings.reset()?.let { vProblem ->
+		System.err.println("ktc2: $vProblem")
+		if (vProblem.startsWith("error")) return 2 to null
+	}
 	return try {
 		0 to command(args, inDirectory)
 	} catch (vExit: Exit) {
 		vExit.status to null
+	} catch (vError: Toml.Error) {
+		System.err.println("ktc2: error: ${vError.message}")
+		1 to null
 	}
 }
 
@@ -71,11 +91,9 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 	val vSources = LinkedHashSet<File>()
 	val vModules = ArrayList<File>()
 	var vOutDir: File? = null
-	var vDumpIr = false
 	var vBuild = false
 	var vRun = false
-	var vDebug = false
-	var vCMake = false
+	var vShowSettings = false
 	var vProgramArguments = emptyList<String>()
 	var vIndex = 0
 	while (vIndex < args.size) {
@@ -87,20 +105,25 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 			}
 			vArg == "-o" && vIndex < args.size -> vOutDir = path(args[vIndex++])
 			vArg == kTerminalArgument -> Progress.isTerminal = true
-			vArg == "--quiet" || vArg == "-q" -> Progress.isShown = false
+			vArg == "--quiet" || vArg == "-q" -> Settings.set("output.quiet", true)
 			vArg == "--build" -> vBuild = true
-			vArg == "--cmake" -> vCMake = true
+			vArg == "--cmake" -> Settings.set("build.cmake", true)
 			vArg == "--run" -> vRun = true
-			vArg == "--debug" -> vDebug = true
-			vArg == "--dump-ir" -> vDumpIr = true
-			vArg == "--warn-heap" -> System.setProperty("ktc2.warnHeap", "true")
-			vArg == "--checks=abort" -> System.setProperty("ktc2.checks", "abort")
-			vArg == "--checks=throw" -> System.setProperty("ktc2.checks", "throw")
-			vArg == "--no-warn-cycles" -> System.setProperty("ktc2.warnCycles", "false")
-			vArg == "-copt" && vIndex < args.size -> addOption("ktc2.copt", args[vIndex++])
+			vArg == "--debug" -> Settings.set("build.debug", true)
+			vArg == "--dump-ir" -> Settings.set("debug.dumpIr", true)
+			vArg == "--warn-heap" -> Settings.set("warnings.heap", true)
+			vArg == "--checks=abort" || vArg == "--checks=throw" -> Settings.set("checks.failure", vArg.substringAfter('='))
+			vArg == "--no-warn-cycles" -> Settings.set("warnings.cycles", false)
+			vArg == "-copt" && vIndex < args.size -> Settings.set("build.compilerOpts", args[vIndex++])
 			// As Kotlin/Native's compiler: assertions are checked when asked for, in any build.
-			vArg == "-ea" || vArg == "-enable-assertions" || vArg == "--enable-assertions" -> addOption("ktc2.copt", "-DKTC2_ASSERTIONS")
-			vArg == "-lopt" && vIndex < args.size -> addOption("ktc2.lopt", args[vIndex++])
+			vArg == "-ea" || vArg == "-enable-assertions" || vArg == "--enable-assertions" -> Settings.set("checks.assertions", true)
+			vArg == "-lopt" && vIndex < args.size -> Settings.set("build.linkerOpts", args[vIndex++])
+			vArg == "--set" && vIndex < args.size -> {
+				val vSetting = args[vIndex++]
+				if ('=' !in vSetting) fail("--set wants key=value, not '$vSetting'")
+				if (!Settings.set(vSetting.substringBefore('=').trim(), vSetting.substringAfter('='))) throw Exit(2)
+			}
+			vArg == "--settings" -> vShowSettings = true
 			vArg.endsWith(".kt") || vArg.endsWith(".def") -> vSources += path(vArg)
 			File(path(vArg), kModuleFileName).isFile -> vModules += path(vArg)
 			// A directory without a module file stands for the sources and definitions directly in it.
@@ -108,6 +131,24 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 			else -> fail("unknown argument '$vArg'")
 		}
 	}
+	if (vShowSettings) {
+		print(Settings.describe())
+		return null
+	}
+	// What the settings say, for the parts of ktc2 that read it from the command's properties.
+	Progress.isShown = !Settings.flag("output.quiet")
+	val vDumpIr = Settings.flag("debug.dumpIr")
+	val vDebug = Settings.flag("build.debug")
+	val vCMake = Settings.flag("build.cmake")
+	when (val vChecks = Settings.text("checks.failure")) {
+		"throw", "abort" -> System.setProperty("ktc2.checks", vChecks)
+		else -> fail("checks.failure is throw or abort, not '$vChecks'")
+	}
+	if (Settings.flag("warnings.heap")) System.setProperty("ktc2.warnHeap", "true")
+	if (!Settings.flag("warnings.cycles")) System.setProperty("ktc2.warnCycles", "false")
+	if (Settings.flag("checks.assertions")) addOption("ktc2.copt", "-DKTC2_ASSERTIONS")
+	Settings.list("build.compilerOpts").forEach { addOption("ktc2.copt", it) }
+	Settings.list("build.linkerOpts").forEach { addOption("ktc2.lopt", it) }
 
 	val vOut = vOutDir ?: vModules.firstOrNull()?.let { File(it, "build") } ?: path("out")
 	var vName = vSources.firstOrNull { it.extension == "kt" }?.nameWithoutExtension ?: "program"
@@ -158,7 +199,7 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 
 /**
  * What a translation is made from, as text: ktc2's own build, the Kotlin it runs, each source file with a digest of its
- * content, the options the command left in system properties, and the `KTC2_` settings. The same text, the same C.
+ * content, the options the command left in system properties, and the settings. The same text, the same C.
  */
 private fun inputsStamp(inSources: List<File>, inDumpIr: Boolean): String {
 	val vDigest = java.security.MessageDigest.getInstance("SHA-256")
@@ -169,7 +210,7 @@ private fun inputsStamp(inSources: List<File>, inDumpIr: Boolean): String {
 		add("kotlin ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}")
 		add("dumpIr $inDumpIr")
 		kCommandProperties.forEach { add("$it=${System.getProperty(it)}") }
-		System.getenv().keys.filter { it.startsWith("KTC2_") }.sorted().forEach { add("$it=${System.getenv(it)}") }
+		addAll(Settings.stamp())
 		inSources.map { it.absoluteFile }.sortedBy { it.path }.forEach { add("${it.path} ${digestOf(it)}") }
 	}.joinToString("\n", postfix = "\n")
 }

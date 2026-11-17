@@ -15,7 +15,7 @@ private const val kInlineLines = 4
 /** How many nested steps a chain of tests may have before it is written flat (`flatChain`). */
 private const val kFlatChainSteps = 8
 
-private val kNoInline = "inline" in (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }
+private val kNoInline: Boolean get() = "inline" in com.bitsycore.ktc2.Settings.list("debug.skip")
 
 /**
  * Prints a [KModule] as C11: one `.h` / `.c` pair per [KUnit], the runtime, `ktc2_types.h`

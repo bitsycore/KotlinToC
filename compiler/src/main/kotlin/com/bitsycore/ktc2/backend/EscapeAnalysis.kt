@@ -3,10 +3,10 @@ package com.bitsycore.ktc2.backend
 import com.bitsycore.ktc2.kir.*
 
 /** `KTC2_SKIP=rooms`: a variable given a new object by a call again and again gets it from the heap. */
-private val kSkipsRooms = "rooms" in (System.getenv("KTC2_SKIP") ?: "").split(",")
+private val kSkipsRooms: Boolean get() = "rooms" in com.bitsycore.ktc2.Settings.list("debug.skip")
 
 /** `KTC2_SKIP=slots`: results that come through a dispatcher are not built in the caller's frame. */
-private val kSkipsDispatcherSlots = "slots" in (System.getenv("KTC2_SKIP") ?: "").split(",")
+private val kSkipsDispatcherSlots: Boolean get() = "slots" in com.bitsycore.ktc2.Settings.list("debug.skip")
 
 /** Largest array (in elements) that is placed on the stack. */
 private const val kStackArrayLimit = 64

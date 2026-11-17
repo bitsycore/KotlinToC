@@ -589,7 +589,8 @@ jvm          = ["org.jetbrains.kotlinx:kotlinx-io-core-jvm"]      # its jars, fo
 A module that takes a library as it is says where that library's sources come from (since
 2026-11-17; before, ktc2's Gradle build fetched them and the tool carried them): each line of
 `upstream` is a directory and what fills it, the source jar of a Maven artifact (`group:artifact`,
-at `version` unless it names its own; from Maven Central, or the repository `KTC2_MAVEN` names) or a
+at `version` unless it names its own; from the first repository that has it: the module's own `[[maven]]`
+tables, then those of the setting `maven`, Maven Central by default) or a
 git repository (`git:url@revision`, `${version}` standing for the version). ktc2 fetches them the
 first time a program needs them, into `<cache>/modules/<name>@<version>` (`Project.kt`,
 `upstreamOf`), and `files.txt` lists the files of them it compiles, by their paths there: each line of
@@ -606,7 +607,7 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
 
 - A dependency is a module shipped with ktc2 (`modules/`, today
   `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable` and `atomicfu`), a directory, or a place in a git repository. Repositories are
-  cloned once into `~/.ktc2/cache` (`KTC2_CACHE`).
+  cloned once into `~/.ktc2/cache` (the setting `cache`, `KTC2_CACHE`).
 - A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
   the sources of kotlinx-io 0.9.3, which ktc2 fetches (its `upstream` above); its `files.txt` lists
   those it compiles, and `files` its own (a module shipped with ktc2 cannot list a directory of its

@@ -830,7 +830,7 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 			val vCall = BorrowedReturns.callOf(inValue) ?: return null
 			val vInfo = mReturns.of(vCall.function)
 			if (vInfo == null) {
-				if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: its result is its own")
+				if (com.bitsycore.ktc2.Settings.flag("debug.borrow")) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: its result is its own")
 				return null
 			}
 			// In the borrowed form of a function, the calls its result comes from were checked when it qualified.
@@ -847,18 +847,18 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 					}
 				}
 				if (vInfo.place.isWrittenBy(vRest)) {
-					if (System.getenv("KTC2_DEBUG_BORROW") != null) {
+					if (com.bitsycore.ktc2.Settings.flag("debug.borrow")) {
 						System.err.println("ktc2: borrow: result of ${vCall.function.cName} in ${inLocal.cName}: the rest of the block writes all=${vRest.all} elements=${vRest.elements && vInfo.place.elements} fields=${vInfo.place.fields.filter { vRest.writesField(it) }.map { it.cName }}")
 					}
 					return null
 				}
 				val vIsHeld = { vBase: KExpr -> (vBase is KRead && isSteady(vBase.local)) || vBase is KStaticRead || vBase is KStringLit || vBase is KNull }
 				if (!vCall.arguments.all { !isRef(it.type) || stays(it, lazyOf(vRest), vIsHeld) }) {
-					if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: an argument may not stay")
+					if (com.bitsycore.ktc2.Settings.flag("debug.borrow")) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: an argument may not stay")
 					return null
 				}
 				if (vIsBrief) mBriefly += inLocal
-				if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: borrowed${if (vIsBrief) " up to its last use" else ""}")
+				if (com.bitsycore.ktc2.Settings.flag("debug.borrow")) System.err.println("ktc2: borrow: call to ${vCall.function.cName}: borrowed${if (vIsBrief) " up to its last use" else ""}")
 			}
 			// A mixed result may be an object of its own: it then also goes into a variable that owns it,
 			// this function's (declared empty, released with the block) or, in a `__m` form, the caller's.

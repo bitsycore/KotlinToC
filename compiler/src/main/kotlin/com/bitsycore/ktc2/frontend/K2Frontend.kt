@@ -236,7 +236,7 @@ object K2Frontend {
 			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, if (vKeepsLibrary) keptCopy(codeSourceOf(ktc2.Struct::class.java)) else codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
 			add("-Xplugin=${pluginClasspath(usesSerialization(inGivenSources))}")
 			// KTC2_TIMING: also the compiler's own account of its phases.
-			if (System.getenv("KTC2_TIMING") != null && !vKeepsLibrary) add("-Xdump-perf=" + File(inOutDir, "perf.log").path)
+			if (com.bitsycore.ktc2.Settings.flag("debug.timing") && !vKeepsLibrary) add("-Xdump-perf=" + File(inOutDir, "perf.log").path)
 		}
 		val vStart = System.nanoTime()
 		System.setProperty(kStartProperty, vStart.toString())
@@ -258,11 +258,8 @@ object K2Frontend {
 	 * process `ktc2` keeps running, or the test suite, which says so with `ktc2.keepLibrary` - and
 	 * `KTC2_KEEP_LIBRARY=0` does not forbid it. A process that compiles once has nothing to keep.
 	 */
-	private fun keepsLibrary(): Boolean = when (System.getenv("KTC2_KEEP_LIBRARY")) {
-		"0" -> false
-		"1" -> true
-		else -> com.bitsycore.ktc2.gIsDaemon || System.getProperty("ktc2.keepLibrary") == "true"
-	}
+	private fun keepsLibrary(): Boolean =
+		com.bitsycore.ktc2.Settings.choice("daemon.keepLibrary") ?: (com.bitsycore.ktc2.gIsDaemon || System.getProperty("ktc2.keepLibrary") == "true")
 
 	/** Where the library sources of this process are, when its analysis is kept between compilations. */
 	private val kLibraryDir: File by lazy {
@@ -299,7 +296,7 @@ object K2Frontend {
 
 	/** With `KTC2_TIMING` set, prints how long the step [inWhat] took since [inSince] (a `System.nanoTime()`). */
 	internal fun reportTime(inWhat: String, inSince: Long) {
-		if (System.getenv("KTC2_TIMING") != null) System.err.println("ktc2: time: $inWhat ${(System.nanoTime() - inSince) / 1_000_000} ms")
+		if (com.bitsycore.ktc2.Settings.flag("debug.timing")) System.err.println("ktc2: time: $inWhat ${(System.nanoTime() - inSince) / 1_000_000} ms")
 	}
 
 	/**
@@ -516,7 +513,7 @@ class Ktc2Extension : IrGenerationExtension {
 		// With `--dump-ir`, KIR is written after the importer and after each pass (`kir/`): the code of
 		// the program itself, or with KTC2_DUMP_KIR=<text> the functions whose C name contains the
 		// text (`all`: every function, the library's too).
-		val vDumpFilter = System.getenv("KTC2_DUMP_KIR")
+		val vDumpFilter = com.bitsycore.ktc2.Settings.text("debug.dumpKir").takeIf { it.isNotEmpty() }
 		val vDumpsKir = System.getProperty(kDumpIrProperty) == "true" || vDumpFilter != null
 		var vStage = 0
 		fun dumpKir(inStage: String) {
@@ -535,11 +532,11 @@ class Ktc2Extension : IrGenerationExtension {
 		val vCycles = CycleLint(vModule).also { it.run() }
 		if (System.getProperty("ktc2.warnCycles") != "false") vCycles.warnings.forEach { System.err.println("ktc2: warning: $it") }
 		// KTC2_SKIP names optimizations to leave out (devirtualize, ranges, handover, brief), to find which one a wrong program comes from.
-		val vSkipped = (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }.toSet()
+		val vSkipped = com.bitsycore.ktc2.Settings.list("debug.skip").toSet()
 		val vDirect = Devirtualize(vModule).also { if ("devirtualize" !in vSkipped) it.run() }
 		val vLists = ListLoops(vModule).also { if ("listloops" !in vSkipped) it.run() }
 		val vRanges = RangeChecks(vModule).also { if ("ranges" !in vSkipped) it.run() }
-		if (System.getenv("KTC2_DEBUG_PASSES") != null) {
+		if (com.bitsycore.ktc2.Settings.flag("debug.passes")) {
 			System.err.println("ktc2: passes: ${vDirect.copied} functions copied for the classes they are called with, ${vDirect.resolved} dispatched calls made direct, ${vDirect.answered} type tests answered, ${vLists.rewritten} loops over a list or a map written without an iterator, ${vLists.accesses} list accesses written out, ${vRanges.proven} array accesses proven in range")
 		}
 		dumpKir("Devirtualize and RangeChecks: calls made direct, type tests answered, accesses proven in range")

@@ -140,8 +140,41 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
   --warn-heap        list every allocation left on the heap, with the reason
   --no-warn-cycles   do not report classes that can form reference cycles
   --dump-ir          also write the IR received from the Kotlin compiler, and ktc2's own after each pass (kir/)
+  -q, --quiet        no line for each step
+  --set <key=value>  a setting for this command only
+  --settings         print every setting, its value, and where the value comes from
   --stop-daemon      end the compiler process ktc2 keeps running between commands
 ```
+
+### Settings
+
+Every setting comes from the first of: the command (`--set key=value`, or the option that stands
+for it), its environment variable (`KTC2_CC`, `KTC2_CACHE`...), the configuration file, ktc2's
+default. The configuration file is `config/ktc2.toml` next to ktc2's `bin/` (the release has one
+with every setting in it, as comments), or the file `KTC2_CONFIG` names. `ktc2 --settings` lists
+them all, with where each value comes from.
+
+```toml
+cache = "~/.ktc2/cache"          # where fetched sources are kept
+
+[[maven]]                        # the Maven repositories sources come from, in order
+url = "https://repo1.maven.org/maven2"
+
+[[maven]]
+url = "https://maven.pkg.github.com/owner/repository"
+user = "${env:GITHUB_ACTOR}"     # a text may take an environment variable
+password = "${env:GITHUB_TOKEN}" # or `token = "..."`, sent as a bearer
+
+[build]
+cc = "clang"
+compilerOpts = ["-march=native"] # those of KTC2_COPT and -copt are added to these
+```
+
+A module may name Maven repositories of its own, tried before those of the settings, with the
+same `[[maven]]` tables in its `module.ktc2.toml`. A module file is shared and a secret is not: its
+`user` and `password` (or `token`) take the environment (`${env:NAME}`), or come from the entry of
+the configuration file with the same `url`, as Maven's `settings.xml` gives them to a repository a
+project names.
 
 The first command starts a compiler process that stays for the next ones, which makes them
 more than ten times faster (about 1 s for a small program instead of 13). It ends by itself

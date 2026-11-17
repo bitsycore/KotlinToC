@@ -109,7 +109,7 @@ class BorrowedReturns(inModule: KModule, private val mEffects: Effects) {
 	// ==================
 
 	private fun debug(inMessage: () -> String) {
-		if (System.getenv("KTC2_DEBUG_BORROW") != null) System.err.println("ktc2: borrow: ${inMessage()}")
+		if (com.bitsycore.ktc2.Settings.flag("debug.borrow")) System.err.println("ktc2: borrow: ${inMessage()}")
 	}
 
 	/** True when the dispatcher [inFunction] has to box an argument for [inTarget]: the box does not outlive the call. */

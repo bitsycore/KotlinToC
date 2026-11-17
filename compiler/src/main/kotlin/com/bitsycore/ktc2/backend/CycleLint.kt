@@ -41,7 +41,7 @@ class CycleLint(private val mModule: KModule) {
 	private val mStoresParameter = HashMap<KFunction, List<Pair<Int, KField>>>()
 
 	/** `KTC2_DEBUG_CYCLES=1`: the cycles of the library's own classes are reported too, to find what to mark weak there. */
-	private val kReportsLibrary = System.getenv("KTC2_DEBUG_CYCLES") == "1"
+	private val kReportsLibrary: Boolean get() = com.bitsycore.ktc2.Settings.flag("debug.cycles")
 
 	private fun isLibrary(inClass: KClass): Boolean {
 		if (kReportsLibrary) return false

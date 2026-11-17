@@ -6,7 +6,7 @@ import com.bitsycore.ktc2.kir.*
 private val kAnything = Any()
 
 /** `KTC2_SKIP=copies`: no function is copied for the classes it is called with. */
-private val kSkipsCopies = "copies" in (System.getenv("KTC2_SKIP") ?: "").split(",").map { it.trim() }
+private val kSkipsCopies: Boolean get() = "copies" in com.bitsycore.ktc2.Settings.list("debug.skip")
 
 /** A function with more statements than this is not copied. */
 private const val kCopyStatements = 80

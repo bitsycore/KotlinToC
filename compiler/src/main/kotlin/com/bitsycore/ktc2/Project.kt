@@ -30,6 +30,11 @@ const val kModuleFileName = "module.ktc2.toml"
  * upstream     = ["core = org.jetbrains.kotlinx:kotlinx-io-core",   # where that library's sources come from
  *                 "src = git:https://github.com/user/lib.git@v${version}"]
  * jvm          = ["org.jetbrains.kotlinx:kotlinx-io-core-jvm"]   # its jars, for the suite's JVM side
+ *
+ * [[maven]]                              # a repository its upstream is fetched from, before those of the settings
+ * url          = "https://maven.example.com/releases"
+ * user         = "${env:EXAMPLE_USER}"   # and password, or token; from the environment, or from the
+ * password     = "${env:EXAMPLE_TOKEN}"  # configuration's entry of the same url
  * ```
  *
  * A module made of a library's sources taken as they are (kotlinx-io, kotlinx.serialization...) says
@@ -105,24 +110,29 @@ class ModuleFile(val directory: File, inText: String) {
 		File(directory, "files.txt").takeIf { it.isFile }?.readLines()?.mapNotNull { ListedFile.of(it) } ?: emptyList()
 	}
 
+	/**
+	 * The Maven repositories its `upstream` is fetched from before those of ktc2's settings: `[[maven]]` tables with a
+	 * `url` and, when it needs them, `user` and `password` or `token` (as `${env:NAME}`: a module file is shared, a
+	 * secret is not); what it says nothing of comes from the entry of ktc2's configuration with the same address.
+	 */
+	val repositories: List<Settings.Repository>
+
 	init {
-		// The small part of TOML a module file needs: `key = "text"` and `key = ["a", "b"]`, with comments.
-		val vQuoted = Regex("\"((?:[^\"\\\\]|\\\\.)*)\"")
-		var vPending = ""
-		for (vRawLine in inText.lines()) {
-			val vLine = (vPending + " " + vRawLine.substringBefore(" #").let { if (it.trimStart().startsWith("#")) "" else it }).trim()
-			// A list may run over several lines.
-			if (vLine.count { it == '[' } > vLine.count { it == ']' }) {
-				vPending = vLine
-				continue
+		val vTable = Toml.parse(inText, File(directory, kModuleFileName).path)
+		for ((vKey, vValue) in vTable) {
+			if (vKey == "maven") continue
+			mValues[vKey] = when (vValue) {
+				is List<*> -> vValue.map { it.toString() }
+				else -> listOf(vValue.toString())
 			}
-			vPending = ""
-			val vEquals = vLine.indexOf('=')
-			if (vEquals <= 0) continue
-			val vKey = vLine.substring(0, vEquals).trim()
-			val vValue = vLine.substring(vEquals + 1).trim()
-			val vItems = vQuoted.findAll(vValue).map { it.groupValues[1].replace("\\\"", "\"").replace("\\\\", "\\") }.toList()
-			mValues[vKey] = if (vItems.isEmpty() && vValue.isNotEmpty() && !vValue.startsWith("[")) listOf(vValue) else vItems
+		}
+		val vMaven = vTable["maven"]
+		repositories = (if (vMaven is List<*>) vMaven else listOfNotNull(vMaven)).mapNotNull { vEntry ->
+			Settings.Repository.of(vEntry)?.also { vRepository ->
+				val vRaw = vEntry as? Map<*, *>
+				if (vRaw != null && listOf("password", "token").any { (vRaw[it] as? String)?.let { vText -> vText.isNotEmpty() && "\${env:" !in vText } == true })
+					System.err.println("ktc2: warning: module '${vTable["name"] ?: directory.name}': the secret of ${vRepository.url} is written in its module file; `\${env:NAME}` takes it from the environment")
+			}?.let(Settings::credentialsFor)
 		}
 	}
 }
@@ -153,7 +163,7 @@ class GitSource(inText: String) {
 	 * @return its directory, or null after reporting why it could not be cloned
 	 */
 	fun checkout(): File? {
-		val vCache = System.getenv("KTC2_CACHE")?.let { File(it) } ?: File(System.getProperty("user.home"), ".ktc2/cache")
+		val vCache = cacheDirectory()
 		val vName = url.removeSuffix(".git").replace(Regex("^[a-z+]+://"), "").replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_')
 		val vTarget = File(vCache, vName + "@" + (revision ?: "default"))
 		// A clone that was interrupted has no marker: it is made again.
@@ -197,11 +207,8 @@ class GitSource(inText: String) {
 // MARK: Upstream
 // ==================
 
-/** Where ktc2 keeps what it fetches: `KTC2_CACHE`, else `~/.ktc2/cache`. */
-fun cacheDirectory(): File = System.getenv("KTC2_CACHE")?.let { File(it) } ?: File(System.getProperty("user.home"), ".ktc2/cache")
-
-/** The repository of Maven artifacts sources are fetched from: `KTC2_MAVEN`, else Maven Central. */
-private fun mavenRepository(): String = (System.getenv("KTC2_MAVEN") ?: "https://repo1.maven.org/maven2").trimEnd('/')
+/** Where ktc2 keeps what it fetches: the setting `cache` (`KTC2_CACHE`), `~/.ktc2/cache` by default. */
+fun cacheDirectory(): File = Settings.cacheDirectory()
 
 /**
  * The sources of the library [inModule] takes as they are (its `upstream`), at its chosen version, fetched into the
@@ -239,7 +246,7 @@ fun upstreamOf(inModule: ModuleFile): File? {
 				val vGit = GitSource(vSource.removePrefix("git:"))
 				val vCheckout = vGit.checkout() ?: return@withFileLock null
 				File(vCheckout, vGit.directory).copyRecursively(vDirectory, overwrite = true)
-			} else if (!fetchSources(vSource, vVersion, vDirectory)) {
+			} else if (!fetchSources(vSource, vVersion, vDirectory, inModule.repositories)) {
 				return@withFileLock null
 			}
 		}
@@ -299,9 +306,10 @@ private fun applyEdits(inFile: File, inEdits: String): Boolean {
 
 /**
  * Fetches the source jar of the Maven artifact [inCoordinate] (`group:artifact`, at [inVersion], or
- * `group:artifact:version`) and unpacks it into [inInto].
+ * `group:artifact:version`) and unpacks it into [inInto]: from the first of [inModuleRepositories], then of the
+ * repositories of ktc2's settings, that has it.
  */
-private fun fetchSources(inCoordinate: String, inVersion: String, inInto: File): Boolean {
+private fun fetchSources(inCoordinate: String, inVersion: String, inInto: File, inModuleRepositories: List<Settings.Repository>): Boolean {
 	val vParts = inCoordinate.split(':')
 	if (vParts.size !in 2..3) {
 		System.err.println("ktc2: error: '$inCoordinate' is not a Maven artifact (group:artifact or group:artifact:version)")
@@ -309,29 +317,79 @@ private fun fetchSources(inCoordinate: String, inVersion: String, inInto: File):
 	}
 	val (vGroup, vArtifact) = vParts
 	val vVersion = vParts.getOrNull(2) ?: inVersion
-	val vUrl = "${mavenRepository()}/${vGroup.replace('.', '/')}/$vArtifact/$vVersion/$vArtifact-$vVersion-sources.jar"
+	val vPath = "${vGroup.replace('.', '/')}/$vArtifact/$vVersion/$vArtifact-$vVersion-sources.jar"
+	val vRepositories = (inModuleRepositories + Settings.repositories()).distinctBy { it.key }
 	Progress.interrupt { System.err.println("ktc2: fetching $vGroup:$vArtifact:$vVersion (sources)") }
-	try {
-		java.net.URI(vUrl).toURL().openStream().use { vStream ->
-			java.util.zip.ZipInputStream(vStream).use { vZip ->
-				val vRoot = inInto.canonicalFile
-				while (true) {
-					val vEntry = vZip.nextEntry ?: break
-					val vFile = File(vRoot, vEntry.name).canonicalFile
-					// Nothing of the jar is written outside the directory it is for.
-					if (!vFile.path.startsWith(vRoot.path + File.separator)) continue
-					if (vEntry.isDirectory) vFile.mkdirs() else {
-						vFile.parentFile.mkdirs()
-						vFile.outputStream().use { vZip.copyTo(it) }
-					}
-				}
+	val vFailures = ArrayList<String>()
+	for (vRepository in vRepositories) {
+		val vUrl = "${vRepository.key}/$vPath"
+		try {
+			val vStream = openFollowingRedirects(vUrl, vRepository)
+			if (vStream == null) {
+				vFailures += "$vUrl: not there"
+				continue
+			}
+			vStream.use { unzipInto(it, inInto) }
+			return true
+		} catch (vError: java.io.IOException) {
+			vFailures += "$vUrl: ${vError.message}"
+		}
+	}
+	System.err.println("ktc2: error: could not fetch the sources of $vGroup:$vArtifact:$vVersion")
+	vFailures.forEach { System.err.println("  $it") }
+	return false
+}
+
+/**
+ * The content at [inUrl], asked for with what [inRepository] is entered with; null when it is not there (404).
+ * A redirection to another host is followed without the credentials: they are only for the repository's own.
+ */
+private fun openFollowingRedirects(inUrl: String, inRepository: Settings.Repository): java.io.InputStream? {
+	val vHost = java.net.URI(inRepository.url).host
+	var vUrl = inUrl
+	repeat(10) {
+		val vConnection = java.net.URI(vUrl).toURL().openConnection() as java.net.HttpURLConnection
+		vConnection.instanceFollowRedirects = false
+		vConnection.connectTimeout = 30_000
+		vConnection.readTimeout = 60_000
+		vConnection.setRequestProperty("User-Agent", "ktc2")
+		if (java.net.URI(vUrl).host == vHost) {
+			when {
+				!inRepository.token.isNullOrEmpty() -> vConnection.setRequestProperty("Authorization", "Bearer ${inRepository.token}")
+				!inRepository.user.isNullOrEmpty() -> vConnection.setRequestProperty("Authorization", "Basic " +
+					java.util.Base64.getEncoder().encodeToString("${inRepository.user}:${inRepository.password ?: ""}".toByteArray()))
 			}
 		}
-	} catch (vError: java.io.IOException) {
-		System.err.println("ktc2: error: could not fetch $vUrl: ${vError.message}")
-		return false
+		when (val vStatus = vConnection.responseCode) {
+			in 200..299 -> return vConnection.inputStream
+			301, 302, 303, 307, 308 -> {
+				val vLocation = vConnection.getHeaderField("Location") ?: throw java.io.IOException("a redirection without a place")
+				vUrl = java.net.URI(vUrl).resolve(vLocation).toString()
+				vConnection.disconnect()
+			}
+			404 -> return null
+			401, 403 -> throw java.io.IOException("refused ($vStatus)${if (inRepository.hasCredentials) "" else ": it may need a user and a password, or a token"}")
+			else -> throw java.io.IOException("HTTP $vStatus")
+		}
 	}
-	return true
+	throw java.io.IOException("too many redirections")
+}
+
+/** Unpacks the zip of [inStream] into [inInto]; nothing of it is written outside that directory. */
+private fun unzipInto(inStream: java.io.InputStream, inInto: File) {
+	inInto.mkdirs()
+	java.util.zip.ZipInputStream(inStream).use { vZip ->
+		val vRoot = inInto.canonicalFile
+		while (true) {
+			val vEntry = vZip.nextEntry ?: break
+			val vFile = File(vRoot, vEntry.name).canonicalFile
+			if (!vFile.path.startsWith(vRoot.path + File.separator)) continue
+			if (vEntry.isDirectory) vFile.mkdirs() else {
+				vFile.parentFile.mkdirs()
+				vFile.outputStream().use { vZip.copyTo(it) }
+			}
+		}
+	}
 }
 
 /**
@@ -614,7 +672,7 @@ private val kIsWindows = "win" in System.getProperty("os.name").lowercase()
 
 /** The C compiler to call: the one `KTC2_CC` names, else the first of gcc, clang and cc there is. */
 fun cCompiler(): String {
-	System.getenv("KTC2_CC")?.let { return it }
+	Settings.text("build.cc").takeIf { it.isNotEmpty() }?.let { return it }
 	for (vName in listOf("gcc", "clang", "cc")) {
 		if (isOnPath(vName)) return vName
 	}
@@ -684,11 +742,7 @@ fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	// files of their classes. `KTC2_LTO=0` turns that off, `KTC2_LTO=1` forces it. With clang on
 	// Windows it needs LLVM's own linker, so it is used by default only when that one is there.
 	val vNeedsLld = kIsWindows && vIsClang
-	val vWholeProgram = !inIsDebug && when (System.getenv("KTC2_LTO")) {
-		"0" -> false
-		"1" -> true
-		else -> !vNeedsLld || isOnPath("lld-link")
-	}
+	val vWholeProgram = !inIsDebug && (Settings.choice("build.lto") ?: (!vNeedsLld || isOnPath("lld-link")))
 	// Floating-point operations are never fused (see ktc2_core.h): Kotlin rounds after each one. With LTO the objects
 	// hold the compiler's own code, which the link optimizes as one program on several threads (ThinLTO with clang).
 	val vLto = when {
@@ -833,11 +887,11 @@ private fun dependenciesOf(inFile: File, inDirectory: File): List<File> {
  */
 fun buildWithCMake(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vBuildDir = File(inOutDir, "cmake")
-	val vExtra = (System.getenv("KTC2_CMAKE_ARGS") ?: "").split(Regex("\\s+(?=-)")).map { it.trim() }.filter { it.isNotEmpty() }
+	val vExtra = Settings.list("build.cmakeArgs")
 	val vConfiguration = if (inIsDebug) "Debug" else "Release"
 	val vConfigure = listOf("cmake", "-S", inOutDir.absolutePath, "-B", vBuildDir.absolutePath, "-DCMAKE_BUILD_TYPE=$vConfiguration") +
 		(if (inIsDebug) listOf("-DKTC2_DEBUG=ON") else listOf("-DKTC2_DEBUG=OFF")) +
-		(System.getenv("KTC2_CC")?.let { listOf("-DCMAKE_C_COMPILER=$it") } ?: emptyList()) + vExtra
+		(Settings.text("build.cc").takeIf { it.isNotEmpty() }?.let { listOf("-DCMAKE_C_COMPILER=$it") } ?: emptyList()) + vExtra
 	// What CMake prints is kept, and shown when it fails; meanwhile the step's line shows how far the build is.
 	fun run(inStep: String, inCommand: List<String>): Boolean {
 		Progress.begin(inStep)
