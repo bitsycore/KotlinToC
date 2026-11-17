@@ -113,9 +113,9 @@ tasks.processResources {
 
 tasks.test {
 	useJUnitPlatform()
-	// The suite compiles the C with gcc unless KTC2_CC says otherwise (IntegrationTest): ktc2 makes the bindings
-	// with the same compiler, whose C library they are of (its own default is clang).
-	environment("KTC2_CC", System.getenv("KTC2_CC") ?: "gcc")
+	// The suite compiles the C with clang unless KTC2_CC says otherwise (IntegrationTest): ktc2 makes the bindings
+	// with the same compiler, whose C library they are of.
+	environment("KTC2_CC", System.getenv("KTC2_CC") ?: "clang")
 	// The suite reads its programs and tests from the repository (tests/) and writes into build/integration.
 	workingDir = kRoot
 	// A program that uses a bundled module made of a library's sources is compiled for the JVM with the library's JVM jars.

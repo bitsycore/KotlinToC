@@ -37,8 +37,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # clang is the suite's C compiler (the owner, 2026-11-17), on each system: on Windows it targets MSVC's C library.
       - name: C compiler
-        run: gcc --version
+        run: clang --version
       # The suite, or the part of it this machine needs (KTC2_TEST_STEPS, compiler/src/test/.../IntegrationTest.kt).
       - name: Suite
         run: ./gradlew :compiler:test --rerun

@@ -86,7 +86,7 @@ class IntegrationTest11 : IntegrationPart(11)
  * as ordinary Kotlin/JVM against the real standard library; both are executed and must print
  * the same text.
  *
- * The C compiler is `gcc`, or the `KTC2_CC` environment variable.
+ * The C compiler is `clang` (the owner, 2026-11-17: ktc2's first), or the `KTC2_CC` environment variable.
  *
  * The programs are independent, and most of the time of one is the Kotlin front end, which
  * works on one program at a time in a process. So the suite is cut in parts, one per class
@@ -103,7 +103,20 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** The counts of allocations and of reference counting of each program of this part. */
 	private val kStatsFile = "build/integration/arc-stats.$mShard.txt"
 
-	private val mCompiler = System.getenv("KTC2_CC") ?: "gcc"
+	private val mCompiler = System.getenv("KTC2_CC") ?: "clang"
+
+	/**
+	 * The test functions `<Name>.skip` next to [inSource] leaves out, one a line with the reason after a colon
+	 * (`name: why`, or `Class.name: why`). A line that begins with `msvc ` applies only when the C compiler
+	 * targets MSVC's C library (MSVC, or clang on Windows): what differs there, as the last digit of `pow`.
+	 */
+	private fun skippedOf(inSource: File): Set<String> {
+		val vFile = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile } ?: return emptySet()
+		val vOnMsvc = com.bitsycore.ktc2.interop.targetsMsvc(mCompiler)
+		return vFile.readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+			.mapNotNull { vLine -> if (vLine.startsWith("msvc ")) vLine.removePrefix("msvc ").takeIf { vOnMsvc } else vLine }
+			.map { it.substringBefore(':').trim() }.filter { it.isNotEmpty() }.toSet()
+	}
 
 	/** The thread option and the math library: needed on POSIX systems; on Windows neither exists for every compiler, nor is needed. */
 	private val kSystemLibraries = if ("win" in System.getProperty("os.name").lowercase()) emptyList() else listOf("-pthread", "-lm")
@@ -228,8 +241,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vMain = File("build/testmain/${inSource.nameWithoutExtension}Main.kt").apply { parentFile.mkdirs() }
 		// `<Name>.skip` names the tests of the file that are not run, one a line with the reason after a colon
 		// (`name: why`, or `Class.name: why`): what ktc2 does not do, said where it is left out. Neither side runs them.
-		val vSkipped = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile }?.readLines()
-			?.map { it.substringBefore(':').trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.toSet() ?: emptySet()
+		val vSkipped = skippedOf(inSource)
 		vMain.writeText(testMain(inSource.readText(), vSkipped))
 		// What the tests of the library share (tests/stdlib/support): the common part for both, and for each side
 		// its answers to what the library's tests leave to the platform.
@@ -364,8 +376,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mInput = null
 		mWarnings = emptyList()
 		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
-		val vSkipped = File(inSource.parentFile, inSource.nameWithoutExtension + ".skip").takeIf { it.isFile }?.readLines()
-			?.map { it.substringBefore(':').trim() }?.filter { it.isNotEmpty() && !it.startsWith("#") }?.toSet() ?: emptySet()
+		val vSkipped = skippedOf(inSource)
 		// `<Name>.vary`: the beginnings of the lines it prints that differ on every run (a size drawn at random, a time).
 		mVarying = File(inSource.parentFile, inSource.nameWithoutExtension + ".vary").takeIf { it.isFile }?.readLines()
 			?.filter { it.isNotEmpty() && !it.startsWith("#") } ?: emptyList()

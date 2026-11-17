@@ -1,0 +1,3 @@
+# Only on MSVC's C library (MSVC, or clang on Windows): its pow differs from the JVM's in the last digit
+# (tools/msvc_known.txt, DESIGN.md: the differences). The other C libraries pass it.
+msvc DoubleMathTest.powers: the last digit of pow in MSVC's C library
