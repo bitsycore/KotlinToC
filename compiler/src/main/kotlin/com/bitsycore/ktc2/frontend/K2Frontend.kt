@@ -78,9 +78,15 @@ object K2Frontend {
 		if (vSource.extension != "kt" || !kNativeSourceSet.containsMatchIn(vPath)) return@map vSource
 		val vText = vSource.readText()
 		val vPackage = Regex("(?m)^package [\\w.`]+").find(vText) ?: return@map vSource
-		val vCopy = File(inOutDir, "native-sources/" + vPath.substringAfterLast(":").trimStart('/').replace(':', '_'))
+		// Under gen/native, by its module and its place there (`kotlinx-io@0.9.3/core/nativeMain/...`); a file of no module
+		// of the cache by its whole path.
+		val vCache = File(com.bitsycore.ktc2.cacheDirectory(), "modules").absoluteFile
+		val vPlace = vSource.absoluteFile.relativeToOrNull(vCache)?.invariantSeparatorsPath?.takeIf { !it.startsWith("..") }
+			?: vPath.substringAfterLast(":").trimStart('/').replace(':', '_')
+		val vCopy = File(inOutDir, "gen/native/$vPlace")
+		val vCopied = vText.replaceRange(vPackage.range, vPackage.value + "; import kotlin.native.*")
 		vCopy.parentFile.mkdirs()
-		vCopy.writeText(vText.replaceRange(vPackage.range, vPackage.value + "; import kotlin.native.*"))
+		if (!vCopy.isFile || vCopy.readText() != vCopied) vCopy.writeText(vCopied)
 		vCopy
 	}
 
@@ -127,15 +133,15 @@ object K2Frontend {
 			val vExtraCompilerOpts = System.getProperty("ktc2.copt", "").lines().filter { it.isNotEmpty() }
 			val vExtraLinkerOpts = System.getProperty("ktc2.lopt", "").lines().filter { it.isNotEmpty() }
 			val vGenerated = vDefinitions.map {
-				BindingGenerator(DefFile(it), vCompiler, "", vExtraCompilerOpts, vExtraLinkerOpts).generate(File(inOutDir, "interop"), File(inOutDir, "c"))
+				BindingGenerator(DefFile(it), vCompiler, "", vExtraCompilerOpts, vExtraLinkerOpts).generate(File(inOutDir, "gen/interop"), File(inOutDir, "c"))
 			}
 			// `import platform.posix.*` asks for the C library, described by a .def of ktc2's own.
 			val vUsesPosix = (vSources - vDefinitions.toSet()).any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
 			if (vUsesPosix && vDefinitions.none { DefFile(it).packageName == "platform.posix" }) {
-				val vDefinition = File(inOutDir, "interop/posix.def")
+				val vDefinition = File(inOutDir, "gen/interop/posix.def")
 				vDefinition.parentFile.mkdirs()
 				vDefinition.writeText(resourceText("/ktc2/interop/posix.def"))
-				vGenerated + BindingGenerator(DefFile(vDefinition), vCompiler, resourceText("/ktc2/interop/posix.kt.txt")).generate(File(inOutDir, "interop"), File(inOutDir, "c"))
+				vGenerated + BindingGenerator(DefFile(vDefinition), vCompiler, resourceText("/ktc2/interop/posix.kt.txt")).generate(File(inOutDir, "gen/interop"), File(inOutDir, "c"))
 			} else {
 				vGenerated
 			}
@@ -223,7 +229,9 @@ object K2Frontend {
 			// blocks and companion extensions, collection literals (`[1, 2, 3]`), full value classes.
 			// The standard library's own sources use the first two.
 			addAll(kLanguageOptions)
-			add("-d"); add(File(if (vKeepsLibrary) kLibraryDir else inOutDir, "jvm-unused").path)
+			// Where the Kotlin compiler writes what a JVM compilation leaves (its module file), which ktc2 never reads: not the
+			// program's output.
+			add("-d"); add(File(kLibraryDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
 			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, if (vKeepsLibrary) keptCopy(codeSourceOf(ktc2.Struct::class.java)) else codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
 			add("-Xplugin=${pluginClasspath(usesSerialization(inGivenSources))}")

@@ -555,7 +555,12 @@ compiler), IR → C (ktc2), C → objects and the link, or CMake; in a terminal 
 goes (`[37/783]`). And it does again only what changed: the translation when a source, an option, a `KTC2_`
 setting or ktc2 itself changed (a stamp of all of them, `<out>/ktc2_inputs.txt`); a C file's object (in
 `<out>/obj`, all compiled at once on every core) when the file, a header it includes (what the compiler says,
-`-MMD`) or the options changed; the link when an object did; CMake's configuration when its command did. The C
+`-MMD`) or the options changed; the link when an object did; CMake's configuration when its command did.
+The output of a command (`<module>/build`, or `-o`): the program; `c/` (the C ktc2 wrote); `obj/` (the objects);
+`modules/<name>/` (each module compiled in, the stdlib's too); `gen/` (the Kotlin ktc2 made before compiling it:
+`gen/interop`, the bindings of the `.def` files, `gen/native`, the `nativeMain` files of the modules with
+`import kotlin.native.*`); `CMakeLists.txt` (and `cmake/`, its build, when CMake builds); `ktc2_build.txt`, what the
+build is made of, which the tools read; `ktc2_inputs.txt`, what the translation was made from. The C
 files are written only when their text changes, so that CMake's own build is incremental too. With link-time
 optimization the objects hold the compiler's code and the link optimizes them as one program (ThinLTO with
 clang, `-flto=auto` with gcc). What a translation still costs every time is the Kotlin compiler: a program
