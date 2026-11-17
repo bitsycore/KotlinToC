@@ -1,14 +1,6 @@
-# kotlinx-datetime for ktc2: kotlinx.datetime (LocalDate, LocalDateTime, TimeZone, formats), from
-# the sources of kotlinx-datetime 0.8.0 as they are (files.txt lists them, with the systems each of
-# those of the time zones is for; ktc2 fetches them, upstream below). Its classes are serializable:
-# it needs kotlinx-serialization's core.
 name         = "kotlinx-datetime"
-version  = "0.8.0"
-# Where the sources of the library come from: each directory and the source jar that fills it (Maven Central, at
-# `version`). ktc2 fetches them into its cache the first time; files.txt lists those it compiles.
-upstream = [". = org.jetbrains.kotlinx:kotlinx-datetime", "mingw = org.jetbrains.kotlinx:kotlinx-datetime-mingwx64"]
-# Its jars, for the JVM side of the suite (the programs and the library's own tests run there too).
-jvm      = ["org.jetbrains.kotlinx:kotlinx-datetime-jvm"]
+version      = "0.8.0"
+upstream     = [". = org.jetbrains.kotlinx:kotlinx-datetime", "mingw = org.jetbrains.kotlinx:kotlinx-datetime-mingwx64"]
+jvm          = ["org.jetbrains.kotlinx:kotlinx-datetime-jvm"]
 dependencies = ["kotlinx-serialization"]
-# Windows' time zones are read from the registry: what windowsMain takes of <windows.h>.
 files        = ["windows: datetime_win32.def", "windows: datetime_win32.h"]

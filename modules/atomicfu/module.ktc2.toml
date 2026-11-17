@@ -1,17 +1,8 @@
-# atomicfu for ktc2: kotlinx.atomicfu (atomic(), AtomicRef, locks, SynchronizedObject, parking),
-# from the sources of atomicfu 0.33.0 as they are (files.txt lists them;
-# ktc2 fetches them, upstream below), and Ktc2Atomicfu.kt for what each system gives apart: a lock and a condition, in
-# atomicfu.h over Win32 or pthreads.
-name  = "atomicfu"
+name     = "atomicfu"
 version  = "0.33.0"
-# Where the sources of the library come from: each directory and the source jar that fills it (Maven Central, at
-# `version`). ktc2 fetches them into its cache the first time; files.txt lists those it compiles.
 upstream = [". = org.jetbrains.kotlinx:atomicfu"]
-# Its jars, for the JVM side of the suite (the programs and the library's own tests run there too).
 jvm      = ["org.jetbrains.kotlinx:atomicfu-jvm"]
-files = ["Ktc2Atomicfu.kt", "atomicfu.def", "atomicfu.h", "atomicfu_win32.h"]
-# A mutex holds its queue of waiting threads and the queue its nodes, which are `inner` classes of
-# the mutex: they refer back to it.
-weak  = ["kotlinx.atomicfu.locks.NativeMutex.ParkingQueue.this$0", "kotlinx.atomicfu.locks.NativeMutex.Node.this$0"]
-# What atomicfu's build opts every source set in to (buildSrc, kotlin-base-conventions).
-optIn = ["kotlinx.cinterop.ExperimentalForeignApi", "kotlinx.atomicfu.locks.ExperimentalThreadBlockingApi"]
+files    = ["Ktc2Atomicfu.kt", "atomicfu.def", "atomicfu.h", "atomicfu_win32.h"]
+# The queue and its nodes are inner classes of the mutex that holds them.
+weak     = ["kotlinx.atomicfu.locks.NativeMutex.ParkingQueue.this$0", "kotlinx.atomicfu.locks.NativeMutex.Node.this$0"]
+optIn    = ["kotlinx.cinterop.ExperimentalForeignApi", "kotlinx.atomicfu.locks.ExperimentalThreadBlockingApi"]

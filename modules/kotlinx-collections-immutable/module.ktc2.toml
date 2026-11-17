@@ -1,12 +1,6 @@
-# kotlinx-collections-immutable for ktc2: persistent lists, sets and maps (kotlinx.collections.immutable),
-# from the library's own sources as they are (files.txt lists them;
-# ktc2 fetches them, upstream below). It is common code: there is no part of ktc2's own.
-name = "kotlinx-collections-immutable"
+name     = "kotlinx-collections-immutable"
 version  = "0.5.2"
-# Where the sources of the library come from: each directory and the source jar that fills it (Maven Central, at
-# `version`). ktc2 fetches them into its cache the first time; files.txt lists those it compiles.
 upstream = [". = org.jetbrains.kotlinx:kotlinx-collections-immutable"]
-# Its jars, for the JVM side of the suite (the programs and the library's own tests run there too).
 jvm      = ["org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm"]
-# The iterator of a builder's entries holds an iterator for each level of the trie, which refers back to it.
-weak = ["kotlinx.collections.immutable.implementations.immutableMap.TrieNodeMutableEntriesIterator.parentIterator"]
+# Each level's iterator is held by the one above it.
+weak     = ["kotlinx.collections.immutable.implementations.immutableMap.TrieNodeMutableEntriesIterator.parentIterator"]

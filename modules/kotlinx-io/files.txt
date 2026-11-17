@@ -1,14 +1,6 @@
-# The sources of kotlinx-io 0.9.3 (kotlinx-io-core and kotlinx-io-bytestring, Apache 2.0) that
-# the module compiles, as they are: fetched by ktc2 from the module's
-# upstream (module.ktc2.toml) into its cache, where these paths are. Those of nativeMain are what Kotlin/Native
-# compiles for every system; what kotlinx-io gives each system apart is in Ktc2KotlinxIo.kt.
-
-# Paths from the module's upstream, where each jar has its directory (`core`, `bytestring`, the left side of
-# `upstream`): whole source sets, `**` taking every file below. What is not here (jvmMain, appleMain,
-# androidMain...) is for the other platforms of kotlinx-io.
+bytestring/commonMain/**
+bytestring/nativeMain/**
 core/commonMain/**
 core/nativeMain/**
 core/nativeNonAndroidMain/**
 core/nativeNonAppleMain/**
-bytestring/commonMain/**
-bytestring/nativeMain/**
