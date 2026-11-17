@@ -1,5 +1,5 @@
 # The showcase: one program that uses a bit of everything ktc2 compiles, in an SDL3 window of several
-# pages. A menu leads to each; Escape comes back to it, 1 to 8 go straight to a page.
+# pages. A menu leads to each; Escape comes back to it, 1 to 7 go straight to a page.
 #   Bunnies     a million sprites bouncing, drawn in batches, moved by several threads
 #   Particles   fireworks: many short-lived objects, the work of the allocator and the counts
 #   Physics     balls that collide, found through a grid of buckets (HashMap, ArrayList)

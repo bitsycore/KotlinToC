@@ -93,9 +93,19 @@ batches and moved by threads, fireworks of short-lived objects (with `arena`), c
 found through a grid built in an arena each frame, a Mandelbrot set computed by threads, the
 game of life, the kotlinx libraries together (JSON into a file, dates, immutable undo, Regex),
 and the self-tests with their log. `-- --auto` goes through every page by itself and reports;
-`-- --headless` opens no window and prints the self-tests instead. It writes a file with
-kotlinx-io, so on Windows it is built with gcc or clang rather than MSVC:
-`KTC2_CC=gcc KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>"`.
+`-- --headless` opens no window and prints the self-tests instead; `-- --auto --shot <dir>` saves
+a picture of each page. On Windows, gcc or clang build it as they are
+(`KTC2_CC=gcc KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>"`); MSVC, CMake's default
+there, has what kotlinx-io's files need since 2026-11-17, not yet tried on the showcase.
+
+| | |
+|---|---|
+| ![The menu](docs/showcase/menu.png) | ![Physics: 2500 balls through a grid of buckets](docs/showcase/physics.png) |
+| ![Fractal: the Mandelbrot set computed by 8 threads](docs/showcase/fractal.jpg) | ![Data: JSON, a file, dates, undo and a Regex filter](docs/showcase/data.png) |
+
+On a MacBook (Apple silicon, Release build): the menu, particles, the game of life and the data
+page at the display's rate (about 100 fps), physics at 60 (4000 balls), a million bunnies at 32
+(the drawing takes 19 ms), the fractal at 24 (a picture of depth 400 in 29 ms).
 
 ## What you need
 

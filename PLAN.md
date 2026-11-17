@@ -71,8 +71,17 @@ look at them. `bench.py` before/after: in `build/bench/` of the Windows machine 
    the `SmokeFileTest`s are out of `tools/msvc_known.txt`. Left, on Windows: `tools/msvc_all.sh`
    (or the CI's MSVC job), `tools/try_cmake.sh modules/kotlinx-io`, and the showcase with CMake's
    default (MSVC).
-3. The showcase on a real screen and GPU (only `SDL_VIDEODRIVER=dummy`, the software renderer, was
-   seen): frame rates, input on each page, F2. Then the `--shot` pictures in the README.
+3. (done in part 2026-11-17, Mac) The showcase on a real screen and GPU: built with
+   `ktc2 examples/showcase --cmake` (Release, link-time optimization; SDL3 fetched and built, 76 s in
+   all), `--headless` 92 of 92, `--auto --shot` on the Mac's display: every page shown, no leak,
+   menu 81 fps, Bunnies 32 (a million: moved in 0.3 ms, drawn in 18.6 ms in 64 calls), Particles 99,
+   Physics 59 (4000 balls), Fractal 24 (29 ms a picture on 8 threads), Life 100, Data 98, Self-tests
+   100. Four pictures are in the README (`docs/showcase/`). The number beside the frame rate is the
+   longest frame of the last second: under `--auto` it shows the frame that saved the picture
+   (100 ms). Left for a person at the keyboard: the input of each page (the keys of its bottom
+   line, the mouse on Physics and Fractal, the buttons of Data), F2 (vsync on and off), and the
+   same on Windows and Linux. Ideas from it: the drawing of the bunnies is most of their frame
+   (SDL's renderer, 64 calls); the fractal's 29 ms are the place for speed in ktc2's code.
 4. `listOf` cost: a parameter that receives several classes of list (`ArrayList` and the view of an
    array) makes its iterator on the heap; Ordinary +9 %. Part 2 of this plan, "iterators in the frame".
 5. The speed of Native's regex engine against ktc2's former one: a benchmark of regex for
