@@ -51,16 +51,26 @@ generics, `ListOfViews`). Not run on WSL/Linux nor the Mac; the CI job of the pu
 look at them. `bench.py` before/after: in `build/bench/` of the Windows machine only.
 
 **What to do next, in order** (each: a test, the change, the tests that cover it, a commit):
-1. Read the CI run of the push (`gh run list --repo bitsycore/KotlinToC`); fix what is red. The
-   first suspects: the `stdlib/` move (a path somewhere that still says `src/main/resources/ktc2/stdlib`)
-   and `listOf` as a view (code that cast `listOf` to `MutableList` or `ArrayList`).
-2. MSVC for kotlinx-io's files (agreed with the owner): a header of ktc2's own that `platform.posix`
-   includes under `_MSC_VER` (`posix.def`): `<io.h>` and `<direct.h>` (`open`, `read`, `write`,
-   `close`, `access`, `rmdir` under their POSIX names), `O_CLOEXEC` as `_O_NOINHERIT`, and
-   `opendir`/`readdir`/`closedir` with `DIR` and `struct dirent { d_name }` over
-   `FindFirstFileA`/`FindNextFileA`. Then take `project-kotlinx-io` and the `SmokeFileTest`s out of
-   `tools/msvc_known.txt`, check with `tools/msvc_all.sh` and `tools/try_cmake.sh`, and the showcase
-   builds with CMake's default (MSVC) on Windows. About half a day.
+1. (done 2026-11-17, Mac, `eb1e5ab`, not pushed yet) The CI run of `c4c894a` was green on Linux,
+   macOS, Windows and AddressSanitizer; MSVC failed on 10 programs with C1061 ("blocks nested too
+   deeply"): Native's regex has a `when` over some 180 classes, and each branch, which reads the
+   subject again before its test, opened one more block (184 levels). `CEmitter.flatChain` now
+   writes a chain of 8 such steps or more at one level (`if (c) { ...; goto chain_end_N; }`); the
+   deepest C of the integration programs is 12 levels. Checked with clang, not with MSVC: the
+   first push shows it. On a machine that pulled the `Regex.kt` change, delete `build/stdlib-src`
+   if ktc2 says "ktc2RegexCleaner ... has no corresponding expect".
+2. (done in part 2026-11-17, Mac, not pushed yet) MSVC for kotlinx-io's files. What MSVC lacks is
+   only `dirent.h`: the bindings are made on Windows from mingw's headers, whose `open`, `read`,
+   `write`, `close`, `access`, `rmdir`, `stat` MSVC's `io.h`, `direct.h`, `sys/stat.h` declare under
+   the same names and types, and the constants (`O_*`, `F_OK`, `S_IF*`) are Kotlin constants, not C.
+   `posix.def`'s C section (after `---`, only for MSVC) has `DIR`, `struct dirent { d_name }`,
+   `opendir`, `readdir`, `closedir` over `_findfirst`/`_findnext`/`_findclose` (no `<windows.h>`);
+   `opendir` gives ENOTDIR for a file, `readdir` leaves errno as it was at the end. Its C was
+   checked with clang against stand-ins of MSVC's headers (`-Wall -Wextra`); gcc and clang builds
+   unchanged (interop programs, `modules/kotlinx-io`, `SmokeFileTest`s). `project-kotlinx-io` and
+   the `SmokeFileTest`s are out of `tools/msvc_known.txt`. Left, on Windows: `tools/msvc_all.sh`
+   (or the CI's MSVC job), `tools/try_cmake.sh modules/kotlinx-io`, and the showcase with CMake's
+   default (MSVC).
 3. The showcase on a real screen and GPU (only `SDL_VIDEODRIVER=dummy`, the software renderer, was
    seen): frame rates, input on each page, F2. Then the `--shot` pictures in the README.
 4. `listOf` cost: a parameter that receives several classes of list (`ArrayList` and the view of an

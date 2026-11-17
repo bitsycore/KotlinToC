@@ -1,6 +1,6 @@
 # The C library, as Kotlin/Native's platform.posix: generated when a program imports it.
 # And the headers of POSIX for files: what kotlinx-io's file system (its nativeMain) calls. mingw has
-# them; MSVC's C library has neither unistd.h nor dirent.h.
+# them; MSVC's C library has neither unistd.h nor dirent.h: what it lacks of them is after `---`.
 headers = stdio.h stdlib.h string.h math.h time.h errno.h ctype.h signal.h fcntl.h sys/types.h sys/stat.h limits.h
 # MSVC's C library has neither: a program that calls nothing of theirs still builds with it.
 optionalHeaders = unistd.h dirent.h
@@ -15,3 +15,89 @@ package = platform.posix
 # All of what glibc declares, as Kotlin/Native's platform.posix has it: under -std=c11 it hides what is
 # not ISO C (realpath, strdup...) unless asked before any header.
 compilerOpts.linux = -D_DEFAULT_SOURCE
+---
+/*
+ * MSVC's C library has the POSIX functions of files under their own names (io.h, direct.h, and
+ * stat, the flags and the modes as their old names), but no dirent.h: here is what Kotlin/Native's
+ * platform.posix has of it on Windows (mingw's), over _findfirst. The bindings are made where the
+ * program is translated (gcc or clang, which do not see this), and this is compiled where MSVC is
+ * the compiler: what kotlinx-io's file system calls (opendir, readdir, closedir).
+ */
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <io.h>
+#include <direct.h>
+#include <stdint.h>
+
+#ifndef KTC2_POSIX_DIRENT
+#define KTC2_POSIX_DIRENT
+
+/** An entry of a directory: its name, as mingw's has it. */
+struct dirent {
+	char d_name[260];
+};
+
+/** A directory being read: the search of its entries, and the entry found and not yet handed out. */
+typedef struct DIR {
+	intptr_t handle;
+	int pending;
+	struct _finddata_t found;
+	struct dirent entry;
+} DIR;
+
+/** Opens the directory [path]: NULL with errno set when it is not there (ENOENT) or not a directory (ENOTDIR). */
+static inline DIR* opendir(const char* path)
+{
+	struct _stat64 status;
+	if (_stat64(path, &status) != 0) return NULL;
+	if (!(status.st_mode & _S_IFDIR)) {
+		errno = ENOTDIR;
+		return NULL;
+	}
+	size_t length = strlen(path);
+	char* pattern = (char*)malloc(length + 3);
+	DIR* dir = (DIR*)malloc(sizeof(DIR));
+	if (!pattern || !dir) {
+		free(pattern);
+		free(dir);
+		errno = ENOMEM;
+		return NULL;
+	}
+	memcpy(pattern, path, length);
+	if (length > 0 && path[length - 1] != '/' && path[length - 1] != '\\') pattern[length++] = '\\';
+	pattern[length++] = '*';
+	pattern[length] = 0;
+	dir->handle = _findfirst(pattern, &dir->found);
+	free(pattern);
+	if (dir->handle == -1) {
+		free(dir);
+		return NULL;
+	}
+	dir->pending = 1;
+	return dir;
+}
+
+/** The next entry of [dir] ("." and ".." included, as POSIX has them), or NULL at the end with errno as it was. */
+static inline struct dirent* readdir(DIR* dir)
+{
+	if (!dir->pending) {
+		int saved = errno;
+		if (_findnext(dir->handle, &dir->found) != 0) {
+			if (errno == ENOENT) errno = saved;
+			return NULL;
+		}
+	}
+	dir->pending = 0;
+	strncpy(dir->entry.d_name, dir->found.name, sizeof dir->entry.d_name - 1);
+	dir->entry.d_name[sizeof dir->entry.d_name - 1] = 0;
+	return &dir->entry;
+}
+
+/** Ends the reading of [dir]: 0, or -1 with errno set. */
+static inline int closedir(DIR* dir)
+{
+	int result = _findclose(dir->handle);
+	free(dir);
+	return result;
+}
+#endif
+#endif
