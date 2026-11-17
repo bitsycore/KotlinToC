@@ -40,11 +40,32 @@ private fun checkCopy(startIndex: Int, endIndex: Int, size: Int, destinationOffs
 // MARK: Array<T>
 // ==================
 
-/** A list that is a view of an array: it reads the array's elements, as `asList` promises. */
-private class ArrayAsList<T>(private val mArray: Array<out T>) : AbstractList<T>(), RandomAccess {
+/** What `asList()` and `listOf(a, b...)` give: a read-only view of the array, which reads its elements. */
+internal class ArrayAsList<T>(private val mArray: Array<out T>) : AbstractList<T>(), RandomAccess {
 	override val size: Int get() = mArray.size
 
 	override fun get(index: Int): T = mArray[index]
+
+	/** Its own, so that a loop over the list is seen to be over the array (`ListLoops`). */
+	override fun iterator(): Iterator<T> = ArrayAsListIterator(this)
+}
+
+/**
+ * The iterator of [ArrayAsList]: its elements in order. It holds the list and asks it for them, and never
+ * has the array: the array is then only ever in the list's field, so an array that `asList()` is given can
+ * stay in the frame of its function where the list does (`EscapeAnalysis` follows fields by name, and an
+ * array read out of `mArray` into an iterator would make every array stored there go where an iterator
+ * may go). A `for` over the list reads the array itself (`ListLoops`).
+ */
+private class ArrayAsListIterator<T>(private val mList: ArrayAsList<T>) : Iterator<T> {
+	private var mIndex = 0
+
+	override fun hasNext(): Boolean = mIndex < mList.size
+
+	override fun next(): T {
+		if (mIndex >= mList.size) throw NoSuchElementException()
+		return mList[mIndex++]
+	}
 }
 
 public actual fun <T> Array<out T>.elementAt(index: Int): T = get(index)

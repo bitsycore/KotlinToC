@@ -170,9 +170,12 @@ class ListLoops(private val mModule: KModule) {
 		}
 		if (vList.isView) {
 			// `get` of the view of an array is the array's own read, checked by it: its error is the view's.
-			if (vName != "_get" || vCall.arguments.size != 2 || vFunction.returnType != vElement || vFunction.params[1].type != kInt) return null
+			// A view of numbers over an array of a type parameter holds them boxed, and its `get` unboxes.
+			val vUnboxed = (vFunction.returnType as? KPrimType)?.takeIf { vElement is KRefType }
+			if (vName != "_get" || vCall.arguments.size != 2 || (vFunction.returnType != vElement && vUnboxed == null) || vFunction.params[1].type != kInt) return null
+			val vRead = KIndexRead(KFieldRead(vCall.arguments[0], vList.array), vCall.arguments[1], vElement)
 			accesses++
-			return listOf(withValue(inStatement, inPlace(vGiven, KIndexRead(KFieldRead(vCall.arguments[0], vList.array), vCall.arguments[1], vElement)))!!)
+			return listOf(withValue(inStatement, inPlace(vGiven, if (vUnboxed != null) KIntrinsic("ktc2_unbox_${vUnboxed.prim.name.lowercase()}", listOf(vRead), vUnboxed) else vRead))!!)
 		}
 		val vCheckIndex = vList.checkIndex ?: return null
 		val vIsGet = vName == "_get" && vCall.arguments.size == 2 && vFunction.returnType == vElement
@@ -264,7 +267,11 @@ class ListLoops(private val mModule: KModule) {
 		val vTake = inLoop.body.getOrNull(2) as? KLet ?: return null
 		val vNextCall = callOf(vTake.init) ?: return null
 		val vElement = (vList.array.type as KArrayType).element
-		if (!isOn(vNextCall, vIterator, kNext) || vNextCall.function.returnType != vElement) return null
+		if (!isOn(vNextCall, vIterator, kNext)) return null
+		// A list of numbers over an array of a type parameter (`listOf(1, 2, 3)`: an `Array<Int>`) holds them
+		// boxed, and its `next` unboxes: the loop does the same.
+		val vUnboxed = (vNextCall.function.returnType as? KPrimType)?.takeIf { vElement is KRefType }
+		if (vNextCall.function.returnType != vElement && vUnboxed == null) return null
 
 		val vNumber = mNext++
 		val vHeld = KLocal("ktc2_list$vNumber", KClassType(vList.cls))
@@ -273,7 +280,8 @@ class ListLoops(private val mModule: KModule) {
 		val vGiven = vMake.arguments[0]
 		fun list(): KExpr = KRead(vHeld)
 		// The element, where the call to `next` was: under the same casts.
-		val vRead = KIndexRead(KFieldRead(list(), vList.array), KRead(vAt), vElement).also { it.isChecked = true }
+		val vSlot = KIndexRead(KFieldRead(list(), vList.array), KRead(vAt), vElement).also { it.isChecked = true }
+		val vRead = if (vUnboxed != null) KIntrinsic("ktc2_unbox_${vUnboxed.prim.name.lowercase()}", listOf(vSlot), vUnboxed) else vSlot
 		fun inPlace(inValue: KExpr): KExpr = if (inValue is KRefCast) KRefCast(inPlace(inValue.operand), inValue.type) else vRead
 		// The view of an array does not change: nothing to compare with what was seen.
 		val vChanges = vList.changes
