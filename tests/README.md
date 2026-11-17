@@ -9,7 +9,7 @@ from (all by default) and which its log names on each line and counts apart:
 - `kotlin`: the files of common tests of `tests/stdlib/` (the Kotlin standard library's and
   Kotlin/Native's runtime's own tests) and of `tests/common/` (ktc2's own);
 - `box`: the box tests of the Kotlin compiler, `tests/box/`;
-- `libraries`: the own tests of the bundled libraries, `tests/libs/<module>/`.
+- `libraries`: the own tests of the bundled libraries, `tests/modules/<module>/`.
 
 The CI job runs `integration`, and `kotlin` in C only (`KTC2_TEST_NO_JVM=kotlin`: a file of tests
 checks itself, the JVM is only a second opinion). The box tests and the libraries' tests run on
@@ -160,7 +160,7 @@ test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt
 
 ## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
-The libraries' own tests (`tests/libs/<module>/`, the category `libraries`) run locally; the
+The libraries' own tests (`tests/modules/<module>/`, the category `libraries`) run locally; the
 CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,kotlin`). The programs on each module (`tests/integration/modules/`) run everywhere.
 
 The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
@@ -300,7 +300,7 @@ a private property read on another instance of a class below its own (`generics/
 On Kotlin/Native 2.4.21 some of these files do not compile ("name based destructuring is only
 available since language version 2.5"): they need the compiler of their own version.
 
-A file of a library's own tests (`tests/libs/<module>/`) that does not pass yet is kept out of the
+A file of a library's own tests (`tests/modules/<module>/`) that does not pass yet is kept out of the
 suite by a `<Name>.pending` next to it, which says why; moved files would no longer be where
-the library has them. `tests/libs/kotlinx-serialization-json-io/.../JsonUpdateModeTest.pending` is
+the library has them. `tests/modules/kotlinx-serialization-json-io/.../JsonUpdateModeTest.pending` is
 the first (2026-11-16: it loops in C).

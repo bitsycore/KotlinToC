@@ -16,7 +16,7 @@ version = "0.1-SNAPSHOT"
 /*
 The compiler: ktc2 itself (src/main/kotlin), its test harness (src/test/kotlin), and what the installed
 tool carries as resources from the other parts of the repository: the platform layer and the C runtime
-(stdlib/), the bundled libraries (libs/), the sources of the Kotlin library and of the libraries that Gradle
+(stdlib/), the bundled libraries (modules/), the sources of the Kotlin library and of the libraries that Gradle
 fetches. Its build directory is the repository's `build/`, where every tool and document looks
 (build/install/ktc2, build/integration...). Paths below are from the repository's root.
 */
@@ -176,7 +176,7 @@ tasks.processResources {
 	dependsOn(unpackStdlibSources, unpackModuleSources)
 	// And the sources each bundled module of a library compiles (modules/<name>/files.txt).
 	for (vModule in kLibraryModules) {
-		val vList = kRoot.resolve("libs/${vModule.name}/files.txt")
+		val vList = kRoot.resolve("modules/${vModule.name}/files.txt")
 		// A line `windows: path` or `linux, macos: path` is a file of those systems only: all are carried.
 		val vModuleListed = vList.readLines().map { it.trim().replace(Regex("^[a-z]+(\\s*,\\s*[a-z]+)*\\s*:\\s*"), "") }.filter { it.contains('/') && !it.startsWith("#") }
 		inputs.file(vList)
@@ -203,8 +203,8 @@ tasks.processResources {
 	from(kRoot.resolve("stdlib/interop")) {
 		into("ktc2/interop")
 	}
-	// The bundled libraries (libs/<name>: module.ktc2.toml, ktc2's own files, .def and CMake files).
-	from(kRoot.resolve("libs")) {
+	// The bundled libraries (modules/<name>: module.ktc2.toml, ktc2's own files, .def and CMake files).
+	from(kRoot.resolve("modules")) {
 		into("ktc2/modules")
 	}
 }
@@ -268,7 +268,7 @@ tasks.test {
 	val kKinds = listOf("integration" to "integration tests", "kotlin" to "Kotlin tests", "box" to "box tests", "libraries" to "library tests")
 	fun kindOf(inName: String): String = when {
 		inName.startsWith("tests/box/") -> "box"
-		inName.startsWith("tests/libs/") -> "libraries"
+		inName.startsWith("tests/modules/") -> "libraries"
 		inName.startsWith("tests/") -> "kotlin"
 		else -> "integration"
 	}

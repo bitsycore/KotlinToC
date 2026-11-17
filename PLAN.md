@@ -24,8 +24,8 @@ ktc2 against Kotlin/Native 2.5.0-RC and the JVM on ten programs ("Where the benc
 cycles with threads. Then the repository was put in parts (the owner's layout): `compiler/`
 (a Gradle project; its build directory is still `build/`), `stdlib/` (with `runtime/` and
 `interop/`), `compat/` (the `ktc2.` package on the JVM, a Gradle project, and on Kotlin/Native),
-`libs/<name>/`, and the tests under `tests/` (`integration`, `stdlib` (was `tests/kotlin`),
-`common`, `libs/<name>` (was `tests/libraries`), `box`). CLAUDE.md, "Repository layout". Checked
+`modules/<name>/`, and the tests under `tests/` (`integration`, `stdlib` (was `tests/kotlin`),
+`common`, `modules/<name>` (was `tests/libraries`, then `tests/libs`), `box`). CLAUDE.md, "Repository layout". Checked
 on the new layout: every integration program and project, and one test of each other category; the
 CI job of that push is the first run of the rest. Left: the JSON benchmark, the input of the showcase
 by hand, MSVC itself, item 5 (the speed of Native's regex engine).
@@ -33,7 +33,7 @@ by hand, MSVC itself, item 5 (the speed of Native's regex engine).
 **State at the end of 2026-11-16 (Windows, late evening).** Start here. `git log bd6b7d2..` is
 the evening's work, all on `master` and pushed:
 - `93b1f7f` the suite in four categories (`KTC2_TEST_CATEGORIES`: `integration`, `kotlin`, `box`,
-  `libraries`; `KTC2_TEST_NO_JVM`); library tests under `tests/libs/`, ktc2's own common test
+  `libraries`; `KTC2_TEST_NO_JVM`); library tests under `tests/modules/`, ktc2's own common test
   under `tests/common/`, the stdlib tests' helpers under `tests/stdlib/support/`; the showcase left
   the suite. The CI job runs `integration`, and `kotlin` in C only (macOS had run out of its 90
   minutes); `tools/msvc_all.sh` checks such a file of tests by how it ends. `interop/Geometry`:

@@ -39,7 +39,7 @@ private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1
  * - `kotlin`: the tests of the Kotlin standard library and of Kotlin/Native's runtime (`tests/stdlib/`), and ktc2's own
  *   common tests (`tests/common/`);
  * - `box`: the box tests of the Kotlin compiler (`tests/box/`);
- * - `libraries`: the own tests of the libraries that are bundled modules (`tests/libs/<module>/`): most of the
+ * - `libraries`: the own tests of the libraries that are bundled modules (`tests/modules/<module>/`): most of the
  *   suite's time, and they change only with the library or its module.
  * The CI job runs `integration` and `kotlin`.
  */
@@ -311,21 +311,21 @@ abstract class IntegrationPart(private val mShard: Int) {
 	// ==================
 
 	/**
-	 * The tests of a library that is a bundled module, under `tests/libs/<module>/<library>/` as its repository has them
+	 * The tests of a library that is a bundled module, under `tests/modules/<module>/<library>/` as its repository has them
 	 * at the version the module compiles: `commonTest/` and `concurrentTest/` (common to the JVM and Native), and the
 	 * helpers of each platform (`nativeTest/`, `jvmTest/`). Each file of tests is a program, compiled with the other
 	 * files of those two (their tests not run): in C with the module's sources and `nativeTest`, on the
 	 * JVM with the library's jars, which it sees the internals of as a test of the library does, and `jvmTest`.
 	 * [kModuleTests] names the modules that have such tests.
 	 */
-	/** The bundled modules whose library's own tests are under `tests/libs/<module>/`. */
+	/** The bundled modules whose library's own tests are under `tests/modules/<module>/`. */
 	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io")
 
 	/** The source sets of a module's tests that are common: run in C and on the JVM. */
 	private val kCommonTestSets = Regex("/(commonTest|concurrentTest)/")
 
 	private fun moduleTestList(): List<DynamicTest> =
-		kModuleTests.asSequence().flatMap { File("tests/libs/$it").walkTopDown() }
+		kModuleTests.asSequence().flatMap { File("tests/modules/$it").walkTopDown() }
 			.filter { it.isFile && it.extension == "kt" && kCommonTestSets.containsMatchIn(it.invariantSeparatorsPath) && "@Test" in it.readText() }
 			// `<Name>.pending` next to a file of a library's tests: it does not pass yet, for the reason written in it.
 			.filter { !File(it.parentFile, it.nameWithoutExtension + ".pending").isFile }
@@ -393,7 +393,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		System.setProperty("ktc2.moduleOptIn", vModules.flatMap { it.optIn }.distinct().joinToString("\n"))
 		mJvmOptions = mJvmOptions + vModules.first().optIn.map { "-opt-in=$it" }
 		try {
-			verify("tests/libs/$vModuleName/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
+			verify("tests/modules/$vModuleName/${vRoot.name}/${inSource.name}", listOf(inSource, vMain) + (vCommon - inSource), vOutDir, null)
 		} finally {
 			mCExtra = emptyList()
 			mJvmExtra = emptyList()

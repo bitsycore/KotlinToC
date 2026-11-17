@@ -114,7 +114,7 @@ page at the display's rate (about 100 fps), physics at 60 (4000 balls), a millio
   library, and the C runtime.
 - `compat/`: the `ktc2.` package for the JVM and Kotlin/Native, so that a program that uses it runs
   there too.
-- `libs/`: the bundled libraries (kotlinx-io, kotlinx.serialization, kotlinx-datetime,
+- `modules/`: the bundled modules, libraries ktc2 carries (kotlinx-io, kotlinx.serialization, kotlinx-datetime,
   kotlinx.collections.immutable, atomicfu, SDL3).
 - `tests/`: the test programs, the Kotlin standard library's tests, each library's own tests, and
   the Kotlin compiler's box tests (`tests/README.md`).

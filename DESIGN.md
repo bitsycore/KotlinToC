@@ -564,7 +564,7 @@ weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that ar
 acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
 ```
 
-- A dependency is a module shipped with ktc2 (`libs/`, today
+- A dependency is a module shipped with ktc2 (`modules/`, today
   `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable` and `atomicfu`), a directory, or a place in a git repository. Repositories are
   cloned once into `~/.ktc2/cache` (`KTC2_CACHE`).
 - A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
@@ -680,7 +680,7 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   program of each process carries the analysis of the library in its first step.
 - The suite is in four categories (`KTC2_TEST_CATEGORIES`): `integration` (the programs of
   `tests/integration/`), `kotlin` (`tests/stdlib/`, `tests/common/`), `box` (`tests/box/`) and
-  `libraries` (`tests/libs/`). `KTC2_TEST_NO_JVM` names categories run in C only; the CI
+  `libraries` (`tests/modules/`). `KTC2_TEST_NO_JVM` names categories run in C only; the CI
   job runs `integration`, and `kotlin` in C only.
 - Test builds (`KTC2_LEAK_CHECK`) fill a freed object with `0xDD` and keep the last few
   thousand of them aside: a retain or a release of one ends the program with "use of a freed
@@ -809,9 +809,9 @@ this list: what may be limited is only what a program asks for with an annotatio
 
 The repository is in parts (2026-11-17): `compiler/` (the code below, and the suite's harness),
 `stdlib/` (the platform layer, the C runtime in `stdlib/runtime`, the C library's bindings in
-`stdlib/interop`), `compat/` (the `ktc2.` package for the JVM and Kotlin/Native), `libs/<name>/` (the
-bundled libraries), `tests/` (`integration`, `stdlib`, `common`, `libs/<name>`, `box`). The compiler
-carries `stdlib/` and `libs/` as resources, under the same names as before (`ktc2/ktc2_core.c`,
+`stdlib/interop`), `compat/` (the `ktc2.` package for the JVM and Kotlin/Native), `modules/<name>/` (the
+bundled libraries), `tests/` (`integration`, `stdlib`, `common`, `modules/<name>`, `box`). The compiler
+carries `stdlib/` and `modules/` as resources, under the same names as before (`ktc2/ktc2_core.c`,
 `ktc2/stdlib/`, `ktc2/modules/<name>/`), so its code reads them as it always did.
 
 Most fixes of a difference from Kotlin land in the importer, which is also the largest part
