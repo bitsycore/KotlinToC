@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: tools/try.sh <path under integration, without .kt> [extra ktc2 arguments]
+# Usage: tools/try.sh <path under tests/integration, without .kt> [extra ktc2 arguments]
 # Transpiles one program, builds it the way the tests do (gcc, or the compiler KTC2_CC names),
 # and runs it. Needs Git Bash on Windows. At most 40 lines of the translator's output are shown.
 cd "$(dirname "$0")/.." || exit 1
@@ -9,7 +9,7 @@ vOut=build/try
 rm -rf "$vOut"
 # Gradle wants a Windows path on Windows; `pwd -W` exists in Git Bash only.
 vHere=$(pwd -W 2>/dev/null || pwd)
-./gradlew run -q --args="$vHere/integration/$vName.kt -o $vHere/$vOut $*" 2>&1 | grep -v "^$" | grep -v "^\*\|^>\|FAILURE\|BUILD" | cut -c1-260 | head -40
+./gradlew run -q --args="$vHere/tests/integration/$vName.kt -o $vHere/$vOut $*" 2>&1 | grep -v "^$" | grep -v "^\*\|^>\|FAILURE\|BUILD" | cut -c1-260 | head -40
 [ -f "$vOut/ktc2_build.txt" ] || exit 1
 # On Windows the runtime needs neither a thread nor a math library, and clang there has none.
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) vLibs="" ;; *) vLibs="-pthread -lm" ;; esac

@@ -30,7 +30,7 @@ A library is a bundled module made of its own sources, unchanged, and nothing of
 - **Cycles** a collector would free: `weak` and `acyclic` in the module file.
 - **Tests**: the library's own common tests, unchanged, under `tests/<library>/`, run in C
   against the module and on the JVM against the library's JVM jars (which they see the
-  internals of); and a program of ktc2's under `integration/modules/<library>`.
+  internals of); and a program of ktc2's under `tests/integration/modules/<library>`.
 
 What it took of ktc2, now there for the next ones: common sources in a module, three levels of
 source sets, `kotlin.native.Platform`, `kotlin.concurrent.Volatile` as a class, `convert()`,

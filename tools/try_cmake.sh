@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: tools/try_cmake.sh <path under integration, without .kt> [arguments for cmake's configure step]
+# Usage: tools/try_cmake.sh <path under tests/integration, without .kt> [arguments for cmake's configure step]
 # Transpiles one program, builds it through the CMakeLists.txt ktc2 writes, and runs it.
 # Uses the installed tool: run `./gradlew installDist` first, and again after a change.
 # Without arguments CMake picks its default generator and compiler (Visual Studio and MSVC on
@@ -9,7 +9,7 @@ vName=$1
 shift
 vOut=build/try_cmake
 rm -rf "$vOut"
-build/install/ktc2/bin/ktc2 "integration/$vName.kt" -o "$vOut" 2>&1 | grep -v "WARNING\|^warning" | head -20
+build/install/ktc2/bin/ktc2 "tests/integration/$vName.kt" -o "$vOut" 2>&1 | grep -v "WARNING\|^warning" | head -20
 [ -f "$vOut/CMakeLists.txt" ] || exit 1
 cmake -S "$vOut" -B "$vOut/cmake" -DKTC2_DEBUG=ON "$@" > "$vOut/configure.log" 2>&1 || { tail -5 "$vOut/configure.log"; exit 1; }
 cmake --build "$vOut/cmake" --config Release > "$vOut/build.log" 2>&1 || { grep -m 12 "error" "$vOut/build.log" | cut -c1-240; exit 1; }

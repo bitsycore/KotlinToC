@@ -107,6 +107,18 @@ On a MacBook (Apple silicon, Release build): the menu, particles, the game of li
 page at the display's rate (about 100 fps), physics at 60 (4000 balls), a million bunnies at 32
 (the drawing takes 19 ms), the fractal at 24 (a picture of depth 400 in 29 ms).
 
+## The repository
+
+- `compiler/`: ktc2 itself (Kotlin, built by Gradle).
+- `stdlib/`: what every program is compiled with: ktc2's platform layer of the Kotlin standard
+  library, and the C runtime.
+- `compat/`: the `ktc2.` package for the JVM and Kotlin/Native, so that a program that uses it runs
+  there too.
+- `libs/`: the bundled libraries (kotlinx-io, kotlinx.serialization, kotlinx-datetime,
+  kotlinx.collections.immutable, atomicfu, SDL3).
+- `tests/`: the test programs, the Kotlin standard library's tests, each library's own tests, and
+  the Kotlin compiler's box tests (`tests/README.md`).
+
 ## What you need
 
 A JDK to start Gradle (it fetches JDK 21, the Kotlin compiler and the library sources the
@@ -147,7 +159,7 @@ program again with AddressSanitizer. Android is not there yet.
 ./gradlew test --rerun
 ```
 
-runs every program under `integration/` twice - as C, compiled with `-Wall -Werror` and
+runs every program under `tests/integration/` twice - as C, compiled with `-Wall -Werror` and
 checked for leaks, and on the JVM - and compares what they print. It also runs the tests
 under `tests/`, which are written as Kotlin Multiplatform's common tests are, with
 `kotlin.test`: among them tests of the Kotlin standard library itself (`tests/README.md`).

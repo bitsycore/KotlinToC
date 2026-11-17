@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: tools/retain_profile.sh <path under integration, without .kt>
+# Usage: tools/retain_profile.sh <path under tests/integration, without .kt>
 # Runs one program with every retain in the generated C counted by source line, and prints
 # the lines that retained most, with their text. For finding what the ARC pass leaves behind.
 cd "$(dirname "$0")/.." || exit 1

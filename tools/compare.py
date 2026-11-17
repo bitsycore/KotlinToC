@@ -15,8 +15,8 @@ For each program and each target, four measures:
 - speed: the time of the whole process, best and median of N runs (7 by default).
 
 The three must print the same: that checks Kotlin/Native and the JVM against ktc2 too. A program
-that uses the `ktc2.` package is compiled on the JVM with src/main/kotlin/ktc2 and on Kotlin/Native
-with benchmarks/native/ktc2, the same API over what each has.
+that uses the `ktc2.` package is compiled on the JVM with compat/src/main/kotlin/ktc2 and on
+Kotlin/Native with compat/native, the same API over what each has (the compat layer).
 
 What it needs:
 - ktc2 installed (./gradlew installDist; KTC2_TOOL names another one) and the C compiler (KTC2_CC);
@@ -184,7 +184,7 @@ def ktc2Sources(inSource, inTarget):
 		vUses = re.search(r"(?m)^import ktc2\.", vFile.read()) is not None
 	if not vUses or inTarget == "ktc2":
 		return [inSource]
-	vDirectory = os.path.join(kRoot, "src", "main", "kotlin", "ktc2") if inTarget == "jvm" else os.path.join(kRoot, "benchmarks", "native", "ktc2")
+	vDirectory = os.path.join(kRoot, "compat", "src", "main", "kotlin", "ktc2") if inTarget == "jvm" else os.path.join(kRoot, "compat", "native")
 	return [inSource] + sorted(os.path.join(vDir, vName) for vDir, _, vNames in os.walk(vDirectory) for vName in vNames if vName.endswith(".kt"))
 
 

@@ -16,7 +16,7 @@ check() {
 	vName=$(basename "$vDir")
 	# The standard input of the test, when it has one.
 	local vInput
-	vInput=$(find integration -name "$vName.in" | head -1)
+	vInput=$(find tests/integration -name "$vName.in" | head -1)
 	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated: not looked for there.
 	local vLeaks="AddressSanitizer|LeakSanitizer|ktc2: leak|ktc2: .*freed"
 	local vOptions=${ASAN_OPTIONS:-}

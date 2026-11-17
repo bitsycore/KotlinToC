@@ -25,7 +25,7 @@ to do is in `PLAN.md`; why things are as they are, and what was tried on the way
    never by a weak reference that would make a program answer otherwise. Optimizations
    (escape analysis, borrowed references, devirtualization) are invisible.
 3. **A ktc2 feature changes storage and cost, never behavior.** Everything ktc2 adds is in
-   the `ktc2.` package and has a plain definition for the JVM (`src/main/kotlin/ktc2/`), so a
+   the `ktc2.` package and has a plain definition for the JVM (`compat/src/main/kotlin/ktc2/`), so a
    program that uses it still runs on the JVM and prints the same. Code that uses none of it
    behaves exactly as on Kotlin/Native. What stands in for a library ktc2 has not (the okio of
    kotlinx.serialization's tests) belongs to a module or to the tests, not to `ktc2.`.
@@ -308,7 +308,7 @@ which also keeps weak references from being read, and a flag that a reference co
 meanwhile waits for, `ktc2_retain_paired`). Counted apart, another thread could take a reference through a
 partner's field between the reads of two counts, or free the pair under a check that has not run yet. The
 objects are destroyed after the lock is given up. It costs a lock for each release of a paired object in a
-threaded program (`integration/objects/PairCyclesThreads`). `CycleLint` warns at compile time about the other classes that can reach
+threaded program (`tests/integration/objects/PairCyclesThreads`). `CycleLint` warns at compile time about the other classes that can reach
 themselves through strong references; `@Weak` (on a property, or on an `inner` class for its
 outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner
@@ -316,11 +316,11 @@ gives an object it makes and hands its own `this` to: an `inner` object (`val ke
 lambda or an object expression that captures `this` (`val handler = { update() }`), `Child(this)`.
 Those are found in the bodies (`let t = new C; t.outer = self; self.key = t`), and a field typed
 as a function or an interface is then followed to the class stored in it
-(`integration/objects/SelfCycles`). A field typed as an interface or `Any` is also followed to the
+(`tests/integration/objects/SelfCycles`). A field typed as an interface or `Any` is also followed to the
 class of a value stored in it whose class is known (`left.other = right`), and to the caller's own
 class when a member keeps one of its parameters there and the caller hands it `this`
 (`PluginGeneratedSerialDescriptor(name, this)`, kotlinx.serialization's serializer and its
-descriptor; through a superclass's constructor too): `integration/objects/InterfacePairCycles`. A
+descriptor; through a superclass's constructor too): `tests/integration/objects/InterfacePairCycles`. A
 warning names the property to mark `@Weak`: the one that leads back to where the cycle starts (an
 `inner` class's outer reference: `@Weak inner class`; a lambda's capture: a `WeakRef` in it).
 `KTC2_DEBUG_CYCLES=1` reports the library's own cycles too.
@@ -378,7 +378,7 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   properties of a file that are so have an initializer of their own, apart from the file's
   others. What they hold is given up when the thread ends (`ktc2_thread_end`, a function `main`
   writes and sets), and by `main` for its own thread at the end. On the JVM, where it does not
-  exist, a test of it has an `.expected` file (`integration/stdlib/ThreadLocals`).
+  exist, a test of it has an `.expected` file (`tests/integration/stdlib/ThreadLocals`).
 
 **Coroutines** are done as on Kotlin/Native: a `suspend` function is a state machine, not a stack
 of its own.
@@ -564,12 +564,12 @@ weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that ar
 acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
 ```
 
-- A dependency is a module shipped with ktc2 (`src/main/resources/ktc2/modules/`, today
+- A dependency is a module shipped with ktc2 (`libs/`, today
   `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable` and `atomicfu`), a directory, or a place in a git repository. Repositories are
   cloned once into `~/.ktc2/cache` (`KTC2_CACHE`).
 - A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
   the sources of kotlinx-io 0.9.3, which Gradle fetches (`kLibraryModules` in
-  `build.gradle.kts`, the versions in `gradle/libs.versions.toml`) and puts next to the module
+  `compiler/build.gradle.kts`, the versions in `gradle/libs.versions.toml`) and puts next to the module
   file; its `files.txt` lists those it compiles (a module shipped with ktc2
   lists its files there or in `files`). What such sources expect of ktc2:
   - a file of its list may be for some systems only (`windows: path`, `linux, macos: path`),
@@ -616,7 +616,7 @@ acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
     `unistd.h`, `sys/stat.h`, `dirent.h`; on Windows `io.h` and `direct.h` too), and
     `kotlinx.cinterop` has `convert()` and `UnsafeNumber`, as Kotlin/Native's.
 - The test suite compiles such a program for the JVM with the library's JVM jars instead of
-  the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `integration/modules/kotlinx-io`.
+  the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `tests/integration/modules/kotlinx-io`.
 - Output goes to `<module>/build` (or `./out`, or `-o`): `c/` with one `.h`/`.c` per unit
   under its package (a unit is a class, the top-level declarations of one file as `<File>Kt`,
   a lambda, or the box of a `@Struct`), `ktc2_core.h/.c`, `ktc2_config.h` (what this program
@@ -663,35 +663,35 @@ function (`_fun`) before it writes anything (`renameClashingGlobals`).
 ## 11. Tests
 ---------------------------------------------------------------------------
 
-`./gradlew test --rerun` (`src/test/kotlin/.../IntegrationTest.kt`): every `integration/**/*.kt` is
+`./gradlew test --rerun` (`compiler/src/test/kotlin/.../IntegrationTest.kt`): every `tests/integration/**/*.kt` is
 translated, built with gcc (`-O1 -Wall -Werror`, leak check, counts) and run; the same file
 is compiled and run on the JVM; the outputs must be equal and nothing may leak.
 
-- `<Name>.expected` replaces the JVM for programs that use C (`integration/interop/`) and for
+- `<Name>.expected` replaces the JVM for programs that use C (`tests/integration/interop/`) and for
   those that print what the JVM and Kotlin/Native do differently: there it is Kotlin/Native's
   own output (made with `kotlinc-native`, each differing line checked against Native's sources),
   and the first lines of the program say so; `<Name>.def` is the C library of the test;
   `<Name>.in` its standard input.
 - A program of several files is a directory with a `module.ktc2.toml` under
-  `integration/modules/`, named in `kProjects` of `IntegrationTest.kt`.
-- The log (`build.gradle.kts`) has a line for each program with the time of its four steps:
+  `tests/integration/modules/`, named in `kProjects` of `IntegrationTest.kt`.
+- The log (`compiler/build.gradle.kts`) has a line for each program with the time of its four steps:
   the Kotlin front end (Kotlin → IR, `K2Frontend.lastFrontEndNanos`), ktc2's translation
   (IR → C), the C compiler and linker, and the run; the summary adds each step up. The first
   program of each process carries the analysis of the library in its first step.
 - The suite is in four categories (`KTC2_TEST_CATEGORIES`): `integration` (the programs of
-  `integration/`), `kotlin` (`tests/kotlin/`, `tests/common/`), `box` (`tests/box/`) and
-  `libraries` (`tests/libraries/`). `KTC2_TEST_NO_JVM` names categories run in C only; the CI
+  `tests/integration/`), `kotlin` (`tests/stdlib/`, `tests/common/`), `box` (`tests/box/`) and
+  `libraries` (`tests/libs/`). `KTC2_TEST_NO_JVM` names categories run in C only; the CI
   job runs `integration`, and `kotlin` in C only.
 - Test builds (`KTC2_LEAK_CHECK`) fill a freed object with `0xDD` and keep the last few
   thousand of them aside: a retain or a release of one ends the program with "use of a freed
   object", on every system. AddressSanitizer (`-fsanitize=address -DKTC2_NO_POOL` on the C of
   `build/integration/<Name>/c`) finds the reads the fill does not.
-- `integration/ported/` are the plain-Kotlin tests of the first transpiler.
-- `tests/kotlin/` and `tests/common/` hold common tests, written as Kotlin Multiplatform's are: classes of `@Test`
+- `tests/integration/ported/` are the plain-Kotlin tests of the first transpiler.
+- `tests/stdlib/` and `tests/common/` hold common tests, written as Kotlin Multiplatform's are: classes of `@Test`
   functions that assert with `kotlin.test` (`stdlib/Ktc2Test.kt` here), and no `main`. The
   suite writes the `main` that calls each test (`testMain` in `IntegrationTest.kt`, which
   reads the source as text), runs it in C and on the JVM, and fails when a test fails on
-  either. `tests/kotlin/` holds tests of the Kotlin standard library itself, unchanged, and
+  either. `tests/stdlib/` holds tests of the Kotlin standard library itself, unchanged, and
   `tests/common/` ktc2's own. See
   `tests/README.md`.
 - The comparison with the JVM counts the two names of a standard exception as one
@@ -789,7 +789,7 @@ Known to differ from the JVM, otherwise:
   implement); everything else a `KClass` offers throws. A property reference knows its name
   (`Reference0`, `Reference1` in `Ktc2Internal.kt`: the getter with the name, and the setter
   for a `var`), and the name of any reference written where it is read (`Builder::char.name`)
-  is a constant (`integration/stdlib/PropertyReferenceNames`);
+  is a constant (`tests/integration/stdlib/PropertyReferenceNames`);
 - what only the JDK has is not there, by the owner's decision: `toSortedMap`, `toSortedSet`,
   `String.format`, `getOrDefault` and `putIfAbsent` of a map, `setCharAt` and `deleteCharAt` of
   a `StringBuilder`. Kotlin/Native has none of them either; a compatibility layer in the
@@ -806,6 +806,13 @@ this list: what may be limited is only what a program asks for with an annotatio
 ---------------------------------------------------------------------------
 ## 13. Inside the code
 ---------------------------------------------------------------------------
+
+The repository is in parts (2026-11-17): `compiler/` (the code below, and the suite's harness),
+`stdlib/` (the platform layer, the C runtime in `stdlib/runtime`, the C library's bindings in
+`stdlib/interop`), `compat/` (the `ktc2.` package for the JVM and Kotlin/Native), `libs/<name>/` (the
+bundled libraries), `tests/` (`integration`, `stdlib`, `common`, `libs/<name>`, `box`). The compiler
+carries `stdlib/` and `libs/` as resources, under the same names as before (`ktc2/ktc2_core.c`,
+`ktc2/stdlib/`, `ktc2/modules/<name>/`), so its code reads them as it always did.
 
 Most fixes of a difference from Kotlin land in the importer, which is also the largest part
 (`BodyLowering.kt` and `KirImport.kt` are four tenths of the code). Its sources have KDoc on
@@ -905,7 +912,7 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
 
 - `ArcInsert`, `Effects`, `BorrowedReturns`, `EscapeAnalysis`: a wrong "this can be borrowed"
   or "this stays in the frame" is a use of freed memory. Test builds overwrite freed objects
-  to make that fail; the cases known to be delicate are in `integration/objects/Borrowing.kt`,
+  to make that fail; the cases known to be delicate are in `tests/integration/objects/Borrowing.kt`,
   `LastUse.kt`, `ThreadBorrowing.kt`, `DispatchedResults.kt`, `Reassigned.kt` and
   `ReturnedCalls.kt`. After any change there, compare the counts of the benchmarks and of
   the suite as well as the output: a pass that silently stops applying shows only there.

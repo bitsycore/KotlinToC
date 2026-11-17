@@ -13,7 +13,29 @@ plugins {
 group = "com.bitsycore"
 version = "0.1-SNAPSHOT"
 
+/*
+The compiler: ktc2 itself (src/main/kotlin), its test harness (src/test/kotlin), and what the installed
+tool carries as resources from the other parts of the repository: the platform layer and the C runtime
+(stdlib/), the bundled libraries (libs/), the sources of the Kotlin library and of the libraries that Gradle
+fetches. Its build directory is the repository's `build/`, where every tool and document looks
+(build/install/ktc2, build/integration...). Paths below are from the repository's root.
+*/
+layout.buildDirectory.set(rootProject.layout.buildDirectory)
+val kRoot: File = rootDir
+
+// The tool is `ktc2`, as before the compiler was a project of its own: build/install/ktc2/bin/ktc2.
+base {
+	archivesName.set("ktc2")
+}
+
+distributions {
+	main {
+		distributionBaseName.set("ktc2")
+	}
+}
+
 application {
+	applicationName = "ktc2"
 	mainClass.set("com.bitsycore.ktc2.MainKt")
 	// A compilation is one short run: the quick JIT tier and a heap that does not have to grow make it a quarter faster.
 	// With the quick tier alone the JVM reserves a small code cache, which the Kotlin compiler can fill: it is given room.
@@ -22,6 +44,7 @@ application {
 
 tasks.named<JavaExec>("run") {
 	dependsOn("unpackStdlibSources")
+	workingDir = kRoot
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// Each run through Gradle is its own process: no compiler process is left behind.
 	environment("KTC2_DAEMON", "0")
@@ -95,6 +118,8 @@ dependencies {
 		for (vSource in vModule.sources.values) add(vModule.sourcesConfiguration.name, variantOf(vSource) { classifier("sources") })
 		for (vJar in vModule.jvm) add(vModule.jvmConfiguration.name, vJar)
 	}
+	// The `ktc2.` package on the JVM (compat/): on the class path of every compilation, and what the suite's JVM side runs with.
+	implementation(project(":compat"))
 	// Frontend: the Kotlin K2 compiler. Pinned - its IR API is experimental.
 	implementation(libs.kotlin.compiler.embeddable)
 	// Run with ktc2's plugin in the compilations of programs that use kotlinx.serialization (K2Frontend.pluginClasspath).
@@ -151,7 +176,7 @@ tasks.processResources {
 	dependsOn(unpackStdlibSources, unpackModuleSources)
 	// And the sources each bundled module of a library compiles (modules/<name>/files.txt).
 	for (vModule in kLibraryModules) {
-		val vList = file("src/main/resources/ktc2/modules/${vModule.name}/files.txt")
+		val vList = kRoot.resolve("libs/${vModule.name}/files.txt")
 		// A line `windows: path` or `linux, macos: path` is a file of those systems only: all are carried.
 		val vModuleListed = vList.readLines().map { it.trim().replace(Regex("^[a-z]+(\\s*,\\s*[a-z]+)*\\s*:\\s*"), "") }.filter { it.contains('/') && !it.startsWith("#") }
 		inputs.file(vList)
@@ -160,26 +185,40 @@ tasks.processResources {
 			into("ktc2/modules/${vModule.name}")
 		}
 	}
-	val vListed = file("stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
-	inputs.file("stdlib/files.txt")
+	val vListed = kRoot.resolve("stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
+	inputs.file(kRoot.resolve("stdlib/files.txt"))
 	from(layout.buildDirectory.dir("stdlib-src")) {
 		include(vListed)
 		into("ktc2/kotlin-stdlib")
 	}
-	// ktc2's platform layer, a directory of its own (stdlib/) that an IDE sees as Kotlin (ide/), carried as resources.
-	from("stdlib") {
+	// ktc2's platform layer, a directory of its own (stdlib/) that an IDE sees as Kotlin (ide/), carried as resources;
+	// with it the C runtime (stdlib/runtime) and the C library's bindings (stdlib/interop), where the compiler reads them.
+	from(kRoot.resolve("stdlib")) {
+		exclude("runtime/**", "interop/**")
 		into("ktc2/stdlib")
+	}
+	from(kRoot.resolve("stdlib/runtime")) {
+		into("ktc2")
+	}
+	from(kRoot.resolve("stdlib/interop")) {
+		into("ktc2/interop")
+	}
+	// The bundled libraries (libs/<name>: module.ktc2.toml, ktc2's own files, .def and CMake files).
+	from(kRoot.resolve("libs")) {
+		into("ktc2/modules")
 	}
 }
 
 tasks.test {
 	useJUnitPlatform()
+	// The suite reads its programs and tests from the repository (tests/) and writes into build/integration.
+	workingDir = kRoot
 	dependsOn(unpackStdlibSources)
 	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// A program that uses a bundled module made of a library's sources is compiled for the JVM with the library's JVM jars.
 	for (vModule in kLibraryModules) systemProperty("ktc2.jvmModule.${vModule.name}", vModule.jvmConfiguration.files.joinToString(File.pathSeparator))
 	// The integration programs and the bundled runtime are inputs of the oracle test.
-	inputs.dir("integration")
+	inputs.dir(kRoot.resolve("tests"))
 	// The programs are shared between several processes (see IntegrationTest): KTC2_TEST_FORKS says how many,
 	// at most 12; by default half the processors but no more than 8, past which they only get in each other's way. Each has a Java machine and a Kotlin compiler of its own.
 	val vForks = (System.getenv("KTC2_TEST_FORKS")?.toIntOrNull() ?: (Runtime.getRuntime().availableProcessors() / 2).coerceAtMost(8)).coerceIn(1, 12)
@@ -229,7 +268,7 @@ tasks.test {
 	val kKinds = listOf("integration" to "integration tests", "kotlin" to "Kotlin tests", "box" to "box tests", "libraries" to "library tests")
 	fun kindOf(inName: String): String = when {
 		inName.startsWith("tests/box/") -> "box"
-		inName.startsWith("tests/libraries/") -> "libraries"
+		inName.startsWith("tests/libs/") -> "libraries"
 		inName.startsWith("tests/") -> "kotlin"
 		else -> "integration"
 	}

@@ -3,13 +3,13 @@
 The suite (`./gradlew test --rerun`) has four categories, which `KTC2_TEST_CATEGORIES` chooses
 from (all by default) and which its log names on each line and counts apart:
 
-- `integration`: the programs under `integration/` (each with its own `main`, compared with the
+- `integration`: the programs under `tests/integration/` (each with its own `main`, compared with the
   JVM or with an `.expected` file) and the programs of several modules under
-  `integration/modules/`;
-- `kotlin`: the files of common tests of `tests/kotlin/` (the Kotlin standard library's and
+  `tests/integration/modules/`;
+- `kotlin`: the files of common tests of `tests/stdlib/` (the Kotlin standard library's and
   Kotlin/Native's runtime's own tests) and of `tests/common/` (ktc2's own);
 - `box`: the box tests of the Kotlin compiler, `tests/box/`;
-- `libraries`: the own tests of the bundled libraries, `tests/libraries/<module>/`.
+- `libraries`: the own tests of the bundled libraries, `tests/libs/<module>/`.
 
 The CI job runs `integration`, and `kotlin` in C only (`KTC2_TEST_NO_JVM=kotlin`: a file of tests
 checks itself, the JVM is only a second opinion). The box tests and the libraries' tests run on
@@ -22,7 +22,7 @@ assert with `kotlin.test`, and no `main`. A test says what must hold on every pl
 nothing of what a platform is free in (the text of a message, the name of an exception's
 package). The same file runs:
 
-- in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/kotlin/,tests/common/`): it
+- in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/stdlib/,tests/common/`): it
   writes the `main` that calls each test (`build/testmain/`), and a test that fails on either
   fails the suite. The log has a line per file (its tests passed out of how many, its time and
   the time of each step), and lists the test functions of a file only when one of them failed
@@ -34,14 +34,14 @@ package). The same file runs:
 `@Ignore`, `@BeforeTest`, `@AfterTest`.
 
 - `common/`: tests written for ktc2.
-- `kotlin/`: tests of the Kotlin standard library itself, unchanged, from
+- `stdlib/`: tests of the Kotlin standard library itself, unchanged, from
   `libraries/stdlib/test` of github.com/JetBrains/kotlin at tag `v2.5.0-RC`, the version of
   the library ktc2 compiles (Apache 2.0, the header of each file). They are the best tests
   there are of what the library must do. 156 files, some 2230 tests: every file of `libraries/stdlib/test` but those of JavaScript. They are compiled as the
   library's own tests are: with its opt-ins (`kotlin.ExperimentalUnsignedTypes` and the others
-  of its `commonTestOptIns`; `ktc2.optIn` in `build.gradle.kts` for C), and on the JVM seeing
+  of its `commonTestOptIns`; `ktc2.optIn` in `compiler/build.gradle.kts` for C), and on the JVM seeing
   what the library keeps `internal`.
-- `kotlin/support/`: the helpers of the library's tests, compiled with every file of `kotlin/`.
+- `stdlib/support/`: the helpers of the library's tests, compiled with every file of `stdlib/`.
   `support/common/` is theirs as they are (`testUtils.kt` without its `expect` line,
   `CollectionBehaviors.kt`, `ComparisonDSL.kt`, `jsCollectionFactories.kt`,
   `DurationTestUtils.kt`); `support/jvm/` and `support/ktc2/` answer what they leave to the
@@ -50,29 +50,29 @@ package). The same file runs:
   2026-11-16: where the JVM and Native differ ktc2 sides with Native (`DESIGN.md`, section 1).
   The JVM's side answers as the JVM's tests do; each side's run then checks its own platform. A line `expect ...` of a test file is left out when it is
   compiled (`support/*/Text.kt` answers those of `StringEncodingTest`).
-- `kotlin/<Name>.with`: other files of tests whose helpers `<Name>.kt` uses (`Sortable` of
+- `stdlib/<Name>.with`: other files of tests whose helpers `<Name>.kt` uses (`Sortable` of
   `IterableTests.kt`, `STRING_CASE_INSENSITIVE_ORDER` of `OrderingTest.kt`), one a line:
   compiled with it, their tests not run.
-- `kotlin/<Name>.jvm`: options the compilation for the JVM needs for that file, one a line.
-- `kotlin/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison. A line `/regex/` names whole lines (a duration, which has no fixed beginning).
-- `kotlin/<Name>.skip`: tests of `<Name>.kt` that are not run, one a line, `name: why` (or
+- `stdlib/<Name>.jvm`: options the compilation for the JVM needs for that file, one a line.
+- `stdlib/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison. A line `/regex/` names whole lines (a duration, which has no fixed beginning).
+- `stdlib/<Name>.skip`: tests of `<Name>.kt` that are not run, one a line, `name: why` (or
   `Class.name: why`). Neither side runs them.
-- `kotlin/<Name>.cycles`: says, with the reason, that the tests of `<Name>.kt` build objects
+- `stdlib/<Name>.cycles`: says, with the reason, that the tests of `<Name>.kt` build objects
   that refer to each other in a circle. Those are never freed, there being no collector of
   cycles, and for that file what is left allocated is not a failure.
 - A class of tests that extends another (`IterableTests.kt`: `ListTest : OrderedIterableTests`)
   runs the tests it inherits; an abstract one runs none itself.
 - `pending/`: tests of the same origin that do not pass yet, each with the reason below. Not
   run. A test that does not pass has found a difference to fix; the file then moves to
-  `kotlin/`.
+  `stdlib/`.
 
 To take in more: get the tests (`git clone --depth 1 --filter=blob:none --sparse -b v2.5.0-RC
 https://github.com/JetBrains/kotlin`, then `git sparse-checkout set libraries/stdlib/test`),
-copy files to `kotlin/`, run `KTC2_TEST_FILTER=tests/kotlin/ ./gradlew test --rerun`, and
+copy files to `stdlib/`, run `KTC2_TEST_FILTER=tests/stdlib/ ./gradlew test --rerun`, and
 read `python tools/failures.py`. A file from another tag than the library's fails on the JVM
 too (two did, taken from `v2.4.21`).
 
-Besides `libraries/stdlib/test`, `kotlin/` has the files of two other directories of the same
+Besides `libraries/stdlib/test`, `stdlib/` has the files of two other directories of the same
 tag that are not about one platform's own API, unchanged:
 - of `libraries/stdlib/jvm/test`, the 3 that use nothing of the JDK nor of the JVM's own part of
   the library (`DurationJVMTest`, `NumbersJVMTest`, `SequenceJVMTest`). The others use
@@ -160,8 +160,8 @@ test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt
 
 ## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
-The libraries' own tests (`tests/libraries/<module>/`, the category `libraries`) run locally; the
-CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,kotlin`). The programs on each module (`integration/modules/`) run everywhere.
+The libraries' own tests (`tests/libs/<module>/`, the category `libraries`) run locally; the
+CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,kotlin`). The programs on each module (`tests/integration/modules/`) run everywhere.
 
 The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
 holds `commonTest` of kotlinx.collections.immutable 0.5.2 (from `core/commonTest/src`) and its
@@ -300,7 +300,7 @@ a private property read on another instance of a class below its own (`generics/
 On Kotlin/Native 2.4.21 some of these files do not compile ("name based destructuring is only
 available since language version 2.5"): they need the compiler of their own version.
 
-A file of a library's own tests (`tests/libraries/<module>/`) that does not pass yet is kept out of the
+A file of a library's own tests (`tests/libs/<module>/`) that does not pass yet is kept out of the
 suite by a `<Name>.pending` next to it, which says why; moved files would no longer be where
-the library has them. `tests/libraries/kotlinx-serialization-json-io/.../JsonUpdateModeTest.pending` is
+the library has them. `tests/libs/kotlinx-serialization-json-io/.../JsonUpdateModeTest.pending` is
 the first (2026-11-16: it loops in C).

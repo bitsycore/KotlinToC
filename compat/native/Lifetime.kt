@@ -7,7 +7,7 @@ import kotlin.native.ref.WeakReference
 /*
 The Kotlin/Native side of the lifetime part of `ktc2.`, for building a ktc2 program with
 Kotlin/Native (tools/compare.py): the same API over what Kotlin/Native has. The annotations
-change nothing there; the C side is ktc2's platform layer, the JVM side src/main/kotlin/ktc2.
+change nothing there; the C side is ktc2's platform layer, the JVM side compat/src/main/kotlin/ktc2.
 */
 
 /** A property or an inner class whose reference does not own its target. Nothing on Kotlin/Native, which has a collector. */

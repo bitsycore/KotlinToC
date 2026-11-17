@@ -4,7 +4,7 @@
 #
 # Moving one up: change it here; for a library, check its files list (resources/ktc2/modules/<name>/files.txt)
 # against the new sources, and take its tests again at the new tag (tests/README.md). Kotlin is more:
-# the tests of the standard library are of its tag (tests/kotlin, v<kotlin>), and PhasedCompiler.kt
+# the tests of the standard library are of its tag (tests/stdlib, v<kotlin>), and PhasedCompiler.kt
 # calls the compiler's internals, to be gone over (CLAUDE.md, "Things that cost time before").
 
 [versions]

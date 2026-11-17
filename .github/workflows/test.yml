@@ -3,7 +3,7 @@
 # first; and on another Windows machine the C of every program built with MSVC, compared with
 # what the program prints on the JVM (which that machine runs instead of gcc's build).
 # Only two categories of the suite run here: the integration programs, compared with the JVM, and
-# the Kotlin tests (tests/kotlin, tests/common), in C only: their assertions decide. The box tests
+# the Kotlin tests (tests/stdlib, tests/common), in C only: their assertions decide. The box tests
 # and the libraries' own tests are run on the machines where the work is done.
 name: test
 
@@ -39,9 +39,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: C compiler
         run: gcc --version
-      # The suite, or the part of it this machine needs (KTC2_TEST_STEPS, src/test/.../IntegrationTest.kt).
+      # The suite, or the part of it this machine needs (KTC2_TEST_STEPS, compiler/src/test/.../IntegrationTest.kt).
       - name: Suite
-        run: ./gradlew test --rerun
+        run: ./gradlew :compiler:test --rerun
         env:
           KTC2_TEST_STEPS: ${{ matrix.steps }}
           KTC2_TEST_CATEGORIES: integration,kotlin

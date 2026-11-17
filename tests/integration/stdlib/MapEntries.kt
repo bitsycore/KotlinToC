@@ -1,6 +1,6 @@
 // Entries of a map that are kept while the map is changed in its values only: each reads and writes the value the
 // map has for its key. (After a key is added or removed an entry fails with ConcurrentModificationException on
-// Kotlin/Native and in ktc2, and goes on working on the JVM: tests/kotlin/MapTest.kt has that case.)
+// Kotlin/Native and in ktc2, and goes on working on the JVM: tests/stdlib/MapTest.kt has that case.)
 
 fun show(inWhat: String, inEntries: List<MutableMap.MutableEntry<String, Int>>, inMap: Map<String, Int>) {
 	println("$inWhat: ${inEntries.map { "${it.key}=${it.value}" }} ${inMap.toList().sortedBy { it.first }}")
