@@ -53,6 +53,17 @@ internal fun cIdentifier(inName: String): String {
 	return if (vClean.isEmpty() || vClean[0].isDigit() || vClean in kCKeywords) "_$vClean" else vClean
 }
 
+/**
+ * The C name of a parameter called [inName]: its own, unless C reserves it for its library (`__c`, `_C`), whose
+ * macros may declare that very name: glibc's `toupper(c)` expands to `int __c = (c)`, which a parameter
+ * `__c` made `int __c = (__c)`. The bindings of the C library name their parameters as its headers do.
+ */
+private fun cParameterName(inName: String): String {
+	val vName = cIdentifier(inName)
+	val vReserved = vName.startsWith("__") || (vName.length > 1 && vName[0] == '_' && vName[1].isUpperCase())
+	return if (vReserved) "p$vName" else vName
+}
+
 private fun cPrefix(inPackage: String): String = if (inPackage.isEmpty()) "kt_" else inPackage.replace('.', '_') + "_"
 
 /** The runtime function that starts a thread; a program reaching it is built with atomic counts. */
@@ -1992,7 +2003,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				continue
 			}
 			// The receiver of an inner class's constructor is the enclosing object, not the new one.
-			var vName = if (vParam.kind == IrParameterKind.Regular) cIdentifier(vParam.name.asString()) else if (inFunction is IrConstructor) "outer" else "self"
+			var vName = if (vParam.kind == IrParameterKind.Regular) cParameterName(vParam.name.asString()) else if (inFunction is IrConstructor) "outer" else "self"
 			while (!vNames.add(vName)) vName += "_"
 			vParams += KLocal(vName, vType).also { vLocal ->
 				if (vType == KObjType && vParam.kind == IrParameterKind.Regular) {

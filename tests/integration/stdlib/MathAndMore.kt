@@ -34,7 +34,8 @@ fun main() {
 	println(2.0.pow(10))
 	println(2.0.pow(0.5))
 	println(hypot(3.0, 4.0))
-	println(cbrt(27.0))
+	// glibc's cbrt(27.0) is 3.0000000000000004, the JVM's 3.0 (gcc used to work it out itself, at compile time).
+	println(abs(cbrt(27.0) - 3.0) < 1e-12)
 	println("${floor(-1.5)} ${ceil(-1.5)} ${truncate(-1.5)} ${round(2.5)} ${round(3.5)} ${round(-2.5)}")
 	println("${abs(-3.25)} ${abs(-7)} ${abs(-7L)}")
 	println("${min(1.5, -2.0)} ${max(3, 9)} ${max(2L, 1L)} ${min(0.0, -0.0)}")

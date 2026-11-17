@@ -111,7 +111,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - A use of freed memory can pass on one system and crash on another: the double release found on macOS had always passed on Windows. Trust AddressSanitizer over a green run.
 - Apple's SDK declares the C library in private headers (`_stdio.h` behind `stdio.h`): `Bindings.kt` adds them to the headers a `.def` asks for.
 - Do not run the benchmarks or the installed tool while the suite runs: the machine is busy enough to make times meaningless.
-- The last digit of `exp`, `ln`, `pow` differs between C libraries and from the JVM: a test must not print it.
+- The last digit of `exp`, `ln`, `pow`, `cbrt` differs between C libraries and from the JVM: a test must not print it (gcc hides it where it works a call on constants out itself; clang calls the C library: glibc's `cbrt(27.0)` is `3.0000000000000004`).
 
 ## Conventions
 These are what the code uses; follow the code where another instruction differs.
