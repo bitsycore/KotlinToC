@@ -17,6 +17,7 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
   --warn-heap        list every allocation left on the heap, with the reason
   --no-warn-cycles   do not report classes that can form reference cycles
   --dump-ir          also write the IR received from the Kotlin compiler, and ktc2's own after each pass (kir/)
+  -q, --quiet        no line for each step (fetching, translating, compiling); KTC2_QUIET=1 the same
   --stop-daemon      end the compiler process that ktc2 keeps running between commands (KTC2_DAEMON=0: none is used)"""
 
 /** Ends the command being run, with the status it exits with. */
@@ -38,8 +39,11 @@ fun main(args: Array<String>) {
 		serveDaemon(args.getOrElse(1) { "" }) { vArguments, vDirectory -> runCommand(vArguments, vDirectory) }
 		exitProcess(0)
 	}
-	runThroughDaemon(args)?.let { exitProcess(it) }
-	val (vStatus, vProgram) = runCommand(args, null)
+	// The process that runs the command, here or the one that stays, is told whether it may rewrite a line in place.
+	val vInTerminal = System.console() != null && System.getenv("TERM") != "dumb" && args.firstOrNull() != kStopDaemon
+	val vArguments = if (vInTerminal) arrayOf(kTerminalArgument) + args else args
+	runThroughDaemon(vArguments)?.let { exitProcess(it) }
+	val (vStatus, vProgram) = runCommand(vArguments, null)
 	if (vStatus != 0 || vProgram == null) exitProcess(vStatus)
 	exitProcess(ProcessBuilder(vProgram).inheritIO().start().waitFor())
 }
@@ -52,6 +56,8 @@ fun main(args: Array<String>) {
  */
 fun runCommand(args: Array<String>, inDirectory: File?): Pair<Int, List<String>?> {
 	kCommandProperties.forEach { System.clearProperty(it) }
+	Progress.isTerminal = false
+	Progress.isShown = System.getenv("KTC2_QUIET") != "1"
 	return try {
 		0 to command(args, inDirectory)
 	} catch (vExit: Exit) {
@@ -60,7 +66,8 @@ fun runCommand(args: Array<String>, inDirectory: File?): Pair<Int, List<String>?
 }
 
 private fun command(args: Array<String>, inDirectory: File?): List<String>? {
-	fun path(inText: String): File = File(inText).let { if (inDirectory == null || it.isAbsolute) it else File(inDirectory, inText) }
+	// Without `.` or `..` in it: a path the Kotlin compiler reports a file by is the same as the one given (`ktc2 .`).
+	fun path(inText: String): File = File(inText).let { if (inDirectory == null || it.isAbsolute) it else File(inDirectory, inText) }.absoluteFile.normalize()
 	val vSources = LinkedHashSet<File>()
 	val vModules = ArrayList<File>()
 	var vOutDir: File? = null
@@ -79,6 +86,8 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 				vIndex = args.size
 			}
 			vArg == "-o" && vIndex < args.size -> vOutDir = path(args[vIndex++])
+			vArg == kTerminalArgument -> Progress.isTerminal = true
+			vArg == "--quiet" || vArg == "-q" -> Progress.isShown = false
 			vArg == "--build" -> vBuild = true
 			vArg == "--cmake" -> vCMake = true
 			vArg == "--run" -> vRun = true
@@ -109,6 +118,9 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 		vName = vProject.executable
 		vProject.main?.let { System.setProperty("ktc2.main", it) }
 	}
+	// What the program is compiled with: the standard library and the modules, each at its version.
+	val vModulesUsed = listOf("stdlib ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}") + vProjects.flatMap { it.modules }.distinct()
+	Progress.note("modules", vModulesUsed.joinToString(", "))
 	val vUsesCMake = vCMake || vProjects.any { it.needsCMake }
 	for (vEach in vProjects) {
 		vSources += vEach.sources
@@ -121,7 +133,19 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 	if (vSources.isEmpty()) fail("no source file")
 	vSources.firstOrNull { !it.isFile }?.let { fail("no such file '$it'") }
 
-	if (!K2Frontend.compile(vSources.toList(), vOut, vDumpIr)) throw Exit(1)
+	// The C of the last command is kept when nothing it was made from changed: the sources, ktc2 itself, the options.
+	val vStampFile = File(vOut, "ktc2_inputs.txt")
+	val vStamp = inputsStamp(vSources.toList(), vDumpIr)
+	if (vStampFile.isFile && vStampFile.readText() == vStamp && File(vOut, com.bitsycore.ktc2.frontend.kManifestName).isFile) {
+		Progress.note("Kotlin → C", "up to date")
+	} else {
+		vStampFile.delete()
+		if (!K2Frontend.compile(vSources.toList(), vOut, vDumpIr)) {
+			Progress.fail()
+			throw Exit(1)
+		}
+		vStampFile.writeText(vStamp)
+	}
 	writeCMake(vOut, vName, vProject)
 	if (!vBuild && !vRun && !vCMake) return null
 	val vProgram = (if (vUsesCMake) buildWithCMake(vOut, vName, vDebug) else buildProgram(vOut, vName, vDebug)) ?: throw Exit(1)
@@ -130,6 +154,24 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 		return null
 	}
 	return listOf(vProgram.absolutePath) + vProgramArguments
+}
+
+/**
+ * What a translation is made from, as text: ktc2's own build, the Kotlin it runs, each source file with a digest of its
+ * content, the options the command left in system properties, and the `KTC2_` settings. The same text, the same C.
+ */
+private fun inputsStamp(inSources: List<File>, inDumpIr: Boolean): String {
+	val vDigest = java.security.MessageDigest.getInstance("SHA-256")
+	fun digestOf(inFile: File): String = vDigest.digest(inFile.readBytes()).joinToString("") { "%02x".format(it) }
+	val vTool = File(Progress::class.java.protectionDomain.codeSource.location.toURI())
+	return buildList {
+		add("ktc2 ${vTool.path} ${vTool.length()} ${vTool.lastModified()}")
+		add("kotlin ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}")
+		add("dumpIr $inDumpIr")
+		kCommandProperties.forEach { add("$it=${System.getProperty(it)}") }
+		System.getenv().keys.filter { it.startsWith("KTC2_") }.sorted().forEach { add("$it=${System.getenv(it)}") }
+		inSources.map { it.absoluteFile }.sortedBy { it.path }.forEach { add("${it.path} ${digestOf(it)}") }
+	}.joinToString("\n", postfix = "\n")
 }
 
 /** Adds [inOption] to the newline-separated list held in the system property [inProperty]. */

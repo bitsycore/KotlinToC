@@ -112,9 +112,11 @@ object K2Frontend {
 		// A program with common sources of its own (a module of `expect`s and `actual`s, as kotlinx-io) is compiled
 		// whole: the kept library takes the program as one part on top of it, which has no room for a common one.
 		val vKeepsLibrary = keepsLibrary() && vSources.none { isCommonSource(it) }
+		com.bitsycore.ktc2.Progress.begin("Kotlin → IR", "${vSources.size} files, with the library")
 		val vLibrary = try {
 			librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
 		} catch (vError: IllegalStateException) {
+			com.bitsycore.ktc2.Progress.end("failed")
 			System.err.println("ktc2: error: ${vError.message}")
 			return false
 		}
@@ -147,7 +149,7 @@ object K2Frontend {
 		System.setProperty(kCompilerOptsProperty, (vCommandCompilerOpts + vBindings.flatMap { it.compilerOpts }).distinct().joinToString("\n"))
 		System.setProperty(kLinkerOptsProperty, (vCommandLinkerOpts + vBindings.flatMap { it.linkerOpts }).distinct().joinToString("\n"))
 		// The files that are not the program's: the library sources and the generated bindings.
-		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.invariantSeparatorsPath })
+		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.normalize().invariantSeparatorsPath })
 		val vProgram = (vSources - vDefinitions.toSet()) + vBindings.map { it.source }
 		val vArgs = buildList {
 			if (!vKeepsLibrary) vProgram.forEach { add(it.path) }
@@ -471,8 +473,12 @@ class Ktc2Extension : IrGenerationExtension {
 		K2Frontend.reportTime("Kotlin front end", System.getProperty(kStartProperty).toLong())
 		val vStart = System.nanoTime()
 		K2Frontend.lastFrontEndNanos = vStart - System.getProperty(kStartProperty).toLong()
+		com.bitsycore.ktc2.Progress.end("${moduleFragment.files.size} files")
+		com.bitsycore.ktc2.Progress.begin("IR → C")
 		try {
 			translate(moduleFragment, pluginContext)
+			val vWritten = File(System.getProperty(kOutDirProperty), "c").walkTopDown().count { it.isFile && it.extension == "c" && it.name != "ktc2_all.c" }
+			com.bitsycore.ktc2.Progress.end("$vWritten C files")
 		} finally {
 			K2Frontend.lastTranslationNanos = System.nanoTime() - vStart
 			K2Frontend.reportTime("translation to C", vStart)

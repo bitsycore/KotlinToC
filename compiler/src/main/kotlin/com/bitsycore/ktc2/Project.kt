@@ -169,7 +169,7 @@ class GitSource(inText: String) {
 		val vTarget = inTarget
 		val vMarker = inMarker
 		vTarget.deleteRecursively()
-		System.err.println("ktc2: fetching $url${revision?.let { " at $it" } ?: ""}")
+		Progress.interrupt { System.err.println("ktc2: fetching $url${revision?.let { " at $it" } ?: ""}") }
 		val vCommand = listOf("git", "clone", "--depth", "1", "-c", "advice.detachedHead=false") +
 			(revision?.let { listOf("--branch", it) } ?: emptyList()) + listOf(url, vTarget.absolutePath)
 		val vExit = try {
@@ -310,7 +310,7 @@ private fun fetchSources(inCoordinate: String, inVersion: String, inInto: File):
 	val (vGroup, vArtifact) = vParts
 	val vVersion = vParts.getOrNull(2) ?: inVersion
 	val vUrl = "${mavenRepository()}/${vGroup.replace('.', '/')}/$vArtifact/$vVersion/$vArtifact-$vVersion-sources.jar"
-	System.err.println("ktc2: fetching $vGroup:$vArtifact:$vVersion (sources)")
+	Progress.interrupt { System.err.println("ktc2: fetching $vGroup:$vArtifact:$vVersion (sources)") }
 	try {
 		java.net.URI(vUrl).toURL().openStream().use { vStream ->
 			java.util.zip.ZipInputStream(vStream).use { vZip ->
@@ -429,6 +429,9 @@ class Project(val name: String, val executable: String, val main: String?) {
 	/** The C sources fetched for the modules: the name each is known by, and where it is. */
 	val fetched = LinkedHashMap<String, File>()
 
+	/** The modules the program depends on, as a command shows them: each name, with the version of its library. */
+	val modules = ArrayList<String>()
+
 	/** The files each module shipped with ktc2 brought, by its name: on the JVM such a module is its library's jars. */
 	val bundledFiles = LinkedHashMap<String, List<File>>()
 }
@@ -453,6 +456,7 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 	fun add(inModule: ModuleFile): Boolean {
 		if (!vSeen.add(inModule.directory.canonicalPath)) return true
 		val vFiles = filesOf(inModule) ?: return false
+		if (inModule !== vRoot) vProject.modules += inModule.name + (versionOf(inModule)?.let { " $it" } ?: "")
 		vProject.sources += vFiles
 		if (inModule.isBundled) vProject.bundledFiles[inModule.name] = vFiles
 		for (vEntry in inModule.fetch) {
@@ -528,8 +532,14 @@ fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 		vTarget.parentFile.mkdirs()
 		if (!vTarget.isFile || !vTarget.readBytes().contentEquals(vBytes)) vTarget.writeBytes(vBytes)
 	}
-	// What another system's compilation left here.
-	vFiles.filter { !it.isHere }.forEach { File(vDirectory, it.path).delete() }
+	// Its directory holds what it is made of now and nothing else (its whole directory is its sources): not what another
+	// system's compilation or an older ktc2 left there. What is unchanged keeps its time, for a build that follows them.
+	val vKept = (vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake) + vEdits).toSet()
+	vDirectory.walkBottomUp().filter { it != vDirectory }.forEach { vFile ->
+		val vPath = vFile.relativeTo(vDirectory).invariantSeparatorsPath
+		if (vFile.isFile && vPath !in vKept) vFile.delete()
+		if (vFile.isDirectory && vFile.list().isNullOrEmpty()) vFile.delete()
+	}
 	return ModuleFile(vDirectory, vText).also { it.isBundled = true }
 }
 
@@ -657,48 +667,157 @@ fun writeCMake(inOutDir: File, inExecutable: String, inProject: Project?) {
 }
 
 /**
- * Compiles the C written under `<inOutDir>/c` into a program, with the C compiler ([cCompiler])
- * and the options the build manifest lists.
- *
- * @param inIsDebug no optimization, debug information, and the leak report at exit; otherwise optimized, as a whole program where the compiler can
- * @return the program, or null after reporting the failure
+ * Builds the program from the C in `<inOutDir>/c` with the C compiler: each file into an object of its own (in
+ * `<inOutDir>/obj`, as many at once as the machine has processors), then the link. An object is made again only when
+ * its file, a header it includes or the options changed (what the compiler said it includes: `-MMD`), so that a
+ * program whose translation changed a few files is rebuilt in the time of those. Null after reporting what failed.
  */
 fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vProgram = File(inOutDir, if (kIsWindows) "$inName.exe" else inName)
 	val vCompiler = cCompiler()
+	val vIsClang = isClang(vCompiler)
 	// A release build is optimized as one program, so that small functions are inlined across the
 	// files of their classes. `KTC2_LTO=0` turns that off, `KTC2_LTO=1` forces it. With clang on
 	// Windows it needs LLVM's own linker, so it is used by default only when that one is there.
-	val vNeedsLld = kIsWindows && "gcc" !in File(vCompiler).name
-	val vWholeProgram = when (System.getenv("KTC2_LTO")) {
+	val vNeedsLld = kIsWindows && vIsClang
+	val vWholeProgram = !inIsDebug && when (System.getenv("KTC2_LTO")) {
 		"0" -> false
 		"1" -> true
 		else -> !vNeedsLld || isOnPath("lld-link")
 	}
-	// Floating-point operations are never fused (see ktc2_core.h): Kotlin rounds after each one.
+	// Floating-point operations are never fused (see ktc2_core.h): Kotlin rounds after each one. With LTO the objects
+	// hold the compiler's own code, which the link optimizes as one program on several threads (ThinLTO with clang).
+	val vLto = when {
+		!vWholeProgram -> emptyList()
+		vIsClang -> listOf("-flto=thin")
+		else -> listOf("-flto")
+	}
 	val vMode = listOf("-ffp-contract=off") + when {
 		inIsDebug -> listOf("-O0", "-g", "-DKTC2_LEAK_CHECK")
-		vWholeProgram -> listOf("-O2", "-flto") + if (vNeedsLld) listOf("-fuse-ld=lld") else emptyList()
-		else -> listOf("-O2")
+		else -> listOf("-O2") + vLto
 	}
 	// On Windows the runtime uses the system's own threads and the math functions are in the C
 	// library every program links: naming a thread or a math library there only breaks the
 	// compilers that have none (clang with the MSVC libraries).
 	val vThreads = if (!kIsWindows && manifestValues(inOutDir, "threads").isNotEmpty()) listOf("-pthread") else emptyList()
 	val vMath = if (kIsWindows) emptyList() else listOf("-lm")
-	val vCommand = listOf(vCompiler, "-std=c11") + vMode + vThreads + listOf("-I", ".", "-o", vProgram.absolutePath) +
-		manifestValues(inOutDir, "cflag") + manifestValues(inOutDir, "c") + vMath + manifestValues(inOutDir, "ldflag")
-	val vStatus = try {
-		runTool(vCommand, File(inOutDir, "c"))
+	val vCompile = listOf(vCompiler, "-std=c11") + vMode + vThreads + listOf("-I", ".") + manifestValues(inOutDir, "cflag")
+	val vCDir = File(inOutDir, "c")
+	val vObjDir = File(inOutDir, "obj")
+	val vSources = manifestValues(inOutDir, "c")
+	val vOptions = vCompile.joinToString(" ")
+	val vDigests = java.util.concurrent.ConcurrentHashMap<String, String>()
+	fun digestOf(inFile: File): String = vDigests.getOrPut(inFile.canonicalPath) {
+		if (!inFile.isFile) "" else java.security.MessageDigest.getInstance("SHA-256").digest(inFile.readBytes()).joinToString("") { "%02x".format(it) }
+	}
+	fun objectOf(inSource: String): File = File(vObjDir, inSource.replace(Regex("[:\\\\]"), "_").removePrefix("/").removeSuffix(".c") + ".o")
+	/** True when the object of [inSource] was made with these options from what its files hold now. */
+	fun isUpToDate(inObject: File): Boolean {
+		val vStamp = File(inObject.path + ".stamp")
+		if (!inObject.isFile || !vStamp.isFile) return false
+		val vLines = vStamp.readLines()
+		if (vLines.firstOrNull() != vOptions) return false
+		return vLines.drop(1).all { vLine -> digestOf(File(vLine.substringBeforeLast(' '))) == vLine.substringAfterLast(' ') }
+	}
+
+	Progress.begin("C → objects", "${vSources.size} files")
+	val vDone = java.util.concurrent.atomic.AtomicInteger()
+	val vCompiled = java.util.concurrent.atomic.AtomicInteger()
+	val vFailures = java.util.concurrent.ConcurrentLinkedQueue<String>()
+	val vPool = java.util.concurrent.Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+	for (vSource in vSources) {
+		vPool.execute {
+			val vObject = objectOf(vSource)
+			if (!isUpToDate(vObject)) {
+				vObject.parentFile.mkdirs()
+				val vDepends = File(vObject.path + ".d")
+				val (vExit, vOutput) = runCaptured(vCompile + listOf("-MMD", "-MF", vDepends.absolutePath, "-c", vSource, "-o", vObject.absolutePath), vCDir)
+				if (vExit != 0) {
+					vObject.delete()
+					vFailures += vOutput.ifBlank { "the C compiler failed on $vSource (exit $vExit)" }
+				} else {
+					// What the object is made of: its file and the headers it includes, each with what it holds now.
+					val vFiles = dependenciesOf(vDepends, vCDir).ifEmpty { listOf(File(vCDir, vSource)) }
+					File(vObject.path + ".stamp").writeText((listOf(vOptions) + vFiles.map { "${it.path} ${digestOf(it)}" }).joinToString("\n"))
+					vCompiled.incrementAndGet()
+				}
+			}
+			// The count and its line together: one thread at a time, so that a count is never shown after a larger one.
+			synchronized(vDone) { Progress.update("[${vDone.incrementAndGet()}/${vSources.size}] ${vCompiled.get()} compiled") }
+		}
+	}
+	vPool.shutdown()
+	vPool.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
+	if (vFailures.isNotEmpty()) {
+		Progress.fail()
+		vFailures.take(3).forEach { System.err.print(it.trimEnd() + "\n") }
+		System.err.println("ktc2: error: the C compiler failed on ${vFailures.size} file(s)")
+		return null
+	}
+	val vUnchanged = vSources.size - vCompiled.get()
+	Progress.end("${vSources.size} files" + if (vUnchanged > 0) ", ${vCompiled.get()} compiled, $vUnchanged unchanged" else "")
+
+	Progress.begin("link", vProgram.name)
+	val vLinkLto = when {
+		vLto.isEmpty() -> emptyList()
+		vIsClang -> vLto + if (vNeedsLld) listOf("-fuse-ld=lld") else emptyList()
+		else -> listOf("-flto=auto")
+	}
+	val vLink = listOf(vCompiler) + vMode.filter { !it.startsWith("-flto") } + vLinkLto + vThreads + listOf("-o", vProgram.absolutePath) +
+		vSources.map { objectOf(it).absolutePath } + vMath + manifestValues(inOutDir, "ldflag")
+	// No object made again, the same command, the program there: the program is what the link would make.
+	val vLinkStamp = File(vObjDir, "link.stamp")
+	if (vCompiled.get() == 0 && vProgram.isFile && vLinkStamp.isFile && vLinkStamp.readText() == vLink.joinToString("\n")) {
+		Progress.end("up to date")
+		return vProgram
+	}
+	vLinkStamp.delete()
+	val (vExit, vOutput) = try {
+		runCaptured(vLink, vCDir)
 	} catch (vError: java.io.IOException) {
+		Progress.fail()
 		System.err.println("ktc2: error: the C compiler could not be run: ${vError.message}")
 		return null
 	}
-	if (vStatus != 0) {
-		System.err.println("ktc2: error: the C compiler failed: ${vCommand.take(8).joinToString(" ")} …")
+	if (vExit != 0) {
+		Progress.fail()
+		System.err.print(vOutput)
+		System.err.println("ktc2: error: the link failed: ${vLink.take(6).joinToString(" ")} …")
 		return null
 	}
+	if (vOutput.isNotBlank()) Progress.interrupt { System.err.print(vOutput) }
+	vLinkStamp.writeText(vLink.joinToString("\n"))
+	Progress.end(vProgram.name)
 	return vProgram
+}
+
+/** True when [inCompiler] is clang (on macOS, `gcc` is): asked once of the compiler itself. */
+private fun isClang(inCompiler: String): Boolean = kClang.getOrPut(inCompiler) {
+	try {
+		"clang" in runCaptured(listOf(inCompiler, "--version"), null).second
+	} catch (vError: java.io.IOException) {
+		false
+	}
+}
+
+private val kClang = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+/** Runs [inCommand] in [inDirectory] and gives what it exits with and what it printed. */
+private fun runCaptured(inCommand: List<String>, inDirectory: File?): Pair<Int, String> {
+	val vBuilder = ProcessBuilder(startable(inCommand, inDirectory)).redirectErrorStream(true)
+		.redirectInput(ProcessBuilder.Redirect.from(File(if (kIsWindows) "NUL" else "/dev/null")))
+	inDirectory?.let { vBuilder.directory(it) }
+	val vProcess = vBuilder.start()
+	val vOutput = vProcess.inputStream.readBytes().decodeToString()
+	return vProcess.waitFor() to vOutput
+}
+
+/** The files a dependency file of the C compiler ([inFile], `-MMD`) names, relative to [inDirectory] unless absolute. */
+private fun dependenciesOf(inFile: File, inDirectory: File): List<File> {
+	if (!inFile.isFile) return emptyList()
+	val vText = inFile.readText().replace("\\\r\n", " ").replace("\\\n", " ")
+	return vText.substringAfter(": ").split(Regex("(?<!\\\\)\\s+")).filter { it.isNotBlank() }.map { it.replace("\\ ", " ") }
+		.map { File(it).let { vFile -> if (vFile.isAbsolute) vFile else File(inDirectory, it) } }
 }
 
 /**
@@ -715,18 +834,42 @@ fun buildWithCMake(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vConfigure = listOf("cmake", "-S", inOutDir.absolutePath, "-B", vBuildDir.absolutePath, "-DCMAKE_BUILD_TYPE=$vConfiguration") +
 		(if (inIsDebug) listOf("-DKTC2_DEBUG=ON") else listOf("-DKTC2_DEBUG=OFF")) +
 		(System.getenv("KTC2_CC")?.let { listOf("-DCMAKE_C_COMPILER=$it") } ?: emptyList()) + vExtra
-	fun run(inCommand: List<String>): Boolean {
+	// What CMake prints is kept, and shown when it fails; meanwhile the step's line shows how far the build is.
+	fun run(inStep: String, inCommand: List<String>): Boolean {
+		Progress.begin(inStep)
+		val vOutput = StringBuilder()
+		val vPercent = Regex("^\\[\\s*(\\d+)%\\]")
 		val vExit = try {
-			runTool(inCommand, null)
+			val vProcess = ProcessBuilder(inCommand).redirectErrorStream(true)
+				.redirectInput(ProcessBuilder.Redirect.from(File(if (kIsWindows) "NUL" else "/dev/null"))).start()
+			vProcess.inputStream.bufferedReader().forEachLine { vLine ->
+				vOutput.append(vLine).append('\n')
+				vPercent.find(vLine)?.let { Progress.update("${it.groupValues[1]}%") }
+			}
+			vProcess.waitFor()
 		} catch (vError: java.io.IOException) {
+			Progress.fail()
 			System.err.println("ktc2: error: cmake could not be run: ${vError.message}")
 			return false
 		}
-		if (vExit != 0) System.err.println("ktc2: error: cmake failed: ${inCommand.take(6).joinToString(" ")} …")
-		return vExit == 0
+		if (vExit != 0) {
+			Progress.fail()
+			System.err.print(vOutput)
+			System.err.println("ktc2: error: cmake failed: ${inCommand.take(6).joinToString(" ")} …")
+			return false
+		}
+		Progress.end()
+		return true
 	}
-	if (!run(vConfigure)) return null
-	if (!run(listOf("cmake", "--build", vBuildDir.absolutePath, "--config", vConfiguration, "--target", inName))) return null
+	// Configured once: the build itself configures again when CMakeLists.txt changes, and configuring each time makes it
+	// link again for nothing. A command with other options configures again.
+	val vConfigured = File(vBuildDir, "ktc2_configure.txt")
+	if (!File(vBuildDir, "CMakeCache.txt").isFile || !vConfigured.isFile || vConfigured.readText() != vConfigure.joinToString("\n")) {
+		vConfigured.delete()
+		if (!run("CMake", vConfigure)) return null
+		vConfigured.writeText(vConfigure.joinToString("\n"))
+	}
+	if (!run("C → program", listOf("cmake", "--build", vBuildDir.absolutePath, "--config", vConfiguration, "--target", inName, "--parallel"))) return null
 	// A generator with several configurations puts the program in a directory named after the one built.
 	val vFileName = if (kIsWindows) "$inName.exe" else inName
 	return listOf(File(vBuildDir, vFileName), File(vBuildDir, "$vConfiguration/$vFileName")).firstOrNull { it.isFile }

@@ -550,6 +550,17 @@ is no bridge code. `import platform.posix.*` generates the bindings of the C lib
 ## 9. Modules and building
 ---------------------------------------------------------------------------
 
+A command shows what it does, one line for each step (`Progress.kt`): the modules, Kotlin → IR (the Kotlin
+compiler), IR → C (ktc2), C → objects and the link, or CMake; in a terminal the line of a step is rewritten as it
+goes (`[37/783]`). And it does again only what changed: the translation when a source, an option, a `KTC2_`
+setting or ktc2 itself changed (a stamp of all of them, `<out>/ktc2_inputs.txt`); a C file's object (in
+`<out>/obj`, all compiled at once on every core) when the file, a header it includes (what the compiler says,
+`-MMD`) or the options changed; the link when an object did; CMake's configuration when its command did. The C
+files are written only when their text changes, so that CMake's own build is incremental too. With link-time
+optimization the objects hold the compiler's code and the link optimizes them as one program (ThinLTO with
+clang, `-flto=auto` with gcc). What a translation still costs every time is the Kotlin compiler: a program
+whose modules have common code (kotlinx-io, kotlinx.serialization) is compiled whole, the library with it.
+
 A directory with a `module.ktc2.toml` is a module (`Project.kt`):
 
 ```toml
