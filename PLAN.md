@@ -41,12 +41,25 @@ For anything about speed, measure before and after; see "Measuring" at the end.
   of `pow` in MSVC's C library, `tools/msvc_known.txt`); it found that MSVC's C library warns of
   `strcpy` and of the POSIX names under `-Werror` (`ktc2_core.h` now asks it not to, before any
   header) and declares `memset`, `strchr` in `vcruntime_string.h` (`posix.def`, `.msvc`).
-- **Next:** `tools/msvc_all.sh` on the suite's programs; whether the suite on Windows moves to clang
-  (MathTest then needs a word for MSVC's C library); `make` for gcc on Windows, or a warning from
-  ktc2 when it is missing; fewer C files (the owner asked, 2026-11-17: measure first what the linker
-  throws away with `-ffunction-sections -Wl,--gc-sections,--print-gc-sections`, then a file's
-  properties never read, dispatch by the classes that reach a call, one C file per Kotlin file);
-  then the Mac's "Next" below.
+- The suite now uses clang (the owner: "for test use clang as it was the fastest"): the CI part, 358
+  of 358 in 4 min 36 s on Windows (gcc: 5 min 46 s; the C compiler's share 14 minutes in all
+  instead of 23). A `.skip` line beginning with `msvc ` leaves a test out on MSVC's C library only
+  (`MathTest`'s `pow`). The CI job runs clang too: its first run is the check on Linux and macOS.
+- Fewer C files (the owner asked): measured on the showcase. The linker throws away almost nothing
+  of what ktc2 writes (0.03 MB of 10.6 MB, with `-ffunction-sections -Wl,--gc-sections`): the
+  dispatch and type tables reference what they list, so that measure cannot see past them. What
+  it showed is where the size is: one file, `WindowsZoneNamesKt.c` (a `mutableMapOf` of 585
+  pairs), was 3.8 MB, 36 %: each element of a `vararg` was stored with a test of its index, whose
+  way out released every element made before it, 110,142 releases. `RangeChecks` now takes a
+  constant index into an array created with a constant length above it as in range: the file is
+  2,393 lines instead of 114,869, the showcase's C 313,000 lines instead of 515,000 (-39 %), its C
+  built in 20 s with clang instead of 27.
+- **Next:** what a release ladder could still do: a way out of a function releases each live
+  object in its own copy (quadratic in the number of live temporaries wherever many tests remain):
+  one shared ladder of releases, entered at the right step, would make it linear; then what is
+  left of the size (Native's Regex 2.2 MB, the Unicode and decomposition tables) and the number of
+  files (one C file per Kotlin file: fewer compiler runs); `tools/msvc_all.sh` on the suite's
+  programs; `make` for gcc on Windows, or a warning; then the Mac's "Next" below.
 
 **State on 2026-11-17 (Mac).** What follows from "State at the end of 2026-11-16" is
 the day before. That day's items 1 to 4, 6 (in part) and 7 are done, each in its place below:

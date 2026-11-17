@@ -34,6 +34,11 @@ import com.bitsycore.ktc2.kir.*
  *
  * where `0 <= i <= length - c` holds in the body.
  *
+ * And anywhere, a constant index into an array created with a constant length larger than it:
+ * the elements of a `vararg` call (`mapOf("a" to 1, ...)`), whose stores would otherwise each be
+ * tested, each test with its own way out releasing every element made before it: code that grew
+ * with the square of their number (585 entries of a map: 110,000 releases, 3.8 MB).
+ *
  * Arrays never change their length, and only locals that are declared with their value and
  * never assigned again are followed, so the array and the bound are the same from the test to
  * the access.
@@ -72,6 +77,33 @@ class RangeChecks(private val mModule: KModule) {
 			}
 			for ((vLocal, vInit) in vDeclared) if (vLocal !in mSets) mFixed[vLocal] = vInit
 			loops(mFunction.body)
+			constantIndices()
+		}
+
+		/** Marks `array[c]` for a constant `c` that is not negative, on an array created with a constant length above `c`. */
+		private fun constantIndices() {
+			fun isProven(inArray: KExpr, inIndex: KExpr): Boolean {
+				val vIndex = ((inIndex as? KConst)?.value as? Int)?.takeIf { it >= 0 } ?: return false
+				val vArray = fixedRoot(inArray) ?: return false
+				val vLength = (createdLength(vArray) as? KConst)?.value as? Int ?: return false
+				return vIndex < vLength
+			}
+			mFunction.body.anyStatement { vStatement ->
+				if (vStatement is KIndexSet && !vStatement.isChecked && isProven(vStatement.array, vStatement.index)) {
+					vStatement.isChecked = true
+					proven++
+				}
+				for (vRoot in vStatement.ownExpressions()) {
+					vRoot.anyNode { vNode ->
+						if (vNode is KIndexRead && !vNode.isChecked && isProven(vNode.array, vNode.index)) {
+							vNode.isChecked = true
+							proven++
+						}
+						false
+					}
+				}
+				false
+			}
 		}
 
 		private fun isFixed(inLocal: KLocal): Boolean = inLocal in mFixed || (inLocal in mFunction.params && inLocal !in mSets)
