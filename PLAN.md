@@ -35,9 +35,17 @@ For anything about speed, measure before and after; see "Measuring" at the end.
   `${version}` is expanded in `fetch` too).
 - The console of Windows decodes UTF-8 only when told (`[Console]::OutputEncoding`): the test log's
   marks showed as `Ô£ö` in PowerShell, not on the Mac.
-- **Next:** MSVC itself on the showcase (CMake's default generator) and on the suite's programs
-  (`tools/msvc_all.sh`); the suite with clang (`KTC2_CC=clang`: its options are gcc's, `-Werror`
-  may find what gcc does not); `make` for gcc on Windows, or a warning from ktc2 when it is missing;
+- Then MSVC and the suite with clang. MSVC (CMake's default, Visual Studio 18) builds the showcase,
+  self-tests 92 of 92 (its C in 127 s). The CI's part of the suite with `KTC2_CC=clang` on Windows:
+  358, of which `tests/stdlib/MathTest` fails as with MSVC (`DoubleMathTest.powers`: the last digit
+  of `pow` in MSVC's C library, `tools/msvc_known.txt`); it found that MSVC's C library warns of
+  `strcpy` and of the POSIX names under `-Werror` (`ktc2_core.h` now asks it not to, before any
+  header) and declares `memset`, `strchr` in `vcruntime_string.h` (`posix.def`, `.msvc`).
+- **Next:** `tools/msvc_all.sh` on the suite's programs; whether the suite on Windows moves to clang
+  (MathTest then needs a word for MSVC's C library); `make` for gcc on Windows, or a warning from
+  ktc2 when it is missing; fewer C files (the owner asked, 2026-11-17: measure first what the linker
+  throws away with `-ffunction-sections -Wl,--gc-sections,--print-gc-sections`, then a file's
+  properties never read, dispatch by the classes that reach a call, one C file per Kotlin file);
   then the Mac's "Next" below.
 
 **State on 2026-11-17 (Mac).** What follows from "State at the end of 2026-11-16" is

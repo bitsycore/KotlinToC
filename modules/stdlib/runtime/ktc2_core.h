@@ -8,6 +8,20 @@
 #ifndef KTC2_CORE_H
 #define KTC2_CORE_H
 
+/*
+ * MSVC's C library (MSVC, and clang on Windows, whose default it is) calls functions of the C library
+ * unsafe (strcpy) and the POSIX names deprecated (open): warnings Kotlin code that calls them cannot
+ * answer, which -Werror makes errors. Before any header: every generated file includes this one first.
+ */
+#if defined(_WIN32) && !defined(__MINGW32__)
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#ifndef _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_NONSTDC_NO_DEPRECATE
+#endif
+#endif
+
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>

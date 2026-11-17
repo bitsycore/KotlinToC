@@ -9,10 +9,10 @@ headers.mingw = io.h direct.h
 # mingw's struct stat is in a header of its own.
 headerFilter.mingw = _mingw_stat64.h
 # MSVC's C library (MSVC, and clang on Windows, whose default it is) declares most of the C library in
-# headers of its own (corecrt_malloc.h has free, corecrt_io.h open and read...), and shows the POSIX
-# names (access, open, close...) under -std=c11 only when asked.
-headerFilter.msvc = corecrt*.h
-compilerOpts.msvc = -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_SECURE_NO_WARNINGS
+# headers of its own (corecrt_malloc.h has free, corecrt_io.h open and read, vcruntime_string.h memset
+# and strchr), and shows the POSIX names (access, open, close...) under -std=c11 only when asked.
+headerFilter.msvc = corecrt*.h vcruntime*.h
+compilerOpts.msvc = -D_CRT_DECLARE_NONSTDC_NAMES=1
 # PATH_MAX and its kin: in a header of Linux's own, of the BSD part on macOS.
 headerFilter.linux = linux/limits.h
 headerFilter.osx = sys/syslimits.h
