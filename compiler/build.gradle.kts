@@ -15,9 +15,8 @@ version = "0.1-SNAPSHOT"
 
 /*
 The compiler: ktc2 itself (src/main/kotlin), its test harness (src/test/kotlin), and what the installed
-tool carries as resources from the other parts of the repository: the platform layer and the C runtime
-(stdlib/), the bundled libraries (modules/), the sources of the Kotlin library and of the libraries that Gradle
-fetches. Its build directory is the repository's `build/`, where every tool and document looks
+tool carries as resources from the other parts of the repository: the modules (modules/), the stdlib's among
+them with ktc2's platform layer and the C runtime. Its build directory is the repository's `build/`, where every tool and document looks
 (build/install/ktc2, build/integration...). Paths below are from the repository's root.
 */
 layout.buildDirectory.set(rootProject.layout.buildDirectory)
@@ -43,30 +42,13 @@ application {
 }
 
 tasks.named<JavaExec>("run") {
-	dependsOn("unpackStdlibSources")
 	workingDir = kRoot
-	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// Each run through Gradle is its own process: no compiler process is left behind.
 	environment("KTC2_DAEMON", "0")
 }
 
 repositories {
 	mavenCentral()
-}
-
-/** The Kotlin standard library sources (Apache-2), compiled together with user programs. */
-val stdlibSources: Configuration = configurations.create("stdlibSources") {
-	isTransitive = false
-}
-
-/**
- * The sources of the standard library for Wasm (Apache-2), for the part of them ktc2 takes:
- * `commonNonJvmMain` and `nativeWasmMain`, which Kotlin/Native compiles too and which no other
- * published jar holds (`NumberConverter`, the Unicode tables and the code that reads them, the regex
- * engine...), and the few files of `wasmCommonMain` that the regex engine needs.
- */
-val nativeWasmSources: Configuration = configurations.create("nativeWasmSources") {
-	isTransitive = false
 }
 
 /**
@@ -92,8 +74,6 @@ val kLibraryModules: List<LibraryModule> = kRoot.resolve("modules").listFiles { 
 
 
 dependencies {
-	stdlibSources(variantOf(libs.kotlin.stdlib) { classifier("sources") })
-	nativeWasmSources(variantOf(libs.kotlin.stdlib.wasm.js) { classifier("sources") })
 	for (vModule in kLibraryModules) {
 		for (vJar in vModule.jvm) add(vModule.jvmConfiguration.name, vJar)
 	}
@@ -111,54 +91,26 @@ kotlin {
 	jvmToolchain(21)
 }
 
-val unpackStdlibSources = tasks.register("unpackStdlibSources", Sync::class) {
-	description = "Unpack the Kotlin standard library sources (Apache-2) into the build directory, so that they can be bundled with user programs."
-	from({ stdlibSources.map { zipTree(it) } })
-	from({ nativeWasmSources.map { zipTree(it) } }) {
-		// wasmCommonMain: of it, only what Kotlin/Native's regex engine needs and its runtime has in C++ (BitSet's actual,
-		// the canonical decomposition of characters), here in Kotlin as Wasm has it.
-		include("commonNonJvmMain/**", "nativeWasmMain/**", "wasmCommonMain/kotlin/text/regex/**")
-		// Kotlin/Native's Regex as it is, with a cleaner: its pattern's graph has cycles (a quantified group's end points
-		// back at the quantifier), which Native's collector frees and reference counting does not. The cleaner cuts them
-		// when the Regex ends (Ktc2RegexCycles.kt, which has the `actual`).
-		filesMatching("nativeWasmMain/kotlin/text/Regex.kt") {
-			filter { vLine ->
-				when (vLine) {
-					"import kotlin.text.regex.*" -> vLine + "\n\n/** ktc2: what cuts the cycles of [pattern] when its Regex ends (Ktc2RegexCycles.kt). */\n" +
-						"internal expect fun ktc2RegexCleaner(pattern: Pattern): Any"
-					"    private val startNode = nativePattern.startNode" -> vLine + "\n\n    // ktc2: see ktc2RegexCleaner.\n" +
-						"    private val ktc2Cleaner = ktc2RegexCleaner(nativePattern)"
-					else -> vLine
-				}
-			}
-		}
-	}
-	into(layout.buildDirectory.dir("stdlib-src"))
-}
-
-/** The installed ktc2 carries the standard library sources it compiles with every program (those of files.txt). */
+/**
+ * What the installed ktc2 carries: the modules (modules/<name>: their module files, lists, edits and own files), the
+ * stdlib's own files where the compiler reads them (its platform layer under ktc2/stdlib, the C runtime under ktc2/, the C
+ * library's bindings under ktc2/interop). The sources of the libraries, the Kotlin standard library's among them, are not
+ * carried: ktc2 fetches them (a module's `upstream`).
+ */
 tasks.processResources {
-	dependsOn(unpackStdlibSources)
-	val vListed = kRoot.resolve("stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
-	inputs.file(kRoot.resolve("stdlib/files.txt"))
-	from(layout.buildDirectory.dir("stdlib-src")) {
-		include(vListed)
-		into("ktc2/kotlin-stdlib")
-	}
-	// ktc2's platform layer, a directory of its own (stdlib/) that an IDE sees as Kotlin (ide/), carried as resources;
-	// with it the C runtime (stdlib/runtime) and the C library's bindings (stdlib/interop), where the compiler reads them.
-	from(kRoot.resolve("stdlib")) {
-		exclude("runtime/**", "interop/**")
+	val vStdlib = kRoot.resolve("modules/stdlib")
+	from(vStdlib) {
+		include("*.kt", "hidden.txt")
 		into("ktc2/stdlib")
 	}
-	from(kRoot.resolve("stdlib/runtime")) {
+	from(vStdlib.resolve("runtime")) {
 		into("ktc2")
 	}
-	from(kRoot.resolve("stdlib/interop")) {
+	from(vStdlib.resolve("interop")) {
 		into("ktc2/interop")
 	}
-	// The bundled libraries (modules/<name>: module.ktc2.toml, ktc2's own files, .def and CMake files).
 	from(kRoot.resolve("modules")) {
+		exclude("stdlib/*.kt", "stdlib/hidden.txt", "stdlib/runtime/**", "stdlib/interop/**")
 		into("ktc2/modules")
 	}
 }
@@ -167,8 +119,6 @@ tasks.test {
 	useJUnitPlatform()
 	// The suite reads its programs and tests from the repository (tests/) and writes into build/integration.
 	workingDir = kRoot
-	dependsOn(unpackStdlibSources)
-	systemProperty("ktc2.stdlibDir", layout.buildDirectory.dir("stdlib-src").get().asFile.absolutePath)
 	// A program that uses a bundled module made of a library's sources is compiled for the JVM with the library's JVM jars.
 	for (vModule in kLibraryModules) systemProperty("ktc2.jvmModule.${vModule.name}", vModule.jvmConfiguration.files.joinToString(File.pathSeparator))
 	// The integration programs and the bundled runtime are inputs of the oracle test.

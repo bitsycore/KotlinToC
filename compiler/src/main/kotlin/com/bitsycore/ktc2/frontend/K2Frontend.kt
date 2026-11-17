@@ -112,7 +112,12 @@ object K2Frontend {
 		// A program with common sources of its own (a module of `expect`s and `actual`s, as kotlinx-io) is compiled
 		// whole: the kept library takes the program as one part on top of it, which has no room for a common one.
 		val vKeepsLibrary = keepsLibrary() && vSources.none { isCommonSource(it) }
-		val vLibrary = librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
+		val vLibrary = try {
+			librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
+		} catch (vError: IllegalStateException) {
+			System.err.println("ktc2: error: ${vError.message}")
+			return false
+		}
 		// Each .def file becomes a Kotlin source of bindings, compiled with the program.
 		val vDefinitions = vSources.filter { it.extension == "def" }
 		val vCompiler = com.bitsycore.ktc2.cCompiler()
@@ -354,35 +359,27 @@ object K2Frontend {
 	}
 
 	/**
-	 * The library sources compiled with every program:
-	 * - files of the Kotlin standard library, unmodified, listed in `ktc2/stdlib/files.txt` and
-	 *   read from the directory named by the `ktc2.stdlibDir` system property (the unpacked
-	 *   kotlin-stdlib sources jar) or, without it, from the copies ktc2 is packaged with;
-	 * - ktc2's platform layer, the `.kt` resources under `ktc2/stdlib/`, copied to `<inOutDir>/stdlib`.
+	 * The library sources compiled with every program, the module `stdlib` (modules/stdlib):
+	 * - ktc2's platform layer, the bare names of its `files.txt`, carried as resources under `ktc2/stdlib/` and
+	 *   copied to `<inOutDir>/stdlib`;
+	 * - files of the Kotlin standard library, the paths of its `files.txt`, from its sources at the version of
+	 *   the compiler, which ktc2 fetches into its cache ([upstreamOf]).
+	 *
+	 * @throws IllegalStateException when the standard library's sources cannot be had
 	 */
 	private fun librarySources(inOutDir: File): List<File> {
+		val vModule = com.bitsycore.ktc2.bundledModule("stdlib", inOutDir) ?: throw IllegalStateException("ktc2 carries no module 'stdlib'")
+		val (vOwn, vListed) = vModule.listed.filter { it.isHere }.partition { '/' !in it.path }
 		val vResult = ArrayList<File>()
-		val vListing = K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/files.txt")?.use { it.readBytes().decodeToString() } ?: ""
-		val vEntries = vListing.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
-		val vStdlibDir = System.getProperty("ktc2.stdlibDir")?.let { File(it) }
-		for (vEntry in vEntries) {
-			if (vEntry.endsWith(".kt") && !vEntry.contains('/')) {
-				val vText = K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/$vEntry")?.use { it.readBytes().decodeToString() } ?: continue
-				val vCopy = File(inOutDir, "stdlib/$vEntry")
-				vCopy.parentFile.mkdirs()
-				if (!vCopy.isFile || vCopy.readText() != vText) vCopy.writeText(vText)
-				vResult += vCopy
-			} else if (vStdlibDir != null) {
-				File(vStdlibDir, vEntry).takeIf { it.isFile }?.let { vResult += it }
-			} else {
-				// The installed ktc2 carries the files it needs of the standard library sources.
-				val vBytes = K2Frontend::class.java.getResourceAsStream("/ktc2/kotlin-stdlib/$vEntry")?.use { it.readBytes() } ?: continue
-				val vCopy = File(inOutDir, "stdlib/$vEntry")
-				vCopy.parentFile.mkdirs()
-				if (!vCopy.isFile || !vCopy.readBytes().contentEquals(vBytes)) vCopy.writeBytes(vBytes)
-				vResult += vCopy
-			}
+		for (vEntry in vOwn.map { it.path }) {
+			val vText = K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/$vEntry")?.use { it.readBytes().decodeToString() } ?: continue
+			val vCopy = File(inOutDir, "stdlib/$vEntry")
+			vCopy.parentFile.mkdirs()
+			if (!vCopy.isFile || vCopy.readText() != vText) vCopy.writeText(vText)
+			vResult += vCopy
 		}
+		val vUpstream = com.bitsycore.ktc2.upstreamOf(vModule) ?: throw IllegalStateException("the sources of the Kotlin standard library could not be had")
+		vResult += com.bitsycore.ktc2.listedFiles(vModule, vUpstream, vListed) ?: throw IllegalStateException("the standard library's files.txt names what its sources do not have")
 		return vResult
 	}
 

@@ -22,7 +22,7 @@ the MSVC nesting limit (`flatChain`), `dirent` for MSVC (not yet seen by MSVC: t
 the check), the showcase on a real screen (pictures in the README), `listOf`'s cost (none left),
 ktc2 against Kotlin/Native 2.5.0-RC and the JVM on ten programs ("Where the benchmarks stand"), pair
 cycles with threads. Then the repository was put in parts (the owner's layout): `compiler/`
-(a Gradle project; its build directory is still `build/`), `stdlib/` (with `runtime/` and
+(a Gradle project; its build directory is still `build/`), `modules/stdlib/` (with `runtime/` and
 `interop/`), `compat/` (the `ktc2.` package on the JVM, a Gradle project, and on Kotlin/Native),
 `modules/<name>/`, and the tests under `tests/` (`integration`, `stdlib` (was `tests/kotlin`),
 `common`, `modules/<name>` (was `tests/libraries`, then `tests/libs`), `box`). CLAUDE.md, "Repository layout". Checked
@@ -34,7 +34,11 @@ its module file; ktc2 fetches them into `<cache>/modules/<name>@<version>` the f
 (`Project.kt`, `upstreamOf`, `filesOf`); `"name@version"` in `dependencies` asks for another version (with
 a warning: kotlinx-io 0.9.2 does not compile with the list written for 0.9.3); a module is usable by its
 git path (checked with a `file://` clone of this repository and an empty cache). The tool no longer
-carries the libraries' sources, and `gradle/libs.versions.toml` holds Kotlin alone.
+carries the libraries' sources, and `gradle/libs.versions.toml` holds Kotlin alone. Then the standard library is a module too
+(`modules/stdlib`, which was `stdlib/`): its sources fetched by ktc2 at the compiler's Kotlin version
+(`version = "${kotlin}"`), the Regex patch an `edits` file, fetching under a lock (the suite's processes
+fetched the same module at once and applied the patch three times). The tool's jar went from 2.2 to 1.0 MB.
+A first build on a machine needs the network (Maven Central, or `KTC2_MAVEN`).
 
 **State at the end of 2026-11-16 (Windows, late evening).** Start here. `git log bd6b7d2..` is
 the evening's work, all on `master` and pushed:
@@ -45,27 +49,27 @@ the evening's work, all on `master` and pushed:
   minutes); `tools/msvc_all.sh` checks such a file of tests by how it ends. `interop/Geometry`:
   `selectany` on Windows (two copies of a variable before);
 - `31a4165` `Regex` is Kotlin/Native's engine (owner's choice), compiled from the Wasm sources jar;
-  a cleaner Gradle adds to Native's `Regex.kt` cuts its pattern's cycles (`stdlib/Ktc2RegexCycles.kt`;
+  a cleaner Gradle adds to Native's `Regex.kt` cuts its pattern's cycles (`modules/stdlib/Ktc2RegexCycles.kt`;
   owner's choice over a bounded cycle collector). Naming `ArrayIndexOutOfBoundsException`,
   `StringIndexOutOfBoundsException`, `NegativeArraySizeException` is refused as on Native;
 - `0d3005b` cycles of two objects through interface-typed fields are freed (a serializer and its
   descriptor, `left.other = right`), every pair of classes, the library's classes too; a cycle
   warning names the property to mark `@Weak`. `tools/bench.py` counts unchanged;
-- `487dda1` the platform layer is `stdlib/` (was `src/main/resources/ktc2/stdlib`), carried as
+- `487dda1` the platform layer is `modules/stdlib/` (was `src/main/resources/ktc2/stdlib`), carried as
   resources by `processResources`;
 - `3d78f05` the showcase is one SDL3 program of 8 pages (`examples/showcase`, see its module file);
   `--auto` runs every page as a user would, checked here with `SDL_VIDEODRIVER=dummy` and `--shot`:
   all pages, no leak, self-tests green. Built with gcc through Ninja (kotlinx-io's files are POSIX);
 - `70605f0` `listOf(a, b...)` is a read-only view of its array as on Native (`ArrayAsList`, which
   `ListLoops` now writes out); Ordinary of `tools/bench.py` is 9 % slower for it (item 4 below);
-- `612f37c` `ide/`: source sets an IDE resolves (`stdlib/` read only, `tests/stdlib` read only,
+- `612f37c` `ide/`: source sets an IDE resolves (`modules/stdlib/` read only, `tests/stdlib` read only,
   `tests/box`, `tests/integration/` in parts where each name is once); `./gradlew :ide:compileIntegrationObjectsKotlin`;
 - `6f48035` `tools/compare.py`: ktc2 against Kotlin/Native and the JVM (compile, size, peak memory,
   speed). First figures, Numeric, Windows: ktc2 0.252 s / 23 MB / 0.1 MB stripped; Native 2.4.21
   0.276 s / 37 MB / 0.4 MB; JVM 0.290 s / 84 MB / 1.8 MB of jars.
 
 **What was run.** The whole suite (1039: integration 176, kotlin 180, box 384, libraries 299) was
-green on Windows on everything up to `0d3005b`. After it, only filtered runs: the `stdlib/` move
+green on Windows on everything up to `0d3005b`. After it, only filtered runs: the `modules/stdlib/` move
 (Kotlin tests, regex, pair cycles), `listOf` (collections, list loops, `CollectionTest`,
 generics, `ListOfViews`). Not run on WSL/Linux nor the Mac; the CI job of the push is the first
 look at them. `bench.py` before/after: in `build/bench/` of the Windows machine only.
@@ -292,7 +296,7 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
    Next: the tests of `libraries/stdlib/jvm/test` that are not about the JDK, and those of
    `kotlin-native/runtime/test` (its coroutine tests among them).
 2. *Programs of ordinary code compared with the JVM* (`generics/ErasedViews`,
-   `objects/OrdinaryClasses`, `stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`,
+   `objects/OrdinaryClasses`, `modules/stdlib/OrdinaryCollections`, `modules/stdlib/OrdinaryStrings`,
    `basic/OrdinaryControl`, `objects/ClassReferences`): write what ordinary code does with one
    part of the language, run it with `KTC2_TEST_FILTER`, read `tools/jvmdiff.sh <Name>`. They
    found some twenty differences. Not looked at yet: inheritance with generics in depth,
@@ -754,7 +758,7 @@ Decided, not started:
     it fetches the standard library's. Each is a bundled module (`resources/ktc2/modules/`, as
     `sdl3`), so a program asks for it in `module.ktc2.toml`, and its sources are compiled with
     the library, kept between programs by the compiler process. A list of files per module, as
-    `stdlib/files.txt`, says which source sets are taken: `commonMain`, and the native ones
+    `modules/stdlib/files.txt`, says which source sets are taken: `commonMain`, and the native ones
     where they suit (`nativeMain`, `concurrentMain`), with `Ktc2*.kt` files for what is left.
   - **kotlinx.io first** (smaller: about 5 000 lines). Started on 2026-11-15: the bundled module
     `kotlinx-io` compiles kotlinx-io 0.9.3's `commonMain` and `nativeMain` (core and bytestring)
@@ -840,7 +844,7 @@ Open:
 - [x] **Coroutines** (2026-11-14). `suspend` functions in full, by the transformation into a
   state machine (`DESIGN.md`, "Coroutines"); `sequence { }`, `iterator { }`,
   `DeepRecursiveFunction`, `startCoroutine`, `suspendCoroutine`, the intrinsics of
-  `kotlin.coroutines`. Tests: `basic/SuspendFunctions`, `stdlib/SequenceBuilders`, and the
+  `kotlin.coroutines`. Tests: `basic/SuspendFunctions`, `modules/stdlib/SequenceBuilders`, and the
   library's `SequenceBuilderTest`, `CoroutinesReferenceValuesTest`, `DeepRecursiveTest`. Left:
   - [ ] kotlinx.coroutines (its common sources and a platform part, as for the library);
   - [ ] a `suspend fun interface`;
@@ -889,7 +893,7 @@ older one it continues (its items 1 to 4 are done or carried over there).
    targeted run, before anything else.
 2. What is left of Kotlin/Native's behavior (`tools/native.sh`, 2026-11-16):
    - (done 2026-11-16) `Regex` is Native's engine; naming the JVM's exceptions is refused;
-     `listOf(a, b)` checked against Native (`stdlib/ListOfViews`);
+     `listOf(a, b)` checked against Native (`modules/stdlib/ListOfViews`);
    - the speed of Native's regex engine against ktc2's former one: to measure
      (`tools/bench.py`, a benchmark of regex to add);
    - not to follow: `readLine()` after `readln()` finds nothing on Native (one reads stdin

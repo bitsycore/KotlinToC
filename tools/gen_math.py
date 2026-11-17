@@ -1,4 +1,4 @@
-"""Writes stdlib/Ktc2Math.kt: the platform side of kotlin.math (the standard library's MathH.kt)."""
+"""Writes modules/stdlib/Ktc2Math.kt: the platform side of kotlin.math (the standard library's MathH.kt)."""
 import io
 
 vOut = r'''@file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE", "ACTUAL_ANNOTATIONS_NOT_MATCH_EXPECT", "ACTUAL_WITHOUT_EXPECT", "NOTHING_TO_INLINE", "EXTENSION_SHADOWED_BY_MEMBER")
@@ -231,4 +231,4 @@ public actual val Long.absoluteValue: Long get() = if (this < 0L) -this else thi
 public actual val Long.sign: Int get() = if (this < 0L) -1 else if (this > 0L) 1 else 0
 '''
 
-io.open('stdlib/Ktc2Math.kt', 'w', encoding='utf-8', newline='\n').write(vOut)
+io.open('modules/stdlib/Ktc2Math.kt', 'w', encoding='utf-8', newline='\n').write(vOut)

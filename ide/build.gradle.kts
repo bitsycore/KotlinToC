@@ -5,7 +5,7 @@ Kotlin on the JVM (the gutter's run button on `main`, or on a `@Test`). Nothing 
 the suite, which compiles each file by itself (IntegrationTest.kt). Gradle
 compiles the programs of tests/integration/ for the JVM (`:ide:compileIntegrationObjectsKotlin`...).
 
-- `stdlib`: ktc2's platform layer (stdlib/), seen as Kotlin against the JVM's standard library:
+- `stdlib`: ktc2's platform layer (modules/stdlib/), seen as Kotlin against the JVM's standard library:
   highlighted and navigable, most of it resolved. It is not compiled here (its compile task is
   off): it is `actual`s of the standard library's own `expect`s in package kotlin, which only
   ktc2's compilation, with the library's sources in their levels, puts together;
@@ -66,7 +66,7 @@ val kGroups = File(kRoot, "tests/integration").listFiles { vFile -> vFile.isDire
 
 sourceSets {
 	create("stdlib") {
-		kotlin.srcDir(File(kRoot, "stdlib"))
+		kotlin.srcDir(File(kRoot, "modules/stdlib"))
 	}
 	create("kotlinTests") {
 		kotlin.srcDir(File(kRoot, "tests/stdlib"))

@@ -111,7 +111,7 @@ page at the display's rate (about 100 fps), physics at 60 (4000 balls), a millio
 ## The repository
 
 - `compiler/`: ktc2 itself (Kotlin, built by Gradle).
-- `stdlib/`: what every program is compiled with: ktc2's platform layer of the Kotlin standard
+- `modules/stdlib/`: what every program is compiled with: ktc2's platform layer of the Kotlin standard
   library, and the C runtime.
 - `compat/`: the `ktc2.` package for the JVM and Kotlin/Native, so that a program that uses it runs
   there too.

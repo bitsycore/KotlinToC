@@ -449,13 +449,16 @@ of its own.
 
 The library is the real one, compiled from source with every program:
 
-- `stdlib/files.txt` lists the files of the Kotlin stdlib sources
-  that are used unmodified (Gradle fetches the sources jar; the installed tool carries the
-  files it needs).
+- It is a module, `modules/stdlib` (since 2026-11-17), every program's implicit dependency: its
+  `upstream` is the sources jar of `kotlin-stdlib` and that of `kotlin-stdlib-wasm-js` (under `wasm/`),
+  at `${kotlin}`, the version of the compiler ktc2 runs; ktc2 fetches them into its cache like any
+  module's (`K2Frontend.librarySources`, `upstreamOf`). Its `files.txt` lists the files of them it
+  compiles (paths) and its platform layer (bare names); its `edits` change one file as it is fetched
+  (`Regex.kt.edit`: the cleaner that cuts the cycles of Native's regex). The tool carries the
+  platform layer, the C runtime and the C library's bindings, not the library's sources.
 - Some of `files.txt` is what Kotlin/Native shares with Wasm, which no jar for Native or the
-  JVM holds: `commonNonJvmMain` and `nativeWasmMain`, taken from the sources jar of
-  `kotlin-stdlib-wasm-js` (Gradle unpacks those two directories beside the others, into
-  `build/stdlib-src`). They are Kotlin/Native's own code, so what they give is Native's by
+  JVM holds: `commonNonJvmMain` and `nativeWasmMain`, from the sources jar of
+  `kotlin-stdlib-wasm-js`. They are Kotlin/Native's own code, so what they give is Native's by
   construction: `NumberConverter` and its `dtoa` helpers (`Float` and `Double` as text), and the
   classification and case of characters and code points with Native's generated Unicode tables
   (`Char.kt`, `CharCategory.kt`, `UnicodeProperties.kt`, `StringCasing.kt`, `generated/_*.kt`).
@@ -708,7 +711,7 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   `build/integration/<Name>/c`) finds the reads the fill does not.
 - `tests/integration/ported/` are the plain-Kotlin tests of the first transpiler.
 - `tests/stdlib/` and `tests/common/` hold common tests, written as Kotlin Multiplatform's are: classes of `@Test`
-  functions that assert with `kotlin.test` (`stdlib/Ktc2Test.kt` here), and no `main`. The
+  functions that assert with `kotlin.test` (`modules/stdlib/Ktc2Test.kt` here), and no `main`. The
   suite writes the `main` that calls each test (`testMain` in `IntegrationTest.kt`, which
   reads the source as text), runs it in C and on the JVM, and fails when a test fails on
   either. `tests/stdlib/` holds tests of the Kotlin standard library itself, unchanged, and
@@ -828,10 +831,10 @@ this list: what may be limited is only what a program asks for with an annotatio
 ---------------------------------------------------------------------------
 
 The repository is in parts (2026-11-17): `compiler/` (the code below, and the suite's harness),
-`stdlib/` (the platform layer, the C runtime in `stdlib/runtime`, the C library's bindings in
-`stdlib/interop`), `compat/` (the `ktc2.` package for the JVM and Kotlin/Native), `modules/<name>/` (the
+`modules/stdlib/` (the platform layer, the C runtime in `modules/stdlib/runtime`, the C library's bindings in
+`modules/stdlib/interop`), `compat/` (the `ktc2.` package for the JVM and Kotlin/Native), `modules/<name>/` (the
 bundled libraries), `tests/` (`integration`, `stdlib`, `common`, `modules/<name>`, `box`). The compiler
-carries `stdlib/` and `modules/` as resources, under the same names as before (`ktc2/ktc2_core.c`,
+carries `modules/stdlib/` and `modules/` as resources, under the same names as before (`ktc2/ktc2_core.c`,
 `ktc2/stdlib/`, `ktc2/modules/<name>/`), so its code reads them as it always did.
 
 Most fixes of a difference from Kotlin land in the importer, which is also the largest part

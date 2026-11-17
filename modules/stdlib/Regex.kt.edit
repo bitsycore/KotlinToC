@@ -1,0 +1,8 @@
+after: import kotlin.text.regex.*
+
+/** ktc2: what cuts the cycles of [pattern] when its Regex ends (Ktc2RegexCycles.kt). */
+internal expect fun ktc2RegexCleaner(pattern: Pattern): Any
+after:     private val startNode = nativePattern.startNode
+
+    // ktc2: see ktc2RegexCleaner.
+    private val ktc2Cleaner = ktc2RegexCleaner(nativePattern)

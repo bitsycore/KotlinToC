@@ -1,0 +1,5 @@
+name     = "stdlib"
+version  = "${kotlin}"
+upstream = [". = org.jetbrains.kotlin:kotlin-stdlib", "wasm = org.jetbrains.kotlin:kotlin-stdlib-wasm-js"]
+# Native's Regex with a cleaner that cuts the cycles of its pattern (Ktc2RegexCycles.kt).
+edits    = ["wasm/nativeWasmMain/kotlin/text/Regex.kt = Regex.kt.edit"]

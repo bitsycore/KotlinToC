@@ -88,6 +88,12 @@ class ModuleFile(val directory: File, inText: String) {
 	val upstream: List<String> get() = mValues["upstream"] ?: emptyList()
 	val jvm: List<String> get() = mValues["jvm"] ?: emptyList()
 
+	/**
+	 * Changes made to files of its upstream when they are fetched: `path = file`, the file of its own holding them, each
+	 * `after: <a line of the upstream file>` followed by the lines to put after that line (it must be there once).
+	 */
+	val edits: List<String> get() = mValues["edits"] ?: emptyList()
+
 	/** The version of its upstream that is taken: the one a program asked for, else [version]. */
 	var chosenVersion: String? = null
 
@@ -153,8 +159,16 @@ class GitSource(inText: String) {
 		// A clone that was interrupted has no marker: it is made again.
 		val vMarker = File(vTarget, ".ktc2-complete")
 		if (vMarker.isFile) return vTarget
-		vTarget.deleteRecursively()
 		vTarget.parentFile.mkdirs()
+		// Several ktc2 at once: one clones, the others wait for it.
+		return withFileLock(File(vTarget.parentFile, vTarget.name + ".lock")) { if (vMarker.isFile) vTarget else clone(vTarget, vMarker) }
+	}
+
+	/** Clones the repository into [inTarget], marking it complete with [inMarker]. */
+	private fun clone(inTarget: File, inMarker: File): File? {
+		val vTarget = inTarget
+		val vMarker = inMarker
+		vTarget.deleteRecursively()
 		System.err.println("ktc2: fetching $url${revision?.let { " at $it" } ?: ""}")
 		val vCommand = listOf("git", "clone", "--depth", "1", "-c", "advice.detachedHead=false") +
 			(revision?.let { listOf("--branch", it) } ?: emptyList()) + listOf(url, vTarget.absolutePath)
@@ -194,35 +208,93 @@ private fun mavenRepository(): String = (System.getenv("KTC2_MAVEN") ?: "https:/
  * cache the first time: the directory its `files.txt` paths are from. Null after reporting why it could not be had.
  */
 fun upstreamOf(inModule: ModuleFile): File? {
-	val vVersion = inModule.chosenVersion ?: inModule.version
+	val vVersion = versionOf(inModule)
 	if (vVersion == null) {
 		System.err.println("ktc2: error: module '${inModule.name}' has an upstream and no version")
 		return null
 	}
 	val vTarget = File(cacheDirectory(), "modules/${inModule.name}@$vVersion")
-	// One fetched only in part has no marker: it is fetched again.
-	val vMarker = File(vTarget, ".ktc2-complete")
-	if (vMarker.isFile) return vTarget
-	vTarget.deleteRecursively()
-	vTarget.mkdirs()
-	for (vLine in inModule.upstream) {
-		val vEquals = vLine.indexOf('=')
-		if (vEquals <= 0) {
-			System.err.println("ktc2: error: module '${inModule.name}': upstream wants `directory = source`, not '$vLine'")
-			return null
+	// One fetched only in part has no marker, one made with other edits another: it is fetched again.
+	val vEdits = inModule.edits.map { vLine -> vLine to File(inModule.directory, vLine.substringAfter('=').trim()).takeIf { it.isFile }?.readText() }
+	val vStamp = vEdits.joinToString("\n") { (vLine, vText) -> vLine + ":" + (vText?.hashCode() ?: 0) }
+	fun isReady(): Boolean = File(vTarget, ".ktc2-complete").let { it.isFile && it.readText() == vStamp }
+	if (isReady()) return vTarget
+	// Several ktc2 at once (the suite's processes, two builds): one fetches, the others wait for it and take what it made.
+	vTarget.parentFile.mkdirs()
+	return withFileLock(File(vTarget.parentFile, vTarget.name + ".lock")) {
+		if (isReady()) return@withFileLock vTarget
+		// Made apart and put in place whole: nothing else ever sees it half made.
+		val vMaking = File(vTarget.parentFile, vTarget.name + ".making")
+		vMaking.deleteRecursively()
+		vMaking.mkdirs()
+		for (vLine in inModule.upstream) {
+			val vEquals = vLine.indexOf('=')
+			if (vEquals <= 0) {
+				System.err.println("ktc2: error: module '${inModule.name}': upstream wants `directory = source`, not '$vLine'")
+				return@withFileLock null
+			}
+			val vDirectory = File(vMaking, vLine.substring(0, vEquals).trim()).canonicalFile
+			val vSource = vLine.substring(vEquals + 1).trim().replace("\${version}", vVersion)
+			if (vSource.startsWith("git:")) {
+				val vGit = GitSource(vSource.removePrefix("git:"))
+				val vCheckout = vGit.checkout() ?: return@withFileLock null
+				File(vCheckout, vGit.directory).copyRecursively(vDirectory, overwrite = true)
+			} else if (!fetchSources(vSource, vVersion, vDirectory)) {
+				return@withFileLock null
+			}
 		}
-		val vDirectory = File(vTarget, vLine.substring(0, vEquals).trim()).canonicalFile
-		val vSource = vLine.substring(vEquals + 1).trim().replace("\${version}", vVersion)
-		if (vSource.startsWith("git:")) {
-			val vGit = GitSource(vSource.removePrefix("git:"))
-			val vCheckout = vGit.checkout() ?: return null
-			File(vCheckout, vGit.directory).copyRecursively(vDirectory, overwrite = true)
-		} else if (!fetchSources(vSource, vVersion, vDirectory)) {
-			return null
+		for ((vLine, vText) in vEdits) {
+			if (vText == null || !applyEdits(File(vMaking, vLine.substringBefore('=').trim()), vText)) {
+				System.err.println("ktc2: error: module '${inModule.name}': the edit '$vLine' does not apply")
+				return@withFileLock null
+			}
+		}
+		File(vMaking, ".ktc2-complete").writeText(vStamp)
+		vTarget.deleteRecursively()
+		if (!vMaking.renameTo(vTarget)) {
+			System.err.println("ktc2: error: could not put the sources of module '${inModule.name}' into ${vTarget.path}")
+			return@withFileLock null
+		}
+		vTarget
+	}
+}
+
+/** Runs [inBlock] holding the lock of [inFile], which another process takes too: one at a time. */
+internal fun <T> withFileLock(inFile: File, inBlock: () -> T): T = synchronized(kCacheLock) {
+	java.io.RandomAccessFile(inFile, "rw").use { vFile -> vFile.channel.lock().use { inBlock() } }
+}
+
+/** One thread of this process at a time in the cache (a lock of a file is the process's). */
+private val kCacheLock = Any()
+
+/** The version of [inModule]'s upstream that is taken: `${kotlin}` stands for the Kotlin of ktc2's compiler. */
+fun versionOf(inModule: ModuleFile): String? =
+	(inModule.chosenVersion ?: inModule.version)?.replace("\${kotlin}", org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION)
+
+/** Puts the lines of each `after:` block of [inEdits] after its line in [inFile]: false when one is not there once. */
+private fun applyEdits(inFile: File, inEdits: String): Boolean {
+	if (!inFile.isFile) return false
+	val vLines = inFile.readLines().toMutableList()
+	var vAfter: String? = null
+	val vInsert = ArrayList<String>()
+	fun flush(): Boolean {
+		val vAnchor = vAfter ?: return true
+		val vAt = vLines.indices.filter { vLines[it] == vAnchor }.singleOrNull() ?: return false
+		vLines.addAll(vAt + 1, vInsert)
+		vInsert.clear()
+		return true
+	}
+	for (vLine in inEdits.lines().dropLastWhile { it.isEmpty() }) {
+		if (vLine.startsWith("after: ")) {
+			if (!flush()) return false
+			vAfter = vLine.removePrefix("after: ")
+		} else {
+			vInsert += vLine
 		}
 	}
-	vMarker.writeText("")
-	return vTarget
+	if (!flush()) return false
+	inFile.writeText(vLines.joinToString("\n", postfix = "\n"))
+	return true
 }
 
 /**
@@ -288,32 +360,41 @@ fun filesOf(inModule: ModuleFile): List<File>? {
 	}
 	if (inModule.upstream.isNotEmpty()) {
 		val vUpstream = upstreamOf(inModule) ?: return null
-		val vVersion = inModule.chosenVersion ?: inModule.version
-		// Every file of the upstream that a pattern may take, by its path there: its Kotlin sources and C definitions.
-		val vAll by lazy {
-			vUpstream.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
-				.map { it.relativeTo(vUpstream).invariantSeparatorsPath }.sorted().toList()
-		}
-		val vTaken = LinkedHashSet<String>()
-		for (vListed in inModule.listed.filter { it.isHere }) {
-			val vExcluded = vListed.path.startsWith("!")
-			val vPath = vListed.path.removePrefix("!").trim()
-			val vMatches = if (isPattern(vPath)) {
-				val vRegex = patternRegex(vPath)
-				vAll.filter { vRegex.matches(it) }
-			} else {
-				listOf(vPath).filter { File(vUpstream, it).isFile }
-			}
-			if (vMatches.isEmpty() && !vExcluded) {
-				val vWhat = if (isPattern(vPath)) "nothing matches '$vPath'" else "no '$vPath'"
-				System.err.println("ktc2: error: module '${inModule.name}': in its upstream at $vVersion, $vWhat (files.txt)")
-				return null
-			}
-			if (vExcluded) vTaken -= vMatches.toSet() else vTaken += vMatches
-		}
-		vTaken.forEach { vFiles += File(vUpstream, it) }
+		vFiles += listedFiles(inModule, vUpstream, inModule.listed.filter { it.isHere }) ?: return null
 	}
 	return vFiles
+}
+
+/**
+ * The files of [inUpstream] (the sources [inModule] takes as they are) that [inListed] names, each a path, a pattern or
+ * a `!` that leaves out what came before; null after reporting a path or a pattern that is not there.
+ */
+fun listedFiles(inModule: ModuleFile, inUpstream: File, inListed: List<ListedFile>): List<File>? {
+	val vUpstream = inUpstream
+	val vVersion = versionOf(inModule)
+	// Every file of the upstream that a pattern may take, by its path there: its Kotlin sources and C definitions.
+	val vAll by lazy {
+		vUpstream.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
+			.map { it.relativeTo(vUpstream).invariantSeparatorsPath }.sorted().toList()
+	}
+	val vTaken = LinkedHashSet<String>()
+	for (vListed in inListed) {
+		val vExcluded = vListed.path.startsWith("!")
+		val vPath = vListed.path.removePrefix("!").trim()
+		val vMatches = if (isPattern(vPath)) {
+			val vRegex = patternRegex(vPath)
+			vAll.filter { vRegex.matches(it) }
+		} else {
+			listOf(vPath).filter { File(vUpstream, it).isFile }
+		}
+		if (vMatches.isEmpty() && !vExcluded) {
+			val vWhat = if (isPattern(vPath)) "nothing matches '$vPath'" else "no '$vPath'"
+			System.err.println("ktc2: error: module '${inModule.name}': in its upstream at $vVersion, $vWhat (files.txt)")
+			return null
+		}
+		if (vExcluded) vTaken -= vMatches.toSet() else vTaken += vMatches
+	}
+	return vTaken.map { File(vUpstream, it) }
 }
 
 // ==================
@@ -440,7 +521,8 @@ fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	vDirectory.mkdirs()
 	val vModule = ModuleFile(vDirectory, vText)
 	val vFiles = vModule.files.mapNotNull { ListedFile.of(it) }
-	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake)) {
+	val vEdits = vModule.edits.map { it.substringAfter('=').trim() }
+	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake) + vEdits) {
 		val vBytes = resource(vFile) ?: continue
 		val vTarget = File(vDirectory, vFile)
 		vTarget.parentFile.mkdirs()
