@@ -34,14 +34,14 @@ package). The same file runs:
 `@Ignore`, `@BeforeTest`, `@AfterTest`.
 
 - `common/`: tests written for ktc2.
-- `modules/stdlib/`: tests of the Kotlin standard library itself, unchanged, from
+- `tests/stdlib/`: tests of the Kotlin standard library itself, unchanged, from
   `libraries/stdlib/test` of github.com/JetBrains/kotlin at tag `v2.5.0-RC`, the version of
   the library ktc2 compiles (Apache 2.0, the header of each file). They are the best tests
   there are of what the library must do. 156 files, some 2230 tests: every file of `libraries/stdlib/test` but those of JavaScript. They are compiled as the
   library's own tests are: with its opt-ins (`kotlin.ExperimentalUnsignedTypes` and the others
   of its `commonTestOptIns`; `ktc2.optIn` in `compiler/build.gradle.kts` for C), and on the JVM seeing
   what the library keeps `internal`.
-- `modules/stdlib/support/`: the helpers of the library's tests, compiled with every file of `modules/stdlib/`.
+- `tests/stdlib/support/`: the helpers of the library's tests, compiled with every file of `tests/stdlib/`.
   `support/common/` is theirs as they are (`testUtils.kt` without its `expect` line,
   `CollectionBehaviors.kt`, `ComparisonDSL.kt`, `jsCollectionFactories.kt`,
   `DurationTestUtils.kt`); `support/jvm/` and `support/ktc2/` answer what they leave to the
@@ -50,29 +50,29 @@ package). The same file runs:
   2026-11-16: where the JVM and Native differ ktc2 sides with Native (`DESIGN.md`, section 1).
   The JVM's side answers as the JVM's tests do; each side's run then checks its own platform. A line `expect ...` of a test file is left out when it is
   compiled (`support/*/Text.kt` answers those of `StringEncodingTest`).
-- `modules/stdlib/<Name>.with`: other files of tests whose helpers `<Name>.kt` uses (`Sortable` of
+- `tests/stdlib/<Name>.with`: other files of tests whose helpers `<Name>.kt` uses (`Sortable` of
   `IterableTests.kt`, `STRING_CASE_INSENSITIVE_ORDER` of `OrderingTest.kt`), one a line:
   compiled with it, their tests not run.
-- `modules/stdlib/<Name>.jvm`: options the compilation for the JVM needs for that file, one a line.
-- `modules/stdlib/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison. A line `/regex/` names whole lines (a duration, which has no fixed beginning).
-- `modules/stdlib/<Name>.skip`: tests of `<Name>.kt` that are not run, one a line, `name: why` (or
+- `tests/stdlib/<Name>.jvm`: options the compilation for the JVM needs for that file, one a line.
+- `tests/stdlib/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison. A line `/regex/` names whole lines (a duration, which has no fixed beginning).
+- `tests/stdlib/<Name>.skip`: tests of `<Name>.kt` that are not run, one a line, `name: why` (or
   `Class.name: why`). Neither side runs them.
-- `modules/stdlib/<Name>.cycles`: says, with the reason, that the tests of `<Name>.kt` build objects
+- `tests/stdlib/<Name>.cycles`: says, with the reason, that the tests of `<Name>.kt` build objects
   that refer to each other in a circle. Those are never freed, there being no collector of
   cycles, and for that file what is left allocated is not a failure.
 - A class of tests that extends another (`IterableTests.kt`: `ListTest : OrderedIterableTests`)
   runs the tests it inherits; an abstract one runs none itself.
-- `pending/`: tests of the same origin that do not pass yet, each with the reason below. Not
-  run. A test that does not pass has found a difference to fix; the file then moves to
-  `modules/stdlib/`.
+- `pending/` (none at the moment): tests of the same origin that do not pass yet, each with the
+  reason below. Not run. A test that does not pass has found a difference to fix; the file then
+  moves to `tests/stdlib/`.
 
 To take in more: get the tests (`git clone --depth 1 --filter=blob:none --sparse -b v2.5.0-RC
 https://github.com/JetBrains/kotlin`, then `git sparse-checkout set libraries/stdlib/test`),
-copy files to `modules/stdlib/`, run `KTC2_TEST_FILTER=tests/stdlib/ ./gradlew test --rerun`, and
+copy files to `tests/stdlib/`, run `KTC2_TEST_FILTER=tests/stdlib/ ./gradlew test --rerun`, and
 read `python tools/failures.py`. A file from another tag than the library's fails on the JVM
 too (two did, taken from `v2.4.21`).
 
-Besides `libraries/stdlib/test`, `modules/stdlib/` has the files of two other directories of the same
+Besides `libraries/stdlib/test`, `tests/stdlib/` has the files of two other directories of the same
 tag that are not about one platform's own API, unchanged:
 - of `libraries/stdlib/jvm/test`, the 3 that use nothing of the JDK nor of the JVM's own part of
   the library (`DurationJVMTest`, `NumbersJVMTest`, `SequenceJVMTest`). The others use
@@ -147,7 +147,7 @@ They found, all fixed:
 
 ## kotlinx-io's tests
 
-`libraries/kotlinx-io/` holds the tests of kotlinx-io itself, as its repository has them at the version the
+`tests/modules/kotlinx-io/` holds the tests of kotlinx-io itself, as its repository has them at the version the
 bundled module compiles (0.9.3, Apache 2.0): `core/commonTest` and `bytestring/commonTest` (from
 `core/common/test` and `bytestring/common/test`), and the helpers of each platform for the common
 `expect`s, `core/nativeTest/util.kt` and `core/jvmTest/utilJVM.kt`. Each file of tests is a

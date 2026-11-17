@@ -166,7 +166,7 @@ Native's Unicode code and tables, the fragment levels of `K2Frontend.kt` that co
 distinct C names for private declarations of one name in two files, the time of each step in
 the test log) was checked on the 170 integration programs, the 5 projects and the common tests
 of characters, strings, numbers, code points and regex (all green), not on the libraries' own
-tests (`tests/stdlibx-*`, `tests/atomicfu`) nor the box tests. If the CI job is red, the first
+tests (`tests/modules/kotlinx-*`, `tests/modules/atomicfu`) nor the box tests. If the CI job is red, the first
 suspects are those: a library that uses `Char` classification or case (kotlinx-datetime's
 parsing, kotlinx-serialization's JSON names) or code that depends on a `private` name in C.
 
@@ -196,7 +196,7 @@ parsing, kotlinx-serialization's JSON names) or code that depends on a `private`
 Kotlin/Native's own output, or that must be refused), 5 projects (the showcase and four
 programs of several files under `tests/integration/modules/`), 180 files of common tests under
 `tests/` (one of ktc2's own, 156 of the Kotlin standard library's, 3 of its JVM part and 20 of
-Kotlin/Native's), 299 files of the libraries' own tests (`tests/stdlibx-io`,
+Kotlin/Native's), 299 files of the libraries' own tests (`tests/modules/kotlinx-io`,
 `kotlinx-collections-immutable`, `atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`,
 `kotlinx-serialization-json-io`) and 384 box tests of the Kotlin compiler (`tests/box/`). About
 28 minutes on the Mac (M-series, 8 processes), most of it the libraries' tests; the integration
@@ -308,13 +308,13 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
 1. *Tests of the Kotlin standard library* (`tests/stdlib/`, from `libraries/stdlib/test` of
    github.com/JetBrains/kotlin at the tag of the library's version, unchanged). 153 files are
    in and pass (some 2200 tests), with the helpers of the library's tests under
-   `tests/support/`; `tests/README.md` lists what they found (some fifty differences, all
-   fixed). What is left: 2 tests in `<Name>.skip` files, each with the reason; `tests/pending/` is
-   empty since coroutines came. Every file of `libraries/stdlib/test` but JavaScript's is in.
+   `tests/stdlib/support/`; `tests/README.md` lists what they found (some fifty differences, all
+   fixed). What is left: 2 tests in `<Name>.skip` files, each with the reason; no file of them is
+   pending since coroutines came. Every file of `libraries/stdlib/test` but JavaScript's is in.
    Next: the tests of `libraries/stdlib/jvm/test` that are not about the JDK, and those of
    `kotlin-native/runtime/test` (its coroutine tests among them).
 2. *Programs of ordinary code compared with the JVM* (`generics/ErasedViews`,
-   `objects/OrdinaryClasses`, `modules/stdlib/OrdinaryCollections`, `modules/stdlib/OrdinaryStrings`,
+   `objects/OrdinaryClasses`, `stdlib/OrdinaryCollections`, `stdlib/OrdinaryStrings`,
    `basic/OrdinaryControl`, `objects/ClassReferences`): write what ordinary code does with one
    part of the language, run it with `KTC2_TEST_FILTER`, read `tools/jvmdiff.sh <Name>`. They
    found some twenty differences. Not looked at yet: inheritance with generics in depth,
@@ -394,7 +394,7 @@ test --rerun 2>&1 | tee build/suite.log`, a line per program with its progress):
 where they can see it. While developing, run the smallest set that covers the change: the
 integration programs are the workspace for quick checks (`KTC2_TEST_FILTER=integration/`, about
 2 minutes), with the few common tests that matter (`tests/stdlib/String`...), never the
-libraries' own tests (`KTC2_TEST_LIBRARIES=0`; the whole suite is 28 minutes). The whole suite
+libraries' own tests (a filter, or `KTC2_TEST_CATEGORIES=integration,kotlin`; the whole suite is 28 minutes). The whole suite
 before a commit that touches a pass or the platform layer broadly. Never two runs at once: they
 share `build/integration`. No push and no waiting on the CI job during the work ("CI is too
 long"): commit locally, push when the owner asks. They push to `master` directly, from several
@@ -786,13 +786,13 @@ Decided, not started:
     a class, and `weak`/`acyclic` in the module file (`Segment.prev`, which made every buffer of
     two segments a cycle). Files work too (`kotlinx.io.files`, kotlinx-io's own native code over
     POSIX, with what differs between Windows and the others in the module's C), except with MSVC
-    (no `unistd.h` nor `dirent.h`). kotlinx-io's own tests (32 files, `tests/stdlibx-io/`) pass in
+    (no `unistd.h` nor `dirent.h`). kotlinx-io's own tests (32 files, `tests/modules/kotlinx-io/`) pass in
     C and on the JVM. Done, but for what is listed under "Known and not done".
     `Buffer`, `Segment`, `Source`, `Sink`, `ByteString`, UTF-8: common code. Files (`kotlinx.io.files`: `Path`, `SystemFileSystem`,
     `FileMetadata`): its `nativeMain` is written over `platform.posix` (`fopen`, `fread`,
     `stat`, `opendir`), which ktc2 generates; to try as it is first, with a Windows part where
     its `mingwMain` needs one. Tests: its common tests, taken in as the library's are
-    (`tests/stdlibx-io/`). Estimate: 2 to 4 days.
+    (`tests/modules/kotlinx-io/`). Estimate: 2 to 4 days.
   - **kotlinx.coroutines** (about 30 000 lines of common and concurrent code). What the
     platform part has to give: `Dispatchers.Default` and `Dispatchers.IO` (threads of
     `ktc2.concurrent`), `Dispatchers.Unconfined`, no `Dispatchers.Main` (it fails, as on
@@ -862,7 +862,7 @@ Open:
 - [x] **Coroutines** (2026-11-14). `suspend` functions in full, by the transformation into a
   state machine (`DESIGN.md`, "Coroutines"); `sequence { }`, `iterator { }`,
   `DeepRecursiveFunction`, `startCoroutine`, `suspendCoroutine`, the intrinsics of
-  `kotlin.coroutines`. Tests: `basic/SuspendFunctions`, `modules/stdlib/SequenceBuilders`, and the
+  `kotlin.coroutines`. Tests: `basic/SuspendFunctions`, `stdlib/SequenceBuilders`, and the
   library's `SequenceBuilderTest`, `CoroutinesReferenceValuesTest`, `DeepRecursiveTest`. Left:
   - [ ] kotlinx.coroutines (its common sources and a platform part, as for the library);
   - [ ] a `suspend fun interface`;
@@ -911,7 +911,7 @@ older one it continues (its items 1 to 4 are done or carried over there).
    targeted run, before anything else.
 2. What is left of Kotlin/Native's behavior (`tools/native.sh`, 2026-11-16):
    - (done 2026-11-16) `Regex` is Native's engine; naming the JVM's exceptions is refused;
-     `listOf(a, b)` checked against Native (`modules/stdlib/ListOfViews`);
+     `listOf(a, b)` checked against Native (`stdlib/ListOfViews`);
    - the speed of Native's regex engine against ktc2's former one: to measure
      (`tools/bench.py`, a benchmark of regex to add);
    - not to follow: `readLine()` after `readln()` finds nothing on Native (one reads stdin

@@ -18,13 +18,15 @@ ktc2 path/to/game --run
 Nothing has to be installed. The module fetches the sources of SDL3 from GitHub the first
 time (into `~/.ktc2/cache`): the bindings are made from their headers, and `module.cmake`
 builds the library from them, statically. When CMake finds an SDL3 on the system it uses that
-one instead; `-DKTC2_SDL3_FROM_SOURCE=ON` in `KTC2_CMAKE_ARGS` insists on the sources.
+one instead; `-DKTC2_SDL3_FROM_SOURCE=ON` in `KTC2_CMAKE_ARGS` insists on the sources. A
+universal program for macOS (`--universal`) always builds its own, for both architectures.
 
 A program that depends on the module is therefore built with CMake, which needs a generator
 it can use: Visual Studio, or Ninja or make with gcc or clang.
 
-`examples/sdl3-demo` opens a window and draws for a second; `examples/showcase` is a window
-with buttons.
+`examples/sdl3-demo` opens a window and draws for a second; `examples/showcase` is one program
+of eight pages (sprites, particles, physics, a fractal, the game of life, the kotlinx libraries,
+the self-tests).
 
 The tables in `SDL3.kt` (between `// <constants>` and `// </constants>`) name SDL's
 constants in groups. The kinds that are one of several are enums that are numbers in C

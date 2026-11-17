@@ -75,8 +75,9 @@ dependencies = ["sdl3", "../engine", "https://github.com/user/repo.git#modules/u
 ```
 
 A dependency is a module shipped with ktc2 (`sdl3`, `kotlinx-io`, `kotlinx-collections-immutable`,
-`atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`), a directory, or a place in a git
-repository. The kotlinx libraries are compiled from their own sources, which ktc2 fetches the first
+`atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`, `kotlinx-serialization-json-io`), a
+directory, or a place in a git repository. The standard library is a module too (`modules/stdlib`),
+which every program has without naming it. The kotlinx libraries are compiled from their own sources, which ktc2 fetches the first
 time a program uses them, at the version its module file names (`modules/<name>/module.ktc2.toml`;
 `"kotlinx-io@0.10.0"` in `dependencies` asks for another): `kotlinx-datetime` (dates, times, formats and time zones: the
 system's files on Linux and macOS, the registry on Windows), `kotlinx-serialization` (its core,
@@ -87,6 +88,21 @@ with gcc or clang, not MSVC, whose C library has no `unistd.h` nor `dirent.h`),
 locks, `SynchronizedObject`). Every compilation writes a `CMakeLists.txt` next to the generated C, and a module
 can bring a CMake file of its own: the `sdl3` module fetches SDL3 from GitHub and builds it,
 so nothing has to be installed.
+
+A module that takes a library as it is says where its sources come from, and which of them it
+compiles:
+
+```toml
+name     = "kotlinx-io"
+version  = "0.9.3"
+upstream = ["core = org.jetbrains.kotlinx:kotlinx-io-core"]   # a Maven sources jar, or "git:url@rev"
+
+[[maven]]                                                     # repositories of its own, if it needs any
+url = "https://maven.example.com/releases"
+```
+
+with a `files.txt` beside it, one path or pattern a line (`core/commonMain/**`, `!` to leave out).
+The repositories, and what they are entered with, are in "Settings" below.
 
 ```bash
 build/install/ktc2/bin/ktc2 examples/showcase --run
@@ -114,19 +130,21 @@ page at the display's rate (about 100 fps), physics at 60 (4000 balls), a millio
 ## The repository
 
 - `compiler/`: ktc2 itself (Kotlin, built by Gradle).
-- `modules/stdlib/`: what every program is compiled with: ktc2's platform layer of the Kotlin standard
-  library, and the C runtime.
+- `modules/stdlib/`: the module every program is compiled with: the list of the Kotlin standard
+  library's files, ktc2's platform layer of it, and the C runtime.
 - `compat/`: the `ktc2.` package for the JVM and Kotlin/Native, so that a program that uses it runs
   there too.
-- `modules/`: the bundled modules, libraries ktc2 carries (kotlinx-io, kotlinx.serialization, kotlinx-datetime,
-  kotlinx.collections.immutable, atomicfu, SDL3).
+- `modules/`: the bundled modules (kotlinx-io, kotlinx.serialization, kotlinx-datetime,
+  kotlinx.collections.immutable, atomicfu, SDL3): each its module file, its list of the library's
+  files and ktc2's own files; the library's sources are fetched by ktc2.
 - `tests/`: the test programs, the Kotlin standard library's tests, each library's own tests, and
   the Kotlin compiler's box tests (`tests/README.md`).
 
 ## What you need
 
-A JDK to start Gradle (it fetches JDK 21, the Kotlin compiler and the library sources the
-first time, so the first build needs the network); a C compiler, gcc for the tests; git and
+A JDK to start Gradle (it fetches JDK 21 and the Kotlin compiler the first time); the network
+the first time ktc2 compiles a program, which fetches the sources of the standard library and of
+the modules it uses into its cache (`~/.ktc2/cache`); a C compiler, gcc for the tests; git and
 CMake with a generator it can use (Visual Studio, or Ninja or make) for programs that depend
 on `sdl3`.
 

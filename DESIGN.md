@@ -552,8 +552,8 @@ is no bridge code. `import platform.posix.*` generates the bindings of the C lib
 
 A command shows what it does, one line for each step (`Progress.kt`): the modules, Kotlin → IR (the Kotlin
 compiler), IR → C (ktc2), C → objects and the link, or CMake; in a terminal the line of a step is rewritten as it
-goes (`[37/783]`). And it does again only what changed: the translation when a source, an option, a `KTC2_`
-setting or ktc2 itself changed (a stamp of all of them, `<out>/ktc2_inputs.txt`); a C file's object (in
+goes (`[37/783]`). And it does again only what changed: the translation when a source, an option, a setting
+or ktc2 itself changed (a stamp of all of them, `<out>/ktc2_inputs.txt`); a C file's object (in
 `<out>/obj`, all compiled at once on every core) when the file, a header it includes (what the compiler says,
 `-MMD`) or the options changed; the link when an object did; CMake's configuration when its command did.
 The output of a command (`<module>/build`, or `-o`): the program; `c/` (the C ktc2 wrote); `obj/` (the objects);
@@ -685,11 +685,11 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
   a lambda, or the box of a `@Struct`), `ktc2_core.h/.c`, `ktc2_config.h` (what this program
   needs of the runtime: threads, checks), `ktc2_main.c`, `ktc2_types.h`, `KtDispatch.c`; a
   `ktc2_build.txt` listing the C files and options; a `CMakeLists.txt`.
-- The C compiler is the one `KTC2_CC` names, else the first of gcc, clang and cc on the path,
+- The C compiler is the one the setting `build.cc` (`KTC2_CC`) names, else the first of gcc, clang and cc on the path,
   for `--build` and for reading headers when bindings are generated. The test suite uses gcc
   unless `KTC2_CC` says otherwise, and its options are gcc's.
 - `--build` calls the C compiler directly. `--cmake`, or any
-  module with a CMake file, builds through CMake (`KTC2_CMAKE_ARGS` adds arguments). A
+  module with a CMake file, builds through CMake (`build.cmakeArgs`, `KTC2_CMAKE_ARGS`, adds arguments). A
   module's CMake file sees the program as `${KTC2_TARGET}` and a fetched repository as
   `${KTC2_FETCH_<NAME>}`.
 - A release build is optimized as a whole program (`-flto`, or CMake's interprocedural
