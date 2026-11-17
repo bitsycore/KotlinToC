@@ -562,16 +562,31 @@ cmake        = "module.cmake"
 files        = ["Api.kt", "lib.def"]      # only in a module shipped with ktc2: its files, since resources cannot be listed
 weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that are @Weak
 acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
+version      = "0.9.3"                    # the version of the library it takes as it is
+upstream     = ["core = org.jetbrains.kotlinx:kotlinx-io-core"]   # where that library's sources come from
+jvm          = ["org.jetbrains.kotlinx:kotlinx-io-core-jvm"]      # its jars, for the suite's JVM side
 ```
+
+A module that takes a library as it is says where that library's sources come from (since
+2026-11-17; before, ktc2's Gradle build fetched them and the tool carried them): each line of
+`upstream` is a directory and what fills it, the source jar of a Maven artifact (`group:artifact`,
+at `version` unless it names its own; from Maven Central, or the repository `KTC2_MAVEN` names) or a
+git repository (`git:url@revision`, `${version}` standing for the version). ktc2 fetches them the
+first time a program needs them, into `<cache>/modules/<name>@<version>` (`Project.kt`,
+`upstreamOf`), and `files.txt` lists the files of them it compiles. So a module is a small directory
+(its file, its list, ktc2's own files), usable by its place in a git repository like any other
+(`https://github.com/bitsycore/KotlinToC.git#modules/kotlinx-io@<tag>`), and a program may ask for
+another version of the library (`dependencies = ["kotlinx-io@0.10.0"]`): ktc2 warns that the module's
+list and its own files were written for its `version`, and that version's sources may differ (0.9.2
+of kotlinx-io does). The Gradle build reads the `jvm` of each module for the suite's JVM side.
 
 - A dependency is a module shipped with ktc2 (`modules/`, today
   `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable` and `atomicfu`), a directory, or a place in a git repository. Repositories are
   cloned once into `~/.ktc2/cache` (`KTC2_CACHE`).
 - A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
-  the sources of kotlinx-io 0.9.3, which Gradle fetches (`kLibraryModules` in
-  `compiler/build.gradle.kts`, the versions in `gradle/libs.versions.toml`) and puts next to the module
-  file; its `files.txt` lists those it compiles (a module shipped with ktc2
-  lists its files there or in `files`). What such sources expect of ktc2:
+  the sources of kotlinx-io 0.9.3, which ktc2 fetches (its `upstream` above); its `files.txt` lists
+  those it compiles, and `files` its own (a module shipped with ktc2 cannot list a directory of its
+  resources). What such sources expect of ktc2:
   - a file of its list may be for some systems only (`windows: path`, `linux, macos: path`),
     as a library's source sets are: the program is compiled with those of the system ktc2
     runs on, whose headers its bindings are made from (kotlinx-datetime takes its `linuxMain`,

@@ -28,7 +28,13 @@ cycles with threads. Then the repository was put in parts (the owner's layout): 
 `common`, `modules/<name>` (was `tests/libraries`, then `tests/libs`), `box`). CLAUDE.md, "Repository layout". Checked
 on the new layout: every integration program and project, and one test of each other category; the
 CI job of that push is the first run of the rest. Left: the JSON benchmark, the input of the showcase
-by hand, MSVC itself, item 5 (the speed of Native's regex engine).
+by hand, MSVC itself, item 5 (the speed of Native's regex engine). Then (owner's design) a module says where
+its library's sources come from: `version`, `upstream` (Maven source jars or `git:url@rev`) and `jvm` in
+its module file; ktc2 fetches them into `<cache>/modules/<name>@<version>` the first time
+(`Project.kt`, `upstreamOf`, `filesOf`); `"name@version"` in `dependencies` asks for another version (with
+a warning: kotlinx-io 0.9.2 does not compile with the list written for 0.9.3); a module is usable by its
+git path (checked with a `file://` clone of this repository and an empty cache). The tool no longer
+carries the libraries' sources, and `gradle/libs.versions.toml` holds Kotlin alone.
 
 **State at the end of 2026-11-16 (Windows, late evening).** Start here. `git log bd6b7d2..` is
 the evening's work, all on `master` and pushed:

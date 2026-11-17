@@ -183,7 +183,8 @@ The first two need little of the platform and test the method; serialization bri
 new kind of thing (a compiler plugin); coroutines needs everything else and is the largest.
 
 Decided by the owner (2026-11-15): `@ThreadLocal` made real, as on Kotlin/Native; atomicfu from
-its own sources; the latest version of each, pinned in `gradle/libs.versions.toml`.
+its own sources; the latest version of each, pinned in its module file since 2026-11-17
+(`modules/<name>/module.ktc2.toml`: `version`, `upstream`, `jvm`; `gradle/libs.versions.toml` before).
 
 To decide:
 1. The choices for coroutines already listed in `PLAN.md` (dispatchers, `Dispatchers.IO`, cycles).
