@@ -2,7 +2,8 @@
 # built, as a static library, from the sources ktc2 fetched for the module.
 # ${KTC2_TARGET} is the program, ${KTC2_FETCH_SDL3} where the sources are.
 
-if(NOT TARGET SDL3::SDL3 AND NOT KTC2_SDL3_FROM_SOURCE)
+# An SDL3 of the system has the machine's architecture only: a program for several (a universal one) builds its own.
+if(NOT TARGET SDL3::SDL3 AND NOT KTC2_SDL3_FROM_SOURCE AND NOT CMAKE_OSX_ARCHITECTURES MATCHES ";")
 	find_package(SDL3 CONFIG QUIET)
 endif()
 

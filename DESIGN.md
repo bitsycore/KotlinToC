@@ -566,6 +566,29 @@ optimization the objects hold the compiler's code and the link optimizes them as
 clang, `-flto=auto` with gcc). What a translation still costs every time is the Kotlin compiler: a program
 whose modules have common code (kotlinx-io, kotlinx.serialization) is compiled whole, the library with it.
 
+Settings (`Settings.kt`) each come from the first of: the command (`--set key=value`, or the option
+that stands for it), the environment (`KTC2_...`), the configuration file (`KTC2_CONFIG`, else
+`config/ktc2.toml` of the installation, which the release carries from `compiler/src/dist/config/`, every
+setting there as a comment), the default; `ktc2 --settings` prints them with where each comes from. The
+lists of options for the C compiler and the linker add up over the levels; any other value is the first
+one's. A text may say `${env:NAME}`. The process that stays reads the command's environment, which the
+command sends with its arguments, so that `${env:...}` and `KTC2_...` are the command's. The file is read
+by the small TOML reader of `Toml.kt`, which reads module files too. The translation's stamp holds the
+settings, and the process that stays is started again when the configuration file changes.
+
+The Maven repositories are the setting `maven`: `[[maven]]` tables, each a `url` and, when it needs them,
+`user` and `password` (sent as HTTP's basic) or `token` (a bearer). A module may have `[[maven]]` tables of
+its own, tried first; what a repository is entered with comes from its entry, or from the configuration's
+entry of the same `url` (a module file is shared, a secret is not: ktc2 warns when one is written in it).
+The credentials are sent to the repository's own host only, not after a redirection to another one. When
+no repository has an artifact, ktc2 says what each answered.
+
+On macOS `build.macosArch` (`--universal`: `arm64` and `x86_64`) builds a program for several
+architectures at once: `-arch` for each to the compiler and the linker, which make one universal program,
+and `CMAKE_OSX_ARCHITECTURES` for CMake. The C is the same for both (the bindings read headers whose types
+and constants are the same on arm64 and x86_64 macOS; sizes and layouts are the C compiler's, each
+architecture's own); the runtime's few lines for one processor are under `#if` in `ktc2_core.h`.
+
 A directory with a `module.ktc2.toml` is a module (`Project.kt`):
 
 ```toml
@@ -862,7 +885,9 @@ nearly every function; this is the map.
 **The driver**, around the passes:
 
 - `Main.kt` reads the command; `Project.kt` reads module files, fetches what they name, and
-  builds the C (directly or through the `CMakeLists.txt` it writes).
+  builds the C (directly or through the `CMakeLists.txt` it writes). `Settings.kt` is every
+  setting and where it comes from, `Toml.kt` the reader of the configuration and module files,
+  `Progress.kt` the line of each step.
 - `Daemon.kt` is the process `ktc2` keeps running: the command sends its arguments to it and
   prints what comes back. `Main.runCommand` is what either of them runs.
 - `frontend/K2Frontend.kt` prepares a compilation (the library sources, the bindings, the

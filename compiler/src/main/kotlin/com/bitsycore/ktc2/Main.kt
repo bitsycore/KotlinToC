@@ -11,6 +11,7 @@ private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.
                      (always so when a module has a CMake file; KTC2_CMAKE_ARGS: more arguments)
   --run              build, then run the program with the arguments after --
   --debug            build without optimization, with debug information and the leak report
+  --universal        on macOS, one program for both arm64 and x86_64 (the setting build.macosArch: either or both)
   -copt <option>     an option for the C compiler; -lopt <option> one for the linker
   -ea                assert() checks (-enable-assertions, as Kotlin/Native's; off otherwise, --debug included)
   --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
@@ -110,6 +111,7 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 			vArg == "--cmake" -> Settings.set("build.cmake", true)
 			vArg == "--run" -> vRun = true
 			vArg == "--debug" -> Settings.set("build.debug", true)
+			vArg == "--universal" -> Settings.set("build.macosArch", "arm64,x86_64")
 			vArg == "--dump-ir" -> Settings.set("debug.dumpIr", true)
 			vArg == "--warn-heap" -> Settings.set("warnings.heap", true)
 			vArg == "--checks=abort" || vArg == "--checks=throw" -> Settings.set("checks.failure", vArg.substringAfter('='))

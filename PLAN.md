@@ -13,7 +13,7 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-16, end of the day)
+## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
 **State on 2026-11-17 (Mac).** Start here; what follows from "State at the end of 2026-11-16" is
@@ -46,9 +46,15 @@ the link and CMake's configuration skipped when nothing changed: the demo of the
 `modules/` and `gen/` (the bindings and the `nativeMain` copies), nothing of the Kotlin compiler's own; and
 settings (`Settings.kt`): default, then `config/ktc2.toml` of the installation (or `KTC2_CONFIG`), then the
 environment, then the command (`--set`, `--settings`), with the Maven repositories as `[[maven]]` tables
-with credentials, a module's own `[[maven]]` tried first. **What was run on these:** the integration
-programs (178) and a repository behind a login (a local server); not the whole suite, nor Windows or
-Linux: the CI job of the push that carries them is the first look. **Next, proposed:** the time of a
+with credentials, a module's own `[[maven]]` tried first (pushed: `7a089a2`). Then, on macOS, universal
+programs (`--universal`, the setting `build.macosArch`): `-arch arm64 -arch x86_64`, and
+`CMAKE_OSX_ARCHITECTURES` through CMake (the `sdl3` module then builds its own SDL3 for both). **What was
+run on these:** the integration programs (178); a repository behind a login (a local server); universal
+builds of the release's demo, the four C interop programs and the showcase (its `--headless`, 92 of 92),
+each half run (the x86_64 one through Rosetta) and the same as expected. Not the whole suite, nor Windows
+or Linux: the CI job of the push that carries them is the first look. Left for universal programs: the
+suite itself built universal (`KTC2_MACOS_ARCH=arm64,x86_64` with the integration programs, each run
+under `arch -x86_64` too), and an Intel Mac. **Next, proposed:** the time of a
 program made of modules after a change of one line (9 s, most of it the Kotlin front end on the
 modules' common sources, which the process that stays could keep as it keeps the library's).
 

@@ -17,10 +17,13 @@ one too (`kotlinx-serialization`), without the compiler plugin yet, because date
 
 A library is a bundled module made of its own sources, unchanged, and nothing of ktc2's own API:
 
-- **Sources.** Gradle fetches the library's sources jars (the common one, and the ones of the
-  Kotlin/Native targets, `-mingwx64`, `-linuxx64`, `-macosarm64`, which hold the source sets of
-  each system); `files.txt` in the module lists the files compiled. They are put next to the
-  module file in ktc2's resources.
+- **Sources.** The module file names the library's `version` and its `upstream`: the sources jars
+  of Maven artifacts (the common one, and those of Kotlin/Native targets, `-mingwx64`, `-linuxx64`,
+  `-macosarm64`, which hold the source sets of each system), or a git repository. ktc2 fetches them
+  the first time a program needs them, into `<cache>/modules/<name>@<version>` (`~/.ktc2/cache`;
+  the repositories are the module's own `[[maven]]`, then the setting `maven`, Maven Central by
+  default), and `files.txt` in the module lists the files compiled, by paths or patterns
+  (`core/commonMain/**`). ktc2's resources carry only the module's own files.
 - **Source sets.** `commonMain` is common code; `nativeMain`, a level of its own when it has
   `expect`s, sees what Kotlin/Native's platform libraries are to it (ktc2's platform layer,
   `kotlinx.cinterop`, `platform.posix`); the rest refines it. A file of a Native source set gets

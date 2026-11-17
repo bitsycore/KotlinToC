@@ -45,6 +45,8 @@ object Settings {
 		Setting("build.cmake", "KTC2_CMAKE", Kind.Flag, false, "build with CMake, as --cmake", option = "--cmake"),
 		Setting("build.cmakeArgs", "KTC2_CMAKE_ARGS", Kind.List, emptyList<String>(), "more arguments for CMake's configuration", split = kSplitArguments),
 		Setting("build.lto", "KTC2_LTO", Kind.Text, "auto", "link-time optimization of a release: true, false, or auto (on, but with clang on Windows only when lld-link is there)"),
+		Setting("build.macosArch", "KTC2_MACOS_ARCH", Kind.List, emptyList<String>(),
+			"on macOS, the architectures the program is built for: arm64, x86_64, or both for a universal program (--universal); none: the machine's own", option = "--universal"),
 		Setting("build.debug", "KTC2_BUILD_DEBUG", Kind.Flag, false, "build without optimization, with debug information and the leak report", option = "--debug"),
 		Setting("build.compilerOpts", "KTC2_COPT", Kind.List, emptyList<String>(), "options for the C compiler", option = "-copt", isAdded = true, split = kSplitArguments),
 		Setting("build.linkerOpts", "KTC2_LOPT", Kind.List, emptyList<String>(), "options for the linker", option = "-lopt", isAdded = true, split = kSplitArguments),

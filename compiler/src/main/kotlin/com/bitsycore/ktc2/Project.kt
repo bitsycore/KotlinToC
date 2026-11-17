@@ -670,6 +670,19 @@ private fun manifestValues(inOutDir: File, inKey: String): List<String> =
 
 private val kIsWindows = "win" in System.getProperty("os.name").lowercase()
 
+/**
+ * The architectures a program for macOS is built for (`build.macosArch`): `-arch` for each, one program holding them
+ * all (a universal one for `arm64` and `x86_64`); empty elsewhere, or when the setting names none (the machine's own).
+ */
+fun macosArchitectures(): List<String> {
+	if (kHostSystem != "macos") return emptyList()
+	val vArchitectures = Settings.list("build.macosArch").distinct()
+	vArchitectures.firstOrNull { it !in setOf("arm64", "x86_64", "arm64e") }?.let {
+		System.err.println("ktc2: warning: build.macosArch: '$it' is not arm64 or x86_64")
+	}
+	return vArchitectures
+}
+
 /** The C compiler to call: the one `KTC2_CC` names, else the first of gcc, clang and cc there is. */
 fun cCompiler(): String {
 	Settings.text("build.cc").takeIf { it.isNotEmpty() }?.let { return it }
@@ -759,7 +772,8 @@ fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	// compilers that have none (clang with the MSVC libraries).
 	val vThreads = if (!kIsWindows && manifestValues(inOutDir, "threads").isNotEmpty()) listOf("-pthread") else emptyList()
 	val vMath = if (kIsWindows) emptyList() else listOf("-lm")
-	val vCompile = listOf(vCompiler, "-std=c11") + vMode + vThreads + listOf("-I", ".") + manifestValues(inOutDir, "cflag")
+	val vArch = macosArchitectures().flatMap { listOf("-arch", it) }
+	val vCompile = listOf(vCompiler, "-std=c11") + vArch + vMode + vThreads + listOf("-I", ".") + manifestValues(inOutDir, "cflag")
 	val vCDir = File(inOutDir, "c")
 	val vObjDir = File(inOutDir, "obj")
 	val vSources = manifestValues(inOutDir, "c")
@@ -821,7 +835,7 @@ fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 		vIsClang -> vLto + if (vNeedsLld) listOf("-fuse-ld=lld") else emptyList()
 		else -> listOf("-flto=auto")
 	}
-	val vLink = listOf(vCompiler) + vMode.filter { !it.startsWith("-flto") } + vLinkLto + vThreads + listOf("-o", vProgram.absolutePath) +
+	val vLink = listOf(vCompiler) + vArch + vMode.filter { !it.startsWith("-flto") } + vLinkLto + vThreads + listOf("-o", vProgram.absolutePath) +
 		vSources.map { objectOf(it).absolutePath } + vMath + manifestValues(inOutDir, "ldflag")
 	// No object made again, the same command, the program there: the program is what the link would make.
 	val vLinkStamp = File(vObjDir, "link.stamp")
@@ -891,7 +905,8 @@ fun buildWithCMake(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 	val vConfiguration = if (inIsDebug) "Debug" else "Release"
 	val vConfigure = listOf("cmake", "-S", inOutDir.absolutePath, "-B", vBuildDir.absolutePath, "-DCMAKE_BUILD_TYPE=$vConfiguration") +
 		(if (inIsDebug) listOf("-DKTC2_DEBUG=ON") else listOf("-DKTC2_DEBUG=OFF")) +
-		(Settings.text("build.cc").takeIf { it.isNotEmpty() }?.let { listOf("-DCMAKE_C_COMPILER=$it") } ?: emptyList()) + vExtra
+		(Settings.text("build.cc").takeIf { it.isNotEmpty() }?.let { listOf("-DCMAKE_C_COMPILER=$it") } ?: emptyList()) +
+		(macosArchitectures().takeIf { it.isNotEmpty() }?.let { listOf("-DCMAKE_OSX_ARCHITECTURES=${it.joinToString(";")}") } ?: emptyList()) + vExtra
 	// What CMake prints is kept, and shown when it fails; meanwhile the step's line shows how far the build is.
 	fun run(inStep: String, inCommand: List<String>): Boolean {
 		Progress.begin(inStep)

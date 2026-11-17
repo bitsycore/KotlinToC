@@ -21,6 +21,9 @@ fun main() {
 ./gradlew installDist
 ```
 
+(`./gradlew :compiler:distZip` makes the same as a release, `build/distributions/ktc2-<version>.zip`:
+`bin/`, `lib/`, and `config/ktc2.toml`, the settings.)
+
 ```bash
 build/install/ktc2/bin/ktc2 hello.kt --run
 ```
@@ -134,6 +137,7 @@ ktc2 <module directory | file.kt | library.def>... [options] [-- program argumen
   --cmake            build with CMake (always so when a module has a CMake file)
   --run              build, then run the program
   --debug            no optimization, debug information, and a report of what was left allocated
+  --universal        on macOS, one program for both arm64 and x86_64
   -copt <option>     an option for the C compiler; -lopt <option> one for the linker
   -ea                assert() checks (-enable-assertions, as Kotlin/Native's; off otherwise, --debug included)
   --checks=abort     an index out of bounds or a division by zero ends the program instead of throwing
@@ -186,6 +190,14 @@ The generated C is C11. On Windows the whole test suite runs with gcc, and the s
 tests also pass with clang and with MSVC. On macOS (ARM64) the whole suite runs with Apple
 clang, and the showcase with SDL3. On Linux the suite runs with gcc, and the CI job runs every
 program again with AddressSanitizer. Android is not there yet.
+
+On macOS a program can be built for both processors at once, one universal program holding an
+arm64 and an x86_64 build: `--universal`, or the setting `build.macosArch` (`["arm64", "x86_64"]`,
+or one of them for that one only; `KTC2_MACOS_ARCH`). Apple clang compiles each file for each
+architecture; through CMake it is `CMAKE_OSX_ARCHITECTURES`, and the `sdl3` module then builds SDL3
+for both instead of taking the system's. Checked on an ARM64 Mac, the x86_64 half run by Rosetta:
+the C interop programs and the showcase's self-tests, the same on both. Other systems ignore the
+setting: ktc2 does not cross-compile.
 
 ## Working on ktc2
 

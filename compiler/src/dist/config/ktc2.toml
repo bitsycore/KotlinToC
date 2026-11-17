@@ -26,6 +26,9 @@
 # cmakeArgs = ["-G", "Ninja"]
 # Link-time optimization of a release (KTC2_LTO): true, false, or auto.
 # lto = "auto"
+# On macOS, the architectures of the program: ["arm64", "x86_64"] makes one universal program
+# (KTC2_MACOS_ARCH, --universal); none: the machine's own. Ignored on other systems.
+# macosArch = []
 # Build without optimization, with debug information and the leak report (KTC2_BUILD_DEBUG, --debug).
 # debug = false
 # Options for the C compiler and the linker; those of the environment and the command are added to these
