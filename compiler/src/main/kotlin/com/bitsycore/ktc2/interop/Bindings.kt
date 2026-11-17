@@ -11,10 +11,12 @@ import java.util.concurrent.TimeUnit
  * A Kotlin/Native interop definition file: `key = value` lines, then optionally a line `---`
  * followed by C code that is part of the library as seen from Kotlin.
  *
- * Understood keys: `headers`, `package`, `headerFilter`, `compilerOpts`, `linkerOpts`, and the
- * last two with a platform suffix (`.mingw`, `.linux`, `.osx`).
+ * Understood keys: `headers`, `package`, `headerFilter`, `compilerOpts`, `linkerOpts`, and each
+ * with a platform suffix (`.mingw`, `.linux`, `.osx`), as Kotlin/Native has them: `.mingw` is
+ * Windows. On Windows a key with `.msvc` applies besides, when the C compiler [inCompiler] targets
+ * MSVC's C library (MSVC itself, or clang, whose default on Windows that is) and not mingw's.
  */
-class DefFile(val file: File) {
+class DefFile(val file: File, inCompiler: String? = null) {
 	val headers: List<String>
 
 	/** Headers included only where the C compiler has them (`__has_include`): read for the bindings, which a program uses only where it calls them. */
@@ -41,8 +43,10 @@ class DefFile(val file: File) {
 		}
 		val vOs = System.getProperty("os.name").lowercase()
 		val vPlatform = if ("win" in vOs) "mingw" else if ("mac" in vOs) "osx" else "linux"
+		val vLibrary = if (vPlatform == "mingw" && inCompiler != null && targetsMsvc(inCompiler)) "msvc" else null
 		fun words(inKey: String): List<String> =
-			listOfNotNull(vProperties[inKey], vProperties["$inKey.$vPlatform"]).flatMap { it.split(Regex("\\s+")) }.filter { it.isNotEmpty() }
+			listOfNotNull(vProperties[inKey], vProperties["$inKey.$vPlatform"], vLibrary?.let { vProperties["$inKey.$it"] })
+				.flatMap { it.split(Regex("\\s+")) }.filter { it.isNotEmpty() }
 		optionalHeaders = words("optionalHeaders")
 		headers = words("headers") + optionalHeaders
 		headerFilter = words("headerFilter")
@@ -52,6 +56,28 @@ class DefFile(val file: File) {
 		strictEnums = words("strictEnums")
 		nonStrictEnums = words("nonStrictEnums")
 		inlineC = if (vSeparator < 0) "" else vLines.subList(vSeparator + 1, vLines.size).joinToString("\n")
+	}
+}
+
+/** What [targetsMsvc] found for each compiler: asking costs a process. */
+private val gTargetsMsvc = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+/**
+ * True when the C compiler [inCompiler] compiles against MSVC's C library: MSVC itself (`cl`,
+ * `clang-cl`), or a compiler whose predefined macros say so (`_MSC_VER` without `__MINGW32__`: clang
+ * on Windows by default). False for mingw's gcc and clang aimed at mingw.
+ */
+fun targetsMsvc(inCompiler: String): Boolean = gTargetsMsvc.getOrPut(inCompiler) {
+	val vName = File(inCompiler).nameWithoutExtension.lowercase()
+	if (vName == "cl" || vName == "clang-cl") return@getOrPut true
+	try {
+		val vProcess = ProcessBuilder(inCompiler, "-dM", "-E", "-x", "c", "-").redirectErrorStream(true).start()
+		vProcess.outputStream.close()
+		val vMacros = vProcess.inputStream.readBytes().decodeToString()
+		vProcess.waitFor(60, TimeUnit.SECONDS)
+		"#define _MSC_VER " in vMacros && "#define __MINGW32__ " !in vMacros
+	} catch (vError: java.io.IOException) {
+		false
 	}
 }
 

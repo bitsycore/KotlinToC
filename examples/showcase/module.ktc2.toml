@@ -14,8 +14,8 @@
 #   ktc2 examples/showcase --run -- --auto --shot dir     the same, saving a picture of each page into dir
 #   ktc2 examples/showcase --run -- --headless            no window: the self-tests, printed
 #
-# SDL3 is fetched from GitHub and built by CMake the first time. On Windows, CMake's default is MSVC:
-# for gcc, KTC2_CC=gcc KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>".
+# SDL3 is fetched from GitHub and built by CMake the first time. On Windows, CMake's default is MSVC;
+# clang is the quickest (ThinLTO): KTC2_CC=clang KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>".
 name         = "showcase"
 executable   = "showcase"
 main         = "showcase.app.start"

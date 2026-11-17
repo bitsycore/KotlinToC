@@ -114,9 +114,9 @@ found through a grid built in an arena each frame, a Mandelbrot set computed by 
 game of life, the kotlinx libraries together (JSON into a file, dates, immutable undo, Regex),
 and the self-tests with their log. `-- --auto` goes through every page by itself and reports;
 `-- --headless` opens no window and prints the self-tests instead; `-- --auto --shot <dir>` saves
-a picture of each page. On Windows, gcc or clang build it as they are
-(`KTC2_CC=gcc KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>"`); MSVC, CMake's default
-there, has what kotlinx-io's files need since 2026-11-17, not yet tried on the showcase.
+a picture of each page. On Windows, clang builds it quickest
+(`KTC2_CC=clang KTC2_CMAKE_ARGS="-G Ninja -DCMAKE_MAKE_PROGRAM=<ninja>"`: its ThinLTO links in
+parallel); gcc and MSVC (CMake's default there) build it too.
 
 | | |
 |---|---|

@@ -16,7 +16,31 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
-**State on 2026-11-17 (Mac).** Start here; what follows from "State at the end of 2026-11-16" is
+**State on 2026-11-17, evening (Windows).** Start here, then the Mac's state below.
+- The repository was cleaned of everything a build makes (`tools/clean.ps1`: the build directories,
+  `.gradle`, `~/.ktc2/cache`) and built from nothing: the tool, the CI's part of the suite (358 of
+  358: integration, and the Kotlin tests in C only), and the showcase (SDL3 and the kotlinx sources
+  fetched by ktc2, self-tests 92 of 92).
+- clang is ktc2's C compiler first, on every system (the owner, "Decided by the owner"): `cCompiler()`
+  takes clang, then gcc, then cc. On Windows clang targets MSVC's C library: a `.def` file's `.msvc`
+  lines apply then besides its `.mingw` ones (`DefFile`, `targetsMsvc` in `Bindings.kt`), and
+  `posix.def` reads MSVC's `corecrt*.h`, asks for the POSIX names (`_CRT_DECLARE_NONSTDC_NAMES`), and
+  its `dirent` (now open to clang, `!defined(__MINGW32__)`) adds `F_OK`. Before, the bindings made by
+  clang there had not even `free`. Checked: the kotlinx-io program with files (clang, direct build:
+  227 C files in 2.5 s, ThinLTO link 1.0 s) and the showcase through CMake and Ninja (its C in 27 s,
+  9 s after a change; gcc's LTO link took 215 s on one thread, mingw's gcc running its parts in
+  parallel only through `make`, which is not on the path). The suite keeps gcc and hands it to ktc2
+  for the bindings (`compiler/build.gradle.kts`).
+- A command lists its modules one a line; `sdl3` has a version (`3.4.8`, the SDL release it fetches:
+  `${version}` is expanded in `fetch` too).
+- The console of Windows decodes UTF-8 only when told (`[Console]::OutputEncoding`): the test log's
+  marks showed as `Ô£ö` in PowerShell, not on the Mac.
+- **Next:** MSVC itself on the showcase (CMake's default generator) and on the suite's programs
+  (`tools/msvc_all.sh`); the suite with clang (`KTC2_CC=clang`: its options are gcc's, `-Werror`
+  may find what gcc does not); `make` for gcc on Windows, or a warning from ktc2 when it is missing;
+  then the Mac's "Next" below.
+
+**State on 2026-11-17 (Mac).** What follows from "State at the end of 2026-11-16" is
 the day before. That day's items 1 to 4, 6 (in part) and 7 are done, each in its place below:
 the MSVC nesting limit (`flatChain`), `dirent` for MSVC (not yet seen by MSVC: the CI's MSVC job is
 the check), the showcase on a real screen (pictures in the README), `listOf`'s cost (none left),
@@ -242,6 +266,8 @@ common case covered. Where the JVM and Kotlin/Native themselves differ because o
 platform, either is accepted, and Kotlin/Native is the one to look at first.
 
 **Decided by the owner** (all on 2026-11-13 unless said):
+- (2026-11-17) clang is the C compiler ktc2 prefers, on every system; gcc and MSVC keep working
+  (CMake's default on Windows is MSVC, and the suite runs with gcc);
 - (2026-11-15) ktc2 is Kotlin/Native as closely as it can be: where the JVM and Kotlin/Native
   differ, ktc2 does as Kotlin/Native (it was the JVM until then); the JVM stays the oracle of
   the suite where the two agree. Memory is the one difference allowed, never results: cycles

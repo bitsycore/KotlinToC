@@ -41,7 +41,7 @@ object Settings {
 		Setting("cache", "KTC2_CACHE", Kind.Text, "~/.ktc2/cache", "where ktc2 keeps the sources it fetches"),
 		Setting("maven", "KTC2_MAVEN", Kind.List, listOf("https://repo1.maven.org/maven2"),
 			"the Maven repositories sources are fetched from, in order; in the file `[[maven]]` tables, each with a `url` and, when it needs them, `user` and `password` or `token`"),
-		Setting("build.cc", "KTC2_CC", Kind.Text, "", "the C compiler (default: the first of gcc, clang, cc on the path)"),
+		Setting("build.cc", "KTC2_CC", Kind.Text, "", "the C compiler (default: the first of clang, gcc, cc on the path)"),
 		Setting("build.cmake", "KTC2_CMAKE", Kind.Flag, false, "build with CMake, as --cmake", option = "--cmake"),
 		Setting("build.cmakeArgs", "KTC2_CMAKE_ARGS", Kind.List, emptyList<String>(), "more arguments for CMake's configuration", split = kSplitArguments),
 		Setting("build.lto", "KTC2_LTO", Kind.Text, "auto", "link-time optimization of a release: true, false, or auto (on, but with clang on Windows only when lld-link is there)"),

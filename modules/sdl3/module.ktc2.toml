@@ -1,5 +1,7 @@
 name         = "sdl3"
+# The release of SDL3 the module is written for, fetched from its repository.
+version      = "3.4.8"
 files        = ["SDL3.kt", "Window.kt", "Renderer.kt", "Draw.kt", "Input.kt", "Math.kt", "sdl3.def"]
-fetch        = ["SDL3=https://github.com/libsdl-org/SDL.git@release-3.4.8"]
+fetch        = ["SDL3=https://github.com/libsdl-org/SDL.git@release-${version}"]
 compilerOpts = ["-I${SDL3}/include"]
 cmake        = "module.cmake"

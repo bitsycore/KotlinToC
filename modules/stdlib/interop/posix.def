@@ -8,6 +8,11 @@ optionalHeaders = unistd.h dirent.h
 headers.mingw = io.h direct.h
 # mingw's struct stat is in a header of its own.
 headerFilter.mingw = _mingw_stat64.h
+# MSVC's C library (MSVC, and clang on Windows, whose default it is) declares most of the C library in
+# headers of its own (corecrt_malloc.h has free, corecrt_io.h open and read...), and shows the POSIX
+# names (access, open, close...) under -std=c11 only when asked.
+headerFilter.msvc = corecrt*.h
+compilerOpts.msvc = -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_SECURE_NO_WARNINGS
 # PATH_MAX and its kin: in a header of Linux's own, of the BSD part on macOS.
 headerFilter.linux = linux/limits.h
 headerFilter.osx = sys/syslimits.h
@@ -19,17 +24,24 @@ compilerOpts.linux = -D_DEFAULT_SOURCE
 /*
  * MSVC's C library has the POSIX functions of files under their own names (io.h, direct.h, and
  * stat, the flags and the modes as their old names), but no dirent.h: here is what Kotlin/Native's
- * platform.posix has of it on Windows (mingw's), over _findfirst. The bindings are made where the
- * program is translated (gcc or clang, which do not see this), and this is compiled where MSVC is
- * the compiler: what kotlinx-io's file system calls (opendir, readdir, closedir).
+ * platform.posix has of it on Windows (mingw's), over _findfirst, and the modes of access(): what
+ * kotlinx-io's file system calls (opendir, readdir, closedir, access with F_OK). For every compiler
+ * on MSVC's C library: MSVC, and clang aimed at it (the bindings are then made from this too).
  */
-#if defined(_MSC_VER) && !defined(__clang__)
+#if defined(_MSC_VER) && !defined(__MINGW32__)
 #include <io.h>
 #include <direct.h>
 #include <stdint.h>
 
 #ifndef KTC2_POSIX_DIRENT
 #define KTC2_POSIX_DIRENT
+
+/* The modes of access(), which io.h takes and does not name. */
+#ifndef F_OK
+#define F_OK 0
+#define W_OK 2
+#define R_OK 4
+#endif
 
 /** An entry of a directory: its name, as mingw's has it. */
 struct dirent {

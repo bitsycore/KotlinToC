@@ -133,7 +133,7 @@ object K2Frontend {
 			val vExtraCompilerOpts = System.getProperty("ktc2.copt", "").lines().filter { it.isNotEmpty() }
 			val vExtraLinkerOpts = System.getProperty("ktc2.lopt", "").lines().filter { it.isNotEmpty() }
 			val vGenerated = vDefinitions.map {
-				BindingGenerator(DefFile(it), vCompiler, "", vExtraCompilerOpts, vExtraLinkerOpts).generate(File(inOutDir, "gen/interop"), File(inOutDir, "c"))
+				BindingGenerator(DefFile(it, vCompiler), vCompiler, "", vExtraCompilerOpts, vExtraLinkerOpts).generate(File(inOutDir, "gen/interop"), File(inOutDir, "c"))
 			}
 			// `import platform.posix.*` asks for the C library, described by a .def of ktc2's own.
 			val vUsesPosix = (vSources - vDefinitions.toSet()).any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
@@ -141,7 +141,7 @@ object K2Frontend {
 				val vDefinition = File(inOutDir, "gen/interop/posix.def")
 				vDefinition.parentFile.mkdirs()
 				vDefinition.writeText(resourceText("/ktc2/interop/posix.def"))
-				vGenerated + BindingGenerator(DefFile(vDefinition), vCompiler, resourceText("/ktc2/interop/posix.kt.txt")).generate(File(inOutDir, "gen/interop"), File(inOutDir, "c"))
+				vGenerated + BindingGenerator(DefFile(vDefinition, vCompiler), vCompiler, resourceText("/ktc2/interop/posix.kt.txt")).generate(File(inOutDir, "gen/interop"), File(inOutDir, "c"))
 			} else {
 				vGenerated
 			}

@@ -40,7 +40,7 @@ const val kModuleFileName = "module.ktc2.toml"
  * A module made of a library's sources taken as they are (kotlinx-io, kotlinx.serialization...) says
  * where they come from: each line of `upstream` is a directory and what fills it, the source jar of a
  * Maven artifact (`group:artifact`, at `version` unless it names its own) or a git repository
- * (`git:url@revision`); `${version}` is the module's version. ktc2 fetches them once, into the cache
+ * (`git:url@revision`); `${version}` is the module's version, there and in `fetch`. ktc2 fetches them once, into the cache
  * (`<cache>/modules/<name>@<version>`), and the module's `files.txt` lists the files of them it
  * compiles, by their paths there: a path, or a pattern, where `**` stands for any number of directories,
  * `*` for any name or part of one in one directory and `?` for one character (a directory and then `**`
@@ -522,7 +522,7 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 			val vEquals = vEntry.indexOf('=')
 			if (vEquals <= 0) return fail("module '${inModule.name}': fetch wants NAME=url, not '$vEntry'")
 			val vName = vEntry.substring(0, vEquals).trim()
-			val vSource = GitSource(vEntry.substring(vEquals + 1).trim())
+			val vSource = GitSource(vEntry.substring(vEquals + 1).trim().replace("\${version}", versionOf(inModule) ?: ""))
 			val vCheckout = vSource.checkout() ?: return false
 			vProject.fetched[vName] = File(vCheckout, vSource.directory)
 		}
@@ -683,10 +683,14 @@ fun macosArchitectures(): List<String> {
 	return vArchitectures
 }
 
-/** The C compiler to call: the one `KTC2_CC` names, else the first of gcc, clang and cc there is. */
+/**
+ * The C compiler to call: the one `KTC2_CC` names, else the first of clang, gcc and cc there is.
+ * clang first (the owner, 2026-11-17): the same compiler on every system, and its ThinLTO links in
+ * parallel by itself (the showcase on Windows: 13 s, where gcc's LTO took 215 s without `make`).
+ */
 fun cCompiler(): String {
 	Settings.text("build.cc").takeIf { it.isNotEmpty() }?.let { return it }
-	for (vName in listOf("gcc", "clang", "cc")) {
+	for (vName in listOf("clang", "gcc", "cc")) {
 		if (isOnPath(vName)) return vName
 	}
 	return "cc"

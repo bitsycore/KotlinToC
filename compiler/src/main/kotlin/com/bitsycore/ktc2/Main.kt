@@ -6,7 +6,7 @@ import kotlin.system.exitProcess
 
 private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
   -o <dir>           where the output goes (default: <module>/build, or ./out)
-  --build            also compile the C into a program (C compiler: KTC2_CC, else gcc, clang or cc)
+  --build            also compile the C into a program (C compiler: KTC2_CC, else clang, gcc or cc)
   --cmake            build with CMake, from the CMakeLists.txt written next to the C
                      (always so when a module has a CMake file; KTC2_CMAKE_ARGS: more arguments)
   --run              build, then run the program with the arguments after --
@@ -163,7 +163,8 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 	}
 	// What the program is compiled with: the standard library and the modules, each at its version.
 	val vModulesUsed = listOf("stdlib ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}") + vProjects.flatMap { it.modules }.distinct()
-	Progress.note("modules", vModulesUsed.joinToString(", "))
+	// One module a line, under the step's name.
+	Progress.note("modules", vModulesUsed.joinToString("") { "\n\t$it" })
 	val vUsesCMake = vCMake || vProjects.any { it.needsCMake }
 	for (vEach in vProjects) {
 		vSources += vEach.sources
