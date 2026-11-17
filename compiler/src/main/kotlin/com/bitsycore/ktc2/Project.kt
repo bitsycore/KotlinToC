@@ -360,7 +360,8 @@ fun filesOf(inModule: ModuleFile): List<File>? {
 	}
 	if (inModule.upstream.isNotEmpty()) {
 		val vUpstream = upstreamOf(inModule) ?: return null
-		vFiles += listedFiles(inModule, vUpstream, inModule.listed.filter { it.isHere }) ?: return null
+		// A bare name is a file of the module itself, which its sources already take.
+		vFiles += listedFiles(inModule, vUpstream, inModule.listed.filter { it.isHere && '/' in it.path.removePrefix("!") }) ?: return null
 	}
 	return vFiles
 }
@@ -526,7 +527,10 @@ fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	val vModule = ModuleFile(vDirectory, vText)
 	val vFiles = vModule.files.mapNotNull { ListedFile.of(it) }
 	val vEdits = vModule.edits.map { it.substringAfter('=').trim() }
-	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake) + vEdits) {
+	// A bare name in its list is a file of the module itself (the stdlib's platform layer), not of its upstream.
+	val vOwnListed = (resource("files.txt")?.decodeToString()?.lines() ?: emptyList()).mapNotNull { ListedFile.of(it) }
+		.filter { it.isHere && '/' !in it.path }.map { it.path }
+	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake) + vEdits + vOwnListed + "hidden.txt") {
 		val vBytes = resource(vFile) ?: continue
 		val vTarget = File(vDirectory, vFile)
 		vTarget.parentFile.mkdirs()
@@ -534,7 +538,7 @@ fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	}
 	// Its directory holds what it is made of now and nothing else (its whole directory is its sources): not what another
 	// system's compilation or an older ktc2 left there. What is unchanged keeps its time, for a build that follows them.
-	val vKept = (vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake) + vEdits).toSet()
+	val vKept = (vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake) + vEdits + vOwnListed + "hidden.txt").toSet()
 	vDirectory.walkBottomUp().filter { it != vDirectory }.forEach { vFile ->
 		val vPath = vFile.relativeTo(vDirectory).invariantSeparatorsPath
 		if (vFile.isFile && vPath !in vKept) vFile.delete()

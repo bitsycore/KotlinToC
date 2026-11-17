@@ -845,8 +845,9 @@ The repository is in parts (2026-11-17): `compiler/` (the code below, and the su
 `modules/stdlib/` (the platform layer, the C runtime in `modules/stdlib/runtime`, the C library's bindings in
 `modules/stdlib/interop`), `compat/` (the `ktc2.` package for the JVM and Kotlin/Native), `modules/<name>/` (the
 bundled libraries), `tests/` (`integration`, `stdlib`, `common`, `modules/<name>`, `box`). The compiler
-carries `modules/stdlib/` and `modules/` as resources, under the same names as before (`ktc2/ktc2_core.c`,
-`ktc2/stdlib/`, `ktc2/modules/<name>/`), so its code reads them as it always did.
+carries the modules as resources (`ktc2/modules/<name>/`, the stdlib's platform layer among its files), and the C
+runtime and the C library's bindings where it reads them (`ktc2/ktc2_core.c`, `ktc2/interop/`). A program's output
+has each module it is compiled with under `<out>/modules/<name>`, the stdlib's too.
 
 Most fixes of a difference from Kotlin land in the importer, which is also the largest part
 (`BodyLowering.kt` and `KirImport.kt` are four tenths of the code). Its sources have KDoc on

@@ -303,13 +303,13 @@ object K2Frontend {
 	 * The top-level declarations of `Name.kt` are compiled on the JVM into a class
 	 * `<Facade>Kt__NameKt` (or `NameKt`), and their JVM-specific counterparts into
 	 * `…NameJVMKt` / `…NameJvmKt`; those are the classes left out, plus the ones listed in
-	 * `ktc2/stdlib/hidden.txt`. The copy is cached in the temporary directory.
+	 * `ktc2/modules/stdlib/hidden.txt`. The copy is cached in the temporary directory.
 	 */
 	private fun filteredStdlib(inLibrary: List<File>): File {
 		val vOriginal = File(codeSourceOf(Unit::class.java))
 		if (inLibrary.isEmpty() || !vOriginal.isFile) return vOriginal
 		val vNames = inLibrary.filter { "commonMain" in it.invariantSeparatorsPath }.map { it.nameWithoutExtension.replaceFirstChar { vChar -> vChar.uppercase() } }.toSet()
-		val vHidden = (K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/hidden.txt")?.use { it.readBytes().decodeToString() } ?: "")
+		val vHidden = (K2Frontend::class.java.getResourceAsStream("/ktc2/modules/stdlib/hidden.txt")?.use { it.readBytes().decodeToString() } ?: "")
 			.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.toSet()
 		val vKey = (vOriginal.path + vOriginal.lastModified() + vNames.sorted() + vHidden.sorted()).hashCode().toUInt().toString(16)
 		val vFiltered = File(System.getProperty("java.io.tmpdir"), "ktc2/kotlin-stdlib-$vKey.jar")
@@ -362,8 +362,8 @@ object K2Frontend {
 
 	/**
 	 * The library sources compiled with every program, the module `stdlib` (modules/stdlib):
-	 * - ktc2's platform layer, the bare names of its `files.txt`, carried as resources under `ktc2/stdlib/` and
-	 *   copied to `<inOutDir>/stdlib`;
+	 * - ktc2's platform layer, the bare names of its `files.txt`: files of the module itself, copied with it into
+	 *   `<inOutDir>/modules/stdlib` ([bundledModule]);
 	 * - files of the Kotlin standard library, the paths of its `files.txt`, from its sources at the version of
 	 *   the compiler, which ktc2 fetches into its cache ([upstreamOf]).
 	 *
@@ -373,13 +373,7 @@ object K2Frontend {
 		val vModule = com.bitsycore.ktc2.bundledModule("stdlib", inOutDir) ?: throw IllegalStateException("ktc2 carries no module 'stdlib'")
 		val (vOwn, vListed) = vModule.listed.filter { it.isHere }.partition { '/' !in it.path }
 		val vResult = ArrayList<File>()
-		for (vEntry in vOwn.map { it.path }) {
-			val vText = K2Frontend::class.java.getResourceAsStream("/ktc2/stdlib/$vEntry")?.use { it.readBytes().decodeToString() } ?: continue
-			val vCopy = File(inOutDir, "stdlib/$vEntry")
-			vCopy.parentFile.mkdirs()
-			if (!vCopy.isFile || vCopy.readText() != vText) vCopy.writeText(vText)
-			vResult += vCopy
-		}
+		vResult += vOwn.map { File(vModule.directory, it.path) }.filter { it.isFile }
 		val vUpstream = com.bitsycore.ktc2.upstreamOf(vModule) ?: throw IllegalStateException("the sources of the Kotlin standard library could not be had")
 		vResult += com.bitsycore.ktc2.listedFiles(vModule, vUpstream, vListed) ?: throw IllegalStateException("the standard library's files.txt names what its sources do not have")
 		return vResult

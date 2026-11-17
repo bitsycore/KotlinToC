@@ -92,17 +92,13 @@ kotlin {
 }
 
 /**
- * What the installed ktc2 carries: the modules (modules/<name>: their module files, lists, edits and own files), the
- * stdlib's own files where the compiler reads them (its platform layer under ktc2/stdlib, the C runtime under ktc2/, the C
- * library's bindings under ktc2/interop). The sources of the libraries, the Kotlin standard library's among them, are not
+ * What the installed ktc2 carries: the modules (modules/<name>: their module files, lists, edits and own files, the
+ * stdlib's platform layer among them), and the C runtime under ktc2/ and the C library's bindings under ktc2/interop,
+ * where the compiler reads them. The sources of the libraries, the Kotlin standard library's among them, are not
  * carried: ktc2 fetches them (a module's `upstream`).
  */
 tasks.processResources {
 	val vStdlib = kRoot.resolve("modules/stdlib")
-	from(vStdlib) {
-		include("*.kt", "hidden.txt")
-		into("ktc2/stdlib")
-	}
 	from(vStdlib.resolve("runtime")) {
 		into("ktc2")
 	}
@@ -110,7 +106,7 @@ tasks.processResources {
 		into("ktc2/interop")
 	}
 	from(kRoot.resolve("modules")) {
-		exclude("stdlib/*.kt", "stdlib/hidden.txt", "stdlib/runtime/**", "stdlib/interop/**")
+		exclude("stdlib/runtime/**", "stdlib/interop/**")
 		into("ktc2/modules")
 	}
 }
