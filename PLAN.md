@@ -39,6 +39,18 @@ carries the libraries' sources, and `gradle/libs.versions.toml` holds Kotlin alo
 (`version = "${kotlin}"`), the Regex patch an `edits` file, fetching under a lock (the suite's processes
 fetched the same module at once and applied the patch three times). The tool's jar went from 2.2 to 1.0 MB.
 A first build on a machine needs the network (Maven Central, or `KTC2_MAVEN`).
+Then the tool as a user meets it (`git log 9b5ff57^..e6f08b4`): a command shows its steps on one line each
+(`Progress.kt`) and does again only what changed (`ktc2_inputs.txt`, an object for each C file in `obj/`,
+the link and CMake's configuration skipped when nothing changed: the demo of the release builds in 20 s,
+0.2 s unchanged, 9 s after a change of one line); a build's directory is the program, `c/`, `obj/`,
+`modules/` and `gen/` (the bindings and the `nativeMain` copies), nothing of the Kotlin compiler's own; and
+settings (`Settings.kt`): default, then `config/ktc2.toml` of the installation (or `KTC2_CONFIG`), then the
+environment, then the command (`--set`, `--settings`), with the Maven repositories as `[[maven]]` tables
+with credentials, a module's own `[[maven]]` tried first. **What was run on these:** the integration
+programs (178) and a repository behind a login (a local server); not the whole suite, nor Windows or
+Linux: the CI job of the push that carries them is the first look. **Next, proposed:** the time of a
+program made of modules after a change of one line (9 s, most of it the Kotlin front end on the
+modules' common sources, which the process that stays could keep as it keeps the library's).
 
 **State at the end of 2026-11-16 (Windows, late evening).** Start here. `git log bd6b7d2..` is
 the evening's work, all on `master` and pushed:
