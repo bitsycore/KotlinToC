@@ -1,5 +1,5 @@
-# The sources of kotlinx-datetime 0.8.0 (Apache 2.0) that the module compiles, as they are: fetched by Gradle
-# (build.gradle.kts, kLibraryModules) and put next to this list in ktc2's resources. The source sets
+# The sources of kotlinx-datetime 0.8.0 (Apache 2.0) that the module compiles, as they are: fetched by ktc2 from the module's
+# upstream (module.ktc2.toml) into its cache, where these paths are. The source sets
 # are those Kotlin/Native compiles for each system: commonMain, commonKotlinMain (its arithmetic in
 # Kotlin), then the time zones from the files of the system on Linux and macOS (tzfileMain,
 # tzdbOnFilesystemMain, linuxMain), from the registry on Windows (windowsMain, of the mingwX64 jar).

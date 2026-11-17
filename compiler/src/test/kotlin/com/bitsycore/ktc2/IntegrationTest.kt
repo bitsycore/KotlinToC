@@ -334,13 +334,15 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.map { vSource -> named(vSource.invariantSeparatorsPath, "libraries") { checkModuleTest(vSource) } }
 			.toList()
 
-	/** The bundled module [inName] as the build carries it, then the bundled modules it depends on, each once. */
-	private fun bundledWithDependencies(inName: String): List<com.bitsycore.ktc2.ModuleFile> {
+	/**
+	 * The bundled module [inName] as ktc2 takes it (copied into [inOutDir], its library's sources from the cache), then the
+	 * bundled modules it depends on, each once.
+	 */
+	private fun bundledWithDependencies(inName: String, inOutDir: File): List<com.bitsycore.ktc2.ModuleFile> {
 		val vResult = LinkedHashMap<String, com.bitsycore.ktc2.ModuleFile>()
 		fun add(inModule: String) {
 			if (inModule in vResult) return
-			val vDirectory = File("build/resources/main/ktc2/modules/$inModule")
-			val vModuleFile = com.bitsycore.ktc2.ModuleFile(vDirectory, File(vDirectory, "module.ktc2.toml").readText())
+			val vModuleFile = com.bitsycore.ktc2.bundledModule(inModule, inOutDir) ?: fail("no bundled module '$inModule'")
 			vResult[inModule] = vModuleFile
 			vModuleFile.dependencies.forEach { add(it) }
 		}
@@ -371,15 +373,13 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vText = inSource.readText()
 		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
 		vMain.writeText((if (vPackage != null) "package $vPackage\n\n" else "") + testMain(vText, vSkipped))
-		// The module as ktc2 carries it (processResources puts the library's sources next to its own files), with
-		// the bundled modules it depends on (kotlinx-datetime on kotlinx-serialization), and their jars on the JVM.
-		val vModules = bundledWithDependencies(vModuleName)
+		// The module as ktc2 takes it (its own files, and its library's sources fetched into the cache), with the bundled
+		// modules it depends on (kotlinx-datetime on kotlinx-serialization), and their jars on the JVM.
+		val vModules = bundledWithDependencies(vModuleName, vOutDir)
 		val vJars = vModules.mapNotNull { System.getProperty("ktc2.jvmModule.${it.name}")?.takeIf { vJar -> vJar.isNotEmpty() } }.joinToString(File.pathSeparator)
 		val vFriendJars = System.getProperty("ktc2.jvmModule.$vModuleName", "")
-		mCExtra = vModules.flatMap { vModuleFile ->
-			vModuleFile.directory.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
-				.filter { it.relativeTo(vModuleFile.directory).invariantSeparatorsPath !in vModuleFile.elsewhere }.sortedBy { it.path }.toList()
-		} + sources("nativeTest") + sources("nativeCommonTest")
+		mCExtra = vModules.flatMap { vModuleFile -> com.bitsycore.ktc2.filesOf(vModuleFile) ?: fail("module '${vModuleFile.name}' could not be had") } +
+			sources("nativeTest") + sources("nativeCommonTest")
 		mJvmExtra = listOf(kTestLibrary) + sources("jvmTest")
 		mJvmOptions = listOf(
 			// kotlin.test (ktc2's, compiled with the tests) is common too: the common tests use it.
@@ -430,10 +430,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		System.clearProperty("ktc2.main")
 		vProject.main?.let { System.setProperty("ktc2.main", it) }
 		// A bundled module made of a library's sources (kotlinx-io) is, on the JVM, that library's jars.
-		val vJvmModules = vProject.sources.mapNotNull { vSource ->
-			vSource.absoluteFile.relativeToOrNull(File(vOutDir, "modules").absoluteFile)?.invariantSeparatorsPath?.substringBefore('/')?.takeIf { !it.startsWith("..") }
-		}.toSet().mapNotNull { vModule -> System.getProperty("ktc2.jvmModule.$vModule")?.takeIf { it.isNotEmpty() }?.let { vModule to it } }.toMap()
-		mJvmExcluded = { vSource -> vJvmModules.keys.any { vModule -> vSource.absoluteFile.relativeToOrNull(File(vOutDir, "modules/$vModule").absoluteFile)?.path?.startsWith("..") == false } }
+		val vJvmModules = vProject.bundledFiles.keys.mapNotNull { vModule -> System.getProperty("ktc2.jvmModule.$vModule")?.takeIf { it.isNotEmpty() }?.let { vModule to it } }.toMap()
+		val vExcluded = vJvmModules.keys.flatMap { vProject.bundledFiles.getValue(it) }.map { it.absoluteFile }.toSet()
+		mJvmExcluded = { vSource -> vSource.absoluteFile in vExcluded }
 		mJvmClasspath = vJvmModules.values.joinToString(File.pathSeparator)
 		// What the modules say is @Weak or @Acyclic, as `ktc2` passes it on.
 		System.setProperty("ktc2.weak", vProject.weak.joinToString("\n"))

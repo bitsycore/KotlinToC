@@ -1,5 +1,6 @@
 # The sources of kotlinx-serialization-core and kotlinx-serialization-json 1.13.0 (Apache 2.0) that the module compiles, as they are:
-# fetched by Gradle (build.gradle.kts, kLibraryModules) and put next to this list in ktc2's resources.
+# fetched by ktc2 from the module's
+# upstream (module.ktc2.toml) into its cache, where these paths are.
 core/commonMain/kotlinx/serialization/Annotations.kt
 core/commonMain/kotlinx/serialization/ApiLevels.kt
 core/commonMain/kotlinx/serialization/ContextualSerializer.kt

@@ -70,52 +70,31 @@ val nativeWasmSources: Configuration = configurations.create("nativeWasmSources"
 }
 
 /**
- * A bundled module made of a library's own sources (all Apache-2): its sources jars, each unpacked
- * under `build/modules-src/<name>/<directory>` (the module's `files.txt` lists what it compiles as
- * `<directory>/<source set>/...`, or `<source set>/...` for the directory "."), and the library's jars
- * for the JVM, which the suite compiles the JVM side of a program on the module with.
+ * A bundled module (modules/<name>) that takes a library as it is: ktc2 itself fetches the library's sources (its
+ * `upstream`, at its `version`), and the suite compiles the JVM side of a program on the module with the library's
+ * jars, which its `jvm` names and Gradle fetches here.
  */
-class LibraryModule(val name: String, val sources: Map<String, Provider<MinimalExternalModuleDependency>>, val jvm: List<Provider<MinimalExternalModuleDependency>>) {
-	val sourcesConfiguration: Configuration = configurations.create("moduleSources-$name") { isTransitive = false }
+class LibraryModule(val name: String, val jvm: List<String>) {
 	val jvmConfiguration: Configuration = configurations.create("moduleJvm-$name") { isTransitive = false }
 }
 
-val kLibraryModules = listOf(
-	LibraryModule(
-		"kotlinx-io",
-		mapOf("core" to libs.kotlinx.io.core.asProvider(), "bytestring" to libs.kotlinx.io.bytestring.asProvider()),
-		listOf(libs.kotlinx.io.core.jvm, libs.kotlinx.io.bytestring.jvm),
-	),
-	LibraryModule(
-		"kotlinx-collections-immutable",
-		mapOf("." to libs.kotlinx.collections.immutable.asProvider()),
-		listOf(libs.kotlinx.collections.immutable.jvm),
-	),
-	LibraryModule("atomicfu", mapOf("." to libs.atomicfu.asProvider()), listOf(libs.atomicfu.jvm)),
-	LibraryModule(
-		"kotlinx-serialization",
-		mapOf("core" to libs.kotlinx.serialization.core.asProvider(), "json" to libs.kotlinx.serialization.json.asProvider()),
-		listOf(libs.kotlinx.serialization.core.jvm, libs.kotlinx.serialization.json.jvm),
-	),
-	// JSON on the streams of kotlinx-io; on the JVM, json-okio and okio too, which only its tests use.
-	LibraryModule(
-		"kotlinx-serialization-json-io",
-		mapOf("." to libs.kotlinx.serialization.json.io.asProvider()),
-		listOf(libs.kotlinx.serialization.json.io.jvm, libs.kotlinx.serialization.json.okio.jvm, libs.okio.jvm),
-	),
-	// The common jar has every source set but Windows' (windowsMain), which is in the jar of mingwX64.
-	LibraryModule(
-		"kotlinx-datetime",
-		mapOf("." to libs.kotlinx.datetime.asProvider(), "mingw" to libs.kotlinx.datetime.mingwx64),
-		listOf(libs.kotlinx.datetime.jvm),
-	),
-)
+/** The bundled modules, from their module files: those with JVM jars, each with them at its version. */
+val kLibraryModules: List<LibraryModule> = kRoot.resolve("modules").listFiles { vFile -> File(vFile, "module.ktc2.toml").isFile }!!.sortedBy { it.name }.map { vDirectory ->
+	val vText = File(vDirectory, "module.ktc2.toml").readText()
+	fun values(inKey: String): List<String> {
+		val vLine = Regex("(?ms)^$inKey\\s*=\\s*(\\[.*?\\]|\"[^\"]*\")").find(vText)?.groupValues?.get(1) ?: return emptyList()
+		return Regex("\"([^\"]*)\"").findAll(vLine).map { it.groupValues[1] }.toList()
+	}
+	val vVersion = values("version").firstOrNull()
+	// `group:artifact` is at the module's version; `group:artifact:version` at its own.
+	LibraryModule(vDirectory.name, values("jvm").map { if (it.count { vChar -> vChar == ':' } == 1) "$it:$vVersion" else it })
+}
+
 
 dependencies {
 	stdlibSources(variantOf(libs.kotlin.stdlib) { classifier("sources") })
 	nativeWasmSources(variantOf(libs.kotlin.stdlib.wasm.js) { classifier("sources") })
 	for (vModule in kLibraryModules) {
-		for (vSource in vModule.sources.values) add(vModule.sourcesConfiguration.name, variantOf(vSource) { classifier("sources") })
 		for (vJar in vModule.jvm) add(vModule.jvmConfiguration.name, vJar)
 	}
 	// The `ktc2.` package on the JVM (compat/): on the class path of every compilation, and what the suite's JVM side runs with.
@@ -157,34 +136,9 @@ val unpackStdlibSources = tasks.register("unpackStdlibSources", Sync::class) {
 	into(layout.buildDirectory.dir("stdlib-src"))
 }
 
-val unpackModuleSources = tasks.register("unpackModuleSources", Sync::class) {
-	description = "Unpack the sources of the libraries that are bundled modules (Apache-2) into the build directory."
-	for (vModule in kLibraryModules) {
-		for ((vDirectory, vSource) in vModule.sources) {
-			// Each jar in a directory of its own: they all have a commonMain, a nativeMain...
-			val vArtifact = vSource.get().module.name
-			from({ vModule.sourcesConfiguration.filter { it.name.startsWith("$vArtifact-") && it.name.removePrefix("$vArtifact-").first().isDigit() }.map { vJar -> zipTree(vJar) } }) {
-				into("${vModule.name}/$vDirectory")
-			}
-		}
-	}
-	into(layout.buildDirectory.dir("modules-src"))
-}
-
 /** The installed ktc2 carries the standard library sources it compiles with every program (those of files.txt). */
 tasks.processResources {
-	dependsOn(unpackStdlibSources, unpackModuleSources)
-	// And the sources each bundled module of a library compiles (modules/<name>/files.txt).
-	for (vModule in kLibraryModules) {
-		val vList = kRoot.resolve("modules/${vModule.name}/files.txt")
-		// A line `windows: path` or `linux, macos: path` is a file of those systems only: all are carried.
-		val vModuleListed = vList.readLines().map { it.trim().replace(Regex("^[a-z]+(\\s*,\\s*[a-z]+)*\\s*:\\s*"), "") }.filter { it.contains('/') && !it.startsWith("#") }
-		inputs.file(vList)
-		from(layout.buildDirectory.dir("modules-src/${vModule.name}")) {
-			include(vModuleListed)
-			into("ktc2/modules/${vModule.name}")
-		}
-	}
+	dependsOn(unpackStdlibSources)
 	val vListed = kRoot.resolve("stdlib/files.txt").readLines().map { it.trim() }.filter { it.contains('/') && !it.startsWith("#") }
 	inputs.file(kRoot.resolve("stdlib/files.txt"))
 	from(layout.buildDirectory.dir("stdlib-src")) {

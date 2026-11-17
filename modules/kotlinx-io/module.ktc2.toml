@@ -1,7 +1,13 @@
 # kotlinx-io for ktc2: kotlinx.io (Buffer, Source, Sink, UTF-8) and kotlinx.io.bytestring
-# (ByteString) and kotlinx.io.files, from the sources of kotlinx-io 0.9.3 as they are (files.txt lists them; Gradle
-# puts them next to this file), and Ktc2KotlinxIo.kt for what each platform of kotlinx-io gives.
+# (ByteString) and kotlinx.io.files, from the sources of kotlinx-io 0.9.3 as they are (files.txt lists them;
+# ktc2 fetches them, upstream below), and Ktc2KotlinxIo.kt for what each platform of kotlinx-io gives.
 name    = "kotlinx-io"
+version  = "0.9.3"
+# Where the sources of the library come from: each directory and the source jar that fills it (Maven Central, at
+# `version`). ktc2 fetches them into its cache the first time; files.txt lists those it compiles.
+upstream = ["core = org.jetbrains.kotlinx:kotlinx-io-core", "bytestring = org.jetbrains.kotlinx:kotlinx-io-bytestring"]
+# Its jars, for the JVM side of the suite (the programs and the library's own tests run there too).
+jvm      = ["org.jetbrains.kotlinx:kotlinx-io-core-jvm", "org.jetbrains.kotlinx:kotlinx-io-bytestring-jvm"]
 files   = ["Ktc2KotlinxIo.kt", "Ktc2KotlinxIoFiles.kt", "kotlinxio.def", "kotlinxio.h", "kotlinxio_win32.h"]
 # A segment of a buffer refers to the next and to the one before: the one before holds it, so
 # that reference is weak, and the chain forward ends at the last segment.

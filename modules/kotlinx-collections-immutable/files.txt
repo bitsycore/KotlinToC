@@ -1,6 +1,6 @@
 # The sources of kotlinx-collections-immutable (Apache 2.0) that the module compiles, as they are:
-# fetched by Gradle (build.gradle.kts, kLibraryModules; the version is in gradle/libs.versions.toml)
-# and put next to this list in ktc2's resources. Pure common code, with an assert of nativeMain.
+# fetched by ktc2 from the module's
+# upstream (module.ktc2.toml) into its cache, where these paths are. Pure common code, with an assert of nativeMain.
 commonMain/ImmutableCollection.kt
 commonMain/ImmutableList.kt
 commonMain/ImmutableMap.kt

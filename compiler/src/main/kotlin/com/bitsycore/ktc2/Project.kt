@@ -26,7 +26,20 @@ const val kModuleFileName = "module.ktc2.toml"
  * weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that are @Weak
  * acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
  * optIn        = ["kotlinx.cinterop.ExperimentalForeignApi"]   # what its sources are compiled opted in to
+ * version      = "0.9.3"                 # the version of the library it takes as it is
+ * upstream     = ["core = org.jetbrains.kotlinx:kotlinx-io-core",   # where that library's sources come from
+ *                 "src = git:https://github.com/user/lib.git@v${version}"]
+ * jvm          = ["org.jetbrains.kotlinx:kotlinx-io-core-jvm"]   # its jars, for the suite's JVM side
  * ```
+ *
+ * A module made of a library's sources taken as they are (kotlinx-io, kotlinx.serialization...) says
+ * where they come from: each line of `upstream` is a directory and what fills it, the source jar of a
+ * Maven artifact (`group:artifact`, at `version` unless it names its own) or a git repository
+ * (`git:url@revision`); `${version}` is the module's version. ktc2 fetches them once, into the cache
+ * (`<cache>/modules/<name>@<version>`), and the module's `files.txt` lists the files of them it
+ * compiles, by their paths there. A program may ask for another version of such a module, `name@0.10.0`
+ * in its `dependencies`: the files of `files.txt` and the module's own were written for its `version`,
+ * so ktc2 says so when it takes another.
  *
  * `weak` and `acyclic` are for sources the module takes as they are (a library written for the
  * JVM or Kotlin/Native, where a collector frees cycles): the properties they name are as if
@@ -67,6 +80,20 @@ class ModuleFile(val directory: File, inText: String) {
 	val weak: List<String> get() = mValues["weak"] ?: emptyList()
 	val acyclic: List<String> get() = mValues["acyclic"] ?: emptyList()
 	val optIn: List<String> get() = mValues["optIn"] ?: emptyList()
+	val version: String? get() = mValues["version"]?.firstOrNull()
+	val upstream: List<String> get() = mValues["upstream"] ?: emptyList()
+	val jvm: List<String> get() = mValues["jvm"] ?: emptyList()
+
+	/** The version of its upstream that is taken: the one a program asked for, else [version]. */
+	var chosenVersion: String? = null
+
+	/** True for a module shipped with ktc2 ([bundledModule]). */
+	var isBundled = false
+
+	/** The lines of its `files.txt`: the files of its upstream it compiles (of its own directory when it has none). */
+	val listed: List<ListedFile> by lazy {
+		File(directory, "files.txt").takeIf { it.isFile }?.readLines()?.mapNotNull { ListedFile.of(it) } ?: emptyList()
+	}
 
 	init {
 		// The small part of TOML a module file needs: `key = "text"` and `key = ["a", "b"]`, with comments.
@@ -149,6 +176,127 @@ class GitSource(inText: String) {
 }
 
 // ==================
+// MARK: Upstream
+// ==================
+
+/** Where ktc2 keeps what it fetches: `KTC2_CACHE`, else `~/.ktc2/cache`. */
+fun cacheDirectory(): File = System.getenv("KTC2_CACHE")?.let { File(it) } ?: File(System.getProperty("user.home"), ".ktc2/cache")
+
+/** The repository of Maven artifacts sources are fetched from: `KTC2_MAVEN`, else Maven Central. */
+private fun mavenRepository(): String = (System.getenv("KTC2_MAVEN") ?: "https://repo1.maven.org/maven2").trimEnd('/')
+
+/**
+ * The sources of the library [inModule] takes as they are (its `upstream`), at its chosen version, fetched into the
+ * cache the first time: the directory its `files.txt` paths are from. Null after reporting why it could not be had.
+ */
+fun upstreamOf(inModule: ModuleFile): File? {
+	val vVersion = inModule.chosenVersion ?: inModule.version
+	if (vVersion == null) {
+		System.err.println("ktc2: error: module '${inModule.name}' has an upstream and no version")
+		return null
+	}
+	val vTarget = File(cacheDirectory(), "modules/${inModule.name}@$vVersion")
+	// One fetched only in part has no marker: it is fetched again.
+	val vMarker = File(vTarget, ".ktc2-complete")
+	if (vMarker.isFile) return vTarget
+	vTarget.deleteRecursively()
+	vTarget.mkdirs()
+	for (vLine in inModule.upstream) {
+		val vEquals = vLine.indexOf('=')
+		if (vEquals <= 0) {
+			System.err.println("ktc2: error: module '${inModule.name}': upstream wants `directory = source`, not '$vLine'")
+			return null
+		}
+		val vDirectory = File(vTarget, vLine.substring(0, vEquals).trim()).canonicalFile
+		val vSource = vLine.substring(vEquals + 1).trim().replace("\${version}", vVersion)
+		if (vSource.startsWith("git:")) {
+			val vGit = GitSource(vSource.removePrefix("git:"))
+			val vCheckout = vGit.checkout() ?: return null
+			File(vCheckout, vGit.directory).copyRecursively(vDirectory, overwrite = true)
+		} else if (!fetchSources(vSource, vVersion, vDirectory)) {
+			return null
+		}
+	}
+	vMarker.writeText("")
+	return vTarget
+}
+
+/**
+ * Fetches the source jar of the Maven artifact [inCoordinate] (`group:artifact`, at [inVersion], or
+ * `group:artifact:version`) and unpacks it into [inInto].
+ */
+private fun fetchSources(inCoordinate: String, inVersion: String, inInto: File): Boolean {
+	val vParts = inCoordinate.split(':')
+	if (vParts.size !in 2..3) {
+		System.err.println("ktc2: error: '$inCoordinate' is not a Maven artifact (group:artifact or group:artifact:version)")
+		return false
+	}
+	val (vGroup, vArtifact) = vParts
+	val vVersion = vParts.getOrNull(2) ?: inVersion
+	val vUrl = "${mavenRepository()}/${vGroup.replace('.', '/')}/$vArtifact/$vVersion/$vArtifact-$vVersion-sources.jar"
+	System.err.println("ktc2: fetching $vGroup:$vArtifact:$vVersion (sources)")
+	try {
+		java.net.URI(vUrl).toURL().openStream().use { vStream ->
+			java.util.zip.ZipInputStream(vStream).use { vZip ->
+				val vRoot = inInto.canonicalFile
+				while (true) {
+					val vEntry = vZip.nextEntry ?: break
+					val vFile = File(vRoot, vEntry.name).canonicalFile
+					// Nothing of the jar is written outside the directory it is for.
+					if (!vFile.path.startsWith(vRoot.path + File.separator)) continue
+					if (vEntry.isDirectory) vFile.mkdirs() else {
+						vFile.parentFile.mkdirs()
+						vFile.outputStream().use { vZip.copyTo(it) }
+					}
+				}
+			}
+		}
+	} catch (vError: java.io.IOException) {
+		System.err.println("ktc2: error: could not fetch $vUrl: ${vError.message}")
+		return false
+	}
+	return true
+}
+
+/**
+ * The files a module compiles: those of its `sources` (its own directory by default), and, when it takes a
+ * library as it is, the files of `files.txt` from that library's sources ([upstreamOf]). Null after reporting
+ * what is missing.
+ */
+fun filesOf(inModule: ModuleFile): List<File>? {
+	val vFiles = ArrayList<File>()
+	for (vEntry in inModule.sources) {
+		val vFile = File(inModule.directory, vEntry)
+		when {
+			vFile.isFile -> vFiles += vFile
+			vFile.isDirectory -> vFile.walkTopDown()
+				// Build output and the examples of a module are not part of it, nor is a module inside it.
+				.onEnter { it == vFile || (it.name != "build" && it.name != "out" && it.name != "example" && it.name != "examples" && !File(it, kModuleFileName).isFile) }
+				.filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
+				.filter { it.relativeTo(inModule.directory).invariantSeparatorsPath !in inModule.elsewhere }
+				.sortedBy { it.path }
+				.forEach { vFiles += it }
+			else -> {
+				System.err.println("ktc2: error: module '${inModule.name}': no such source '$vEntry'")
+				return null
+			}
+		}
+	}
+	if (inModule.upstream.isNotEmpty()) {
+		val vUpstream = upstreamOf(inModule) ?: return null
+		for (vListed in inModule.listed.filter { it.isHere }) {
+			val vFile = File(vUpstream, vListed.path)
+			if (!vFile.isFile) {
+				System.err.println("ktc2: error: module '${inModule.name}': its upstream at ${inModule.chosenVersion ?: inModule.version} has no '${vListed.path}' (files.txt)")
+				return null
+			}
+			vFiles += vFile
+		}
+	}
+	return vFiles
+}
+
+// ==================
 // MARK: Project
 // ==================
 
@@ -179,6 +327,9 @@ class Project(val name: String, val executable: String, val main: String?) {
 
 	/** The C sources fetched for the modules: the name each is known by, and where it is. */
 	val fetched = LinkedHashMap<String, File>()
+
+	/** The files each module shipped with ktc2 brought, by its name: on the JVM such a module is its library's jars. */
+	val bundledFiles = LinkedHashMap<String, List<File>>()
 }
 
 /**
@@ -200,20 +351,9 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 
 	fun add(inModule: ModuleFile): Boolean {
 		if (!vSeen.add(inModule.directory.canonicalPath)) return true
-		for (vEntry in inModule.sources) {
-			val vFile = File(inModule.directory, vEntry)
-			when {
-				vFile.isFile -> vProject.sources += vFile
-				vFile.isDirectory -> vFile.walkTopDown()
-					// Build output and the examples of a module are not part of it, nor is a module inside it.
-					.onEnter { it == vFile || (it.name != "build" && it.name != "out" && it.name != "example" && it.name != "examples" && !File(it, kModuleFileName).isFile) }
-					.filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
-					.filter { it.relativeTo(inModule.directory).invariantSeparatorsPath !in inModule.elsewhere }
-					.sortedBy { it.path }
-					.forEach { vProject.sources += it }
-				else -> return fail("module '${inModule.name}': no such source '$vEntry'")
-			}
-		}
+		val vFiles = filesOf(inModule) ?: return false
+		vProject.sources += vFiles
+		if (inModule.isBundled) vProject.bundledFiles[inModule.name] = vFiles
 		for (vEntry in inModule.fetch) {
 			val vEquals = vEntry.indexOf('=')
 			if (vEquals <= 0) return fail("module '${inModule.name}': fetch wants NAME=url, not '$vEntry'")
@@ -249,8 +389,17 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 					val vLocal = File(inModule.directory, vDependency)
 					ModuleFile(vLocal, File(vLocal, kModuleFileName).readText())
 				}
-				else -> bundledModule(vDependency, inOutDir)
-					?: return fail("module '${inModule.name}': no module '$vDependency' (neither a directory with a $kModuleFileName, nor a git repository, nor a module of ktc2)")
+				else -> {
+					// `name@version`: a module of ktc2 with another version of the library it takes as it is.
+					val vName = vDependency.substringBefore('@')
+					val vVersion = vDependency.substringAfter('@', "").takeIf { it.isNotEmpty() }
+					bundledModule(vName, inOutDir)?.also { vBundled ->
+						if (vVersion != null && vVersion != vBundled.version) {
+							System.err.println("ktc2: warning: module '$vName' at $vVersion: its files were written for ${vBundled.version ?: "no version"}")
+							vBundled.chosenVersion = vVersion
+						}
+					} ?: return fail("module '${inModule.name}': no module '$vDependency' (neither a directory with a $kModuleFileName, nor a git repository, nor a module of ktc2)")
+				}
 			}
 			if (!add(vModule)) return false
 		}
@@ -260,17 +409,18 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 	return if (add(vRoot)) vProject else null
 }
 
-/** The module [inName] shipped with ktc2, copied to `<inOutDir>/modules/<inName>`; null when there is none. */
-private fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
+/**
+ * The module [inName] shipped with ktc2, copied to `<inOutDir>/modules/<inName>`: its module file, its list and its own
+ * files (the library it takes as it is comes from the cache, [upstreamOf]); null when there is none.
+ */
+fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	fun resource(inFile: String): ByteArray? = Project::class.java.getResourceAsStream("/ktc2/modules/$inName/$inFile")?.use { it.readBytes() }
 	val vText = resource(kModuleFileName)?.decodeToString() ?: return null
 	val vDirectory = File(inOutDir, "modules/$inName")
 	vDirectory.mkdirs()
 	val vModule = ModuleFile(vDirectory, vText)
-	// A module made of a library's sources lists them in files.txt, one a line (`#` for a comment).
-	val vListed = resource("files.txt")?.decodeToString()?.lines()?.mapNotNull { ListedFile.of(it) } ?: emptyList()
-	val vFiles = vModule.files.mapNotNull { ListedFile.of(it) } + vListed
-	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + listOfNotNull(vModule.cmake)) {
+	val vFiles = vModule.files.mapNotNull { ListedFile.of(it) }
+	for (vFile in vFiles.filter { it.isHere }.map { it.path } + kModuleFileName + "files.txt" + listOfNotNull(vModule.cmake)) {
 		val vBytes = resource(vFile) ?: continue
 		val vTarget = File(vDirectory, vFile)
 		vTarget.parentFile.mkdirs()
@@ -278,7 +428,7 @@ private fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	}
 	// What another system's compilation left here.
 	vFiles.filter { !it.isHere }.forEach { File(vDirectory, it.path).delete() }
-	return ModuleFile(vDirectory, vText)
+	return ModuleFile(vDirectory, vText).also { it.isBundled = true }
 }
 
 /** The system ktc2 runs on, as a module's lists name it: `windows`, `macos` or `linux`. */
