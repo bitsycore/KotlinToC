@@ -12,6 +12,9 @@ const val kAllFile = "ktc2_all.c"
 /** The longest body, in lines of C, that is written in a header. Longer ones gained nothing when measured, and every C file reads them. */
 private const val kInlineLines = 4
 
+/** How many nested steps a chain of tests may have before it is written flat (`flatChain`). */
+private const val kFlatChainSteps = 8
+
 private val kNoInline = "inline" in (System.getenv("KTC2_SKIP") ?: "").split(',').map { it.trim() }
 
 /**
@@ -761,6 +764,9 @@ class CEmitter(private val mModule: KModule) {
 		private val mBreakLabels = HashSet<Int>()
 		private val mContinueLabels = HashSet<Int>()
 
+		/** How many long chains of tests were written flat ([flatChain]): the number of the next one's label. */
+		private var mFlatChains = 0
+
 		fun block(inStatements: List<KStmt>, inDepth: Int) {
 			inStatements.forEach { statement(it, inDepth) }
 		}
@@ -1046,6 +1052,7 @@ class CEmitter(private val mModule: KModule) {
 		}
 
 		private fun ifChain(inIf: KIf, inDepth: Int) {
+			if (nestedSteps(inIf) >= kFlatChainSteps) return flatChain(inIf, inDepth)
 			var vCurrent = inIf
 			var vKeyword = "if"
 			while (true) {
@@ -1063,6 +1070,48 @@ class CEmitter(private val mModule: KModule) {
 				vKeyword = "} else if"
 			}
 			line(inDepth, "}")
+		}
+
+		/**
+		 * How many times the chain of tests that starts at [inIf] would open one more block: an `else` that runs
+		 * statements before its own `if` (a `when` on a subject reads it again in each branch). An `else` that is
+		 * only an `if` is written `else if`, one level.
+		 */
+		private fun nestedSteps(inIf: KIf): Int {
+			var vSteps = 0
+			var vCurrent = inIf
+			while (true) {
+				val vElse = vCurrent.elseBlock
+				val vNext = vElse.lastOrNull() as? KIf ?: return vSteps
+				if (vElse.size > 1) vSteps++
+				vCurrent = vNext
+			}
+		}
+
+		/**
+		 * A long chain of tests written at one level: `if (c) { ...; goto end; }` then what the `else` runs before its own
+		 * test, and so on, the last `else` as it is. Nested, Native's `when` over its regex classes went past what MSVC
+		 * allows (C1061, some 128 blocks); jumping forward past declarations, which are not arrays of variable length,
+		 * is allowed in C. The locals are of the function, each declared once, so they keep their meaning at one level.
+		 */
+		private fun flatChain(inIf: KIf, inDepth: Int) {
+			val vEnd = "chain_end_${mFlatChains++}"
+			var vCurrent = inIf
+			while (true) {
+				line(inDepth, "if (${bare(expr(vCurrent.condition))}) {")
+				block(vCurrent.thenBlock, inDepth + 1)
+				line(inDepth + 1, "goto $vEnd;")
+				line(inDepth, "}")
+				val vElse = vCurrent.elseBlock
+				val vNext = vElse.lastOrNull() as? KIf
+				if (vNext == null) {
+					block(vElse, inDepth)
+					break
+				}
+				block(vElse.dropLast(1), inDepth)
+				vCurrent = vNext
+			}
+			line(inDepth, "$vEnd: ;")
 		}
 
 		private fun loop(inLoop: KLoop, inDepth: Int) {
