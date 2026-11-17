@@ -2,43 +2,13 @@
 # the module compiles, as they are: fetched by ktc2 from the module's
 # upstream (module.ktc2.toml) into its cache, where these paths are. Those of nativeMain are what Kotlin/Native
 # compiles for every system; what kotlinx-io gives each system apart is in Ktc2KotlinxIo.kt.
-core/commonMain/-CommonPlatform.kt
-core/commonMain/-Util.kt
-core/commonMain/Annotations.kt
-core/commonMain/Buffer.kt
-core/commonMain/Buffers.kt
-core/commonMain/ByteStrings.kt
-core/commonMain/Core.kt
-core/commonMain/PeekSource.kt
-core/commonMain/RawSink.kt
-core/commonMain/RawSource.kt
-core/commonMain/RealSink.kt
-core/commonMain/RealSource.kt
-core/commonMain/Segment.kt
-core/commonMain/SegmentPool.kt
-core/commonMain/Sink.kt
-core/commonMain/Sinks.kt
-core/commonMain/Source.kt
-core/commonMain/Sources.kt
-core/commonMain/Utf8.kt
-core/commonMain/internal/-Utf8.kt
-core/commonMain/unsafe/UnsafeBufferOperations.kt
-core/nativeMain/-NonJvmPlatform.kt
-core/nativeMain/RawSink.kt
-core/nativeMain/SegmentPool.kt
-core/nativeMain/UtilsNative.kt
-core/commonMain/files/FileSystem.kt
-core/commonMain/files/Paths.kt
-core/nativeMain/files/FileSystemNative.kt
-core/nativeMain/files/PathsNative.kt
-core/nativeNonAndroidMain/files/FileSystemNativeNonAndroid.kt
-core/nativeNonAppleMain/files/FileSystemNativeNonApple.kt
-bytestring/commonMain/-Platform.kt
-bytestring/commonMain/Base64.kt
-bytestring/commonMain/ByteString.kt
-bytestring/commonMain/ByteStringBuilder.kt
-bytestring/commonMain/Hex.kt
-bytestring/commonMain/Random.kt
-bytestring/commonMain/unsafe/Annotations.kt
-bytestring/commonMain/unsafe/UnsafeByteStringOperations.kt
-bytestring/nativeMain/-PlatformNative.kt
+
+# Paths from the module's upstream, where each jar has its directory (`core`, `bytestring`, the left side of
+# `upstream`): whole source sets, `**` taking every file below. What is not here (jvmMain, appleMain,
+# androidMain...) is for the other platforms of kotlinx-io.
+core/commonMain/**
+core/nativeMain/**
+core/nativeNonAndroidMain/**
+core/nativeNonAppleMain/**
+bytestring/commonMain/**
+bytestring/nativeMain/**

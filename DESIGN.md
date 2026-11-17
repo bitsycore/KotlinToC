@@ -573,7 +573,12 @@ A module that takes a library as it is says where that library's sources come fr
 at `version` unless it names its own; from Maven Central, or the repository `KTC2_MAVEN` names) or a
 git repository (`git:url@revision`, `${version}` standing for the version). ktc2 fetches them the
 first time a program needs them, into `<cache>/modules/<name>@<version>` (`Project.kt`,
-`upstreamOf`), and `files.txt` lists the files of them it compiles. So a module is a small directory
+`upstreamOf`), and `files.txt` lists the files of them it compiles, by their paths there: each line of
+`upstream` fills the directory on its left (`core`, `bytestring`, or `.` for the root), so the one list
+names `core/commonMain/Buffer.kt` and `bytestring/commonMain/ByteString.kt` alike. A line may be a pattern
+(`core/commonMain/` then `**` for every file below it, `*` for any name in one directory, `?` for one
+character), which takes the `.kt` and `.def` files it matches, and a line that starts with `!` leaves out
+what the lines before it took (kotlinx-io's list is six patterns). So a module is a small directory
 (its file, its list, ktc2's own files), usable by its place in a git repository like any other
 (`https://github.com/bitsycore/KotlinToC.git#modules/kotlinx-io@<tag>`), and a program may ask for
 another version of the library (`dependencies = ["kotlinx-io@0.10.0"]`): ktc2 warns that the module's

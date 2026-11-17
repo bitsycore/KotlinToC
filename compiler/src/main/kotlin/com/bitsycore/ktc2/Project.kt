@@ -37,7 +37,11 @@ const val kModuleFileName = "module.ktc2.toml"
  * Maven artifact (`group:artifact`, at `version` unless it names its own) or a git repository
  * (`git:url@revision`); `${version}` is the module's version. ktc2 fetches them once, into the cache
  * (`<cache>/modules/<name>@<version>`), and the module's `files.txt` lists the files of them it
- * compiles, by their paths there. A program may ask for another version of such a module, `name@0.10.0`
+ * compiles, by their paths there: a path, or a pattern, where `**` stands for any number of directories,
+ * `*` for any name or part of one in one directory and `?` for one character (a directory and then `**`
+ * takes all of it), which takes the `.kt` and `.def` files it matches; a line `!` and a path or a pattern
+ * leaves out what the lines before it took, in order, as in a `.gitignore`. Any of them may be for some
+ * systems only (`windows: ` before it). files.txt of kotlinx-io shows them. A program may ask for another version of such a module, `name@0.10.0`
  * in its `dependencies`: the files of `files.txt` and the module's own were written for its `version`,
  * so ktc2 says so when it takes another.
  *
@@ -284,14 +288,30 @@ fun filesOf(inModule: ModuleFile): List<File>? {
 	}
 	if (inModule.upstream.isNotEmpty()) {
 		val vUpstream = upstreamOf(inModule) ?: return null
+		val vVersion = inModule.chosenVersion ?: inModule.version
+		// Every file of the upstream that a pattern may take, by its path there: its Kotlin sources and C definitions.
+		val vAll by lazy {
+			vUpstream.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "def") }
+				.map { it.relativeTo(vUpstream).invariantSeparatorsPath }.sorted().toList()
+		}
+		val vTaken = LinkedHashSet<String>()
 		for (vListed in inModule.listed.filter { it.isHere }) {
-			val vFile = File(vUpstream, vListed.path)
-			if (!vFile.isFile) {
-				System.err.println("ktc2: error: module '${inModule.name}': its upstream at ${inModule.chosenVersion ?: inModule.version} has no '${vListed.path}' (files.txt)")
+			val vExcluded = vListed.path.startsWith("!")
+			val vPath = vListed.path.removePrefix("!").trim()
+			val vMatches = if (isPattern(vPath)) {
+				val vRegex = patternRegex(vPath)
+				vAll.filter { vRegex.matches(it) }
+			} else {
+				listOf(vPath).filter { File(vUpstream, it).isFile }
+			}
+			if (vMatches.isEmpty() && !vExcluded) {
+				val vWhat = if (isPattern(vPath)) "nothing matches '$vPath'" else "no '$vPath'"
+				System.err.println("ktc2: error: module '${inModule.name}': in its upstream at $vVersion, $vWhat (files.txt)")
 				return null
 			}
-			vFiles += vFile
+			if (vExcluded) vTaken -= vMatches.toSet() else vTaken += vMatches
 		}
+		vTaken.forEach { vFiles += File(vUpstream, it) }
 	}
 	return vFiles
 }
@@ -429,6 +449,35 @@ fun bundledModule(inName: String, inOutDir: File): ModuleFile? {
 	// What another system's compilation left here.
 	vFiles.filter { !it.isHere }.forEach { File(vDirectory, it.path).delete() }
 	return ModuleFile(vDirectory, vText).also { it.isBundled = true }
+}
+
+/** True when a path of a list is a pattern: `*` (in one directory), `**` (any depth) or `?` (one character). */
+private fun isPattern(inPath: String): Boolean = inPath.any { it == '*' || it == '?' }
+
+/** The paths [inPattern] takes: `**` any number of directories, `*` any name or part of one, `?` one character. */
+private fun patternRegex(inPattern: String): Regex {
+	val vText = StringBuilder()
+	var vIndex = 0
+	while (vIndex < inPattern.length) {
+		val vChar = inPattern[vIndex]
+		when {
+			inPattern.startsWith("**/", vIndex) -> {
+				vText.append("(?:.*/)?")
+				vIndex += 3
+				continue
+			}
+			inPattern.startsWith("**", vIndex) -> {
+				vText.append(".*")
+				vIndex += 2
+				continue
+			}
+			vChar == '*' -> vText.append("[^/]*")
+			vChar == '?' -> vText.append("[^/]")
+			else -> vText.append(Regex.escape(vChar.toString()))
+		}
+		vIndex++
+	}
+	return Regex(vText.toString())
 }
 
 /** The system ktc2 runs on, as a module's lists name it: `windows`, `macos` or `linux`. */
