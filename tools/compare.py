@@ -127,7 +127,7 @@ def konan():
 	"""The directory of Kotlin/Native's compiler, and its version."""
 	vNamed = os.environ.get("KTC2_KONAN")
 	if vNamed:
-		return vNamed, os.path.basename(vNamed.rstrip("/\\")).split("-")[-1]
+		return vNamed, versionOf(os.path.basename(vNamed.rstrip("/\\")))
 	vHome = os.path.join(os.path.expanduser("~"), ".konan")
 	vAll = [vName for vName in os.listdir(vHome) if vName.startswith("kotlin-native-prebuilt-")] if os.path.isdir(vHome) else []
 	if not vAll:
@@ -136,10 +136,16 @@ def konan():
 	vExact = [vName for vName in vAll if vName.endswith("-" + vWanted)]
 
 	def version(inName):
-		return [int(vPart) if vPart.isdigit() else -1 for vPart in re.split(r"[.-]", inName.split("-")[-1])]
+		return [int(vPart) if vPart.isdigit() else -1 for vPart in re.split(r"[.-]", versionOf(inName))]
 
 	vName = vExact[0] if vExact else max(vAll, key=version)
-	return os.path.join(vHome, vName), vName.split("-")[-1]
+	return os.path.join(vHome, vName), versionOf(vName)
+
+
+def versionOf(inName):
+	"""The version in the name of a Kotlin/Native directory (`...-macos-aarch64-2.5.0-RC`: 2.5.0-RC)."""
+	vMatch = re.search(r"-(\d+\.\d+[^/\\]*)$", inName)
+	return vMatch.group(1) if vMatch else inName.split("-")[-1]
 
 
 def javaHome():

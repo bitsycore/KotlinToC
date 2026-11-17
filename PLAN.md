@@ -95,11 +95,12 @@ look at them. `bench.py` before/after: in `build/bench/` of the Windows machine 
 5. The speed of Native's regex engine against ktc2's former one: a benchmark of regex for
    `tools/bench.py` and `tools/compare.py`; then speed it up (it is Native's code: change only the
    platform layer or the passes).
-6. `tools/compare.py` on all of `benchmarks/` with Kotlin/Native 2.5.0-RC (`./gradlew
-   fetchKotlinNative`: about 1 GB with its dependencies, the first compilation fetches them), then
-   the new programs the benchmark plan lists (an empty program, binary trees, a map of many objects,
-   JSON); numbers into "Where the benchmarks stand". The programs printing their own warm times
-   (`--self-timed`) is not done.
+6. (done in part 2026-11-17, Mac) `tools/compare.py` on all of `benchmarks/` with Kotlin/Native
+   2.5.0-RC, with three new programs (`Empty`, `BinaryTrees`, `ManyObjects`): the numbers are in
+   "Where the benchmarks stand". Fixed on the way: the Native side of `createCleaner`
+   (`benchmarks/native/ktc2/Lifetime.kt`: Native's takes only a lambda that captures nothing) and
+   the version the report names. Left: the JSON program (a library for a program, on the three
+   targets), `--self-timed`, the same on Windows and Linux.
 7. Pair cycles in programs with threads (the check reads two counts another thread could change):
    kotlinx.serialization's serializers in a threaded program still warn (the showcase shows it).
 8. What "What I would do first" lists below from item 5 on.
@@ -441,6 +442,40 @@ counts the JVM's runtime (proposed: both, the jar and the `jlink` runtime).
 
 ## Where the benchmarks stand
 ---------------------------------------------------------------------------
+
+**ktc2 against Kotlin/Native and the JVM** (2026-11-17, `python tools/compare.py`, a MacBook with
+Apple silicon, macOS; ktc2 with Apple clang `-O2` and LTO; Kotlin/Native 2.5.0-RC `-opt`, its own
+collector; the JVM: OpenJDK 21, the whole process timed, start and JIT included; best of 7 runs,
+peak resident memory; sizes stripped, the JVM's being its jar and the Kotlin library's, without
+the 40.8 MB of a `jlink` runtime it needs to run). The `ktc2` columns of `compile` are cold (a
+process of its own), then warm (the compiler process `ktc2` keeps) and the C compiler.
+
+| | ktc2 | Kotlin/Native | JVM | ktc2 memory | Native memory | JVM memory |
+|---|---|---|---|---|---|---|
+| Empty | 0.002 s | 0.004 s | 0.025 s | 1.8 MB | 6.4 MB | 39.6 MB |
+| BinaryTrees | 0.340 s | 0.699 s | 0.375 s | 33.9 MB | 190.7 MB | 1109 MB |
+| Collections | 0.142 s | 0.439 s | 0.288 s | 11.8 MB | 77.8 MB | 231 MB |
+| Dispatch | 0.110 s | 0.463 s | 0.398 s | 1.9 MB | 16.0 MB | 385 MB |
+| ManyObjects | 0.162 s | 0.257 s | 0.320 s | 116.9 MB | 254.9 MB | 308 MB |
+| Numeric | 0.278 s | 0.341 s | 0.315 s | 29.5 MB | 38.7 MB | 81.5 MB |
+| Objects | 0.157 s | 0.186 s | 0.143 s | 2.6 MB | 16.0 MB | 380 MB |
+| Ordinary | 0.219 s | 0.543 s | 0.277 s | 1.9 MB | 16.4 MB | 362 MB |
+| Strings | 0.202 s | 0.351 s | 0.231 s | 3.8 MB | 16.3 MB | 158 MB |
+| Threads | 0.048 s | 0.179 s | 0.173 s | 13.6 MB | 28.1 MB | 154 MB |
+
+- Speed: ktc2 is the fastest on 9 of 10, 1.2 to 4.2 times Kotlin/Native and up to 3.6 times the
+  JVM; the JVM is 9 % faster on Objects (small objects made and dropped in a loop: its young
+  generation), and within 10 % on BinaryTrees, Numeric, Strings. Against Native, the most is on
+  Dispatch (4.2x), Threads (3.7x) and Collections (3.1x).
+- Memory: 1.3 to 8.5 times less than Kotlin/Native, 2.6 to 200 times less than the JVM; ManyObjects
+  (a million live objects) is the closest, 2.2x and 2.6x.
+- Size: about 0.1 MB stripped, Native 0.4 MB, the JVM 1.8 MB of jars (and its runtime).
+- Compile: `kotlinc-native` takes about 7 s a program; ktc2 9.3 to 10.2 s cold (the library is
+  analysed first), 0.4 to 0.8 s warm plus 0.2 to 1.7 s of C; `kotlinc` to a jar about 1.6 s.
+- Not done: the JSON program on kotlinx.serialization (the tool has no way yet to give a program a
+  library: the module on ktc2, the klibs and plugin on Native, the jars and plugin on the JVM); the
+  programs timing themselves (`--self-timed`, the JVM's warm time); Windows and Linux;
+  the same with `ktc2.` features stripped.
 
 `python tools/bench.py`, Apple clang on an ARM64 Mac, best of seven runs. "Before" is commit
 `2a16110`, built `-O2`; "now" is the same build (on 2026-11-13, at the end of the day); "now, LTO" is what

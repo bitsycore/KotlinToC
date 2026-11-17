@@ -34,6 +34,9 @@ sealed interface Cleaner
 
 private class NativeCleaner(val cleaner: kotlin.native.ref.Cleaner) : Cleaner
 
-/** A [Cleaner] that runs [cleanupAction] with [resource] once it is collected: Kotlin/Native's own. */
+/**
+ * A [Cleaner] that runs [cleanupAction] with [resource] once it is collected: Kotlin/Native's own. Its
+ * `createCleaner` takes only a lambda that captures nothing, so the action goes with the resource.
+ */
 fun <T> createCleaner(resource: T, cleanupAction: (resource: T) -> Unit): Cleaner =
-	NativeCleaner(kotlin.native.ref.createCleaner(resource, cleanupAction))
+	NativeCleaner(kotlin.native.ref.createCleaner(resource to cleanupAction) { it.second(it.first) })
