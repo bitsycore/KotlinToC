@@ -402,6 +402,19 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   others. What they hold is given up when the thread ends (`ktc2_thread_end`, a function `main`
   writes and sets), and by `main` for its own thread at the end. On the JVM, where it does not
   exist, a test of it has an `.expected` file (`tests/integration/stdlib/ThreadLocals`).
+- **atomicfu's atomics are fields of their owner**, as atomicfu's compiler plugin makes them: a
+  property of type `AtomicRef`, `AtomicInt`, `AtomicLong` or `AtomicBoolean` is held in place (the
+  importer makes it as `@Value`, `KirImporter.inlineSizeOf`), and its default getter read from another
+  class is a read of the field (`BodyLowering.atomicFieldRead`). The atomics are ktc2's own
+  (`modules/atomicfu/Ktc2AtomicValues.kt`, in the place of atomicfu's `AtomicFU.kt`): a number in its
+  one field, changed with the C compiler's atomic operations (`ktc2_atomicIntCell`), a reference in a
+  Long that the runtime counts under the atomic's monitor (`ktc2_AtomicRefCell`, `ktc2_atomicRefLoad`...).
+  An atomic held in place knows its owner (`ktc2_atomicRefPlace`, written where the field is set) and
+  holds that one without a count: a reference from an object to itself can never keep it alive, and a
+  node of a list that points to itself (`_next = atomic(this)`, an empty circular list) is freed as any
+  object. Before, each atomic was three or four objects (atomicfu's, `kotlin.concurrent`'s, and an
+  `IntArray`), and an object that referred to itself through one was a cycle of four. Escape analysis
+  knows that the monitor and the atomic operations keep nothing of what they are given (`kKeepNothing`).
 - **Workers** (`kotlin.native.concurrent.Worker`, `Future`; `Ktc2Workers.kt`) are as on Kotlin/Native,
   whose C++ (`Worker.cpp`) is written again in Kotlin: a queue of jobs worked through by a thread
   started for the worker, or by the thread that asked for `Worker.current` when it parks or processes

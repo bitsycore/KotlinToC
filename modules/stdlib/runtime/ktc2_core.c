@@ -3011,6 +3011,38 @@ void ktc2_secureRandomBytes(ktc2_Array* bytes)
  * 4 adds [a] and gives what was there. Every one is sequentially consistent, as on the JVM.
  */
 #if defined(_MSC_VER) && !defined(__clang__)
+static int32_t atomic_int_at(volatile long* at, int32_t operation, int32_t a, int32_t b)
+{
+	switch (operation) {
+	case 0: return (int32_t)_InterlockedCompareExchange(at, 0, 0);
+	case 1: _InterlockedExchange(at, (long)a); return 0;
+	case 2: return (int32_t)_InterlockedExchange(at, (long)a);
+	case 3: return (int32_t)_InterlockedCompareExchange(at, (long)b, (long)a);
+	default: return (int32_t)_InterlockedExchangeAdd(at, (long)a);
+	}
+}
+
+static int64_t atomic_long_at(volatile __int64* at, int32_t operation, int64_t a, int64_t b)
+{
+	switch (operation) {
+	case 0: return _InterlockedCompareExchange64(at, 0, 0);
+	case 1: _InterlockedExchange64(at, a); return 0;
+	case 2: return _InterlockedExchange64(at, a);
+	case 3: return _InterlockedCompareExchange64(at, b, a);
+	default: return _InterlockedExchangeAdd64(at, a);
+	}
+}
+
+int32_t ktc2_atomicIntCell(ktc2_Obj* cell, int32_t operation, int32_t a, int32_t b)
+{
+	return atomic_int_at((volatile long*)&((ktc2_IntCell*)cell)->value, operation, a, b);
+}
+
+int64_t ktc2_atomicLongCell(ktc2_Obj* cell, int32_t operation, int64_t a, int64_t b)
+{
+	return atomic_long_at((volatile __int64*)&((ktc2_LongCell*)cell)->value, operation, a, b);
+}
+
 int32_t ktc2_atomicInt(ktc2_Array* array, int32_t index, int32_t operation, int32_t a, int32_t b)
 {
 	volatile long* at = (volatile long*)((int32_t*)(array + 1) + index);
@@ -3050,7 +3082,110 @@ int64_t ktc2_atomicLong(ktc2_Array* array, int32_t index, int32_t operation, int
 
 KTC2_ATOMIC_OPERATIONS(ktc2_atomicInt, int32_t)
 KTC2_ATOMIC_OPERATIONS(ktc2_atomicLong, int64_t)
+
+#define KTC2_ATOMIC_CELL(name, type, cellType) \
+	type name(ktc2_Obj* cell, int32_t operation, type a, type b) \
+	{ \
+		type* at = &((cellType*)cell)->value; \
+		switch (operation) { \
+		case 0: return __atomic_load_n(at, __ATOMIC_SEQ_CST); \
+		case 1: __atomic_store_n(at, a, __ATOMIC_SEQ_CST); return 0; \
+		case 2: return __atomic_exchange_n(at, a, __ATOMIC_SEQ_CST); \
+		case 3: __atomic_compare_exchange_n(at, &a, b, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); return a; \
+		default: return __atomic_fetch_add(at, a, __ATOMIC_SEQ_CST); \
+		} \
+	}
+
+KTC2_ATOMIC_CELL(ktc2_atomicIntCell, int32_t, ktc2_IntCell)
+KTC2_ATOMIC_CELL(ktc2_atomicLongCell, int64_t, ktc2_LongCell)
 #endif
+
+/* ================== */
+/* MARK: AtomicRef    */
+/* ================== */
+
+#define ATOMIC_REF(cell) ((ktc2_AtomicRefCell*)(cell))
+#define ATOMIC_HELD(cell) ((ktc2_Obj*)(intptr_t)ATOMIC_REF(cell)->held)
+
+/** True when [value] is what [cell] is held in: then held without a count. */
+static bool atomic_ref_is_owner(ktc2_Obj* cell, const ktc2_Obj* value)
+{
+	return value && (int64_t)(intptr_t)value == ATOMIC_REF(cell)->owner;
+}
+
+ktc2_Obj* ktc2_atomicRefLoad(ktc2_Obj* cell)
+{
+	ktc2_monitorEnter(cell);
+	ktc2_Obj* value = ATOMIC_HELD(cell);
+	ktc2_retain(value);
+	ktc2_monitorExit(cell);
+	return value;
+}
+
+void ktc2_atomicRefStore(ktc2_Obj* cell, ktc2_Obj* value)
+{
+	if (!atomic_ref_is_owner(cell, value)) ktc2_retain(value);
+	ktc2_monitorEnter(cell);
+	ktc2_Obj* old = ATOMIC_HELD(cell);
+	ATOMIC_REF(cell)->held = (int64_t)(intptr_t)value;
+	bool counted = !atomic_ref_is_owner(cell, old);
+	ktc2_monitorExit(cell);
+	if (counted) ktc2_release(old);
+}
+
+ktc2_Obj* ktc2_atomicRefExchange(ktc2_Obj* cell, ktc2_Obj* value)
+{
+	if (!atomic_ref_is_owner(cell, value)) ktc2_retain(value);
+	ktc2_monitorEnter(cell);
+	ktc2_Obj* old = ATOMIC_HELD(cell);
+	ATOMIC_REF(cell)->held = (int64_t)(intptr_t)value;
+	/* The count the atomic had becomes the caller's; the owner, held without one, is given one. */
+	if (atomic_ref_is_owner(cell, old)) ktc2_retain(old);
+	ktc2_monitorExit(cell);
+	return old;
+}
+
+bool ktc2_atomicRefCompareAndSet(ktc2_Obj* cell, ktc2_Obj* expected, ktc2_Obj* update)
+{
+	ktc2_monitorEnter(cell);
+	ktc2_Obj* old = ATOMIC_HELD(cell);
+	if (old != expected) {
+		ktc2_monitorExit(cell);
+		return false;
+	}
+	if (!atomic_ref_is_owner(cell, update)) ktc2_retain(update);
+	ATOMIC_REF(cell)->held = (int64_t)(intptr_t)update;
+	bool counted = !atomic_ref_is_owner(cell, old);
+	ktc2_monitorExit(cell);
+	if (counted) ktc2_release(old);
+	return true;
+}
+
+void ktc2_atomicRefAdopt(ktc2_AtomicRefCell* cell, ktc2_Obj* owner)
+{
+	cell->owner = (int64_t)(intptr_t)owner;
+	ktc2_Obj* value = (ktc2_Obj*)(intptr_t)cell->held;
+	/* The copy it was made from keeps its own count, given up with it. */
+	if (value != owner) ktc2_retain(value);
+}
+
+void ktc2_atomicRefPlace(ktc2_AtomicRefCell* cell, ktc2_Obj* owner)
+{
+	int64_t place = (int64_t)(intptr_t)owner;
+	if (cell->owner == place) return;
+	ktc2_Obj* value = (ktc2_Obj*)(intptr_t)cell->held;
+	bool wasCounted = cell->held != cell->owner;
+	cell->owner = place;
+	/* The owner it now holds without a count: the count it had is given back. */
+	if (value == owner && wasCounted) ktc2_release(value);
+}
+
+void ktc2_atomicRefDestroy(ktc2_Obj* cell)
+{
+	ktc2_Obj* value = ATOMIC_HELD(cell);
+	ATOMIC_REF(cell)->held = 0;
+	if (!atomic_ref_is_owner(cell, value)) ktc2_release(value);
+}
 
 /* ================== */
 /* MARK: Exceptions   */

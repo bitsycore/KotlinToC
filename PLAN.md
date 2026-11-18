@@ -16,6 +16,12 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
+**State on 2026-11-18 (Mac), kotlinx.coroutines' cycles.** The owner chose to answer the library's
+cycles with edits of it, after atomicfu's atomics are made fields of their owner, which they are now
+(`DESIGN.md`, section 6): the objects left for 1,000 coroutines went from 109,521 to 21,947, and every
+cycle left is of two to four objects (`KOTLINX.md`, kotlinx.coroutines, "Cycles": the list, and what is
+next). `KTC2_CYCLES=1` on a debug or test build names each cycle and its fields.
+
 **State on 2026-11-18 (Mac), kotlinx.coroutines.** The owner chose coroutines before more optimizations, and
 the three choices of the library as Kotlin/Native (below, "Decided by the owner (2026-11-18)"). The first
 stages are done (`KOTLINX.md`, kotlinx.coroutines, "State"): the library compiles as it is and a program of

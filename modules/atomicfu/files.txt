@@ -1,3 +1,5 @@
 commonMain/**
 concurrentMain/**
 nativeMain/**
+# Its atomics are ktc2's own (Ktc2AtomicValues.kt): each holds its value itself, kept inside its owner.
+!nativeMain/kotlinx/atomicfu/AtomicFU.kt

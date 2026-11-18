@@ -212,7 +212,21 @@ class EscapeAnalysis(private val mModule: KModule) {
 	}
 
 	private fun parameterEscapes(inFunction: KFunction, inIndex: Int): Boolean =
-		inFunction.isExternal || inFunction.params.getOrNull(inIndex)?.let { it in mEscaping } != false
+		(inFunction.isExternal && inFunction.cName !in kKeepNothing && !(inIndex == 0 && inFunction.cName in kKeepNotTheCell)) ||
+			inFunction.params.getOrNull(inIndex)?.let { it in mEscaping } != false
+
+	/**
+	 * Functions of the runtime that use what they are given for the time of the call only: the monitor of an object is
+	 * taken and given back by the function that calls them, and an atomic operation changes a field and returns. An object
+	 * held in place (atomicfu's atomics, inside their owner) may be passed to them.
+	 */
+	private val kKeepNothing = setOf(
+		"ktc2_monitorEnter", "ktc2_monitorExit", "ktc2_monitorWait", "ktc2_monitorNotifyAll",
+		"ktc2_atomicIntCell", "ktc2_atomicLongCell", "ktc2_identityHashCode",
+	)
+
+	/** Functions of the runtime that keep what they are given to hold, but not the atomic (the first argument) that holds it. */
+	private val kKeepNotTheCell = setOf("ktc2_atomicRefLoad", "ktc2_atomicRefStore", "ktc2_atomicRefExchange", "ktc2_atomicRefCompareAndSet")
 
 	/** The locals whose reference [inValue] may be. */
 	private fun sources(inValue: KExpr?, outLocals: MutableSet<KLocal>) {

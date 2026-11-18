@@ -191,6 +191,16 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   resumption brought back: `withTimeoutOrNull`). Left: the library's cycles (its program leaves objects:
   `program.cycles` says so until `weak`/`acyclic` entries answer them), its own tests, the pending box
   tests of coroutines, `kotlinx-coroutines-test`.
+- **Cycles (2026-11-18)**: the owner chose to answer them in the library (edits of the module), after
+  atomicfu's atomics are made fields of their owner (`DESIGN.md`, section 6), which they now are. Measured
+  with `KTC2_CYCLES=1` on a program that launches N coroutines, awaits N and sends N through a channel:
+  before, 8,541 / 17,721 / 109,521 objects left for N = 10 / 100 / 1,000 (each atomic three or four
+  objects, every cycle through one of four or more); now 2,642 / 4,397 / 21,947, of which 2,386 are a
+  fixed set of atomics, and every cycle left is of two to four objects: a removed node and its cached
+  `Removed`, a coroutine and its `context` (`parentContext + this`), a resumed continuation, its
+  `CompletedContinuation`'s cancel handler and the job node that resumed it, a `DispatchedContinuation`
+  and its reusable `CancellableContinuationImpl`, a channel and its segments (`ChannelSegment._channel`),
+  and a closed empty list of handlers. Next: an edit or an entry for each.
 
 ---------------------------------------------------------------------------
 ## 5. Order, and what is the owner's to decide

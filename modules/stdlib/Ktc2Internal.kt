@@ -217,6 +217,24 @@ public external fun secureRandomBytes(bytes: ByteArray)
 /** [atomicInt] for a LongArray. */
 public external fun atomicLong(array: LongArray, index: Int, operation: Int, a: Long, b: Long): Long
 
+/**
+ * The operations of [atomicInt] on the one field of [cell], an object of a class whose only field is an Int and which
+ * extends nothing (atomicfu's AtomicInt, which ktc2 keeps inside the object that owns it).
+ */
+public external fun atomicIntCell(cell: Any, operation: Int, a: Int, b: Int): Int
+
+/** The same for a Long. */
+public external fun atomicLongCell(cell: Any, operation: Int, a: Long, b: Long): Long
+
+/** atomicfu's AtomicRef as ktc2 keeps it (`ktc2_AtomicRefCell`): what it holds, counted for the caller. */
+public external fun atomicRefLoad(cell: Any): Any?
+
+public external fun atomicRefStore(cell: Any, value: Any?)
+
+public external fun atomicRefExchange(cell: Any, value: Any?): Any?
+
+public external fun atomicRefCompareAndSet(cell: Any, expected: Any?, update: Any?): Boolean
+
 /** True when the bytes from [startIndex] to [endIndex] are not all UTF-8. */
 public external fun utf8Malformed(bytes: ByteArray, startIndex: Int, endIndex: Int): Boolean
 

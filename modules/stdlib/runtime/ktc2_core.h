@@ -967,6 +967,56 @@ void ktc2_secureRandomBytes(ktc2_Array* bytes);
 int32_t ktc2_atomicInt(ktc2_Array* array, int32_t index, int32_t operation, int32_t a, int32_t b);
 int64_t ktc2_atomicLong(ktc2_Array* array, int32_t index, int32_t operation, int64_t a, int64_t b);
 
+/** An object whose one field is an Int, or a Long: what [ktc2_atomicIntCell] and [ktc2_atomicLongCell] change. */
+typedef struct ktc2_IntCell {
+	ktc2_Obj header;
+	int32_t value;
+} ktc2_IntCell;
+
+typedef struct ktc2_LongCell {
+	ktc2_Obj header;
+	int64_t value;
+} ktc2_LongCell;
+
+/** The operations of [ktc2_atomicInt] on the one field of [cell], an object of a class with an Int as its only field (atomicfu's AtomicInt). */
+int32_t ktc2_atomicIntCell(ktc2_Obj* cell, int32_t operation, int32_t a, int32_t b);
+
+/** The same for a Long (atomicfu's AtomicLong). */
+int64_t ktc2_atomicLongCell(ktc2_Obj* cell, int32_t operation, int64_t a, int64_t b);
+
+/**
+ * atomicfu's AtomicRef as ktc2 keeps it: the reference, and the object it is held in place in (0 for one of its own,
+ * an element of an AtomicArray). A reference to that owner is held without a count: it can never keep the owner alive,
+ * and an object that refers to itself through its atomic (a node of a list, `_next = atomic(this)`) is then freed as
+ * any other. The fields are Longs in Kotlin, so that only these functions count.
+ */
+typedef struct ktc2_AtomicRefCell {
+	ktc2_Obj header;
+	int64_t held;
+	int64_t owner;
+} ktc2_AtomicRefCell;
+
+/** The reference held, with a count for the caller. */
+ktc2_Obj* ktc2_atomicRefLoad(ktc2_Obj* cell);
+
+/** Holds [value] in the place of what was held. */
+void ktc2_atomicRefStore(ktc2_Obj* cell, ktc2_Obj* value);
+
+/** Holds [value] in the place of what was held, which it returns, with a count for the caller. */
+ktc2_Obj* ktc2_atomicRefExchange(ktc2_Obj* cell, ktc2_Obj* value);
+
+/** Holds [update] when what is held is [expected] (by identity); true then. */
+bool ktc2_atomicRefCompareAndSet(ktc2_Obj* cell, ktc2_Obj* expected, ktc2_Obj* update);
+
+/** An atomic just copied into its place in [owner]: it knows its owner, and has a count of its own for what it holds. */
+void ktc2_atomicRefAdopt(ktc2_AtomicRefCell* cell, ktc2_Obj* owner);
+
+/** An atomic put in place in [owner] (a field of it): from now on it holds [owner] without a count. */
+void ktc2_atomicRefPlace(ktc2_AtomicRefCell* cell, ktc2_Obj* owner);
+
+/** Gives up what an atomic holds, when the object it is (or is in) goes. */
+void ktc2_atomicRefDestroy(ktc2_Obj* cell);
+
 /** `Enum.valueOf` found no entry called [name]. */
 _Noreturn void ktc2_fail_enum_value(const ktc2_String* name);
 

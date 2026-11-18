@@ -2359,6 +2359,20 @@ internal class BodyBuilder(
 		}
 	}
 
+	/** `owner.atomic` through a default getter, for an atomic of atomicfu: a read of the field; null for anything else. */
+	private fun atomicFieldRead(inCall: IrCall, inCallee: IrSimpleFunction): KExpr? {
+		if (inCallee.origin != IrDeclarationOrigin.DEFAULT_PROPERTY_ACCESSOR) return null
+		val vProperty = inCallee.correspondingPropertySymbol?.owner ?: return null
+		if (vProperty.getter != inCallee) return null
+		val vBacking = vProperty.backingField ?: return null
+		val vTypeName = vBacking.type.classFqName?.asString() ?: return null
+		if (vTypeName !in setOf("kotlinx.atomicfu.AtomicRef", "kotlinx.atomicfu.AtomicInt", "kotlinx.atomicfu.AtomicLong", "kotlinx.atomicfu.AtomicBoolean")) return null
+		val vReceiver = inCall.dispatchReceiver ?: return null
+		val vField = mImporter.fieldFor(vBacking, closed(vReceiver.type)) ?: return null
+		if (vField.inlineSize != 0) return null
+		return adapt(readField(fieldTarget(lowerPure(vReceiver), vField), vField), inCall)
+	}
+
 	private fun lowerGetField(inExpression: IrGetField): KExpr {
 		val vLate = lateinitName(inExpression.symbol.owner)
 		mImporter.globalFor(inExpression.symbol.owner)?.let { vGlobal ->
@@ -2588,6 +2602,9 @@ internal class BodyBuilder(
 
 	private fun lowerCall(inCall: IrCall): KExpr {
 		var vCallee = mImporter.sourceOf(inCall.symbol.owner)
+		// The getter of an atomicfu atomic property reads its field, which holds the atomic in place (as the atomicfu
+		// plugin makes it): what is read from it is the atomic itself, inside its owner.
+		atomicFieldRead(inCall, vCallee)?.let { return it }
 		// A member of Unit (`toString`, `equals`, `hashCode` of a Unit or Unit? value) is Any's: the Unit object is an object of the runtime.
 		if ((vCallee.parent as? IrClass)?.kotlinFqName?.asString() == "kotlin.Unit") {
 			anyMemberOf(mImporter.mBuiltIns.anyType, vCallee.name.asString(), vCallee.parameters.count { it.kind == IrParameterKind.Regular })?.let { vCallee = it }

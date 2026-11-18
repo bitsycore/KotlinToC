@@ -12,6 +12,9 @@ const val kAllFile = "ktc2_all.c"
 /** The longest body, in lines of C, that is written in a header. Longer ones gained nothing when measured, and every C file reads them. */
 private const val kInlineLines = 4
 
+/** atomicfu's atomic reference, which ktc2 keeps in a Long counted by the runtime (`ktc2_AtomicRefCell`). */
+private const val kAtomicRefClass = "kotlinx.atomicfu.AtomicRef"
+
 /** How many nested steps a chain of tests may have before it is written flat (`flatChain`). */
 private const val kFlatChainSteps = 8
 
@@ -561,7 +564,9 @@ class CEmitter(private val mModule: KModule) {
 				vState.includes += it.unit
 				vBodies.append("\t${it.cName}__destroy(object);\n")
 			}
-			if (vOwn.isEmpty() && vClass.superClass == null) vBodies.append("\t(void)object;\n")
+			// atomicfu's AtomicRef keeps its reference in a Long, counted by the runtime (ktc2_AtomicRefCell).
+			if (vClass.name == kAtomicRefClass) vBodies.append("\tktc2_atomicRefDestroy(object);\n")
+			else if (vOwn.isEmpty() && vClass.superClass == null) vBodies.append("\t(void)object;\n")
 			vBodies.append("}\n")
 			// What the leak check follows to tell the cycles among what is left (a frame's fields too: they hold while it waits).
 			vBodies.append("\n#ifdef KTC2_LEAK_CHECK\nvoid ${vClass.cName}__refs(ktc2_Obj* object, ktc2_RefVisitor visit, void* context)\n{\n")
@@ -578,6 +583,9 @@ class CEmitter(private val mModule: KModule) {
 				}
 			}
 			vClass.superClass?.let { vBodies.append("\t${it.cName}__refs(object, visit, context);\n") }
+			if (vClass.name == kAtomicRefClass) {
+				vBodies.append("\tif (((ktc2_AtomicRefCell*)object)->held != ((ktc2_AtomicRefCell*)object)->owner) visit(context, object, \"held\", (ktc2_Obj*)(intptr_t)((ktc2_AtomicRefCell*)object)->held);\n")
+			}
 			vBodies.append("}\n#endif\n")
 			if (vClass.pairCycles.isNotEmpty()) {
 				// What is left of the count of this object: when each of those references is held by an object of one of its
@@ -638,11 +646,17 @@ class CEmitter(private val mModule: KModule) {
 				vBodies.append("\n$vName* ${vName}__clone(const $vName* source)\n{\n")
 				vBodies.append("\t$vName* copy = ktc2_alloc(sizeof($vName), ${typeId(vClass)});\n")
 				vBodies.append("\tktc2_Obj header = *(ktc2_Obj*)copy;\n\t*copy = *source;\n\t*(ktc2_Obj*)copy = header;\n")
-				vBodies.append("\t${vName}__retain_fields(copy);\n\treturn copy;\n}\n")
+				vBodies.append("\t${vName}__retain_fields(copy);\n")
+				// A copy of its own of an atomic held in place counts what it holds, its former owner too.
+				if (vClass.name == kAtomicRefClass) vBodies.append("\tktc2_atomicRefAdopt((ktc2_AtomicRefCell*)copy, NULL);\n")
+				vBodies.append("\treturn copy;\n}\n")
 				vBodies.append("\nvoid ${vName}__assign($vName* slot, const $vName* source)\n{\n")
 				vBodies.append("\tif (slot == source) return;\n")
 				vBodies.append("\t$vName previous = *slot;\n\t*slot = *source;\n\t*(ktc2_Obj*)slot = $vHeader;\n")
-				vBodies.append("\t${vName}__retain_fields(slot);\n\t${vName}__destroy((ktc2_Obj*)&previous);\n}\n")
+				vBodies.append("\t${vName}__retain_fields(slot);\n")
+				// The owner of an atomic is set where it is put in place (KFieldSet): here it keeps the one it had.
+				if (vClass.name == kAtomicRefClass) vBodies.append("\tktc2_atomicRefAdopt((ktc2_AtomicRefCell*)slot, (ktc2_Obj*)(intptr_t)previous.owner);\n")
+				vBodies.append("\t${vName}__destroy((ktc2_Obj*)&previous);\n}\n")
 			}
 		}
 		if (inUnit.globals.isNotEmpty()) vBodies.append("\n")
@@ -1005,6 +1019,10 @@ class CEmitter(private val mModule: KModule) {
 						vField.inlineSize == 0 -> {
 							mState.includes += (vType as KClassType).cls.unit
 							line(inDepth, "${vType.cls.cName}__assign(&$vSlot, ${bare(expr(inStatement.value))});")
+							// An atomic put in place knows the object it is in: a reference to that one it holds without a count.
+							if (vType.cls.name == kAtomicRefClass) {
+								line(inDepth, "ktc2_atomicRefPlace((ktc2_AtomicRefCell*)&$vSlot, (ktc2_Obj*)${expr(inStatement.target)});")
+							}
 						}
 						vField.inlineSize > 0 -> {
 							val vElement = (vType as KArrayType).element

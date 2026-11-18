@@ -2,7 +2,7 @@ name     = "atomicfu"
 version  = "0.33.0"
 upstream = [". = org.jetbrains.kotlinx:atomicfu"]
 jvm      = ["org.jetbrains.kotlinx:atomicfu-jvm"]
-files    = ["Ktc2Atomicfu.kt", "atomicfu.def", "atomicfu.h", "atomicfu_win32.h"]
+files    = ["Ktc2Atomicfu.kt", "Ktc2AtomicValues.kt", "atomicfu.def", "atomicfu.h", "atomicfu_win32.h"]
 # The queue and its nodes are inner classes of the mutex that holds them.
 weak     = ["kotlinx.atomicfu.locks.NativeMutex.ParkingQueue.this$0", "kotlinx.atomicfu.locks.NativeMutex.Node.this$0"]
 optIn    = ["kotlinx.cinterop.ExperimentalForeignApi", "kotlinx.atomicfu.locks.ExperimentalThreadBlockingApi"]

@@ -1195,8 +1195,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			vClass.isUsedInline = true
 			return 0
 		}
+		// atomicfu's atomics are fields of the object that owns them, as its compiler plugin makes them (ktc2's own
+		// atomics, modules/atomicfu/Ktc2AtomicValues.kt, hold their value themselves): no object of their own.
+		val vAtomic = (inType as? KClassType)?.cls
+		if (vAtomic != null && vAtomic.name in kInlineAtomics && vAtomic !== inOwner && !inProperty.isVar && !inBacking.type.isMarkedNullable()) {
+			vAtomic.isUsedInline = true
+			return 0
+		}
 		return null
 	}
+
+	/** The classes of atomicfu kept inside the object that owns a property of their type. */
+	private val kInlineAtomics = setOf("kotlinx.atomicfu.AtomicRef", "kotlinx.atomicfu.AtomicInt", "kotlinx.atomicfu.AtomicLong", "kotlinx.atomicfu.AtomicBoolean")
 
 	internal fun infoOf(inClass: KClass): ClassInfo? = mClassInfo[inClass]
 
