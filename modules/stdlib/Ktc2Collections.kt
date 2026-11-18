@@ -471,20 +471,9 @@ public actual fun <T> MutableList<T>.fill(value: T) {
 	for (vIndex in 0 until size) this[vIndex] = value
 }
 
-/** Shuffles with a fixed-seed generator: deterministic, and not the sequence the JVM produces. */
+/** Shuffles with the default random generator, as Kotlin/Native does: a different order on every run. */
 public actual fun <T> MutableList<T>.shuffle() {
-	var vState = 0x2545F491
-	var vIndex = size - 1
-	while (vIndex > 0) {
-		vState = vState xor (vState shl 13)
-		vState = vState xor (vState ushr 17)
-		vState = vState xor (vState shl 5)
-		val vOther = (vState and 0x7FFFFFFF) % (vIndex + 1)
-		val vTemp = this[vIndex]
-		this[vIndex] = this[vOther]
-		this[vOther] = vTemp
-		vIndex--
-	}
+	shuffle(kotlin.random.Random)
 }
 
 public actual fun <T> Iterable<T>.shuffled(): List<T> {
