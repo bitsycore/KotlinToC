@@ -774,6 +774,12 @@ class KTryRegion(val id: Int, val body: List<KStmt>) : KStmt
 /** Added by `ArcInsert`: decrements the count of [operand] (null-safe), destroying it at zero. */
 class KRelease(val operand: KExpr) : KStmt
 
+/** Added by `ReleaseLadders`: goes on at [label] of the same function. */
+class KGoto(val label: String) : KStmt
+
+/** Added by `ReleaseLadders`: where a [KGoto] goes on. */
+class KLabel(val label: String) : KStmt
+
 /** The expressions a statement evaluates itself (not those of the blocks inside it), in order. */
 fun KStmt.ownExpressions(): List<KExpr> = when (this) {
 	is KLet -> listOfNotNull(init)
@@ -788,7 +794,7 @@ fun KStmt.ownExpressions(): List<KExpr> = when (this) {
 	is KConcat -> parts.mapNotNull { (it as? KPrintValue)?.value }
 	is KThrow -> listOf(value)
 	is KRelease -> listOf(operand)
-	is KLoop, is KBreak, is KContinue, is KTryRegion -> emptyList()
+	is KLoop, is KBreak, is KContinue, is KTryRegion, is KGoto, is KLabel -> emptyList()
 }
 
 /** True when [inTest] holds for a statement of [this] block or of a block nested in it. */

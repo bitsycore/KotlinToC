@@ -143,6 +143,8 @@ class KirDump(private val mModule: KModule) {
 		is KContinue -> "continue ${inStatement.loopId}"
 		is KThrow -> "throw ${expr(inStatement.value)}"
 		is KRelease -> "release ${expr(inStatement.operand)}"
+		is KGoto -> "goto ${inStatement.label}"
+		is KLabel -> "${inStatement.label}:"
 		is KPrint -> (if (inStatement.newline) "println " else "print ") + parts(inStatement.parts)
 		is KConcat -> "${inStatement.target.cName} = concat ${parts(inStatement.parts)}${if (inStatement.onStack) " on the stack" else ""}"
 		is KIf, is KLoop, is KTryRegion -> error("written by block")

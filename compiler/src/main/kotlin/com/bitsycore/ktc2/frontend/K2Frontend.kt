@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.config.CompilerConfiguration
 import com.bitsycore.ktc2.backend.ArcInsert
 import com.bitsycore.ktc2.backend.CEmitter
 import com.bitsycore.ktc2.backend.CycleLint
+import com.bitsycore.ktc2.backend.ReleaseLadders
 import com.bitsycore.ktc2.kir.KirDump
 import com.bitsycore.ktc2.interop.BindingGenerator
 import com.bitsycore.ktc2.interop.DefFile
@@ -552,7 +553,11 @@ class Ktc2Extension : IrGenerationExtension {
 			return
 		}
 		ArcInsert(vModule, mHandsOverAtLastUse = "handover" !in vSkipped, mBorrowsBriefly = "brief" !in vSkipped, mWalks = "walk" !in vSkipped, mOwnsParameters = "owned" !in vSkipped).run()
-		dumpKir("ArcInsert: retains and releases, as the C is written from")
+		dumpKir("ArcInsert: retains and releases")
+		val vLadders = ReleaseLadders(vModule)
+		if ("ladders" !in vSkipped) vLadders.run()
+		if (com.bitsycore.ktc2.Settings.flag("debug.passes")) System.err.println("ktc2: passes: ${vLadders.exits} ways out sharing their releases, ${vLadders.saved} releases fewer")
+		dumpKir("ReleaseLadders: the ways out share their releases, as the C is written from")
 		val vSources = CEmitter(vModule).emit(File(vOutDir, "c"))
 		val vMain = moduleFragment.files.first { vFile -> vFile.declarations.any { it is IrSimpleFunction && isEntryPoint(it) } }
 		val vFacade = File(vMain.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"

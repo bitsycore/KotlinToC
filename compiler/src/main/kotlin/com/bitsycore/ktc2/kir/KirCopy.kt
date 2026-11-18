@@ -49,6 +49,8 @@ private class Copier {
 		is KThrow -> KThrow(expr(inStatement.value))
 		is KTryRegion -> KTryRegion(inStatement.id, block(inStatement.body))
 		is KRelease -> KRelease(expr(inStatement.operand))
+		is KGoto -> KGoto(inStatement.label)
+		is KLabel -> KLabel(inStatement.label)
 	}
 
 	private fun expr(inExpr: KExpr): KExpr = when (inExpr) {

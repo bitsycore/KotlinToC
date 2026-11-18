@@ -60,7 +60,7 @@ object Settings {
 		Setting("debug.dumpIr", "KTC2_DUMP_IR", Kind.Flag, false, "also write the IR of the Kotlin compiler and ktc2's after each pass (kir/)", option = "--dump-ir"),
 		Setting("debug.dumpKir", "KTC2_DUMP_KIR", Kind.Text, "", "the functions whose KIR is written, by a part of their C name (all: every one)"),
 		Setting("debug.skip", "KTC2_SKIP", Kind.List, emptyList<String>(),
-			"optimizations left out: devirtualize, copies, listloops, ranges, handover, brief, walk, owned, slots, rooms, inline"),
+			"optimizations left out: devirtualize, copies, listloops, ranges, handover, brief, walk, owned, slots, rooms, inline, ladders"),
 		Setting("debug.timing", "KTC2_TIMING", Kind.Flag, false, "print where compile time goes"),
 		Setting("debug.borrow", "KTC2_DEBUG_BORROW", Kind.Flag, false, "explain reference-count decisions"),
 		Setting("debug.cycles", "KTC2_DEBUG_CYCLES", Kind.Flag, false, "report the cycles of the library's own classes too"),

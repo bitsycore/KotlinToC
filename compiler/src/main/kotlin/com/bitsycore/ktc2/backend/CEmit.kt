@@ -993,6 +993,8 @@ class CEmitter(private val mModule: KModule) {
 				// A value that is computed only because computing it can fail is not kept: the cast says so to the C compiler.
 				is KEval -> line(inDepth, if (inStatement.expr is KCall || inStatement.expr is KIntrinsic) "${bare(expr(inStatement.expr))};" else "(void)${expr(inStatement.expr)};")
 				is KRelease -> line(inDepth, "${releaseText(inStatement.operand.type, bare(expr(inStatement.operand)))};")
+				is KGoto -> line(inDepth, "goto ${inStatement.label};")
+				is KLabel -> line(inDepth - 1, "${inStatement.label}: ;")
 				is KReturn -> {
 					// A coroutine that returns is done: dropped now, it has nothing to give up.
 					coroutine?.let { line(inDepth, "$self->${it.label.cName} = -1;") }

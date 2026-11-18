@@ -51,6 +51,7 @@ sources + library sources + generated bindings
   -> ExceptionLowering       throw/try -> pending value + tests          backend/ExceptionLowering.kt
   -> EscapeAnalysis          objects to the frame, results in place      backend/EscapeAnalysis.kt
   -> ArcInsert               retain/release, minus what is unobservable  backend/ArcInsert.kt (+ Effects, BorrowedReturns)
+  -> ReleaseLadders          the ways out share their releases           backend/ReleaseLadders.kt
   -> CEmitter                one .h/.c per class (short functions in the .h), ktc2_all.c, CMakeLists.txt   backend/CEmit.kt
 ```
 
@@ -290,6 +291,21 @@ program without one is counted exactly as before. The early release of a tempora
 one release `Effects` does not place: `ArcInsert` leaves it to the end of the block when the
 object may have a cleaner and a local that borrows from a writable place is still in use
 (`mPlaceBorrowers`).
+
+**The ways out share their releases** (`ReleaseLadders`, after `ArcInsert`). `ArcInsert` writes
+in front of each `return` the releases of everything still held, and a call that can throw is
+followed by such a way out: a function that holds n objects and calls n times had some n * n / 2
+releases. A way out that returns a constant (the zero of the type after a failed call, or nothing)
+now jumps into a ladder of releases written once, the last object made first, each step falling
+to the next, down to the `return`. Two ways out that release the same objects last share those
+steps: the ways out are a tree read from the `return` back. A step stands at the end of the block
+that declares its object, so that the object, and the stack slot it may be in, is still in scope:
+an inner block's steps go on to the outer block's with a `goto`, which only ever goes forward or
+out of a block. Left as they are: coroutines (`CEmitter` takes their ways out apart), and the
+`else` of a chain of tests, which `flatChain` writes at one level. A `return` of a computed value
+keeps its releases. In the showcase: 8,345 ways out, releases in the C 49,298 to 21,981, the C 4 %
+smaller, the program 3 %; the counts and times of `tools/bench.py` unchanged. `KTC2_SKIP=ladders`
+leaves it out.
 
 **Cycles** are not collected, but for one shape. Two objects that hold each other through their
 own fields (an object and its `inner` object, or the lambda in one of its properties that calls
@@ -963,6 +979,7 @@ nearly every function; this is the map.
 | `KThrow`, `KTryRegion` | from the importer until `ExceptionLowering`, which removes them |
 | `KAlloc.onStack`, `KArrayNew.onStack`, `KConcat.onStack`, `KStackSlot`, calls to `name__into` (a dispatcher's has `KFunction.slotClasses`), the locals `ktc2_roomN_0/1` | set or added by `EscapeAnalysis` |
 | `KRetain`, `KRelease`, `releasesOld` on stores, calls to `name__b` / `name__m` | added by `ArcInsert`; before it no counting exists |
+| `KGoto`, `KLabel` | added by `ReleaseLadders`, the last pass: only `CEmitter` sees them |
 | `KFunction.coroutine`, `KIf` on `suspendPoint(N)` | from the importer on; the emitter makes the locals fields (`KField.isFrame`) and takes the releases in front of each suspension out into `KCoroutine.cleanups` |
 | `KIndexRead.isChecked`, `KIndexSet.isChecked` | set by `RangeChecks` when the index is proven in range, and by `ExceptionLowering` when it put the test in front of the statement |
 | calls to a dispatcher | fewer after `Devirtualize`, which replaces the ones it can resolve by `KCall`s to the implementation (under a `KRefCast` when the types of the two differ) |

@@ -16,7 +16,18 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
-**State on 2026-11-17, evening (Windows).** Start here, then the Mac's state below.
+**State on 2026-11-18 (Mac).** Start here, then the evening of 2026-11-17 below. The ways out of a
+function share their releases (`ReleaseLadders`, after `ArcInsert`; `DESIGN.md`, section 5): a way out
+that returns a constant (after a failed call, mostly) jumps into a ladder of releases written once, each
+step at the end of the block that declares its object. The showcase: 8,345 ways out, releases in its C
+49,298 to 21,981, its C 331,000 lines to 317,000 (-4 %), the program 6.57 to 6.37 MB; compile time the
+same. `tools/bench.py`: counts unchanged, times within the noise. The whole suite on the Mac, 1041 of
+1041 (27 min, clang), and AddressSanitizer on every integration program and project (173). Not run on
+Windows (MSVC) nor Linux: the CI job of the push that carries it. Left of the "Next" below: a `return`
+of a computed value keeps its releases (the result in a variable, then the same ladder, would share
+those too); what is left of the size (Native's Regex 2.2 MB, the Unicode tables); fewer C files.
+
+**State on 2026-11-17, evening (Windows).**
 - The repository was cleaned of everything a build makes (`tools/clean.ps1`: the build directories,
   `.gradle`, `~/.ktc2/cache`) and built from nothing: the tool, the CI's part of the suite (358 of
   358: integration, and the Kotlin tests in C only), and the showcase (SDL3 and the kotlinx sources

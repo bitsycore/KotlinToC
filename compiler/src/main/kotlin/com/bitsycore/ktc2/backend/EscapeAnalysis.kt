@@ -539,6 +539,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 					}
 					is KPrint, is KBreak, is KContinue, is KRelease -> {}
 					is KThrow, is KTryRegion -> error("exceptions are lowered before this pass")
+					is KGoto, is KLabel -> error("release ladders are made after this pass")
 				}
 			}
 		}

@@ -64,7 +64,7 @@
 # The functions whose KIR is written, by a part of their C name; "all": every one (KTC2_DUMP_KIR).
 # dumpKir = ""
 # Optimizations left out (KTC2_SKIP): devirtualize, copies, listloops, ranges, handover, brief, walk, owned,
-# slots, rooms, inline.
+# slots, rooms, inline, ladders.
 # skip = []
 # Print where compile time goes (KTC2_TIMING).
 # timing = false

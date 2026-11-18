@@ -270,6 +270,7 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 					is KRelease -> expr(vStatement.operand)
 					is KBreak, is KContinue -> {}
 					is KThrow, is KTryRegion -> error("exceptions are lowered before this pass")
+					is KGoto, is KLabel -> error("release ladders are made after this pass")
 				}
 			}
 		}
@@ -807,6 +808,7 @@ private fun buildOwnedForms(inEffects: Effects, inReturns: BorrowedReturns) {
 				is KReturn -> returnValue(inStatement, outStatements)
 				is KPrint, is KRelease -> outStatements += inStatement
 				is KThrow, is KTryRegion -> error("exceptions are lowered before this pass")
+				is KGoto, is KLabel -> error("release ladders are made after this pass")
 			}
 		}
 
