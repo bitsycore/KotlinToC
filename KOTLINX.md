@@ -189,7 +189,8 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   `CancellationException`; a `suspend` lambda that implements a `fun interface` (`FlowCollector`); and a
   `suspend` call returned from inside a `try`, which ktc2 took for a tail call (its `catch` never saw what the
   resumption brought back: `withTimeoutOrNull`). Left: the library's cycles (its program leaves objects:
-  `program.cycles` says so until `weak`/`acyclic` entries answer them), its own tests, the pending box
+  `program.cycles` says so until `weak`/`acyclic` entries answer them), its own tests (in the suite since the night of
+  2026-11-18: `PLAN.md`), the pending box
   tests of coroutines, `kotlinx-coroutines-test`.
 - **Cycles (2026-11-18)**: the owner chose to answer them in the library (edits of the module), after
   atomicfu's atomics are made fields of their owner (`DESIGN.md`, section 6), which they now are. Measured

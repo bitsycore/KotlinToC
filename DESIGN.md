@@ -336,6 +336,9 @@ objects are destroyed after the step (`tests/integration/objects/PairCyclesThrea
 release of a paired object before (2026-11-18): with kotlinx.coroutines' coroutines paired, 100,000 `async` on
 `Dispatchers.Default` took twice as long and 20,000 cancellations four times; now about what they take unpaired. A cycle longer than two that is a library's design
 is declared by its module, as `KTC2_CYCLES=1` names it: `cycles = ["A.f -> B.g -> C.h"]` (C's `h` holding the A).
+A step may be `lambda.self` (or an object expression's `<no name provided>`), which has no name of its own: it
+stands for each lambda the field before can hold that has that field, holding the class of the next step, a cycle
+for each.
 It is the same mechanism, a `KPairCycle` with the steps between (`via`): each class of the cycle gets it from its own
 place, its objects carry `KTC2_PAIRED`, and the check follows the cycle, each object on the way held by the one before
 it alone and the last one's field holding the first; then the cycle is cut there and the first object released, which
@@ -478,7 +481,11 @@ of its own.
   machine (`KFunction.coroutine`). `f` makes the object and runs `invokeSuspend` from the start.
   A `suspend` lambda is such a class too: the closure object is one instance with only the
   captured values; its `invoke` and `create` copy it with the parameters and the completion.
-  `BaseContinuationImpl.resumeWith` (the platform's, as Kotlin/Native's) runs the machines.
+  `BaseContinuationImpl.resumeWith` (the platform's, as Kotlin/Native's) runs the machines. A
+  machine that ends in its first run, with a value or an exception, is resumed by nobody: the
+  function that made it then lets go of the continuation it intercepted there
+  (`coroutineRanThrough`), as `resumeWith` does after a later run. Kept, the intercepted
+  continuation (kotlinx.coroutines' `DispatchedContinuation`) and the machine would hold each other.
 - A suspension point is plain KIR made by the importer: the call, then
   `if (r === COROUTINE_SUSPENDED) { if (suspend point N) return COROUTINE_SUSPENDED; r = coroutineResult(result) }`.
   `coroutineResult` throws the exception the coroutine is resumed with, so `ExceptionLowering`
@@ -535,7 +542,9 @@ The library is the real one, compiled from source with every program:
   at `${kotlin}`, the version of the compiler ktc2 runs; ktc2 fetches them into its cache like any
   module's (`K2Frontend.librarySources`, `upstreamOf`). Its `files.txt` lists the files of them it
   compiles (paths) and its platform layer (bare names); its `edits` change one file as it is fetched
-  (`Regex.kt.edit`: the cleaner that cuts the cycles of Native's regex). The tool carries the
+  (`Regex.kt.edit`: the cleaner that cuts the cycles of Native's regex). A block `after: <line>` or
+  `replace: <line>` names a line that is there once; `replace 2: <line>` the second of several, as the
+  blocks before it left the file. The tool carries the
   platform layer, the C runtime and the C library's bindings, not the library's sources.
 - Some of `files.txt` is what Kotlin/Native shares with Wasm, which no jar for Native or the
   JVM holds: `commonNonJvmMain` and `nativeWasmMain`, from the sources jar of
@@ -946,6 +955,10 @@ Known to differ from the JVM, otherwise:
 - an argument of the wrong kind that reaches a function of a concrete class through an
   unchecked cast (a `Comparator<Int>` handed a `String` as a `Comparator<Any>`) is answered
   with -1, false or null where the JVM throws `ClassCastException`;
+- a null cast without a check to a type parameter that stands for a number (`slot as E` with E an
+  `Int`) is that number's zero: the instantiation holds the number itself, where Kotlin/Native and the
+  JVM keep the null as an object until it is used as a number (kotlinx.coroutines' channel segments
+  read an emptied slot that way and never use it: `generics/UncheckedNullCast`);
 - paths and program arguments are UTF-8, which on Windows is right for ASCII only.
 
 A difference from both the JVM and Kotlin/Native in plain Kotlin is a bug to fix, not a line for
@@ -996,6 +1009,10 @@ nearly every function; this is the map.
   arguments, into its KIR counterpart, creating it on first request. That is the
   monomorphization: the key is the declaration and the `canonical` form of the arguments.
   A function's body is not built at once but queued, so recursion and cycles are no problem.
+  A class's members (its fields, its interfaces, its instance) are declared once the outermost
+  `classFor` has made its classes: a field's type may be a class below the one being made, through a
+  generic class whose superclass is being made too (kotlinx.coroutines' `AbstractSharedFlow` holds a
+  `SubscriptionCountStateFlow`, a `SharedFlowImpl<Int>` below it: `generics/FieldOfSubclassType`).
 - `kTypeOf` maps a Kotlin type to a KIR type (`KPrimType`, `KOptType`, `KClassType`,
   `KObjType`, `KArrayType`, `KStringType`, `KStructType`, `KPtrType`, `KUnitType`, `KNothingType`).
 - Names in C: package and class joined by `_`, then the function; overloads get `__` and the

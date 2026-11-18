@@ -16,6 +16,32 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-18)
 ---------------------------------------------------------------------------
 
+**State on 2026-11-18 (Windows), night: kotlinx.coroutines' own tests.** They are in the suite
+(`tests/modules/kotlinx-coroutines/core`, `tests/README.md`): 170 files of `common/test` and `concurrent/test` with
+the common `test-utils`; every one runs and passes its tests in C and on the JVM. 16 files leave cycles of the
+library that are not answered yet (`.cycles`, each naming the structure), and 11 cycles by their tests' own design or
+of the deprecated `BroadcastChannel`. Found and fixed on the way, in ktc2: a `val` given its value in a
+`callsInPlace` lambda read as 0; `String::plus` given as a `suspend` function type made no function value; a null
+cast without a check to a type parameter that is a number failed (now its zero, `DESIGN.md`, section 12); a field of
+a class below the class being made, through a generic class (`AbstractSharedFlow`, so `SharedFlow`/`StateFlow`
+compile now: the members of classes are declared once the outermost `classFor` is done); `removeFirst` on an
+`ArrayList` itself; `shuffle()` had a fixed seed (Native's uses `Random`); a state machine that ends in its first
+run kept its intercepted continuation (`coroutineRanThrough`); and a double release in a state machine resumed
+inside the call that suspends it (an immediate dispatcher): the release of the call's argument ran before the test
+for a suspension once a declaration stood in front of the suspension point (`CEmit.withTestsAfterCalls`). In the
+library, ten more edits of the module (lazy coroutines let go of their block, `awaitAll`'s nodes and disposer, a
+`Mutex`'s resumed waiters, a shared flow's emitters, Native's `SafeCollector` releases its last context, the
+channel's handler of undelivered elements, `shareIn`'s sentinel as `Any?`, `Deprecated.kt` compiled) and four
+declared cycles (the dispatchers' pool and its lambda: `lambda.self` may now name a step; a handler boxed as a
+job's state; a closed channel's cause; an aborted flow). An edit may now name the second of repeated lines
+(`replace 2:`). Left, the 16 `.cycles` of the library, by kind: a channel's coroutine cancelled (its exception kept
+both as its state and as the channel's cause: two cycles through one object, which no declared cycle frees, and a
+ring of those four classes made it worse); a failed `runBlocking` whose exception names a scope coroutine that
+keeps its caller's continuation (`ScopeCoroutine.uCont`); a job whose result is its own handler (declared, and
+still not freed: to look at with `KTC2_CYCLES=1`); a lazy coroutine cancelled while it is made; the segments of a
+channel or a semaphore (`_next`/`_prev`) left unclosed; a select's clauses; the handler lists in threads (below).
+Not run here: the CI job, Linux, macOS; the whole suite on Windows before the commit (`build/suite-all.log`).
+
 **Read first (2026-11-18, end of the day, Mac).** Pushed together: eleven commits of the day (from `bcf1aef`,
 kotlinx.coroutines as a module, to the rings), each with the whole suite green on the Mac (1,043, clang) and
 AddressSanitizer clean on the threaded programs; never run on Windows nor Linux: the CI job of this push is
