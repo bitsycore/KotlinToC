@@ -8,3 +8,6 @@ edits        = ["commonMain/AbstractCoroutine.kt = AbstractCoroutine.kt.edit", "
 # A segment of a channel refers back to it; the channel is held by whoever sends or receives through the segment. A
 # timeout's exception names its coroutine only for withTimeoutOrNull to know it, which holds that coroutine meanwhile.
 weak         = ["kotlinx.coroutines.channels.ChannelSegment._channel", "kotlinx.coroutines.TimeoutCancellationException.coroutine"]
+# A coroutine that ends with an exception keeps it as its final state, and the exception names the coroutine: they go
+# together when nothing else holds any of them.
+cycles       = ["kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.CompletedExceptionally.cause -> kotlinx.coroutines.JobCancellationException.job"]

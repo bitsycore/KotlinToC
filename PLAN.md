@@ -16,6 +16,14 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
+**State on 2026-11-18 (Mac), kotlinx.coroutines' cycles, done.** Nothing that kotlinx.coroutines leaves grows
+with use any more (`KOTLINX.md`, kotlinx.coroutines, "Cycles"): what is left is the dispatchers' own, made once.
+Last: the rings of a job's list cut once it has ended, a timeout's exception weak on its coroutine, and the
+cycle of a coroutine and the exception it ended with declared by the module (`cycles`, a new key: a cycle of
+any length freed as a pair is, the same `KPairCycle` with steps between; the owner asked for one reusable
+mechanism rather than a case of kotlinx's in the emitter). Next: the library's own tests
+(`kotlinx-coroutines-core/common/test`), then the pending box tests of coroutines.
+
 **State on 2026-11-18 (Mac), kotlinx.coroutines' cycles.** The owner chose to answer the library's
 cycles with edits of it, after atomicfu's atomics are made fields of their owner, which they are now
 (`DESIGN.md`, section 6): the objects left for 1,000 coroutines went from 109,521 to 21,947, and every

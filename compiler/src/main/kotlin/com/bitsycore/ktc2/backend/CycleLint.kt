@@ -69,6 +69,7 @@ class CycleLint(private val mModule: KModule) {
 			}
 		}
 		findSelfHandovers()
+		declaredCycles()
 
 		val vSeen = HashSet<String>()
 		for (vClass in vClasses) {
@@ -259,6 +260,41 @@ class CycleLint(private val mModule: KModule) {
 		}
 		register(inThere, inBack)
 		if (inBack !== inThere) register(inBack, inThere)
+	}
+
+	/**
+	 * The cycles the modules of the program declare (`cycles` in `module.ktc2.toml`, as `KTC2_CYCLES=1` writes them:
+	 * `A.f -> B.g -> C.h`, C's `h` holding the A): the library's own design, of objects that free one another only when
+	 * nothing else holds any of them. Each class of the cycle gets it from its own place in it, so that whichever object
+	 * is let go of last finds the cycle: it is freed as a cycle of two is (KPairCycle, with the steps between).
+	 * A cycle whose classes or fields the program does not have is not there.
+	 */
+	private fun declaredCycles() {
+		val vDeclared = System.getProperty("ktc2.cycles", "").lines().map { it.trim() }.filter { it.isNotEmpty() }
+		for (vLine in vDeclared) {
+			val vSteps = vLine.split("->").map { it.trim() }
+			if (vSteps.size < 2) continue
+			// Each step: the class named, the field of it (or of a class above it), the classes the program makes of it.
+			val vResolved = vSteps.mapNotNull { vStep ->
+				val vClassName = vStep.substringBeforeLast('.')
+				val vFieldName = vStep.substringAfterLast('.')
+				val vClass = mModule.classes.firstOrNull { it.name == vClassName } ?: return@mapNotNull null
+				val vField = generateSequence(vClass) { it.superClass }.flatMap { it.fields }.firstOrNull { it.cName == vFieldName } ?: return@mapNotNull null
+				Triple(vClass, vField, mModule.classes.filter { it.isInstantiated && it.isSubclassOf(vClass) })
+			}
+			if (vResolved.size != vSteps.size || vResolved.any { it.third.isEmpty() }) continue
+			val vCount = vResolved.size
+			for (vStart in 0 until vCount) {
+				val vTurn = (0 until vCount).map { vResolved[(vStart + it) % vCount] }
+				val vVia = (1 until vCount - 1).map { KCycleStep(vTurn[it].second, vTurn[it + 1].third) }
+				for (vHead in vTurn[0].third) {
+					for (vPartner in vTurn[1].third) {
+						val vCycle = KPairCycle(vTurn[0].second, vPartner, vTurn[vCount - 1].second, vVia)
+						if (vHead.pairCycles.none { it.field === vCycle.field && it.partner === vPartner && it.back === vCycle.back && it.via.size == vVia.size }) vHead.pairCycles += vCycle
+					}
+				}
+			}
+		}
 	}
 
 	/** What a warning of a cycle asks of the program: [inBack] is the reference that closes it. */

@@ -171,8 +171,14 @@ class KStruct(
  * [owner] is the class declaring the field, or null for a `@Struct` field. [isImmutable] is set
  * for a field that is never reassigned once its object is constructed (a `val`).
  */
-/** One of [KClass.pairCycles]. */
-class KPairCycle(val field: KField, val partner: KClass, val back: KField)
+/**
+ * One of [KClass.pairCycles]: the object holds, in [field], a [partner]; that one holds, through the steps of [via] if
+ * there are any (a cycle longer than two, declared by a module: `cycles`), an object whose [back] holds the first.
+ */
+class KPairCycle(val field: KField, val partner: KClass, val back: KField, val via: List<KCycleStep> = emptyList())
+
+/** A step of a cycle longer than two: the object reached holds, in [field], one of [classes]. */
+class KCycleStep(val field: KField, val classes: List<KClass>)
 
 class KField(val cName: String, val type: KType, val owner: KClass? = null, val isImmutable: Boolean = false) {
 	/**

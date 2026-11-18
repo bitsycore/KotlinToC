@@ -579,7 +579,12 @@ class CEmitter(private val mModule: KModule) {
 				val vType = vField.type
 				if (vField.inlineSize == 0 && vType is KClassType) {
 					vState.includes += vType.cls.unit
-					vBodies.append("\t${vType.cls.cName}__refs((ktc2_Obj*)&self->${vField.cName}, visit, context);\n")
+					// An atomic held in place is told by the name of its field: as a module's `cycles` names it.
+					if (vType.cls.name == kAtomicRefClass) {
+						vBodies.append("\tif (((ktc2_AtomicRefCell*)&self->${vField.cName})->held != ((ktc2_AtomicRefCell*)&self->${vField.cName})->owner) visit(context, object, ${cString(vField.cName)}, (ktc2_Obj*)(intptr_t)((ktc2_AtomicRefCell*)&self->${vField.cName})->held);\n")
+					} else {
+						vBodies.append("\t${vType.cls.cName}__refs((ktc2_Obj*)&self->${vField.cName}, visit, context);\n")
+					}
 				}
 			}
 			vClass.superClass?.let { vBodies.append("\t${it.cName}__refs(object, visit, context);\n") }
@@ -599,14 +604,43 @@ class CEmitter(private val mModule: KModule) {
 					return "(ktc2_Obj*)((${(inPair.field.owner ?: vClass).cName}*)object)->${inPair.field.cName}"
 				}
 				fun back(inPair: KPairCycle, inPartner: String): String = "((${(inPair.back.owner ?: inPair.partner).cName}*)$inPartner)->${inPair.back.cName}"
+				// A field read through: an atomic held in place keeps its reference in a Long (ktc2_AtomicRefCell).
+				fun isAtomic(inField: KField): Boolean = inField.isInline && (inField.type as? KClassType)?.cls?.name == kAtomicRefClass
+				fun read(inField: KField, inObject: String): String {
+					val vOwner = inField.owner ?: return "NULL"
+					vState.includes += vOwner.unit
+					val vSlot = "((${vOwner.cName}*)$inObject)->${inField.cName}"
+					return if (isAtomic(inField)) "(ktc2_Obj*)(intptr_t)((ktc2_AtomicRefCell*)&$vSlot)->held" else "(ktc2_Obj*)$vSlot"
+				}
+				fun clear(inField: KField, inObject: String): String {
+					val vSlot = "((${inField.owner!!.cName}*)$inObject)->${inField.cName}"
+					return if (isAtomic(inField)) "((ktc2_AtomicRefCell*)&$vSlot)->held = 0" else "$vSlot = NULL"
+				}
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					vBodies.append("\tktc2_Obj* partner$vIndex = ${partner(vIndex, vPair)};\n")
-					vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1 && (ktc2_Obj*)${back(vPair, "partner$vIndex")} == object;\n")
+					if (vPair.via.isEmpty()) {
+						vBodies.append("\tktc2_Obj* partner$vIndex = ${partner(vIndex, vPair)};\n")
+						vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1 && (ktc2_Obj*)${back(vPair, "partner$vIndex")} == object;\n")
+					} else {
+						// A longer cycle: each object on the way held by the one before it alone, the last one's field holding this one.
+						vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
+						vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1;\n")
+						var vLast = "partner$vIndex"
+						for ((vStep, vVia) in vPair.via.withIndex()) {
+							val vNext = "step${vIndex}_$vStep"
+							val vTypes = vVia.classes.joinToString(" || ") { "$vNext->typeId == ${typeId(it)}" }
+							vBodies.append("\tktc2_Obj* $vNext = held$vIndex ? ${read(vVia.field, vLast)} : NULL;\n")
+							vBodies.append("\theld$vIndex = held$vIndex && $vNext && ($vTypes) && (KTC2_RC_LOAD($vNext) & KTC2_COUNT_MASK) == 1;\n")
+							vLast = vNext
+						}
+						vBodies.append("\tktc2_Obj* last$vIndex = $vLast;\n")
+						vBodies.append("\theld$vIndex = held$vIndex && ${read(vPair.back, vLast)} == object;\n")
+					}
 					vBodies.append("\tif (held$vIndex) explained++;\n")
 				}
 				vBodies.append("\tif (explained == 0 || (KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return 0;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					vBodies.append("\tif (held$vIndex) ${back(vPair, "partner$vIndex")} = NULL;\n")
+					if (vPair.via.isEmpty()) vBodies.append("\tif (held$vIndex) ${back(vPair, "partner$vIndex")} = NULL;\n")
+					else vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
 				}
 				// The object is then this function's alone (its count one): the caller releases it, which frees the pair.
 				vBodies.append("\tKTC2_RC_SET(object, (KTC2_RC_LOAD(object) & ~KTC2_COUNT_MASK) | 1);\n\treturn 1;\n}\n")
@@ -615,7 +649,8 @@ class CEmitter(private val mModule: KModule) {
 				// step a program with threads takes under its lock (ktc2_release_paired).
 				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tif (${vClass.cName}__collect(object)) return object;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					if (vPair.partner.pairCycles.isEmpty()) continue
+					// A longer cycle is given to each of its classes from its own place: each finds it for itself.
+					if (vPair.partner.pairCycles.isEmpty() || vPair.via.isNotEmpty()) continue
 					vBodies.append("\tktc2_Obj* other$vIndex = ${partner(vIndex, vPair)};\n")
 					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex)) return other$vIndex;\n")
 				}

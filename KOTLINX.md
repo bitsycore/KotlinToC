@@ -219,7 +219,9 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   refers to its coroutine weakly (`weak`: only `withTimeoutOrNull` reads it, to know its own, holding that
   coroutine meanwhile). Left: a cancelled coroutine and its `JobCancellationException`, which refers back to
   it from the coroutine's final state (four objects for each cancelled coroutine), and the dispatchers' own
-  structures, which live as long as the program.
+  structures, which live as long as the program. The first is now declared by the module (`cycles`, a cycle
+  of three the runtime frees as it frees a pair: `DESIGN.md`, Cycles). The broad program (flows, a `Mutex`,
+  `Dispatchers.Default`, timeouts, cancellation, failures) leaves 2,356 objects for any N: none grows with use.
 
 ---------------------------------------------------------------------------
 ## 5. Order, and what is the owner's to decide

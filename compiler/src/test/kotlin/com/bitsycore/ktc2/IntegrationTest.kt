@@ -401,6 +401,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		mJvmClasspath = vJars
 		System.setProperty("ktc2.weak", vModules.flatMap { it.weak }.joinToString("\n"))
 		System.setProperty("ktc2.acyclic", vModules.flatMap { it.acyclic }.joinToString("\n"))
+		System.setProperty("ktc2.cycles", vModules.flatMap { it.cycles }.joinToString("\n"))
 		System.setProperty("ktc2.moduleOptIn", vModules.flatMap { it.optIn }.distinct().joinToString("\n"))
 		mJvmOptions = mJvmOptions + vModules.first().optIn.map { "-opt-in=$it" }
 		try {
@@ -414,6 +415,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			mVarying = emptyList()
 			System.clearProperty("ktc2.weak")
 			System.clearProperty("ktc2.acyclic")
+			System.clearProperty("ktc2.cycles")
 			System.clearProperty("ktc2.moduleOptIn")
 		}
 	}
@@ -448,6 +450,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// What the modules say is @Weak or @Acyclic, as `ktc2` passes it on.
 		System.setProperty("ktc2.weak", vProject.weak.joinToString("\n"))
 		System.setProperty("ktc2.acyclic", vProject.acyclic.joinToString("\n"))
+		System.setProperty("ktc2.cycles", vProject.cycles.joinToString("\n"))
 		System.setProperty("ktc2.moduleOptIn", vProject.optIn.joinToString("\n"))
 		// As a command compiles it: the modules' files with the library, the program's own on top.
 		mOwnSources = vProject.ownSources
@@ -458,6 +461,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			System.clearProperty("ktc2.main")
 			System.clearProperty("ktc2.weak")
 			System.clearProperty("ktc2.acyclic")
+			System.clearProperty("ktc2.cycles")
 			System.clearProperty("ktc2.moduleOptIn")
 			mJvmExcluded = { false }
 			mJvmClasspath = ""

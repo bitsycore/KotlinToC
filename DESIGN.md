@@ -331,7 +331,15 @@ which also keeps weak references from being read, and a flag that a reference co
 meanwhile waits for, `ktc2_retain_paired`). Counted apart, another thread could take a reference through a
 partner's field between the reads of two counts, or free the pair under a check that has not run yet. The
 objects are destroyed after the lock is given up. It costs a lock for each release of a paired object in a
-threaded program (`tests/integration/objects/PairCyclesThreads`). `CycleLint` warns at compile time about the other classes that can reach
+threaded program (`tests/integration/objects/PairCyclesThreads`). A cycle longer than two that is a library's design
+is declared by its module, as `KTC2_CYCLES=1` names it: `cycles = ["A.f -> B.g -> C.h"]` (C's `h` holding the A).
+It is the same mechanism, a `KPairCycle` with the steps between (`via`): each class of the cycle gets it from its own
+place, its objects carry `KTC2_PAIRED`, and the check follows the cycle, each object on the way held by the one before
+it alone and the last one's field holding the first; then the cycle is cut there and the first object released, which
+frees them all. Exact as for a pair: nothing is freed while anything else holds one of them. A field that is an atomic
+held in place is read through its cell (`ktc2_AtomicRefCell`). kotlinx.coroutines declares one: a coroutine that ended
+with an exception keeps it as its state, and the exception names the coroutine
+(`JobSupport._state -> CompletedExceptionally.cause -> JobCancellationException.job`). `CycleLint` warns at compile time about the other classes that can reach
 themselves through strong references; `@Weak` (on a property, or on an `inner` class for its
 outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner
