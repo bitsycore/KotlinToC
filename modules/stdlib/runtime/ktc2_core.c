@@ -123,15 +123,74 @@ static void runtime_leave(void)
 /** Live objects per type id. */
 static int64_t* live_counts;
 
-static void count_live(uint32_t typeId, int delta)
+/*
+ * The objects alive, as a set of addresses: what the leak check looks through at the end for the
+ * cycles that kept objects alive (cycles_report). Open addressing; a removed entry is a tombstone.
+ */
+static ktc2_Obj** live_set;
+static size_t live_capacity;
+static size_t live_filled;
+#define LIVE_TOMBSTONE ((ktc2_Obj*)1)
+
+static size_t live_slot(const ktc2_Obj* object)
 {
+	return (size_t)((((uintptr_t)object >> 4) * UINT64_C(0x9E3779B97F4A7C15)) >> 20) & (live_capacity - 1);
+}
+
+static void live_add(ktc2_Obj* object)
+{
+	if ((live_filled + 1) * 2 >= live_capacity) {
+		ktc2_Obj** old = live_set;
+		size_t oldCapacity = live_capacity;
+		live_capacity = live_capacity ? live_capacity * 2 : 1024;
+		live_set = calloc(live_capacity, sizeof *live_set);
+		live_filled = 0;
+		if (!live_set) {
+			live_capacity = 0;
+			free(old);
+			return;
+		}
+		for (size_t at = 0; at < oldCapacity; at++) {
+			ktc2_Obj* each = old[at];
+			if (!each || each == LIVE_TOMBSTONE) continue;
+			size_t slot = live_slot(each);
+			while (live_set[slot]) slot = (slot + 1) & (live_capacity - 1);
+			live_set[slot] = each;
+			live_filled++;
+		}
+		free(old);
+	}
+	size_t slot = live_slot(object);
+	while (live_set[slot] && live_set[slot] != LIVE_TOMBSTONE) slot = (slot + 1) & (live_capacity - 1);
+	if (!live_set[slot]) live_filled++;
+	live_set[slot] = object;
+}
+
+static void live_remove(ktc2_Obj* object)
+{
+	if (!live_capacity) return;
+	size_t slot = live_slot(object);
+	while (live_set[slot]) {
+		if (live_set[slot] == object) {
+			live_set[slot] = LIVE_TOMBSTONE;
+			return;
+		}
+		slot = (slot + 1) & (live_capacity - 1);
+	}
+}
+
+static void count_live(ktc2_Obj* object, int delta)
+{
+	uint32_t typeId = object->typeId;
 	runtime_enter();
 	if (!live_counts) live_counts = calloc(ktc2_type_count, sizeof *live_counts);
 	if (live_counts && typeId < ktc2_type_count) live_counts[typeId] += delta;
+	if (delta > 0) live_add(object);
+	else live_remove(object);
 	runtime_leave();
 }
 #else
-#define count_live(typeId, delta) ((void)0)
+#define count_live(object, delta) ((void)0)
 #endif
 
 #ifdef KTC2_ARC_STATS
@@ -444,7 +503,7 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 	}
 	object->typeId = typeId;
 	if (typeId >= KTC2_TYPE_FIRST_USER && ktc2_types[typeId].pairs) object->rc |= KTC2_PAIRED;
-	count_live(typeId, 1);
+	count_live(object, 1);
 	return object;
 }
 
@@ -647,7 +706,7 @@ KTC2_ALWAYS_INLINE void destroy_now(ktc2_Obj* object)
 	if (destroy) destroy(object);
 	/* A stack object only gives up what it refers to; its memory belongs to a frame. */
 	if (object->rc & KTC2_STACK) return;
-	count_live(object->typeId, -1);
+	count_live(object, -1);
 	if (object->rc & KTC2_ARENA) {
 		arena_block_drop(*(ArenaBlock**)((char*)object - ARENA_PREFIX));
 		return;
@@ -659,6 +718,230 @@ static void destroy_rest(void)
 {
 	while (destroy_later_count != 0) destroy_now(destroy_later[--destroy_later_count]);
 }
+
+#ifdef KTC2_LEAK_CHECK
+
+/*
+ * The cycles among what is left at the end: each group of objects that hold one another (a
+ * strongly connected component of the references between them), told by one way round it, the
+ * class and the field of each step. Groups that go round the same way are counted together.
+ */
+typedef struct CycleEdge {
+	uint32_t from;
+	uint32_t to;
+	const char* field;
+} CycleEdge;
+
+typedef struct CycleGraph {
+	ktc2_Obj** nodes;
+	uint32_t count;
+	CycleEdge* edges;
+	size_t edgeCount;
+	size_t edgeCapacity;
+	uint32_t current;
+} CycleGraph;
+
+static int cycle_compare(const void* a, const void* b)
+{
+	uintptr_t left = (uintptr_t)*(ktc2_Obj* const*)a;
+	uintptr_t right = (uintptr_t)*(ktc2_Obj* const*)b;
+	return left < right ? -1 : left > right;
+}
+
+static int64_t cycle_index(CycleGraph* graph, const ktc2_Obj* object)
+{
+	uint32_t low = 0;
+	uint32_t high = graph->count;
+	while (low < high) {
+		uint32_t middle = low + (high - low) / 2;
+		if ((uintptr_t)graph->nodes[middle] < (uintptr_t)object) low = middle + 1;
+		else high = middle;
+	}
+	return low < graph->count && graph->nodes[low] == object ? (int64_t)low : -1;
+}
+
+static void cycle_visit(void* context, ktc2_Obj* from, const char* field, ktc2_Obj* to)
+{
+	(void)from;
+	CycleGraph* graph = context;
+	if (!to) return;
+	int64_t target = cycle_index(graph, to);
+	if (target < 0) return;
+	if (graph->edgeCount == graph->edgeCapacity) {
+		graph->edgeCapacity = graph->edgeCapacity ? graph->edgeCapacity * 2 : 4096;
+		graph->edges = realloc(graph->edges, graph->edgeCapacity * sizeof *graph->edges);
+	}
+	graph->edges[graph->edgeCount++] = (CycleEdge){ graph->current, (uint32_t)target, field };
+}
+
+static int cycle_edge_compare(const void* a, const void* b)
+{
+	const CycleEdge* left = a;
+	const CycleEdge* right = b;
+	return left->from < right->from ? -1 : left->from > right->from;
+}
+
+typedef struct CycleKind {
+	char* text;
+	uint32_t count;
+	uint32_t size;
+} CycleKind;
+
+static void cycles_report(void)
+{
+	CycleGraph graph = { 0 };
+	for (size_t at = 0; at < live_capacity; at++) if (live_set[at] && live_set[at] != LIVE_TOMBSTONE) graph.count++;
+	if (graph.count == 0) return;
+	graph.nodes = malloc(graph.count * sizeof *graph.nodes);
+	uint32_t filled = 0;
+	for (size_t at = 0; at < live_capacity; at++) if (live_set[at] && live_set[at] != LIVE_TOMBSTONE) graph.nodes[filled++] = live_set[at];
+	qsort(graph.nodes, graph.count, sizeof *graph.nodes, cycle_compare);
+	for (uint32_t index = 0; index < graph.count; index++) {
+		ktc2_Obj* object = graph.nodes[index];
+		graph.current = index;
+		if (object->typeId == KTC2_TYPE_ARRAY_REF) {
+			ktc2_Array* array = (ktc2_Array*)object;
+			for (int32_t at = 0; at < array->length; at++) cycle_visit(&graph, object, "[]", ((ktc2_Obj**)(array + 1))[at]);
+		} else if (object->typeId < ktc2_type_count && ktc2_type_refs[object->typeId]) {
+			ktc2_type_refs[object->typeId](object, cycle_visit, &graph);
+		}
+	}
+	qsort(graph.edges, graph.edgeCount, sizeof *graph.edges, cycle_edge_compare);
+	uint32_t* first = calloc((size_t)graph.count + 1, sizeof *first);
+	for (size_t at = 0; at < graph.edgeCount; at++) first[graph.edges[at].from + 1]++;
+	for (uint32_t at = 0; at < graph.count; at++) first[at + 1] += first[at];
+	/* Tarjan's components, without recursion. */
+	int32_t* order = malloc(graph.count * sizeof *order);
+	int32_t* low = malloc(graph.count * sizeof *low);
+	uint32_t* component = malloc(graph.count * sizeof *component);
+	uint32_t* stack = malloc(graph.count * sizeof *stack);
+	bool* onStack = calloc(graph.count, sizeof *onStack);
+	uint32_t* callNode = malloc(graph.count * sizeof *callNode);
+	uint32_t* callEdge = malloc(graph.count * sizeof *callEdge);
+	for (uint32_t at = 0; at < graph.count; at++) order[at] = -1;
+	int32_t counter = 0;
+	uint32_t stackSize = 0;
+	uint32_t components = 0;
+	for (uint32_t root = 0; root < graph.count; root++) {
+		if (order[root] >= 0) continue;
+		uint32_t depth = 0;
+		callNode[depth] = root;
+		callEdge[depth] = first[root];
+		order[root] = low[root] = counter++;
+		stack[stackSize++] = root;
+		onStack[root] = true;
+		while (true) {
+			uint32_t node = callNode[depth];
+			if (callEdge[depth] < first[node + 1]) {
+				uint32_t next = graph.edges[callEdge[depth]++].to;
+				if (order[next] < 0) {
+					order[next] = low[next] = counter++;
+					stack[stackSize++] = next;
+					onStack[next] = true;
+					depth++;
+					callNode[depth] = next;
+					callEdge[depth] = first[next];
+				} else if (onStack[next] && order[next] < low[node]) {
+					low[node] = order[next];
+				}
+				continue;
+			}
+			if (low[node] == order[node]) {
+				uint32_t member;
+				do {
+					member = stack[--stackSize];
+					onStack[member] = false;
+					component[member] = components;
+				} while (member != node);
+				components++;
+			}
+			if (depth == 0) break;
+			depth--;
+			uint32_t parent = callNode[depth];
+			if (low[node] < low[parent]) low[parent] = low[node];
+		}
+	}
+	uint32_t* sizes = calloc(components, sizeof *sizes);
+	for (uint32_t at = 0; at < graph.count; at++) sizes[component[at]]++;
+	bool* told = calloc(components, sizeof *told);
+	CycleKind* kinds = NULL;
+	uint32_t kindCount = 0;
+	uint32_t* previous = malloc(graph.count * sizeof *previous);
+	size_t* previousEdge = malloc(graph.count * sizeof *previousEdge);
+	uint32_t* queue = malloc(graph.count * sizeof *queue);
+	for (uint32_t start = 0; start < graph.count; start++) {
+		uint32_t group = component[start];
+		if (told[group]) continue;
+		bool selfLoop = false;
+		for (uint32_t at = first[start]; at < first[start + 1]; at++) if (graph.edges[at].to == start) selfLoop = true;
+		if (sizes[group] < 2 && !selfLoop) continue;
+		told[group] = true;
+		/* The shortest way round from this object back to it, inside its group. */
+		for (uint32_t at = 0; at < graph.count; at++) previous[at] = UINT32_MAX;
+		uint32_t head = 0, tail = 0;
+		queue[tail++] = start;
+		int64_t endEdge = -1;
+		while (head < tail && endEdge < 0) {
+			uint32_t node = queue[head++];
+			for (uint32_t at = first[node]; at < first[node + 1]; at++) {
+				uint32_t next = graph.edges[at].to;
+				if (component[next] != group) continue;
+				if (next == start) {
+					endEdge = at;
+					break;
+				}
+				if (previous[next] != UINT32_MAX) continue;
+				previous[next] = node;
+				previousEdge[next] = at;
+				queue[tail++] = next;
+			}
+		}
+		if (endEdge < 0) continue;
+		char text[1024];
+		size_t used = 0;
+		/* The steps from the start: walked back from the end, then written in order. */
+		size_t steps[64];
+		uint32_t stepCount = 0;
+		steps[stepCount++] = (size_t)endEdge;
+		for (uint32_t node = graph.edges[endEdge].from; node != start && stepCount < 64; node = previous[node]) steps[stepCount++] = previousEdge[node];
+		for (uint32_t at = stepCount; at-- > 0;) {
+			const CycleEdge* edge = &graph.edges[steps[at]];
+			int written = snprintf(text + used, sizeof text - used, "%s.%s -> ", ktc2_types[graph.nodes[edge->from]->typeId].name, edge->field);
+			if (written < 0 || (size_t)written >= sizeof text - used) break;
+			used += (size_t)written;
+		}
+		snprintf(text + used, sizeof text - used, "%s", ktc2_types[graph.nodes[start]->typeId].name);
+		uint32_t kind = 0;
+		while (kind < kindCount && strcmp(kinds[kind].text, text) != 0) kind++;
+		if (kind == kindCount) {
+			kinds = realloc(kinds, (kindCount + 1) * sizeof *kinds);
+			kinds[kindCount++] = (CycleKind){ strdup(text), 0, sizes[group] };
+		}
+		kinds[kind].count++;
+	}
+	for (uint32_t at = 0; at < kindCount; at++) {
+		fprintf(stderr, "ktc2: cycle x%" PRIu32 " (of %" PRIu32 " objects): %s\n", kinds[at].count, kinds[at].size, kinds[at].text);
+		free(kinds[at].text);
+	}
+	free(kinds);
+	free(previous);
+	free(previousEdge);
+	free(queue);
+	free(told);
+	free(sizes);
+	free(order);
+	free(low);
+	free(component);
+	free(stack);
+	free(onStack);
+	free(callNode);
+	free(callEdge);
+	free(first);
+	free(graph.edges);
+	free(graph.nodes);
+}
+
+#endif
 
 int ktc2_exit(void)
 {
@@ -674,6 +957,8 @@ int ktc2_exit(void)
 		free(live_counts);
 		live_counts = NULL;
 	}
+	/* KTC2_CYCLES=1: what holds what is left, the cycles among them. */
+	if (live_counts && getenv("KTC2_CYCLES")) cycles_report();
 	for (uint32_t id = 0; live_counts && id < ktc2_type_count; id++) {
 		if (live_counts[id] != 0) {
 			fprintf(stderr, "ktc2: leak: %" PRId64 " object(s) of type %s\n", live_counts[id], ktc2_types[id].name);

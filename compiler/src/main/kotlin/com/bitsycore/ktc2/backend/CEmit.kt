@@ -115,6 +115,9 @@ class CEmitter(private val mModule: KModule) {
 			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, ${vClass.pairCycles.size} },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
+		append("\n#ifdef KTC2_LEAK_CHECK\nconst ktc2_RefsFn ktc2_type_refs[KTC2_TYPE_COUNT] = {\n")
+		mConcrete.forEach { append("\t[${typeId(it)}] = ${it.cName}__refs,\n") }
+		append("};\n#endif\n")
 		val vHasThreadLocals = vThreadGlobals.isNotEmpty() || vThreadStatics.isNotEmpty()
 		if (vHasThreadLocals) {
 			// What the `@ThreadLocal` properties and objects of a thread hold, given up when it ends.
@@ -412,6 +415,8 @@ class CEmitter(private val mModule: KModule) {
 			append("};\n\n")
 			append("/** Releases the references held by the fields of an instance. */\n")
 			append("void ${vClass.cName}__destroy(ktc2_Obj* object);\n")
+			append("#ifdef KTC2_LEAK_CHECK\n/** Tells what an instance refers to (the leak check's report of cycles). */\n")
+			append("void ${vClass.cName}__refs(ktc2_Obj* object, ktc2_RefVisitor visit, void* context);\n#endif\n")
 			append("/** Takes a reference on everything the fields of an instance refer to (after a bitwise copy). */\n")
 			append("void ${vClass.cName}__retain_fields(${vClass.cName}* self);\n")
 			if (vClass.deinit != null) {
@@ -558,6 +563,22 @@ class CEmitter(private val mModule: KModule) {
 			}
 			if (vOwn.isEmpty() && vClass.superClass == null) vBodies.append("\t(void)object;\n")
 			vBodies.append("}\n")
+			// What the leak check follows to tell the cycles among what is left (a frame's fields too: they hold while it waits).
+			vBodies.append("\n#ifdef KTC2_LEAK_CHECK\nvoid ${vClass.cName}__refs(ktc2_Obj* object, ktc2_RefVisitor visit, void* context)\n{\n")
+			vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n\t(void)self; (void)visit; (void)context;\n")
+			for (vField in vClass.fields) {
+				if (vField.isInline || vField.type !is KRefType) continue
+				vBodies.append("\tvisit(context, object, ${cString(vField.cName)}, (ktc2_Obj*)self->${vField.cName});\n")
+			}
+			for (vField in vClass.fields) {
+				val vType = vField.type
+				if (vField.inlineSize == 0 && vType is KClassType) {
+					vState.includes += vType.cls.unit
+					vBodies.append("\t${vType.cls.cName}__refs((ktc2_Obj*)&self->${vField.cName}, visit, context);\n")
+				}
+			}
+			vClass.superClass?.let { vBodies.append("\t${it.cName}__refs(object, visit, context);\n") }
+			vBodies.append("}\n#endif\n")
 			if (vClass.pairCycles.isNotEmpty()) {
 				// What is left of the count of this object: when each of those references is held by an object of one of its
 				// own fields that this object is all that holds, nothing else reaches any of them. Those give their reference

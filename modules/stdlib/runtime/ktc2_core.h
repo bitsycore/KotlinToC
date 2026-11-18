@@ -272,6 +272,17 @@ typedef struct ktc2_TypeInfo {
 /** The table of types, written for each program (ktc2_main.c). */
 extern const ktc2_TypeInfo ktc2_types[];
 
+#ifdef KTC2_LEAK_CHECK
+/** Told of each reference [field] of [from] holds ([to] may be NULL): what the leak check follows. */
+typedef void (*ktc2_RefVisitor)(void* context, ktc2_Obj* from, const char* field, ktc2_Obj* to);
+
+/** Tells [visit] of each reference an object of one class holds: `<Class>__refs`, written with each class. */
+typedef void (*ktc2_RefsFn)(ktc2_Obj* object, ktc2_RefVisitor visit, void* context);
+
+/** For each type, the function that lists what its objects refer to (NULL for the built-in types). */
+extern const ktc2_RefsFn ktc2_type_refs[];
+#endif
+
 /** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left);
 
