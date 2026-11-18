@@ -14,3 +14,23 @@ replace:         val state = job.state
         val continuation = this.continuation!!
         this.continuation = null
         val state = job.state
+replace:         private val parent: JobSupport,
+        // ktc2: let go of once invoked (a job node is invoked once): the parent's state held by a node of the child's
+        // list would keep both jobs and both lists, a cycle reference counts never free.
+        private var parent: JobSupport?,
+replace:         private val state: Finishing,
+        private var state: Finishing?,
+replace:         private val child: ChildHandleNode,
+        private var child: ChildHandleNode?,
+replace:         private val proposedUpdate: Any?
+        private var proposedUpdate: Any?
+replace:             parent.continueCompleting(state, child, proposedUpdate)
+            val parent = this.parent!!
+            val state = this.state!!
+            val child = this.child!!
+            val proposedUpdate = this.proposedUpdate
+            this.parent = null
+            this.state = null
+            this.child = null
+            this.proposedUpdate = null
+            parent.continueCompleting(state, child, proposedUpdate)

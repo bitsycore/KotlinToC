@@ -220,7 +220,11 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   coroutine meanwhile). The cut of the rings was taken out the same day: another thread may still walk the list
   of a job that is ending (cancelling it, adding a handler), and on a cut ring it walked for ever (a benchmark
   of 20,000 cancellations on `Dispatchers.Default` hung in `correctPrev`). The rings of jobs with several
-  handlers are left again, until an answer safe under concurrency. Left: a cancelled coroutine and its `JobCancellationException`, which refers back to
+  handlers are left again, until an answer safe under concurrency. That answer: the module declares the
+  lists as rings (`rings`, `DESIGN.md`, Cycles), which the runtime frees when only their own objects hold them,
+  checked when a list's head goes; and a `ChildCompletion` (the node a parent puts in its child's list) lets go
+  of the parent's state, the child and the result once invoked (`JobSupport.kt.edit`), which otherwise held two
+  jobs and their lists together. The broad program leaves 2,356 objects again for any N. Left: a cancelled coroutine and its `JobCancellationException`, which refers back to
   it from the coroutine's final state (four objects for each cancelled coroutine), and the dispatchers' own
   structures, which live as long as the program. The first is now declared by the module (`cycles`, a cycle
   of three the runtime frees as it frees a pair: `DESIGN.md`, Cycles). Without the cut of the rings, the broad

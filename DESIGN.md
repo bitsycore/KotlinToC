@@ -342,7 +342,20 @@ it alone and the last one's field holding the first; then the cycle is cut there
 frees them all. Exact as for a pair: nothing is freed while anything else holds one of them. A field that is an atomic
 held in place is read through its cell (`ktc2_AtomicRefCell`). kotlinx.coroutines declares one: a coroutine that ended
 with an exception keeps it as its state, and the exception names the coroutine
-(`JobSupport._state -> CompletedExceptionally.cause -> JobCancellationException.job`). `CycleLint` warns at compile time about the other classes that can reach
+(`JobSupport._state -> CompletedExceptionally.cause -> JobCancellationException.job`).
+A structure that is a ring of any size (a circular list) is declared by its classes, its head first:
+`rings = ["Head: Node, Other"]`. A release that leaves its head few references (`kRingReferences`) gathers
+the objects of rings it reaches (`ktc2_ring_collect`, at most 32, through `<Class>__ring_refs`: each
+reference and where it is, a field or an atomic's cell); when every reference each has left comes from them,
+the references that are not those each was found by are dropped without a count, which leaves a tree, and the
+head is released, which frees it. Same exactness as a pair (a thread walking the list holds one of its
+objects), in the same step. Only the head is looked at from the start: the other objects of a ring
+(`ktc2_TypeInfo.lazy`) carry `KTC2_PAIRED` only once a check found its head alone and them held from outside
+(a handle someone keeps), so that their last release finds the ring; a ring in use costs nothing.
+`KTC2_RING_TRACE=1` in a debug build says why a ring is not freed and who holds it. kotlinx.coroutines
+declares the lists of a job's handlers (`LockFreeLinkedListHead: LockFreeLinkedListNode, Removed`): on
+`Dispatchers.Default`, 20,000 cancellations take about 0.2 s instead of 0.1 s without it (a check when
+each job's list goes), 100,000 `async` the same. `CycleLint` warns at compile time about the other classes that can reach
 themselves through strong references; `@Weak` (on a property, or on an `inner` class for its
 outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner

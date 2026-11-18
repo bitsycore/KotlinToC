@@ -241,6 +241,24 @@ class KClass(
 	val pairCycles = ArrayList<KPairCycle>()
 
 	/**
+	 * Of a class a module says forms rings (`rings`): a group of such objects that only they hold is freed (the runtime's
+	 * `ktc2_ring_collect`, called when a release leaves one with few references).
+	 */
+	var isRingMember = false
+
+	/**
+	 * Of the class a ring is headed by (the first a `rings` entry names): its objects are checked when they go; the other
+	 * objects of a ring only once a check found them held from outside after their head went (`KTC2_PAIRED` set then).
+	 */
+	var isRingHead = false
+
+	/** True when its objects carry `KTC2_PAIRED` from the start: a release that leaves them few references asks whether a cycle can go. */
+	val isPaired: Boolean get() = pairCycles.isNotEmpty() || isRingHead
+
+	/** True when its type has a `__pair` function: its pair cycles, or the check of its ring. */
+	val hasPairFunction: Boolean get() = pairCycles.isNotEmpty() || isRingMember
+
+	/**
 	 * What the instantiations of one generic class have in common: the same value for all of
 	 * them, null for a class that stands alone. Code written for one instantiation is sometimes
 	 * handed an object of another (a local class inside a generic class is shared by all of them,

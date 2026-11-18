@@ -453,6 +453,143 @@ void ktc2_release_paired(ktc2_Obj* object)
 }
 #endif
 
+/*
+ * The rings of objects of the classes a module names in `rings` (a circular list: its head, its nodes, the Removed that
+ * mark them). From the object whose count came down, the objects of rings it reaches are gathered (RING_MOST at most);
+ * when every reference each has left comes from them, nothing else reaches any of them and they go: the references
+ * that are not those it was found by are dropped without a count, which leaves them a tree, and the start is returned
+ * for its caller to release, which frees the tree. As exact as a pair (no thread can take a reference to one of them
+ * without holding one already), and in the same step, one at a time with threads (ktc2_release_paired).
+ */
+#define RING_MOST 32
+#define RING_EDGES (RING_MOST * 4)
+
+typedef struct RingEdge {
+	ktc2_Obj* to;
+	void* slot;
+	bool isCell;
+} RingEdge;
+
+typedef struct Ring {
+	ktc2_Obj* members[RING_MOST];
+	int32_t foundBy[RING_MOST];  /* the edge each member was found by: kept, the others are dropped */
+	uint32_t count;
+	RingEdge edges[RING_EDGES];
+	uint32_t edgeCount;
+	bool tooBig;
+} Ring;
+
+static void ring_visit(void* context, ktc2_Obj* value, void* slot, bool isCell)
+{
+	Ring* ring = context;
+	if (!value || ring->tooBig) return;
+	/* An object of no ring is outside: a reference to it stays as it is. */
+	if (value->typeId >= ktc2_type_count || !ktc2_type_ring_refs[value->typeId]) return;
+	uint32_t rc = KTC2_RC_LOAD(value);
+	if (rc == KTC2_IMMORTAL || (rc & KTC2_STACK) || ring->edgeCount == RING_EDGES) {
+		ring->tooBig = true;
+		return;
+	}
+	uint32_t at = 0;
+	while (at < ring->count && ring->members[at] != value) at++;
+	if (at == ring->count) {
+		if (ring->count == RING_MOST) {
+			ring->tooBig = true;
+			return;
+		}
+		ring->members[ring->count] = value;
+		ring->foundBy[ring->count] = (int32_t)ring->edgeCount;
+		ring->count++;
+	}
+	ring->edges[ring->edgeCount++] = (RingEdge){ value, slot, isCell };
+}
+
+#ifdef KTC2_LEAK_CHECK
+static ktc2_Obj* ring_trace_target;
+static ktc2_Obj** ring_trace_members;
+static uint32_t ring_trace_count;
+static void ring_trace_visit(void* context, ktc2_Obj* from, const char* field, ktc2_Obj* to)
+{
+	(void)context;
+	if (to != ring_trace_target) return;
+	for (uint32_t at = 0; at < ring_trace_count; at++) if (ring_trace_members[at] == from) return;
+	fprintf(stderr, "ring:   held from outside by %s.%s%s\n", ktc2_types[from->typeId].name, field,
+		from->typeId < ktc2_type_count && ktc2_type_ring_refs[from->typeId] ? " (an object of a ring, not reached)" : "");
+}
+#endif
+
+ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start)
+{
+	Ring ring;
+	ring.members[0] = start;
+	ring.foundBy[0] = -1;
+	ring.count = 1;
+	ring.edgeCount = 0;
+	ring.tooBig = false;
+	for (uint32_t at = 0; at < ring.count && !ring.tooBig; at++) {
+		ktc2_type_ring_refs[ring.members[at]->typeId](ring.members[at], ring_visit, &ring);
+	}
+	if (ring.tooBig) return NULL;
+	/* Every reference each has left comes from the others. */
+	bool headsAlone = true;
+	bool othersAlone = true;
+	for (uint32_t at = 0; at < ring.count; at++) {
+		uint32_t inside = 0;
+		for (uint32_t edge = 0; edge < ring.edgeCount; edge++) if (ring.edges[edge].to == ring.members[at]) inside++;
+		bool alone = (KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK) == inside;
+		if (alone) continue;
+		if (ktc2_types[ring.members[at]->typeId].lazy) othersAlone = false;
+		else headsAlone = false;
+	}
+	/*
+	 * Its heads held by nothing else, but objects of it held from outside (a handle someone keeps): those are checked
+	 * from now on, so that the release of their last reference from outside finds the ring.
+	 */
+	if (headsAlone && !othersAlone) {
+		for (uint32_t at = 0; at < ring.count; at++) {
+			ktc2_Obj* member = ring.members[at];
+			if (ktc2_types[member->typeId].lazy && !(KTC2_RC_LOAD(member) & KTC2_PAIRED)) ktc2_atomic_or(&member->rc, KTC2_PAIRED);
+		}
+		return NULL;
+	}
+	for (uint32_t at = 0; at < ring.count; at++) {
+		uint32_t inside = 0;
+		for (uint32_t edge = 0; edge < ring.edgeCount; edge++) if (ring.edges[edge].to == ring.members[at]) inside++;
+		if ((KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK) != inside) {
+#ifdef KTC2_LEAK_CHECK
+			/* KTC2_RING_TRACE=1, in a debug or test build: why a ring is not freed, and who holds it from outside. */
+			static int trace = -1;
+			if (trace < 0) trace = getenv("KTC2_RING_TRACE") != NULL;
+			if (trace) {
+				fprintf(stderr, "ring: %u members, %s has %u, %u from inside\n", ring.count, ktc2_types[ring.members[at]->typeId].name, KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK, inside);
+				ring_trace_target = ring.members[at];
+				ring_trace_members = ring.members;
+				ring_trace_count = ring.count;
+				for (size_t slot = 0; slot < live_capacity; slot++) {
+					ktc2_Obj* each = live_set[slot];
+					if (!each || each == LIVE_TOMBSTONE || each->typeId >= ktc2_type_count || !ktc2_type_refs[each->typeId]) continue;
+					ktc2_type_refs[each->typeId](each, ring_trace_visit, NULL);
+				}
+			}
+#endif
+			return NULL;
+		}
+	}
+	/* What is no edge of the tree is dropped without a count; each member keeps the one it was found by. */
+	for (uint32_t edge = 0; edge < ring.edgeCount; edge++) {
+		bool kept = false;
+		for (uint32_t at = 1; at < ring.count; at++) if (ring.foundBy[at] == (int32_t)edge) kept = true;
+		if (kept) continue;
+		if (ring.edges[edge].isCell) ((ktc2_AtomicRefCell*)ring.edges[edge].slot)->held = 0;
+		else *(ktc2_Obj**)ring.edges[edge].slot = NULL;
+	}
+	for (uint32_t at = 0; at < ring.count; at++) {
+		ktc2_Obj* member = ring.members[at];
+		KTC2_RC_SET(member, (KTC2_RC_LOAD(member) & ~KTC2_COUNT_MASK) | 1);
+	}
+	return start;
+}
+
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left)
 {
 	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
@@ -489,7 +626,7 @@ void* ktc2_alloc(size_t size, uint32_t typeId)
 		object->rc = 1;
 	}
 	object->typeId = typeId;
-	if (typeId >= KTC2_TYPE_FIRST_USER && ktc2_types[typeId].pairs) object->rc |= KTC2_PAIRED;
+	if (typeId >= KTC2_TYPE_FIRST_USER && ktc2_types[typeId].pairs && !ktc2_types[typeId].lazy) object->rc |= KTC2_PAIRED;
 	count_live(object, 1);
 	return object;
 }

@@ -15,6 +15,13 @@ private const val kInlineLines = 4
 /** atomicfu's atomic reference, which ktc2 keeps in a Long counted by the runtime (`ktc2_AtomicRefCell`). */
 private const val kAtomicRefClass = "kotlinx.atomicfu.AtomicRef"
 
+/**
+ * How many references an object of a ring may have left for the runtime to look at its ring: its neighbours, a Removed
+ * that names it, and two more when it heads a ring of its own (a ListClosed after another). Only a head, and an object
+ * found held from outside, are looked at: an object of a ring in use costs nothing.
+ */
+private const val kRingReferences = 6
+
 /** How many nested steps a chain of tests may have before it is written flat (`flatChain`). */
 private const val kFlatChainSteps = 8
 
@@ -114,10 +121,18 @@ class CEmitter(private val mModule: KModule) {
 			val vChain = generateSequence(vClass) { it.superClass }.toList()
 			val vInterfaces = vChain.flatMap { vLevel -> vLevel.interfaces.flatMap { listOf(it) + it.supers } }.map { it.qualifiedName }
 			val vAncestors = (vChain.map { it.name } + vInterfaces).distinct().joinToString("|", "|", "|")
-			val vPair = if (vClass.pairCycles.isNotEmpty()) "${vClass.cName}__pair" else "NULL"
-			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, ${vClass.pairCycles.size} },\n")
+			val vPair = if (vClass.hasPairFunction) "${vClass.cName}__pair" else "NULL"
+			// An object of a ring is held by its neighbours, and by a Removed that names it: checked when it has that few left.
+			// The head of a ring from the start; another object of it once a check found it held from outside (lazy).
+			val vPairs = if (vClass.isRingMember) maxOf(vClass.pairCycles.size, kRingReferences) else vClass.pairCycles.size
+			val vLazy = if (vClass.isRingMember && !vClass.isPaired) 1 else 0
+			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, $vPairs, $vLazy },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
+		// What the objects of a ring hold, where: what the runtime follows to free a ring only its objects hold.
+		append("\nconst ktc2_RingRefsFn ktc2_type_ring_refs[KTC2_TYPE_COUNT] = {\n")
+		mConcrete.filter { it.isRingMember }.forEach { append("\t[${typeId(it)}] = ${it.cName}__ring_refs,\n") }
+		append("\t[0] = NULL,\n};\n")
 		append("\n#ifdef KTC2_LEAK_CHECK\nconst ktc2_RefsFn ktc2_type_refs[KTC2_TYPE_COUNT] = {\n")
 		mConcrete.forEach { append("\t[${typeId(it)}] = ${it.cName}__refs,\n") }
 		append("};\n#endif\n")
@@ -429,8 +444,14 @@ class CEmitter(private val mModule: KModule) {
 			if (vClass.pairCycles.isNotEmpty()) {
 				append("/** Frees an instance held only by objects it holds itself, which only it holds, and them with it; 1 when it did. */\n")
 				append("int ${vClass.cName}__collect(ktc2_Obj* object);\n")
+			}
+			if (vClass.hasPairFunction) {
 				append("/** Called when the count of an instance came down to its number of pair cycles or less: [__collect] for it and its partners; the object to release, or NULL. */\n")
 				append("ktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object);\n")
+			}
+			if (vClass.isRingMember) {
+				append("/** Tells what an instance refers to, and where (ktc2_ring_collect). */\n")
+				append("void ${vClass.cName}__ring_refs(ktc2_Obj* object, ktc2_RingVisitor visit, void* context);\n")
 			}
 			if (vClass.isUsedInline) {
 				append("/** A heap copy of an instance (the boxed form of an inline value). */\n")
@@ -654,7 +675,29 @@ class CEmitter(private val mModule: KModule) {
 					vBodies.append("\tktc2_Obj* other$vIndex = ${partner(vIndex, vPair)};\n")
 					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex)) return other$vIndex;\n")
 				}
-				vBodies.append("\treturn NULL;\n}\n")
+				vBodies.append(if (vClass.isRingMember) "\treturn ktc2_ring_collect(object);\n}\n" else "\treturn NULL;\n}\n")
+			} else if (vClass.isRingMember) {
+				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\treturn ktc2_ring_collect(object);\n}\n")
+			}
+			if (vClass.isRingMember) {
+				// Each reference it holds, with where it is: a field, or an atomic held in place (its cell), which holds its own
+				// object without a count (not told).
+				vBodies.append("\nvoid ${vClass.cName}__ring_refs(ktc2_Obj* object, ktc2_RingVisitor visit, void* context)\n{\n")
+				vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n\t(void)self;\n")
+				for (vLevel in generateSequence(vClass) { it.superClass }) {
+					for (vField in vLevel.fields) {
+						val vType = vField.type
+						val vSlot = "((${vLevel.cName}*)object)->${vField.cName}"
+						vState.includes += vLevel.unit
+						when {
+							vField.isInline && vType is KClassType && vType.cls.name == kAtomicRefClass ->
+								vBodies.append("\tif ((((ktc2_AtomicRefCell*)&$vSlot)->held & ~(int64_t)1) != ((ktc2_AtomicRefCell*)&$vSlot)->owner) visit(context, (ktc2_Obj*)(intptr_t)(((ktc2_AtomicRefCell*)&$vSlot)->held & ~(int64_t)1), &$vSlot, true);\n")
+							!vField.isInline && vType is KRefType && vField.weakType == null ->
+								vBodies.append("\tvisit(context, (ktc2_Obj*)$vSlot, &$vSlot, false);\n")
+						}
+					}
+				}
+				vBodies.append("}\n")
 			}
 			vClass.deinit?.let { vDeinit ->
 				vState.includes += vDeinit.unit
@@ -908,7 +951,7 @@ class CEmitter(private val mModule: KModule) {
 				if (vBuilt != null) {
 					mState.includes += vBuilt.unit
 					val vSlot = inFunction.params.last().cName
-					vBefore.append("memset($vSlot, 0, sizeof(${vBuilt.cName})); *(ktc2_Obj*)$vSlot = (ktc2_Obj){ KTC2_STACK | 1${if (vBuilt.pairCycles.isNotEmpty()) " | KTC2_PAIRED" else ""}, ${typeId(vBuilt)} }; ")
+					vBefore.append("memset($vSlot, 0, sizeof(${vBuilt.cName})); *(ktc2_Obj*)$vSlot = (ktc2_Obj){ KTC2_STACK | 1${if (vBuilt.isPaired) " | KTC2_PAIRED" else ""}, ${typeId(vBuilt)} }; ")
 					vRoom = "(${vBuilt.cName}*)$vSlot, "
 				}
 				/*
@@ -1466,14 +1509,14 @@ class CEmitter(private val mModule: KModule) {
 			} else {
 				mState.includes += inExpr.cls.unit
 				val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
-				"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1${if (inExpr.cls.pairCycles.isNotEmpty()) " | KTC2_PAIRED" else ""}, ${typeId(inExpr.cls)} } })"
+				"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1${if (inExpr.cls.isPaired) " | KTC2_PAIRED" else ""}, ${typeId(inExpr.cls)} } })"
 			}
 			is KAlloc -> {
 				mState.includes += inExpr.cls.unit
 				if (inExpr.onStack) {
 					// The object lives in the enclosing block: a compound literal, zeroed each time it is reached.
 					val vPath = generateSequence(inExpr.cls) { it.superClass }.drop(1).joinToString("") { "._super" } + "._header"
-					"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1${if (inExpr.cls.pairCycles.isNotEmpty()) " | KTC2_PAIRED" else ""}, ${typeId(inExpr.cls)} } })"
+					"(&(${inExpr.cls.cName}){ $vPath = { KTC2_STACK | 1${if (inExpr.cls.isPaired) " | KTC2_PAIRED" else ""}, ${typeId(inExpr.cls)} } })"
 				} else {
 					"ktc2_alloc(sizeof(${inExpr.cls.cName}), ${typeId(inExpr.cls)})"
 				}

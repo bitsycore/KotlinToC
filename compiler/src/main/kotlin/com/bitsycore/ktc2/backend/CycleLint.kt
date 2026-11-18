@@ -70,6 +70,17 @@ class CycleLint(private val mModule: KModule) {
 		}
 		findSelfHandovers()
 		declaredCycles()
+		// The classes the modules say form rings (`Head: Node, Other`), and the classes below them.
+		for (vEntry in System.getProperty("ktc2.rings", "").lines().map { it.trim() }.filter { it.isNotEmpty() }) {
+			val vHead = vEntry.substringBefore(':').trim()
+			val vMembers = (listOf(vHead) + vEntry.substringAfter(':', "").split(',').map { it.trim() }).filter { it.isNotEmpty() }.toSet()
+			for (vClass in vClasses) {
+				if (!vClass.isInstantiated) continue
+				val vNames = generateSequence(vClass) { it.superClass }.map { it.name }.toSet()
+				if (vNames.any { it in vMembers }) vClass.isRingMember = true
+				if (vHead in vNames) vClass.isRingHead = true
+			}
+		}
 
 		val vSeen = HashSet<String>()
 		for (vClass in vClasses) {

@@ -11,3 +11,6 @@ weak         = ["kotlinx.coroutines.channels.ChannelSegment._channel", "kotlinx.
 # A coroutine that ends with an exception keeps it as its final state, and the exception names the coroutine: they go
 # together when nothing else holds any of them.
 cycles       = ["kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.CompletedExceptionally.cause -> kotlinx.coroutines.JobCancellationException.job"]
+# The lists of a job's handlers are rings (a head, its nodes, the Removed that mark the nodes taken out): a ring that
+# only its own objects hold is freed (another thread walking it holds one of them). Checked when its head goes.
+rings        = ["kotlinx.coroutines.internal.LockFreeLinkedListHead: kotlinx.coroutines.internal.LockFreeLinkedListNode, kotlinx.coroutines.internal.Removed"]

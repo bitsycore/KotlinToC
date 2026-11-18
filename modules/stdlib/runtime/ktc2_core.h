@@ -267,6 +267,8 @@ typedef struct ktc2_TypeInfo {
 	ktc2_Obj* (*pair)(ktc2_Obj* object);
 	/* How many of them [pair] looks at: it is called when the count comes down to that many or fewer. */
 	uint32_t pairs;
+	/* 1 for an object of a ring that is not its head: KTC2_PAIRED only once a check of its ring found it held from outside. */
+	uint32_t lazy;
 } ktc2_TypeInfo;
 
 /** The table of types, written for each program (ktc2_main.c). */
@@ -282,6 +284,25 @@ typedef void (*ktc2_RefsFn)(ktc2_Obj* object, ktc2_RefVisitor visit, void* conte
 /** For each type, the function that lists what its objects refer to (NULL for the built-in types). */
 extern const ktc2_RefsFn ktc2_type_refs[];
 #endif
+
+/**
+ * Told of each reference an object of a ring holds ([ktc2_ring_collect]): [value], and where it is: a field ([slot]), or
+ * the cell of an atomic held in place ([isCell]).
+ */
+typedef void (*ktc2_RingVisitor)(void* context, ktc2_Obj* value, void* slot, bool isCell);
+
+/** Tells [visit] of each reference an object of a ring holds: `<Class>__ring_refs`, written for the classes of `rings`. */
+typedef void (*ktc2_RingRefsFn)(ktc2_Obj* object, ktc2_RingVisitor visit, void* context);
+
+/** For each type, the function that lists what its objects hold, when its class forms rings; NULL otherwise. */
+extern const ktc2_RingRefsFn ktc2_type_ring_refs[];
+
+/**
+ * Called when a release left [start], of a class that forms rings, few references: the objects of rings it reaches
+ * (at most a few dozen) are freed when every reference each has left comes from them. Returns the object to release
+ * that frees them all, or NULL.
+ */
+ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start);
 
 /** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left);

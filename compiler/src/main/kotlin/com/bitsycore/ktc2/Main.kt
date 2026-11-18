@@ -30,7 +30,7 @@ environment variable, the configuration file (KTC2_CONFIG, else config/ktc2.toml
 private class Exit(val status: Int) : RuntimeException()
 
 /** The options a command leaves in system properties: forgotten before the next one. */
-private val kCommandProperties = listOf("ktc2.warnHeap", "ktc2.checks", "ktc2.warnCycles", "ktc2.copt", "ktc2.lopt", "ktc2.main", "ktc2.weak", "ktc2.acyclic", "ktc2.cycles", "ktc2.moduleOptIn")
+private val kCommandProperties = listOf("ktc2.warnHeap", "ktc2.checks", "ktc2.warnCycles", "ktc2.copt", "ktc2.lopt", "ktc2.main", "ktc2.weak", "ktc2.acyclic", "ktc2.cycles", "ktc2.rings", "ktc2.moduleOptIn")
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC - see DESIGN.md).
@@ -174,6 +174,7 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 		vEach.weak.forEach { addOption("ktc2.weak", it) }
 		vEach.acyclic.forEach { addOption("ktc2.acyclic", it) }
 		vEach.cycles.forEach { addOption("ktc2.cycles", it) }
+		vEach.rings.forEach { addOption("ktc2.rings", it) }
 		vEach.optIn.forEach { addOption("ktc2.moduleOptIn", it) }
 		(if (vUsesCMake) vEach.linkerOpts else vEach.directLinkerOpts).forEach { addOption("ktc2.lopt", it) }
 	}

@@ -26,6 +26,7 @@ const val kModuleFileName = "module.ktc2.toml"
  * weak         = ["kotlinx.io.Segment.prev"]   # properties of its sources that are @Weak
  * acyclic      = ["kotlinx.io.Segment.next"]   # and those that are @Acyclic
  * cycles       = ["a.A.f -> b.B.g -> c.C.h"]   # cycles that are its design (C's h holds the A): freed together
+ * rings        = ["a.Head: a.Node"]          # classes whose objects form rings, the head first: a ring only they hold is freed
  * optIn        = ["kotlinx.cinterop.ExperimentalForeignApi"]   # what its sources are compiled opted in to
  * version      = "0.9.3"                 # the version of the library it takes as it is
  * upstream     = ["core = org.jetbrains.kotlinx:kotlinx-io-core",   # where that library's sources come from
@@ -95,6 +96,12 @@ class ModuleFile(val directory: File, inText: String) {
 	 * as `KTC2_CYCLES=1` writes them (CycleLint.declaredCycles).
 	 */
 	val cycles: List<String> get() = mValues["cycles"] ?: emptyList()
+
+	/**
+	 * Classes of its sources whose objects hold one another in rings (a circular list): a group of them that only they
+	 * hold is freed (DESIGN.md, Cycles).
+	 */
+	val rings: List<String> get() = mValues["rings"] ?: emptyList()
 	val optIn: List<String> get() = mValues["optIn"] ?: emptyList()
 	val version: String? get() = mValues["version"]?.firstOrNull()
 	val upstream: List<String> get() = mValues["upstream"] ?: emptyList()
@@ -493,6 +500,9 @@ class Project(val name: String, val executable: String, val main: String?) {
 	/** The cycles the modules declare (`cycles`): freed when nothing else holds any of their objects. */
 	val cycles = ArrayList<String>()
 
+	/** The classes the modules say form rings (`rings`). */
+	val rings = ArrayList<String>()
+
 	/** The opt-ins the modules name in `optIn`, as their builds give them to the compiler (`-opt-in`). */
 	val optIn = ArrayList<String>()
 
@@ -558,6 +568,7 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 		vProject.weak += inModule.weak
 		vProject.acyclic += inModule.acyclic
 		vProject.cycles += inModule.cycles
+		vProject.rings += inModule.rings
 		vProject.optIn += inModule.optIn
 		val vCMake = inModule.cmake?.let { File(inModule.directory, it) }
 		if (vCMake != null) {

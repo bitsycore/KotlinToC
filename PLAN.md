@@ -24,7 +24,12 @@ table (an entry made and freed at each operation), the monitor table under one l
 every release of a paired object as one global step. Now each atomic is its own lock (a bit of what it holds),
 the table is 64 buckets each with its lock and conditions, and only a release that enters the pair zone takes
 the global step (`DESIGN.md`): `async` 4.6 s -> 0.33 s, the channel 0.45 s -> 0.11 s, cancellations 1.6 s ->
-0.10 s; the `cycles` entry now costs about nothing. Next: the rings, safely; then the library's own tests.
+0.10 s; the `cycles` entry now costs about nothing. Then the rings, safely: a module may declare a structure
+that is a ring of any size (`rings`, a head and its nodes), freed when only its own objects hold it, checked
+when its head goes (`DESIGN.md`, Cycles); with it and one more edit (`ChildCompletion`), nothing
+kotlinx.coroutines leaves grows with use. Cost: cancellations on `Dispatchers.Default` 0.1 s -> 0.2 s for
+20,000 (a check when each job's list goes), the rest unchanged. Next: the library's own tests
+(`kotlinx-coroutines-core/common/test`), then the pending box tests of coroutines.
 
 **State on 2026-11-18 (Mac), kotlinx.coroutines' cycles, done.** Nothing that kotlinx.coroutines leaves grows
 with use any more (`KOTLINX.md`, kotlinx.coroutines, "Cycles"): what is left is the dispatchers' own, made once.
