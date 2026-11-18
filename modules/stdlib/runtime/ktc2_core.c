@@ -505,14 +505,17 @@ static void ring_visit(void* context, ktc2_Obj* value, void* slot, bool isCell)
 }
 
 #ifdef KTC2_LEAK_CHECK
-static ktc2_Obj* ring_trace_target;
-static ktc2_Obj** ring_trace_members;
-static uint32_t ring_trace_count;
+/** What ring_trace_visit looks for: the member held from outside, and the ring it is of. */
+typedef struct RingTrace {
+	ktc2_Obj* target;
+	const Ring* ring;
+} RingTrace;
+
 static void ring_trace_visit(void* context, ktc2_Obj* from, const char* field, ktc2_Obj* to)
 {
-	(void)context;
-	if (to != ring_trace_target) return;
-	for (uint32_t at = 0; at < ring_trace_count; at++) if (ring_trace_members[at] == from) return;
+	const RingTrace* trace = context;
+	if (to != trace->target) return;
+	for (uint32_t at = 0; at < trace->ring->count; at++) if (trace->ring->members[at] == from) return;
 	fprintf(stderr, "ring:   held from outside by %s.%s%s\n", ktc2_types[from->typeId].name, field,
 		from->typeId < ktc2_type_count && ktc2_type_ring_refs[from->typeId] ? " (an object of a ring, not reached)" : "");
 }
@@ -562,13 +565,11 @@ ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start)
 			if (trace < 0) trace = getenv("KTC2_RING_TRACE") != NULL;
 			if (trace) {
 				fprintf(stderr, "ring: %u members, %s has %u, %u from inside\n", ring.count, ktc2_types[ring.members[at]->typeId].name, KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK, inside);
-				ring_trace_target = ring.members[at];
-				ring_trace_members = ring.members;
-				ring_trace_count = ring.count;
+				RingTrace looked = { ring.members[at], &ring };
 				for (size_t slot = 0; slot < live_capacity; slot++) {
 					ktc2_Obj* each = live_set[slot];
 					if (!each || each == LIVE_TOMBSTONE || each->typeId >= ktc2_type_count || !ktc2_type_refs[each->typeId]) continue;
-					ktc2_type_refs[each->typeId](each, ring_trace_visit, NULL);
+					ktc2_type_refs[each->typeId](each, ring_trace_visit, &looked);
 				}
 			}
 #endif
@@ -911,6 +912,15 @@ typedef struct CycleKind {
 	uint32_t size;
 } CycleKind;
 
+/** A copy of [text] from malloc: strdup, which the GNU C library does not declare under -std=c11. */
+static char* cycle_text_copy(const char* text)
+{
+	size_t length = strlen(text) + 1;
+	char* copy = malloc(length);
+	if (copy) memcpy(copy, text, length);
+	return copy;
+}
+
 static void cycles_report(void)
 {
 	CycleGraph graph = { 0 };
@@ -1039,7 +1049,7 @@ static void cycles_report(void)
 		while (kind < kindCount && strcmp(kinds[kind].text, text) != 0) kind++;
 		if (kind == kindCount) {
 			kinds = realloc(kinds, (kindCount + 1) * sizeof *kinds);
-			kinds[kindCount++] = (CycleKind){ strdup(text), 0, sizes[group] };
+			kinds[kindCount++] = (CycleKind){ cycle_text_copy(text), 0, sizes[group] };
 		}
 		kinds[kind].count++;
 	}
