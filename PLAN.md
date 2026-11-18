@@ -13,8 +13,16 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 `[x]` is done, `[~]` is done in part: what is left is said next to it.
 
 ---------------------------------------------------------------------------
-## Where the work stands (2026-11-17)
+## Where the work stands (2026-11-18)
 ---------------------------------------------------------------------------
+
+**Read first (2026-11-18, end of the day, Mac).** Pushed together: eleven commits of the day (from `bcf1aef`,
+kotlinx.coroutines as a module, to the rings), each with the whole suite green on the Mac (1,043, clang) and
+AddressSanitizer clean on the threaded programs; never run on Windows nor Linux: the CI job of this push is
+the first look, read it first. What changed under every program, not only coroutines: atomicfu's atomics are
+fields of their owner (`DESIGN.md`, section 6); the monitor table is 64 buckets; paired objects take the global
+step only at their end; pair cycles may be declared longer (`cycles`) and rings (`rings`); `Throwable(cause)`
+has a message; a `suspend` call returned inside a `try` is no tail call. The paragraphs below, newest first.
 
 **State on 2026-11-18 (Mac), evening: the speed of coroutines, and a correction.** A benchmark of coroutines on
 `Dispatchers.Default` (100,000 `async`, a channel, 20,000 cancellations) hung: the cut of a finished job's ring

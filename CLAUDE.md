@@ -4,7 +4,7 @@ Source-to-source transpiler: **Kotlin -> C11**, with real Kotlin semantics (the 
 Kotlin K2 compiler) on automatic reference counting, no GC.
 
 ## Read first
-- Start here: `PLAN.md`, "Where the work stands" (state of 2026-11-17): the last push went out with only the integration programs run on its last changes; read its CI run before anything else.
+- Start here: `PLAN.md`, "Where the work stands" (2026-11-18): the last push carried a day of work run only on the Mac (whole suite, AddressSanitizer on threads); read its CI run (Linux, macOS, Windows, MSVC) before anything else.
 - How the owner wants the work done: while developing, run only the smallest set of tests that covers the change (`KTC2_TEST_FILTER=integration/` is the quick workspace, about 2 minutes; add the few relevant common tests; never the libraries' own tests: a filter, or `KTC2_TEST_CATEGORIES=integration,kotlin`); the whole suite (about 28 minutes on the Mac) before a commit that touches a pass or the platform layer broadly, in a terminal tab the owner can watch. Commit locally; do not push or wait on the CI job during the work, push when the owner asks. Propose two or three options with a recommendation when a decision is theirs; when in doubt, do as Kotlin/Native.
 - `PLAN.md`, "Where the work stands": the state the last session left, what was not run on which system, and what waits for a decision.
 - `DESIGN.md`: how ktc2 works now. Meant to be read whole before changing anything; section 13 is the map of the code.
