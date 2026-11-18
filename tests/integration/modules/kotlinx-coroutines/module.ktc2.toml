@@ -1,0 +1,6 @@
+# A program on the bundled module kotlinx-coroutines, run by the suite and compared with the same program
+# on the JVM, there on kotlinx-coroutines' JVM jar.
+name         = "kotlinx-coroutines-program"
+executable   = "kotlinx-coroutines-program"
+sources      = ["Main.kt"]
+dependencies = ["kotlinx-coroutines"]

@@ -198,7 +198,10 @@ object K2Frontend {
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.
 				add("-Xmulti-platform")
 				// A module's own sources under a `commonMain` directory are common code too (kotlinx-io's: its `expect`s, with the `actual`s beside them).
-				val vCommonProgram = vWithLibrary.filter { isCommonSource(it) }
+				// A module's `concurrentMain` (common to the JVM and Native, with `actual`s of its `commonMain`) is a level of
+				// its own, between the common code and `nativeMain`, as in its build; its `concurrentTest` with it.
+				val vConcurrent = vWithLibrary.filter { Regex("/concurrent(Main|Test)/").containsMatchIn(it.invariantSeparatorsPath) }
+				val vCommonProgram = vWithLibrary.filter { isCommonSource(it) && it !in vConcurrent }
 				// `kotlin.test` (Ktc2Test.kt, plain Kotlin) is common too: common tests use it.
 				val vCommon = vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") || it.name == "Ktc2Test.kt" } + vCommonProgram
 				// What Kotlin/Native shares with other targets below the common code, taken from the Wasm sources jar:
@@ -213,7 +216,7 @@ object K2Frontend {
 				// compiler is then told the levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
 				val vNative = vWithLibrary.filter { kMiddleSourceSet.containsMatchIn(it.invariantSeparatorsPath) }
 				val vOwnProgram = vWithLibrary
-				if (vNative.isEmpty() && vShared.isEmpty()) {
+				if (vNative.isEmpty() && vShared.isEmpty() && vConcurrent.isEmpty()) {
 					add("-Xcommon-sources=" + vCommon.joinToString(",") { it.path })
 				} else {
 					val vFragments = ArrayList<Pair<String, List<File>>>()
@@ -226,6 +229,11 @@ object K2Frontend {
 						vRefines += "$vName:$vAbove"
 						vAbove = vName
 					}
+					if (vConcurrent.isNotEmpty()) {
+						vFragments += "concurrent" to vConcurrent
+						vRefines += "concurrent:$vAbove"
+						vAbove = "concurrent"
+					}
 					val vLayer = vLibrary - vCommon.toSet() - vShared.toSet()
 					if (vNative.isNotEmpty()) {
 						// What Kotlin/Native's platform libraries are to `nativeMain`, ktc2's platform layer and the
@@ -233,11 +241,11 @@ object K2Frontend {
 						// it, what refines it: the module's own part and the program.
 						val vSeenByNative = vNative + vLayer + vBindings.map { it.source }.filter { it in vWithLibrary }
 						vFragments += "native" to vSeenByNative
-						vFragments += "platform" to vOwnProgram.filter { it !in vCommon && it !in vSeenByNative }
+						vFragments += "platform" to vOwnProgram.filter { it !in vCommon && it !in vSeenByNative && it !in vConcurrent }
 						vRefines += "native:$vAbove"
 						vRefines += "platform:native"
 					} else {
-						vFragments += "platform" to (vLayer + vOwnProgram.filter { it !in vCommon })
+						vFragments += "platform" to (vLayer + vOwnProgram.filter { it !in vCommon && it !in vConcurrent })
 						vRefines += "platform:$vAbove"
 					}
 					add("-Xfragments=" + vFragments.joinToString(",") { it.first })

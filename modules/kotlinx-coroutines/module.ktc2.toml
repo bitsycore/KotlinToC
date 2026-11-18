@@ -1,0 +1,6 @@
+name         = "kotlinx-coroutines"
+version      = "1.11.0"
+upstream     = [". = org.jetbrains.kotlinx:kotlinx-coroutines-core"]
+jvm          = ["org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm"]
+dependencies = ["atomicfu"]
+optIn        = ["kotlinx.coroutines.InternalCoroutinesApi", "kotlinx.coroutines.ExperimentalCoroutinesApi", "kotlinx.coroutines.DelicateCoroutinesApi", "kotlinx.cinterop.ExperimentalForeignApi", "kotlin.experimental.ExperimentalNativeApi", "kotlin.native.concurrent.ObsoleteWorkersApi", "kotlin.experimental.ExperimentalTypeInference"]

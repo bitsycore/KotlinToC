@@ -79,6 +79,7 @@ commonMain/kotlin/UIntArray.kt
 commonMain/kotlin/ULongArray.kt
 commonMain/generated/_UArrays.kt
 Ktc2Internal.kt
+Ktc2Workers.kt
 Ktc2Exceptions.kt
 Ktc2Collections.kt
 Ktc2Arrays.kt
@@ -91,7 +92,9 @@ commonMain/kotlin/text/regex/RegexExtensions.kt
 # (BitSet, the canonical decomposition of characters, the actual of an annotation) as Wasm has it in Kotlin.
 # Its Regex.kt gets a cleaner as Gradle unpacks it, which cuts the graph's cycles (Ktc2RegexCycles.kt).
 wasm/nativeWasmMain/kotlin/Assertions.kt
+wasm/commonNonJvmMain/kotlin/coroutines/cancellation/CancellationException.kt
 wasm/nativeWasmMain/kotlin/native/ObsoleteNativeApi.kt
+wasm/nativeWasmMain/kotlin/native/concurrent/ObsoleteWorkersApi.kt
 wasm/wasmCommonMain/kotlin/text/regex/ObsoleteNativeApi.kt
 wasm/nativeWasmMain/kotlin/native/BitSet.kt
 wasm/wasmCommonMain/kotlin/text/regex/BitSet.kt
@@ -257,7 +260,6 @@ commonMain/kotlin/coroutines/CoroutineContext.kt
 commonMain/kotlin/coroutines/CoroutineContextImpl.kt
 commonMain/kotlin/coroutines/ContinuationInterceptor.kt
 commonMain/kotlin/coroutines/cancellation/CancellationExceptionH.kt
-Ktc2Cancellation.kt
 commonMain/kotlin/coroutines/Continuation.kt
 commonMain/kotlin/coroutines/CoroutinesH.kt
 commonMain/kotlin/coroutines/CoroutinesIntrinsicsH.kt

@@ -1,0 +1,4 @@
+kotlinx.coroutines' own structures are compiled as they are, and some of them hold each other (a channel and
+its segments, a job and its children, the event loop and its tasks): what is left is to be measured and
+answered with `weak` and `acyclic` entries in the module file (PLAN.md, kotlinx.coroutines, decided on
+2026-11-18). Until then what they leave is no failure.

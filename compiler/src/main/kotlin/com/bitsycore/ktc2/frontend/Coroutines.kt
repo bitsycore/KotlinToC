@@ -119,7 +119,15 @@ private class TailCheck(private val mSourceOf: (IrSimpleFunction) -> IrSimpleFun
 			}
 			// A lambda that is a value is a function of its own.
 			is IrFunctionExpression -> {}
-			is IrTry, is IrLoop -> inExpression.acceptChildrenVoid(Visitor())
+			// A `return` inside a `try` is not the end of the function: its `catch` and `finally` are still to see what the
+			// call ends with, an exception that comes back through the resumption among them (`withTimeoutOrNull`).
+			is IrTry -> {
+				val vTargets = mTailTargets.toSet()
+				mTailTargets.clear()
+				inExpression.acceptChildrenVoid(Visitor())
+				mTailTargets += vTargets
+			}
+			is IrLoop -> inExpression.acceptChildrenVoid(Visitor())
 			else -> inExpression.acceptChildrenVoid(Visitor())
 		}
 	}

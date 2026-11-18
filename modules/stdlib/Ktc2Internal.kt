@@ -270,6 +270,35 @@ public external fun monitorEnter(lock: Any)
 
 public external fun monitorExit(lock: Any)
 
+/**
+ * Gives up the monitor of [lock], which this thread holds, until [monitorNotifyAll] is called on it or [timeoutNanos]
+ * have passed (forever when negative); true when notified.
+ */
+public external fun monitorWait(lock: Any, timeoutNanos: Long): Boolean
+
+/** Wakes the threads in [monitorWait] on [lock]. */
+public external fun monitorNotifyAll(lock: Any)
+
+/** How many processors the system gives the program. */
+public external fun availableProcessors(): Int
+
+/** The hash of [value] by its identity. */
+public external fun identityHashCode(value: Any?): Int
+
+/** Called when `main` has returned, in a program that has workers: ends them, as Kotlin/Native's end with the program. */
+public fun endWorkers() {
+	kotlin.native.concurrent.endWorkersAtExit()
+}
+
+/** The message of a `Throwable(cause)`: what the cause says of itself. */
+public fun causeMessage(cause: Throwable?): String? = cause?.toString()
+
+/** Says that the calling thread does not keep the program running (a worker's): it ends with the program. */
+public external fun threadUnwaited()
+
+/** Ends the program with [exception], as one that leaves `main`: never returns. */
+public external fun terminateUncaught(exception: Any)
+
 /** Opens an arena with blocks of [size] bytes on this thread; returns the handle [arenaLeave] takes. */
 public external fun arenaEnter(size: Int): Long
 

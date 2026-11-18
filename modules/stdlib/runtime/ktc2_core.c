@@ -550,10 +550,14 @@ static int ending;
 
 void (*ktc2_thread_end)(void);
 
-void ktc2_ending(void)
+/** How many threads that the program does not wait for are still running (ktc2_threadUnwaited). */
+static uint32_t threads_unwaited;
+
+bool ktc2_ending(void)
 {
 	threads_wait();
 	ending = 1;
+	return ktc2_atomic_load(&threads_unwaited) == 0;
 }
 
 /**
@@ -665,6 +669,11 @@ int ktc2_exit(void)
 	fprintf(stderr, "ktc2: arc: allocs=%" PRIu64 " retains=%" PRIu64 " releases=%" PRIu64 " arena=%" PRIu64 "\n", stat_allocs, ktc2_stat_retains, ktc2_stat_releases, stat_arena_allocs);
 #endif
 #ifdef KTC2_LEAK_CHECK
+	/* With a thread still running (a worker), what it holds is in use, not left behind. */
+	if (ktc2_atomic_load(&threads_unwaited) != 0) {
+		free(live_counts);
+		live_counts = NULL;
+	}
 	for (uint32_t id = 0; live_counts && id < ktc2_type_count; id++) {
 		if (live_counts[id] != 0) {
 			fprintf(stderr, "ktc2: leak: %" PRId64 " object(s) of type %s\n", live_counts[id], ktc2_types[id].name);
@@ -2230,8 +2239,19 @@ void ktc2_weak_cell_destroy(ktc2_Obj* object)
 /** `ktc2.internal.threadEntry`, generated with the program: calls `run` of the Thread object. */
 void ktc2_internal_threadEntry(ktc2_Obj* thread);
 
-/** Threads started and not yet ended. */
+/** Threads started and not yet ended, that the program waits for. */
 static uint32_t threads_running;
+
+/** True on a thread that said it does not keep the program running. */
+static KTC2_TLS bool thread_unwaited;
+
+void ktc2_threadUnwaited(void)
+{
+	if (thread_unwaited) return;
+	thread_unwaited = true;
+	ktc2_atomic_add(&threads_unwaited, 1);
+	ktc2_atomic_sub(&threads_running, 1);
+}
 
 static void thread_body(ktc2_Obj* thread)
 {
@@ -2252,7 +2272,8 @@ static void thread_body(ktc2_Obj* thread)
 	free(destroy_later);
 	destroy_later = NULL;
 	destroy_later_room = 0;
-	ktc2_atomic_sub(&threads_running, 1);
+	if (thread_unwaited) ktc2_atomic_sub(&threads_unwaited, 1);
+	else ktc2_atomic_sub(&threads_running, 1);
 }
 
 static void threads_wait(void)
@@ -2421,6 +2442,8 @@ typedef struct Monitor {
 	uintptr_t owner;       /* the thread inside (the address of one of its thread-locals), or 0 */
 	uint32_t depth;        /* how many times the owner entered */
 	uint32_t waiting;      /* threads that want in */
+	uint32_t sleepers;     /* threads in ktc2_monitorWait, which keep the entry */
+	uint64_t generation;   /* how many times it was notified: what a sleeper waits to see change */
 	struct Monitor* next;
 } Monitor;
 
@@ -2447,6 +2470,8 @@ static CONDITION_VARIABLE monitor_freed = CONDITION_VARIABLE_INIT;
 #define monitor_unlock() ReleaseSRWLockExclusive(&monitor_mutex)
 #define monitor_wait() SleepConditionVariableSRW(&monitor_freed, &monitor_mutex, INFINITE, 0)
 #define monitor_wake() WakeAllConditionVariable(&monitor_freed)
+/* What ktc2_monitorWait sleeps on, apart from the threads that wait to get in. */
+static CONDITION_VARIABLE monitor_signal = CONDITION_VARIABLE_INIT;
 #else
 static pthread_mutex_t monitor_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t monitor_freed = PTHREAD_COND_INITIALIZER;
@@ -2454,6 +2479,7 @@ static pthread_cond_t monitor_freed = PTHREAD_COND_INITIALIZER;
 #define monitor_unlock() pthread_mutex_unlock(&monitor_mutex)
 #define monitor_wait() pthread_cond_wait(&monitor_freed, &monitor_mutex)
 #define monitor_wake() pthread_cond_broadcast(&monitor_freed)
+static pthread_cond_t monitor_signal = PTHREAD_COND_INITIALIZER;
 #endif
 
 void ktc2_monitorEnter(ktc2_Obj* lock)
@@ -2490,12 +2516,95 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 	Monitor* monitor = *link;
 	if (monitor && --monitor->depth == 0) {
 		monitor->owner = 0;
-		if (monitor->waiting == 0) {
+		if (monitor->waiting == 0 && monitor->sleepers == 0) {
 			*link = monitor->next;
 			free(monitor);
 		} else {
 			monitor_wake();
 		}
+	}
+	monitor_unlock();
+}
+
+/*
+ * Sleeps on the condition of the table until [deadline] (ktc2_ticksNanos), or until woken when
+ * [deadline] is negative. False when the time has run out.
+ */
+static bool monitor_sleep(int64_t deadline)
+{
+	if (deadline < 0) {
+#ifdef _WIN32
+		SleepConditionVariableSRW(&monitor_signal, &monitor_mutex, INFINITE, 0);
+#else
+		pthread_cond_wait(&monitor_signal, &monitor_mutex);
+#endif
+		return true;
+	}
+	int64_t left = deadline - ktc2_ticksNanos();
+	if (left <= 0) return false;
+#ifdef _WIN32
+	int64_t millis = (left + 999999) / 1000000;
+	SleepConditionVariableSRW(&monitor_signal, &monitor_mutex, millis > 0x7FFFFFFE ? 0x7FFFFFFE : (DWORD)millis, 0);
+#else
+	struct timespec when;
+	/* The condition's clock is the time of day, which C11 reads as TIME_UTC. */
+	timespec_get(&when, TIME_UTC);
+	int64_t nanos = (int64_t)when.tv_nsec + left % INT64_C(1000000000);
+	when.tv_sec += (time_t)(left / INT64_C(1000000000) + nanos / INT64_C(1000000000));
+	when.tv_nsec = (long)(nanos % INT64_C(1000000000));
+	pthread_cond_timedwait(&monitor_signal, &monitor_mutex, &when);
+#endif
+	return true;
+}
+
+bool ktc2_monitorWait(ktc2_Obj* lock, int64_t timeoutNanos)
+{
+	if (!lock) ktc2_fail_null();
+	uintptr_t self = (uintptr_t)&monitor_self;
+	int64_t deadline = timeoutNanos < 0 ? -1 : ktc2_ticksNanos() + timeoutNanos;
+	monitor_lock();
+	Monitor* monitor = *monitor_link(lock);
+	if (!monitor || monitor->owner != self) {
+		monitor_unlock();
+		fail("kotlin.IllegalStateException", "waiting on a monitor the thread does not hold");
+	}
+	/* Given up whole, as deep as it was entered; the entry stays while this thread sleeps (sleepers). */
+	uint32_t depth = monitor->depth;
+	uint64_t generation = monitor->generation;
+	monitor->owner = 0;
+	monitor->depth = 0;
+	monitor->sleepers++;
+	if (monitor->waiting) monitor_wake();
+	bool notified = true;
+	while (monitor->generation == generation) {
+		if (!monitor_sleep(deadline)) {
+			notified = monitor->generation != generation;
+			break;
+		}
+	}
+	while (monitor->owner != 0) {
+		monitor->waiting++;
+		monitor_wait();
+		monitor->waiting--;
+	}
+	monitor->owner = self;
+	monitor->depth = depth;
+	monitor->sleepers--;
+	monitor_unlock();
+	return notified;
+}
+
+void ktc2_monitorNotifyAll(ktc2_Obj* lock)
+{
+	monitor_lock();
+	Monitor* monitor = *monitor_link(lock);
+	if (monitor && monitor->sleepers > 0) {
+		monitor->generation++;
+#ifdef _WIN32
+		WakeAllConditionVariable(&monitor_signal);
+#else
+		pthread_cond_broadcast(&monitor_signal);
+#endif
 	}
 	monitor_unlock();
 }
@@ -2517,6 +2626,8 @@ void ktc2_initExit(void)
 
 static void threads_wait(void) {}
 
+void ktc2_threadUnwaited(void) {}
+
 /* Without threads nothing can contend for a monitor. */
 void ktc2_monitorEnter(ktc2_Obj* lock)
 {
@@ -2528,11 +2639,51 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 	(void)lock;
 }
 
+/* Without threads nothing can notify: a wait is a sleep for its time, or for good. */
+bool ktc2_monitorWait(ktc2_Obj* lock, int64_t timeoutNanos)
+{
+	if (!lock) ktc2_fail_null();
+	if (timeoutNanos < 0) {
+		for (;;) ktc2_threadSleep(INT64_C(1000000000));
+	}
+	ktc2_threadSleep((timeoutNanos + 999999) / 1000000);
+	return false;
+}
+
+void ktc2_monitorNotifyAll(ktc2_Obj* lock)
+{
+	(void)lock;
+}
+
 #endif
 
 /* ================== */
 /* MARK: Process      */
 /* ================== */
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
+int32_t ktc2_availableProcessors(void)
+{
+#ifdef _WIN32
+	SYSTEM_INFO info;
+	GetSystemInfo(&info);
+	return info.dwNumberOfProcessors > 0 ? (int32_t)info.dwNumberOfProcessors : 1;
+#elif defined(_SC_NPROCESSORS_ONLN)
+	long count = sysconf(_SC_NPROCESSORS_ONLN);
+	return count > 0 ? (int32_t)count : 1;
+#else
+	return 1;
+#endif
+}
+
+int32_t ktc2_identityHashCode(ktc2_Obj* object)
+{
+	uintptr_t address = (uintptr_t)object;
+	return (int32_t)((address >> 3) ^ (address >> 35));
+}
 
 _Noreturn void ktc2_exitProcess(int32_t status)
 {
@@ -2655,4 +2806,10 @@ _Noreturn void ktc2_uncaught(void)
 {
 	const ktc2_Throwable* exception = (const ktc2_Throwable*)ktc2_pending;
 	fail(ktc2_types[exception->header.typeId].name, exception->message ? exception->message->bytes : NULL);
+}
+
+_Noreturn void ktc2_terminateUncaught(ktc2_Obj* exception)
+{
+	ktc2_pending = exception;
+	ktc2_uncaught();
 }

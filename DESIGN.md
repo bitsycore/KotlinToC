@@ -402,6 +402,19 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   others. What they hold is given up when the thread ends (`ktc2_thread_end`, a function `main`
   writes and sets), and by `main` for its own thread at the end. On the JVM, where it does not
   exist, a test of it has an `.expected` file (`tests/integration/stdlib/ThreadLocals`).
+- **Workers** (`kotlin.native.concurrent.Worker`, `Future`; `Ktc2Workers.kt`) are as on Kotlin/Native,
+  whose C++ (`Worker.cpp`) is written again in Kotlin: a queue of jobs worked through by a thread
+  started for the worker, or by the thread that asked for `Worker.current` when it parks or processes
+  its queue; a delayed job joins the queue when its time comes; a termination waits for the delayed
+  jobs unless told not to. A thread waits on the monitor of the queue's lock and is woken by the
+  runtime (`ktc2_monitorWait`, `ktc2_monitorNotifyAll`: the monitors of `synchronized`, with a
+  condition and a count of notifications). A worker's thread does not keep the program running
+  (`ktc2_threadUnwaited`): when `main` returns, a worker that waits for a job is ended
+  (`ktc2.internal.endWorkers`, which `main` calls when the program has workers) and gives back what
+  it holds; one in the middle of a job (the event loops of kotlinx.coroutines' `Dispatchers.Default`)
+  ends with the process, as on Native, and the program then gives up neither its globals, which that
+  thread may still use, nor makes the leak check. `tests/integration/stdlib/Workers` has Kotlin/Native's
+  output as its `.expected`.
 
 **Coroutines** are done as on Kotlin/Native: a `suspend` function is a state machine, not a stack
 of its own.
@@ -652,7 +665,8 @@ list and its own files were written for its `version`, and that version's source
 of kotlinx-io does). The Gradle build reads the `jvm` of each module for the suite's JVM side.
 
 - A dependency is a module shipped with ktc2 (`modules/`, today
-  `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable` and `atomicfu`), a directory, or a place in a git repository. Repositories are
+  `sdl3`, `kotlinx-io`, `kotlinx-collections-immutable`, `atomicfu`, `kotlinx-datetime`,
+  `kotlinx-serialization`, `kotlinx-serialization-json-io` and `kotlinx-coroutines`), a directory, or a place in a git repository. Repositories are
   cloned once into `~/.ktc2/cache` (the setting `cache`, `KTC2_CACHE`).
 - A module may be a library written for Kotlin Multiplatform, taken as it is: `kotlinx-io` is
   the sources of kotlinx-io 0.9.3, which ktc2 fetches (its `upstream` above); its `files.txt` lists

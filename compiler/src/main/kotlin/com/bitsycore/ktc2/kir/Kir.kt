@@ -100,6 +100,9 @@ class KModule(
 	 * has no such number.
 	 */
 	var realFormatter: KFunction? = null
+
+	/** What runs when `main` has returned, before the program waits for its threads: the end of the workers it started. */
+	var programEnding: KFunction? = null
 }
 
 /** One generated `.h` / `.c` pair: a class, or the top-level declarations of one file. */

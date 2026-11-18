@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalNativeApi::class)
+
 package kotlin.native
 
 import kotlin.experimental.ExperimentalNativeApi
@@ -48,6 +50,52 @@ public object Platform {
 
 	/** False: a ktc2 program reads a number only where it is aligned. */
 	public val canAccessUnaligned: Boolean get() = false
+
+	/** How many processors the system gives the program. */
+	public fun getAvailableProcessors(): Int = ktc2.internal.availableProcessors()
+}
+
+/** The hash of this object by its identity, whatever its class says (0 for null). */
+@ExperimentalNativeApi
+public fun Any?.identityHashCode(): Int = if (this == null) 0 else ktc2.internal.identityHashCode(this)
+
+// ==================
+// MARK: Exceptions nothing caught
+// ==================
+
+/** What [processUnhandledException] gives an exception to. */
+@ExperimentalNativeApi
+public typealias ReportUnhandledExceptionHook = Function1<Throwable, Unit>
+
+private val unhandledExceptionHook = kotlin.concurrent.AtomicReference<ReportUnhandledExceptionHook?>(null)
+
+/** Sets what [processUnhandledException] gives an exception to; returns the one there was. */
+@ExperimentalNativeApi
+@IgnorableReturnValue
+public fun setUnhandledExceptionHook(hook: ReportUnhandledExceptionHook?): ReportUnhandledExceptionHook? = unhandledExceptionHook.getAndSet(hook)
+
+@ExperimentalNativeApi
+public fun getUnhandledExceptionHook(): ReportUnhandledExceptionHook? = unhandledExceptionHook.value
+
+/**
+ * What is done with an exception nothing caught (in a job of a worker, at the end of a coroutine): it goes to
+ * the hook when one is set ([setUnhandledExceptionHook]); otherwise the program ends, as at the end of `main`.
+ */
+@ExperimentalNativeApi
+public fun processUnhandledException(throwable: Throwable) {
+	val vHook = unhandledExceptionHook.value ?: terminateWithUnhandledException(throwable)
+	try {
+		vHook(throwable)
+	} catch (vError: Throwable) {
+		terminateWithUnhandledException(vError)
+	}
+}
+
+/** Ends the program with [throwable], as an exception that leaves `main` does. */
+@ExperimentalNativeApi
+public fun terminateWithUnhandledException(throwable: Throwable): Nothing {
+	ktc2.internal.terminateUncaught(throwable)
+	throw throwable
 }
 
 // ==================

@@ -75,7 +75,8 @@ dependencies = ["sdl3", "../engine", "https://github.com/user/repo.git#modules/u
 ```
 
 A dependency is a module shipped with ktc2 (`sdl3`, `kotlinx-io`, `kotlinx-collections-immutable`,
-`atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`, `kotlinx-serialization-json-io`), a
+`atomicfu`, `kotlinx-datetime`, `kotlinx-serialization`, `kotlinx-serialization-json-io`,
+`kotlinx-coroutines`), a
 directory, or a place in a git repository. The standard library is a module too (`modules/stdlib`),
 which every program has without naming it. The kotlinx libraries are compiled from their own sources, which ktc2 fetches the first
 time a program uses them, at the version its module file names (`modules/<name>/module.ktc2.toml`;

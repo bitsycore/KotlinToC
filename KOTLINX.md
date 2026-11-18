@@ -176,6 +176,21 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
 - **Tests**: `kotlinx-coroutines-core/common/test` and `concurrent/test`, with their `TestBase`;
   `runTest` comes from kotlinx-coroutines-test, a second module.
 - **Estimate**: two to three weeks.
+- **State (2026-11-18)**: the module `kotlinx-coroutines` compiles the library as it is, and a program with
+  `runBlocking`, `async`, `delay`, `launch`, channels, flows, `Dispatchers.Default` with a `Mutex`,
+  cancellation, `withTimeoutOrNull` and exceptions runs as on the JVM
+  (`tests/integration/modules/kotlinx-coroutines`). What it took: Kotlin/Native's `Worker` and `Future`
+  in the platform layer (`Ktc2Workers.kt`, over a monitor that a thread can wait on and be woken, new in the
+  runtime: `ktc2_monitorWait`, `ktc2_monitorNotifyAll`), `Platform.getAvailableProcessors()`,
+  `identityHashCode()`, `processUnhandledException`; workers that end with the program, as Native's do
+  (one idle at the end of `main` is ended and gives back what it holds; one in a job, as the event loops of
+  `Dispatchers.Default`, is left to end with the process, and then the leak check is not made);
+  `concurrentMain` as a level of its own between `commonMain` and `nativeMain`; Native's own
+  `CancellationException`; a `suspend` lambda that implements a `fun interface` (`FlowCollector`); and a
+  `suspend` call returned from inside a `try`, which ktc2 took for a tail call (its `catch` never saw what the
+  resumption brought back: `withTimeoutOrNull`). Left: the library's cycles (its program leaves objects:
+  `program.cycles` says so until `weak`/`acyclic` entries answer them), its own tests, the pending box
+  tests of coroutines, `kotlinx-coroutines-test`.
 
 ---------------------------------------------------------------------------
 ## 5. Order, and what is the owner's to decide

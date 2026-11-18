@@ -100,7 +100,7 @@ class CEmitter(private val mModule: KModule) {
 		val vAllStatics = mModule.units.flatMap { it.statics }
 		val (vThreadGlobals, vGlobals) = vAllGlobals.partition { it.isThreadLocal }
 		val (vThreadStatics, vStatics) = vAllStatics.partition { it.isThreadLocal }
-		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vAllStatics.flatMap { listOf(it.unit, it.cls.unit) } + vAllGlobals.map { it.unit } + inEntry.unit + listOfNotNull(mModule.realFormatter?.unit)
+		val vUnits = vStartup.map { it.unit } + mConcrete.map { it.unit } + vAllStatics.flatMap { listOf(it.unit, it.cls.unit) } + vAllGlobals.map { it.unit } + inEntry.unit + listOfNotNull(mModule.realFormatter?.unit, mModule.programEnding?.unit)
 		append("#include \"ktc2_types.h\"\n")
 		vUnits.distinct().forEach { append("#include \"${it.path}.h\"\n") }
 
@@ -138,11 +138,14 @@ class CEmitter(private val mModule: KModule) {
 		} else {
 			append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
 		}
-		// What the top-level properties and the objects still hold is given up without `deinit`.
-		append("\tktc2_ending();\n")
-		if (vHasThreadLocals) append("\tthread_locals_end();\n")
-		vGlobals.asReversed().forEach { append("\t${releaseText(it.type, it.cName)};\n") }
-		vStatics.asReversed().forEach { append("\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
+		mModule.programEnding?.let { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
+		// What the top-level properties and the objects still hold is given up without `deinit`, unless a thread the
+		// program does not wait for (a worker) still runs and may use it.
+		append("\tif (ktc2_ending()) {\n")
+		if (vHasThreadLocals) append("\t\tthread_locals_end();\n")
+		vGlobals.asReversed().forEach { append("\t\t${releaseText(it.type, it.cName)};\n") }
+		vStatics.asReversed().forEach { append("\t\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
+		append("\t}\n")
 		append("\treturn ktc2_exit();\n}\n")
 	}
 
@@ -904,18 +907,18 @@ class CEmitter(private val mModule: KModule) {
 					// The implementation returns a box it owns: its content is taken out and the box released.
 					// (NULL is what it returns when it left with an exception.)
 					// The struct taken out of the box keeps its own references: the box is about to give up its ones.
-					val vTaken = adapt("result", inTarget.returnType, inFunction.returnType)
+					val vTaken = adapt("ktc2_result", inTarget.returnType, inFunction.returnType)
 					val vContent = if (inFunction.returnType.isCounted()) retainText(inFunction.returnType, vTaken) else vTaken
 					val vValue = when (inFunction.returnType) {
-						is KPrimType -> "result ? $vContent : 0"
-						is KStructType -> "result ? $vContent : (${cType(inFunction.returnType)}){ 0 }"
+						is KPrimType -> "ktc2_result ? $vContent : 0"
+						is KStructType -> "ktc2_result ? $vContent : (${cType(inFunction.returnType)}){ 0 }"
 						else -> vContent
 					}
-					return "{ $vBefore${cType(inTarget.returnType)} result = $vCall; $vAfter${cType(inFunction.returnType)} value = $vValue; ktc2_release(result); return value; }"
+					return "{ $vBefore${cType(inTarget.returnType)} ktc2_result = $vCall; $vAfter${cType(inFunction.returnType)} ktc2_value = $vValue; ktc2_release(ktc2_result); return ktc2_value; }"
 				}
 				val vResult = adapt(vCall, inTarget.returnType, inFunction.returnType)
 				if (vBefore.isEmpty() && vAfter.isEmpty()) return "return $vResult;"
-				return "{ $vBefore${cType(inFunction.returnType)} result = $vResult; ${vAfter}return result; }"
+				return "{ $vBefore${cType(inFunction.returnType)} ktc2_result = $vResult; ${vAfter}return ktc2_result; }"
 			}
 			line(1, "switch (((ktc2_Obj*)$vSelf)->typeId) {")
 			// An implementation that cannot take what the dispatcher passes (an instantiation of a generic interface for a number,
@@ -947,7 +950,7 @@ class CEmitter(private val mModule: KModule) {
 				val vDefault = inFunction.dispatchDefault!!
 				val vKeep = inFunction.params.last().cName
 				val vArguments = inFunction.params.dropLast(1).joinToString(", ") { it.cName }
-				line(1, "default: { ${cType(inFunction.returnType)} result = ${vDefault.cName}($vArguments); *(ktc2_Obj**)$vKeep = (ktc2_Obj*)result; return result; }")
+				line(1, "default: { ${cType(inFunction.returnType)} ktc2_result = ${vDefault.cName}($vArguments); *(ktc2_Obj**)$vKeep = (ktc2_Obj*)ktc2_result; return ktc2_result; }")
 				line(1, "}")
 				return
 			}

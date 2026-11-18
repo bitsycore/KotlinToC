@@ -567,6 +567,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				while (mPending.isNotEmpty()) mPending.removeFirst().invoke()
 			} while (resolveDispatch() || mPending.isNotEmpty())
 		}
+		// A program that has workers ends them when `main` returns: Kotlin/Native's do not keep it running.
+		var vEnding: KFunction? = null
+		if (mClassList.any { it.name == "kotlin.native.concurrent.Worker" }) {
+			vEnding = internalFunction("endWorkers")?.let { functionFor(it) }
+			do {
+				while (mPending.isNotEmpty()) mPending.removeFirst().invoke()
+			} while (resolveDispatch() || mPending.isNotEmpty())
+		}
 
 		settleDeinit()
 		settleInitialization()
@@ -575,6 +583,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
 			it.realFormatter = vFormatter
+			it.programEnding = vEnding
 		}
 	}
 

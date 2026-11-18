@@ -424,7 +424,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * the JVM like the single files. The examples (`examples/`) are not here: they are programs for a
 	 * desktop, built and run by hand.
 	 */
-	private val kProjects = listOf("tests/integration/modules/kotlinx-io", "tests/integration/modules/kotlinx-serialization", "tests/integration/modules/kotlinx-datetime", "tests/integration/modules/private-names")
+	private val kProjects = listOf("tests/integration/modules/kotlinx-io", "tests/integration/modules/kotlinx-serialization", "tests/integration/modules/kotlinx-datetime", "tests/integration/modules/kotlinx-coroutines", "tests/integration/modules/private-names")
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects

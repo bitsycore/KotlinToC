@@ -16,6 +16,15 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
+**State on 2026-11-18 (Mac), kotlinx.coroutines.** The owner chose coroutines before more optimizations, and
+the three choices of the library as Kotlin/Native (below, "Decided by the owner (2026-11-18)"). The first
+stages are done (`KOTLINX.md`, kotlinx.coroutines, "State"): the library compiles as it is and a program of
+it runs as on the JVM. Found on the way, in ktc2 itself: a `suspend` call returned from inside a `try` was
+made a tail call (`Coroutines.kt`, `TailCheck`); `Throwable(cause)` had no message (it is `cause.toString()`);
+a dispatcher's own C variable `result` met a parameter of that name. Run: integration, Kotlin and box tests
+(744, clang), and the libraries' own tests. Next: the library's cycles (what its program leaves), then its
+own tests (`kotlinx-coroutines-core/common/test`), then the pending box tests of coroutines.
+
 **State on 2026-11-18 (Mac), later.** A program of modules is translated again in 1.5 s after a change of one
 line (the release's demo; it was 9 s), the showcase in 3.7 s: the compiler process keeps the modules' files
 resolved with the library and resolves only the program's own on top (`DESIGN.md`, section 2); it keeps two
@@ -866,7 +875,11 @@ Decided, not started:
     `SynchronizedObject` and `reentrantLock`, which a compatibility layer gives over
     `kotlin.concurrent.atomics` and the monitors of `ktc2.concurrent`. Tests: its `commonTest`
     (with its `TestBase`), as the library's are. Estimate: 2 to 3 weeks.
-  - **To decide (owner):**
+  - **Decided by the owner (2026-11-18)**, as Kotlin/Native: `Dispatchers.Default` a pool of as
+    many threads as processors, started on first use; `Dispatchers.IO` the same pool, allowed up
+    to 64 threads; cycles: the library compiled as it is, what its own tests leave allocated
+    measured, then `weak`/`acyclic` entries in its module file where its design makes that
+    harmless. The choices as they were put:
     1. `Dispatchers.Default`: a pool of as many threads as processors (as on the JVM and
        Kotlin/Native), started on first use; or one thread, simpler to reason about.
     2. `Dispatchers.IO`: the same pool with more threads (64, as on the JVM), or an alias of

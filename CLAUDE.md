@@ -9,7 +9,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - `PLAN.md`, "Where the work stands": the state the last session left, what was not run on which system, and what waits for a decision.
 - `DESIGN.md`: how ktc2 works now. Meant to be read whole before changing anything; section 13 is the map of the code.
 - `PLAN.md`: what is left to do, with estimates, and what to do first.
-- `KOTLINX.md`: the plan for the kotlinx libraries (collections.immutable, atomicfu, datetime done, serialization's core without its plugin; coroutines to come).
+- `KOTLINX.md`: the plan for the kotlinx libraries (collections.immutable, atomicfu, datetime done, serialization's core without its plugin; coroutines compiled and running, its cycles and its own tests to come).
 - `gradle/libs.versions.toml`: the Kotlin version ktc2 pins; each bundled module pins its own library in its `modules/<name>/module.ktc2.toml` (`version`, `upstream`, `jvm`). The latest of each, by the owner's rule.
 - `HISTORY.md`: the original design and the log of the work. Not reference: only for the reasoning behind a decision, or to see what was tried and dropped.
 - `tests/README.md`: the common tests, written as Kotlin Multiplatform's are, and the tests of the Kotlin standard library taken as they are.
@@ -57,7 +57,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - `compiler/`: ktc2 itself, a Gradle project (`compiler/build.gradle.kts`: dependencies, what the installed tool carries, the suite's task and log). `src/main/kotlin/com/bitsycore/ktc2/` the compiler, `src/test/kotlin/` the suite's harness (`IntegrationTest.kt`). Its build directory is the repository's `build/` (`build/install/ktc2`, `build/integration`...).
 - `modules/stdlib/`: the platform layer (`Ktc2*.kt`), the list of the Kotlin library's files compiled with it (`files.txt`, `hidden.txt`), the C runtime (`modules/stdlib/runtime/ktc2_core.{h,c}`) and the C library's bindings (`modules/stdlib/interop/posix.def`): what every program is compiled with. Carried as resources of the compiler.
 - `compat/`: the compat layer, the `ktc2.` package for the other platforms: the JVM's (`compat/src/main/kotlin/ktc2`, a Gradle project the compiler depends on and the suite's JVM side runs with) and Kotlin/Native's (`compat/native`, for `tools/compare.py`).
-- `modules/<name>/`: the bundled modules, libraries taken as they are (`kotlinx-io`, `kotlinx-serialization`, `kotlinx-serialization-json-io`, `kotlinx-datetime`, `kotlinx-collections-immutable`, `atomicfu`, `sdl3`): each its `module.ktc2.toml`, `files.txt` (the files of its upstream it compiles, which ktc2 fetches) and ktc2's own files.
+- `modules/<name>/`: the bundled modules, libraries taken as they are (`kotlinx-io`, `kotlinx-serialization`, `kotlinx-serialization-json-io`, `kotlinx-datetime`, `kotlinx-collections-immutable`, `atomicfu`, `kotlinx-coroutines`, `sdl3`): each its `module.ktc2.toml`, `files.txt` (the files of its upstream it compiles, which ktc2 fetches) and ktc2's own files.
 - `tests/`: `integration/` (programs, by group; `modules/`: programs of several files), `modules/stdlib/` (the tests of the Kotlin standard library and of Kotlin/Native's runtime, unchanged, with `support/`), `common/` (ktc2's own common tests), `modules/<name>/` (each bundled library's own tests), `box/` (the Kotlin compiler's box tests). `tests/README.md`.
 - `ide/`: the tests and the platform layer as source sets an IDE resolves. `benchmarks/`, `examples/`, `tools/`, `docs/`.
 

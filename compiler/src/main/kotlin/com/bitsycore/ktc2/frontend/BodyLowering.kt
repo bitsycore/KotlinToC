@@ -739,7 +739,7 @@ internal class BodyBuilder(
 	 * `invoke` (the parameters, then the continuation) `create`s a new coroutine object, a copy of
 	 * the closure with the parameters, and runs its state machine.
 	 */
-	private fun makeSuspendLambda(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?, inBound: List<KLocal>): Pair<KLocal, KFunction>? {
+	private fun makeSuspendLambda(inElement: IrElement, inFunction: IrSimpleFunction, inSelf: IrFunction?, inBound: List<KLocal>, inSam: IrType? = null): Pair<KLocal, KFunction>? {
 		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
 
 		val vSet = CaptureSet()
@@ -779,8 +779,15 @@ internal class BodyBuilder(
 		vClass.unit.functions += vCreate
 		val vInvoke = KFunction("${vClass.cName}_invoke", vClass.unit, parameters(), KObjType)
 		vClass.unit.functions += vInvoke
-		mImporter.registerClosure(vClass, vInvoke)
-		mImporter.implementFunction(vClass, vParamTypes.size + 1)
+		// A lambda where a `fun interface` with a `suspend` method is expected (`FlowCollector { }`) implements that
+		// interface: its method is the lambda's `invoke`, which takes the completion as every `suspend` function does.
+		val vSamClass = inSam?.classOrNull?.owner
+		if (vSamClass != null) {
+			mImporter.registerSam(vClass, vInvoke, vSamClass, mImporter.argumentsOf(closed(inSam)))
+		} else {
+			mImporter.registerClosure(vClass, vInvoke)
+			mImporter.implementFunction(vClass, vParamTypes.size + 1)
+		}
 		BodyBuilder(mImporter, vCreate, null, mFile, mSubst).buildCoroutineCreate(vCoroutine, vCaptureFields, vParamFields, vIrParams)
 		BodyBuilder(mImporter, vInvoke, null, mFile, mSubst).buildCoroutineInvoke(vCoroutine, vCreate)
 		// What `createCoroutineUnintercepted` calls: `create(completion)` and `create(value, completion)` of `BaseContinuationImpl`.
@@ -1690,7 +1697,13 @@ internal class BodyBuilder(
 				"cause" -> mImporter.throwableCauseField
 				else -> return@forEachIndexed
 			}
-			mBlock += KFieldSet(inObject, vField, coerce(lowerRhs(vArgument), vField.type))
+			val vValue = spill(coerce(lowerRhs(vArgument), vField.type))
+			mBlock += KFieldSet(inObject, vField, vValue)
+			// `Throwable(cause)`: its message is what the cause says of itself, as in Kotlin's common `Throwable`.
+			if (vField === mImporter.throwableCauseField && inConstructor.parameters.none { it.name.asString() == "message" }) {
+				val vSays = mImporter.internalFunction("causeMessage")?.let { mImporter.functionFor(it) }
+				if (vSays != null) mBlock += KFieldSet(inObject, mImporter.throwableMessageField, spill(KCall(vSays, listOf(vValue))))
+			}
 		}
 	}
 
@@ -2881,10 +2894,7 @@ internal class BodyBuilder(
 		/** The values bound to the first parameters of [inFunction] (a function reference `x::f`). */
 		inBound: List<KLocal> = emptyList(),
 	): Pair<KLocal, KFunction>? {
-		if (inFunction.isSuspend) {
-			if (inSam != null) return fail(inElement, "suspend fun interface").let { null }
-			return makeSuspendLambda(inElement, inFunction, inSelf, inBound)
-		}
+		if (inFunction.isSuspend) return makeSuspendLambda(inElement, inFunction, inSelf, inBound, inSam)
 		class Capture(val declaration: Any, val name: String, val source: KLocal, val cell: KField?, val invoke: KFunction?)
 
 		val vSet = CaptureSet()

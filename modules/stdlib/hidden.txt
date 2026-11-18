@@ -27,3 +27,4 @@ kotlin/time/MonotonicTimeSource.class
 kotlin/time/MonoTimeSourceKt.class
 kotlin/time/LongSaturatedMathKt.class
 kotlin/PreconditionsKt__AssertionsJVMKt.class
+kotlin/coroutines/cancellation/CancellationExceptionKt.class

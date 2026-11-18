@@ -396,9 +396,17 @@ void ktc2_destroy(ktc2_Obj* object);
 /**
  * Called by `main` when the program is over, before it gives up what its top-level properties
  * and objects hold: waits for the threads still running, which may read those, and from then
- * on no `deinit` runs (what is alive when the program ends is not deinitialized).
+ * on no `deinit` runs (what is alive when the program ends is not deinitialized). False when
+ * a thread the program does not wait for still runs ([ktc2_threadUnwaited]): what the top-level
+ * properties hold is then left as it is, that thread may still use it.
  */
-void ktc2_ending(void);
+bool ktc2_ending(void);
+
+/**
+ * Says that the calling thread does not keep the program running: it ends with the program, as a
+ * worker of Kotlin/Native does, instead of being waited for.
+ */
+void ktc2_threadUnwaited(void);
 
 /**
  * Set by `main` when the program has `@ThreadLocal` properties or objects: gives up what those
@@ -593,6 +601,25 @@ void ktc2_threadSleep(int64_t milliseconds);
  */
 void ktc2_monitorEnter(ktc2_Obj* lock);
 void ktc2_monitorExit(ktc2_Obj* lock);
+
+/**
+ * Gives up the monitor of [lock], which the calling thread holds, until another thread calls
+ * [ktc2_monitorNotifyAll] on it or [timeoutNanos] have passed (forever when negative), then takes
+ * it again as deeply as before. True when notified, false when the time ran out.
+ */
+bool ktc2_monitorWait(ktc2_Obj* lock, int64_t timeoutNanos);
+
+/** Wakes every thread waiting on the monitor of [lock] ([ktc2_monitorWait]). */
+void ktc2_monitorNotifyAll(ktc2_Obj* lock);
+
+/** How many processors the system gives the program: Kotlin/Native's `Platform.getAvailableProcessors()`. */
+int32_t ktc2_availableProcessors(void);
+
+/** The hash of [object] by its identity, whatever its class says: Kotlin/Native's `identityHashCode()`. */
+int32_t ktc2_identityHashCode(ktc2_Obj* object);
+
+/** Ends the program with [exception], as an exception that leaves `main` does. */
+_Noreturn void ktc2_terminateUncaught(ktc2_Obj* exception);
 
 /**
  * Around the first use of an object or an enum class: one thread initializes, a thread that
