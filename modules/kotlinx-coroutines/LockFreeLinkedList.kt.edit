@@ -2,21 +2,3 @@ replace:         _removedRef.value ?: Removed(this).also { _removedRef.lazySet(i
         // ktc2: not cached in the node, which would hold it while it holds the node (a cycle of two).
         Removed(this)
 
-    /*
-     * ktc2: the list of a job that has ended is dead (closed, every handler notified), and its head and its nodes refer
-     * to one another round the ring, which reference counts never free. Called on the head, it makes each node refer
-     * to the head only, and the head to itself (which an atomic holds without a count): a walk from any node still ends
-     * at the head, and a node still to be disposed of is removed from nothing.
-     */
-    internal actual fun ktc2Unlink() {
-        var next: Any = _next.value
-        while (true) {
-            val node = (next as? Removed)?.ref ?: next as Node
-            if (node === this) break
-            next = node._next.value
-            node._next.value = this
-            node._prev.value = this
-        }
-        _next.value = this
-        _prev.value = this
-    }

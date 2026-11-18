@@ -16,6 +16,16 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
+**State on 2026-11-18 (Mac), evening: the speed of coroutines, and a correction.** A benchmark of coroutines on
+`Dispatchers.Default` (100,000 `async`, a channel, 20,000 cancellations) hung: the cut of a finished job's ring
+(below) is not safe while another thread still walks that list; taken out, the rings of jobs with several
+handlers leak again (`KOTLINX.md`). It also measured three global locks: atomic references through the monitor
+table (an entry made and freed at each operation), the monitor table under one lock with one condition, and
+every release of a paired object as one global step. Now each atomic is its own lock (a bit of what it holds),
+the table is 64 buckets each with its lock and conditions, and only a release that enters the pair zone takes
+the global step (`DESIGN.md`): `async` 4.6 s -> 0.33 s, the channel 0.45 s -> 0.11 s, cancellations 1.6 s ->
+0.10 s; the `cycles` entry now costs about nothing. Next: the rings, safely; then the library's own tests.
+
 **State on 2026-11-18 (Mac), kotlinx.coroutines' cycles, done.** Nothing that kotlinx.coroutines leaves grows
 with use any more (`KOTLINX.md`, kotlinx.coroutines, "Cycles"): what is left is the dispatchers' own, made once.
 Last: the rings of a job's list cut once it has ended, a timeout's exception weak on its coroutine, and the

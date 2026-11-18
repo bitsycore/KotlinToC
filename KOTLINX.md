@@ -217,11 +217,15 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   ended and notified it (`LockFreeLinkedList.kt.edit`, `ktc2Unlink`: each node then refers to the head
   only, the head to itself; called from `JobSupport.completeStateFinalization`), and a timeout's exception
   refers to its coroutine weakly (`weak`: only `withTimeoutOrNull` reads it, to know its own, holding that
-  coroutine meanwhile). Left: a cancelled coroutine and its `JobCancellationException`, which refers back to
+  coroutine meanwhile). The cut of the rings was taken out the same day: another thread may still walk the list
+  of a job that is ending (cancelling it, adding a handler), and on a cut ring it walked for ever (a benchmark
+  of 20,000 cancellations on `Dispatchers.Default` hung in `correctPrev`). The rings of jobs with several
+  handlers are left again, until an answer safe under concurrency. Left: a cancelled coroutine and its `JobCancellationException`, which refers back to
   it from the coroutine's final state (four objects for each cancelled coroutine), and the dispatchers' own
   structures, which live as long as the program. The first is now declared by the module (`cycles`, a cycle
-  of three the runtime frees as it frees a pair: `DESIGN.md`, Cycles). The broad program (flows, a `Mutex`,
-  `Dispatchers.Default`, timeouts, cancellation, failures) leaves 2,356 objects for any N: none grows with use.
+  of three the runtime frees as it frees a pair: `DESIGN.md`, Cycles). Without the cut of the rings, the broad
+  program (flows, a `Mutex`, timeouts, cancellation, failures) leaves again a few objects for each job that had
+  several handlers; launch, async/await, join, channels and cancelled coroutines leave none that grows.
 
 ---------------------------------------------------------------------------
 ## 5. Order, and what is the owner's to decide

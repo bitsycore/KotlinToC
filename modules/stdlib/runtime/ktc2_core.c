@@ -415,49 +415,36 @@ static void pool_leave(void)
 #endif
 
 #ifdef KTC2_THREADS
-/** Set while a thread checks a pair cycle; how many references to paired objects are being counted. */
+/*
+ * Paired objects with threads. A check only matters when a release brings a count down to the number of pairs of its
+ * class or less (its end, nearly always): such a release is made, and its check run, one at a time (pair_checking,
+ * and the runtime's lock, under which no weak reference is read). Every other count of a paired object moves with one
+ * atomic operation, as any object's: a retain, and a release that leaves more references than the class has pairs.
+ * It stays exact: nothing brings a count down to where a check looks without that step, a thread that waits for it
+ * still holds the reference it is giving up (no check can free the object meanwhile), and no thread can take a new
+ * reference to an object of a cycle without holding one already, which its count would show.
+ */
 static uint32_t pair_checking;
-static uint32_t pair_counting;
-
-/** A full barrier: what was written before is seen by every thread before what is read after. */
-static void pair_fence(void)
-{
-#if defined(_MSC_VER) && !defined(__clang__)
-	static volatile long fence;
-	_InterlockedOr(&fence, 0);
-#else
-	__atomic_thread_fence(__ATOMIC_SEQ_CST);
-#endif
-}
 
 void ktc2_retain_paired(ktc2_Obj* object)
 {
-	for (;;) {
-		ktc2_atomic_add(&pair_counting, 1);
-		pair_fence();
-		if (!ktc2_atomic_load(&pair_checking)) {
-			ktc2_atomic_add(&object->rc, 1);
-			ktc2_atomic_sub(&pair_counting, 1);
-			return;
-		}
-		ktc2_atomic_sub(&pair_counting, 1);
-		while (ktc2_atomic_load(&pair_checking)) thread_yield();
-	}
+	ktc2_atomic_add(&object->rc, 1);
 }
 
 void ktc2_release_paired(ktc2_Obj* object)
 {
-	/* No count of a paired object moves meanwhile, and no weak reference is read (the runtime's lock). */
+	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
+	uint32_t count = ktc2_atomic_load(&object->rc);
+	for (;;) {
+		uint32_t left = (count & KTC2_COUNT_MASK) - 1;
+		if (left <= type->pairs) break;
+		if (ktc2_atomic_replace(&object->rc, &count, count - 1)) return;
+	}
 	while (ktc2_atomic_exchange(&pair_checking, 1)) thread_yield();
-	pair_fence();
-	while (ktc2_atomic_load(&pair_counting)) thread_yield();
 	runtime_enter();
 	uint32_t left = ktc2_atomic_sub(&object->rc, 1) & KTC2_COUNT_MASK;
 	ktc2_Obj* freed = NULL;
-	if (left != 0) {
-		const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
-		if (left <= type->pairs && type->pair) freed = type->pair(object);
-	}
+	if (left != 0 && left <= type->pairs && type->pair) freed = type->pair(object);
 	runtime_leave();
 	ktc2_atomic_exchange(&pair_checking, 0);
 	/* Destroyed after: its destruction releases other objects, paired ones among them. */
@@ -2732,48 +2719,75 @@ typedef struct Monitor {
 	struct Monitor* next;
 } Monitor;
 
+/*
+ * The table is in buckets, each with a lock of its own and its own conditions: the monitors of two objects meet only
+ * when they fall in the same bucket, and a notification wakes only the threads that wait in it.
+ */
 #define MONITOR_BUCKETS 64
 
-static Monitor* monitor_buckets[MONITOR_BUCKETS];
+typedef struct MonitorBucket {
+#ifdef _WIN32
+	SRWLOCK lock;
+	CONDITION_VARIABLE freed;   /* a monitor of the bucket was given up: who waits to enter tries again */
+	CONDITION_VARIABLE signal;  /* a monitor of the bucket was notified: who sleeps in ktc2_monitorWait looks */
+#else
+	pthread_mutex_t lock;
+	pthread_cond_t freed;
+	pthread_cond_t signal;
+#endif
+	Monitor* first;
+} MonitorBucket;
+
+static MonitorBucket monitor_buckets[MONITOR_BUCKETS];
 static KTC2_TLS char monitor_self;
 
-static Monitor** monitor_link(const ktc2_Obj* object)
+#ifdef _WIN32
+/* Windows' locks and conditions start as zeroes, as the table does. */
+#define monitor_ready() ((void)0)
+#define bucket_lock(bucket) AcquireSRWLockExclusive(&(bucket)->lock)
+#define bucket_unlock(bucket) ReleaseSRWLockExclusive(&(bucket)->lock)
+#define bucket_wait(bucket, condition) SleepConditionVariableSRW(&(bucket)->condition, &(bucket)->lock, INFINITE, 0)
+#define bucket_wake(bucket, condition) WakeAllConditionVariable(&(bucket)->condition)
+#else
+static pthread_once_t monitor_once = PTHREAD_ONCE_INIT;
+
+static void monitor_init(void)
 {
-	Monitor** link = &monitor_buckets[(((uintptr_t)object >> 4) * 2654435761u >> 8) % MONITOR_BUCKETS];
+	for (int at = 0; at < MONITOR_BUCKETS; at++) {
+		pthread_mutex_init(&monitor_buckets[at].lock, NULL);
+		pthread_cond_init(&monitor_buckets[at].freed, NULL);
+		pthread_cond_init(&monitor_buckets[at].signal, NULL);
+	}
+}
+
+#define monitor_ready() pthread_once(&monitor_once, monitor_init)
+#define bucket_lock(bucket) pthread_mutex_lock(&(bucket)->lock)
+#define bucket_unlock(bucket) pthread_mutex_unlock(&(bucket)->lock)
+#define bucket_wait(bucket, condition) pthread_cond_wait(&(bucket)->condition, &(bucket)->lock)
+#define bucket_wake(bucket, condition) pthread_cond_broadcast(&(bucket)->condition)
+#endif
+
+static MonitorBucket* monitor_bucket(const ktc2_Obj* object)
+{
+	return &monitor_buckets[(((uintptr_t)object >> 4) * 2654435761u >> 8) % MONITOR_BUCKETS];
+}
+
+static Monitor** monitor_link(MonitorBucket* bucket, const ktc2_Obj* object)
+{
+	Monitor** link = &bucket->first;
 	while (*link && (*link)->object != object) link = &(*link)->next;
 	return link;
 }
 
-/*
- * The table has a lock of its own, and a thread that finds its monitor taken sleeps on a
- * condition until some monitor is given up.
- */
-#ifdef _WIN32
-static SRWLOCK monitor_mutex = SRWLOCK_INIT;
-static CONDITION_VARIABLE monitor_freed = CONDITION_VARIABLE_INIT;
-#define monitor_lock() AcquireSRWLockExclusive(&monitor_mutex)
-#define monitor_unlock() ReleaseSRWLockExclusive(&monitor_mutex)
-#define monitor_wait() SleepConditionVariableSRW(&monitor_freed, &monitor_mutex, INFINITE, 0)
-#define monitor_wake() WakeAllConditionVariable(&monitor_freed)
-/* What ktc2_monitorWait sleeps on, apart from the threads that wait to get in. */
-static CONDITION_VARIABLE monitor_signal = CONDITION_VARIABLE_INIT;
-#else
-static pthread_mutex_t monitor_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t monitor_freed = PTHREAD_COND_INITIALIZER;
-#define monitor_lock() pthread_mutex_lock(&monitor_mutex)
-#define monitor_unlock() pthread_mutex_unlock(&monitor_mutex)
-#define monitor_wait() pthread_cond_wait(&monitor_freed, &monitor_mutex)
-#define monitor_wake() pthread_cond_broadcast(&monitor_freed)
-static pthread_cond_t monitor_signal = PTHREAD_COND_INITIALIZER;
-#endif
-
 void ktc2_monitorEnter(ktc2_Obj* lock)
 {
 	if (!lock) ktc2_fail_null();
+	monitor_ready();
 	uintptr_t self = (uintptr_t)&monitor_self;
-	monitor_lock();
+	MonitorBucket* bucket = monitor_bucket(lock);
+	bucket_lock(bucket);
 	for (;;) {
-		Monitor** link = monitor_link(lock);
+		Monitor** link = monitor_link(bucket, lock);
 		Monitor* monitor = *link;
 		if (!monitor) {
 			monitor = calloc(1, sizeof *monitor);
@@ -2788,16 +2802,17 @@ void ktc2_monitorEnter(ktc2_Obj* lock)
 		}
 		/* Held by another thread: registered as waiting, the entry stays while this thread sleeps. */
 		monitor->waiting++;
-		monitor_wait();
-		(*monitor_link(lock))->waiting--;
+		bucket_wait(bucket, freed);
+		(*monitor_link(bucket, lock))->waiting--;
 	}
-	monitor_unlock();
+	bucket_unlock(bucket);
 }
 
 void ktc2_monitorExit(ktc2_Obj* lock)
 {
-	monitor_lock();
-	Monitor** link = monitor_link(lock);
+	MonitorBucket* bucket = monitor_bucket(lock);
+	bucket_lock(bucket);
+	Monitor** link = monitor_link(bucket, lock);
 	Monitor* monitor = *link;
 	if (monitor && --monitor->depth == 0) {
 		monitor->owner = 0;
@@ -2805,31 +2820,27 @@ void ktc2_monitorExit(ktc2_Obj* lock)
 			*link = monitor->next;
 			free(monitor);
 		} else {
-			monitor_wake();
+			bucket_wake(bucket, freed);
 		}
 	}
-	monitor_unlock();
+	bucket_unlock(bucket);
 }
 
 /*
- * Sleeps on the condition of the table until [deadline] (ktc2_ticksNanos), or until woken when
- * [deadline] is negative. False when the time has run out.
+ * Sleeps on the signal of [bucket] until [deadline] (ktc2_ticksNanos), or until woken when [deadline] is negative.
+ * False when the time has run out.
  */
-static bool monitor_sleep(int64_t deadline)
+static bool monitor_sleep(MonitorBucket* bucket, int64_t deadline)
 {
 	if (deadline < 0) {
-#ifdef _WIN32
-		SleepConditionVariableSRW(&monitor_signal, &monitor_mutex, INFINITE, 0);
-#else
-		pthread_cond_wait(&monitor_signal, &monitor_mutex);
-#endif
+		bucket_wait(bucket, signal);
 		return true;
 	}
 	int64_t left = deadline - ktc2_ticksNanos();
 	if (left <= 0) return false;
 #ifdef _WIN32
 	int64_t millis = (left + 999999) / 1000000;
-	SleepConditionVariableSRW(&monitor_signal, &monitor_mutex, millis > 0x7FFFFFFE ? 0x7FFFFFFE : (DWORD)millis, 0);
+	SleepConditionVariableSRW(&bucket->signal, &bucket->lock, millis > 0x7FFFFFFE ? 0x7FFFFFFE : (DWORD)millis, 0);
 #else
 	struct timespec when;
 	/* The condition's clock is the time of day, which C11 reads as TIME_UTC. */
@@ -2837,7 +2848,7 @@ static bool monitor_sleep(int64_t deadline)
 	int64_t nanos = (int64_t)when.tv_nsec + left % INT64_C(1000000000);
 	when.tv_sec += (time_t)(left / INT64_C(1000000000) + nanos / INT64_C(1000000000));
 	when.tv_nsec = (long)(nanos % INT64_C(1000000000));
-	pthread_cond_timedwait(&monitor_signal, &monitor_mutex, &when);
+	pthread_cond_timedwait(&bucket->signal, &bucket->lock, &when);
 #endif
 	return true;
 }
@@ -2847,10 +2858,11 @@ bool ktc2_monitorWait(ktc2_Obj* lock, int64_t timeoutNanos)
 	if (!lock) ktc2_fail_null();
 	uintptr_t self = (uintptr_t)&monitor_self;
 	int64_t deadline = timeoutNanos < 0 ? -1 : ktc2_ticksNanos() + timeoutNanos;
-	monitor_lock();
-	Monitor* monitor = *monitor_link(lock);
+	MonitorBucket* bucket = monitor_bucket(lock);
+	bucket_lock(bucket);
+	Monitor* monitor = *monitor_link(bucket, lock);
 	if (!monitor || monitor->owner != self) {
-		monitor_unlock();
+		bucket_unlock(bucket);
 		fail("kotlin.IllegalStateException", "waiting on a monitor the thread does not hold");
 	}
 	/* Given up whole, as deep as it was entered; the entry stays while this thread sleeps (sleepers). */
@@ -2859,39 +2871,36 @@ bool ktc2_monitorWait(ktc2_Obj* lock, int64_t timeoutNanos)
 	monitor->owner = 0;
 	monitor->depth = 0;
 	monitor->sleepers++;
-	if (monitor->waiting) monitor_wake();
+	if (monitor->waiting) bucket_wake(bucket, freed);
 	bool notified = true;
 	while (monitor->generation == generation) {
-		if (!monitor_sleep(deadline)) {
+		if (!monitor_sleep(bucket, deadline)) {
 			notified = monitor->generation != generation;
 			break;
 		}
 	}
 	while (monitor->owner != 0) {
 		monitor->waiting++;
-		monitor_wait();
+		bucket_wait(bucket, freed);
 		monitor->waiting--;
 	}
 	monitor->owner = self;
 	monitor->depth = depth;
 	monitor->sleepers--;
-	monitor_unlock();
+	bucket_unlock(bucket);
 	return notified;
 }
 
 void ktc2_monitorNotifyAll(ktc2_Obj* lock)
 {
-	monitor_lock();
-	Monitor* monitor = *monitor_link(lock);
+	MonitorBucket* bucket = monitor_bucket(lock);
+	bucket_lock(bucket);
+	Monitor* monitor = *monitor_link(bucket, lock);
 	if (monitor && monitor->sleepers > 0) {
 		monitor->generation++;
-#ifdef _WIN32
-		WakeAllConditionVariable(&monitor_signal);
-#else
-		pthread_cond_broadcast(&monitor_signal);
-#endif
+		bucket_wake(bucket, signal);
 	}
-	monitor_unlock();
+	bucket_unlock(bucket);
 }
 
 /* The monitor of an object nobody else can name is the lock of first-use initialization. */
@@ -3105,7 +3114,6 @@ KTC2_ATOMIC_CELL(ktc2_atomicLongCell, int64_t, ktc2_LongCell)
 /* ================== */
 
 #define ATOMIC_REF(cell) ((ktc2_AtomicRefCell*)(cell))
-#define ATOMIC_HELD(cell) ((ktc2_Obj*)(intptr_t)ATOMIC_REF(cell)->held)
 
 /** True when [value] is what [cell] is held in: then held without a count. */
 static bool atomic_ref_is_owner(ktc2_Obj* cell, const ktc2_Obj* value)
@@ -3113,50 +3121,84 @@ static bool atomic_ref_is_owner(ktc2_Obj* cell, const ktc2_Obj* value)
 	return value && (int64_t)(intptr_t)value == ATOMIC_REF(cell)->owner;
 }
 
+/*
+ * Each atomic reference is its own lock: the lowest bit of what it holds, which an object's address never has (they
+ * are aligned). Taking it is one atomic operation when nobody else has it, and two atomics never wait for each other;
+ * the count of what is read is taken while it is held, so that no store can give the object up in between. Without
+ * threads there is nobody to wait for.
+ */
+#ifdef KTC2_THREADS
+#if defined(_MSC_VER) && !defined(__clang__)
+static int64_t cell_load(volatile int64_t* at) { return _InterlockedCompareExchange64((volatile __int64*)at, 0, 0); }
+static bool cell_try(volatile int64_t* at, int64_t expected, int64_t locked) { return _InterlockedCompareExchange64((volatile __int64*)at, locked, expected) == expected; }
+static void cell_set(volatile int64_t* at, int64_t value) { _InterlockedExchange64((volatile __int64*)at, value); }
+#else
+static int64_t cell_load(volatile int64_t* at) { return __atomic_load_n(at, __ATOMIC_ACQUIRE); }
+static bool cell_try(volatile int64_t* at, int64_t expected, int64_t locked) { return __atomic_compare_exchange_n(at, &expected, locked, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED); }
+static void cell_set(volatile int64_t* at, int64_t value) { __atomic_store_n(at, value, __ATOMIC_RELEASE); }
+#endif
+
+/** Takes the lock of [cell]; what it holds. */
+static ktc2_Obj* cell_lock(ktc2_Obj* cell)
+{
+	volatile int64_t* at = &ATOMIC_REF(cell)->held;
+	for (uint32_t spins = 0;; spins++) {
+		int64_t value = cell_load(at);
+		if (!(value & 1) && cell_try(at, value, value | 1)) return (ktc2_Obj*)(intptr_t)value;
+		if (spins > 64) thread_yield();
+	}
+}
+
+/** Gives the lock of [cell] back, holding [value]. */
+static void cell_unlock(ktc2_Obj* cell, ktc2_Obj* value)
+{
+	cell_set(&ATOMIC_REF(cell)->held, (int64_t)(intptr_t)value);
+}
+#else
+static ktc2_Obj* cell_lock(ktc2_Obj* cell) { return (ktc2_Obj*)(intptr_t)ATOMIC_REF(cell)->held; }
+static void cell_unlock(ktc2_Obj* cell, ktc2_Obj* value) { ATOMIC_REF(cell)->held = (int64_t)(intptr_t)value; }
+#endif
+
+/** What [cell] holds, read without its lock: where nobody else can reach it (its object is being made, or goes). */
+#define ATOMIC_HELD(cell) ((ktc2_Obj*)(intptr_t)(ATOMIC_REF(cell)->held & ~(int64_t)1))
+
 ktc2_Obj* ktc2_atomicRefLoad(ktc2_Obj* cell)
 {
-	ktc2_monitorEnter(cell);
-	ktc2_Obj* value = ATOMIC_HELD(cell);
+	ktc2_Obj* value = cell_lock(cell);
 	ktc2_retain(value);
-	ktc2_monitorExit(cell);
+	cell_unlock(cell, value);
 	return value;
 }
 
 void ktc2_atomicRefStore(ktc2_Obj* cell, ktc2_Obj* value)
 {
 	if (!atomic_ref_is_owner(cell, value)) ktc2_retain(value);
-	ktc2_monitorEnter(cell);
-	ktc2_Obj* old = ATOMIC_HELD(cell);
-	ATOMIC_REF(cell)->held = (int64_t)(intptr_t)value;
+	ktc2_Obj* old = cell_lock(cell);
 	bool counted = !atomic_ref_is_owner(cell, old);
-	ktc2_monitorExit(cell);
+	cell_unlock(cell, value);
 	if (counted) ktc2_release(old);
 }
 
 ktc2_Obj* ktc2_atomicRefExchange(ktc2_Obj* cell, ktc2_Obj* value)
 {
 	if (!atomic_ref_is_owner(cell, value)) ktc2_retain(value);
-	ktc2_monitorEnter(cell);
-	ktc2_Obj* old = ATOMIC_HELD(cell);
-	ATOMIC_REF(cell)->held = (int64_t)(intptr_t)value;
+	ktc2_Obj* old = cell_lock(cell);
 	/* The count the atomic had becomes the caller's; the owner, held without one, is given one. */
 	if (atomic_ref_is_owner(cell, old)) ktc2_retain(old);
-	ktc2_monitorExit(cell);
+	cell_unlock(cell, value);
 	return old;
 }
 
 bool ktc2_atomicRefCompareAndSet(ktc2_Obj* cell, ktc2_Obj* expected, ktc2_Obj* update)
 {
-	ktc2_monitorEnter(cell);
-	ktc2_Obj* old = ATOMIC_HELD(cell);
+	ktc2_Obj* old = cell_lock(cell);
 	if (old != expected) {
-		ktc2_monitorExit(cell);
+		cell_unlock(cell, old);
 		return false;
 	}
 	if (!atomic_ref_is_owner(cell, update)) ktc2_retain(update);
-	ATOMIC_REF(cell)->held = (int64_t)(intptr_t)update;
 	bool counted = !atomic_ref_is_owner(cell, old);
-	ktc2_monitorExit(cell);
+	cell_unlock(cell, update);
 	if (counted) ktc2_release(old);
 	return true;
 }

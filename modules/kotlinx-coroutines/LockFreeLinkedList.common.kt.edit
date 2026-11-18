@@ -1,3 +1,0 @@
-after:     public fun close(forbiddenElementsBit: Int)
-    // ktc2: cuts the ring of a dead list (LockFreeLinkedList.kt).
-    internal fun ktc2Unlink()

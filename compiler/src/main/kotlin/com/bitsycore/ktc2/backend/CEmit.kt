@@ -610,7 +610,7 @@ class CEmitter(private val mModule: KModule) {
 					val vOwner = inField.owner ?: return "NULL"
 					vState.includes += vOwner.unit
 					val vSlot = "((${vOwner.cName}*)$inObject)->${inField.cName}"
-					return if (isAtomic(inField)) "(ktc2_Obj*)(intptr_t)((ktc2_AtomicRefCell*)&$vSlot)->held" else "(ktc2_Obj*)$vSlot"
+					return if (isAtomic(inField)) "(ktc2_Obj*)(intptr_t)(((ktc2_AtomicRefCell*)&$vSlot)->held & ~(int64_t)1)" else "(ktc2_Obj*)$vSlot"
 				}
 				fun clear(inField: KField, inObject: String): String {
 					val vSlot = "((${inField.owner!!.cName}*)$inObject)->${inField.cName}"

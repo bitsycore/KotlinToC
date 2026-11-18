@@ -325,13 +325,16 @@ leaves no more references than the class has pairs calls `ktc2_pair_check`, whic
 class's `__collect`: when every reference left is held by a partner that it alone holds, the
 partners give theirs up without a release and the object goes, taking them with it. It is exact:
 nothing is freed while a reference from outside is left, so nothing a program can see changes.
-In a program with threads (`KTC2_THREADS`) the same, once threads run, with one more rule: a release of an
-object of a paired class and its check are one step under a lock (`ktc2_release_paired`: the runtime's lock,
-which also keeps weak references from being read, and a flag that a reference counted to such an object
-meanwhile waits for, `ktc2_retain_paired`). Counted apart, another thread could take a reference through a
-partner's field between the reads of two counts, or free the pair under a check that has not run yet. The
-objects are destroyed after the lock is given up. It costs a lock for each release of a paired object in a
-threaded program (`tests/integration/objects/PairCyclesThreads`). A cycle longer than two that is a library's design
+In a program with threads (`KTC2_THREADS`) the same, once threads run, with one more rule: a release that brings
+the count of a paired object down to its number of pairs or less (its end, nearly always) is made, and its check
+run, one at a time (`ktc2_release_paired`: a flag, and the runtime's lock, under which no weak reference is
+read); every other count of a paired object moves with one atomic operation as any object's (a retain, and a
+release that leaves more than that, by compare-and-swap). It stays exact: nothing brings a count to where a
+check looks without that step, a thread waiting for it still holds the reference it gives up, and no thread
+can take a new reference to an object of a cycle without holding one already, which its count would show. The
+objects are destroyed after the step (`tests/integration/objects/PairCyclesThreads`). It was a step for every
+release of a paired object before (2026-11-18): with kotlinx.coroutines' coroutines paired, 100,000 `async` on
+`Dispatchers.Default` took twice as long and 20,000 cancellations four times; now about what they take unpaired. A cycle longer than two that is a library's design
 is declared by its module, as `KTC2_CYCLES=1` names it: `cycles = ["A.f -> B.g -> C.h"]` (C's `h` holding the A).
 It is the same mechanism, a `KPairCycle` with the steps between (`via`): each class of the cycle gets it from its own
 place, its objects carry `KTC2_PAIRED`, and the check follows the cycle, each object on the way held by the one before
@@ -416,7 +419,10 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   class is a read of the field (`BodyLowering.atomicFieldRead`). The atomics are ktc2's own
   (`modules/atomicfu/Ktc2AtomicValues.kt`, in the place of atomicfu's `AtomicFU.kt`): a number in its
   one field, changed with the C compiler's atomic operations (`ktc2_atomicIntCell`), a reference in a
-  Long that the runtime counts under the atomic's monitor (`ktc2_AtomicRefCell`, `ktc2_atomicRefLoad`...).
+  Long that the runtime counts (`ktc2_AtomicRefCell`, `ktc2_atomicRefLoad`...), each atomic its own lock:
+  the lowest bit of what it holds, which an object's address never has, taken while the count of what is
+  read is taken (no store can give it up in between). Two atomics never wait for each other, and nothing is
+  allocated: it was the monitor table, with an entry made and freed at each operation.
   An atomic held in place knows its owner (`ktc2_atomicRefPlace`, written where the field is set) and
   holds that one without a count: a reference from an object to itself can never keep it alive, and a
   node of a list that points to itself (`_next = atomic(this)`, an empty circular list) is freed as any
@@ -436,6 +442,11 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   ends with the process, as on Native, and the program then gives up neither its globals, which that
   thread may still use, nor makes the leak check. `tests/integration/stdlib/Workers` has Kotlin/Native's
   output as its `.expected`.
+- **Monitors** (`synchronized`, and the workers' queues) are in a table of 64 buckets, each with a lock of its
+  own and its own conditions: the monitors of two objects meet only in the same bucket, and a notification
+  wakes only the threads waiting in it. With one lock and one condition for all (before 2026-11-18), eight
+  workers woke one another on every job and queued for that lock: 100,000 `async` on `Dispatchers.Default`
+  went from 4.6 s to 0.7 s.
 
 **Coroutines** are done as on Kotlin/Native: a `suspend` function is a state machine, not a stack
 of its own.
