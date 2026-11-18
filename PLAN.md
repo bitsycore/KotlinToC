@@ -16,6 +16,11 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 ## Where the work stands (2026-11-17)
 ---------------------------------------------------------------------------
 
+**State on 2026-11-18 (Mac), later.** A program of modules is translated again in 1.5 s after a change of one
+line (the release's demo; it was 9 s), the showcase in 3.7 s: the compiler process keeps the modules' files
+resolved with the library and resolves only the program's own on top (`DESIGN.md`, section 2); it keeps two
+such libraries. The suite compiles its programs of modules the same way.
+
 **State on 2026-11-18 (Mac).** Start here, then the evening of 2026-11-17 below. The ways out of a
 function share their releases (`ReleaseLadders`, after `ArcInsert`; `DESIGN.md`, section 5): a way out
 that returns a constant (after a failed call, mostly) jumps into a ladder of releases written once, each

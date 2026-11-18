@@ -166,6 +166,8 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 	// One module a line, under the step's name.
 	Progress.note("modules", vModulesUsed.joinToString("") { "\n\t$it" })
 	val vUsesCMake = vCMake || vProjects.any { it.needsCMake }
+	// The program's own files: those given as they are, and those of the modules named on the command line, not of their dependencies.
+	val vOwnSources = vSources.toSet() + vProjects.flatMap { it.ownSources }
 	for (vEach in vProjects) {
 		vSources += vEach.sources
 		vEach.compilerOpts.forEach { addOption("ktc2.copt", it) }
@@ -184,7 +186,7 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 		Progress.note("Kotlin → C", "up to date")
 	} else {
 		vStampFile.delete()
-		if (!K2Frontend.compile(vSources.toList(), vOut, vDumpIr)) {
+		if (!K2Frontend.compile(vSources.toList(), vOut, vDumpIr, vOwnSources)) {
 			Progress.fail()
 			throw Exit(1)
 		}

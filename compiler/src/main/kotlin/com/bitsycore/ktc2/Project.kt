@@ -463,6 +463,9 @@ fun listedFiles(inModule: ModuleFile, inUpstream: File, inListed: List<ListedFil
 /** What a module and the modules it depends on add up to. */
 class Project(val name: String, val executable: String, val main: String?) {
 	val sources = LinkedHashSet<File>()
+
+	/** The files of the program's own module, without those of its dependencies: what changes from one build to the next. */
+	val ownSources = LinkedHashSet<File>()
 	val compilerOpts = ArrayList<String>()
 
 	/** The properties the modules name in `weak` and `acyclic`: `@Weak` and `@Acyclic` as if annotated. */
@@ -517,6 +520,7 @@ fun loadProject(inDirectory: File, inOutDir: File): Project? {
 		val vFiles = filesOf(inModule) ?: return false
 		if (inModule !== vRoot) vProject.modules += inModule.name + (versionOf(inModule)?.let { " $it" } ?: "")
 		vProject.sources += vFiles
+		if (inModule === vRoot) vProject.ownSources += vFiles
 		if (inModule.isBundled) vProject.bundledFiles[inModule.name] = vFiles
 		for (vEntry in inModule.fetch) {
 			val vEquals = vEntry.indexOf('=')

@@ -94,14 +94,21 @@ internal object PhasedCompiler {
 		return vCopy
 	}
 
-	/** The library as the front end left it: what [key] says it was made from, and what a program is added to. */
-	private class Library(val key: String, val disposable: Disposable, val frontend: JvmFrontendPipelineArtifact, val classpath: JvmClasspath)
+	/**
+	 * The library as the front end left it: what [key] says it was made from (the standard library, and the modules of
+	 * the program it was made for), and what a program is added to; [programs]: how many were.
+	 */
+	private class Library(val key: String, val disposable: Disposable, val frontend: JvmFrontendPipelineArtifact, val classpath: JvmClasspath) {
+		var programs = 0
+	}
 
-	private var mLibrary: Library? = null
+	/** The libraries kept, the one used last at the end: the standard library alone, and that with a program's modules. */
+	private val mLibraries = ArrayList<Library>()
 
-	/** How many programs were compiled on the library that is kept: it is made again now and then, since each leaves something behind. */
-	private var mPrograms = 0
+	/** How many are kept: one more is resolved at the cost of the one used longest ago. */
+	private const val kKeptLibraries = 2
 
+	/** How many programs are compiled on one library: it is made again now and then, since each leaves something behind. */
 	private const val kProgramsPerLibrary = 200
 
 	/**
@@ -111,16 +118,19 @@ internal object PhasedCompiler {
 	 */
 	@Synchronized
 	fun compileOnLibrary(inLibraryArguments: List<String>, inLibraryKey: String, inProgram: List<File>): ExitCode {
-		var vLibrary = mLibrary
+		var vLibrary = mLibraries.firstOrNull { it.key == inLibraryKey }
 		var vSince = System.nanoTime()
 		fun lap(inWhat: String) {
 			K2Frontend.reportTime(inWhat, vSince)
 			vSince = System.nanoTime()
 		}
-		if (vLibrary == null || vLibrary.key != inLibraryKey || mPrograms >= kProgramsPerLibrary) {
-			vLibrary?.let { Disposer.dispose(it.disposable) }
-			mLibrary = null
-			mPrograms = 0
+		if (vLibrary != null && vLibrary.programs >= kProgramsPerLibrary) {
+			Disposer.dispose(vLibrary.disposable)
+			mLibraries.remove(vLibrary)
+			vLibrary = null
+		}
+		if (vLibrary == null) {
+			while (mLibraries.size >= kKeptLibraries) Disposer.dispose(mLibraries.removeAt(0).disposable)
 			val vCollector = collector()
 			val vDisposable = Disposer.newDisposable("ktc2 library")
 			val vFrontend = try {
@@ -134,10 +144,11 @@ internal object PhasedCompiler {
 			}
 			val vClasspath = prepareIncrementalCompilationContextAndLibrariesClasspath(vFrontend.configuration, vFrontend.environment).first
 			vLibrary = Library(inLibraryKey, vDisposable, vFrontend, vClasspath)
-			mLibrary = vLibrary
 			lap("the library, resolved")
 		}
-		mPrograms++
+		mLibraries.remove(vLibrary)
+		mLibraries += vLibrary
+		vLibrary.programs++
 
 		val vCollector = collector()
 		try {

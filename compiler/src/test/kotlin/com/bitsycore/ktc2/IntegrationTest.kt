@@ -449,9 +449,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 		System.setProperty("ktc2.weak", vProject.weak.joinToString("\n"))
 		System.setProperty("ktc2.acyclic", vProject.acyclic.joinToString("\n"))
 		System.setProperty("ktc2.moduleOptIn", vProject.optIn.joinToString("\n"))
+		// As a command compiles it: the modules' files with the library, the program's own on top.
+		mOwnSources = vProject.ownSources
 		try {
 			verify(vName, vProject.sources.toList(), vOutDir, null)
 		} finally {
+			mOwnSources = null
 			System.clearProperty("ktc2.main")
 			System.clearProperty("ktc2.weak")
 			System.clearProperty("ktc2.acyclic")
@@ -495,15 +498,18 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** What ktc2 has to say while it accepts the program being checked. */
 	private var mWarnings: List<String> = emptyList()
 
+	/** The program's own files, for a program of several modules: the others are compiled with the library. */
+	private var mOwnSources: Collection<File>? = null
+
 	/** Translates [inSources] and checks that ktc2 said each of [mWarnings] meanwhile. */
 	private fun translate(inSources: List<File>, inOutDir: File): Boolean {
-		if (mWarnings.isEmpty()) return K2Frontend.compile(inSources, inOutDir, inDumpIr = kDumps)
+		if (mWarnings.isEmpty()) return K2Frontend.compile(inSources, inOutDir, inDumpIr = kDumps, inOwnSources = mOwnSources)
 		val vSaved = System.err
 		val vCaptured = java.io.ByteArrayOutputStream()
 		val vAccepted: Boolean
 		System.setErr(java.io.PrintStream(vCaptured, true, "UTF-8"))
 		try {
-			vAccepted = K2Frontend.compile(inSources, inOutDir, inDumpIr = kDumps)
+			vAccepted = K2Frontend.compile(inSources, inOutDir, inDumpIr = kDumps, inOwnSources = mOwnSources)
 		} finally {
 			System.setErr(vSaved)
 		}

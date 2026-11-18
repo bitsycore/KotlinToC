@@ -75,7 +75,14 @@ sources + library sources + generated bindings
   second, because that process also keeps the front end's work on the library
   (`PhasedCompiler.kt`: the library is resolved once; each program is resolved as one more
   part of the compilation on top of it, and the whole is converted to IR again, which is
-  fast). The
+  fast). The library kept is the standard library with the modules of the program: the
+  program's own files (those of the module named on the command line, `Project.ownSources`)
+  are the part on top, its dependencies' files are resolved with the library, and the bindings
+  of their `.def` files too (written only when they change, so that the library stays the same).
+  Two libraries are kept, the one used longest ago given up for a third: the standard library
+  alone and the one of the last program of modules. The release's demo (kotlinx.serialization,
+  kotlinx-datetime, kotlinx-io) is translated again in 1.5 s after a change of one line (it was
+  9 s, compiled whole each time), the showcase in 3.7 s. The
   command hands its arguments and its directory over a port of the machine itself and prints
   what comes back. The process is replaced when ktc2's own files, the Java machine or an
   environment variable ktc2 reads (`KTC2_*`, `PATH`) differ from what it was started with,
@@ -579,8 +586,8 @@ The output of a command (`<module>/build`, or `-o`): the program; `c/` (the C kt
 build is made of, which the tools read; `ktc2_inputs.txt`, what the translation was made from. The C
 files are written only when their text changes, so that CMake's own build is incremental too. With link-time
 optimization the objects hold the compiler's code and the link optimizes them as one program (ThinLTO with
-clang, `-flto=auto` with gcc). What a translation still costs every time is the Kotlin compiler: a program
-whose modules have common code (kotlinx-io, kotlinx.serialization) is compiled whole, the library with it.
+clang, `-flto=auto` with gcc). What a translation still costs every time, in the process that stays: the
+program's own files resolved, the whole converted to IR and translated to C (1.5 s for the release's demo).
 
 Settings (`Settings.kt`) each come from the first of: the command (`--set key=value`, or the option
 that stands for it), the environment (`KTC2_...`), the configuration file (`KTC2_CONFIG`, else
@@ -661,9 +668,10 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
     kotlinx-serialization, whose annotations and serializers its classes name);
   - its sources under a `commonMain` or `concurrentMain` directory (the latter shared by the
     JVM and Native) are common code: compiled as such
-    (`-Xcommon-sources`), so that its `expect`s find the `actual`s beside them. Such a program
-    is compiled whole, without the library kept by the compiler process (which takes the
-    program as one part on top of the library, with no room for a common part of its own);
+    (`-Xcommon-sources`), so that its `expect`s find the `actual`s beside them. In the process
+    that stays they are resolved with the library it keeps, and only the program's own files on
+    top; a program whose own module has common code is compiled whole (the part on top has no
+    room for a common part of its own);
   - a file of a source set written for Kotlin/Native (`nativeMain`, `posixMain`, `mingwMain`...)
     is compiled from a copy that imports `kotlin.native.*`, which Kotlin/Native imports by
     default (`K2Frontend.withNativeImports`; the import is put on the `package` line, so lines

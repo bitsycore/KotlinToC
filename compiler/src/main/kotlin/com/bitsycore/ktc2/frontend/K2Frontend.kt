@@ -109,16 +109,23 @@ object K2Frontend {
 
 	private val kCommonSourceSet = Regex("/(common|concurrent|nativeCommon)(Main|Test)/")
 
-	fun compile(inGivenSources: List<File>, inOutDir: File, inDumpIr: Boolean): Boolean {
+	/**
+	 * @param inOwnSources the program's own files among [inGivenSources] (not those of the modules it depends on); null:
+	 *   all of them. With the library kept between compilations, the modules' files are kept with it, and only these
+	 *   are compiled on top: what changes from one build of a program to the next.
+	 */
+	fun compile(inGivenSources: List<File>, inOutDir: File, inDumpIr: Boolean, inOwnSources: Collection<File>? = null): Boolean {
 		val vSources = withNativeImports(inGivenSources, inOutDir)
+		val vOwnGiven = inOwnSources?.map { it.absoluteFile.normalize() }?.toSet()
+		val vOwn = if (vOwnGiven == null) vSources.toSet() else vSources.filterIndexed { vIndex, _ -> inGivenSources[vIndex].absoluteFile.normalize() in vOwnGiven }.toSet()
 		inOutDir.mkdirs()
 		System.setProperty(kOutDirProperty, inOutDir.absolutePath)
 		System.setProperty(kDumpIrProperty, inDumpIr.toString())
 		System.setProperty(kErrorCountProperty, "0")
-		// With the library kept between compilations, its sources are in a place of this process, not of this program.
-		// A program with common sources of its own (a module of `expect`s and `actual`s, as kotlinx-io) is compiled
-		// whole: the kept library takes the program as one part on top of it, which has no room for a common one.
-		val vKeepsLibrary = keepsLibrary() && vSources.none { isCommonSource(it) }
+		// With the library kept between compilations, its sources are in a place of this process, not of this program, and
+		// the modules' sources are kept with it. The program's own files are one part on top of it, which has no room for
+		// common code: a program with common sources of its own (a module of `expect`s and `actual`s) is compiled whole.
+		val vKeepsLibrary = keepsLibrary() && vOwn.none { isCommonSource(it) }
 		com.bitsycore.ktc2.Progress.begin("Kotlin → IR", "${vSources.size} files, with the library")
 		val vLibrary = try {
 			librarySources(if (vKeepsLibrary) kLibraryDir else inOutDir)
@@ -158,8 +165,23 @@ object K2Frontend {
 		// The files that are not the program's: the library sources and the generated bindings.
 		System.setProperty(kLibraryFilesProperty, (vLibrary + vBindings.map { it.source }).joinToString("\n") { it.absoluteFile.normalize().invariantSeparatorsPath })
 		val vProgram = (vSources - vDefinitions.toSet()) + vBindings.map { it.source }
+		// What is compiled with the library: everything when nothing is kept; when it is, the modules' files and the
+		// bindings of their .def files (the program's own .def files and the C library's bindings go on top with it,
+		// unless a module uses those too). The rest, on top, is what [PhasedCompiler] resolves for each build.
+		val vOwnDefinitions = vDefinitions.filter { it in vOwn }.map { DefFile(it).packageName }.toSet()
+		val vModuleFiles = vProgram.filter { it !in vOwn && it !in vBindings.map { vBinding -> vBinding.source } }
+		val vModulesUsePosix = vModuleFiles.any { vSource -> Regex("\\bplatform\\.posix\\b").containsMatchIn(vSource.readText()) }
+		val vOnTop = if (!vKeepsLibrary) emptyList() else vProgram.filter { vFile ->
+			val vBinding = vBindings.firstOrNull { it.source == vFile }
+			when {
+				vBinding == null -> vFile in vOwn
+				vFile.nameWithoutExtension == "platform_posix" -> !vModulesUsePosix
+				else -> vOwnDefinitions.any { vFile.nameWithoutExtension == it.replace('.', '_') }
+			}
+		}
+		val vWithLibrary = vProgram - vOnTop.toSet()
 		val vArgs = buildList {
-			if (!vKeepsLibrary) vProgram.forEach { add(it.path) }
+			vWithLibrary.forEach { add(it.path) }
 			vLibrary.forEach { add(it.path) }
 			if (vLibrary.isNotEmpty()) {
 				// The flags the standard library itself is built with.
@@ -176,7 +198,7 @@ object K2Frontend {
 				// The common sources declare `expect`s; the platform layer provides the `actual`s.
 				add("-Xmulti-platform")
 				// A module's own sources under a `commonMain` directory are common code too (kotlinx-io's: its `expect`s, with the `actual`s beside them).
-				val vCommonProgram = if (vKeepsLibrary) emptyList() else vProgram.filter { isCommonSource(it) }
+				val vCommonProgram = vWithLibrary.filter { isCommonSource(it) }
 				// `kotlin.test` (Ktc2Test.kt, plain Kotlin) is common too: common tests use it.
 				val vCommon = vLibrary.filter { "commonMain" in it.invariantSeparatorsPath || it.name.startsWith("Ktc2Common") || it.name == "Ktc2Test.kt" } + vCommonProgram
 				// What Kotlin/Native shares with other targets below the common code, taken from the Wasm sources jar:
@@ -189,8 +211,8 @@ object K2Frontend {
 				// Those of `nativeMain` are a level of their own between: they have `actual`s of the common
 				// `expect`s, and `expect`s whose `actual`s are below them (ktc2's part of the module). The
 				// compiler is then told the levels (its "fragments"), as Gradle tells it a hierarchy of source sets.
-				val vNative = if (vKeepsLibrary) emptyList() else vProgram.filter { kMiddleSourceSet.containsMatchIn(it.invariantSeparatorsPath) }
-				val vOwnProgram = if (vKeepsLibrary) emptyList() else vProgram
+				val vNative = vWithLibrary.filter { kMiddleSourceSet.containsMatchIn(it.invariantSeparatorsPath) }
+				val vOwnProgram = vWithLibrary
 				if (vNative.isEmpty() && vShared.isEmpty()) {
 					add("-Xcommon-sources=" + vCommon.joinToString(",") { it.path })
 				} else {
@@ -209,7 +231,7 @@ object K2Frontend {
 						// What Kotlin/Native's platform libraries are to `nativeMain`, ktc2's platform layer and the
 						// bindings (platform.posix) are here: on the level of `nativeMain`, which sees them. Below
 						// it, what refines it: the module's own part and the program.
-						val vSeenByNative = vNative + vLayer + vBindings.map { it.source }
+						val vSeenByNative = vNative + vLayer + vBindings.map { it.source }.filter { it in vWithLibrary }
 						vFragments += "native" to vSeenByNative
 						vFragments += "platform" to vOwnProgram.filter { it !in vCommon && it !in vSeenByNative }
 						vRefines += "native:$vAbove"
@@ -243,9 +265,9 @@ object K2Frontend {
 		System.setProperty(kStartProperty, vStart.toString())
 		val vExit = when {
 			vKeepsLibrary -> {
-				// The library is the same while its files and the options are.
-				val vKey = vArgs.joinToString(";") + vLibrary.joinToString("") { ";${it.length()} ${it.lastModified()}" }
-				PhasedCompiler.compileOnLibrary(vArgs, vKey, vProgram)
+				// The library is the same while its files (the modules' with it) and the options are.
+				val vKey = vArgs.joinToString(";") + (vLibrary + vWithLibrary).joinToString("") { ";${it.length()} ${it.lastModified()}" }
+				PhasedCompiler.compileOnLibrary(vArgs, vKey, vOnTop)
 			}
 			else -> K2JVMCompiler().exec(System.err, *vArgs.toTypedArray())
 		}
