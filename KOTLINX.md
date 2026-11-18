@@ -212,7 +212,14 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   cancellation and failures: the circular lists of handlers, closed when a job ends (a ring of the list's
   head and its nodes); a cancelled job and its `JobCancellationException`, which refers back to it; and
   ktc2's own, a finished state machine that still holds its locals in its fields (`withTimeoutOrNull`'s
-  continuation is itself).
+  continuation is itself). That last one was not: the state machine holds itself there without a count; it
+  was kept by the ring of its timeout's job. Then answered: the ring of a job's list is cut once the job has
+  ended and notified it (`LockFreeLinkedList.kt.edit`, `ktc2Unlink`: each node then refers to the head
+  only, the head to itself; called from `JobSupport.completeStateFinalization`), and a timeout's exception
+  refers to its coroutine weakly (`weak`: only `withTimeoutOrNull` reads it, to know its own, holding that
+  coroutine meanwhile). Left: a cancelled coroutine and its `JobCancellationException`, which refers back to
+  it from the coroutine's final state (four objects for each cancelled coroutine), and the dispatchers' own
+  structures, which live as long as the program.
 
 ---------------------------------------------------------------------------
 ## 5. Order, and what is the owner's to decide

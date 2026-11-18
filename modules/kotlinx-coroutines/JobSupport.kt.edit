@@ -14,3 +14,9 @@ replace:         val state = job.state
         val continuation = this.continuation!!
         this.continuation = null
         val state = job.state
+replace:             state.list?.notifyCompletion(cause)
+            state.list?.let { list ->
+                list.notifyCompletion(cause)
+                // ktc2: the list is dead now, its ring is cut (LockFreeLinkedList.kt).
+                list.ktc2Unlink()
+            }
