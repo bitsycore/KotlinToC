@@ -229,5 +229,5 @@ checked for leaks, and on the JVM - and compares what they print. It also runs t
 under `tests/`, which are written as Kotlin Multiplatform's common tests are, with
 `kotlin.test`: among them tests of the Kotlin standard library itself (`tests/README.md`).
 A job on GitHub runs all of it on Linux, macOS and Windows on every push. `DESIGN.md` describes
-how ktc2 works, `PLAN.md` what is left to do, `HISTORY.md` how it got here; `CLAUDE.md` is
+how ktc2 works, `PLAN.md` what is left to do, `docs/HISTORY.md` how it got here; `CLAUDE.md` is
 the short map of the code and of how to work on it.

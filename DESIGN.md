@@ -2,7 +2,7 @@
 
 ktc2 translates Kotlin to C11. This document describes what is built, as it is. What is left
 to do is in `PLAN.md`; why things are as they are, and what was tried on the way, is in
-`HISTORY.md`.
+`docs/HISTORY.md`.
 
 ---------------------------------------------------------------------------
 ## 1. The rules
@@ -815,7 +815,7 @@ function (`_fun`) before it writes anything (`renameClashingGlobals`).
 | MSVC through CMake | the showcase's tests, threads included; one harmless warning (C4116) per array kept in the frame |
 | Apple clang on macOS (ARM64) | the whole suite; the showcase with SDL3 through CMake |
 | gcc on Linux | the suite passes in the CI job but for `interop/Posix` (the bindings of `platform.posix` with the GNU C library) |
-| Android NDK | not there: no console, no `main`; see `PLAN.md` |
+| Android NDK | not there: no console, no `main`; see `PLAN.md`, section 7.4 |
 
 ---------------------------------------------------------------------------
 ## 11. Tests
@@ -933,7 +933,7 @@ Known to differ from the JVM, otherwise:
   everywhere the JVM's (`exp(1.0) == E` is false on the JVM and true with Apple's library). The
   JVM's own is not one thing either: HotSpot computes `Math` with intrinsics of its own, which
   differ from `StrictMath` (fdlibm) in 3 to 10 % of values on x86-64; mingw's C library differs
-  from them in 0.03 to 0.23 % (PLAN.md has the measure). As on Kotlin/Native, the C library;
+  from them in 0.03 to 0.23 % (docs/HISTORY.md, the former plan, has the measure). As on Kotlin/Native, the C library;
 - an entry of a `HashMap` is a new object each time the map hands it out (as on
   Kotlin/Native; on the JVM it is the map's own node, the same every time): two entries for
   one key are equal, not identical, and what one is given by `setValue` after its key was
