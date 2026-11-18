@@ -539,9 +539,7 @@ internal class BodyBuilder(
 		}
 		val vObject = newCoroutineObject(vCoroutine, KRead(vCompletion), emptyList(), null)
 		storeCoroutineParams(vObject, vCoroutine, vCoroutine.fields, vParams.map { KRead(it) }, inFunction.parameters, KRead(vCompletion))
-		val vResult = newTemp(KObjType)
-		mBlock += KLet(vResult, KCall(vCoroutine.invokeSuspend, listOf(KRead(vObject), KNull(vCoroutine.invokeSuspend.params[1].type))))
-		mBlock += KReturn(KRead(vResult))
+		mBlock += KReturn(runFirst(vCoroutine, vObject))
 		val vSubst = mSubst
 		val vFields = inFunction.parameters.zip(vCoroutine.fields)
 		// The captured values of a local class are read from the object the function is a member of.
@@ -549,6 +547,28 @@ internal class BodyBuilder(
 		mImporter.later {
 			BodyBuilder(mImporter, vCoroutine.invokeSuspend, inFunction, mFile, vSubst).buildStateMachine(vCoroutine, vFields, vBindings, true, mInlineLambdas.toMap(), null, null)
 		}
+	}
+
+	/**
+	 * Runs the new coroutine [inObject] of [inCoroutine] from the start: what it returns. A coroutine that ends in that run,
+	 * with a value or an exception, is resumed by nobody: it lets go of the continuation it intercepted there.
+	 */
+	private fun runFirst(inCoroutine: KirImporter.CoroutineClass, inObject: KLocal): KExpr {
+		val vRun = KCall(inCoroutine.invokeSuspend, listOf(KRead(inObject), KNull(inCoroutine.invokeSuspend.params[1].type)))
+		val vResult = newTemp(KObjType)
+		val vRanThrough = internal("coroutineRanThrough")
+		if (vRanThrough == null) {
+			mBlock += KLet(vResult, vRun)
+			return KRead(vResult)
+		}
+		mBlock += KLet(vResult, null)
+		mBlock += KTryRegion(mNextLoopId++, inBlock { mBlock += KSet(vResult, vRun) })
+		mBlock += KIf(hasPending(), inBlock {
+			val vFailure = takePending()
+			mBlock += KEval(KCall(vRanThrough, listOf(coerce(KRead(inObject), KObjType), KNull(KObjType))))
+			mBlock += KThrow(vFailure)
+		}, emptyList())
+		return KCall(vRanThrough, listOf(coerce(KRead(inObject), KObjType), KRead(vResult)))
 	}
 
 	/**
@@ -832,9 +852,7 @@ internal class BodyBuilder(
 		mFunction.params.forEach { mUsedNames[it.cName] = 1 }
 		val vObject = newTemp(KClassType(inCoroutine.cls))
 		mBlock += KLet(vObject, KCall(inCreate, mFunction.params.map { KRead(it) }))
-		val vResult = newTemp(KObjType)
-		mBlock += KLet(vResult, KCall(inCoroutine.invokeSuspend, listOf(KRead(vObject), KNull(inCoroutine.invokeSuspend.params[1].type))))
-		mBlock += KReturn(KRead(vResult))
+		mBlock += KReturn(runFirst(inCoroutine, vObject))
 	}
 
 	/** Body of `create(completion)` or `create(value, completion)` of a `suspend` lambda: its own `create`. */
@@ -1480,6 +1498,11 @@ internal class BodyBuilder(
 			}
 			if (vValue.type == vTo && vTo !is KRefType) {
 				vValue
+			} else if (vValue.type == KObjType && vTo is KPrimType && inExpression.typeOperand.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) {
+				// An unchecked cast to a type parameter that is a number here: Kotlin/Native's generics are erased, so it checks
+				// nothing and a null goes through (an element a channel's segment has let go of, read and never used).
+				// ktc2 holds the number itself: a null is its zero.
+				KSelect(isNull(vValue), KZero(vTo), coerce(vValue, vTo), vTo)
 			} else if (vValue.type == KObjType && (vTo is KPrimType || vTo is KOptType)) {
 				// Unboxing checks the kind of box itself.
 				coerce(vValue, vTo)
@@ -2796,7 +2819,9 @@ internal class BodyBuilder(
 			}
 		}
 		val vView = if (vIsErased) receiverView(vArguments.firstOrNull(), vCallee, vReceiver) else vReceiver
-		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vView, vOwnArguments, vIsErased) ?: return fail(inCall, "call to '${vCallee.kotlinFqName}'")
+		val (vTarget, vSubst) = memberTarget(vCallee, vIsSuper, vView, vOwnArguments, vIsErased)
+			// A member only the JDK's class has, which Kotlin has as an extension (`removeFirst` of an ArrayList): the platform layer's.
+			?: return redirectToPlatform(inCall) ?: fail(inCall, "call to '${vCallee.kotlinFqName}'")
 		return adapt(callFunction(inCall, vTarget, vCallee, vArguments, null, vSubst), inCall)
 	}
 
@@ -3012,7 +3037,12 @@ internal class BodyBuilder(
 		}
 		// A reference used where a `fun interface` is expected implements that interface.
 		val vInterface = inReference.overriddenFunctionSymbol.owner.parentAsClass
-		val vSam = inReference.type.takeIf { !isFunctionType(vInterface.symbol.typeWith()) && !vInterface.kotlinFqName.asString().startsWith("kotlin.reflect.") }
+		// A reference given as a `suspend` function type (`String::plus` as `suspend (String, Int) -> String`) is a function value
+		// like a `suspend` lambda: a FunctionN with the continuation last.
+		val vSam = inReference.type.takeIf {
+			!isFunctionType(vInterface.symbol.typeWith()) && !vInterface.kotlinFqName.asString().startsWith("kotlin.reflect.") &&
+				!vInterface.kotlinFqName.asString().let { it.startsWith("kotlin.coroutines.SuspendFunction") && it.removePrefix("kotlin.coroutines.SuspendFunction").all(Char::isDigit) }
+		}
 		return makeClosure(inReference, inReference.invokeFunction, null, vSam, vBound)?.let { KRead(it.first) } ?: KUnitValue
 	}
 

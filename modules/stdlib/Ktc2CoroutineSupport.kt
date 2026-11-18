@@ -150,6 +150,15 @@ public fun coroutineOfFunction(inCompletion: Continuation<*>, inStart: (Continua
 // MARK: Helpers of the generated code
 // ==================
 
+/**
+ * [inResult], what the first run of the coroutine [inCoroutine] returned. A coroutine that ended there, without suspending,
+ * is resumed by nobody, so this lets go of the continuation it intercepted (which holds it back) as a resumption would.
+ */
+public fun coroutineRanThrough(inCoroutine: Any, inResult: Any?): Any? {
+	if (inResult !== COROUTINE_SUSPENDED) (inCoroutine as BaseContinuationImpl).releaseIntercepted()
+	return inResult
+}
+
 /** The value a coroutine waited for, or the exception it is resumed with, thrown. */
 public fun coroutineResult(inResult: Result<Any?>): Any? = inResult.getOrThrow()
 

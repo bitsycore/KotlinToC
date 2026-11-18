@@ -479,6 +479,13 @@ public fun <T> kotlin_collections_MutableList_removeFirst(list: MutableList<T>):
 public fun <T> kotlin_collections_MutableList_removeLast(list: MutableList<T>): T =
 	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(list.size - 1)
 
+/** The same, called on an `ArrayList` itself, whose JDK class has them as members of its own. */
+public fun <T> kotlin_collections_ArrayList_removeFirst(list: ArrayList<T>): T =
+	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(0)
+
+public fun <T> kotlin_collections_ArrayList_removeLast(list: ArrayList<T>): T =
+	if (list.isEmpty()) throw NoSuchElementException() else list.removeAt(list.size - 1)
+
 /** `Char(code)`: the character with that number, which has to be one. */
 public fun kotlin_Char__Int(code: Int): Char {
 	if (code < 0 || code > 0xFFFF) throw IllegalArgumentException("Invalid Char code: $code")
