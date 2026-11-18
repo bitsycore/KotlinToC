@@ -286,27 +286,55 @@ class CycleLint(private val mModule: KModule) {
 			val vSteps = vLine.split("->").map { it.trim() }
 			if (vSteps.size < 2) continue
 			// Each step: the class named, the field of it (or of a class above it), the classes the program makes of it.
-			val vResolved = vSteps.mapNotNull { vStep ->
+			val vNamed = vSteps.map { vStep ->
 				val vClassName = vStep.substringBeforeLast('.')
 				val vFieldName = vStep.substringAfterLast('.')
-				val vClass = mModule.classes.firstOrNull { it.name == vClassName } ?: return@mapNotNull null
-				val vField = generateSequence(vClass) { it.superClass }.flatMap { it.fields }.firstOrNull { it.cName == vFieldName } ?: return@mapNotNull null
+				if (isAnonymous(vClassName)) return@map null
+				val vClass = mModule.classes.firstOrNull { it.name == vClassName } ?: return@map null
+				val vField = generateSequence(vClass) { it.superClass }.flatMap { it.fields }.firstOrNull { it.cName == vFieldName } ?: return@map null
 				Triple(vClass, vField, mModule.classes.filter { it.isInstantiated && it.isSubclassOf(vClass) })
 			}
-			if (vResolved.size != vSteps.size || vResolved.any { it.third.isEmpty() }) continue
-			val vCount = vResolved.size
-			for (vStart in 0 until vCount) {
-				val vTurn = (0 until vCount).map { vResolved[(vStart + it) % vCount] }
-				val vVia = (1 until vCount - 1).map { KCycleStep(vTurn[it].second, vTurn[it + 1].third) }
-				for (vHead in vTurn[0].third) {
-					for (vPartner in vTurn[1].third) {
-						val vCycle = KPairCycle(vTurn[0].second, vPartner, vTurn[vCount - 1].second, vVia)
-						if (vHead.pairCycles.none { it.field === vCycle.field && it.partner === vPartner && it.back === vCycle.back && it.via.size == vVia.size }) vHead.pairCycles += vCycle
+			// A lambda or an object expression has no name of its own: each class of the program the step before can hold there
+			// that has the field, holding the class of the next step. One cycle for each (their fields are not at one place).
+			val vChoices = vSteps.indices.map { vAt ->
+				vNamed[vAt]?.let { return@map listOf(it) }
+				val vClassName = vSteps[vAt].substringBeforeLast('.')
+				val vFieldName = vSteps[vAt].substringAfterLast('.')
+				val vBefore = vNamed[(vAt + vSteps.size - 1) % vSteps.size]
+				val vNext = vNamed[(vAt + 1) % vSteps.size]?.first
+				if (!isAnonymous(vClassName) || vBefore == null || vNext == null) return@map emptyList()
+				// What the field before can hold, as the edges know it; a field typed as a function may lead nowhere there.
+				val vHeld = vBefore.third.flatMap { vFrom -> mEdges[vFrom].orEmpty().filter { it.field === vBefore.second }.map { it.to } }
+					.filter { it.isInstantiated && it.name == vClassName }.distinct()
+				vHeld.ifEmpty { mModule.classes.filter { it.isInstantiated && it.name == vClassName } }
+					.mapNotNull { vClass ->
+						vClass.fields.firstOrNull { it.cName == vFieldName && ownedClass(it.type)?.let { vHeld -> vNext.isSubclassOf(vHeld) } == true }
+							?.let { Triple(vClass, it, listOf(vClass)) }
 					}
+			}
+			if (vChoices.any { it.isEmpty() || it.any { vStep -> vStep.third.isEmpty() } }) continue
+			val vEach = vChoices.fold(listOf(emptyList<Triple<KClass, KField, List<KClass>>>())) { vSoFar, vStep -> vSoFar.flatMap { vPath -> vStep.map { vPath + it } } }
+			for (vResolved in vEach) declaredCycle(vResolved)
+		}
+	}
+
+	/** One cycle a module declares, resolved: each step's class, its field, and the classes the program makes of it. */
+	private fun declaredCycle(inResolved: List<Triple<KClass, KField, List<KClass>>>) {
+		val vCount = inResolved.size
+		for (vStart in 0 until vCount) {
+			val vTurn = (0 until vCount).map { inResolved[(vStart + it) % vCount] }
+			val vVia = (1 until vCount - 1).map { KCycleStep(vTurn[it].second, vTurn[it + 1].third) }
+			for (vHead in vTurn[0].third) {
+				for (vPartner in vTurn[1].third) {
+					val vCycle = KPairCycle(vTurn[0].second, vPartner, vTurn[vCount - 1].second, vVia)
+					if (vHead.pairCycles.none { it.field === vCycle.field && it.partner === vPartner && it.back === vCycle.back && it.via.size == vVia.size }) vHead.pairCycles += vCycle
 				}
 			}
 		}
 	}
+
+	/** Whether [inName] is the name a cycle's report gives a class without one of its own: a lambda, an object expression. */
+	private fun isAnonymous(inName: String): Boolean = inName == "lambda" || inName.endsWith("<no name provided>")
 
 	/** What a warning of a cycle asks of the program: [inBack] is the reference that closes it. */
 	private fun advice(inBack: Edge): String {

@@ -110,7 +110,7 @@ class ModuleFile(val directory: File, inText: String) {
 	/**
 	 * Changes made to files of its upstream when they are fetched: `path = file`, the file of its own holding them, each
 	 * `after: <a line of the upstream file>` followed by the lines to put after that line, or `replace: <a line>` followed by
-	 * the lines to put in its place (it must be there once).
+	 * the lines to put in its place (it must be there once; `replace 2: <a line>` takes the second of several).
 	 */
 	val edits: List<String> get() = mValues["edits"] ?: emptyList()
 
@@ -293,18 +293,24 @@ private val kCacheLock = Any()
 fun versionOf(inModule: ModuleFile): String? =
 	(inModule.chosenVersion ?: inModule.version)?.replace("\${kotlin}", org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION)
 
+/** The line that begins a block of an edit: `after: `, `replace: `, or either with the occurrence taken (`replace 2: `). */
+private val kEditAnchor = Regex("^(after|replace)(?: (\\d+))?: ")
+
 /**
  * Puts the lines of each `after: <line>` block of [inEdits] after that line of [inFile], and those of each `replace: <line>` block
- * in its place: false when a line is not there once.
+ * in its place: false when a line is not there once. `after 2:` or `replace 2:` takes the second of the lines that are the
+ * same (the edits before it applied), for a line a file repeats.
  */
 private fun applyEdits(inFile: File, inEdits: String): Boolean {
 	if (!inFile.isFile) return false
 	val vLines = inFile.readLines().toMutableList()
 	var vAnchor: String? = null
+	var vOccurrence = 0
 	var vReplaces = false
 	val vInsert = ArrayList<String>()
 	fun flush(): Boolean {
-		val vAt = vLines.indices.filter { vLines[it] == (vAnchor ?: return true) }.singleOrNull() ?: return false
+		val vFound = vLines.indices.filter { vLines[it] == (vAnchor ?: return true) }
+		val vAt = (if (vOccurrence == 0) vFound.singleOrNull() else vFound.getOrNull(vOccurrence - 1)) ?: return false
 		if (vReplaces) {
 			vLines.removeAt(vAt)
 			vLines.addAll(vAt, vInsert)
@@ -316,10 +322,12 @@ private fun applyEdits(inFile: File, inEdits: String): Boolean {
 	}
 	for (vLine in inEdits.lines().dropLastWhile { it.isEmpty() }) {
 		when {
-			vLine.startsWith("after: ") || vLine.startsWith("replace: ") -> {
+			kEditAnchor.matchesAt(vLine, 0) -> {
 				if (!flush()) return false
-				vReplaces = vLine.startsWith("replace: ")
-				vAnchor = vLine.substringAfter(": ")
+				val vMatch = kEditAnchor.find(vLine)!!
+				vReplaces = vMatch.groupValues[1] == "replace"
+				vOccurrence = vMatch.groupValues[2].toIntOrNull() ?: 0
+				vAnchor = vLine.substring(vMatch.range.last + 1)
 			}
 			else -> vInsert += vLine
 		}
