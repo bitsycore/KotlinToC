@@ -1047,30 +1047,53 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			return null
 		}
 		mClasses[vKey] = null
-		val vSubst = vOwn.map { it.symbol }.zip(vArguments).toMap()
-		val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) && !isNumberClass(it) } == true }
-		val vSuperIr = vSuperType?.classOrNull?.owner
-		val vSuper = vSuperIr?.let {
-			if (it.kotlinFqName.asString() == "kotlin.Enum") enumBase() else classFor(it, argumentsOf(close(vSuperType, vSubst)))
+		mClassDepth++
+		try {
+			val vSubst = vOwn.map { it.symbol }.zip(vArguments).toMap()
+			val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) && !isNumberClass(it) } == true }
+			val vSuperIr = vSuperType?.classOrNull?.owner
+			val vSuper = vSuperIr?.let {
+				if (it.kotlinFqName.asString() == "kotlin.Enum") enumBase() else classFor(it, argumentsOf(close(vSuperType, vSubst)))
+			}
+			if (vSuperIr != null && vSuper == null) {
+				unsupported(vFile, inClass, "superclass '${vSuperIr.kotlinFqName}'")
+				return null
+			}
+			var vSuffix = if (vKey.arguments.isEmpty()) "" else "__" + vKey.arguments.joinToString("_") { mangle(it) }
+			// A local class has no name of its own that is unique in the program.
+			// Nor a class inside one (the companion of a local class): its name is made of its outer classes' names only.
+			val vIsInLocal = generateSequence(inClass.parent) { (it as? IrClass)?.parent }.firstOrNull { it !is IrClass } !is IrFile
+			if (vIsInLocal) vSuffix += "__local${mClassList.size}"
+			val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
+			val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, jvmNameOf(inClass))
+			vClass.family = inClass
+			vUnit.cls = vClass
+			mClasses[vKey] = vClass
+			mClassInfo[vClass] = ClassInfo(inClass, vSubst, inClass.symbol.typeWith(vArguments))
+			mClassList += vClass
+			mUnits += vUnit
+			// Its members once the classes being made around it are there: a field's type may be a class below one of them
+			// (AbstractSharedFlow holds a SubscriptionCountStateFlow, a SharedFlowImpl below it).
+			mPendingMembers += { declareMembers(inClass, vClass, vUnit, vFile, vSubst, inFresh) }
+			if (mClassDepth == 1) while (mPendingMembers.isNotEmpty()) mPendingMembers.removeFirst()()
+			return vClass
+		} finally {
+			mClassDepth--
 		}
-		if (vSuperIr != null && vSuper == null) {
-			unsupported(vFile, inClass, "superclass '${vSuperIr.kotlinFqName}'")
-			return null
-		}
-		var vSuffix = if (vKey.arguments.isEmpty()) "" else "__" + vKey.arguments.joinToString("_") { mangle(it) }
-		// A local class has no name of its own that is unique in the program.
-		// Nor a class inside one (the companion of a local class): its name is made of its outer classes' names only.
-		val vIsInLocal = generateSequence(inClass.parent) { (it as? IrClass)?.parent }.firstOrNull { it !is IrClass } !is IrFile
-		if (vIsInLocal) vSuffix += "__local${mClassList.size}"
-		val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
-		val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, jvmNameOf(inClass))
-		vClass.family = inClass
-		vUnit.cls = vClass
-		mClasses[vKey] = vClass
-		mClassInfo[vClass] = ClassInfo(inClass, vSubst, inClass.symbol.typeWith(vArguments))
-		mClassList += vClass
-		mUnits += vUnit
+	}
 
+	/** How deep [classFor] is in making classes: their members are declared when the outermost one is made. */
+	private var mClassDepth = 0
+
+	/** The members of the classes [classFor] made, still to declare, in the order the classes were made. */
+	private val mPendingMembers = ArrayDeque<() -> Unit>()
+
+	/** The fields of [inClass] made as [inKClass] (the class of [inUnit], of [inFile], its type parameters [inSubst]), its interfaces, its instance. */
+	private fun declareMembers(inClass: IrClass, inKClass: KClass, inUnit: KUnit, inFile: IrFile, inSubst: Subst, inFresh: Boolean) {
+		val vClass = inKClass
+		val vUnit = inUnit
+		val vFile = inFile
+		val vSubst = inSubst
 		for (vProperty in inClass.declarations.filterIsInstance<IrProperty>()) {
 			val vBacking = vProperty.backingField ?: continue
 			if (selfDelegation(vProperty) != null) continue
@@ -1141,7 +1164,6 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			}
 		}
 		if (inClass.kind == ClassKind.ENUM_CLASS) declareEnumEntries(inClass, vClass, vFile)
-		return vClass
 	}
 
 	/** True for a property marked `@Weak`, which has to be a nullable reference. */
