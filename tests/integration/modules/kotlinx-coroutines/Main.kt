@@ -8,6 +8,13 @@ suspend fun compute(n: Int): Int {
 	return n * n
 }
 
+/** A dispatcher that runs what it is given at once, inside `dispatch`: a coroutine is resumed inside the call that suspends it. */
+class Immediate : CoroutineDispatcher() {
+	override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+		block.run()
+	}
+}
+
 fun main() = runBlocking {
 	val a = async { delay(10); 20 }
 	val b = async { delay(5); 22 }
@@ -48,5 +55,11 @@ fun main() = runBlocking {
 	} catch (e: IllegalStateException) {
 		println("caught ${e.message}")
 	}
+	// Combined flows collected on a dispatcher that resumes at once (a flow read from the array of combine's flows was
+	// released twice: the release after the call ran before the test for a suspension)
+	val combined = withContext(Immediate()) {
+		flowOf("a", "b").combine(flowOf(1, 2)) { s, n -> s + n }.toList()
+	}
+	println("combined $combined")
 	println("done")
 }

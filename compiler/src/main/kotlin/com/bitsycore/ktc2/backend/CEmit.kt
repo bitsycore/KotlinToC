@@ -300,7 +300,9 @@ class CEmitter(private val mModule: KModule) {
 		val vOut = ArrayList<KStmt>()
 		for (vStatement in inBlock) {
 			val vTest = vStatement as? KIf
-			val vPoint = vTest?.thenBlock?.firstOrNull() as? KIf
+			// The declarations a pass put in front of the suspension point (the local its result goes to) stay in front of it.
+			val vLead = vTest?.thenBlock?.takeWhile { it is KLet && (it.init == null || it.init is KNull) } ?: emptyList()
+			val vPoint = vTest?.thenBlock?.getOrNull(vLead.size) as? KIf
 			if (vTest == null || vPoint == null || !vPoint.condition.isSuspendPoint()) {
 				vOut += when (vStatement) {
 					is KIf -> KIf(vStatement.condition, withTestsAfterCalls(vStatement.thenBlock), withTestsAfterCalls(vStatement.elseBlock))
@@ -323,7 +325,7 @@ class CEmitter(private val mModule: KModule) {
 			val vAsReleases = vReleases.map { if (it is KSet) KRelease(KRead(it.local)) else it }
 				.filter { ((it as KRelease).operand as? KRead)?.local !in vAlready }
 			val vWaits = KIf(vPoint.condition, vPoint.thenBlock.filter { it !is KReturn } + vAsReleases + vPoint.thenBlock.filterIsInstance<KReturn>(), vPoint.elseBlock)
-			vOut += KIf(vTest.condition, listOf(vWaits) + vReleases + vTest.thenBlock.drop(1), vTest.elseBlock + vBetween)
+			vOut += KIf(vTest.condition, vLead + vWaits + vReleases + vTest.thenBlock.drop(vLead.size + 1), vTest.elseBlock + vBetween)
 		}
 		return vOut
 	}
