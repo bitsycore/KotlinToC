@@ -20,7 +20,11 @@ For anything about speed, measure before and after; see "Measuring" at the end.
 cycles with edits of it, after atomicfu's atomics are made fields of their owner, which they are now
 (`DESIGN.md`, section 6): the objects left for 1,000 coroutines went from 109,521 to 21,947, and every
 cycle left is of two to four objects (`KOTLINX.md`, kotlinx.coroutines, "Cycles": the list, and what is
-next). `KTC2_CYCLES=1` on a debug or test build names each cycle and its fields.
+next). `KTC2_CYCLES=1` on a debug or test build names each cycle and its fields. Then five edits and a
+`weak` entry of the module answer the cycles of plain use (`launch`, `async`/`await`, `join`, channels): what
+is left no longer grows with the number of coroutines (2,359 objects, the dispatchers'). Next, from flows,
+timeouts, cancellation and failures: the circular lists of handlers, a cancelled job and its exception, and
+a finished state machine that keeps its locals (ktc2's, `KOTLINX.md`).
 
 **State on 2026-11-18 (Mac), kotlinx.coroutines.** The owner chose coroutines before more optimizations, and
 the three choices of the library as Kotlin/Native (below, "Decided by the owner (2026-11-18)"). The first

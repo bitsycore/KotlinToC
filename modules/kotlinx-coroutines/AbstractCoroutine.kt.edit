@@ -1,0 +1,6 @@
+replace:     public final override val context: CoroutineContext = parentContext + this
+    // ktc2: made when it is read, not kept. Kept, it would refer to this coroutine while the coroutine refers to it, a
+    // cycle reference counts never free. It is what it was, `parentContext + this` (adding the Job takes out any other):
+    // equal, with the same elements; only two reads are no longer the same object.
+    private val contextWithoutJob: CoroutineContext = parentContext.minusKey(Job)
+    public final override val context: CoroutineContext get() = contextWithoutJob + this

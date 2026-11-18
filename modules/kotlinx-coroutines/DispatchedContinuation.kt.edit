@@ -1,0 +1,3 @@
+after:         reusableCancellableContinuation?.detachChild()
+        // ktc2: the continuation kept for reuse refers back to this one: let go of it, nothing reuses it any more.
+        _reusableCancellableContinuation.value = null

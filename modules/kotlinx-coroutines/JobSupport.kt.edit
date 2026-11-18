@@ -1,0 +1,16 @@
+replace:     private val continuation: Continuation<Unit>
+    // ktc2: let go of once resumed (a job node is invoked once): a cycle with the continuation's cancel handler otherwise.
+    private var continuation: Continuation<Unit>?
+replace:     override fun invoke(cause: Throwable?) = continuation.resume(Unit)
+    override fun invoke(cause: Throwable?) {
+        val continuation = this.continuation!!
+        this.continuation = null
+        continuation.resume(Unit)
+    }
+replace:     private val continuation: CancellableContinuationImpl<T>
+    // ktc2: let go of once resumed (a job node is invoked once): a cycle with the continuation's cancel handler otherwise.
+    private var continuation: CancellableContinuationImpl<T>?
+replace:         val state = job.state
+        val continuation = this.continuation!!
+        this.continuation = null
+        val state = job.state

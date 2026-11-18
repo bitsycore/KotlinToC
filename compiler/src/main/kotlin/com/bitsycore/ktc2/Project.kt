@@ -95,7 +95,8 @@ class ModuleFile(val directory: File, inText: String) {
 
 	/**
 	 * Changes made to files of its upstream when they are fetched: `path = file`, the file of its own holding them, each
-	 * `after: <a line of the upstream file>` followed by the lines to put after that line (it must be there once).
+	 * `after: <a line of the upstream file>` followed by the lines to put after that line, or `replace: <a line>` followed by
+	 * the lines to put in its place (it must be there once).
 	 */
 	val edits: List<String> get() = mValues["edits"] ?: emptyList()
 
@@ -278,25 +279,35 @@ private val kCacheLock = Any()
 fun versionOf(inModule: ModuleFile): String? =
 	(inModule.chosenVersion ?: inModule.version)?.replace("\${kotlin}", org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION)
 
-/** Puts the lines of each `after:` block of [inEdits] after its line in [inFile]: false when one is not there once. */
+/**
+ * Puts the lines of each `after: <line>` block of [inEdits] after that line of [inFile], and those of each `replace: <line>` block
+ * in its place: false when a line is not there once.
+ */
 private fun applyEdits(inFile: File, inEdits: String): Boolean {
 	if (!inFile.isFile) return false
 	val vLines = inFile.readLines().toMutableList()
-	var vAfter: String? = null
+	var vAnchor: String? = null
+	var vReplaces = false
 	val vInsert = ArrayList<String>()
 	fun flush(): Boolean {
-		val vAnchor = vAfter ?: return true
-		val vAt = vLines.indices.filter { vLines[it] == vAnchor }.singleOrNull() ?: return false
-		vLines.addAll(vAt + 1, vInsert)
+		val vAt = vLines.indices.filter { vLines[it] == (vAnchor ?: return true) }.singleOrNull() ?: return false
+		if (vReplaces) {
+			vLines.removeAt(vAt)
+			vLines.addAll(vAt, vInsert)
+		} else {
+			vLines.addAll(vAt + 1, vInsert)
+		}
 		vInsert.clear()
 		return true
 	}
 	for (vLine in inEdits.lines().dropLastWhile { it.isEmpty() }) {
-		if (vLine.startsWith("after: ")) {
-			if (!flush()) return false
-			vAfter = vLine.removePrefix("after: ")
-		} else {
-			vInsert += vLine
+		when {
+			vLine.startsWith("after: ") || vLine.startsWith("replace: ") -> {
+				if (!flush()) return false
+				vReplaces = vLine.startsWith("replace: ")
+				vAnchor = vLine.substringAfter(": ")
+			}
+			else -> vInsert += vLine
 		}
 	}
 	if (!flush()) return false

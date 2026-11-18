@@ -1,0 +1,3 @@
+replace:         _removedRef.value ?: Removed(this).also { _removedRef.lazySet(it) }
+        // ktc2: not cached in the node, which would hold it while it holds the node (a cycle of two).
+        Removed(this)

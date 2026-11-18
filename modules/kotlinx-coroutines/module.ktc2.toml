@@ -4,3 +4,6 @@ upstream     = [". = org.jetbrains.kotlinx:kotlinx-coroutines-core"]
 jvm          = ["org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm"]
 dependencies = ["atomicfu"]
 optIn        = ["kotlinx.coroutines.InternalCoroutinesApi", "kotlinx.coroutines.ExperimentalCoroutinesApi", "kotlinx.coroutines.DelicateCoroutinesApi", "kotlinx.cinterop.ExperimentalForeignApi", "kotlin.experimental.ExperimentalNativeApi", "kotlin.native.concurrent.ObsoleteWorkersApi", "kotlin.experimental.ExperimentalTypeInference"]
+edits        = ["commonMain/AbstractCoroutine.kt = AbstractCoroutine.kt.edit", "commonMain/JobSupport.kt = JobSupport.kt.edit", "concurrentMain/internal/LockFreeLinkedList.kt = LockFreeLinkedList.kt.edit", "commonMain/internal/DispatchedContinuation.kt = DispatchedContinuation.kt.edit"]
+# A segment of a channel refers back to it; the channel is held by whoever sends or receives through the segment.
+weak         = ["kotlinx.coroutines.channels.ChannelSegment._channel"]

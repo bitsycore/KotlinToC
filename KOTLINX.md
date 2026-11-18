@@ -200,7 +200,19 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   `Removed`, a coroutine and its `context` (`parentContext + this`), a resumed continuation, its
   `CompletedContinuation`'s cancel handler and the job node that resumed it, a `DispatchedContinuation`
   and its reusable `CancellableContinuationImpl`, a channel and its segments (`ChannelSegment._channel`),
-  and a closed empty list of handlers. Next: an edit or an entry for each.
+  and a closed empty list of handlers. Then answered (`modules/kotlinx-coroutines`): the cached `Removed` is
+  not cached (`LockFreeLinkedList.kt.edit`); a job node that resumes a continuation lets go of it once it has
+  (`JobSupport.kt.edit`: a node is invoked once); a `DispatchedContinuation` lets go of the continuation it
+  keeps for reuse when it is released (`DispatchedContinuation.kt.edit`); a segment refers to its channel
+  weakly (`weak`: whoever sends or receives through it holds the channel); a coroutine's `context` is made
+  when it is read, `parentContext.minusKey(Job) + this`, equal to what it was (`AbstractCoroutine.kt.edit`:
+  only two reads are no longer the same object, which `withContext` and a flow's collector use as a
+  shortcut, never for a result). The same program now leaves 2,359 objects for any N: the dispatchers'
+  own, which live as long as the program. Left, from a program that also uses flows, a `Mutex`, timeouts,
+  cancellation and failures: the circular lists of handlers, closed when a job ends (a ring of the list's
+  head and its nodes); a cancelled job and its `JobCancellationException`, which refers back to it; and
+  ktc2's own, a finished state machine that still holds its locals in its fields (`withTimeoutOrNull`'s
+  continuation is itself).
 
 ---------------------------------------------------------------------------
 ## 5. Order, and what is the owner's to decide
