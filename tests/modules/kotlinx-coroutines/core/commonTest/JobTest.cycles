@@ -1,0 +1,1 @@
+A handler disposes its own registration, which it reads from a variable it captures: the registration (the job's node) holds the handler, which holds the variable (the test's design; a collector frees them).

@@ -1,0 +1,1 @@
+Its tests keep a continuation in a variable their own coroutine captures (cont): the continuation holds, through its dispatched delegate, the coroutine that holds the variable (the test's design; a collector frees them).

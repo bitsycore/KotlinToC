@@ -1,0 +1,1 @@
+Its tests keep a continuation in a variable their own coroutine captures (cc): the continuation, its handler of cancellation and the coroutine hold one another (the test's design; a collector frees them).

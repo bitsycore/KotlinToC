@@ -331,7 +331,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * [kModuleTests] names the modules that have such tests.
 	 */
 	/** The bundled modules whose library's own tests are under `tests/modules/<module>/`. */
-	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io")
+	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io", "kotlinx-coroutines")
 
 	/** The source sets of a module's tests that are common: run in C and on the JVM. */
 	private val kCommonTestSets = Regex("/(commonTest|concurrentTest)/")

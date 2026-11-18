@@ -1,0 +1,2 @@
+# Counts of what was sent, received and not delivered, which depend on the threads.
+/ *(Send|Send exception|trySend failed|Received|Undelivered): .*/

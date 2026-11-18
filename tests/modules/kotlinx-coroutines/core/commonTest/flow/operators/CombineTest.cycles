@@ -1,0 +1,1 @@
+A runBlocking that fails keeps the exception as its state; the exception names a scope coroutine (coroutineScope, flowScope), which keeps the continuation of its caller (uCont), whose frame holds the runBlocking coroutine. PLAN.md, kotlinx.coroutines' tests.

@@ -1,0 +1,1 @@
+A coroutine of a channel (produce, and the flows made of it) cancelled keeps its exception as its state, and its channel keeps the same exception as its cause of closing: the exception names the coroutine, which holds the channel. Two cycles through one exception, which neither declared cycle frees. PLAN.md, kotlinx.coroutines' tests.

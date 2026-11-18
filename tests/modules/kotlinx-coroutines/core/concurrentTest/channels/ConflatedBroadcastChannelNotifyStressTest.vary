@@ -1,0 +1,3 @@
+# Counts of what was sent and received, which depend on the threads and the time.
+/[0-9]+: Sent .*/
+/ +(Sent|Received) [0-9]+ events/

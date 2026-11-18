@@ -1,0 +1,1 @@
+The test keeps a continuation in a field of its own and resumes it later: the continuation holds the coroutine, which holds the test (the test's design; a collector frees them).

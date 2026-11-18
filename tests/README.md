@@ -196,6 +196,28 @@ They found (kotlinx-io): a file's unit named after it, with another file of the 
 for in a package whose name starts with `kotlin` (`kotlinx.io`); a value class passed between a
 dispatcher and an implementation, one as it is and the other as an object, had no box class.
 
+`kotlinx-coroutines/core/` holds the tests of kotlinx.coroutines 1.11.0 (from the repository's tag `1.11.0`):
+`commonTest` is `kotlinx-coroutines-core/common/test` with the common part of its `test-utils`
+(`commonTest/testutils`: `TestBase.common.kt`, `LaunchFlow.kt`, `MainDispatcherTestBase.kt`), `concurrentTest` is
+`kotlinx-coroutines-core/concurrent/test`; `nativeTest` has Native's `TestBase` and `ConcurrentTestUtilities`, and
+`jvmTest` the same `TestBase` (Native's, with a line that says so: the JVM's needs JUnit) and the JVM's
+`ConcurrentTestUtilities`. Native's own tests (`native/test`: workers, multithreaded dispatchers) are not taken. Each
+file is a program of some 180 files, so a run of the 170 takes about 25 minutes on 8 processes (50 s of Kotlin for
+each); `KTC2_TEST_FILTER=tests/modules/kotlinx-coroutines/` runs them. Files whose tests keep a continuation in a
+variable their own coroutine captures, or that use the deprecated `BroadcastChannel`, leave cycles by their design
+(`.cycles`, with the reason); three stress tests print counts that depend on the threads (`.vary`).
+
+They found (2026-11-18): a `val` given its value in a lambda a contract runs in place (`coroutineScope { x = 1 }`)
+read as 0 (`basic/ContractInitialization`); a reference to an ordinary function given as a `suspend` function type
+(`combine(other, String::plus)`) made no function value (`basic/SuspendReferences`); a null cast without a check to a
+type parameter that is a number here failed (`generics/UncheckedNullCast`); a class whose field is of a class below
+it, through a generic class being made (`AbstractSharedFlow` and `SubscriptionCountStateFlow`:
+`generics/FieldOfSubclassType`); `removeFirst` called on an `ArrayList` itself; `shuffle()` with a fixed seed
+(Native's uses `Random`: `selectUnbiased` was biased); a state machine whose first run ends it never let go of its
+intercepted continuation; and in a state machine, the release of a call's argument ran before the test for a
+suspension when a declaration stood in front of the suspension point, so a coroutine resumed inside the call (a
+dispatcher that runs at once) released it twice (`modules/kotlinx-coroutines`, the combined flows).
+
 To take in more: `git sparse-checkout add compiler/testData/codegen/box/<dir>` in the clone, then
 `python -I tools/select_box.py <clone>/compiler/testData/codegen/box/<dir> tests/box/<dir>`.
 

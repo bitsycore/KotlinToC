@@ -1,0 +1,1 @@
+The test keeps in a list of its own lambdas that capture the test (shouldBeUnhandled): the test's design; a collector frees them.

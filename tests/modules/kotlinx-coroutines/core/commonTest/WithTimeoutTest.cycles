@@ -1,0 +1,1 @@
+A job whose result is one of its own handlers (the DisposableHandle its block returns) keeps that node boxed as its state, and the node names the job. The module declares the cycle (JobSupport._state -> IncompleteStateBox.state -> JobNode.job), which does not free it here yet: PLAN.md, kotlinx.coroutines' tests.
