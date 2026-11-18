@@ -18,7 +18,8 @@ unless it says so.
   the bundled libraries' own tests). The last whole run on Windows with clang: 1,207 passed and none failed;
   the last 11 (kotlinx-serialization-json-io) were not reached when it was stopped. The CI job of the last
   push from the Mac failed on Linux (`strdup`, gcc 14's dangling pointer); fixed in `1e64df1`, not pushed.
-  Twelve commits are local and not pushed (`git log origin/master..`).
+  The fix and the work of the night were pushed together on 2026-11-19 (`ab63593` and the eleven before it):
+  read that CI run first.
 - **kotlinx.coroutines**: the library compiles as it is (with 14 edits of the module) and its 170 test files
   run and pass their tests in C and on the JVM; 27 of them leave cycles (`.cycles`): 16 of the library's
   structures not answered yet, 11 by their tests' design or the deprecated `BroadcastChannel` (section 2).
