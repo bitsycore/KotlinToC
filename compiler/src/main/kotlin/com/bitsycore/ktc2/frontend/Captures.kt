@@ -124,18 +124,19 @@ internal class CaptureAnalysis {
 				}
 			}
 
-			private fun use(inDeclaration: IrValueDeclaration) {
+			/** A `var` used inside a closure, or a `val` given its value there (a lambda a contract runs in place): a cell. */
+			private fun use(inDeclaration: IrValueDeclaration, inSets: Boolean) {
 				val vDeclaredAt = vDepthOf[inDeclaration] ?: return
-				if (inDeclaration is IrVariable && inDeclaration.isVar && vDeclaredAt < vDepth) vCells += inDeclaration
+				if (inDeclaration is IrVariable && (inDeclaration.isVar || inSets) && vDeclaredAt < vDepth) vCells += inDeclaration
 			}
 
 			override fun visitGetValue(expression: IrGetValue) {
-				use(expression.symbol.owner)
+				use(expression.symbol.owner, false)
 				super.visitGetValue(expression)
 			}
 
 			override fun visitSetValue(expression: IrSetValue) {
-				use(expression.symbol.owner)
+				use(expression.symbol.owner, true)
 				super.visitSetValue(expression)
 			}
 		})
