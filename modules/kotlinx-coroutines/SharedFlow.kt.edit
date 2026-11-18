@@ -1,0 +1,6 @@
+replace:         @JvmField val cont: Continuation<Unit>
+        // ktc2: let go of once the flow resumes it: the continuation's cancel handler holds this emitter.
+        @JvmField var cont: Continuation<Unit>?
+replace:                     resumes[resumeCount++] = emitter.cont
+                    resumes[resumeCount++] = emitter.cont
+                    emitter.cont = null

@@ -1,0 +1,8 @@
+replace 1:     initialValue: T
+    // ktc2: NO_VALUE itself, or a value of T: a sentinel cast to T cannot be held where T is a number, as ktc2 holds it.
+    initialValue: Any?
+replace:                                     shared.tryEmit(initialValue) // state flow -> reset to initial value
+                                    @Suppress("UNCHECKED_CAST")
+                                    shared.tryEmit(initialValue as T) // state flow -> reset to initial value
+replace:     val job = scope.launchSharing(config.context, config.upstream, shared, started, NO_VALUE as T)
+    val job = scope.launchSharing(config.context, config.upstream, shared, started, NO_VALUE)

@@ -1,0 +1,3 @@
+replace:                 if (element !== CHANNEL_CLOSED) onUndeliveredElement.callUndeliveredElement(element as E, select.context)
+                // ktc2: the handler itself (`it`), not the channel's property: the channel holds this lambda.
+                if (element !== CHANNEL_CLOSED) it.callUndeliveredElement(element as E, select.context)

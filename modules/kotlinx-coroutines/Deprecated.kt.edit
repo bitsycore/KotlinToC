@@ -1,0 +1,3 @@
+replace:     @BuilderInference block: suspend ProducerScope<E>.() -> Unit
+    // ktc2: @BuilderInference, which Kotlin 2.5 refuses here.
+    block: suspend ProducerScope<E>.() -> Unit

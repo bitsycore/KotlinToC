@@ -1,6 +1,4 @@
 commonMain/**
-# Deprecated channel operators, with an annotation Kotlin 2.5 refuses (@BuilderInference): used by nothing else.
-!commonMain/channels/Deprecated.kt
 concurrentMain/**
 nativeMain/**
 nativeOtherMain/**

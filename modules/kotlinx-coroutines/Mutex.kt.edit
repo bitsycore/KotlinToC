@@ -1,0 +1,16 @@
+replace:             val token = cont.tryResume(value, idempotent) { _, _, _ ->
+            // ktc2: the lambdas hold the mutex and the owner, not this wrapper: the continuation keeps them once resumed,
+            // and the wrapper holds the continuation.
+            val mutex = this@MutexImpl
+            val lockOwner = owner
+            val token = cont.tryResume(value, idempotent) { _, _, _ ->
+replace:                 assert { this@MutexImpl.owner.value.let { it === NO_OWNER || it === owner } }
+                assert { mutex.owner.value.let { it === NO_OWNER || it === lockOwner } }
+replace 1:                 this@MutexImpl.owner.value = owner
+                mutex.owner.value = lockOwner
+replace:                 unlock(owner)
+                mutex.unlock(lockOwner)
+replace:             cont.resume(value) { unlock(owner) }
+            val mutex = this@MutexImpl
+            val lockOwner = owner
+            cont.resume(value) { mutex.unlock(lockOwner) }

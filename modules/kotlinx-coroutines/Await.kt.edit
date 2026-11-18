@@ -1,0 +1,28 @@
+replace:                 handle = deferred.invokeOnCompletion(handler = this)
+                // ktc2: a node installed as itself (a JobNode) is not kept as its own handle, which would hold it.
+                val installed = deferred.invokeOnCompletion(handler = this)
+                if (installed === this) installedAsItself = true else handle = installed
+replace:     private inner class DisposeHandlersOnCancel(private val nodes: Array<AwaitAllNode>) : CancelHandler {
+    private inner class DisposeHandlersOnCancel(nodes: Array<AwaitAllNode>) : CancelHandler {
+        // ktc2: let go of once disposed or done with: each node holds this disposer.
+        private var nodes: Array<AwaitAllNode>? = nodes
+
+replace:             nodes.forEach { it.handle.dispose() }
+            val nodes = this.nodes ?: return
+            this.nodes = null
+            nodes.forEach { if (it.installedAsItself) it.dispose() else it.handle?.dispose() }
+        }
+
+        /** ktc2: the nodes are not needed any more (every deferred completed). */
+        fun release() {
+            nodes = null
+replace:         lateinit var handle: DisposableHandle
+        // ktc2: let go of once this node has fired (its handle, a node of the deferred's list, holds this one), or not
+        // kept at all when this node is that handle.
+        var handle: DisposableHandle? = null
+        var installedAsItself = false
+replace:         override fun invoke(cause: Throwable?) {
+        override fun invoke(cause: Throwable?) {
+            handle = null
+after:                 continuation.resume(deferreds.map { it.getCompleted() })
+                disposer?.release()

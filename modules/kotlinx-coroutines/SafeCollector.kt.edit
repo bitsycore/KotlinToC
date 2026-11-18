@@ -1,0 +1,3 @@
+after:     public actual fun releaseIntercepted() {
+        // ktc2: the context of the last emission holds the coroutine that emitted, whose continuation holds this collector.
+        lastEmissionContext = null
