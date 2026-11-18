@@ -2,8 +2,8 @@
 # And the headers of POSIX for files: what kotlinx-io's file system (its nativeMain) calls. mingw has
 # them; MSVC's C library has neither unistd.h nor dirent.h: what it lacks of them is after `---`.
 headers = stdio.h stdlib.h string.h math.h time.h errno.h ctype.h signal.h fcntl.h sys/types.h sys/stat.h limits.h
-# MSVC's C library has neither: a program that calls nothing of theirs still builds with it.
-optionalHeaders = unistd.h dirent.h
+# MSVC's C library has none of them: a program that calls nothing of theirs still builds with it.
+optionalHeaders = unistd.h dirent.h sched.h
 # On Windows unistd.h has open, read, write, close and access from io.h, and rmdir from direct.h.
 headers.mingw = io.h direct.h
 # mingw's struct stat is in a header of its own.
@@ -110,6 +110,15 @@ static inline int closedir(DIR* dir)
 	int result = _findclose(dir->handle);
 	free(dir);
 	return result;
+}
+/* sched.h's sched_yield, over Windows' own (declared as windows.h has it, which is not included here). */
+__declspec(dllimport) int __stdcall SwitchToThread(void);
+
+/** Lets another thread of the processor run: always 0. */
+static inline int sched_yield(void)
+{
+	SwitchToThread();
+	return 0;
 }
 #endif
 #endif
