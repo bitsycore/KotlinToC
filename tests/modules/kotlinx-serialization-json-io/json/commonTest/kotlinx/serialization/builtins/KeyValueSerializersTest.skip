@@ -1,0 +1,1 @@
+testKeyValuePair: its body runs on the JVM only (jvmOnly), where it relies on JUnit's asserter, which compares expected.equals(actual); kotlin-test's DefaultAsserter (Kotlin/Native's, and the suite's JVM side) compares actual == expected, which MapEntry, a data class, refuses

@@ -48,6 +48,15 @@ Kotlin/Native's collector would). What stands between, in the order to do it:
 - [ ] The cycle declared for a job whose result is one of its own handlers
   (`JobSupport._state -> IncompleteStateBox.state -> JobNode.job`) does not free it
   (`AsyncTest`, `WithTimeoutTest`): `KTC2_CYCLES=1` and the generated `__collect` to read.
+- [ ] A reference not counted under threads: `CombineStressTest.testCancellation` of kotlinx.coroutines
+  (`flatMapLatest { combine(...) }` on `Dispatchers.Default`) ends with "use of a freed object" in most runs (13 of
+  15 with the compiler of 2026-11-19, as a program of its own; 3 of 15 in the group). Left out by a `.skip` until
+  fixed. `SemaphoreStressTest` failed once in some 40 runs ("Inconsistent state null"): maybe the same.
+- [ ] `Any().hashCode() != Any().hashCode()` (`HashCodeNativeTest.hashCodeOfAny`): the first object is freed before
+  the second is made, which takes its address, and the identity hash is the address. The suite's test builds keep
+  freed objects aside before reuse, so it passes there; a release build of `ktc2 test tests/stdlib` fails it. The header
+  has no room for a hash (8 bytes: count and type). Options: a salt mixed in, counted up at each free of an
+  object whose hash was taken (a header bit says so); or a short quarantine of such blocks before reuse.
 
 ### 2.2 kotlinx.coroutines' cycles (3 to 5 days)
 The 16 files of the library's own structures, by kind (each file's `.cycles` names it):
@@ -134,13 +143,13 @@ the JVM), `ide/` (source sets for an IDE), and Gradle's configuration cache that
   can stay on without the filter going stale.
 - Or: keep the three, document why each exists. Less work, the same confusion for a newcomer.
 
-### 3.3 Tests (2 to 3 days, after section 4)
+### 3.3 Tests (2 to 3 days; section 4 is done)
 Today: `tests/integration/` (programs compared with the JVM), `tests/stdlib/` (Kotlin's own tests),
-`tests/common/` (one file), `tests/modules/<module>/` (libraries' tests copied in), `tests/box/`, and twelve
-kinds of files next to a test (`.skip .vary .cycles .pending .with .jvm .native .expected .in .def .errors
+`tests/common/` (one file), `tests/modules/<module>/` (libraries' tests copied in), `tests/box/`, and eleven
+kinds of files next to a test (`.skip .vary .cycles .pending .jvm .native .expected .in .def .errors
 .warnings`), read by a harness of 1,000 lines (`IntegrationTest.kt`) that also builds and runs.
 - [ ] One file of settings per test or per directory (`<Name>.test.toml`, or `tests.toml` with a section per
-  file) in place of the twelve kinds: skips, varying lines, cycles, pending, JVM options, expected output.
+  file) in place of the eleven kinds: skips, varying lines, cycles, pending, JVM options, expected output.
 - [ ] Names that say what each is: `tests/programs/` (was `integration`), `tests/kotlin/` (the standard
   library's and Native's runtime's), `tests/ktc2/` (ktc2's own common tests, which should grow: most of what the
   programs check that must hold everywhere), `tests/libraries/<module>/`, `tests/box/`.
@@ -148,8 +157,9 @@ kinds of files next to a test (`.skip .vary .cycles .pending .with .jvm .native 
   `module.ktc2.toml`: the repository and the directories), with only the settings files in the repository. The
   repository loses some 600 copied files and a new version of a library is one line. Or keep them copied:
   greppable and offline. Recommended: fetched, with the cache as the place to read them.
-- [ ] The harness reduced to running `ktc2 test` (section 4) and comparing with the JVM; the build, the run and
-  the leak check move into the tool, where a user gets them too.
+- [ ] The harness reduced to running `ktc2 test` and comparing with the JVM: the groups compile as `ktc2 test` does
+  (section 4), but through the harness's own build and run; the build, the run and the leak check by file move
+  into the tool, where a user gets them too.
 
 ### 3.4 Tools (1 day)
 Fifteen scripts in bash, Python and PowerShell (`tools/`). Recommended: the ones a user needs become `ktc2`
@@ -161,34 +171,15 @@ and `--cmake` do it).
 ## 4. kotlin.test as a module, and a test mode of the compiler
 ---------------------------------------------------------------------------
 
-Today `kotlin.test` is ktc2's own sources compiled with every file of tests, and the suite writes a `main`
-for each file (`testMain` in `IntegrationTest.kt`): a test file is a program, compiled alone, and a library's
-test file compiles all the files of its source set with it (kotlinx.coroutines: 170 compilations of 180 files,
-50 s of Kotlin each, 25 minutes for the set).
-
-The proposal (estimate: 4 to 6 days):
-- [ ] **`kotlin-test` a bundled module**, as `kotlinx-io` is: Kotlin's own `kotlin-test` common sources
-  (`Asserter`, `assertEquals`... and the annotations `@Test`, `@BeforeTest`, `@AfterTest`, `@Ignore`), with
-  ktc2's `actual`s (the asserter that throws `AssertionError`, as Native's). Then it is the real library, the
-  same on the JVM side, and a program can use it without the suite.
-- [ ] **`ktc2 test <paths>... [--filter Class | Class.method | pattern]`**: compiles every file given (a file,
-  or every `.kt` under a directory) as one program with the `kotlin-test` module added implicitly; the importer
-  finds the classes with `@Test` functions (and their `@BeforeTest`/`@AfterTest`, `@Ignore`), and the compiler
-  writes the `main` in KIR itself (no source file): for each class an instance per test, before, test, after,
-  each failure caught and reported, a summary, the exit code. As Kotlin/Native's test runner
-  (`-generate-test-runner`), whose options it can follow (`--ktest_filter=Class.method`, `--ktest_list`).
-- [ ] **What the binary takes at run time**: `--filter` again (no recompile to run one test), `--list`,
-  `--isolate` (each test in a process of its own: the binary runs itself with `--only Class.method`, so a crash
-  fails one test and not the run), `--report junit.xml` for CI.
-- [ ] **Leaks per test**: the runtime's count of live objects before and after each test, so a leak names its
-  test (today it names the file); `KTC2_CYCLES` per test.
-- [ ] **The suite on it**: the `kotlin` and `libraries` categories become one `ktc2 test` per directory (one
-  compilation for the 170 files of coroutines: minutes become seconds of Kotlin); the JVM side runs the same
-  files with `kotlin-test` on JUnit, and the two reports are compared test by test.
-- Recommended order: the module first (small), then `ktc2 test` on one directory, then the suite.
-- The risk: a library whose test files clash when compiled together (two `main`s, a helper declared twice in
-  different files of a source set). The source sets already compile together on the JVM, so this is rare;
-  `--isolate` and per-file compilation stay as the fallback.
+Done on 2026-11-19 (`docs/HISTORY.md`, section 12; `DESIGN.md`, `tests/README.md` "Groups"): the module
+`kotlin-test`, `ktc2 test`, and the suite on it. What is left of the proposal (a day):
+- [ ] `--isolate`: each test in a process of its own (the program runs itself with `--ktest_filter=Class.test`), so a
+  crash fails one test and not the run; the suite does it by file today, after a crash.
+- [ ] `--report junit.xml` for CI (Native's runner has a TeamCity logger, `--ktest_logger=TEAMCITY`, already).
+- [ ] Leaks named by test rather than by file: the runtime's count of live objects around each test (a
+  `TestListener` of ktc2's).
+- [ ] `tools/native.sh` on the groups: the same directories with Kotlin/Native's `-generate-test-runner`, one
+  program each, instead of one a file.
 
 ---------------------------------------------------------------------------
 ## 5. Speed of programs: toward Go and Swift

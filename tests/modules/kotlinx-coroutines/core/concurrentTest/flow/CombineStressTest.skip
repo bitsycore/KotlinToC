@@ -1,0 +1,1 @@
+testCancellation: a reference not counted under threads (flatMapLatest of combine on Dispatchers.Default) uses a freed object in most runs; it did before the tests were compiled by group, which runs it once (PLAN.md, 2.1)

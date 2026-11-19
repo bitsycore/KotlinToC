@@ -107,7 +107,7 @@ object K2Frontend {
 	 */
 	private fun isCommonSource(inSource: File): Boolean = kCommonSourceSet.containsMatchIn(inSource.invariantSeparatorsPath)
 
-	private val kCommonSourceSet = Regex("/(common|concurrent|nativeCommon)(Main|Test)/")
+	private val kCommonSourceSet = Regex("/(common|concurrent|nativeCommon|annotationsCommon|assertionsCommon)(Main|Test)/")
 
 	/**
 	 * @param inOwnSources the program's own files among [inGivenSources] (not those of the modules it depends on); null:
@@ -526,8 +526,17 @@ class Ktc2Extension : IrGenerationExtension {
 		}
 
 		writeAssociatedObjects(moduleFragment, pluginContext)
+		val vLibraryFiles = System.getProperty(kLibraryFilesProperty, "").lines().toSet()
+		// `ktc2 test`: the suites of the program's tests, for Kotlin/Native's runner.
+		val vTestErrors = ArrayList<String>()
+		writeTestRegistry(moduleFragment, pluginContext, vLibraryFiles, vOutDir, vTestErrors)
+		if (vTestErrors.isNotEmpty()) {
+			vTestErrors.forEach { System.err.println("ktc2: error: $it") }
+			System.setProperty(kErrorCountProperty, vTestErrors.size.toString())
+			return
+		}
 		val vImporter = KirImporter(pluginContext.irBuiltIns)
-		val vJavaUses = JavaUseCheck(System.getProperty(kLibraryFilesProperty, "").lines().toSet()).also { it.check(moduleFragment.files) }
+		val vJavaUses = JavaUseCheck(vLibraryFiles).also { it.check(moduleFragment.files) }
 		if (vJavaUses.errors.isNotEmpty()) {
 			// Nothing else is said about such a program: every use would be reported again as unsupported.
 			vJavaUses.errors.forEach { System.err.println("ktc2: error: $it") }

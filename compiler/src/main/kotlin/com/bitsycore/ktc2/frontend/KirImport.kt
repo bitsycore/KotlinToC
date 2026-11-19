@@ -521,8 +521,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		mCoroutineSingletons = inModule.files.filter { it.packageFqName.asString() == "kotlin.coroutines.intrinsics" }
 			.flatMap { it.declarations.filterIsInstance<IrClass>() }.firstOrNull { it.name.asString() == "CoroutineSingletons" }
-		// Not in the library's own packages (kotlin, kotlin.*): kotlinx.* is a program's or a module's.
-		val vMain = inModule.files.filter { it.packageFqName.asString().let { vPackage -> vPackage != "kotlin" && !vPackage.startsWith("kotlin.") } }.firstNotNullOfOrNull { vFile ->
+		// Not in the library's own packages (kotlin, kotlin.*): kotlinx.* is a program's or a module's. One named (`ktc2.main`) may be
+		// anywhere: the test runner of `ktc2 test` is in kotlin.native.internal.test.
+		val vNamed = System.getProperty("ktc2.main") != null
+		val vMain = inModule.files.filter { vNamed || it.packageFqName.asString().let { vPackage -> vPackage != "kotlin" && !vPackage.startsWith("kotlin.") } }.firstNotNullOfOrNull { vFile ->
 			vFile.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { isEntryPoint(it) }
 		}
 		val vEntry = vMain?.let { functionFor(it) }

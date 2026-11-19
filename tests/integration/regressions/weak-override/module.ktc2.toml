@@ -1,0 +1,4 @@
+name = "weak-override"
+# Properties that override another, made weak by the module (as kotlin-test's TestCase.suite): read through what they
+# override, they give their object, not its weak cell.
+weak = ["Leaf.owner", "Branch.holder"]

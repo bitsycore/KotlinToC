@@ -1,0 +1,14 @@
+name     = "kotlin-test"
+version  = "${kotlin}"
+# Kotlin's kotlin.test as Kotlin/Native has it: the common sources of the library (the assertions, the annotations
+# as `expect`s), and from Kotlin's repository at the same tag Native's `actual`s of them and its test runner
+# (kotlin.native.internal.test), which `ktc2 test` gives the tests of a program to.
+upstream = [". = org.jetbrains.kotlin:kotlin-test", "native = git:https://github.com/JetBrains/kotlin.git#kotlin-native/runtime/src/main/kotlin@v${version}"]
+# On the JVM the assertions are the same library's (DefaultAsserter, as on Native); its annotations are the suite's.
+jvm      = ["org.jetbrains.kotlin:kotlin-test"]
+files    = ["Ktc2TestRegistry.kt"]
+# Native's runner has its own `main`, which would be any program's: renamed, `ktc2 test` starts through Ktc2TestRegistry.kt.
+edits    = ["native/kotlin/native/internal/test/Launcher.kt = Launcher.kt.edit"]
+optIn    = ["kotlin.experimental.ExperimentalNativeApi"]
+# A test case names its suite, which holds it; the runner's list (GeneratedSuites) holds every suite for the whole run.
+weak     = ["kotlin.native.internal.test.AbstractTestSuite.BasicTestCase.suite", "kotlin.native.internal.test.BaseClassSuite.TestCase.suite", "kotlin.native.internal.test.TopLevelSuite.TestCase.suite"]

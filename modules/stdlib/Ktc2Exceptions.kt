@@ -154,6 +154,9 @@ private fun Throwable.describeTo(text: StringBuilder, indent: String, caption: S
 	cause?.describeTo(text, indent, "Caused by: ", seen)
 }
 
+/** Kotlin/Native's name of [stackTraceToString] inside its library (its test runner's loggers use it). */
+internal fun Throwable.dumpStackTrace(): String = stackTraceToString()
+
 /** As on the JVM and Kotlin/Native: what [stackTraceToString] gives, on the standard error. */
 public actual fun Throwable.printStackTrace() {
 	ktc2.internal.throwablePrintStackTrace(this)

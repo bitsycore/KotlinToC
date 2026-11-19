@@ -67,7 +67,8 @@ val kLibraryModules: List<LibraryModule> = kRoot.resolve("modules").listFiles { 
 		val vLine = Regex("(?ms)^$inKey\\s*=\\s*(\\[.*?\\]|\"[^\"]*\")").find(vText)?.groupValues?.get(1) ?: return emptyList()
 		return Regex("\"([^\"]*)\"").findAll(vLine).map { it.groupValues[1] }.toList()
 	}
-	val vVersion = values("version").firstOrNull()
+	// `${kotlin}` is the Kotlin ktc2 pins (kotlin-test).
+	val vVersion = values("version").firstOrNull()?.replace("\${kotlin}", libs.versions.kotlin.get())
 	// `group:artifact` is at the module's version; `group:artifact:version` at its own.
 	LibraryModule(vDirectory.name, values("jvm").map { if (it.count { vChar -> vChar == ':' } == 1) "$it:$vVersion" else it })
 }

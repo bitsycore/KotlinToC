@@ -42,7 +42,8 @@ const val kModuleFileName = "module.ktc2.toml"
  * A module made of a library's sources taken as they are (kotlinx-io, kotlinx.serialization...) says
  * where they come from: each line of `upstream` is a directory and what fills it, the source jar of a
  * Maven artifact (`group:artifact`, at `version` unless it names its own) or a git repository
- * (`git:url@revision`); `${version}` is the module's version, there and in `fetch`. ktc2 fetches them once, into the cache
+ * (`git:url@revision`, or `git:url#directory@revision` for one directory of it, which only that is fetched of);
+ * `${version}` is the module's version, there and in `fetch`. ktc2 fetches them once, into the cache
  * (`<cache>/modules/<name>@<version>`), and the module's `files.txt` lists the files of them it
  * compiles, by their paths there: a path, or a pattern, where `**` stands for any number of directories,
  * `*` for any name or part of one in one directory and `?` for one character (a directory and then `**`
@@ -175,34 +176,42 @@ class GitSource(inText: String) {
 	/**
 	 * The repository at this revision, cloned into the cache the first time it is asked for.
 	 *
+	 * @param inOnlyDirectory true to fetch only [directory] (a sparse clone: the Kotlin repository's runtime is a few files of a
+	 *   large repository), kept apart from a whole clone of the same repository
 	 * @return its directory, or null after reporting why it could not be cloned
 	 */
-	fun checkout(): File? {
+	fun checkout(inOnlyDirectory: Boolean = false): File? {
 		val vCache = cacheDirectory()
 		val vName = url.removeSuffix(".git").replace(Regex("^[a-z+]+://"), "").replace(Regex("[^A-Za-z0-9._-]+"), "_").trim('_')
-		val vTarget = File(vCache, vName + "@" + (revision ?: "default"))
+		val vSparse = inOnlyDirectory && directory.isNotEmpty()
+		val vPart = if (vSparse) "#" + directory.trim('/').replace(Regex("[^A-Za-z0-9._-]+"), "_") else ""
+		val vTarget = File(vCache, vName + vPart + "@" + (revision ?: "default"))
 		// A clone that was interrupted has no marker: it is made again.
 		val vMarker = File(vTarget, ".ktc2-complete")
 		if (vMarker.isFile) return vTarget
 		vTarget.parentFile.mkdirs()
 		// Several ktc2 at once: one clones, the others wait for it.
-		return withFileLock(File(vTarget.parentFile, vTarget.name + ".lock")) { if (vMarker.isFile) vTarget else clone(vTarget, vMarker) }
+		return withFileLock(File(vTarget.parentFile, vTarget.name + ".lock")) { if (vMarker.isFile) vTarget else clone(vTarget, vMarker, vSparse) }
 	}
 
-	/** Clones the repository into [inTarget], marking it complete with [inMarker]. */
-	private fun clone(inTarget: File, inMarker: File): File? {
+	/** Clones the repository into [inTarget], marking it complete with [inMarker]; [inSparse]: only [directory] of it. */
+	private fun clone(inTarget: File, inMarker: File, inSparse: Boolean): File? {
 		val vTarget = inTarget
 		val vMarker = inMarker
 		vTarget.deleteRecursively()
 		Progress.interrupt { System.err.println("ktc2: fetching $url${revision?.let { " at $it" } ?: ""}") }
+		// A sparse clone fetches the trees of the revision, and the files of the directory only.
 		val vCommand = listOf("git", "clone", "--depth", "1", "-c", "advice.detachedHead=false") +
+			(if (inSparse) listOf("--filter=blob:none", "--sparse") else emptyList()) +
 			(revision?.let { listOf("--branch", it) } ?: emptyList()) + listOf(url, vTarget.absolutePath)
-		val vExit = try {
-			ProcessBuilder(vCommand).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start().waitFor()
+		fun git(inCommand: List<String>): Int? = try {
+			ProcessBuilder(inCommand).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start().waitFor()
 		} catch (vError: java.io.IOException) {
 			System.err.println("ktc2: error: git could not be run: ${vError.message}")
-			return null
+			null
 		}
+		var vExit = git(vCommand) ?: return null
+		if (vExit == 0 && inSparse) vExit = git(listOf("git", "-C", vTarget.absolutePath, "sparse-checkout", "set", "--no-cone", "/" + directory.trim('/') + "/")) ?: return null
 		if (vExit != 0) {
 			System.err.println("ktc2: error: could not clone $url${revision?.let { " at $it" } ?: ""} (git exited with $vExit)")
 			vTarget.deleteRecursively()
@@ -259,7 +268,7 @@ fun upstreamOf(inModule: ModuleFile): File? {
 			val vSource = vLine.substring(vEquals + 1).trim().replace("\${version}", vVersion)
 			if (vSource.startsWith("git:")) {
 				val vGit = GitSource(vSource.removePrefix("git:"))
-				val vCheckout = vGit.checkout() ?: return@withFileLock null
+				val vCheckout = vGit.checkout(inOnlyDirectory = true) ?: return@withFileLock null
 				File(vCheckout, vGit.directory).copyRecursively(vDirectory, overwrite = true)
 			} else if (!fetchSources(vSource, vVersion, vDirectory, inModule.repositories)) {
 				return@withFileLock null
@@ -544,8 +553,12 @@ class Project(val name: String, val executable: String, val main: String?) {
  * @param inOutDir where the modules shipped with ktc2 are copied
  * @return the project, or null after reporting what is wrong
  */
-fun loadProject(inDirectory: File, inOutDir: File): Project? {
-	val vRoot = ModuleFile(inDirectory, File(inDirectory, kModuleFileName).readText())
+fun loadProject(inDirectory: File, inOutDir: File): Project? =
+	loadProject(ModuleFile(inDirectory, File(inDirectory, kModuleFileName).readText()), inOutDir)
+
+/** As [loadProject] of a directory, for the module [inRoot] (one of ktc2's, [bundledModule]). */
+fun loadProject(inRoot: ModuleFile, inOutDir: File): Project? {
+	val vRoot = inRoot
 	val vProject = Project(vRoot.name, vRoot.executable ?: vRoot.name, vRoot.main)
 	val vSeen = HashSet<String>()
 

@@ -846,12 +846,13 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   `build/integration/<Name>/c`) finds the reads the fill does not.
 - `tests/integration/ported/` are the plain-Kotlin tests of the first transpiler.
 - `tests/stdlib/` and `tests/common/` hold common tests, written as Kotlin Multiplatform's are: classes of `@Test`
-  functions that assert with `kotlin.test` (`modules/stdlib/Ktc2Test.kt` here), and no `main`. The
-  suite writes the `main` that calls each test (`testMain` in `IntegrationTest.kt`, which
-  reads the source as text), runs it in C and on the JVM, and fails when a test fails on
-  either. `tests/stdlib/` holds tests of the Kotlin standard library itself, unchanged, and
-  `tests/common/` ktc2's own. See
-  `tests/README.md`.
+  functions that assert with `kotlin.test` (the bundled module `kotlin-test`: Kotlin's own, with Kotlin/Native's
+  `actual`s and test runner), and no `main`. The suite compiles them by directory, as `ktc2 test` does, one program
+  a group (the libraries' tests too: `tests/modules/<module>/<library>`), runs it in C and on the JVM (the same
+  files with kotlin-test's JVM jar, run by `tests/support/Ktc2JvmTestRunner.kt` on the list the C program gives),
+  and compares them test by test. `tests/stdlib/` holds tests of the Kotlin standard library itself, unchanged,
+  and `tests/common/` ktc2's own. See `tests/README.md`.
+- `tests/integration/regressions/` holds a program for each bug found in ktc2 itself, written before its fix.
 - The comparison with the JVM counts the two names of a standard exception as one
   (`java.lang.IllegalStateException` there, `kotlin.IllegalStateException` here and on
   Kotlin/Native): `samePlatform` in `IntegrationTest.kt`.
@@ -997,6 +998,15 @@ nearly every function; this is the map.
   program together, and everything below starts there. It also sorts the sources into the
   compiler's levels (`-Xfragments`: common, nonJvm, nativeWasm, a module's native, platform;
   section 7) and keeps the time of the front end and of the translation for the suite.
+- `frontend/TestRegistry.kt`, for `ktc2 test` (the setting `ktc2.test`): before the importer, it writes in IR the
+  bodies of three functions of the module kotlin-test (`Ktc2TestRegistry.kt`): `ktc2RegisterTests` registers each
+  class of the program's own files with `@Test` functions, and the top-level `@Test` functions of a file, as a
+  suite of Kotlin/Native's test runner (`kotlin.native.internal.test`, taken as it is); `ktc2NewInstance` makes an
+  object of a class of tests by its number; `ktc2Call` calls a test or a `@BeforeTest`/`@AfterTest` function by its
+  numbers. Native's compiler generates a class for each suite instead; numbers need no lambda built in IR. An
+  `@Ignore`d test is registered as one and never called, so its body is not translated; one left out
+  (`ktc2.testExclude`: `name`, `Class.name`, `path::name`, `path::*`) is not registered. The entry point is then
+  `ktc2TestMain` of the module (`ktc2.main`), and the program writes `tests.txt`, the file of each suite.
 - `CEmitter.renameClashingGlobals` gives distinct C names to declarations that are distinct in
   Kotlin and met in C: a function named as a class of its package, a property named as a
   function, and private top-level declarations of one name in two files of a package (each

@@ -5,6 +5,11 @@ import java.io.File
 import kotlin.system.exitProcess
 
 private const val kUsage = """Usage: ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
+       ktc2 test <module directory | directory | file.kt>... [options] [--filter pattern] [--exclude test] [-- runner options]
+  test               compile the files of tests given (every .kt under a directory) as one program with kotlin.test, and
+                     run their @Test functions with Kotlin/Native's runner: --filter Class.test (*, ?; -negative) as its
+                     --ktest_filter; --exclude Class.test leaves a test out of the program; --build only builds; after
+                     --, the runner's own options (--ktest_list_tests, --ktest_logger=SIMPLE, --help)
   -o <dir>           where the output goes (default: <module>/build, or ./out)
   --build            also compile the C into a program (C compiler: KTC2_CC, else clang, gcc or cc)
   --cmake            build with CMake, from the CMakeLists.txt written next to the C
@@ -30,7 +35,7 @@ environment variable, the configuration file (KTC2_CONFIG, else config/ktc2.toml
 private class Exit(val status: Int) : RuntimeException()
 
 /** The options a command leaves in system properties: forgotten before the next one. */
-private val kCommandProperties = listOf("ktc2.warnHeap", "ktc2.checks", "ktc2.warnCycles", "ktc2.copt", "ktc2.lopt", "ktc2.main", "ktc2.weak", "ktc2.acyclic", "ktc2.cycles", "ktc2.rings", "ktc2.moduleOptIn")
+private val kCommandProperties = listOf("ktc2.warnHeap", "ktc2.checks", "ktc2.warnCycles", "ktc2.copt", "ktc2.lopt", "ktc2.main", "ktc2.weak", "ktc2.acyclic", "ktc2.cycles", "ktc2.rings", "ktc2.moduleOptIn", com.bitsycore.ktc2.frontend.kTestModeProperty, com.bitsycore.ktc2.frontend.kTestExcludeProperty)
 
 /**
  * Entry point of the ktc2 transpiler (Kotlin semantics on ARC - see DESIGN.md).
@@ -96,10 +101,16 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 	var vRun = false
 	var vShowSettings = false
 	var vProgramArguments = emptyList<String>()
+	// `ktc2 test`: the files are tests, run by Kotlin/Native's runner, with the runner's options.
+	var vIsTest = false
+	val vRunnerOptions = ArrayList<String>()
 	var vIndex = 0
 	while (vIndex < args.size) {
 		val vArg = args[vIndex++]
 		when {
+			vArg == "test" && args.take(vIndex - 1).all { it == kTerminalArgument } -> vIsTest = true
+			vIsTest && vArg == "--filter" && vIndex < args.size -> vRunnerOptions += "--ktest_filter=" + args[vIndex++]
+			vIsTest && vArg == "--exclude" && vIndex < args.size -> addOption(com.bitsycore.ktc2.frontend.kTestExcludeProperty, args[vIndex++])
 			vArg == "--" -> {
 				vProgramArguments = args.drop(vIndex)
 				vIndex = args.size
@@ -128,6 +139,8 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 			vArg == "--settings" -> vShowSettings = true
 			vArg.endsWith(".kt") || vArg.endsWith(".def") -> vSources += path(vArg)
 			File(path(vArg), kModuleFileName).isFile -> vModules += path(vArg)
+			// For tests, a directory stands for every file of tests under it.
+			vIsTest && path(vArg).isDirectory -> vSources += path(vArg).walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }
 			// A directory without a module file stands for the sources and definitions directly in it.
 			path(vArg).isDirectory -> vSources += path(vArg).listFiles { vFile -> vFile.isFile && (vFile.extension == "kt" || vFile.extension == "def") }!!.sortedBy { it.name }
 			else -> fail("unknown argument '$vArg'")
@@ -154,20 +167,31 @@ private fun command(args: Array<String>, inDirectory: File?): List<String>? {
 
 	val vOut = vOutDir ?: vModules.firstOrNull()?.let { File(it, "build") } ?: path("out")
 	var vName = vSources.firstOrNull { it.extension == "kt" }?.nameWithoutExtension ?: "program"
-	val vProjects = vModules.map { loadProject(it, vOut) ?: throw Exit(1) }
+	var vProjects = vModules.map { loadProject(it, vOut) ?: throw Exit(1) }
 	// The first module is the program: its name, and where it starts.
 	val vProject = vProjects.firstOrNull()
 	if (vProject != null) {
 		vName = vProject.executable
 		vProject.main?.let { System.setProperty("ktc2.main", it) }
 	}
-	// What the program is compiled with: the standard library and the modules, each at its version.
-	val vModulesUsed = listOf("stdlib ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}") + vProjects.flatMap { it.modules }.distinct()
-	// One module a line, under the step's name.
-	Progress.note("modules", vModulesUsed.joinToString("") { "\n\t$it" })
 	val vUsesCMake = vCMake || vProjects.any { it.needsCMake }
 	// The program's own files: those given as they are, and those of the modules named on the command line, not of their dependencies.
 	val vOwnSources = vSources.toSet() + vProjects.flatMap { it.ownSources }
+	if (vIsTest) {
+		// Tests have kotlin.test, and start in its runner.
+		val vKotlinTest = bundledModule("kotlin-test", vOut)?.let { loadProject(it, vOut) } ?: throw Exit(1)
+		vProjects = vProjects + vKotlinTest
+		System.setProperty(com.bitsycore.ktc2.frontend.kTestModeProperty, "true")
+		System.setProperty("ktc2.main", com.bitsycore.ktc2.frontend.kTestEntryPoint)
+		if (vProject == null) vName = "tests"
+		vRun = vRun || !vBuild && !vCMake
+		vProgramArguments = vRunnerOptions + vProgramArguments
+	}
+	// What the program is compiled with: the standard library and the modules, each at its version.
+	val vModulesUsed = listOf("stdlib ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}") +
+		(if (vIsTest) listOf("kotlin-test ${org.jetbrains.kotlin.config.KotlinCompilerVersion.VERSION}") else emptyList()) + vProjects.flatMap { it.modules }.distinct()
+	// One module a line, under the step's name.
+	Progress.note("modules", vModulesUsed.joinToString("") { "\n\t$it" })
 	for (vEach in vProjects) {
 		vSources += vEach.sources
 		vEach.compilerOpts.forEach { addOption("ktc2.copt", it) }

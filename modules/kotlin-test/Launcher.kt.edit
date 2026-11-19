@@ -1,0 +1,2 @@
+replace: public fun main(args: Array<String>) {
+public fun testMain(args: Array<String>) {

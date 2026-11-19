@@ -1,0 +1,6 @@
+# The common sources of kotlin.test (its source sets annotationsCommonMain and assertionsCommonMain).
+annotationsCommonMain/**
+assertionsCommonMain/**
+# Kotlin/Native's actuals of them, and its test runner.
+native/kotlin/test/**
+native/kotlin/native/internal/test/**

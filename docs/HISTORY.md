@@ -1021,6 +1021,21 @@ Decided 2026-11-11:
 
 No decision is open at the moment.
 
+---------------------------------------------------------------------------
+## 12. Done since the plan of 2026-11-18
+---------------------------------------------------------------------------
+
+A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
+
+- 2026-11-19, `PLAN.md` section 4 (kotlin.test as a module, a test mode of the compiler): the bundled module
+  `kotlin-test` (Kotlin's common sources and Kotlin/Native's `actual`s and test runner, the latter fetched from
+  Kotlin's repository by a sparse git upstream); `ktc2 test`, whose program's `main` is Native's runner with the
+  suites the compiler registers (`TestRegistry.kt`); the suite's `kotlin` and `libraries` categories by group,
+  compared with the JVM test by test: some 25 minutes of the whole suite's 28 on a Mac became about 6. On the way:
+  an inline function inside itself lost the target of its outer `return`, a property a module makes weak gave its
+  cell through its default getter, a dispatcher of a function returning `Nothing` returned a value
+  (`tests/integration/regressions/`, a new place for them).
+
 
 ---------------------------------------------------------------------------
 # Archive: the plan as it was kept until 2026-11-18

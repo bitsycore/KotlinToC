@@ -4,14 +4,14 @@ The suite (`./gradlew test --rerun`) has four categories, which `KTC2_TEST_CATEG
 from (all by default) and which its log names on each line and counts apart:
 
 - `integration`: the programs under `tests/integration/` (each with its own `main`, compared with the
-  JVM or with an `.expected` file) and the programs of several modules under
-  `tests/integration/modules/`;
+  JVM or with an `.expected` file) and the programs of several modules (every directory under it with a
+  `module.ktc2.toml`: `tests/integration/modules/`, and some of `regressions/`);
 - `kotlin`: the files of common tests of `tests/stdlib/` (the Kotlin standard library's and
   Kotlin/Native's runtime's own tests) and of `tests/common/` (ktc2's own);
 - `box`: the box tests of the Kotlin compiler, `tests/box/`;
 - `libraries`: the own tests of the bundled libraries, `tests/modules/<module>/`.
 
-The CI job runs `integration`, and `kotlin` in C only (`KTC2_TEST_NO_JVM=kotlin`: a file of tests
+The CI job runs `integration`, and `kotlin` in C only (`KTC2_TEST_NO_JVM=kotlin`: a program of tests
 checks itself, the JVM is only a second opinion). The box tests and the libraries' tests run on
 the machines where the work is done. `examples/` are not tests: they are built and run by hand.
 
@@ -22,16 +22,45 @@ assert with `kotlin.test`, and no `main`. A test says what must hold on every pl
 nothing of what a platform is free in (the text of a message, the name of an exception's
 package). The same file runs:
 
-- in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/stdlib/,tests/common/`): it
-  writes the `main` that calls each test (`build/testmain/`), and a test that fails on either
-  fails the suite. The log has a line per file (its tests passed out of how many, its time and
-  the time of each step), and lists the test functions of a file only when one of them failed
-  (`KTC2_TEST_FUNCTIONS=1`: always);
+- in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/stdlib/,tests/common/`), by
+  groups (below), and a test that fails on either fails the suite. The log has a line per group (its tests passed
+  out of how many, its time and the time of each step), and lists the tests of a group, by class, only when one of
+  them failed (`KTC2_TEST_FUNCTIONS=1`: always);
+- with `ktc2 test <directory or files>` (`README.md`), which is what the suite does in C;
 - on Kotlin/Native, by `tools/native.sh tests/` after a run of the suite, with Kotlin/Native's
   own `kotlin.test`.
 
-`kotlin.test` here is `modules/stdlib/Ktc2Test.kt`: the assertions, `@Test`,
-`@Ignore`, `@BeforeTest`, `@AfterTest`.
+`kotlin.test` is the bundled module `kotlin-test` (`modules/kotlin-test`): Kotlin's own library, its common
+sources and Kotlin/Native's `actual`s of them, with Native's test runner. On the JVM the suite compiles the
+tests with the JVM jar of kotlin-test (the same assertions and messages, `DefaultAsserter`) and the four
+annotations of `tests/support/KotlinTestAnnotations.kt`.
+
+## Groups
+
+The files of tests are compiled by directory, each group one program, as `ktc2 test` compiles them: `tests/stdlib`
+(with `support/`), `tests/common`, and for each library of `tests/modules/<module>/<library>/` its `commonTest` and
+`concurrentTest` (`IntegrationTest.kt`, "Groups of tests"). ktc2's compiler registers every class of tests (and the
+top-level `@Test` functions of a file) as a suite of Kotlin/Native's runner, whose `main` the program has
+(`TestRegistry.kt`); it prints what Native's prints (`[ RUN      ] Class.test`, `[       OK ]`...), and takes its
+options (`--ktest_filter=Class.*:Other.test`, `--ktest_list_tests`). The JVM side compiles the same files and runs
+`tests/support/Ktc2JvmTestRunner.kt` on the list the C program gives, in its order; the two are compared test by
+test: each test passes in C, passes on the JVM, and prints the same lines on both.
+
+A group compiles once where each file was a program compiled with all the others (kotlinx.coroutines: 170
+compilations of 180 files, some 25 minutes; now one, 3 minutes). What a file says next to it is said by file:
+`.skip` (its tests not registered), `.pending` (its tests not run; the file is still compiled, for what others use
+of it), `.vary` (lines left out of the comparison), `.native` (its tests may fail on the JVM), `.jvm` (options of
+the JVM compilation, of the whole group), `.cycles` (it may leave objects in a cycle). A run that leaks or crashes
+is run again file by file (`--ktest_filter` of each file's suites, without compiling again), to say which file
+did it: only a file without `.cycles` that leaks fails. `build/integration/<group>/` has the program
+(`program.exe`), what it printed (`program.out`), the JVM's (`jvm.out`), the list (`tests-list.txt`) and the file
+of each suite (`tests.txt`).
+
+## Regressions
+
+`tests/integration/regressions/` holds a program for each bug found in ktc2 itself on the way (a miscompilation,
+a crash, a wrong C), named after it, written before the fix: `KTC2_TEST_FILTER=regressions/` checks them all
+quickly. A bug that needs a module's settings to show is a directory with its `module.ktc2.toml`.
 
 - `common/`: tests written for ktc2.
 - `tests/stdlib/`: tests of the Kotlin standard library itself, unchanged, from
@@ -41,7 +70,7 @@ package). The same file runs:
   library's own tests are: with its opt-ins (`kotlin.ExperimentalUnsignedTypes` and the others
   of its `commonTestOptIns`; `ktc2.optIn` in `compiler/build.gradle.kts` for C), and on the JVM seeing
   what the library keeps `internal`.
-- `tests/stdlib/support/`: the helpers of the library's tests, compiled with every file of `tests/stdlib/`.
+- `tests/stdlib/support/`: the helpers of the library's tests, compiled with the group `tests/stdlib/`.
   `support/common/` is theirs as they are (`testUtils.kt` without its `expect` line,
   `CollectionBehaviors.kt`, `ComparisonDSL.kt`, `jsCollectionFactories.kt`,
   `DurationTestUtils.kt`); `support/jvm/` and `support/ktc2/` answer what they leave to the
@@ -50,16 +79,13 @@ package). The same file runs:
   2026-11-16: where the JVM and Native differ ktc2 sides with Native (`DESIGN.md`, section 1).
   The JVM's side answers as the JVM's tests do; each side's run then checks its own platform. A line `expect ...` of a test file is left out when it is
   compiled (`support/*/Text.kt` answers those of `StringEncodingTest`).
-- `tests/stdlib/<Name>.with`: other files of tests whose helpers `<Name>.kt` uses (`Sortable` of
-  `IterableTests.kt`, `STRING_CASE_INSENSITIVE_ORDER` of `OrderingTest.kt`), one a line:
-  compiled with it, their tests not run.
 - `tests/stdlib/<Name>.jvm`: options the compilation for the JVM needs for that file, one a line.
 - `tests/stdlib/<Name>.vary`: the beginnings of the lines it prints that differ on every run (a random seed, a time), one a line: left out of the comparison. A line `/regex/` names whole lines (a duration, which has no fixed beginning).
 - `tests/stdlib/<Name>.skip`: tests of `<Name>.kt` that are not run, one a line, `name: why` (or
   `Class.name: why`). Neither side runs them.
 - `tests/stdlib/<Name>.cycles`: says, with the reason, that the tests of `<Name>.kt` build objects
   that refer to each other in a circle. Those are never freed, there being no collector of
-  cycles, and for that file what is left allocated is not a failure.
+  cycles, and for that file what is left allocated is not a failure (see Groups).
 - A class of tests that extends another (`IterableTests.kt`: `ListTest : OrderedIterableTests`)
   runs the tests it inherits; an abstract one runs none itself.
 - `pending/` (none at the moment): tests of the same origin that do not pass yet, each with the
@@ -150,10 +176,9 @@ They found, all fixed:
 `tests/modules/kotlinx-io/` holds the tests of kotlinx-io itself, as its repository has them at the version the
 bundled module compiles (0.9.3, Apache 2.0): `core/commonTest` and `bytestring/commonTest` (from
 `core/common/test` and `bytestring/common/test`), and the helpers of each platform for the common
-`expect`s, `core/nativeTest/util.kt` and `core/jvmTest/utilJVM.kt`. Each file of tests is a
-program, compiled with the other files of its `commonTest` (their tests not run): in C with the
-module's sources and `nativeTest`, on the JVM with kotlinx-io's jars, whose internals it sees as a
-test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt`). All 32 pass.
+`expect`s, `core/nativeTest/util.kt` and `core/jvmTest/utilJVM.kt`. The files of a `commonTest` are a group
+(above): in C with the module's sources and `nativeTest`, on the JVM with kotlinx-io's jars, whose internals it
+sees as a test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt`). All 32 pass.
 `.skip` and `.cycles` next to a file say what they say for the library's tests:
 `bytestring/commonTest/samples/samples.skip` (a sample prints random bytes),
 `core/commonTest/samples/rawSourceSample.cycles` (an object holds an object of its inner class).
@@ -201,9 +226,9 @@ dispatcher and an implementation, one as it is and the other as an object, had n
 (`commonTest/testutils`: `TestBase.common.kt`, `LaunchFlow.kt`, `MainDispatcherTestBase.kt`), `concurrentTest` is
 `kotlinx-coroutines-core/concurrent/test`; `nativeTest` has Native's `TestBase` and `ConcurrentTestUtilities`, and
 `jvmTest` the same `TestBase` (Native's, with a line that says so: the JVM's needs JUnit) and the JVM's
-`ConcurrentTestUtilities`. Native's own tests (`native/test`: workers, multithreaded dispatchers) are not taken. Each
-file is a program of some 180 files, so a run of the 170 takes about 25 minutes on 8 processes (50 s of Kotlin for
-each); `KTC2_TEST_FILTER=tests/modules/kotlinx-coroutines/` runs them. Files whose tests keep a continuation in a
+`ConcurrentTestUtilities`. Native's own tests (`native/test`: workers, multithreaded dispatchers) are not taken. The 170
+files, 1368 tests, are one program of some 180 files, about 3 minutes; `KTC2_TEST_FILTER=tests/modules/kotlinx-coroutines/`
+runs them. Files whose tests keep a continuation in a
 variable their own coroutine captures, or that use the deprecated `BroadcastChannel`, leave cycles by their design
 (`.cycles`, with the reason); three stress tests print counts that depend on the threads (`.vary`).
 

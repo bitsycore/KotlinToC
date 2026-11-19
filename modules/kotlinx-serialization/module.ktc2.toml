@@ -5,4 +5,7 @@ jvm      = ["org.jetbrains.kotlinx:kotlinx-serialization-core-jvm", "org.jetbrai
 files    = ["Ktc2Serialization.kt"]
 # The encoders of one call share an array that the call holds.
 weak     = ["kotlinx.serialization.json.internal.StreamingJsonEncoder.modeReuseCache"]
+# A JsonElementMarker's ElementMarker reads through a reference bound to that JsonElementMarker (its readIfAbsent): the
+# three go together, when the decoder is done with them.
+cycles   = ["kotlinx.serialization.json.internal.JsonElementMarker.origin -> kotlinx.serialization.internal.ElementMarker.readIfAbsent -> lambda.bound0"]
 optIn    = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.SealedSerializationApi", "kotlinx.serialization.internal.CoreFriendModuleApi", "kotlinx.serialization.json.internal.JsonFriendModuleApi", "kotlin.ExperimentalMultiplatform", "kotlin.ExperimentalSubclassOptIn", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.reflect.ExperimentalAssociatedObjects", "kotlin.ExperimentalUnsignedTypes"]

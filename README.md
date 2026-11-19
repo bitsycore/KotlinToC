@@ -128,6 +128,23 @@ On a MacBook (Apple silicon, Release build): the menu, particles, the game of li
 page at the display's rate (about 100 fps), physics at 60 (4000 balls), a million bunnies at 32
 (the drawing takes 19 ms), the fractal at 24 (a picture of depth 400 in 29 ms).
 
+## Tests
+
+Tests written as Kotlin Multiplatform's common tests are (classes with `@Test` functions, `kotlin.test`
+assertions, no `main`) run with `ktc2 test`, as Kotlin/Native runs them: the files given (every `.kt`
+under a directory, or a module's) are one program with `kotlin.test`, whose `main` is Kotlin/Native's
+test runner, and it prints and takes what that runner does.
+
+```bash
+build/install/ktc2/bin/ktc2 test tests/common
+build/install/ktc2/bin/ktc2 test my-module --filter 'ParserTest.*' -- --ktest_logger=SIMPLE
+```
+
+`--filter Class.test` (with `*`, `?`, several separated by `:`, `-` before those left out) chooses the
+tests run; the program takes it again without being compiled again (`--ktest_filter=...`), and
+`--ktest_list_tests` lists them. `--exclude Class.test` leaves a test out of the program. A program that
+uses `kotlin.test` without being tests names `kotlin-test` in its module's `dependencies`.
+
 ## The repository
 
 - `compiler/`: ktc2 itself (Kotlin, built by Gradle).
@@ -151,6 +168,7 @@ on `sdl3`.
 
 ```
 ktc2 <module directory | file.kt | library.def>... [options] [-- program arguments]
+ktc2 test <module directory | directory | file.kt>... [options] [--filter pattern] [--exclude test] [-- runner options]
   -o <dir>           where the output goes (default: <module>/build, or ./out)
   --build            also compile the C into a program (KTC2_CC names the compiler)
   --cmake            build with CMake (always so when a module has a CMake file)
