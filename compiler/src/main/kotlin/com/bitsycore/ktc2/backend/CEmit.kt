@@ -907,7 +907,8 @@ class CEmitter(private val mModule: KModule) {
 		/** Body of a virtual dispatcher: a switch on the receiver's type id. */
 		fun dispatcher(inFunction: KFunction) {
 			val vSelf = inFunction.params[0].cName
-			val vIsVoid = inFunction.returnType == KUnitType
+			// A function that never returns (`Nothing`, `Asserter.fail`) is void in C too.
+			val vIsVoid = inFunction.returnType == KUnitType || inFunction.returnType == KNothingType
 			// The dispatcher and an implementation can differ in representation: a pointer cast
 			// between reference types, and boxing where one side is erased and the other is not.
 			fun adapt(inText: String, inFrom: KType, inTo: KType): String = when {

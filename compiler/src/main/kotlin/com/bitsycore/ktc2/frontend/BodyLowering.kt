@@ -495,8 +495,11 @@ internal class BodyBuilder(
 		val vSelf = KRead(mFunction.params[0])
 		if (mFunction.params.size == 1) {
 			val vProperty = inAccessor.correspondingPropertySymbol?.owner
-			val vRead: KExpr = KFieldRead(vSelf, vField)
+			// A weak field holds its object's weak cell: the getter gives the object (a module's `weak` on a property that overrides another).
+			val vRead: KExpr = if (vField.weakType != null) readField(vSelf, vField) else KFieldRead(vSelf, vField)
 			mBlock += KReturn(if (vProperty?.isLateinit == true) initialized(vRead, vProperty.name.asString()) else vRead)
+		} else if (vField.weakType != null) {
+			writeField(vSelf, vField, KRead(mFunction.params[1]))
 		} else {
 			mBlock += KFieldSet(vSelf, vField, KRead(mFunction.params[1]))
 		}
@@ -1834,7 +1837,9 @@ internal class BodyBuilder(
 		val vResult = if (inResultType == KUnitType || inResultType == KNothingType) null else newTemp(inResultType)
 		vResult?.let { mBlock += KLet(it, null) }
 		val vId = mNextLoopId++
-		mInlineTargets[vFunction.symbol] = InlineTarget(vResult, vId)
+		// The same inline function may be expanded inside itself (`measureTime { ... measureTime { } }`): the outer
+		// expansion's target comes back when the inner one ends.
+		val vOuterTarget = mInlineTargets.put(vFunction.symbol, InlineTarget(vResult, vId))
 		mControl += InlineMark(vFunction.symbol)
 		val vBody = inBlock {
 			when (val vIrBody = vFunction.body) {
@@ -1847,7 +1852,7 @@ internal class BodyBuilder(
 			}
 		}
 		mControl.removeLast()
-		mInlineTargets.remove(vFunction.symbol)
+		if (vOuterTarget != null) mInlineTargets[vFunction.symbol] = vOuterTarget else mInlineTargets.remove(vFunction.symbol)
 		// The usual lambda returns once, at its end: then no block is needed to return from.
 		val vTail = vBody.lastOrNull()
 		val vHead = if (vTail is KBreak && vTail.loopId == vId) vBody.dropLast(1) else vBody
