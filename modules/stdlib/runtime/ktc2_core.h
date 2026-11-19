@@ -269,6 +269,8 @@ typedef struct ktc2_TypeInfo {
 	uint32_t pairs;
 	/* 1 for an object of a ring that is not its head: KTC2_PAIRED only once a check of its ring found it held from outside. */
 	uint32_t lazy;
+	/* 1 for a class of a declared cycle that is of no ring (a check that starts from a ring does not follow it), 2 for one of a ring too. */
+	uint32_t knot;
 } ktc2_TypeInfo;
 
 /** The table of types, written for each program (ktc2_main.c). */
@@ -303,6 +305,12 @@ extern const ktc2_RingRefsFn ktc2_type_ring_refs[];
  * that frees them all, or NULL.
  */
 ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start);
+
+/**
+ * As [ktc2_ring_collect], following the classes of declared cycles too (a knot): called when the check of [start]'s own
+ * cycle found it held by that cycle and by more.
+ */
+ktc2_Obj* ktc2_knot_collect(ktc2_Obj* start);
 
 /** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left);

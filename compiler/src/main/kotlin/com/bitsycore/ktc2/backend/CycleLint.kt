@@ -321,6 +321,8 @@ class CycleLint(private val mModule: KModule) {
 	/** One cycle a module declares, resolved: each step's class, its field, and the classes the program makes of it. */
 	private fun declaredCycle(inResolved: List<Triple<KClass, KField, List<KClass>>>) {
 		val vCount = inResolved.size
+		// Each class of it may be in a knot with other cycles: the bounded check of a group can start from it, and follow it.
+		inResolved.forEach { vStep -> vStep.third.forEach { it.isKnotMember = true } }
 		for (vStart in 0 until vCount) {
 			val vTurn = (0 until vCount).map { inResolved[(vStart + it) % vCount] }
 			val vVia = (1 until vCount - 1).map { KCycleStep(vTurn[it].second, vTurn[it + 1].third) }

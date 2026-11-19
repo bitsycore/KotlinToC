@@ -126,12 +126,17 @@ class CEmitter(private val mModule: KModule) {
 			// The head of a ring from the start; another object of it once a check found it held from outside (lazy).
 			val vPairs = if (vClass.isRingMember) maxOf(vClass.pairCycles.size, kRingReferences) else vClass.pairCycles.size
 			val vLazy = if (vClass.isRingMember && !vClass.isPaired) 1 else 0
-			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, $vPairs, $vLazy },\n")
+			val vKnot = when {
+				!vClass.isKnotMember -> 0
+				vClass.isRingMember -> 2
+				else -> 1
+			}
+			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, $vPairs, $vLazy, $vKnot },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 		// What the objects of a ring hold, where: what the runtime follows to free a ring only its objects hold.
 		append("\nconst ktc2_RingRefsFn ktc2_type_ring_refs[KTC2_TYPE_COUNT] = {\n")
-		mConcrete.filter { it.isRingMember }.forEach { append("\t[${typeId(it)}] = ${it.cName}__ring_refs,\n") }
+		mConcrete.filter { it.isGroupMember }.forEach { append("\t[${typeId(it)}] = ${it.cName}__ring_refs,\n") }
 		append("\t[0] = NULL,\n};\n")
 		append("\n#ifdef KTC2_LEAK_CHECK\nconst ktc2_RefsFn ktc2_type_refs[KTC2_TYPE_COUNT] = {\n")
 		mConcrete.forEach { append("\t[${typeId(it)}] = ${it.cName}__refs,\n") }
@@ -444,14 +449,14 @@ class CEmitter(private val mModule: KModule) {
 				append("void ${vClass.cName}__deinit(ktc2_Obj* object);\n")
 			}
 			if (vClass.pairCycles.isNotEmpty()) {
-				append("/** Frees an instance held only by objects it holds itself, which only it holds, and them with it; 1 when it did. */\n")
+				append("/** Frees an instance held only by objects it holds itself, which only it holds, and them with it; 1 when it did, -1 when its cycles held it and something more did, 0 otherwise. */\n")
 				append("int ${vClass.cName}__collect(ktc2_Obj* object);\n")
 			}
 			if (vClass.hasPairFunction) {
 				append("/** Called when the count of an instance came down to its number of pair cycles or less: [__collect] for it and its partners; the object to release, or NULL. */\n")
 				append("ktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object);\n")
 			}
-			if (vClass.isRingMember) {
+			if (vClass.isGroupMember) {
 				append("/** Tells what an instance refers to, and where (ktc2_ring_collect). */\n")
 				append("void ${vClass.cName}__ring_refs(ktc2_Obj* object, ktc2_RingVisitor visit, void* context);\n")
 			}
@@ -660,7 +665,8 @@ class CEmitter(private val mModule: KModule) {
 					}
 					vBodies.append("\tif (held$vIndex) explained++;\n")
 				}
-				vBodies.append("\tif (explained == 0 || (KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return 0;\n")
+				// Held by its cycle and by more: -1, which is where a knot may be (its objects held by one another otherwise).
+				vBodies.append("\tif (explained == 0) return 0;\n\tif ((KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return -1;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					if (vPair.via.isEmpty()) vBodies.append("\tif (held$vIndex) ${back(vPair, "partner$vIndex")} = NULL;\n")
 					else vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
@@ -670,18 +676,27 @@ class CEmitter(private val mModule: KModule) {
 				// The check above, and then the same for each partner: the count that came down may be what was left of
 				// one partner's references to another object of the pair. What it returns the runtime releases, after the
 				// step a program with threads takes under its lock (ktc2_release_paired).
-				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tif (${vClass.cName}__collect(object)) return object;\n")
+				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tint found = ${vClass.cName}__collect(object);\n\tif (found > 0) return object;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					// A longer cycle is given to each of its classes from its own place: each finds it for itself.
 					if (vPair.partner.pairCycles.isEmpty() || vPair.via.isNotEmpty()) continue
 					vBodies.append("\tktc2_Obj* other$vIndex = ${partner(vIndex, vPair)};\n")
-					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex)) return other$vIndex;\n")
+					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex) > 0) return other$vIndex;\n")
 				}
-				vBodies.append(if (vClass.isRingMember) "\treturn ktc2_ring_collect(object);\n}\n" else "\treturn NULL;\n}\n")
-			} else if (vClass.isRingMember) {
+				// Not freed as a cycle of its own: the bounded check of a group, for a ring each time, for a knot only when its own
+				// cycle held it and something more did (an object merely still in use costs no walk).
+				// The walk of a knot follows the classes of declared cycles too; that of a ring its own classes only (a node of a
+				// ring that is of a declared cycle too walks into the knot only when its cycle held it and something more did).
+				vBodies.append(when {
+					vClass.isKnotMember && vClass.isRingMember -> "\treturn found < 0 ? ktc2_knot_collect(object) : ktc2_ring_collect(object);\n}\n"
+					vClass.isKnotMember -> "\treturn found < 0 ? ktc2_knot_collect(object) : NULL;\n}\n"
+					vClass.isRingMember -> "\t(void)found;\n\treturn ktc2_ring_collect(object);\n}\n"
+					else -> "\t(void)found;\n\treturn NULL;\n}\n"
+				})
+			} else if (vClass.isGroupMember) {
 				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\treturn ktc2_ring_collect(object);\n}\n")
 			}
-			if (vClass.isRingMember) {
+			if (vClass.isGroupMember) {
 				// Each reference it holds, with where it is: a field, or an atomic held in place (its cell), which holds its own
 				// object without a count (not told).
 				vBodies.append("\nvoid ${vClass.cName}__ring_refs(ktc2_Obj* object, ktc2_RingVisitor visit, void* context)\n{\n")

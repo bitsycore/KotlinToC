@@ -477,14 +477,19 @@ typedef struct Ring {
 	RingEdge edges[RING_EDGES];
 	uint32_t edgeCount;
 	bool tooBig;
+	/* Started from a class of a knot: the classes of knots are followed too, not only those of rings. */
+	bool knots;
+	/* How many objects it gathers at most. */
+	uint32_t most;
 } Ring;
 
 static void ring_visit(void* context, ktc2_Obj* value, void* slot, bool isCell)
 {
 	Ring* ring = context;
 	if (!value || ring->tooBig) return;
-	/* An object of no ring is outside: a reference to it stays as it is. */
+	/* An object of no ring is outside: a reference to it stays as it is. So is one of a knot, for a check started from a ring. */
 	if (value->typeId >= ktc2_type_count || !ktc2_type_ring_refs[value->typeId]) return;
+	if (!ring->knots && ktc2_types[value->typeId].knot == 1) return;
 	uint32_t rc = KTC2_RC_LOAD(value);
 	if (rc == KTC2_IMMORTAL || (rc & KTC2_STACK) || ring->edgeCount == RING_EDGES) {
 		ring->tooBig = true;
@@ -493,7 +498,7 @@ static void ring_visit(void* context, ktc2_Obj* value, void* slot, bool isCell)
 	uint32_t at = 0;
 	while (at < ring->count && ring->members[at] != value) at++;
 	if (at == ring->count) {
-		if (ring->count == RING_MOST) {
+		if (ring->count == ring->most) {
 			ring->tooBig = true;
 			return;
 		}
@@ -521,7 +526,32 @@ static void ring_trace_visit(void* context, ktc2_Obj* from, const char* field, k
 }
 #endif
 
+/*
+ * A knot: objects of declared cycles and of rings that hold one another in more than one cycle (a job whose result is one
+ * of its own handlers, the handler of an await in its list). A check from an object of a declared cycle that found it held
+ * by that cycle and by more gathers the classes of both (ktc2_knot_collect); so does a check of a ring that failed, from an
+ * object that is of a declared cycle too, held by nothing outside the ring, within KNOT_MOST objects. A busy node is held
+ * from outside (by its job): its check does not go further, which keeps the cost of rings as it was.
+ */
+#define KNOT_MOST 12
+
+static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool* outStartInside);
+
 ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start)
+{
+	bool startInside = false;
+	ktc2_Obj* freed = group_collect(start, false, RING_MOST, &startInside);
+	if (!freed && startInside && ktc2_types[start->typeId].knot == 2) freed = group_collect(start, true, KNOT_MOST, NULL);
+	return freed;
+}
+
+ktc2_Obj* ktc2_knot_collect(ktc2_Obj* start)
+{
+	return group_collect(start, true, RING_MOST, NULL);
+}
+
+/** The check of a group from [start]; [outStartInside]: set when every reference [start] has left came from the group. */
+static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool* outStartInside)
 {
 	Ring ring;
 	ring.members[0] = start;
@@ -529,6 +559,8 @@ ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start)
 	ring.count = 1;
 	ring.edgeCount = 0;
 	ring.tooBig = false;
+	ring.knots = knots;
+	ring.most = most;
 	for (uint32_t at = 0; at < ring.count && !ring.tooBig; at++) {
 		ktc2_type_ring_refs[ring.members[at]->typeId](ring.members[at], ring_visit, &ring);
 	}
@@ -540,6 +572,7 @@ ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start)
 		uint32_t inside = 0;
 		for (uint32_t edge = 0; edge < ring.edgeCount; edge++) if (ring.edges[edge].to == ring.members[at]) inside++;
 		bool alone = (KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK) == inside;
+		if (at == 0 && outStartInside) *outStartInside = alone;
 		if (alone) continue;
 		if (ktc2_types[ring.members[at]->typeId].lazy) othersAlone = false;
 		else headsAlone = false;

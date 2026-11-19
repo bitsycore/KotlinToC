@@ -252,11 +252,22 @@ class KClass(
 	 */
 	var isRingHead = false
 
+	/**
+	 * Of a class of a cycle a module declares (`cycles`): when the check of its cycle finds its objects held by more than the
+	 * cycle (a knot: two declared cycles through one object, or a declared cycle and a ring), the bounded check of rings
+	 * runs from it over every object of such classes it reaches (`ktc2_ring_collect`), which frees them when only they
+	 * hold one another, whatever the shape.
+	 */
+	var isKnotMember = false
+
+	/** True when the runtime follows what its objects hold to free a group of them (`__ring_refs`): of a ring, or of a knot. */
+	val isGroupMember: Boolean get() = isRingMember || isKnotMember
+
 	/** True when its objects carry `KTC2_PAIRED` from the start: a release that leaves them few references asks whether a cycle can go. */
 	val isPaired: Boolean get() = pairCycles.isNotEmpty() || isRingHead
 
 	/** True when its type has a `__pair` function: its pair cycles, or the check of its ring. */
-	val hasPairFunction: Boolean get() = pairCycles.isNotEmpty() || isRingMember
+	val hasPairFunction: Boolean get() = pairCycles.isNotEmpty() || isGroupMember
 
 	/**
 	 * What the instantiations of one generic class have in common: the same value for all of
