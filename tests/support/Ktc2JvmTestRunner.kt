@@ -28,12 +28,16 @@ private fun suitesOf(inLines: List<String>): List<ListedSuite> {
 	return vSuites
 }
 
+/** What the classes of the tests are found with. */
+private val kLoader: ClassLoader = object {}.javaClass.classLoader
+
 /** The JVM class of [inName] (`pkg.Outer.Inner` is `pkg.Outer$Inner`). */
 private fun classOf(inName: String): Class<*>? {
 	var vName = inName
 	while (true) {
 		try {
-			return Class.forName(vName)
+			// Not initialized here: a file's top-level values are made when the test first uses them, as in C.
+			return Class.forName(vName, false, kLoader)
 		} catch (vMissing: ClassNotFoundException) {
 			val vDot = vName.lastIndexOf('.')
 			if (vDot < 0) return null

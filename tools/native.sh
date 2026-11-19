@@ -6,7 +6,7 @@
 # same on the JVM, on Kotlin/Native and here.
 # Needs a Kotlin/Native compiler: KTC2_KONAN names its directory, else the newest one under
 # ~/.konan is used (Gradle puts them there for multiplatform projects). About 10 seconds a
-# program, four at a time. The common tests (tests/common/*.kt, tests/stdlib/*.kt) are run there too, each file with
+# program, four at a time. The files of tests (tests/ktc2/*/*.kt, tests/stdlib/*.kt) are run there too, each file with
 # Kotlin/Native's test runner (-tr). The report is build/native/report.txt.
 cd "$(dirname "$0")/.." || exit 1
 vKonan=${KTC2_KONAN:-$(ls -d ~/.konan/kotlin-native-prebuilt-* 2>/dev/null | sort -V | tail -1)}
@@ -37,7 +37,7 @@ one() {
 	fi
 	rm -f "$vOut.kexe"
 }
-# A file of common tests (tests/common, tests/stdlib): compiled with Kotlin/Native's own test runner (-tr) and
+# A file of tests (tests/ktc2, tests/stdlib): compiled with Kotlin/Native's own test runner (-tr) and
 # kotlin.test, as `ktc2 test` compiles it; what has to hold is that its tests pass there too.
 common() {
 	vFile=$1
@@ -57,14 +57,14 @@ common() {
 	rm -f "$vOut.kexe"
 }
 export -f one common
-vFiles=$(for vFile in tests/integration/basic/*.kt tests/integration/objects/*.kt tests/integration/generics/*.kt tests/integration/stdlib/*.kt tests/integration/ported/*.kt; do
+vFiles=$(for vFile in tests/integration/native/*.kt tests/integration/process/*.kt; do
 	vBase=${vFile%.kt}
 	[ -f "$vBase.expected" ] || [ -f "$vBase.def" ] || [ -f "$vBase.errors" ] && continue
 	grep -q "^import ktc2\.\|kotlinx.cinterop\|platform.posix" "$vFile" && continue
 	[[ "$vFile" == *"$1"* ]] && echo "$vFile"
 done)
 echo "$vFiles" | xargs -P 4 -I{} bash -c 'one "$1" "$2"' _ {} "$vKonan"
-for vFile in tests/common/*.kt tests/stdlib/*.kt; do [[ "$vFile" == *"$1"* ]] && echo "$vFile"; done | xargs -P 4 -I{} bash -c 'common "$1" "$2"' _ {} "$vKonan"
+for vFile in tests/ktc2/*/*.kt tests/stdlib/*.kt; do [[ "$vFile" == *"$1"* ]] && echo "$vFile"; done | xargs -P 4 -I{} bash -c 'common "$1" "$2"' _ {} "$vKonan"
 cat build/native/*.result | sort > build/native/report.txt
 echo "Kotlin/Native $(basename "$vKonan"): $(grep -c "^same" build/native/report.txt) the same, $(grep -c "^differs" build/native/report.txt) differ, $(grep -c "^does not compile" build/native/report.txt) do not compile there, $(grep -c "^skipped" build/native/report.txt) skipped"
 grep -v "^same" build/native/report.txt

@@ -1054,6 +1054,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   `async` 30% slower; this one is at the cost it had. `regressions/coroutines-incomplete-async`, without
   `program.cycles` now. Still leaking (PLAN.md 2.2): the other tests of `AsyncTest` and 26 files, whose garbage is
   never seen whole from where a check starts (the deferred does not reach the old list that names it).
+- 2026-11-19, `PLAN.md` 3.3 (names), the owner's layout: a folder under `tests/` for each category (`integration`,
+  `ktc2`, `stdlib`, `box`, `modules`). The programs of `tests/integration` that only check what they print became
+  `@Test` files of `tests/ktc2/<topic>/`, a package each (146 programs; `ported/` dissolved; small files of one subject
+  merged, 132 files); what only a whole program shows stayed (`interop`, `errors`, `native`, `process`). The log names
+  each line by its category and path, lists each group's files, and ends with the run's time.
 
 
 ---------------------------------------------------------------------------
@@ -1350,7 +1355,7 @@ look at them. `bench.py` before/after: in `build/bench/` of the Windows machine 
    check are one step under a lock (`ktc2_release_paired`), and a reference counted to such an object
    meanwhile waits (`ktc2_retain_paired`); `__pair` now only decides and returns what to free, which is
    released after the lock. The first try (a lock around the check alone) was wrong and
-   `tests/integration/objects/PairCyclesThreads` found it at once: a thread waiting to check an object it had
+   `tests/ktc2/threads/PairCyclesThreads` found it at once: a thread waiting to check an object it had
    just released met it freed by another thread's check. That test, 20 times under AddressSanitizer and
    50 times plain, passes; the benchmarks are unchanged (none has a paired object in a threaded part).
    The cost: a global lock for each release of a paired object once threads run. Not tried with
@@ -1574,7 +1579,7 @@ platform, either is accepted, and Kotlin/Native is the one to look at first.
   there). A cycle ktc2 cannot see this way (three objects or more) is answered by `@Weak` on a
   property, or now on an `inner` class (`@Weak inner class Entry`: its outer object is not owned,
   and an inner object that outlives it throws `NullPointerException` where it uses it).
-  `tests/integration/objects/PairCycles`, `SelfCycles`, `tests/integration/values/WeakInner`.
+  `tests/ktc2/memory/PairCycles`, `SelfCycles`, `tests/integration/native/WeakInner`.
 
 Fixed on 2026-11-14 from that list: a value of the wrong class that reaches a function through an
 unchecked cast throws `ClassCastException`, as on the JVM and Kotlin/Native, except for the
@@ -1817,12 +1822,12 @@ of the frame. What is left in `Ordinary`, by what makes it (counted from the pro
   resource is a `val` of the class. With it: `Effects` treats giving up a reference as
   something that can run the program's code, temporaries end with their statement, and
   `ArrayList` and `HashMap.remove` let go of what is removed at once. It began as a `Deinit`
-  interface as Swift's `deinit`, removed since: `tests/integration/values/CleanerLifetimes.kt` is
+  interface as Swift's `deinit`, removed since: `tests/integration/native/CleanerLifetimes.kt` is
   the test of when objects end.
   Left:
   - [x] a `HashMap` entry removed through an iterator is let go at once: an entry that is
     handed out has its own key and value (`HashMapEntry`), which a `for ((k, v) in map)` no
-    longer makes (`ListLoops`). `tests/integration/stdlib/MapEntries.kt`.
+    longer makes (`ListLoops`). `tests/ktc2/collections/MapEntries.kt`.
   - [ ] a variable could give up its object after its last use, as Swift does in optimized
     builds, instead of at the end of its block: frees earlier, but a guard object
     (`val lock = Guard()`) would then end at once. Not planned unless asked for.
@@ -1867,11 +1872,11 @@ start together) and the C compiler.
 
 | | Gain | Effort |
 |---|---|---|
-| [x] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known to be `ArrayList` (`Devirtualize`), `ListLoops` writes the loop over the storage itself: no iterator, the size and the count of changes compared once per round, the element read without a test. It is the platform iterator written out, so it ends and fails as that one does (`tests/integration/stdlib/ListLoops.kt`, `KTC2_SKIP=listloops`) | Collections 0.26 s -> 0.15 s, Dispatch 0.31 -> 0.22, Ordinary 0.35 -> 0.28, Threads 0.17 -> 0.05 | medium |
-| [x] The same for a `HashMap`: `for ((k, v) in map)`, `map.keys`, `map.values`, and what is built on it (`LinkedHashMap`, the sets). The loop is known by the class of its iterator, which is still made once; the map is read from it, and the loop goes over the entries itself. For the entries, the entry object is not made when the loop only asks it for its key and its value (`tests/integration/stdlib/MapLoops.kt`) | 3.7 ns per entry -> 0.5 ns (LTO, 30 M entries) | medium |
+| [x] `for` over an `ArrayList`, an array or a range as an index loop when the type is known. Arrays and ranges were index loops already. Over a list whose class is known to be `ArrayList` (`Devirtualize`), `ListLoops` writes the loop over the storage itself: no iterator, the size and the count of changes compared once per round, the element read without a test. It is the platform iterator written out, so it ends and fails as that one does (`tests/integration/native/ListLoops.kt`, `KTC2_SKIP=listloops`) | Collections 0.26 s -> 0.15 s, Dispatch 0.31 -> 0.22, Ordinary 0.35 -> 0.28, Threads 0.17 -> 0.05 | medium |
+| [x] The same for a `HashMap`: `for ((k, v) in map)`, `map.keys`, `map.values`, and what is built on it (`LinkedHashMap`, the sets). The loop is known by the class of its iterator, which is still made once; the map is read from it, and the loop goes over the entries itself. For the entries, the entry object is not made when the loop only asks it for its key and its value (`tests/integration/native/MapLoops.kt`) | 3.7 ns per entry -> 0.5 ns (LTO, 30 M entries) | medium |
 | [x] Iterators in the frame when the loop cannot be an index loop. Done where the class of the collection is known (a local, a parameter every caller passes the same class to, a property that only ever receives one class). A parameter that receives several classes (`List<T>` given an `ArrayList` here and a `listOf()` there) is covered by the next line, and a small function is copied for each class (`Devirtualize`) | high where it applies | medium |
-| [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`tests/integration/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
-| [x] A variable that is given a new object on every turn of a loop (`place = place + step`): the function has two rooms for it, and the call builds in the one that holds no object in use (`KStackSlot.rooms`, `ktc2_slot_reuse`); when something else still holds an older object, that one comes from the heap. `tests/integration/objects/Reassigned.kt`, `KTC2_SKIP=rooms` | Ordinary: 12.56 M allocations -> 8.56 M; the time does not move | medium |
+| [x] The result of a call through a dispatcher is built in the caller's frame when it stays there: the dispatcher has an `__into` form that hands the caller's room (a `union` of the classes the implementations build) to those that can build in place. With it an argument is no longer "kept" just because the call is dispatched: it is held as the implementations hold it, so a local list handed to a function that takes a `List` stays in the frame (`tests/ktc2/objects/DispatchedResults.kt`, `KTC2_SKIP=slots`) | Dispatch: 6.5 M allocations -> 1,014; every `for` over a `List`, `Collection` or `Map` parameter | medium |
+| [x] A variable that is given a new object on every turn of a loop (`place = place + step`): the function has two rooms for it, and the call builds in the one that holds no object in use (`KStackSlot.rooms`, `ktc2_slot_reuse`); when something else still holds an older object, that one comes from the heap. `tests/ktc2/memory/Reassigned.kt`, `KTC2_SKIP=rooms` | Ordinary: 12.56 M allocations -> 8.56 M; the time does not move | medium |
 | [ ] The array inside an `ArrayList` (or `StringBuilder`, `HashMap`) that is itself in the frame: the constructor stores it into `this`, which was passed in. Needs room in the caller for a first small array, as `ktc2_array_local` has for arrays. Measured before building it: a local list that is given six numbers and summed takes 22 ns, of which making and freeing its array is 5 (the same loop over a local `IntArray` takes 1.4 ns: the rest is the list itself, its `add` and its counters). So about a quarter of such a function at best, for a change to the most delicate pass; an object that never leaves its function as plain locals (below) is where the other 15 ns are | 5 ns per local list; perhaps 5 % of `Ordinary` | medium to high |
 | [ ] An object that never leaves its function becomes plain locals | medium | medium |
 | [x] Closures in the frame when the lambda does not outlive the call it is passed to. The closure was there already; what it captured was not, because storing into a field counted as leaving. An object or the cell of a `var` stored into an object that stays in the frame now stays too, unless some read of that field lets it out | every capturing lambda that is only called: no allocation left | medium |
@@ -1913,17 +1918,17 @@ write to an array of references.
 | | Gain | Effort |
 |---|---|---|
 | [x] Call the implementation directly when only one class implements the method, or the type is known at the call (`Devirtualize`: the class is followed from the allocation through locals, parameters, fields and results) | Dispatch -17 %, -48 % with LTO; 375 calls in the showcase | medium |
-| [x] A function called with objects of several classes for one parameter is copied for the calls that pass a known class (`Devirtualize.copyFor`, `KirCopy.kt`): `total(values: List<Int>)` given an `ArrayList` goes to `total__c0`, where the iterator and its `hasNext` and `next` are direct calls. At most 4 copies of a function of at most 80 statements, three rounds. `tests/integration/objects/Copies.kt`, `KTC2_SKIP=copies` | the `for` over a list parameter in `Ordinary`: 87 ms -> 60 ms with LTO (half its calls pass an `ArrayList`); Ordinary -7 % with LTO, -3 % without; programs under 1 % larger | medium |
+| [x] A function called with objects of several classes for one parameter is copied for the calls that pass a known class (`Devirtualize.copyFor`, `KirCopy.kt`): `total(values: List<Int>)` given an `ArrayList` goes to `total__c0`, where the iterator and its `hasNext` and `next` are direct calls. At most 4 copies of a function of at most 80 statements, three rounds. `tests/ktc2/memory/Copies.kt`, `KTC2_SKIP=copies` | the `for` over a list parameter in `Ordinary`: 87 ms -> 60 ms with LTO (half its calls pass an `ArrayList`); Ordinary -7 % with LTO, -3 % without; programs under 1 % larger | medium |
 | [x] `listOf(a, b, c)` is of a known class: with at least one element and no spread the call is lowered as `elements.asList()`, which is what `listOf` does then (`lowerCall` in `BodyLowering.kt`) | with the two lines below: Collections -18 %, Ordinary -17 %, Dispatch -12 % | low |
 | [x] `ArrayList` does not test the index of its own storage: `Storage.at` and `Storage.put` (`Ktc2Internal.kt`) are `get` and `set` without the test, for the platform layer where it has made sure of the index. The storage of an `ArrayList` never shrinks and every index was below its length. So `add` cannot throw, and no caller tests for an exception after it | part of the above | low |
-| [x] A function that returns the result of a call directly (`fun first() = at(0)`) can have its result borrowed: `ExceptionLowering` gives every returned call a local, the shape it already gave the ones that can throw and the only one `BorrowedReturns` looked at. Found when `next()` of the list iterator lost its borrowed form (retains of Collections: 8.7 M -> 38.7 M until fixed). `tests/integration/objects/ReturnedCalls.kt` | correctness of the counts; Objects and Threads -8 % | low |
+| [x] A function that returns the result of a call directly (`fun first() = at(0)`) can have its result borrowed: `ExceptionLowering` gives every returned call a local, the shape it already gave the ones that can throw and the only one `BorrowedReturns` looked at. Found when `next()` of the list iterator lost its borrowed form (retains of Collections: 8.7 M -> 38.7 M until fixed). `tests/ktc2/objects/ReturnedCalls.kt` | correctness of the counts; Objects and Threads -8 % | low |
 | [x] `HashMap` no longer tests the four indices of a probe: `find` holds the table and the three arrays in locals for the whole probe and reads them with `Storage.at`. They are replaced together, and a slot only names entries its own arrays have, so that holds even when comparing a key runs code that clears the map. The index it returns is still tested by the caller. No restart when `changes` moved: what the JVM does then is not defined either | Collections: no change in time (the C compiler had most of it); less code, fewer tests for an exception | low |
 | [x] The class of a call's result is followed in two rounds: a call through a dispatcher that is not resolved yet says nothing of its result until nothing else moves, where it used to say "any class" at once, for good. The iterator of `map.keys` or `map.values` (the result of a call on the result of a call) is now of a known class | 558 calls made direct in the showcase, from 490 | low |
 | [ ] Follow the other arguments through dispatchers too, and the element class of a collection (`List<Shape>` that only holds circles) | medium | medium |
 | [ ] Stop sharing the code of a local class between the instantiations of the generic class around it (the importer reads an `X<Int>` through the type `X<Any>`): `Devirtualize` has to distrust static types wherever it sees this, and so will every later pass that reasons about classes | removes a trap more than it gains speed | medium, in the importer |
 | [x] Fold `is` and `as` when the class is known: 20 tests in the showcase | low | low |
 | [x] Short generated functions as `static inline` in the headers: those of at most four lines of C that need nothing but their own class and the runtime (`CEmitter.inHeader`, `KTC2_SKIP=inline`). Longer ones were tried (6, 8, 12 lines) and gained nothing | Dispatch without LTO: 0.218 s -> 0.136 s; nothing with LTO | low |
-| [x] `list[i]`, `list[i] = x` and `list.size` on a list known to be an `ArrayList` are written out where they are (`ListLoops.accessor`): one test of the index, and the call to `checkIndex` only when it fails. `tests/integration/stdlib/ListAccess.kt` | an indexed loop: 1.85 ns -> 0.25 ns for an element; Collections -9 %, Ordinary -15 % | low |
+| [x] `list[i]`, `list[i] = x` and `list.size` on a list known to be an `ArrayList` are written out where they are (`ListLoops.accessor`): one test of the index, and the call to `checkIndex` only when it fails. `tests/integration/native/ListAccess.kt` | an indexed loop: 1.85 ns -> 0.25 ns for an element; Collections -9 %, Ordinary -15 % | low |
 | [ ] Instantiate generic classes for hot reference types too, not only for numbers | medium: no casts, more direct calls | high, more code |
 | [x] Dispatcher cases ordered by how often each class is created: not needed. A dispatcher is a `switch` on the type id, which the C compiler turns into a table or a search of its own; the order of the cases changes nothing | none | - |
 
@@ -2042,7 +2047,7 @@ Open:
   much closer to what the JVM prints than fdlibm would be ("Where the work stands", not
   differences after all). It stays the C library's, as on Kotlin/Native.
 - [x] **An enum that is a number: `@SimpleEnum`** (`DESIGN.md`, section 4;
-  `tests/integration/values/SimpleEnums.kt`, `tests/integration/errors/SimpleEnumState.kt`). A C `enum`;
+  `tests/ktc2/values/SimpleEnums.kt`, `tests/integration/errors/SimpleEnumState.kt`). A C `enum`;
   `@EnumValue` on an `Int` or `UInt` parameter of the constructor gives the numbers (a
   constant, or a `const val` such as the ones of C bindings), and `ktc2.enumOf<T>(number) {
   it.code }` goes from a number back to the entry: a loop over the entries on the JVM, the

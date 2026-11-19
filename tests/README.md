@@ -1,19 +1,43 @@
 # The tests
 
-The suite (`./gradlew test --rerun`) has four categories, which `KTC2_TEST_CATEGORIES` chooses
-from (all by default) and which its log names on each line and counts apart:
+The suite (`./gradlew test --rerun`) has five categories, one for each folder under `tests/`, which
+`KTC2_TEST_CATEGORIES` chooses from (all by default). The log names the category on each line and the path there,
+lists the files of each group under it (✔ or ✘, and under a file that failed its tests that did), and counts the
+categories apart; at its end, the steps added over all programs and the run's own time:
 
-- `integration`: the programs under `tests/integration/` (each with its own `main`, compared with the
-  JVM or with an `.expected` file) and the programs of several modules (every directory under it with a
-  `module.ktc2.toml`: `tests/integration/modules/`, and some of `regressions/`);
-- `kotlin`: the files of common tests of `tests/stdlib/` (the Kotlin standard library's and
-  Kotlin/Native's runtime's own tests) and of `tests/common/` (ktc2's own);
-- `box`: the box tests of the Kotlin compiler, `tests/box/`;
-- `libraries`: the own tests of the bundled libraries, `tests/modules/<module>/`.
+```
+[ 87/584  14%] modules     ✔ kotlinx-serialization-json-io/json (126/126 files)  65.4 s  5.2 · 16.2 · 29.1 · 5.2
+        ✔ commonTest/kotlinx/serialization/json/JsonParserTest.kt
+[481/584  82%] integration ✔ interop/Geometry.kt   1.1 s  0.3 · 0.1 · 0.5 · 0.1
+```
 
-The CI job runs `integration`, and `kotlin` in C only (`KTC2_TEST_NO_JVM=kotlin`: a program of tests
-checks itself, the JVM is only a second opinion). The box tests and the libraries' tests run on
-the machines where the work is done. `examples/` are not tests: they are built and run by hand.
+(the times of the steps: Kotlin → IR, IR → C, C → exe, run.)
+
+- `integration` (`tests/integration/`): whole programs, each with its own `main`, compared with the JVM or with an
+  `.expected` file, for what only a program shows: `interop/` (C libraries, `.def`), `errors/` (programs ktc2 must
+  refuse), `native/` (output that is Kotlin/Native's where the JVM's differs), `process/` (standard input,
+  `exitProcess`, a warning of the compiler, threads left running at the end); and the programs of several modules
+  (every directory under it with a `module.ktc2.toml`: `modules/`, `regressions/`);
+- `ktc2` (`tests/ktc2/<topic>/`): ktc2's own tests, written as Kotlin's common tests are, a group for each topic:
+  `language`, `numbers`, `text`, `collections`, `objects`, `generics`, `memory`, `threads`, `coroutines`, `values`
+  (the `ktc2.` package), `regressions`;
+- `stdlib` (`tests/stdlib/`): the Kotlin standard library's and Kotlin/Native's runtime's own tests, a group;
+- `box` (`tests/box/`): the box tests of the Kotlin compiler;
+- `modules` (`tests/modules/<module>/<library>/`): the own tests of the bundled libraries, a group each.
+
+The CI job runs `integration`, `ktc2`, and `stdlib` in C only (`KTC2_TEST_NO_JVM=stdlib`: a group of tests checks
+itself, the JVM is only a second opinion). The box tests and the libraries' tests run on the machines where the work
+is done. `examples/` are not tests: they are built and run by hand.
+
+# ktc2's own tests
+
+A file of `tests/ktc2/<topic>/` is in a package of its own (`ktc2test.<topic>.<file>`): the files of a topic are
+compiled together, and many declare the same names. A test about what a program prints has its `@Test` function
+print it: the suite compares what each test prints with the JVM, test by test. They were programs with a `main` until
+2026-11-19 (`tests/integration/basic`, `objects`, `stdlib`, `values`, `generics`, and `ported`, the plain-Kotlin
+tests of the first transpiler), made tests and sorted by topic then (small files of one subject merged:
+`language/Loops.kt`, `objects/Enums.kt`...); `language/TestClasses.kt` checks what `ktc2 test` registers. What only a
+whole program can check goes to `tests/integration/`.
 
 # Common tests
 
@@ -22,10 +46,10 @@ assert with `kotlin.test`, and no `main`. A test says what must hold on every pl
 nothing of what a platform is free in (the text of a message, the name of an exception's
 package). The same file runs:
 
-- in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/stdlib/,tests/common/`), by
+- in C and on the JVM, by the suite (`./gradlew test --rerun`, `KTC2_TEST_FILTER=tests/stdlib/,tests/ktc2/`), by
   groups (below), and a test that fails on either fails the suite. The log has a line per group (its tests passed
   out of how many, its time and the time of each step), and lists the tests of a group, by class, only when one of
-  them failed (`KTC2_TEST_FUNCTIONS=1`: always);
+  them failed;
 - with `ktc2 test <directory or files>` (`README.md`), which is what the suite does in C;
 - on Kotlin/Native, by `tools/native.sh tests/` after a run of the suite, with Kotlin/Native's
   own `kotlin.test`.
@@ -38,7 +62,7 @@ annotations of `tests/support/KotlinTestAnnotations.kt`.
 ## Groups
 
 The files of tests are compiled by directory, each group one program, as `ktc2 test` compiles them: `tests/stdlib`
-(with `support/`), `tests/common`, and for each library of `tests/modules/<module>/<library>/` its `commonTest` and
+(with `support/`), each topic of `tests/ktc2`, and for each library of `tests/modules/<module>/<library>/` its `commonTest` and
 `concurrentTest` (`IntegrationTest.kt`, "Groups of tests"). ktc2's compiler registers every class of tests (and the
 top-level `@Test` functions of a file) as a suite of Kotlin/Native's runner, whose `main` the program has
 (`TestRegistry.kt`); it prints what Native's prints (`[ RUN      ] Class.test`, `[       OK ]`...), and takes its
@@ -58,11 +82,10 @@ of each suite (`tests.txt`).
 
 ## Regressions
 
-`tests/integration/regressions/` holds a program for each bug found in ktc2 itself on the way (a miscompilation,
-a crash, a wrong C), named after it, written before the fix: `KTC2_TEST_FILTER=regressions/` checks them all
-quickly. A bug that needs a module's settings to show is a directory with its `module.ktc2.toml`.
+`tests/ktc2/regressions/` holds a test for each bug found in ktc2 itself on the way (a miscompilation, a crash, a
+wrong C), named after it, written before the fix; one that needs a module's settings or a library to show is a program
+of its own module under `tests/integration/regressions/`. `KTC2_TEST_FILTER=regressions/` checks them all quickly.
 
-- `common/`: tests written for ktc2.
 - `tests/stdlib/`: tests of the Kotlin standard library itself, unchanged, from
   `libraries/stdlib/test` of github.com/JetBrains/kotlin at tag `v2.5.0-RC`, the version of
   the library ktc2 compiles (Apache 2.0, the header of each file). They are the best tests
@@ -185,8 +208,8 @@ sees as a test of the library does, and `jvmTest` (`moduleTestList` in `Integrat
 
 ## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
-The libraries' own tests (`tests/modules/<module>/`, the category `libraries`) run locally; the
-CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,kotlin`). The programs on each module (`tests/integration/modules/`) run everywhere.
+The libraries' own tests (`tests/modules/<module>/`, the category `modules`) run locally; the
+CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,ktc2,stdlib`). The programs on each module (`tests/integration/modules/`) run everywhere.
 
 The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
 holds `commonTest` of kotlinx.collections.immutable 0.5.2 (from `core/commonTest/src`) and its

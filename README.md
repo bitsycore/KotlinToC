@@ -136,7 +136,7 @@ under a directory, or a module's) are one program with `kotlin.test`, whose `mai
 test runner, and it prints and takes what that runner does.
 
 ```bash
-build/install/ktc2/bin/ktc2 test tests/common
+build/install/ktc2/bin/ktc2 test tests/ktc2/language
 build/install/ktc2/bin/ktc2 test my-module --filter 'ParserTest.*' -- --ktest_logger=SIMPLE
 ```
 
@@ -242,10 +242,11 @@ setting: ktc2 does not cross-compile.
 ./gradlew test --rerun
 ```
 
-runs every program under `tests/integration/` twice - as C, compiled with `-Wall -Werror` and
-checked for leaks, and on the JVM - and compares what they print. It also runs the tests
-under `tests/`, which are written as Kotlin Multiplatform's common tests are, with
-`kotlin.test`: among them tests of the Kotlin standard library itself (`tests/README.md`).
+runs the tests under `tests/` twice - as C, compiled with `-Wall -Werror` and checked for leaks, and
+on the JVM - and compares what they print, test by test: ktc2's own tests, written as Kotlin
+Multiplatform's common tests are with `kotlin.test`, the Kotlin standard library's own tests, the
+bundled libraries' own tests, the Kotlin compiler's box tests, and whole programs (C interop, programs
+that must be refused) (`tests/README.md`).
 A job on GitHub runs all of it on Linux, macOS and Windows on every push. `DESIGN.md` describes
 how ktc2 works, `PLAN.md` what is left to do, `docs/HISTORY.md` how it got here; `CLAUDE.md` is
 the short map of the code and of how to work on it.

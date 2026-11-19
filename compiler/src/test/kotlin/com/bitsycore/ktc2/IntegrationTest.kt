@@ -34,17 +34,18 @@ private val kShards = (System.getProperty("ktc2.testShards")?.toIntOrNull() ?: 1
  * prints (MSVC) leaves the others out: the comparison is then made where both are there.
  */
 /**
- * The categories of the suite, each run unless `KTC2_TEST_CATEGORIES` names the ones to run (separated by commas):
- * - `integration`: the programs under `tests/integration/`, and the programs of several files under `tests/integration/modules/`;
- * - `kotlin`: the tests of the Kotlin standard library and of Kotlin/Native's runtime (`tests/stdlib/`), and ktc2's own
- *   common tests (`tests/common/`);
+ * The categories of the suite, one for each folder under `tests/`, each run unless `KTC2_TEST_CATEGORIES` names the ones
+ * to run (separated by commas):
+ * - `integration`: whole programs (`tests/integration/`): what only a program shows (C interop, programs that must be
+ *   refused, output that is Kotlin/Native's, standard input, the end of a program), and programs of several modules;
+ * - `ktc2`: ktc2's own tests, written as Kotlin's common tests are (`tests/ktc2/<topic>/`, a group each);
+ * - `stdlib`: the tests of the Kotlin standard library and of Kotlin/Native's runtime (`tests/stdlib/`, a group);
  * - `box`: the box tests of the Kotlin compiler (`tests/box/`);
- * - `libraries`: the own tests of the libraries that are bundled modules (`tests/modules/<module>/`): most of the
- *   suite's time, and they change only with the library or its module.
- * The CI job runs `integration` and `kotlin`.
+ * - `modules`: the own tests of the libraries that are bundled modules (`tests/modules/<module>/<library>`, a group each).
+ * The CI job runs `integration`, `ktc2` and `stdlib`.
  */
 private val kCategories = System.getenv("KTC2_TEST_CATEGORIES")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
-	?: setOf("integration", "kotlin", "box", "libraries")
+	?: setOf("integration", "ktc2", "stdlib", "box", "modules")
 
 /**
  * `KTC2_TEST_NO_JVM`: the categories whose tests run in C only, not compared with the JVM (separated by commas). A file
@@ -177,7 +178,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * kotlinx.coroutines' group and then the standard library's ran out of it, and took half an hour over one).
 	 */
 	private fun programList(): List<DynamicTest> =
-		((if ("libraries" in kCategories) moduleTestList() else emptyList()) + (if ("kotlin" in kCategories) commonTestList() else emptyList()))
+		((if ("modules" in kCategories) moduleTestList() else emptyList()) + commonTestList())
 			.sortedBy { vGroup -> kHeavyGroups.indexOfFirst { it in vGroup.displayName }.let { if (it < 0) kHeavyGroups.size else it } } +
 			(if ("integration" in kCategories) integrationList() + projectList() else emptyList()) +
 			(if ("box" in kCategories) boxTestList() else emptyList())
@@ -192,7 +193,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text (several, separated by commas).
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> named(vSource.relativeTo(File("tests/integration")).invariantSeparatorsPath, "integration") { check(vSource) } }
+			.map { vSource -> named("integration/" + vSource.relativeTo(File("tests/integration")).invariantSeparatorsPath, "integration") { check(vSource) } }
 			.toList()
 
 	// ==================
@@ -217,8 +218,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 	/** A group of files of tests compiled as one program: see above. */
 	private class TestGroup(
-		/** The name the run shows: a directory of tests. */
+		/** The name the run shows: its category, then its directory there (`ktc2/objects`, `modules/kotlinx-io/core`). */
 		val name: String,
+		/** The directory of its files, which the run names them from. */
+		val root: File,
 		/** The name of its build directory. */
 		val outName: String,
 		/** The files of tests run, as they are in the repository. */
@@ -266,15 +269,15 @@ abstract class IntegrationPart(private val mShard: Int) {
 	}
 
 	/**
-	 * The groups of the `kotlin` category: the tests of the standard library and of Kotlin/Native's runtime (`tests/stdlib/`),
-	 * with the helpers of `tests/stdlib/support` (the common part for both sides, and each side's answers to what the
-	 * library's tests leave to the platform), and ktc2's own common tests (`tests/common/`).
+	 * The groups of the categories `stdlib` and `ktc2`: the tests of the standard library and of Kotlin/Native's runtime
+	 * (`tests/stdlib/`), with the helpers of `tests/stdlib/support` (the common part for both sides, and each side's answers
+	 * to what the library's tests leave to the platform), and ktc2's own tests, a group for each topic (`tests/ktc2/<topic>/`).
 	 */
 	private fun commonTestList(): List<DynamicTest> {
 		fun files(inDirectory: String) = File(inDirectory).listFiles { vFile -> vFile.isFile && vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList()
 		val vGroups = ArrayList<TestGroup>()
-		split(files("tests/stdlib"))?.let { (vTests, vHelpers) ->
-			val vGroup = TestGroup("tests/stdlib", "tests-stdlib", vTests, vHelpers + files("tests/stdlib/support/common"))
+		if ("stdlib" in kCategories) split(files("tests/stdlib"))?.let { (vTests, vHelpers) ->
+			val vGroup = TestGroup("stdlib", File("tests/stdlib"), "tests-stdlib", vTests, vHelpers + files("tests/stdlib/support/common"))
 			vGroup.cExtra = files("tests/stdlib/support/ktc2")
 			vGroup.jvmExtra = files("tests/stdlib/support/jvm")
 			// The library's tests are of its own module: they opt in to what it calls experimental, and see what it keeps internal.
@@ -289,8 +292,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 			}
 			vGroups += vGroup
 		}
-		split(files("tests/common"))?.let { (vTests, vHelpers) -> vGroups += TestGroup("tests/common", "tests-common", vTests, vHelpers) }
-		return vGroups.map { vGroup -> named(vGroup.name, "kotlin") { checkGroup(vGroup) } }
+		if ("ktc2" in kCategories) {
+			for (vTopic in File("tests/ktc2").listFiles { vFile -> vFile.isDirectory }?.sortedBy { it.name } ?: emptyList()) {
+				split(files(vTopic.path))?.let { (vTests, vHelpers) -> vGroups += TestGroup("ktc2/${vTopic.name}", vTopic, "ktc2-${vTopic.name}", vTests, vHelpers) }
+			}
+		}
+		return vGroups.map { vGroup -> named(vGroup.name, vGroup.name.substringBefore('/')) { checkGroup(vGroup) } }
 	}
 
 	// ==================
@@ -310,7 +317,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "helpers" && "pending" !in it.invariantSeparatorsPath.split('/') }
 			.filter { vSource -> selected(vSource) }
 			.sortedBy { it.path }
-			.map { vSource -> named(vSource.invariantSeparatorsPath, "box") { checkBox(vSource) } }
+			.map { vSource -> named("box/" + vSource.relativeTo(File("tests/box")).invariantSeparatorsPath, "box") { checkBox(vSource) } }
 			.toList()
 
 	private fun checkBox(inSource: File) {
@@ -368,15 +375,15 @@ abstract class IntegrationPart(private val mShard: Int) {
 				if (vCommon.isEmpty()) continue
 				// `<Name>.pending` next to a file of a library's tests: it does not pass yet, for the reason written in it.
 				val (vTests, vHelpers) = split(vCommon) { beside(it, "pending").isFile } ?: continue
-				val vGroup = TestGroup("tests/modules/$vModule/${vRoot.name}", "lib-$vModule-${vRoot.name}", vTests, vHelpers)
+				val vGroup = TestGroup("modules/$vModule/${vRoot.name}", vRoot, "lib-$vModule-${vRoot.name}", vTests, vHelpers)
 				vGroup.cExtra = sources("nativeTest") + sources("nativeCommonTest")
 				vGroup.jvmExtra = sources("jvmTest")
 				vGroups += vGroup
 			}
 		}
 		return vGroups.map { vGroup ->
-			named(vGroup.name, "libraries") {
-				val vModuleName = vGroup.name.split('/')[2]
+			named(vGroup.name, "modules") {
+				val vModuleName = vGroup.name.split('/')[1]
 				// The module as ktc2 takes it (its own files, and its library's sources fetched into the cache), with the bundled
 				// modules it depends on (kotlinx-datetime on kotlinx-serialization), and their jars on the JVM.
 				val vModules = bundledWithDependencies(vModuleName, File("build/integration/${vGroup.outName}"))
@@ -551,6 +558,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// Test by test: passed in C, passed on the JVM (or failed there where its file is of Native's runtime), the same printed.
 		fun printed(inLines: List<String>): List<String> = inLines.map { kotlinNames(it) }.filter { vLine -> vVarying.none { varies(vLine, it) } }
 		val vResults = ArrayList<String>()
+		val vFailedByFile = LinkedHashMap<File?, MutableList<String>>()
 		for ((vName, vOutcome) in vC) {
 			val vFile = fileOfTest(vName)
 			val vOnJvm = vJvm?.get(vName)
@@ -563,10 +571,21 @@ abstract class IntegrationPart(private val mShard: Int) {
 				else -> null
 			}
 			vResults += if (vReason == null) "ok $vName" else "FAILED $vName: $vReason"
-			if (vReason != null) vProblems += "$vName (${vFile?.path ?: "?"}): $vReason"
+			if (vReason != null) {
+				vProblems += "$vName (${vFile?.path ?: "?"}): $vReason"
+				vFailedByFile.getOrPut(vFile) { ArrayList() } += "$vName: ${vReason.lineSequence().first()}"
+			}
 		}
-		// The result of each test, for the Gradle task to show under the group (build.gradle.kts).
-		functionsFile().apply { parentFile.mkdirs() }.writeText(vResults.joinToString("\n"))
+		// Each file of the group, for the Gradle task to show under it (build.gradle.kts): `ok path` or `FAILED path`, and under
+		// a file that failed, each test of it that did (`  name: reason`). A file that leaked or crashed is one that failed.
+		val vLeakedOrCrashed = vProblems.filter { it.startsWith(inGroup.root.path) || it.startsWith(File(inGroup.root.path).invariantSeparatorsPath) }
+			.map { it.substringBefore(':').substringBefore(" leaked") }.toSet()
+		functionsFile().apply { parentFile.mkdirs() }.writeText(inGroup.tests.joinToString("\n") { vFile ->
+			val vPath = vFile.relativeTo(inGroup.root).invariantSeparatorsPath
+			val vFailed = vFailedByFile[vFile].orEmpty()
+			val vBroken = vFailed.isNotEmpty() || vFile.path in vLeakedOrCrashed
+			(if (vBroken) "FAILED $vPath" else "ok $vPath") + vFailed.joinToString("") { "\n  $it" }
+		})
 		stepsFile().apply { parentFile.mkdirs() }.writeText("$vKotlinToIr ${vTranslated - vKotlinToIr} $vCompiled ${vTimes.firstOrNull { it.startsWith("cRun=") }?.substringAfter('=') ?: 0}\n")
 		File(vOutDir, "program.out").writeText(kotlinNames(vOutput))
 		File(kTimesFile).appendText("${inGroup.name} ${vTimes.joinToString(" ")}\n")
@@ -585,8 +604,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 	private fun projectList(): List<DynamicTest> =
 		kProjects
-			.filter { vPath -> selected(File("projects/$vPath")) }
-			.map { vPath -> named("projects/$vPath", "integration") { checkProject(File(vPath)) } }
+			.filter { vPath -> selected(File(vPath)) }
+			.map { vPath -> named("integration/" + File(vPath).relativeTo(File("tests/integration")).invariantSeparatorsPath, "integration") { checkProject(File(vPath)) } }
 
 	private fun checkProject(inDirectory: File) {
 		val vName = "project-" + inDirectory.name
@@ -791,11 +810,12 @@ abstract class IntegrationPart(private val mShard: Int) {
 		} else {
 			// The C files in a few groups, each compiled by a process of its own into a directory of its own
 			// (two files of the same name in different packages go to different groups), then linked.
-			val vGroups = List(kCompileJobs) { ArrayList<String>() }
+			// Groups of tests hold many packages: more files of one name than groups get groups of their own.
+			val vGroups = MutableList(kCompileJobs) { ArrayList<String>() }
 			vCSources.forEachIndexed { vIndex, vSource ->
 				val vName = File(vSource).name
-				val vGroup = (0 until kCompileJobs).map { vGroups[(vIndex + it) % kCompileJobs] }.firstOrNull { vOthers -> vOthers.none { File(it).name == vName } }
-					?: fail("more than $kCompileJobs C files are called $vName")
+				val vGroup = vGroups.indices.map { vGroups[(vIndex + it) % vGroups.size] }.firstOrNull { vOthers -> vOthers.none { File(it).name == vName } }
+					?: ArrayList<String>().also { vGroups += it }
 				vGroup += vSource
 			}
 			val vFailures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()

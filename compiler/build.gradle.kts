@@ -169,14 +169,11 @@ tasks.test {
 		?: vResults.listFiles { vFile -> vFile.name.startsWith("count.") }?.sumOf { it.readText().trim().toIntOrNull() ?: 0 } ?: 0
 	// What kind of test a program is, from its name: shown on its line, and counted apart in the summary.
 	// The categories of IntegrationTest (KTC2_TEST_CATEGORIES), in the order the summary shows them.
-	val kKinds = listOf("integration" to "integration tests", "kotlin" to "Kotlin tests", "box" to "box tests", "libraries" to "library tests")
-	fun kindOf(inName: String): String = when {
-		inName.startsWith("tests/box/") -> "box"
-		inName.startsWith("tests/modules/") -> "libraries"
-		inName.startsWith("tests/") -> "kotlin"
-		else -> "integration"
-	}
-	val vKindColors = mapOf("box" to "35", "libraries" to "36", "kotlin" to "34", "integration" to "37")
+	// A test's name is its category (the folder under tests/) and its path there: the line shows them apart.
+	val kKinds = listOf("integration" to "integration", "ktc2" to "ktc2", "stdlib" to "stdlib", "box" to "box", "modules" to "modules")
+	fun kindOf(inName: String): String = inName.substringBefore('/')
+	fun shownName(inName: String): String = inName.substringAfter('/', inName)
+	val vKindColors = mapOf("box" to "35", "modules" to "36", "stdlib" to "34", "ktc2" to "33", "integration" to "37")
 	val vByKind = ConcurrentHashMap<String, IntArray>()
 	// The steps of a program, each program's on its line and their totals in the summary (IntegrationTest.stepsFile):
 	// the Kotlin front end, ktc2's translation of its IR to C, the C compiler and linker, and the run of the program.
@@ -200,14 +197,14 @@ tasks.test {
 			println(if (inResult.failedTestCount == 0L) paint("1;32", "✅ $vLine") else paint("1;31", "❌ $vLine"))
 			for ((vKind, vLabel) in kKinds) {
 				val vCounts = vByKind[vKind] ?: continue
-				val vText = "   $vLabel".padEnd(22) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
+				val vText = "   $vLabel".padEnd(16) + "${vCounts[0]} passed" + if (vCounts[1] > 0) ", ${vCounts[1]} failed" else ""
 				println(if (vCounts[1] > 0) paint("31", vText) else paint(vKindColors.getValue(vKind), vText))
 			}
-			// Where the time went, added up over the programs (several run at once: more than the run's own time).
+			// The steps added up over the programs (several run at once: more than the run took), in the order of each line's.
 			if (vStepTotals.any { it.get() > 0 }) {
-				println(paint("1", "   time of each step, all programs together:"))
-				kStepNames.forEachIndexed { vIndex, vName -> println(paint("2", "      ${vName.padEnd(14)}${seconds(vStepTotals[vIndex].get())}")) }
+				println(paint("2", "   steps, all programs added: " + vStepTotals.joinToString(" · ") { seconds(it.get()) } + "  (" + kStepNames.joinToString(", ") + ")"))
 			}
+			println(paint("1", "   total: ${seconds(vSeconds * 1000)}"))
 			vFailed.forEach { println(paint("31", "   ❌ $it")) }
 		}
 		override fun afterTest(inTest: TestDescriptor, inResult: TestResult) {
@@ -215,54 +212,47 @@ tasks.test {
 			if (inTest.displayName == "programs()") return
 			val vKind = kindOf(inTest.displayName)
 			vByKind.getOrPut(vKind) { IntArray(2) }.let { if (inResult.resultType == TestResult.ResultType.FAILURE) it[1]++ else it[0]++ }
-			val vTag = paint(vKindColors.getValue(vKind), vKind.padEnd(11))
+			val vTag = paint(vKindColors[vKind] ?: "37", vKind.padEnd(11))
 			val vIndex = vDone.incrementAndGet()
 			val vTotal = total().coerceAtLeast(vIndex)
 			val vWidth = vTotal.toString().length
 			val vProgress = paint("2", "[${vIndex.toString().padStart(vWidth)}/$vTotal ${(vIndex * 100 / vTotal).toString().padStart(3)}%]")
 			val vTime = paint("2", "%5.1f s".format(Locale.ROOT, (inResult.endTime - inResult.startTime) / 1000.0))
 			val vOutput = vOutputs.remove(keyOf(inTest))
-			// A file of tests runs several test functions: each is a line under the file, as an IDE shows them.
-			// Written by the test, by the name of the program (IntegrationTest.functionsFile).
+			// A group of tests: each of its files a line under it, and under a file that failed each test of it that did.
+			// Written by the test, by its name (IntegrationTest.functionsFile): `ok path`, `FAILED path`, `  name: reason`.
 			val vFunctionsFile = File(vResults, "functions/${inTest.displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
-			val vFunctions = vFunctionsFile.takeIf { it.isFile }?.readLines()?.filter { it.isNotBlank() } ?: emptyList()
+			val vFiles = vFunctionsFile.takeIf { it.isFile }?.readLines()?.filter { it.isNotBlank() } ?: emptyList()
 			vFunctionsFile.delete()
-			val vFunctionsFailed = vFunctions.count { it.startsWith("FAILED ") }
-			val vCounts = if (vFunctions.isEmpty()) "" else paint("2", " (${vFunctions.size - vFunctionsFailed}/${vFunctions.size} tests)")
+			val vFileCount = vFiles.count { !it.startsWith("  ") }
+			val vFilesFailed = vFiles.count { it.startsWith("FAILED ") }
+			val vCounts = if (vFileCount == 0) "" else paint("2", " (${vFileCount - vFilesFailed}/$vFileCount files)")
 			// The milliseconds of its four steps, when it got to the end of them.
 			val vStepsFile = File(vResults, "steps/${inTest.displayName.replace(Regex("[^A-Za-z0-9._-]"), "_")}.txt")
 			val vSteps = vStepsFile.takeIf { it.isFile }?.readText()?.trim()?.split(' ')?.mapNotNull { it.toLongOrNull() }?.takeIf { it.size == kStepNames.size }
 			vStepsFile.delete()
 			vSteps?.forEachIndexed { vIndex, vMillis -> vStepTotals[vIndex].addAndGet(vMillis) }
-			val vStepText = if (vSteps == null) "" else paint("2", "  " + kStepNames.indices.joinToString(" · ") { "${kStepNames[it]} ${"%.1f".format(Locale.ROOT, vSteps[it] / 1000.0)}" })
-			// As an IDE shows them: each class of tests, then its test functions under it. Only for a file where one
-			// failed (all of them then), or for every file with KTC2_TEST_FUNCTIONS=1.
-			fun functions() {
-				var vClass: String? = null
-				for (vFunction in vFunctions) {
-					val vPassed = vFunction.startsWith("ok ")
-					val vText = vFunction.removePrefix("ok ").removePrefix("FAILED ")
-					val vName = vText.substringBefore(": ")
-					val vOwner = vName.substringBeforeLast('.', "")
-					val vShort = if (vOwner.isEmpty()) vText else vText.removePrefix("$vOwner.")
-					if (vOwner.isNotEmpty() && vOwner != vClass) {
-						vClass = vOwner
-						println("      ${paint("1", vOwner)}")
+			// The time of each step, in the order of kStepNames (the summary names them once).
+			val vStepText = if (vSteps == null) "" else paint("2", "  " + vSteps.joinToString(" · ") { "%.1f".format(Locale.ROOT, it / 1000.0) })
+			fun files() {
+				for (vLine in vFiles) {
+					when {
+						vLine.startsWith("ok ") -> if (!vQuiet) println("        ${paint("32", "✔")} ${paint("2", vLine.removePrefix("ok "))}")
+						vLine.startsWith("FAILED ") -> println("        ${paint("31", "✘")} ${paint("31", vLine.removePrefix("FAILED "))}")
+						else -> println(paint("31", "            ${vLine.trim()}"))
 					}
-					val vIndent = if (vOwner.isEmpty()) "      " else "         "
-					println(if (vPassed) "$vIndent${paint("32", "✔")} ${paint("2", vShort)}" else "$vIndent${paint("31", "✘")} ${paint("31", vShort)}")
 				}
 			}
 			when (inResult.resultType) {
 				TestResult.ResultType.SUCCESS -> if (!vQuiet) {
-					println("$vProgress $vTag ${paint("32", "✔")} ${inTest.displayName}$vCounts $vTime$vStepText")
-					if (System.getenv("KTC2_TEST_FUNCTIONS") == "1") functions()
+					println("$vProgress $vTag ${paint("32", "✔")} ${shownName(inTest.displayName)}$vCounts $vTime$vStepText")
+					files()
 				}
-				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress $vTag ${paint("33", "⏭")} ${inTest.displayName}")
+				TestResult.ResultType.SKIPPED -> if (!vQuiet) println("$vProgress $vTag ${paint("33", "⏭")} ${shownName(inTest.displayName)}")
 				else -> {
 					vFailed += inTest.displayName
-					println("$vProgress $vTag ${paint("1;31", "✘ ${inTest.displayName}")}$vCounts $vTime")
-					functions()
+					println("$vProgress $vTag ${paint("1;31", "✘ ${shownName(inTest.displayName)}")}$vCounts $vTime")
+					files()
 					// The reason, as the assertion has it, and what the program wrote: a few lines of each.
 					inResult.exceptions.firstOrNull()?.message?.lines()?.take(12)?.forEach { println(paint("31", "      $it")) }
 					vOutput?.lines()?.filter { it.isNotBlank() }?.take(20)?.forEach { println(paint("2", "      | $it")) }

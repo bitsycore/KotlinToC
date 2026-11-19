@@ -1,7 +1,8 @@
 #!/bin/bash
-# Usage: tools/try.sh <path under tests/integration, without .kt> [extra ktc2 arguments]
-# Transpiles one program, builds it the way the tests do (gcc, or the compiler KTC2_CC names),
-# and runs it. Needs Git Bash on Windows. At most 40 lines of the translator's output are shown.
+# Usage: tools/try.sh <path under tests/, without .kt> [extra ktc2 arguments]
+# Transpiles one program (integration/interop/Geometry), or one file of tests as `ktc2 test` does (ktc2/objects/Classes),
+# builds it the way the tests do (gcc, or the compiler KTC2_CC names), and runs it. A path under tests/integration may
+# leave out `integration/`. Needs Git Bash on Windows. At most 40 lines of the translator's output are shown.
 cd "$(dirname "$0")/.." || exit 1
 vName=$1
 shift
@@ -9,7 +10,12 @@ vOut=build/try
 rm -rf "$vOut"
 # Gradle wants a Windows path on Windows; `pwd -W` exists in Git Bash only.
 vHere=$(pwd -W 2>/dev/null || pwd)
-./gradlew run -q --args="$vHere/tests/integration/$vName.kt -o $vHere/$vOut $*" 2>&1 | grep -v "^$" | grep -v "^\*\|^>\|FAILURE\|BUILD" | cut -c1-260 | head -40
+vFile=tests/$vName.kt
+[ -f "$vFile" ] || vFile=tests/integration/$vName.kt
+# A file of tests (no main of its own): compiled with Kotlin/Native's runner as its main.
+vMode=
+grep -q "^fun main(" "$vFile" || vMode="test --build"
+./gradlew run -q --args="$vMode $vHere/$vFile -o $vHere/$vOut $*" 2>&1 | grep -v "^$" | grep -v "^\*\|^>\|FAILURE\|BUILD" | cut -c1-260 | head -40
 [ -f "$vOut/ktc2_build.txt" ] || exit 1
 # On Windows the runtime needs neither a thread nor a math library, and clang there has none.
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) vLibs="" ;; *) vLibs="-pthread -lm" ;; esac

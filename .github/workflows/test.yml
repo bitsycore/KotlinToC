@@ -2,9 +2,9 @@
 # program again with AddressSanitizer on another Linux machine, which only translates them to C
 # first; and on another Windows machine the C of every program built with MSVC, compared with
 # what the program prints on the JVM (which that machine runs instead of gcc's build).
-# Only two categories of the suite run here: the integration programs, compared with the JVM, and
-# the Kotlin tests (tests/stdlib, tests/common), in C only: their assertions decide. The box tests
-# and the libraries' own tests are run on the machines where the work is done.
+# Three categories of the suite run here: the integration programs and ktc2's own tests (tests/ktc2), compared with
+# the JVM, and the Kotlin library's tests (tests/stdlib), in C only: their assertions decide. The box tests and the
+# libraries' own tests (tests/modules) are run on the machines where the work is done.
 name: test
 
 on:
@@ -45,8 +45,8 @@ jobs:
         run: ./gradlew :compiler:test --rerun
         env:
           KTC2_TEST_STEPS: ${{ matrix.steps }}
-          KTC2_TEST_CATEGORIES: integration,kotlin
-          KTC2_TEST_NO_JVM: kotlin
+          KTC2_TEST_CATEGORIES: integration,ktc2,stdlib
+          KTC2_TEST_NO_JVM: stdlib
           # A runner has 7 to 16 GB: each process takes about 1 GB.
           KTC2_TEST_FORKS: 3
       - name: Failures

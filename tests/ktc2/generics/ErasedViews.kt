@@ -1,0 +1,114 @@
+// Ordinary generic code: classes over numbers and objects seen through one type, stars, casts.
+
+package ktc2test.generics.erasedviews
+
+import kotlin.test.Test
+
+class Box<T>(var value: T) {
+	fun get(): T = value
+	override fun toString(): String = "Box($value)"
+}
+
+open class Shape(val name: String) { override fun toString(): String = "Shape($name)" }
+class Circle(val radius: Double) : Shape("circle")
+
+class Stack<T> {
+	private val mItems = ArrayList<T>()
+	val size: Int get() = mItems.size
+	fun push(inItem: T) { mItems += inItem }
+	fun pop(): T = mItems.removeAt(mItems.size - 1)
+	fun peek(): T? = mItems.lastOrNull()
+	operator fun iterator(): Iterator<T> = mItems.iterator()
+}
+
+interface Source<out T> { fun next(): T }
+class Counter(private var mAt: Int) : Source<Int> { override fun next(): Int = mAt++ }
+class Words(private val mWords: List<String>) : Source<String> {
+	private var mAt = 0
+	override fun next(): String = mWords[mAt++ % mWords.size]
+}
+
+fun <T> describe(inBox: Box<T>): String = "${inBox.value} ${inBox.get()} $inBox"
+fun anyBox(inBox: Box<*>): String = "star ${inBox.value} ${inBox.get()} ${inBox.value is Int} ${inBox.value is String}"
+fun <T : Comparable<T>> largest(inValues: List<T>): T { var vBest = inValues[0]; for (vValue in inValues) if (vValue > vBest) vBest = vValue; return vBest }
+fun <T> firstOr(inValues: List<T>, inDefault: T): T = if (inValues.isEmpty()) inDefault else inValues[0]
+fun <A, B> swap(inPair: Pair<A, B>): Pair<B, A> = Pair(inPair.second, inPair.first)
+inline fun <reified T> countOf(inValues: List<Any?>): Int = inValues.count { it is T }
+fun <T> take(inSource: Source<T>, inCount: Int): List<T> = List(inCount) { inSource.next() }
+fun sum(vararg inValues: Int): Int = inValues.sum()
+fun <T> listOfAll(vararg inValues: T): List<T> = inValues.toList()
+
+@Test
+fun main() {
+	val vInt = Box(5)
+	val vText = Box("five")
+	val vReal = Box(2.5)
+	val vNull = Box<Int?>(null)
+	val vShape = Box<Shape>(Circle(1.5))
+	println("${describe(vInt)} | ${describe(vText)} | ${describe(vReal)} | ${describe(vNull)}")
+	val vBoxes: List<Box<*>> = listOf(vInt, vText, vReal, vNull, vShape)
+	for (vBox in vBoxes) println(anyBox(vBox))
+	val vAny: List<Any> = listOf(vInt, vText, "text", 5, vShape)
+	println(vAny.map { it is Box<*> })
+	println(vAny.filterIsInstance<Box<*>>().map { it.value.toString() })
+	println((vAny[0] as Box<*>).value)
+	println((vAny[1] as Box<*>).get())
+	@Suppress("UNCHECKED_CAST")
+	val vBack = vAny[0] as Box<Int>
+	vBack.value += 10
+	println("${vBack.value} ${vInt.value} ${vInt.get() + 1}")
+	vInt.value = 7
+	vText.value += "!"
+	println("$vInt $vText ${vShape.value.name} ${(vShape.value as Circle).radius}")
+
+	val vStack = Stack<Int>()
+	for (vIndex in 1..5) vStack.push(vIndex * vIndex)
+	println("${vStack.pop()} ${vStack.peek()} ${vStack.size}")
+	var vTotal = 0
+	for (vItem in vStack) vTotal += vItem
+	println(vTotal)
+	val vNames = Stack<String>()
+	vNames.push("a"); vNames.push("b")
+	println("${vNames.pop()}${vNames.pop()} ${vNames.peek()}")
+	val vStacks: List<Stack<*>> = listOf(vStack, vNames)
+	println(vStacks.map { it.size })
+
+	println("${largest(listOf(3, 9, 2))} ${largest(listOf("pear", "apple"))} ${largest(listOf(1.5, -2.0))} ${largest(listOf('a', 'z'))}")
+	println("${firstOr(emptyList(), 4)} ${firstOr(listOf("x"), "y")} ${firstOr<Int?>(emptyList(), null)}")
+	println("${swap(Pair(1, "one"))} ${swap(Pair(2.5, 'c'))} ${swap(swap(Pair(1L, true)))}")
+	val vMixed = listOf<Any?>(1, "two", 3.0, null, 4, 'c', 5L, listOf(1), Box(1))
+	println("${countOf<Int>(vMixed)} ${countOf<String>(vMixed)} ${countOf<Number>(vMixed)} ${countOf<Any>(vMixed)} ${countOf<List<*>>(vMixed)} ${countOf<Box<*>>(vMixed)} ${countOf<Comparable<*>>(vMixed)}")
+	val vSources: List<Source<Any>> = listOf(Counter(10), Words(listOf("x", "y")))
+	println(vSources.map { take(it, 3) })
+	println("${take(Counter(1), 4).sum()} ${take(Words(listOf("a", "b", "c")), 4).joinToString("")}")
+	println("${sum()} ${sum(1)} ${sum(1, 2, 3)} ${sum(*intArrayOf(4, 5))} ${listOfAll(1, "a", null)} ${listOfAll<Int>()}")
+
+	// A collection of numbers asked about something that is no such number, as Kotlin allows.
+	val vInts = arrayListOf(1, 2, 3)
+	val vAnyKey: Any = "x"
+	val vAnyOne: Any = 2
+	val vAsAny: List<Any> = vInts
+	println("${vAsAny.contains("x")} ${vAsAny.contains(2)} ${vAsAny.indexOf("x")} ${vAsAny.indexOf(3)} ${vAsAny.lastIndexOf(2.0)} ${vInts.contains<Any>(vAnyKey)} ${vInts.contains<Any>(vAnyOne)} ${vAsAny.containsAll(listOf(1, "x"))} ${vAsAny.containsAll(listOf(1, 3))}")
+	val vNullable: List<Int?> = vInts
+	println("${vNullable.contains(null)} ${vNullable.indexOf(null)} ${vNullable.indexOf(2)} ${vNullable.size} ${vNullable[1]} ${vNullable.filterNotNull().sum()} ${vNullable.binarySearch(3)} ${vNullable.lastIndexOf(null)} $vNullable")
+	val vByNumber = hashMapOf(1 to "one", 2 to "two")
+	val vKeys: Map<out Any, String> = vByNumber
+	@Suppress("UNCHECKED_CAST")
+	println("${vKeys[vAnyOne]} ${vKeys[vAnyKey]} ${vKeys.containsKey(vAnyKey)} ${vKeys.containsKey(1)} ${(vByNumber as Map<Any, String>).get(2.0)} ${vKeys.containsValue("two")}")
+	val vMutable: MutableCollection<out Any> = vInts
+	println("${vMutable.remove("x")} ${vMutable.remove(2)} $vInts")
+	val vDoubles: Collection<Any> = hashSetOf(1.5, 2.5)
+	println("${vDoubles.contains(1.5)} ${vDoubles.contains(1)} ${vDoubles.contains("1.5")} ${vDoubles.size}")
+	val vLongs: Map<out Any, Any> = hashMapOf(5L to 1.5)
+	println("${vLongs[5L]} ${vLongs[5]} ${vLongs["5"]} ${vLongs.containsValue(1.5)} ${vLongs.containsValue(1)}")
+
+	val vPairs = listOf(1 to "one", 2 to "two")
+	val (vNumbers, vWords) = vPairs.unzip()
+	println("$vNumbers $vWords ${vPairs.toMap()[2]} ${Triple(1, 2.0, "3")} ${Triple(1, 2.0, "3").second + 1}")
+	val vByLength: Map<Int, List<String>> = listOf("a", "bb", "cc", "d").groupBy { it.length }
+	println("$vByLength ${vByLength[2]?.size} ${vByLength[3]}")
+	val vOptional: Box<Box<Int>?> = Box(Box(1))
+	println("${vOptional.value?.value} ${Box<Box<Int>?>(null).value?.value}")
+	val vFunctions: List<(Int) -> Any> = listOf({ it + 1 }, { "n$it" }, { it * 0.5 }, ::Box)
+	println(vFunctions.map { it(4) })
+}

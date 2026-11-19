@@ -10,7 +10,7 @@ compiles the programs of tests/integration/ for the JVM (`:ide:compileIntegratio
   off): it is `actual`s of the standard library's own `expect`s in package kotlin, which only
   ktc2's compilation, with the library's sources in their levels, puts together;
 - `kotlinTests`: tests/stdlib (the tests of the Kotlin library, with their helpers of
-  tests/stdlib/support) and tests/common, with kotlin.test. Read by the IDE, not compiled as one:
+  tests/stdlib/support) and tests/ktc2 (a package for each file), with kotlin.test. Read by the IDE, not compiled as one:
   the suite compiles each file by itself, without the `expect` lines its helpers answer;
 - `box`: tests/box, with its helpers;
 - `integration<Group><n>`: the programs of tests/integration/<group>/. Programs of one group declare
@@ -62,7 +62,7 @@ fun partsOf(inFiles: List<File>): List<List<File>> {
 	return vParts.map { it.second }
 }
 
-val kGroups = File(kRoot, "tests/integration").listFiles { vFile -> vFile.isDirectory && vFile.name !in setOf("interop", "errors", "modules") }!!.sortedBy { it.name }
+val kGroups = File(kRoot, "tests/integration").listFiles { vFile -> vFile.isDirectory && vFile.name !in setOf("interop", "errors", "modules", "regressions") }!!.sortedBy { it.name }
 
 sourceSets {
 	create("stdlib") {
@@ -70,7 +70,7 @@ sourceSets {
 	}
 	create("kotlinTests") {
 		kotlin.srcDir(File(kRoot, "tests/stdlib"))
-		kotlin.srcDir(File(kRoot, "tests/common"))
+		kotlin.srcDir(File(kRoot, "tests/ktc2"))
 		// The helpers of the library's tests: the common part and the JVM's answers, not ktc2's (compiled for C only).
 		kotlin.exclude("support/ktc2/**")
 	}

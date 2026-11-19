@@ -111,8 +111,8 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
 - [ ] Box tests of the Kotlin compiler beyond coroutines (`tools/select_box.py`): classes, inline classes,
   generics, lambdas, when, strings. Thousands; take them directory by directory, the ones without JVM-only
   features.
-- [ ] ktc2's own common tests (`tests/common/` has one file): what the programs under `tests/integration/`
-  check that must hold everywhere moves there (section 3.3).
+- [ ] ktc2's own tests (`tests/ktc2/`, 132 files since 2026-11-19): more of what must hold everywhere as assertions,
+  where a test now only prints and is compared with the JVM.
 
 ### 2.7 Every system (1 to 2 days, mostly waiting)
 - [ ] Push and read the CI job (Linux, macOS, Windows, MSVC, AddressSanitizer on Linux), then fix.
@@ -143,15 +143,12 @@ the JVM), `ide/` (source sets for an IDE), and Gradle's configuration cache that
 - Or: keep the three, document why each exists. Less work, the same confusion for a newcomer.
 
 ### 3.3 Tests (2 to 3 days; section 4 is done)
-Today: `tests/integration/` (programs compared with the JVM), `tests/stdlib/` (Kotlin's own tests),
-`tests/common/` (one file), `tests/modules/<module>/` (libraries' tests copied in), `tests/box/`, and eleven
+Today (2026-11-19): a folder under `tests/` for each category: `integration/` (whole programs), `ktc2/` (ktc2's own
+tests by topic), `stdlib/` (Kotlin's own tests), `modules/<module>/` (libraries' tests copied in), `box/`, and eleven
 kinds of files next to a test (`.skip .vary .cycles .pending .jvm .native .expected .in .def .errors
 .warnings`), read by a harness of 1,000 lines (`IntegrationTest.kt`) that also builds and runs.
 - [ ] One file of settings per test or per directory (`<Name>.test.toml`, or `tests.toml` with a section per
   file) in place of the eleven kinds: skips, varying lines, cycles, pending, JVM options, expected output.
-- [ ] Names that say what each is: `tests/programs/` (was `integration`), `tests/kotlin/` (the standard
-  library's and Native's runtime's), `tests/ktc2/` (ktc2's own common tests, which should grow: most of what the
-  programs check that must hold everywhere), `tests/libraries/<module>/`, `tests/box/`.
 - [ ] The libraries' tests fetched at the module's version, like their sources (a `tests` key in
   `module.ktc2.toml`: the repository and the directories), with only the settings files in the repository. The
   repository loses some 600 copied files and a new version of a library is one line. Or keep them copied:

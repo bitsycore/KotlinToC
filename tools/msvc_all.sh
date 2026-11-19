@@ -36,7 +36,7 @@ for vDir in build/integration/*/; do
 	vNames="$vNames $vName"
 	# A file of tests that builds cycles on purpose (tests/README.md) leaves them allocated.
 	vLeaks="ktc2: leak\|ktc2: .*freed"
-	for vMarker in "$vDir/cycles-allowed" tests/stdlib/"${vName#test-}.cycles" tests/common/"${vName#test-}.cycles"; do [ -f "$vMarker" ] && vLeaks="ktc2: .*freed"; done
+	[ -f "$vDir/cycles-allowed" ] && vLeaks="ktc2: .*freed"
 	# The standard input of the test, when it has one.
 	vInput=
 	for vFile in tests/integration/*/"$vName.in"; do [ -f "$vFile" ] && vInput=$vFile; done
@@ -49,7 +49,10 @@ for vDir in build/integration/*/; do
 		continue
 	fi
 	vSelfChecking=
-	if [ -f "$vDir/program.exe" ]; then
+	# A group of tests (tests/ktc2, tests/stdlib) checks itself, and prints times: only how it ends is compared.
+	if [ -f "$vDir/self-checking" ]; then
+		vSelfChecking=1; vExpected=0
+	elif [ -f "$vDir/program.exe" ]; then
 		"$vDir/program.exe" < "${vInput:-/dev/null}" > "$vDir/gcc.out" 2> "$vDir/gcc.err"; vExpected=$?
 	elif [ ! -f "$vDir/program.out" ]; then
 		vSelfChecking=1; vExpected=0
@@ -61,7 +64,7 @@ for vDir in build/integration/*/; do
 	# Nothing to compare with: what it prints is its own, and only how it ends is checked.
 	[ -n "$vSelfChecking" ] && cp "$vDir/msvc.out" "$vDir/gcc.out"
 	# The lines a file of tests says differ on every run (`<Name>.vary`: a time, an address) are not compared.
-	for vVary in tests/stdlib/"${vName#test-}.vary" tests/common/"${vName#test-}.vary"; do
+	for vVary in tests/integration/*/"$vName.vary"; do
 		[ -f "$vVary" ] || continue
 		while IFS= read -r vPrefix || [ -n "$vPrefix" ]; do
 			vPrefix=${vPrefix%$'\r'}
