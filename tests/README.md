@@ -17,12 +17,12 @@ categories apart; at its end, the steps added over all programs and the run's ow
   `.expected` file, for what only a program shows: `interop/` (C libraries, `.def`), `errors/` (programs ktc2 must
   refuse), `native/` (output that is Kotlin/Native's where the JVM's differs), `process/` (standard input,
   `exitProcess`, a warning of the compiler, threads left running at the end); and the programs of several modules
-  (every directory under it with a `module.ktc2.toml`: `modules/`, `regressions/`);
+  (`projects/`, each a directory with a `module.ktc2.toml`, whose line lists its own files; and `regressions/`);
 - `ktc2` (`tests/ktc2/<topic>/`): ktc2's own tests, written as Kotlin's common tests are, a group for each topic:
   `language`, `numbers`, `text`, `collections`, `objects`, `generics`, `memory`, `threads`, `coroutines`, `values`
   (the `ktc2.` package), `regressions`;
 - `stdlib` (`tests/stdlib/`): the Kotlin standard library's and Kotlin/Native's runtime's own tests, a group;
-- `box` (`tests/box/`): the box tests of the Kotlin compiler;
+- `box` (`tests/box/<folder>/`): the box tests of the Kotlin compiler, a group for each folder of its tree;
 - `modules` (`tests/modules/<module>/<library>/`): the own tests of the bundled libraries, a group each.
 
 The CI job runs `integration`, `ktc2`, and `stdlib` in C only (`KTC2_TEST_NO_JVM=stdlib`: a group of tests checks
@@ -142,8 +142,9 @@ tag that are not about one platform's own API, unchanged:
 
 `box/` holds tests of the Kotlin compiler itself (`compiler/testData/codegen/box` at the same tag),
 which every back end of Kotlin runs, Kotlin/Native's included: each file has a `fun box(): String`
-that returns "OK". The suite writes a `main` that prints what `box()` returns and fails
-otherwise, and runs it in C and on the JVM (`KTC2_TEST_FILTER=tests/box/`). `box/helpers/` is
+that returns "OK". The suite compiles them by folder, a group each: each file copied in a package of its own
+(`build/testmain/box/`), with a `@Test` that prints what `box()` returns and fails otherwise, run in C and on the JVM
+(`KTC2_TEST_FILTER=tests/box/`). The files under `tests/box/` stay as the compiler has them. `box/helpers/` is
 what they import (`import helpers.*`: `EmptyContinuation`, `handleResultContinuation`,
 `StateMachineChecker`), from `compiler/testData/diagnostics/helpers/coroutines`.
 
@@ -209,7 +210,7 @@ sees as a test of the library does, and `jvmTest` (`moduleTestList` in `Integrat
 ## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
 The libraries' own tests (`tests/modules/<module>/`, the category `modules`) run locally; the
-CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,ktc2,stdlib`). The programs on each module (`tests/integration/modules/`) run everywhere.
+CI job leaves them out (`KTC2_TEST_CATEGORIES=integration,ktc2,stdlib`). The programs on each module (`tests/integration/projects/`) run everywhere.
 
 The same, for the other libraries that are bundled modules. `kotlinx-collections-immutable/core/`
 holds `commonTest` of kotlinx.collections.immutable 0.5.2 (from `core/commonTest/src`) and its

@@ -68,7 +68,17 @@ fun main(args: Array<String>) {
 	println("[==========] Running $vRunnable tests from ${vSuites.size} test cases.")
 	println("[----------] Global test environment set-up.")
 	for (vSuite in vSuites) {
-		val vClass = classOf(vSuite.name) ?: throw IllegalStateException("no class ${vSuite.name}")
+		val vClass = classOf(vSuite.name)
+		if (vClass == null) {
+			// Named otherwise on the JVM: its tests fail here, the others still run.
+			System.err.println("no class ${vSuite.name}")
+			for (vName in vSuite.tests) {
+				println("[ RUN      ] ${vSuite.name}.$vName")
+				println("[  FAILED  ] ${vSuite.name}.$vName (0 ms)")
+				vFailed += "${vSuite.name}.$vName"
+			}
+			continue
+		}
 		val vMethods = methodsOf(vClass)
 		val vSuiteIgnored = vClass.isAnnotationPresent(kotlin.test.Ignore::class.java)
 		val vBefore = vMethods.filter { it.isMarked(kotlin.test.BeforeTest::class.java) }.reversed()

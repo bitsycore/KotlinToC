@@ -178,17 +178,16 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * kotlinx.coroutines' group and then the standard library's ran out of it, and took half an hour over one).
 	 */
 	private fun programList(): List<DynamicTest> =
-		((if ("modules" in kCategories) moduleTestList() else emptyList()) + commonTestList())
+		((if ("modules" in kCategories) moduleTestList() else emptyList()) + commonTestList() + (if ("box" in kCategories) boxTestList() else emptyList()))
 			.sortedBy { vGroup -> kHeavyGroups.indexOfFirst { it in vGroup.displayName }.let { if (it < 0) kHeavyGroups.size else it } } +
-			(if ("integration" in kCategories) integrationList() + projectList() else emptyList()) +
-			(if ("box" in kCategories) boxTestList() else emptyList())
+			(if ("integration" in kCategories) integrationList() + projectList() else emptyList())
 
 	/** The groups of tests that take longest, the longest first. */
-	private val kHeavyGroups = listOf("kotlinx-coroutines", "tests/stdlib", "kotlinx-serialization-json-io", "atomicfu", "kotlinx-collections-immutable", "kotlinx-datetime", "kotlinx-serialization/")
+	private val kHeavyGroups = listOf("kotlinx-coroutines", "stdlib", "kotlinx-serialization-json-io", "box/coroutines", "atomicfu", "kotlinx-collections-immutable", "kotlinx-datetime", "kotlinx-serialization/")
 
 	private fun integrationList(): List<DynamicTest> =
 		File("tests/integration").walkTopDown()
-			// A file in the directory of a module (tests/integration/modules/) is a part of that program (kProjects).
+			// A file in the directory of a module (tests/integration/projects/) is a part of that program (kProjects).
 			.filter { it.isFile && it.extension == "kt" && !File(it.parentFile, "module.ktc2.toml").isFile }
 			// KTC2_TEST_FILTER=ported/ runs only the programs whose path contains that text (several, separated by commas).
 			.filter { vSource -> selected(vSource) }
@@ -311,45 +310,59 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * `tests/box/helpers/` (`import helpers.*`). The suite writes a `main` that prints what `box()`
 	 * returns and fails otherwise, and runs it in C and on the JVM.
 	 */
-	private fun boxTestList(): List<DynamicTest> =
-		File("tests/box").walkTopDown()
-			// tests/box/pending holds those that do not pass yet (tests/README.md).
-			.filter { it.isFile && it.extension == "kt" && it.parentFile.name != "helpers" && "pending" !in it.invariantSeparatorsPath.split('/') }
-			.filter { vSource -> selected(vSource) }
-			.sortedBy { it.path }
-			.map { vSource -> named("box/" + vSource.relativeTo(File("tests/box")).invariantSeparatorsPath, "box") { checkBox(vSource) } }
-			.toList()
-
-	private fun checkBox(inSource: File) {
-		mInput = null
-		mWarnings = emptyList()
-		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
-		// A long name is cut, with a hash of the whole: the C files of the program are named after it, and a path of
-		// Windows has at most 260 characters (the checkout of a CI machine is deeper than one's own).
-		val vFull = "box-" + inSource.relativeTo(File("tests/box")).invariantSeparatorsPath.removeSuffix(".kt").replace('/', '-')
-		val vName = if (vFull.length <= 60) vFull else vFull.take(50) + "-" + vFull.hashCode().toUInt().toString(16)
-		val vText = inSource.readText()
-		val vPackage = Regex("(?m)^package\\s+([\\w.]+)").find(vText)?.groupValues?.get(1)
-		// The name of the file of `main` is the name of its class on the JVM: no '-' there.
-		val vMain = File("build/testmain/${vName.replace('-', '_')}.kt").apply { parentFile.mkdirs() }
-		vMain.writeText(
-			(if (vPackage != null) "package $vPackage\n\n" else "") +
-				"fun main() {\n\tval vResult = box()\n\tprintln(vResult)\n\tif (vResult != \"OK\") throw IllegalStateException(\"box() returned \" + vResult)\n}\n"
-		)
-		val vHelpers = if ("helpers" in vText) File("tests/box/helpers").listFiles { vFile -> vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList() else emptyList()
-		// The tests assert with `kotlin.test`: the module kotlin-test in C, with the library, and its jar on the JVM.
-		val vOutDir = File("build/integration/$vName").apply { deleteRecursively() }
-		mCExtra = bundledWithDependencies("kotlin-test", vOutDir).flatMap { com.bitsycore.ktc2.filesOf(it) ?: fail("module kotlin-test could not be had") }
-		mOwnSources = listOf(inSource, vMain) + vHelpers
-		mJvmClasspath = kKotlinTestJar
-		try {
-			verify("tests/box/${inSource.relativeTo(File("tests/box")).invariantSeparatorsPath}", listOf(inSource, vMain) + vHelpers, vOutDir, null)
-		} finally {
-			mCExtra = emptyList()
-			mOwnSources = null
-			mJvmClasspath = ""
-			mAllowsLeaks = false
+	private fun boxTestList(): List<DynamicTest> {
+		val vRoot = File("tests/box")
+		val vHelpers = File(vRoot, "helpers").listFiles { vFile -> vFile.extension == "kt" }?.sortedBy { it.name } ?: emptyList()
+		// tests/box/pending holds those that do not pass yet (tests/README.md).
+		val vFolders = vRoot.walkTopDown().onEnter { it.name != "pending" && it.name != "helpers" }.filter { it.isDirectory }
+			.filter { vFolder -> vFolder.listFiles { vFile -> vFile.isFile && vFile.extension == "kt" }?.isNotEmpty() == true }.sortedBy { it.path }.toList()
+		val vGroups = ArrayList<TestGroup>()
+		for (vFolder in vFolders) {
+			val vFiles = vFolder.listFiles { vFile -> vFile.isFile && vFile.extension == "kt" }!!.sortedBy { it.name }
+			val (vTests, vOthers) = split(vFiles) ?: continue
+			val vRelative = vFolder.relativeTo(vRoot).invariantSeparatorsPath
+			val vGroup = TestGroup("box/$vRelative", vFolder, "box-" + vRelative.replace('/', '-'), vTests, vOthers + vHelpers)
+			// Each file in a package of its own (they all declare `box()`), with a test that calls it: as its `main` did.
+			for (vFile in vTests + vOthers) {
+				val vPackage = "boxtest." + (vRelative + "/" + vFile.nameWithoutExtension).split('/', '-', '.').joinToString(".") { vPart ->
+					vPart.replace(Regex("[^A-Za-z0-9_]"), "_").let { if (it.first().isDigit()) "_$it" else it }.lowercase()
+				}
+				vGroup.copies[vFile] = File("build/testmain/box/$vRelative/${vFile.name}").apply {
+					parentFile.mkdirs()
+					writeText(inPackage(vFile.readText(), vPackage) + "\n@kotlin.test.Test\nfun boxTest() {\n\tval vResult = box()\n\tprintln(vResult)\n" +
+						"\tif (vResult != \"OK\") throw IllegalStateException(\"box() returned \" + vResult)\n}\n")
+				}
+			}
+			vGroups += vGroup
 		}
+		return vGroups.map { vGroup -> named(vGroup.name, "box") { checkGroup(vGroup) } }
+	}
+
+	/**
+	 * [inText] in the package [inPackage], put after the comments and `@file:` annotations at its top; a file that has a
+	 * package of its own keeps it (it may name its own declarations by it: `a.b.BatchInfo1::class`).
+	 */
+	private fun inPackage(inText: String, inPackage: String): String {
+		val vLines = inText.lines().toMutableList()
+		if (vLines.any { it.startsWith("package ") }) return inText
+		var vInComment = false
+		var vInsert = vLines.size
+		for ((vIndex, vLine) in vLines.withIndex()) {
+			val vText = vLine.trim()
+			if (vInComment) {
+				if ("*/" in vText) vInComment = false
+				continue
+			}
+			if (vText.startsWith("/*")) {
+				vInComment = "*/" !in vText
+				continue
+			}
+			if (vText.isEmpty() || vText.startsWith("//") || vText.startsWith("@file:")) continue
+			vInsert = vIndex
+			break
+		}
+		vLines.add(vInsert, "package $inPackage\n")
+		return vLines.joinToString("\n")
 	}
 
 	// ==================
@@ -629,6 +642,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		System.setProperty("ktc2.moduleOptIn", vProject.optIn.joinToString("\n"))
 		// As a command compiles it: the modules' files with the library, the program's own on top.
 		mOwnSources = vProject.ownSources
+		// Its own files, for the log to show under it (build.gradle.kts): what it was compiled from besides its modules.
+		functionsFile().apply { parentFile.mkdirs() }.writeText(vProject.ownSources.filter { it.extension == "kt" }
+			.joinToString("\n") { "ok " + it.relativeTo(inDirectory).invariantSeparatorsPath })
 		try {
 			verify(vName, vProject.sources.toList(), vOutDir, null)
 		} finally {

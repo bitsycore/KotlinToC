@@ -1059,6 +1059,8 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   `@Test` files of `tests/ktc2/<topic>/`, a package each (146 programs; `ported/` dissolved; small files of one subject
   merged, 132 files); what only a whole program shows stayed (`interop`, `errors`, `native`, `process`). The log names
   each line by its category and path, lists each group's files, and ends with the run's time.
+  Then the box tests by folder (each file copied in a package of its own with a `@Test` that checks `box()`; the
+  files themselves stay as the compiler has them), and the programs of several modules under `integration/projects/`.
 
 
 ---------------------------------------------------------------------------

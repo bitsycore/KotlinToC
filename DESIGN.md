@@ -782,7 +782,7 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
     `unistd.h`, `sys/stat.h`, `dirent.h`; on Windows `io.h` and `direct.h` too), and
     `kotlinx.cinterop` has `convert()` and `UnsafeNumber`, as Kotlin/Native's.
 - The test suite compiles such a program for the JVM with the library's JVM jars instead of
-  the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `tests/integration/modules/kotlinx-io`.
+  the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `tests/integration/projects/kotlinx-io`.
 - Output goes to `<module>/build` (or `./out`, or `-o`): `c/` with one `.h`/`.c` per unit
   under its package (a unit is a class, the top-level declarations of one file as `<File>Kt`,
   a lambda, or the box of a `@Struct`), `ktc2_core.h/.c`, `ktc2_config.h` (what this program
@@ -842,14 +842,15 @@ is compiled and run on the JVM; the outputs must be equal and nothing may leak.
   and the first lines of the program say so; `<Name>.def` is the C library of the test;
   `<Name>.in` its standard input.
 - A program of several files is a directory with a `module.ktc2.toml` under
-  `tests/integration/modules/`, named in `kProjects` of `IntegrationTest.kt`.
+  `tests/integration/projects/`, named in `kProjects` of `IntegrationTest.kt`.
 - The log (`compiler/build.gradle.kts`) has a line for each program and group with the time of its four steps, in this
   order: the Kotlin front end (Kotlin → IR, `K2Frontend.lastFrontEndNanos`), ktc2's translation (IR → C), the C
   compiler and linker, and the run; under a group, each of its files; the summary adds each step up, and gives the
   run's own time. The first
   program of each process carries the analysis of the library in its first step.
 - The suite is in five categories (`KTC2_TEST_CATEGORIES`), one for each folder under `tests/`: `integration` (whole
-  programs), `ktc2` (ktc2's own tests by topic), `stdlib`, `box` and `modules`. `KTC2_TEST_NO_JVM` names categories run
+  programs), `ktc2` (ktc2's own tests by topic), `stdlib`, `box` (a group for each folder: each file copied in a package
+  of its own, with a test that checks its `box()`) and `modules`. `KTC2_TEST_NO_JVM` names categories run
   in C only; the CI job runs `integration`, `ktc2`, and `stdlib` in C only.
 - Test builds (`KTC2_LEAK_CHECK`) fill a freed object with `0xDD` and keep the last few
   thousand of them aside: a retain or a release of one ends the program with "use of a freed

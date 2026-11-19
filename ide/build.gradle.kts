@@ -18,7 +18,7 @@ compiles the programs of tests/integration/ for the JVM (`:ide:compileIntegratio
   as few parts as keep every name once in each (`partsOf`); a new program goes in the first part
   where its names are free. The groups that are C and not JVM (`interop`, which uses C libraries;
   `errors`, programs that must be refused) are left out, and so are the programs of several
-  modules (`tests/integration/modules/`), each a project of its own for ktc2.
+  modules (`tests/integration/projects/`), each a project of its own for ktc2.
 */
 
 plugins {
@@ -62,7 +62,7 @@ fun partsOf(inFiles: List<File>): List<List<File>> {
 	return vParts.map { it.second }
 }
 
-val kGroups = File(kRoot, "tests/integration").listFiles { vFile -> vFile.isDirectory && vFile.name !in setOf("interop", "errors", "modules", "regressions") }!!.sortedBy { it.name }
+val kGroups = File(kRoot, "tests/integration").listFiles { vFile -> vFile.isDirectory && vFile.name !in setOf("interop", "errors", "projects", "regressions") }!!.sortedBy { it.name }
 
 sourceSets {
 	create("stdlib") {

@@ -91,7 +91,10 @@ private fun isMarkedFunction(inFunction: IrSimpleFunction, inAnnotation: String)
 
 /** The name Kotlin gives the class of a file's top-level declarations: `pkg.NameKt`. */
 private fun facadeName(inFile: IrFile): String {
-	val vName = File(inFile.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() } + "Kt"
+	// As Kotlin names it for the JVM: an identifier (`32defaults.kt` is `_32defaultsKt`).
+	val vBase = File(inFile.fileEntry.name).nameWithoutExtension.replaceFirstChar { it.uppercase() }
+		.map { if (Character.isJavaIdentifierPart(it)) it else '_' }.joinToString("")
+	val vName = (if (vBase.isEmpty() || !Character.isJavaIdentifierStart(vBase[0])) "_$vBase" else vBase) + "Kt"
 	val vPackage = inFile.packageFqName.asString()
 	return if (vPackage.isEmpty()) vName else "$vPackage.$vName"
 }
