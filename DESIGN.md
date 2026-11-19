@@ -358,7 +358,14 @@ objects), in the same step. Only the head is looked at from the start: the other
 `KTC2_RING_TRACE=1` in a debug build says why a ring is not freed and who holds it. kotlinx.coroutines
 declares the lists of a job's handlers (`LockFreeLinkedListHead: LockFreeLinkedListNode, Removed`): on
 `Dispatchers.Default`, 20,000 cancellations take about 0.2 s instead of 0.1 s without it (a check when
-each job's list goes), 100,000 `async` the same. `CycleLint` warns at compile time about the other classes that can reach
+each job's list goes), 100,000 `async` the same.
+Declared cycles and rings can hold one another in more than one cycle: a knot (a job whose result is one of its own
+handlers, boxed as its state, which names the job, while the node `await` left in the job's list names it too). Each
+class of a declared cycle is then of a group as well (`KClass.isKnotMember`, `ktc2_TypeInfo.knot`): its check, when
+its own cycle holds it and something more does (`__collect` returns -1), walks over the classes of knots and rings
+(`ktc2_knot_collect`); and the check of a ring that failed from a node that is of a declared cycle too, held by
+nothing outside the ring, walks again over both, within 12 objects. A busy node is held by its job, from outside:
+its check stays the ring's, and the cost of rings is what it was. `CycleLint` warns at compile time about the other classes that can reach
 themselves through strong references; `@Weak` (on a property, or on an `inner` class for its
 outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner

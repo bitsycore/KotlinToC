@@ -1046,6 +1046,14 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   from the program ("No override for ... removeFirst"): the call went to the member Java 21 gives every List. The
   front end now sees the JDK's API as of Java 17 (`-Xjdk-release=17`), as a program on Kotlin/Native sees none:
   `removeFirst`, `getFirst`, `reversed` are the library's extensions there. `regressions/ArrayListRemoveFirst.kt`.
+- 2026-11-19, `PLAN.md` 2.1, the owner's choice (a): knots. A job whose result is one of its own handlers was held
+  by its declared cycle and by the node `await` left in its list (a ring): neither check freed it. The bounded check
+  of rings now follows the classes of declared cycles too, from a check that found its object held by its cycle and
+  by more, or from a node of a declared cycle the ring check found held only by its ring (12 objects at most); a
+  busy node is held by its job, and walks no further. A first version that let every ring check follow them made
+  `async` 30% slower; this one is at the cost it had. `regressions/coroutines-incomplete-async`, without
+  `program.cycles` now. Still leaking (PLAN.md 2.2): the other tests of `AsyncTest` and 26 files, whose garbage is
+  never seen whole from where a check starts (the deferred does not reach the old list that names it).
 
 
 ---------------------------------------------------------------------------

@@ -42,19 +42,8 @@ few that state a difference the owner's rule accepts (section 8), and no `.cycle
 Kotlin/Native's collector would). What stands between, in the order to do it:
 
 ### 2.1 Bugs found and not fixed (half a day)
-- [ ] The cycle declared for a job whose result is one of its own handlers
-  (`JobSupport._state -> IncompleteStateBox.state -> JobNode.job`) does not free it (`AsyncTest`;
-  `regressions/coroutines-incomplete-async`, whose `program.cycles` says so until it is answered). Found
-  2026-11-19: it is not one cycle but a knot. The deferred is held by the node its result boxes (the declared pair)
-  and also by the node `await` left in its list of handlers (`ResumeAwaitOnCompletion.job`); that list is a ring
-  (declared), and the node of the result, though disposed, still links into it. The pair check finds the deferred
-  held twice from inside, the ring check finds a member held from outside (the box). Options: (a) the bounded
-  check of rings (`ktc2_ring_collect`, 32 objects) run from a declared pair's head too, over the whole knot: a group
-  is freed when only its own objects hold it, whatever the shape (close to 7.1, without its cost on every release);
-  (b) an edit: a node a finished job invoked lets go of its job (`dispose()` of such a node then does nothing, as on
-  a finished job already). Recommended (a): it is what (b) would have to be done again for each such knot.
-  `WithTimeoutTest` leaves another: `lambda.F_t_3 -> TimeoutCoroutine.uCont -> lambda` (a suspend lambda's frame
-  holds the coroutine that holds it as its continuation).
+- [ ] `WithTimeoutTest` leaves `lambda.F_t_3 -> TimeoutCoroutine.uCont -> lambda` (a suspend lambda's frame holds the
+  coroutine that holds it as its continuation).
 - [ ] `Any().hashCode() != Any().hashCode()` (`HashCodeNativeTest.hashCodeOfAny`): the first object is freed before
   the second is made, which takes its address, and the identity hash is the address. The suite's test builds keep
   freed objects aside before reuse, so it passes there; a release build of `ktc2 test tests/stdlib` fails it. The header
@@ -63,6 +52,13 @@ Kotlin/Native's collector would). What stands between, in the order to do it:
 
 ### 2.2 kotlinx.coroutines' cycles (3 to 5 days)
 The 16 files of the library's own structures, by kind (each file's `.cycles` names it):
+- [ ] Knots whose garbage is never seen whole from where a check starts (2026-11-19; most of `AsyncTest`'s, after the
+  knots of `regressions/coroutines-incomplete-async` were answered): a deferred that ended with an exception (a declared
+  cycle) is named by the node `await` left in its old list of handlers (a ring). When the list goes, the deferred is
+  still held by the test; when the test lets go, the check starts from the deferred, which does not reach the list.
+  Proposal: a check that fails only because a member is held from outside leaves a note on that member (a bit of the
+  count, which has 28), and that member's next release checks again from where the first started (kept in a small
+  table, its entry dropped when the start goes).
 - [ ] A coroutine of a channel (`produce`, and flows built on it) cancelled: its exception is kept both as its
   state and as the channel's cause of closing, and names the coroutine. Two cycles through one object; neither
   declared cycle frees it, and a ring of the four classes made it worse (tried, taken out). Options: a check
