@@ -264,6 +264,11 @@ object K2Frontend {
 			// program's output.
 			add("-d"); add(File(kLibraryDir, "jvm-unused").path)
 			add("-no-stdlib"); add("-no-reflect")
+			// The JDK's API as of Java 17, before SequencedCollection: a program has no JDK, and on Kotlin/Native
+			// `list.removeFirst()`, `getFirst()`, `reversed()` are the library's extensions, not the members Java 21
+			// gives every List (`reversed()` there is a view, not a copy). The members also had no override in
+			// ktc2's ArrayList when the library was compiled apart from the program.
+			add("-Xjdk-release=17")
 			add("-cp"); add(listOf(filteredStdlib(vLibrary).path, if (vKeepsLibrary) keptCopy(codeSourceOf(ktc2.Struct::class.java)) else codeSourceOf(ktc2.Struct::class.java)).joinToString(File.pathSeparator))
 			add("-Xplugin=${pluginClasspath(usesSerialization(inGivenSources))}")
 			// KTC2_TIMING: also the compiler's own account of its phases.
