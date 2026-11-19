@@ -171,11 +171,19 @@ abstract class IntegrationPart(private val mShard: Int) {
 		return vFilter.split(',').any { it.isNotEmpty() && it in inSource.invariantSeparatorsPath }
 	}
 
+	/**
+	 * Every program of the run. The groups of tests come first, the heaviest first: the parts take the programs by their
+	 * place in the list, so each part gets at most one of them, and gets it while its memory is fresh (a part that met
+	 * kotlinx.coroutines' group and then the standard library's ran out of it, and took half an hour over one).
+	 */
 	private fun programList(): List<DynamicTest> =
-		(if ("integration" in kCategories) integrationList() + projectList() else emptyList()) +
-			(if ("kotlin" in kCategories) commonTestList() else emptyList()) +
-			(if ("box" in kCategories) boxTestList() else emptyList()) +
-			(if ("libraries" in kCategories) moduleTestList() else emptyList())
+		((if ("libraries" in kCategories) moduleTestList() else emptyList()) + (if ("kotlin" in kCategories) commonTestList() else emptyList()))
+			.sortedBy { vGroup -> kHeavyGroups.indexOfFirst { it in vGroup.displayName }.let { if (it < 0) kHeavyGroups.size else it } } +
+			(if ("integration" in kCategories) integrationList() + projectList() else emptyList()) +
+			(if ("box" in kCategories) boxTestList() else emptyList())
+
+	/** The groups of tests that take longest, the longest first. */
+	private val kHeavyGroups = listOf("kotlinx-coroutines", "tests/stdlib", "kotlinx-serialization-json-io", "atomicfu", "kotlinx-collections-immutable", "kotlinx-datetime", "kotlinx-serialization/")
 
 	private fun integrationList(): List<DynamicTest> =
 		File("tests/integration").walkTopDown()

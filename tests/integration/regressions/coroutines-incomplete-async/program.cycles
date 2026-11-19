@@ -1,0 +1,3 @@
+Known leak (PLAN.md 2.1): the deferred is held by the node its result boxes (the declared pair) and by the node await
+left in its list of handlers (ResumeAwaitOnCompletion.job), a ring the disposed node still links to: neither the
+declared cycle nor the declared ring frees the whole. Take this file out once it is answered.

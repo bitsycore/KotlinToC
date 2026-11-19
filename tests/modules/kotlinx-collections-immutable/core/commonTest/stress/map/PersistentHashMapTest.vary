@@ -1,2 +1,2 @@
 Largest persistent
-Execution time:
+/(#{20} )?Execution time: .*/
