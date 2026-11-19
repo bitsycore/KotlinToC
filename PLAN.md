@@ -42,16 +42,19 @@ few that state a difference the owner's rule accepts (section 8), and no `.cycle
 Kotlin/Native's collector would). What stands between, in the order to do it:
 
 ### 2.1 Bugs found and not fixed (half a day)
-- [ ] `ArrayList(listOf(1, 2, 3)).removeFirst()` in a program crashes Kotlin's compiler inside ktc2
-  (`SpecialFakeOverrideSymbolsResolver`: "No override for ... removeFirst" in ktc2's `ArrayList`). The member
-  the JDK gives `java.util.ArrayList` has no counterpart in ktc2's class; hide it (`hidden.txt`) or declare it.
 - [ ] The cycle declared for a job whose result is one of its own handlers
-  (`JobSupport._state -> IncompleteStateBox.state -> JobNode.job`) does not free it
-  (`AsyncTest`, `WithTimeoutTest`): `KTC2_CYCLES=1` and the generated `__collect` to read.
-- [ ] A reference not counted under threads: `CombineStressTest.testCancellation` of kotlinx.coroutines
-  (`flatMapLatest { combine(...) }` on `Dispatchers.Default`) ends with "use of a freed object" in most runs (13 of
-  15 with the compiler of 2026-11-19, as a program of its own; 3 of 15 in the group). Left out by a `.skip` until
-  fixed. `SemaphoreStressTest` failed once in some 40 runs ("Inconsistent state null"): maybe the same.
+  (`JobSupport._state -> IncompleteStateBox.state -> JobNode.job`) does not free it (`AsyncTest`;
+  `regressions/coroutines-incomplete-async`, whose `program.cycles` says so until it is answered). Found
+  2026-11-19: it is not one cycle but a knot. The deferred is held by the node its result boxes (the declared pair)
+  and also by the node `await` left in its list of handlers (`ResumeAwaitOnCompletion.job`); that list is a ring
+  (declared), and the node of the result, though disposed, still links into it. The pair check finds the deferred
+  held twice from inside, the ring check finds a member held from outside (the box). Options: (a) the bounded
+  check of rings (`ktc2_ring_collect`, 32 objects) run from a declared pair's head too, over the whole knot: a group
+  is freed when only its own objects hold it, whatever the shape (close to 7.1, without its cost on every release);
+  (b) an edit: a node a finished job invoked lets go of its job (`dispose()` of such a node then does nothing, as on
+  a finished job already). Recommended (a): it is what (b) would have to be done again for each such knot.
+  `WithTimeoutTest` leaves another: `lambda.F_t_3 -> TimeoutCoroutine.uCont -> lambda` (a suspend lambda's frame
+  holds the coroutine that holds it as its continuation).
 - [ ] `Any().hashCode() != Any().hashCode()` (`HashCodeNativeTest.hashCodeOfAny`): the first object is freed before
   the second is made, which takes its address, and the identity hash is the address. The suite's test builds keep
   freed objects aside before reuse, so it passes there; a release build of `ktc2 test tests/stdlib` fails it. The header

@@ -1035,6 +1035,17 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   an inline function inside itself lost the target of its outer `return`, a property a module makes weak gave its
   cell through its default getter, a dispatcher of a function returning `Nothing` returned a value
   (`tests/integration/regressions/`, a new place for them).
+- 2026-11-19, found by the tests by group: kotlinx.coroutines' `CombineStressTest.testCancellation` used a freed
+  object in most runs (13 of 15). ktc2's edit of `DispatchedContinuation.release()`, which set the continuation kept
+  for reuse to null to cut a cycle, broke the library's protocol of claiming it (a claim made meanwhile found null:
+  "Inconsistent state null", and the coroutine ran on two threads). The edit is gone, and no cycle came back in the
+  library's tests. Also: the C of a suspension point wrote and read the coroutine's fields after the call returned
+  `COROUTINE_SUSPENDED`, when another thread may run it already; the result is now tested in a C local and that path
+  returns at once (`CEmitter.suspendingResult`). `regressions/coroutines-combine-cancel`.
+- 2026-11-19, `PLAN.md` 2.1: `ArrayList(...).removeFirst()` stopped Kotlin's compiler when the library was kept apart
+  from the program ("No override for ... removeFirst"): the call went to the member Java 21 gives every List. The
+  front end now sees the JDK's API as of Java 17 (`-Xjdk-release=17`), as a program on Kotlin/Native sees none:
+  `removeFirst`, `getFirst`, `reversed` are the library's extensions there. `regressions/ArrayListRemoveFirst.kt`.
 
 
 ---------------------------------------------------------------------------
@@ -2358,7 +2369,8 @@ database (`kotlinx-datetime-zoneinfo`) has no sources: it is compiled for the we
   and a closed empty list of handlers. Then answered (`modules/kotlinx-coroutines`): the cached `Removed` is
   not cached (`LockFreeLinkedList.kt.edit`); a job node that resumes a continuation lets go of it once it has
   (`JobSupport.kt.edit`: a node is invoked once); a `DispatchedContinuation` lets go of the continuation it
-  keeps for reuse when it is released (`DispatchedContinuation.kt.edit`); a segment refers to its channel
+  keeps for reuse when it is released (`DispatchedContinuation.kt.edit`, taken out on 2026-11-19: it broke the
+  library's protocol of reuse, see section 12); a segment refers to its channel
   weakly (`weak`: whoever sends or receives through it holds the channel); a coroutine's `context` is made
   when it is read, `parentContext.minusKey(Job) + this`, equal to what it was (`AbstractCoroutine.kt.edit`:
   only two reads are no longer the same object, which `withContext` and a flow's collector use as a

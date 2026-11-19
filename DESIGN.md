@@ -512,7 +512,11 @@ of its own.
   handed a local (`ArcInsert`: the local would be cleared after the call, which the inner run
   does not wait for); and the emitter moves the test for `COROUTINE_SUSPENDED` to right after the
   call (`withTestsAfterCalls`), before what the other passes put there (the release of the
-  call's arguments, the test for an exception). The run that made the call then only returns;
+  call's arguments, the test for an exception). The run that made the call then only returns,
+  touching nothing of the coroutine: the call's result is tested in a C local, and only when it is
+  not the marker does it go to its field (`suspendingResult`), since another thread may be running the
+  coroutine already, and may have ended and freed it (a field of the result set without a release is
+  set to the marker before the call, so that the resume label's assignment finds its own value there);
   what followed the call runs once, in whichever run goes on (its releases also on resuming,
   and in the cleanup of the case N). A coroutine created and then resumed with an exception
   (`createCoroutine(...).resumeWithException(e)`) throws it before its first statement.
