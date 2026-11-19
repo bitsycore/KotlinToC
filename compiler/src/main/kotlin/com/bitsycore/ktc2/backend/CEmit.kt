@@ -888,7 +888,52 @@ class CEmitter(private val mModule: KModule) {
 		private var mFlatChains = 0
 
 		fun block(inStatements: List<KStmt>, inDepth: Int) {
-			inStatements.forEach { statement(it, inDepth) }
+			var vIndex = 0
+			while (vIndex < inStatements.size) {
+				val vNext = inStatements.getOrNull(vIndex + 1)
+				if (vNext is KIf && suspendingResult(inStatements[vIndex], vNext, inDepth)) {
+					statement(vNext, inDepth)
+					vIndex += 2
+				} else {
+					statement(inStatements[vIndex], inDepth)
+					vIndex++
+				}
+			}
+		}
+
+		/**
+		 * The value of a call that may suspend ([inStatement]), followed by its test for `COROUTINE_SUSPENDED` ([inTest]),
+		 * in a state machine: the value is tested in a C local, and when it is the marker the function returns at once.
+		 * Once the call has returned so, another thread may be running the coroutine already (resumed inside the call,
+		 * from the resume label), and may have ended it and freed it: this run touches nothing of it, not even the field
+		 * of the value. The field gets the value when the call did not suspend; a field set without releasing its old
+		 * value is set to the marker before the call, so that the assignment the resume label makes finds no value
+		 * there that is not its own. True when written so; false leaves both statements as they are.
+		 */
+		private fun suspendingResult(inStatement: KStmt, inTest: KIf, inDepth: Int): Boolean {
+			if (frame == null) return false
+			val vLocal: KLocal
+			val vValue: KExpr
+			val vReleasesOld: Boolean
+			when (inStatement) {
+				is KLet -> { vLocal = inStatement.local; vValue = inStatement.init ?: return false; vReleasesOld = false }
+				is KSet -> { vLocal = inStatement.local; vValue = inStatement.value; vReleasesOld = inStatement.releasesOld }
+				else -> return false
+			}
+			if (frame?.containsKey(vLocal) != true || !(vLocal.type is KRefType || vLocal.type == KObjType)) return false
+			val vCondition = inTest.condition as? KRefEquals ?: return false
+			if ((vCondition.left as? KRead)?.local != vLocal) return false
+			if (inTest.thenBlock.none { it is KIf && it.condition.isSuspendPoint() }) return false
+			need(vLocal.type)
+			val vSlot = localText(vLocal)
+			val vMarker = bare(expr(vCondition.right))
+			if (!vReleasesOld) line(inDepth, "$vSlot = (${cType(vLocal.type)})($vMarker);")
+			line(inDepth, "{")
+			line(inDepth + 1, "${cType(vLocal.type)} ktc2_suspending = ${bare(expr(vValue))};")
+			line(inDepth + 1, "if ((void*)ktc2_suspending == (void*)($vMarker)) return $vMarker;")
+			line(inDepth + 1, if (vReleasesOld) "KTC2_ASSIGN($vSlot, ktc2_suspending);" else "$vSlot = ktc2_suspending;")
+			line(inDepth, "}")
+			return true
 		}
 
 		private fun line(inDepth: Int, inText: String) {

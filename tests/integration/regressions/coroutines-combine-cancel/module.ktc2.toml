@@ -1,0 +1,2 @@
+name         = "coroutines-combine-cancel"
+dependencies = ["kotlinx-coroutines"]
