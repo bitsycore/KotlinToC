@@ -2743,7 +2743,8 @@ static DWORD WINAPI thread_main(LPVOID argument)
 
 int64_t ktc2_threadStart(ktc2_Obj* thread)
 {
-	ktc2_threaded = 1;
+	/* Written once, before any other thread exists: the others only read it. */
+	if (!ktc2_threaded) ktc2_threaded = 1;
 	ktc2_retain(thread);
 	ktc2_atomic_add(&threads_running, 1);
 	HANDLE handle = CreateThread(NULL, 0, thread_main, thread, 0, NULL);
@@ -2780,7 +2781,8 @@ int64_t ktc2_threadStart(ktc2_Obj* thread)
 {
 	pthread_t created;
 	int64_t handle = 0;
-	ktc2_threaded = 1;
+	/* Written once, before any other thread exists: the others only read it. */
+	if (!ktc2_threaded) ktc2_threaded = 1;
 	ktc2_retain(thread);
 	ktc2_atomic_add(&threads_running, 1);
 	if (pthread_create(&created, NULL, thread_main, thread) != 0) fail("kotlin.OutOfMemoryError", "unable to create native thread");

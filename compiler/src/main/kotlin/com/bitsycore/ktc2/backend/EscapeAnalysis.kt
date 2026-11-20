@@ -31,7 +31,8 @@ private const val kStackArrayLimit = 64
  * constant size.
  *
  * It also covers the object a function *returns*. A function whose result is always the one
- * object it allocates, and which lets it go nowhere else, gets a second form that builds the
+ * object it allocates, and which lets it go nowhere else (nor through an object that holds it and
+ * escapes: a job that holds the future it returns, put in a queue), gets a second form that builds the
  * object in room supplied by the caller (`make__into(slot, …)`). A call whose result stays in
  * its block then passes a slot of its own stack frame, and the object is never on the heap.
  * A dispatcher has such a form when an implementation behind it has: the caller's slot is
@@ -574,18 +575,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 					}
 				}
 			}
-			// The locals whose object goes somewhere else than back to the caller: kept, copied into one
-			// that is, or held by one that is.
-			val vKept = HashSet(mKept)
-			do {
-				var vGrew = false
-				for (vEdges in listOf(mFlows, mHeldBy)) {
-					for ((vSource, vTargets) in vEdges) if (vSource !in vKept && vTargets.any { it in vKept }) {
-						vKept += vSource
-						vGrew = true
-					}
-				}
-			} while (vGrew)
+			val vKept = keptAll()
 			// A reference copied into a local that escapes escapes too; so does one held by an object that
 			// escapes - unless that object only goes back to the caller: what it holds is then held by
 			// the result, which the caller follows.
@@ -645,6 +635,21 @@ class EscapeAnalysis(private val mModule: KModule) {
 				if (vParam !in mEscaping && mParamHeld.getOrPut(vParam) { HashSet() }.addAll(vHolds)) mChanged = true
 			}
 			return mChanged
+		}
+
+		/** The locals whose object goes somewhere else than back to the caller: kept, copied into one that is, or held by one that is. */
+		private fun keptAll(): Set<KLocal> {
+			val vKept = HashSet(mKept)
+			do {
+				var vGrew = false
+				for (vEdges in listOf(mFlows, mHeldBy)) {
+					for ((vSource, vTargets) in vEdges) if (vSource !in vKept && vTargets.any { it in vKept }) {
+						vKept += vSource
+						vGrew = true
+					}
+				}
+			} while (vGrew)
+			return vKept
 		}
 
 		/** Every local the object first held by [inLocal] may be referred to through: its copies, the objects that hold it, and theirs. */
@@ -800,10 +805,12 @@ class EscapeAnalysis(private val mModule: KModule) {
 				val vSources = sourcesOf(vValue)
 				if (vSources.isEmpty() || !vAliases.containsAll(vSources)) return null
 			}
-			// Each of those locals holds that object and nothing else, and none lets it go elsewhere.
+			// Each of those locals holds that object and nothing else, and none lets it go elsewhere: nor does an object
+			// that holds it (a job that holds the future it returns, put in a queue another thread takes it from).
 			val vAssignments = HashMap<KLocal, Int>()
 			countAssignments(mFunction.body, vAssignments)
-			if (vAliases.any { vAssignments[it] != 1 || it in mKept || it in mFunction.params }) return null
+			val vKept = keptAll()
+			if (vAliases.any { vAssignments[it] != 1 || it in vKept || it in mFunction.params }) return null
 			val vClass = builtClass(vLet.init) ?: return null
 
 			val vSlot = KLocal("ktc2_slot", KClassType(vClass))
