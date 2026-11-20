@@ -124,7 +124,7 @@ ends what is printed waits for what is printed next, as in the JVM's stream.
 | static | string literals, `object`s, enum entries, the boxes of small numbers (-128..127 as `Int` or `Long`, characters below 128, the two Booleans, as the JVM keeps them) |
 | the frame | escape analysis shows it does not leave its block: objects, arrays of constant size up to 64 elements, arrays of run-time size up to 256 bytes, strings built from templates up to 128 bytes |
 | inside its owner | a `@Value` or `@Size(n)` field; a `@Struct` anywhere |
-| the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller. A variable that is given such a result again and again while it still holds the one before (`place = place + step`) has two rooms in the frame of its function, and each call builds in the one that holds no object in use (`ktc2_slot_reuse`: the count in the header says so); with both in use the function is handed no room and makes a heap object. A dispatcher has one too when an implementation behind it has: the caller's slot is then room for the largest of the classes they build (a `union`), and the dispatcher marks it for the implementation it calls (`KFunction.slotClasses`); the implementations without such a form return a heap object as before. This is what keeps the iterator of `for (x in list)` in the frame when `list` is a parameter that receives several classes |
+| the caller's frame | a function that returns a new object has a second form, `name__into(slot, ...)`, that builds it in a slot of the caller, when it lets that object go nowhere else: neither itself nor through an object that holds it and goes elsewhere (a job that holds the future it returns, put in a worker's queue, which another thread completes and releases: `regressions/ResultHeldByKept.kt`). A variable that is given such a result again and again while it still holds the one before (`place = place + step`) has two rooms in the frame of its function, and each call builds in the one that holds no object in use (`ktc2_slot_reuse`: the count in the header says so); with both in use the function is handed no room and makes a heap object. A dispatcher has one too when an implementation behind it has: the caller's slot is then room for the largest of the classes they build (a `union`), and the dispatcher marks it for the implementation it calls (`KFunction.slotClasses`); the implementations without such a form return a heap object as before. This is what keeps the iterator of `for (x in list)` in the frame when `list` is a parameter that receives several classes |
 | an arena | allocated inside `arena(size) { }` |
 | the heap | everything else |
 
@@ -802,6 +802,8 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
   optimization where the compiler has it): a class is one C file, and its small functions are
   only inlined into the others this way. `KTC2_LTO=0`, or `-DKTC2_LTO=OFF` for CMake, turns it
   off; with clang on Windows it needs LLVM's linker, and is used when `lld-link` is on the path.
+- `tools/msvc_all.sh` compiles a program of more than 1,000 C files (the stdlib's tests) in parts of 100 with `cl -MP`:
+  as one file, MSVC's optimizer took hours.
 - With clang on Windows every build links with `lld-link` when it is on the path
   (`windowsLinker`): Microsoft's `link.exe` refuses a line of 131072 characters in the command
   file clang writes it, which the 4,700 objects of the stdlib's tests pass. CMake's MSVC build

@@ -1067,6 +1067,16 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   as a plain one; it reads it through the cell now. What the base has because of coroutines, looked at again: the
   declared cycles, rings and knots are opt-in (nothing for a program none of whose modules declares one), and the knots
   are still what frees `regressions/coroutines-incomplete-async`.
+- 2026-11-20, the CI jobs on Windows: clang links with `lld-link` when it is on the path (Microsoft's `link.exe` refuses
+  the 4,700 objects of the stdlib's tests in one line of its command file); `tools/msvc_all.sh` compiles with
+  `/bigobj` and a program of more than 1,000 C files in parts (100 files each; one file took hours, parts of 500 more
+  than the job's 90 minutes), with a line for each program and its times.
+- 2026-11-20, the escape analysis gave an in-place form (`__into`) to a function whose new object was held by another
+  one that escapes (`Worker.requestTermination()`: its future in a job of the worker's queue). The future was then in
+  the caller's frame, counted without atomics there and by the worker's thread: a leak in some runs of
+  `native/Workers.kt` on Linux, found with ThreadSanitizer. The form now asks the closure of what is kept, as the
+  summary did. `tests/ktc2/regressions/ResultHeldByKept.kt` shows it without threads (the list read a dead frame).
+  The runtime writes `ktc2_threaded` once only.
 
 
 ---------------------------------------------------------------------------
