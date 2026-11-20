@@ -43,8 +43,16 @@ for vDir in build/integration/*/; do
 	vOptions=$(grep "^cflag=" "$vDir/ktc2_build.txt" | cut -d= -f2- | tr '\n' ' ')
 	# The libraries a program links with, as gcc names them (-ladvapi32), are MSVC's .lib files (advapi32.lib).
 	vLibraries=$(grep "^ldflag=-l" "$vDir/ktc2_build.txt" | cut -d= -f2- | sed 's/^-l\(.*\)$/\1.lib/' | tr '\n' ' ')
+	# A large program (the stdlib's tests: 4,700 files) as one file takes cl hours on one thread: its files go
+	# into parts of 500, which cl compiles on every processor (-MP).
+	rm -f "$vDir"/c/ktc2_part_*.c
+	vSources=ktc2_all.c
+	if [ "$(grep -c '^#include' "$vDir/c/ktc2_all.c")" -gt 1000 ]; then
+		awk -v d="$vDir/c" '/^#include/ { f = sprintf("%s/ktc2_part_%02d.c", d, int(n++ / 500)); print >> f; close(f) }' "$vDir/c/ktc2_all.c"
+		vSources="-MP $(cd "$vDir/c" && echo ktc2_part_*.c)"
+	fi
 	# cl takes its options with a dash too; MSYS must not take /Fe and the like for paths.
-	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -bigobj -DKTC2_LEAK_CHECK -I . $vOptions ktc2_all.c ktc2_core.c $vLibraries -Fe:../msvc.exe -Fo:../ > ../msvc.log 2>&1); then
+	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -bigobj -DKTC2_LEAK_CHECK -I . $vOptions $vSources ktc2_core.c $vLibraries -Fe:../msvc.exe -Fo:../ > ../msvc.log 2>&1); then
 		vFailed=$((vFailed + 1)); echo "== $vName: does not compile"; grep -m 6 "error" "$vDir/msvc.log" | cut -c1-240
 		continue
 	fi
