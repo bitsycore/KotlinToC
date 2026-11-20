@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: tools/msvc_all.sh [part of a name]
 # After a run of the suite on Windows: compiles the generated C of every program under
-# build/integration with MSVC, as one file (ktc2_all.c) and the runtime (ktc2_core.c), runs it, and compares what it prints
+# build/integration with MSVC (the files of ktc2_all.c in parts of 100, and the runtime ktc2_core.c), runs it, and compares what it prints
 # with what the program the suite built (gcc) prints. Fails when one does not compile, does not
 # end as the other does, or prints something else.
 # Needs `cl` on the path: a "Developer Command Prompt", or after vcvars64.bat, as in
@@ -43,15 +43,12 @@ for vDir in build/integration/*/; do
 	vOptions=$(grep "^cflag=" "$vDir/ktc2_build.txt" | cut -d= -f2- | tr '\n' ' ')
 	# The libraries a program links with, as gcc names them (-ladvapi32), are MSVC's .lib files (advapi32.lib).
 	vLibraries=$(grep "^ldflag=-l" "$vDir/ktc2_build.txt" | cut -d= -f2- | sed 's/^-l\(.*\)$/\1.lib/' | tr '\n' ' ')
-	# A large program (the stdlib's tests: 4,700 files) as one file takes cl hours on one thread, and a few parts of
-	# 500 files at once still did not end in an hour: its files go into parts of 100, which cl compiles on every
-	# processor (-MP).
+	# cl's optimizer takes far longer on one large file than on its parts: a program of 300 to 400 files (Native's
+	# Regex, string code) as one file took it 13 minutes, in parts of 100 compiled on every processor (-MP) 16 s; the
+	# stdlib's tests (4,700 files) as one file took hours. So every program goes in parts of 100.
 	rm -f "$vDir"/c/ktc2_part_*.c
-	vSources=ktc2_all.c
-	if [ "$(grep -c '^#include' "$vDir/c/ktc2_all.c")" -gt 1000 ]; then
-		awk -v d="$vDir/c" '/^#include/ { f = sprintf("%s/ktc2_part_%02d.c", d, int(n++ / 100)); print >> f; close(f) }' "$vDir/c/ktc2_all.c"
-		vSources="-MP $(cd "$vDir/c" && echo ktc2_part_*.c)"
-	fi
+	awk -v d="$vDir/c" '/^#include/ { f = sprintf("%s/ktc2_part_%02d.c", d, int(n++ / 100)); print >> f; close(f) }' "$vDir/c/ktc2_all.c"
+	vSources="-MP $(cd "$vDir/c" && echo ktc2_part_*.c)"
 	vStart=$SECONDS
 	# cl takes its options with a dash too; MSYS must not take /Fe and the like for paths.
 	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -bigobj -DKTC2_LEAK_CHECK -I . $vOptions $vSources ktc2_core.c $vLibraries -Fe:../msvc.exe -Fo:../ > ../msvc.log 2>&1); then

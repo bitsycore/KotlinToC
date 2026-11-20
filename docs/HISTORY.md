@@ -1071,6 +1071,9 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   the 4,700 objects of the stdlib's tests in one line of its command file); `tools/msvc_all.sh` compiles with
   `/bigobj` and a program of more than 1,000 C files in parts (100 files each; one file took hours, parts of 500 more
   than the job's 90 minutes), with a line for each program and its times.
+- 2026-11-20, the MSVC job still ran out of its 90 minutes: programs under 1,000 C files went to cl as one file, and
+  those of 300 to 400 files with Native's Regex took 13 minutes each. Every program is now compiled in parts of 100
+  (16 to 19 s for those).
 - 2026-11-20, the escape analysis gave an in-place form (`__into`) to a function whose new object was held by another
   one that escapes (`Worker.requestTermination()`: its future in a job of the worker's queue). The future was then in
   the caller's frame, counted without atomics there and by the worker's thread: a leak in some runs of

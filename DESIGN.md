@@ -802,8 +802,8 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
   optimization where the compiler has it): a class is one C file, and its small functions are
   only inlined into the others this way. `KTC2_LTO=0`, or `-DKTC2_LTO=OFF` for CMake, turns it
   off; with clang on Windows it needs LLVM's linker, and is used when `lld-link` is on the path.
-- `tools/msvc_all.sh` compiles a program of more than 1,000 C files (the stdlib's tests) in parts of 100 with `cl -MP`:
-  as one file, MSVC's optimizer took hours.
+- `tools/msvc_all.sh` compiles every program's C in parts of 100 files with `cl -MP`: as one file, MSVC's optimizer took 13
+  minutes on a program of 300 to 400 files (Native's Regex) and hours on the stdlib's tests; in parts, 16 to 19 s.
 - With clang on Windows every build links with `lld-link` when it is on the path
   (`windowsLinker`): Microsoft's `link.exe` refuses a line of 131072 characters in the command
   file clang writes it, which the 4,700 objects of the stdlib's tests pass. CMake's MSVC build
