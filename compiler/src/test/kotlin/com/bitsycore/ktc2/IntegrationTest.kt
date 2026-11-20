@@ -12,8 +12,11 @@ import kotlin.test.fail
 
 private const val kTimeoutSeconds = 300L
 
-/** How long a C compiler may take on one program: the largest, of thousands of files, take a few minutes on a slow machine. */
-private const val kCompileTimeoutSeconds = 900L
+/**
+ * How long a C compiler may take on one program: the largest, of thousands of files (the group of the standard library's
+ * tests, 4,700), take a quarter of an hour on a machine of the CI job with four processors.
+ */
+private const val kCompileTimeoutSeconds = 1800L
 
 /**
  * How many processes share the programs of a run: Gradle starts one per class below, each
@@ -401,7 +404,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 				// modules it depends on (kotlinx-datetime on kotlinx-serialization), and their jars on the JVM.
 				val vModules = bundledWithDependencies(vModuleName, File("build/integration/${vGroup.outName}"))
 				vGroup.modules = vModules
-				vGroup.cModules = vModules.flatMap { vModuleFile -> com.bitsycore.ktc2.filesOf(vModuleFile) ?: fail("module '${vModuleFile.name}' could not be had") }
+				vGroup.cModules = filesOfModules(vModules)
 				vGroup.jvmJars = vModules.mapNotNull { System.getProperty("ktc2.jvmModule.${it.name}")?.takeIf { vJar -> vJar.isNotEmpty() } }.joinToString(File.pathSeparator)
 				vGroup.jvmOptions = listOf(
 					// kotlin.test's annotations (the suite's, compiled with the tests) are common too: the common tests use them.
@@ -417,7 +420,31 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * The bundled module [inName] as ktc2 takes it (copied into [inOutDir], its library's sources from the cache), then the
 	 * bundled modules it depends on, each once.
 	 */
-	private fun bundledWithDependencies(inName: String, inOutDir: File): List<com.bitsycore.ktc2.ModuleFile> {
+	private fun bundledWithDependencies(inName: String, inOutDir: File): List<com.bitsycore.ktc2.ModuleFile> = said {
+		bundledModules(inName, inOutDir)
+	}
+
+	/** The files of the bundled modules [inModules], fetched when they are not yet; what ktc2 said when one could not be had. */
+	private fun filesOfModules(inModules: List<com.bitsycore.ktc2.ModuleFile>): List<File> = said {
+		inModules.flatMap { vModule -> com.bitsycore.ktc2.filesOf(vModule) ?: fail("module '${vModule.name}' could not be had") }
+	}
+
+	/** Runs [inBlock], adding what ktc2 wrote on the standard error meanwhile to a failure of it (a fetch that failed says why there). */
+	private fun <T> said(inBlock: () -> T): T {
+		val vSaved = System.err
+		val vCaptured = java.io.ByteArrayOutputStream()
+		System.setErr(java.io.PrintStream(vCaptured, true, "UTF-8"))
+		try {
+			return inBlock()
+		} catch (vError: AssertionError) {
+			throw AssertionError((vError.message ?: "") + "\n" + vCaptured.toString("UTF-8").trim(), vError)
+		} finally {
+			System.setErr(vSaved)
+			vSaved.print(vCaptured.toString("UTF-8"))
+		}
+	}
+
+	private fun bundledModules(inName: String, inOutDir: File): List<com.bitsycore.ktc2.ModuleFile> {
 		val vResult = LinkedHashMap<String, com.bitsycore.ktc2.ModuleFile>()
 		fun add(inModule: String) {
 			if (inModule in vResult) return
@@ -480,7 +507,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vVarying = inGroup.tests.flatMap { settingLines(beside(it, "vary")) }.distinct()
 		val vSources = (inGroup.tests + inGroup.helpers).map { compiled(it) }
 		val vKotlinTestModules = bundledWithDependencies("kotlin-test", vOutDir)
-		val vKotlinTest = vKotlinTestModules.flatMap { com.bitsycore.ktc2.filesOf(it) ?: fail("module kotlin-test could not be had") }
+		val vKotlinTest = filesOfModules(vKotlinTestModules)
 		val vModules = inGroup.modules + vKotlinTestModules
 		System.setProperty("ktc2.weak", vModules.flatMap { it.weak }.joinToString("\n"))
 		System.setProperty("ktc2.acyclic", vModules.flatMap { it.acyclic }.joinToString("\n"))
@@ -509,6 +536,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 			lap("translate")
 			vTranslated = vTimes.last().substringAfter('=').toLong()
 			vKotlinToIr = (K2Frontend.lastFrontEndNanos / 1_000_000).coerceAtMost(vTranslated)
+			// For tools/asan_all.sh and tools/msvc_all.sh, which build the C again (a job that only translates): a program of
+			// tests checks itself, and may leave cycles.
+			File(vOutDir, "self-checking").writeText("")
+			if (suiteFiles(vOutDir).values.any { vPath -> beside(vOriginals[vPath] ?: File(vPath), "cycles").isFile }) File(vOutDir, "cycles-allowed").writeText("")
 			if ("c" !in kSteps) return
 			vExe = compileC(vOutDir)
 			lap("cCompile")
@@ -549,9 +580,6 @@ abstract class IntegrationPart(private val mShard: Int) {
 			}
 		}
 		mAllowsLeaks = false
-		// For tools/asan_all.sh and tools/msvc_all.sh: a program of tests checks itself, and may leave cycles.
-		File(vOutDir, "self-checking").writeText("")
-		if (vByFile.keys.any { beside(it, "cycles").isFile }) File(vOutDir, "cycles-allowed").writeText("")
 
 		// The JVM: the same tests, the list of the C program, compared test by test.
 		val vJvm: Map<String, TestOutcome>? = if ("jvm" !in kSteps || mCategory in kNoJvm) null else {

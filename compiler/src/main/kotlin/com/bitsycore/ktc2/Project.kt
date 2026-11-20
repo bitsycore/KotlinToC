@@ -211,6 +211,12 @@ class GitSource(inText: String) {
 			null
 		}
 		var vExit = git(vCommand) ?: return null
+		// Once more after a failure: a network that failed once (a machine of a CI job) often works the next time.
+		if (vExit != 0) {
+			vTarget.deleteRecursively()
+			Thread.sleep(3000)
+			vExit = git(vCommand) ?: return null
+		}
 		if (vExit == 0 && inSparse) vExit = git(listOf("git", "-C", vTarget.absolutePath, "sparse-checkout", "set", "--no-cone", "/" + directory.trim('/') + "/")) ?: return null
 		if (vExit != 0) {
 			System.err.println("ktc2: error: could not clone $url${revision?.let { " at $it" } ?: ""} (git exited with $vExit)")

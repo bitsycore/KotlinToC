@@ -4,7 +4,7 @@
 # with AddressSanitizer (tools/asan.sh) and runs it. Fails when one of them does not end with
 # exit code 0, or when the sanitizer or the runtime reported something. Slow: each program is
 # compiled again; KTC2_ASAN_JOBS of them at once (default: the number of processors), each run
-# limited to KTC2_ASAN_TIMEOUT seconds (default 1200: the large tests of the library take minutes).
+# limited to KTC2_ASAN_TIMEOUT seconds (default 2400: the group of the standard library's tests compiles 4,700 C files).
 # KTC2_SHARD=i/n takes the i-th of n shares of the programs (from 0), for several machines at once.
 cd "$(dirname "$0")/.." || exit 1
 
@@ -23,9 +23,12 @@ check() {
 	# The suite says so in the build directory (cycles-allowed); a .cycles of tests/ by the name, for an older run.
 	if [ -f "$vDir/cycles-allowed" ] || [ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ]; then vLeaks="AddressSanitizer|ktc2: .*freed"; vOptions="detect_leaks=0:$vOptions"; fi
 	local vLimit=()
-	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-1200}")
+	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-2400}")
 	local vResult
-	vResult=$(ASAN_OPTIONS=$vOptions "${vLimit[@]}" tools/asan.sh "$vDir" ${vInput:+"$vInput"} 2>&1)
+	# A large program (a group of tests, thousands of C files) compiles on every processor; the others on two each.
+	local vCompileJobs=$KTC2_ASAN_COMPILE_JOBS
+	[ "$(grep -c "^c=" "$vDir/ktc2_build.txt")" -gt 1000 ] && vCompileJobs=$KTC2_ASAN_ALL_PROCESSORS
+	vResult=$(KTC2_ASAN_COMPILE_JOBS=$vCompileJobs KTC2_ASAN_QUIET=1 ASAN_OPTIONS=$vOptions "${vLimit[@]}" tools/asan.sh "$vDir" ${vInput:+"$vInput"} 2>&1)
 	local vCode=$?
 	# What a program writes to standard error itself (an exception in a thread) is not a failure.
 	# The line that says how the program ended; the C compiler may have said something before it (a note of gcc's).
@@ -38,10 +41,13 @@ check() {
 	else
 		echo ok > "$vDir/asan.result"
 	fi
-	# One line a program as it ends, so the log of a slow or stuck run says where it is.
-	local vState=ok
-	[ "$(cat "$vDir/asan.result")" = ok ] || vState=FAILED
-	echo "$vState $vName ($((SECONDS - vStart)) s)"
+	# One line a program as it ends, as the suite's log has it, so the log of a slow or stuck run says where it is.
+	echo x >> "$KTC2_ASAN_PROGRESS"
+	local vDone
+	vDone=$(wc -l < "$KTC2_ASAN_PROGRESS" | tr -d ' ')
+	local vMark="✔"
+	[ "$(cat "$vDir/asan.result")" = ok ] || vMark="✘"
+	printf '[%*d/%d %3d%%] %s %s  %d s  (%s C files)\n' "${#KTC2_ASAN_TOTAL}" "$vDone" "$KTC2_ASAN_TOTAL" $((vDone * 100 / KTC2_ASAN_TOTAL)) "$vMark" "$vName" $((SECONDS - vStart)) "$(grep -c "^c=" "$vDir/ktc2_build.txt")"
 }
 export -f check
 
@@ -57,7 +63,17 @@ for vDir in build/integration/*/; do
 done
 
 vJobs=${KTC2_ASAN_JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
-echo "${#vDirs[@]} programs, $vJobs at once"
+# The largest first (groups of tests: thousands of C files), so that they do not end the run alone; each program's C on
+# two processors, several programs at once.
+vSorted=()
+while IFS= read -r vLine; do vSorted+=("${vLine#* }"); done < <(for vDir in "${vDirs[@]}"; do echo "$(grep -c "^c=" "$vDir/ktc2_build.txt") $vDir"; done | sort -rn)
+vDirs=("${vSorted[@]}")
+export KTC2_ASAN_COMPILE_JOBS=${KTC2_ASAN_COMPILE_JOBS:-2}
+export KTC2_ASAN_ALL_PROCESSORS=$vJobs
+export KTC2_ASAN_TOTAL=${#vDirs[@]}
+export KTC2_ASAN_PROGRESS=build/asan-progress.txt
+rm -f "$KTC2_ASAN_PROGRESS"
+echo "${#vDirs[@]} programs, $vJobs at once, the largest first"
 [ ${#vDirs[@]} -gt 0 ] && printf '%s\0' "${vDirs[@]}" | xargs -0 -n 1 -P "$vJobs" bash -c 'check "$1"' _
 
 echo
