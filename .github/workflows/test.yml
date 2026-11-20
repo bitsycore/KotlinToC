@@ -37,6 +37,14 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # ktc2's own cache (~/.ktc2/cache): the sources of the Kotlin library and of each bundled module it fetches, and the
+      # clone of Kotlin's repository for kotlin-test. Kept between runs, by the Kotlin version and every module's file and
+      # edits: a new version or edit is a new cache; ktc2 checks each upstream against its edits when it reads it.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ktc2/cache
+          key: ktc2-cache-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'modules/*/module.ktc2.toml', 'modules/*/files.txt', 'modules/*/*.edit') }}
+          restore-keys: ktc2-cache-${{ runner.os }}-
       # clang is the suite's C compiler (the owner, 2026-11-17), on each system: on Windows it targets MSVC's C library.
       - name: C compiler
         run: clang --version
