@@ -1061,6 +1061,12 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   each line by its category and path, lists each group's files, and ends with the run's time.
   Then the box tests by folder (each file copied in a package of its own with a `@Test` that checks `box()`; the
   files themselves stay as the compiler has them), and the programs of several modules under `integration/projects/`.
+- 2026-11-20, `PLAN.md` 2.2: the cycle of a dispatched continuation and the cancellable continuation it keeps for reuse
+  declared in the module (`cycles`), where an edit had cut it and broken the library's protocol: 1,578 such cycles left
+  in the library's tests to 55, `AsyncTest` without `.cycles`. The check of a pair read a field held in an atomic cell
+  as a plain one; it reads it through the cell now. What the base has because of coroutines, looked at again: the
+  declared cycles, rings and knots are opt-in (nothing for a program none of whose modules declares one), and the knots
+  are still what frees `regressions/coroutines-incomplete-async`.
 
 
 ---------------------------------------------------------------------------

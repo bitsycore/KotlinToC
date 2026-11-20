@@ -646,8 +646,10 @@ class CEmitter(private val mModule: KModule) {
 				}
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					if (vPair.via.isEmpty()) {
-						vBodies.append("\tktc2_Obj* partner$vIndex = ${partner(vIndex, vPair)};\n")
-						vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1 && (ktc2_Obj*)${back(vPair, "partner$vIndex")} == object;\n")
+						// Each field read as it is held: a field, or an atomic held in place (its cell).
+						partner(vIndex, vPair)
+						vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
+						vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1 && ${read(vPair.back, "partner$vIndex")} == object;\n")
 					} else {
 						// A longer cycle: each object on the way held by the one before it alone, the last one's field holding this one.
 						vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
@@ -668,7 +670,7 @@ class CEmitter(private val mModule: KModule) {
 				// Held by its cycle and by more: -1, which is where a knot may be (its objects held by one another otherwise).
 				vBodies.append("\tif (explained == 0) return 0;\n\tif ((KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return -1;\n")
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					if (vPair.via.isEmpty()) vBodies.append("\tif (held$vIndex) ${back(vPair, "partner$vIndex")} = NULL;\n")
+					if (vPair.via.isEmpty()) vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "partner$vIndex")};\n")
 					else vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
 				}
 				// The object is then this function's alone (its count one): the caller releases it, which frees the pair.
@@ -680,7 +682,8 @@ class CEmitter(private val mModule: KModule) {
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					// A longer cycle is given to each of its classes from its own place: each finds it for itself.
 					if (vPair.partner.pairCycles.isEmpty() || vPair.via.isNotEmpty()) continue
-					vBodies.append("\tktc2_Obj* other$vIndex = ${partner(vIndex, vPair)};\n")
+					partner(vIndex, vPair)
+					vBodies.append("\tktc2_Obj* other$vIndex = ${read(vPair.field, "object")};\n")
 					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex) > 0) return other$vIndex;\n")
 				}
 				// Not freed as a cycle of its own: the bounded check of a group, for a ring each time, for a knot only when its own

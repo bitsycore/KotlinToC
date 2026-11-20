@@ -8,6 +8,8 @@ edits        = ["commonMain/AbstractCoroutine.kt = AbstractCoroutine.kt.edit", "
 # A segment of a channel refers back to it; the channel is held by whoever sends or receives through the segment. A
 # timeout's exception names its coroutine only for withTimeoutOrNull to know it, which holds that coroutine meanwhile.
 weak         = ["kotlinx.coroutines.channels.ChannelSegment._channel", "kotlinx.coroutines.TimeoutCancellationException.coroutine"]
+# A dispatched continuation keeps the cancellable continuation it made for reuse, which names it as its delegate: the
+# two go together when the coroutine is done with them (its release() leaves the one kept for reuse in place).
 # A coroutine that ends with an exception keeps it as its final state, and the exception names the coroutine: they go
 # together when nothing else holds any of them.
 # A dispatcher of workers starts them through a lambda of its pool that calls back into it: made once (Dispatchers.Default and
@@ -15,7 +17,7 @@ weak         = ["kotlinx.coroutines.channels.ChannelSegment._channel", "kotlinx.
 # A job whose result is one of its own handlers (a DisposableHandle returned from its block) keeps it boxed as its state.
 # A channel closed by the cancellation of the coroutine that sends to it keeps the exception, which names that coroutine.
 # A flow aborted early (take, first) ends its collecting job with an exception that names that job.
-cycles       = ["kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.CompletedExceptionally.cause -> kotlinx.coroutines.JobCancellationException.job", "kotlinx.coroutines.MultiWorkerDispatcher.workerPool -> kotlinx.coroutines.internal.OnDemandAllocatingPool.create -> lambda.self", "kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.IncompleteStateBox.state -> kotlinx.coroutines.JobNode.job", "kotlinx.coroutines.channels.BufferedChannel._closeCause -> kotlinx.coroutines.JobCancellationException.job -> kotlinx.coroutines.channels.ChannelCoroutine._channel", "kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.CompletedExceptionally.cause -> kotlinx.coroutines.flow.internal.AbortFlowException.owner"]
+cycles       = ["kotlinx.coroutines.internal.DispatchedContinuation._reusableCancellableContinuation -> kotlinx.coroutines.CancellableContinuationImpl.delegate", "kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.CompletedExceptionally.cause -> kotlinx.coroutines.JobCancellationException.job", "kotlinx.coroutines.MultiWorkerDispatcher.workerPool -> kotlinx.coroutines.internal.OnDemandAllocatingPool.create -> lambda.self", "kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.IncompleteStateBox.state -> kotlinx.coroutines.JobNode.job", "kotlinx.coroutines.channels.BufferedChannel._closeCause -> kotlinx.coroutines.JobCancellationException.job -> kotlinx.coroutines.channels.ChannelCoroutine._channel", "kotlinx.coroutines.JobSupport._state -> kotlinx.coroutines.CompletedExceptionally.cause -> kotlinx.coroutines.flow.internal.AbortFlowException.owner"]
 # The lists of a job's handlers are rings (a head, its nodes, the Removed that mark the nodes taken out): a ring that
 # only its own objects hold is freed (another thread walking it holds one of them). Checked when its head goes.
 rings        = ["kotlinx.coroutines.internal.LockFreeLinkedListHead: kotlinx.coroutines.internal.LockFreeLinkedListNode, kotlinx.coroutines.internal.Removed"]

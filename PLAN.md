@@ -51,6 +51,16 @@ Kotlin/Native's collector would). What stands between, in the order to do it:
   object whose hash was taken (a header bit says so); or a short quarantine of such blocks before reuse.
 
 ### 2.2 kotlinx.coroutines' cycles (3 to 5 days)
+The owner's direction (2026-11-20): kotlinx.coroutines keeps its API and behavior, even at some cost; what answers its
+cycles stays in its module (edits, declarations, a small runtime of its own if needed), not in ktc2's base. Measured on
+the 26 files left with `.cycles` (2026-11-20, after the cycle of a dispatched continuation and the one kept for reuse
+was declared: 1,578 such cycles to 55): the lists of handlers of finished jobs (`NodeList`, `ChildHandleNode`,
+`ResumeOnCompletion`, `ListClosed`, `Removed`), some 450; a coroutine's frame that holds the coroutine itself
+(`F_uCont -> itself`, inside `suspendCoroutineUninterceptedOrReturn`), 60: a fix of ktc2's state machines (a frame
+field holding its own coroutine needs no count); channels and broadcast, a few dozen.
+- [ ] A frame field that holds its own coroutine (`lambda.F_uCont -> lambda`, `withContextUndispatched.F_uCont`).
+- [ ] A completion hook of the module: what a finished job lets go of, at the points the library defines (its final
+  state and its children done), as edits; the handler lists stay (another thread may still walk them).
 The 16 files of the library's own structures, by kind (each file's `.cycles` names it):
 - [ ] Knots whose garbage is never seen whole from where a check starts (2026-11-19; most of `AsyncTest`'s, after the
   knots of `regressions/coroutines-incomplete-async` were answered): a deferred that ended with an exception (a declared
