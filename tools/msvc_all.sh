@@ -44,7 +44,7 @@ for vDir in build/integration/*/; do
 	# The libraries a program links with, as gcc names them (-ladvapi32), are MSVC's .lib files (advapi32.lib).
 	vLibraries=$(grep "^ldflag=-l" "$vDir/ktc2_build.txt" | cut -d= -f2- | sed 's/^-l\(.*\)$/\1.lib/' | tr '\n' ' ')
 	# cl takes its options with a dash too; MSYS must not take /Fe and the like for paths.
-	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -DKTC2_LEAK_CHECK -I . $vOptions ktc2_all.c ktc2_core.c $vLibraries -Fe:../msvc.exe -Fo:../ > ../msvc.log 2>&1); then
+	if ! (cd "$vDir/c" && MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' cl -nologo -std:c11 -O1 -w -bigobj -DKTC2_LEAK_CHECK -I . $vOptions ktc2_all.c ktc2_core.c $vLibraries -Fe:../msvc.exe -Fo:../ > ../msvc.log 2>&1); then
 		vFailed=$((vFailed + 1)); echo "== $vName: does not compile"; grep -m 6 "error" "$vDir/msvc.log" | cut -c1-240
 		continue
 	fi

@@ -877,7 +877,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			vFailures.firstOrNull()?.let { throw it }
 			// Named from the directory of the program: a command line has a longest length.
 			val vObjectFiles = File(vOutDir, "obj").walkTopDown().filter { it.isFile && it.extension == "o" }.map { it.relativeTo(vOutDir).invariantSeparatorsPath }.sorted().toList()
-			run(vOptions + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir, kCompileTimeoutSeconds)
+			run(vOptions + com.bitsycore.ktc2.windowsLinker(mCompiler) + listOf("-o", vExe.absolutePath) + vObjectFiles + kSystemLibraries.drop(1) + vLinkerOpts, vOutDir, kCompileTimeoutSeconds)
 		}
 		return vExe
 	}

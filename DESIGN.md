@@ -802,6 +802,10 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
   optimization where the compiler has it): a class is one C file, and its small functions are
   only inlined into the others this way. `KTC2_LTO=0`, or `-DKTC2_LTO=OFF` for CMake, turns it
   off; with clang on Windows it needs LLVM's linker, and is used when `lld-link` is on the path.
+- With clang on Windows every build links with `lld-link` when it is on the path
+  (`windowsLinker`): Microsoft's `link.exe` refuses a line of 131072 characters in the command
+  file clang writes it, which the 4,700 objects of the stdlib's tests pass. CMake's MSVC build
+  compiles with `/bigobj`: a large C file has more sections than its object format holds.
 - Every build passes `-ffp-contract=off` and the runtime header asks the same with a pragma:
   Kotlin rounds after each floating-point operation, and a C compiler would otherwise fuse a
   product and a sum into one where the processor can (ARM64).

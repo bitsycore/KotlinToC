@@ -760,6 +760,13 @@ fun cCompiler(): String {
 	return "cc"
 }
 
+/**
+ * What clang on Windows needs to link with LLVM's own linker, when it is there: Microsoft's `link.exe`, clang's default
+ * there, refuses a command file with a line of 131072 characters or more, which the objects of a large program pass.
+ */
+fun windowsLinker(inCompiler: String): List<String> =
+	if (kIsWindows && isClang(inCompiler) && isOnPath("lld-link")) listOf("-fuse-ld=lld") else emptyList()
+
 /** Whether a program called [inName] is in one of the directories of `PATH`. */
 private fun isOnPath(inName: String): Boolean =
 	(System.getenv("PATH") ?: "").split(File.pathSeparator).any { File(it, inName).isFile || File(it, "$inName.exe").isFile }
@@ -786,6 +793,8 @@ fun writeCMake(inOutDir: File, inExecutable: String, inProject: Project?) {
 		append("if(KTC2_DEBUG)\n\ttarget_compile_definitions($inExecutable PRIVATE KTC2_LEAK_CHECK)\nendif()\n")
 		append("# Kotlin rounds after every floating-point operation: none is fused with the next.\n")
 		append("if(NOT MSVC)\n\ttarget_compile_options($inExecutable PRIVATE -ffp-contract=off)\nendif()\n")
+		append("# A large C file has more sections than MSVC's object format holds by default.\n")
+		append("if(MSVC)\n\ttarget_compile_options($inExecutable PRIVATE /bigobj)\nendif()\n")
 		append("# A release build is optimized as one program where the compiler can: -DKTC2_LTO=OFF to do without.\n")
 		append("option(KTC2_LTO \"Optimize the release build as a whole program\" ON)\n")
 		append("if(KTC2_LTO AND NOT KTC2_DEBUG)\n\tinclude(CheckIPOSupported)\n\tcheck_ipo_supported(RESULT KTC2_HAS_LTO OUTPUT KTC2_LTO_OUTPUT LANGUAGES C)\n")
@@ -902,7 +911,7 @@ fun buildProgram(inOutDir: File, inName: String, inIsDebug: Boolean): File? {
 		vLto.isEmpty() -> emptyList()
 		vIsClang -> vLto + if (vNeedsLld) listOf("-fuse-ld=lld") else emptyList()
 		else -> listOf("-flto=auto")
-	}
+	}.ifEmpty { windowsLinker(vCompiler) }
 	val vLink = listOf(vCompiler) + vArch + vMode.filter { !it.startsWith("-flto") } + vLinkLto + vThreads + listOf("-o", vProgram.absolutePath) +
 		vSources.map { objectOf(it).absolutePath } + vMath + manifestValues(inOutDir, "ldflag")
 	// No object made again, the same command, the program there: the program is what the link would make.
