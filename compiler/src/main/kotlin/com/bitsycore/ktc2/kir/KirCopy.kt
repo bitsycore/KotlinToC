@@ -14,11 +14,14 @@ fun KFunction.copyAs(inName: String): KFunction {
 	return vCopy
 }
 
-/** Copies statements and expressions, giving each local it meets a counterpart. */
-private class Copier {
+/** A copy of this statement where the locals of [inReplaced] are their counterparts there; every other local is the same. */
+fun KStmt.withLocals(inReplaced: Map<KLocal, KLocal>): KStmt = Copier(inReplaced).statement(this)
+
+/** Copies statements and expressions, giving each local it meets a counterpart (only those of [mOnly] when given). */
+private class Copier(private val mOnly: Map<KLocal, KLocal>? = null) {
 	private val mLocals = HashMap<KLocal, KLocal>()
 
-	fun local(inLocal: KLocal): KLocal = mLocals.getOrPut(inLocal) { KLocal(inLocal.cName, inLocal.type).also { it.isTemporary = inLocal.isTemporary; it.boundClass = inLocal.boundClass; it.boundInterface = inLocal.boundInterface; it.boundIsNonNull = inLocal.boundIsNonNull } }
+	fun local(inLocal: KLocal): KLocal = if (mOnly != null) mOnly[inLocal] ?: inLocal else mLocals.getOrPut(inLocal) { KLocal(inLocal.cName, inLocal.type).also { it.isTemporary = inLocal.isTemporary; it.boundClass = inLocal.boundClass; it.boundInterface = inLocal.boundInterface; it.boundIsNonNull = inLocal.boundIsNonNull } }
 
 	fun block(inBlock: List<KStmt>): List<KStmt> = inBlock.map { statement(it) }
 
@@ -29,7 +32,7 @@ private class Copier {
 		}
 	}
 
-	private fun statement(inStatement: KStmt): KStmt = when (inStatement) {
+	fun statement(inStatement: KStmt): KStmt = when (inStatement) {
 		is KLet -> KLet(local(inStatement.local), inStatement.init?.let { expr(it) })
 		is KSet -> KSet(local(inStatement.local), expr(inStatement.value), inStatement.releasesOld)
 		is KGlobalSet -> KGlobalSet(inStatement.global, expr(inStatement.value), inStatement.releasesOld)

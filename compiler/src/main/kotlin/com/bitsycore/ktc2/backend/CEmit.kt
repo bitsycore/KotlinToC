@@ -276,6 +276,9 @@ class CEmitter(private val mModule: KModule) {
 	/** For each state machine, its locals and the field of the coroutine object each one is. */
 	private val mFrames = HashMap<KFunction, Map<KLocal, KField>>()
 
+	/** A call that may suspend, and the C locals it reads in the place of frame locals, released right after it ([releaseDeadAtSuspensions]). */
+	private val mHeldOver = java.util.IdentityHashMap<KStmt, List<KLocal>>()
+
 	/** The state machines, by the class of their coroutine object. */
 	private val mStateMachines = HashMap<KClass, KFunction>()
 
@@ -310,7 +313,7 @@ class CEmitter(private val mModule: KModule) {
 				vCoroutine.cls.fields += vFields.values
 				mFrames[vFunction] = vFields
 				mStateMachines[vCoroutine.cls] = vFunction
-				val vBody = withoutSuspendReleases(withTestsAfterCalls(vFunction.body), vCoroutine)
+				val vBody = releaseDeadAtSuspensions(withoutSuspendReleases(withTestsAfterCalls(vFunction.body), vCoroutine), vCoroutine, vFields)
 				vFunction.body.clear()
 				vFunction.body += vBody
 			}
@@ -360,6 +363,131 @@ class CEmitter(private val mModule: KModule) {
 			vOut += KIf(vTest.condition, vLead + vWaits + vReleases + vTest.thenBlock.drop(vLead.size + 1), vTest.elseBlock + vBetween)
 		}
 		return vOut
+	}
+
+	/**
+	 * [inBody] where each frame local that holds a count while the coroutine waits, and that neither it nor anything made
+	 * of it is read after the call that suspends, is given up by the run that makes the call, as on the JVM and Kotlin/Native,
+	 * where a waiting coroutine keeps only what it uses after: the `SafeContinuation` of `suspendCoroutine`, which holds the
+	 * coroutine, kept it alive for ever when nothing resumed it. From where the label of the suspension is set, a call may
+	 * resume the coroutine inside it, and that run gives up what the frame holds at its exits: the local's count goes to a
+	 * C local before the label is set, which every statement up to the call uses in its place, and which is released
+	 * right after the call ([mHeldOver]), without touching the frame (another run may be running it already). Its field
+	 * stays null: the cleanup of the place it waits at and the releases after find nothing.
+	 */
+	private fun releaseDeadAtSuspensions(inBody: List<KStmt>, inCoroutine: KCoroutine, inFrame: Map<KLocal, KField>): List<KStmt> {
+		// ============
+		//  Where each local is read, in the order of the statements; what is made of each; where each loop is
+		val vReads = HashMap<KLocal, MutableList<Int>>()
+		val vMadeFrom = HashMap<KLocal, MutableSet<KLocal>>()
+		val vPlaces = java.util.IdentityHashMap<KStmt, Int>()
+		val vLoops = java.util.IdentityHashMap<KStmt, IntRange>()
+		var vNext = 0
+		// What a call returns is its caller's own, made of nothing it was given; but for the forms that may return what one of
+		// its arguments holds or is (`__b`, `__m`, `__into`).
+		fun reads(inExpr: KExpr, inAt: Int, inInto: KLocal?) {
+			if (inExpr is KRead) {
+				vReads.getOrPut(inExpr.local) { ArrayList() } += inAt
+				if (inInto != null) vMadeFrom.getOrPut(inExpr.local) { HashSet() } += inInto
+			}
+			val vOwned = inExpr is KCall && listOf("__b", "__m", "__into").none { inExpr.function.cName.endsWith(it) }
+			inExpr.children().forEach { reads(it, inAt, if (vOwned) null else inInto) }
+		}
+		fun walk(inBlock: List<KStmt>) {
+			for (vStatement in inBlock) {
+				val vAt = vNext++
+				vPlaces[vStatement] = vAt
+				when (vStatement) {
+					is KRelease -> {}
+					is KLet -> vStatement.init?.let { reads(it, vAt, vStatement.local) }
+					is KSet -> reads(vStatement.value, vAt, vStatement.local)
+					is KIf -> { reads(vStatement.condition, vAt, null); walk(vStatement.thenBlock); walk(vStatement.elseBlock) }
+					is KLoop -> { walk(vStatement.body); walk(vStatement.latch); vLoops[vStatement] = vAt until vNext }
+					is KTryRegion -> walk(vStatement.body)
+					is KConcat -> { vReads.getOrPut(vStatement.target) { ArrayList() } += vAt; vStatement.ownExpressions().forEach { reads(it, vAt, null) } }
+					else -> vStatement.ownExpressions().forEach { reads(it, vAt, null) }
+				}
+			}
+		}
+		walk(inBody)
+		// Not read after [inAt], nor at all in a loop around it (the next round reads it again, at [inAt] too), nor anything made
+		// of it (a borrowed copy, what a call gave of it).
+		fun isDeadAfter(inLocal: KLocal, inAt: Int, inLoops: List<IntRange>): Boolean {
+			val vFamily = HashSet<KLocal>()
+			val vPending = ArrayDeque(listOf(inLocal))
+			while (vPending.isNotEmpty()) {
+				val vLocal = vPending.removeFirst()
+				if (vFamily.add(vLocal)) vMadeFrom[vLocal]?.let { vPending.addAll(it) }
+			}
+			return vFamily.all { vLocal -> vReads[vLocal].orEmpty().all { vRead -> vRead <= inAt && inLoops.none { vRead in it } } }
+		}
+		// The frame locals given up for the suspension tested by [inTest], after [inCall], the label of the suspension being set
+		// at [inWindow]'s start: their counts move out before it.
+		fun givenUp(inCall: KStmt, inTest: KIf, inWindow: List<KStmt>, inLoops: List<IntRange>): List<KLocal> {
+			val vResult = (inCall as? KLet)?.local ?: (inCall as? KSet)?.local ?: return emptyList()
+			if (((inTest.condition as? KRefEquals)?.left as? KRead)?.local != vResult) return emptyList()
+			val vPoint = inTest.thenBlock.firstOrNull { it is KIf && it.condition.isSuspendPoint() } as? KIf ?: return emptyList()
+			val vAt = vPlaces[inCall] ?: return emptyList()
+			// A call to an owned form takes the counts of its arguments: those stay where they are.
+			if (inWindow.anyStatement { vStatement -> vStatement.ownExpressions().any { vRoot -> vRoot.anyNode { it is KCall && it.function.cName.endsWith("__o") } } }) return emptyList()
+			return inCoroutine.cleanups[vPoint.condition.suspendLabel()].orEmpty().mapNotNull { ((it as? KRelease)?.operand as? KRead)?.local }
+				.filter { it != vResult && it in inFrame && (it.type is KRefType || it.type == KObjType) && isDeadAfter(it, vAt, inLoops) }
+				.distinct()
+		}
+		// Where the label of the suspension tested by [inTest] is set, in the same block before it: -1 when it is not there.
+		fun labelSetAt(inBlock: List<KStmt>, inBefore: Int, inTest: KIf): Int {
+			val vPoint = inTest.thenBlock.firstOrNull { it is KIf && it.condition.isSuspendPoint() } as? KIf ?: return -1
+			val vLabel = vPoint.condition.suspendLabel()
+			return (inBefore downTo 0).firstOrNull { vIndex ->
+				val vSet = inBlock[vIndex] as? KFieldSet
+				vSet != null && vSet.field === inCoroutine.label && (vSet.value as? KConst)?.value == vLabel
+			} ?: -1
+		}
+		// A declaration of a C local that stands for a frame local is a store into it: it is declared before the window.
+		fun storesInto(inStatement: KStmt, inHolders: Set<KLocal>): KStmt = when (inStatement) {
+			is KLet -> if (inStatement.local in inHolders) KSet(inStatement.local, inStatement.init ?: KNull(inStatement.local.type)) else inStatement
+			is KIf -> KIf(inStatement.condition, inStatement.thenBlock.map { storesInto(it, inHolders) }, inStatement.elseBlock.map { storesInto(it, inHolders) })
+			is KLoop -> KLoop(inStatement.id, inStatement.body.map { storesInto(it, inHolders) }, inStatement.latch.map { storesInto(it, inHolders) })
+			is KTryRegion -> KTryRegion(inStatement.id, inStatement.body.map { storesInto(it, inHolders) })
+			else -> inStatement
+		}
+		var vHeldCount = 0
+		fun rewrite(inBlock: List<KStmt>, inLoops: List<IntRange>): List<KStmt> {
+			// Each window of this block: from where a label is set to the call tested for that suspension, with what it gives up.
+			class Window(val start: Int, val end: Int, val held: Map<KLocal, KLocal>)
+			val vWindows = ArrayList<Window>()
+			for (vIndex in inBlock.indices) {
+				val vTest = inBlock.getOrNull(vIndex + 1) as? KIf ?: continue
+				val vStart = labelSetAt(inBlock, vIndex, vTest)
+				if (vStart < 0 || vWindows.any { vStart <= it.end }) continue
+				val vGiven = givenUp(inBlock[vIndex], vTest, inBlock.subList(vStart, vIndex + 1), inLoops)
+				if (vGiven.isNotEmpty()) vWindows += Window(vStart, vIndex, vGiven.associateWith { KLocal("ktc2_held${vHeldCount++}", it.type) })
+			}
+			val vOut = ArrayList<KStmt>()
+			for ((vIndex, vStatement) in inBlock.withIndex()) {
+				val vWindow = vWindows.firstOrNull { vIndex in it.start..it.end }
+				if (vWindow == null) {
+					vOut += when (vStatement) {
+						is KIf -> KIf(vStatement.condition, rewrite(vStatement.thenBlock, inLoops), rewrite(vStatement.elseBlock, inLoops))
+						is KLoop -> (inLoops + listOfNotNull(vLoops[vStatement])).let { KLoop(vStatement.id, rewrite(vStatement.body, it), rewrite(vStatement.latch, it)) }
+						is KTryRegion -> KTryRegion(vStatement.id, rewrite(vStatement.body, inLoops))
+						else -> vStatement
+					}
+					continue
+				}
+				if (vIndex == vWindow.start) {
+					for ((vLocal, vHolder) in vWindow.held) {
+						vOut += KLet(vHolder, KRead(vLocal))
+						vOut += KSet(vLocal, KNull(vLocal.type))
+					}
+				}
+				val vMoved = storesInto(vStatement.withLocals(vWindow.held), vWindow.held.values.toSet())
+				if (vIndex == vWindow.end) mHeldOver[vMoved] = vWindow.held.values.toList()
+				vOut += vMoved
+			}
+			return vOut
+		}
+		return rewrite(inBody, emptyList())
 	}
 
 	/** [inBlock] with the releases in front of each suspension moved to [inCoroutine]'s cleanups. */
@@ -1008,6 +1136,7 @@ class CEmitter(private val mModule: KModule) {
 					vIndex += 2
 				} else {
 					statement(inStatements[vIndex], inDepth)
+					mHeldOver[inStatements[vIndex]]?.forEach { statement(KRelease(KRead(it)), inDepth) }
 					vIndex++
 				}
 			}
@@ -1042,6 +1171,8 @@ class CEmitter(private val mModule: KModule) {
 			if (!vReleasesOld) line(inDepth, "$vSlot = (${cType(vLocal.type)})($vMarker);")
 			line(inDepth, "{")
 			line(inDepth + 1, "${cType(vLocal.type)} ktc2_suspending = ${bare(expr(vValue))};")
+			// What the waiting coroutine does not keep, given up by this run before it may return.
+			mHeldOver[inStatement]?.forEach { statement(KRelease(KRead(it)), inDepth + 1) }
 			line(inDepth + 1, "if ((void*)ktc2_suspending == (void*)($vMarker)) return $vMarker;")
 			line(inDepth + 1, if (vReleasesOld) "KTC2_ASSIGN($vSlot, ktc2_suspending);" else "$vSlot = ktc2_suspending;")
 			line(inDepth, "}")

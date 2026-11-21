@@ -1168,6 +1168,13 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   `TailrecThroughWhen.kt`). Two references to one function holding equal values are equal and hash alike, and a function
   reference knows its name (`FunctionReferenceEquality.kt`). `suspendFunctionAsSupertypeIsCheckWithArity` fails on the
   JVM by design (`.native`).
+- 2026-11-21, `PLAN.md` 2.3: the last 7 pending box tests of coroutines pass; none is left in `tests/box/pending/`. A
+  waiting coroutine keeps only what it uses after: a frame local dead after its suspension point gives its count to a C
+  local before the label is set, released by the run that makes the call (`releaseDeadAtSuspensions`). A coroutine never
+  resumed was kept alive by the `SafeContinuation` in its own frame (`infiniteLoopInNextMeaningful`). Six of them keep
+  their own continuation in a variable or a list their coroutine holds, by design (`.cycles`). Two mistakes of the first
+  form, found by the suite: a local given up after a call that had resumed the coroutine already (a resume inside a call
+  before the one tested: the window starts where the label is set), and one read again in the next round of a loop.
 
 
 ---------------------------------------------------------------------------

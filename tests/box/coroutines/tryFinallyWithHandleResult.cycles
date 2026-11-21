@@ -1,0 +1,1 @@
+The coroutine's controller (its receiver) keeps in its list of postponed actions lambdas that hold the coroutine's continuation: a coroutine whose actions are not all run and its controller hold each other (the test's design; a collector frees them).

@@ -110,10 +110,8 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   This is the decision of section 7.1.
 
 ### 2.3 kotlinx.coroutines: what is not taken yet (3 to 5 days)
-- [ ] The 7 pending box tests of coroutines (`tests/box/pending/coroutines`; 34 of 41 pass since 2026-11-21) give the
-  right answer and leak: a coroutine that waits for ever keeps what it no longer uses in its frame
-  (`infiniteLoopInNextMeaningful`: the `SafeContinuation` of `suspendCoroutine`, which holds the coroutine); the six
-  others keep a continuation in a variable or a list their own coroutine holds (the three `*WithHandleResult`,
+- Every box test of coroutines taken passes (41 of 41, 2026-11-21; none pending). Six have `.cycles`: they keep a
+  continuation in a variable or a list their own coroutine holds (the three `*WithHandleResult`,
   `boxReturnValueOfSuspendLambda` twice, `resultExceptionOrNullInLambda`), the test's design, which a collector frees.
 
 ### 2.4 kotlinx.serialization (done but for a known leak)

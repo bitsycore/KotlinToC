@@ -172,31 +172,11 @@ They found, all fixed:
 - a parameter of type `Unit` (`(T) -> Unit` with `T = Unit`, `fun f(u: Unit)`), and `==`
   between a `String` and an `Any?` (not about coroutines either).
 
-`box/pending/` holds the 41 that do not pass yet:
-- conversions to `suspend` function types (a plain function value or a `fun interface` where a
-  `suspend` one is wanted, an adapted reference): `suspendConversion/*`,
-  `featureIntersection/funInterface.kt`, `featureIntersection/callableReference/function/adapted.kt`,
-  `kt28844.kt`, `kt49168.kt`, `intrinsicSemantics/startCoroutineWithCallerContinuation.kt`;
-- references to `suspend` functions as values (`::f` as a `KSuspendFunction`: its `invoke`, its
-  name, `equals`): `simpleSuspendCallableReference.kt`, `functionReference_eqeq_name.kt`,
-  `featureIntersection/callableReference/bound/emptyLHS.kt`,
-  `featureIntersection/callableReference/function/local/equalsHashCode.kt`,
-  `tailCallOptimizations/unit/functionReference.kt`;
-- a class that extends a `suspend` function type, and a lambda used as one:
-  `suspendFunctionAsSupertype.kt`, `featureIntersection/suspendFunctionAsSupertypeIsCheckWithArity.kt`,
-  `createCoroutinesOnManualInstances.kt`, `functionReference_lambdaAsSuspendLambda.kt`;
-- value classes in `suspend` functions (C that does not compile, a leak):
-  `inlineClasses/*`, `suspendLambdaWithValueClassSpilledField.kt`;
-- `tailrec` in a function that is a state machine: `featureIntersection/tailrec/tailCallInBlockInParentheses.kt`,
-  `featureIntersection/tailrec/whenWithIs.kt`;
-- objects left allocated: `tryCatchWithHandleResult.kt`, `tryFinallyWithHandleResult.kt` and
-  `tryCatchFinallyWithHandleResult.kt` by a cycle of the test's own (the controller holds the
-  lambdas that resume the coroutine, which holds the controller, and an exception leaves the
-  lambda in the list), `kt51718.kt` by a property whose lambda calls the members of its own
-  object (a cycle no warning reports yet: PLAN.md); `infiniteLoopInNextMeaningful.kt` and
-  `intrinsicSemantics/resultExceptionOrNullInLambda.kt` not looked at yet;
-- wrong results, not looked at yet: `unitTypeReturn/unitSafeCall.kt`, `varSpilling/safeCallElvis.kt`,
-  `tailCallOptimizations/tryCatch.kt`.
+`box/pending/` held the 41 that did not pass at first; every one passes since 2026-11-21 (`docs/HISTORY.md`), and
+the folder is gone until a new box test needs it. Six of them have `.cycles`: they keep their own continuation in a
+variable or a list their coroutine holds (the three `*WithHandleResult`, `boxReturnValueOfSuspendLambda` twice,
+`intrinsicSemantics/resultExceptionOrNullInLambda`). `featureIntersection/suspendFunctionAsSupertypeIsCheckWithArity`
+fails on the JVM by design (`.native`).
 
 ## kotlinx-io's tests
 

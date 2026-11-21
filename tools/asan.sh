@@ -26,7 +26,8 @@ rm -rf "$vOut/asan-obj" && mkdir -p "$vOut/asan-obj"
 	VFLAGS="$vFlags" VCC="$vCompiler" xargs -P "$vJobs" -I{} sh -c 'o="../asan-obj/$(echo "$1" | tr "/\\\\" "__").o"; $VCC $VFLAGS -c "$1" -o "$o" 2>&1 | head -5' _ {} | head -20)
 say "compiled in $((SECONDS - vStep)) s; linking"
 vStep=$SECONDS
-(cd "$vOut/c" && $vCompiler -fsanitize=address -g -o ../asan.exe ../asan-obj/*.o $vLibs $(grep "^ldflag=" ../ktc2_build.txt | cut -d= -f2-) 2>&1 | head -20)
+# The objects through a response file: a program of thousands of files is a command line longer than Windows takes.
+(cd "$vOut/c" && ls ../asan-obj/*.o > ../asan-objects.rsp && $vCompiler -fsanitize=address -g -o ../asan.exe @../asan-objects.rsp $vLibs $(grep "^ldflag=" ../ktc2_build.txt | cut -d= -f2-) 2>&1 | head -20)
 say "linked in $((SECONDS - vStep)) s; running"
 vStep=$SECONDS
 # clang on Windows links the sanitizer as a library of its own, which is not on the path.

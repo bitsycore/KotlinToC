@@ -554,6 +554,15 @@ of its own.
   what followed the call runs once, in whichever run goes on (its releases also on resuming,
   and in the cleanup of the case N). A coroutine created and then resumed with an exception
   (`createCoroutine(...).resumeWithException(e)`) throws it before its first statement.
+- A waiting coroutine keeps only what it uses after, as on the JVM and Kotlin/Native
+  (`releaseDeadAtSuspensions` in the emitter): a local of the frame that holds a count at a suspension point and that
+  neither it nor anything made of it is read after the call (nor at all in a loop around it) gives its count, before
+  the label of that point is set, to a C local, which every statement up to the call uses in its place and which is
+  released right after the call (`mHeldOver`, also on the way out when it suspends: the C local is the run's own, not
+  the frame's). Its field stays null, which the cleanup and the releases after find. What a call returns is made of
+  nothing it was given (its caller's own), but for the forms that may return what an argument holds (`__b`, `__m`,
+  `__into`); a call to an owned form (`__o`) keeps the window as it is. The `SafeContinuation` of a `suspendCoroutine`
+  never resumed held its coroutine for ever (`box/coroutines/infiniteLoopInNextMeaningful`).
 - The driver. `sequence { }`, `iterator { }` and `DeepRecursiveFunction` start a coroutine whose
   receiver and completion are one object, the driver: it holds the coroutine while it waits and
   resumes it. Counted by the coroutine in turn, it would never be freed. So a coroutine refers to
