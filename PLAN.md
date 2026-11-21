@@ -24,6 +24,23 @@ library's needs):
   ktc2's own implementation for counting, without cycles by design, compatible with the JVM, Kotlin/Native and ktc2
   (section 7.5). Keep it in mind: nothing for kotlinx.coroutines goes into the base where it could stand in its way.
 
+**Who answers a cycle** (the owner, 2026-11-21; read before any work on memory, a library's cycles or the lint). There is
+no general cycle collector, in the runtime or as an option (section 7.1):
+1. The language stays plain reference counting, as Swift is: a cycle a program makes is the program's to break, and
+   the compiler warns where it can see one coming (`CycleLint`), saying what to write (`@Weak`, `WeakRef`, `@Acyclic`,
+   letting go of a reference once done). What no compiler can see (an array or a list put into itself) is the
+   program's, as in Swift.
+2. A kotlinx library keeps its API and its behavior: a program written for the JVM or Kotlin/Native compiles and
+   computes the same.
+3. To keep that behavior, a library's module may have rules and runtime of its own (`weak`, `acyclic`, `cycles`,
+   `rings`, edits of its sources, Kotlin code of its own, a runtime option), compiled only into the programs that use it
+   (the runtime principle above). Everything internal to the library, its own objects referring to one another, is
+   answered there: the user never has to know.
+4. What the user can fix with the library's own API as it is, adding only a `ktc2.` annotation or way of working
+   (`@Weak` on a property, a `WeakRef` captured instead of the object, a variable cleared once done), is the user's:
+   a warning of the compiler, never machinery in the library or the runtime. A cycle that passes through the user's
+   own objects (a lambda, a class, a frame of theirs) is never cut by a library's rules.
+
 ---------------------------------------------------------------------------
 ## 1. Where it stands (2026-11-18, night, Windows)
 ---------------------------------------------------------------------------
@@ -59,55 +76,49 @@ Kotlin/Native's collector would). What stands between, in the order to do it:
 ### 2.1 Bugs found and not fixed
 Nothing left: `WithTimeoutTest`'s cycle is one of the lists of handlers of 2.2 today.
 
-### 2.2 kotlinx.coroutines' cycles (3 to 5 days)
-The owner's direction (2026-11-20): kotlinx.coroutines keeps its API and behavior, even at some cost; what answers its
-cycles stays in its module (edits, declarations, a small runtime of its own if needed), not in ktc2's base.
-Measured again on 2026-11-21 with the report of what a leak starts from (`[root]`, CLAUDE.md): in each of the 26 files
-with `.cycles`, every cycle left is a root (nothing else holds it), by kind:
-- A declared cycle held only for the first instantiation of a generic class (fixed 2026-11-21, 10 files and 3 freed
-  whole): what was taken for a cycle closed by a store after its last check was a `CancellableContinuationImpl<Int>`,
-  of a class with no check at all. Option (a) the owner chose (a check at stores into the fields of declared cycles)
-  waits until a case of it is found; none is known now.
-- [ ] A job and the exception that is its final state, left in 4 files (`ProducerCoroutine` in `ZipTest` and
-  `ChannelBuildersFlowTest`, `ScopeCoroutine` and `BlockingCoroutine` in `CombineTest` and `IdFlowTest`). For the
-  producer (`ZipTest`): the job held only by the exception, its channel and its state only by the job, the exception
-  by both (two declared cycles through it). Since 2026-11-21 a longer declared cycle that is there but shared starts
-  the check of a group (knot), which freed the `WithTimeout` tests' knot, but not this one: the walk reaches an object
-  held from outside (`KTC2_RING_TRACE=1`; its lines carry no address yet, which they need to tell this group's apart).
-- [ ] A completion hook of the module: what a finished job lets go of, at the points the library defines (its final
-  state and its children done), as edits; the handler lists stay (another thread may still walk them).
-The 16 files of the library's own structures, by kind (each file's `.cycles` names it):
-- [ ] Knots whose garbage is never seen whole from where a check starts (2026-11-19; most of `AsyncTest`'s, after the
-  knots of `regressions/coroutines-incomplete-async` were answered): a deferred that ended with an exception (a declared
-  cycle) is named by the node `await` left in its old list of handlers (a ring). When the list goes, the deferred is
-  still held by the test; when the test lets go, the check starts from the deferred, which does not reach the list.
-  The note (tried 2026-11-21, taken out): a member held from outside noted, the check made again from the same start at
-  its next release. It worked as meant and freed nothing in the files left: their garbage is two groups that hold each
-  other (the producers of `zip`, through a segment of one channel the other's channel holds), which no walk along
-  references from one start sees whole. What is left of these is for a collector (7.1), restricted to the classes of
-  declared cycles and run by the module's programs only (`KTC2_KNOTS`).
-- [ ] A coroutine of a channel (`produce`, and flows built on it) cancelled: its exception is kept both as its
-  state and as the channel's cause of closing, and names the coroutine. Two cycles through one object; neither
-  declared cycle frees it, and a ring of the four classes made it worse (tried, taken out). Options: a check
-  that follows several declared cycles through a shared object (a generalization of `KPairCycle` to "every
-  reference to each object of the set comes from the set", which is what rings do for lists); or an edit that
-  closes the channel with a copy of the exception that does not name the job. Recommended: the first, it is
-  the general answer and the next item needs it too.
-- [ ] A failed `runBlocking` (and `coroutineScope`, `flowScope`) whose exception names a scope coroutine that
-  keeps its caller's continuation (`ScopeCoroutine.uCont`). An edit that lets go of `uCont` once the scope has
-  resumed its caller touches the five subclasses; or the general check above.
-- [ ] A lazy coroutine cancelled while it is being made (its parent already cancelled, `CancelledParentAttachTest`): it
-  keeps the coroutine of its block (`continuation`), which names it (`mCompletion`, `receiver`), and its state is the
-  parent's exception, which names the parent. Measured 2026-11-21 (`KTC2_PAIR_TRACE=2`, `KTC2_RING_TRACE=1`, which gives
-  addresses now): declaring the pair (tried, taken out) is not enough: its check, a knot, walks into the parent while the
-  test holds it, and no later release of the lazy coroutine brings its count to where a check runs. The edit of
-  `Builders.common.kt` that tests `isCancelled` where it keeps the block is what is left to try.
-- [ ] A `select`'s clauses (inner objects in its list): a ring to declare (`rings`), as the job lists are.
-- [ ] The lists of handlers of jobs that end on several threads at once (`ConcurrentExceptionsStressTest`): the
-  rings of jobs with several handlers in threaded programs, known since 2026-11-18.
-- [ ] The 11 files whose tests keep a continuation in a variable their own coroutine captures, or keep the
-  deprecated `BroadcastChannel`'s subscriptions: nothing in the library to answer; only a collector frees them.
-  This is the decision of section 7.1.
+### 2.2 Cycles: the reaper of kotlinx.coroutines and the lint (the owner, 2026-11-21; 1 to 2 weeks)
+The rules are "Who answers a cycle", at the top. What the 32 files with `.cycles` leave, by who answers it:
+
+**The user's (rule 4): warnings of the compiler.** A test that does what a program should not, and that the library's
+API as it is lets it avoid: its `.cycles` stays, saying "the user's cycle, warned at compile time", once the warning is
+there.
+- [ ] A coroutine's continuation kept where its own coroutine reaches it: a captured `var` given the continuation in
+  `suspendCoroutine { c = it }`, a list of actions of its receiver holding lambdas that resume it (7 files of
+  kotlinx.coroutines' tests: `CancellableContinuation*`, `CancellableResume*`, `DispatchedContinuationTest`, `JobTest`,
+  `ChannelUndeliveredElementFailureTest`; 6 box tests: `*WithHandleResult`, `boxReturnValueOfSuspendLambda`,
+  `resultExceptionOrNullInLambda`). The warning names the variable: hold the continuation through a `WeakRef`, or clear
+  it once it has resumed.
+- [ ] A property of a class whose lambda, `lazy { }` or `DeepRecursiveFunction` uses `this`, for the life of the object:
+  three objects or more, which no pair check frees (`DeepRecursiveTest`, `LazyValuesTest` of the stdlib). `CycleLint`
+  does not follow a field typed as a function or as a library class whose field holds the lambda: it should, for a
+  class of the program, through the lambdas its constructor makes.
+- An array, a list or exceptions put into themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`): what no
+  compiler can see, the program's (rule 1). Accepted.
+
+**The library's (rule 3): the reaper of kotlinx.coroutines.** Written by hand in the module (Kotlin of its own and
+edits), compiled only into its programs. Nothing new in ktc2's base but one intrinsic.
+- [ ] `ktc2.internal.referenceCount(obj)`: the count of an object, read (an `external` of the platform layer; its C only
+  in the programs that call it). What tells the module "held only by its own structure".
+- [ ] The reaper: a job that reaches its final state (its handlers run, its children done) registers with the reaper of
+  the thread it completed on, through a `WeakRef` (keeping nothing). Between continuations, where the library already
+  runs code (`EventLoopImplBase.processNextEvent`, the worker loop of `CoroutineScheduler`, the end of `runBlocking`),
+  the reaper sweeps: for each job still there, if its count is what its own structure holds of it, it cuts that
+  structure; a job still held from outside waits for the next sweep. A worker that stops hands its list to a global one;
+  a program that ends sweeps once more. Exact: nothing outside holds what is cut, and no thread can take a new reference
+  to it without holding one already.
+- [ ] Its structures, one at a time, each with the file it frees: a job and the exception that is its final state and
+  names it, also kept as its channel's cause (`ZipTest`, `ChannelBuildersFlowTest`); a failed `runBlocking`,
+  `coroutineScope` or `flowScope` whose exception names a scope that keeps its caller's continuation (`uCont`:
+  `IdFlowTest`, `CombineTest`; when that caller is the user's own frame, an edit that lets go of `uCont` once the scope
+  has resumed it); a lazy coroutine cancelled while it is made (`CancelledParentAttachTest`); a `select`'s clauses
+  (`SelectRendezvousChannelTest`); the lists of handlers of jobs that end on several threads at once
+  (`ConcurrentExceptionsStressTest`); the deprecated `BroadcastChannel`'s subscriptions (`BasicOperationsTest`,
+  `BufferedBroadcastChannelTest`, `ConflatedBroadcastChannelTest`).
+- Its declarations (`cycles`, `rings`, the edits that cut cycles) stay where they free what they free at once; the
+  reaper takes what they cannot.
+
+**Known, kept:** kotlinx.serialization's types that contain themselves (section 2.4): one ring for each such type,
+held for the life of the program by its serializer object.
 
 ### 2.3 kotlinx.coroutines: what is not taken yet (3 to 5 days)
 - Every box test of coroutines taken passes (41 of 41, 2026-11-21; none pending). Six have `.cycles`: they keep a
@@ -125,9 +136,9 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
 
 ### 2.5 The standard library (2 to 3 days)
 - The 5 `.cycles` left of `tests/stdlib/` are the tests' own design: a collection, an array or exceptions put into
-  themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`), an object whose `DeepRecursiveFunction`s or whose lazy
-  value hold lambdas that use it (`DeepRecursiveTest`, `LazyValuesTest`: three objects or more, which no declared cycle
-  of a module names).
+  themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`: the program's, rule 1), an object whose
+  `DeepRecursiveFunction`s or whose lazy value hold lambdas that use it (`DeepRecursiveTest`, `LazyValuesTest`: a
+  warning to come, section 2.2).
 - Known difference, accepted (the owner's to decide otherwise): `MapTest.nullKeyAndValue`, a `null` put through an
   unchecked cast into a map that keeps its values as numbers. Only generics of numbers kept boxed where a cast can
   reach them would answer it.
@@ -311,20 +322,11 @@ the compiler process, the IR to C under a second, the C 0.2 to 20 s. By gain:
 ## 7. Other proposals
 ---------------------------------------------------------------------------
 
-### 7.1 A cycle collector as a backup (the owner's decision; 1 to 2 weeks)
-Everything left in sections 2.2 to 2.5 is memory Kotlin/Native's collector frees and ktc2's counting does not
-without a declaration in a module. Options:
-1. None (now): declare each library's cycles (`weak`, `acyclic`, `cycles`, `rings`, edits), and accept the
-   tests whose own design makes cycles (11 files). Exact and cheap, but every new library brings its own work,
-   and a user's program can leak where Native's would not.
-2. A collector that runs in test and debug builds only, to name every leaked cycle precisely (no freeing):
-   the tooling for option 1.
-3. **A backup collector in the runtime, by trial deletion** (as CPython's and PHP's: the objects whose count
-   went down without reaching zero are candidates; from time to time, or when memory grows, their subgraph is
-   scanned and what only it holds is freed). Exact, no pauses for programs without cycles, a cost per release
-   of a candidate. The declarations stay as optimizations. Recommended, as an option of the build (on by
-   default, `--no-cycle-collector` for programs that know they have none): it makes "every test passes" reachable
-   and Kotlin code behave as on Native without a module file.
+### 7.1 A cycle collector (decided 2026-11-21: none)
+No general collector, in the runtime or as an option: the language stays reference counting with warnings, as Swift;
+a library's internal cycles are its module's, by hand; the user's are warnings ("Who answers a cycle", at the top; the
+work is section 2.2). A collector that only names leaked cycles in test builds (no freeing) stays possible as tooling:
+`KTC2_CYCLES=1` does most of it already.
 
 ### 7.5 ktc2.coroutines (the owner, 2026-11-21: after kotlinx.coroutines works)
 An implementation of coroutines of ktc2's own, with an API of its own, that runs on the JVM and Kotlin/Native too (as
@@ -395,6 +397,10 @@ proposed first.
   of ktc2's own, optimized for counting (no cycles by design), compatible with the JVM, Kotlin/Native and ktc2
   (2026-11-21; section 7.5).
 - The last digit of `exp`, `pow`... is the C library's, as on Native (2026-11-14).
+- No general cycle collector (2026-11-21): the four rules of "Who answers a cycle", at the top. A library's internal
+  cycles are answered inside its module, by hand: for kotlinx.coroutines a reaper written in the module (section 2.2)
+  that sweeps finished jobs at the points the library already runs code between continuations, with one small
+  intrinsic of the base (the count of an object) compiled only where it is called. The user's cycles are warnings.
 
 **Not differences** (either platform is right): two entries a `HashMap` hands out for one key are equal and not
 the same object; the last digit of the C library's mathematics.
