@@ -98,6 +98,9 @@ class CEmitter(private val mModule: KModule) {
 
 	private fun typeId(inClass: KClass): String = "KTC2_TYPE_${inClass.cName}"
 
+	/** Whether a value of [inType] is nothing in C (Unit, Nothing): a local of it has no storage. */
+	private fun isVoid(inType: KType): Boolean = inType == KUnitType || inType == KNothingType
+
 	private fun typeIds(): String = buildString {
 		append("#ifndef KTC2_TYPES_H\n#define KTC2_TYPES_H\n\n#include \"ktc2_core.h\"\n\n")
 		append("/* Type ids of the classes this program instantiates. */\nenum {\n")
@@ -283,7 +286,7 @@ class CEmitter(private val mModule: KModule) {
 				val vFields = LinkedHashMap<KLocal, KField>()
 				val vNames = generateSequence(vCoroutine.cls) { it.superClass }.flatMap { it.fields }.mapTo(HashSet()) { it.cName }
 				fun local(inLocal: KLocal) {
-					if (inLocal in vParams || inLocal in vFields) return
+					if (inLocal in vParams || inLocal in vFields || isVoid(inLocal.type)) return
 					var vName = "F_${inLocal.cName}"
 					while (!vNames.add(vName)) vName += "_"
 					vFields[inLocal] = KField(vName, inLocal.type, vCoroutine.cls).also { it.isFrame = true }
@@ -1248,6 +1251,10 @@ class CEmitter(private val mModule: KModule) {
 
 		private fun statement(inStatement: KStmt, inDepth: Int) {
 			when (inStatement) {
+				// A local of Unit (a generic result where T is Unit: `val result = block()` of `measureTimedValue`) holds nothing:
+				// its value is only evaluated.
+				is KLet if isVoid(inStatement.local.type) -> inStatement.init?.let { line(inDepth, "(void)(${bare(expr(it))});") }
+				is KSet if isVoid(inStatement.local.type) -> line(inDepth, "(void)(${bare(expr(inStatement.value))});")
 				is KLet -> {
 					need(inStatement.local.type)
 					// A local without an initializer starts at zero: a path that leaves through a call
@@ -1576,7 +1583,7 @@ class CEmitter(private val mModule: KModule) {
 				else -> "NULL"
 			}
 			is KStringLit -> "KTC2_STR(${mState.literals.getOrPut(inExpr.text) { "lit_${mState.tag}${mState.literals.size}" }})"
-			is KRead -> localText(inExpr.local)
+			is KRead -> if (isVoid(inExpr.local.type)) "((void)0)" else localText(inExpr.local)
 			is KGlobalRead -> {
 				mState.includes += inExpr.global.unit
 				inExpr.global.cName

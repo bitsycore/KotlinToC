@@ -385,7 +385,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 * JVM with the library's jars, which it sees the internals of as a test of the library does, and `jvmTest`.
 	 * [kModuleTests] names the modules that have such tests.
 	 */
-	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io", "kotlinx-coroutines")
+	private val kModuleTests = listOf("kotlinx-io", "kotlinx-collections-immutable", "atomicfu", "kotlinx-datetime", "kotlinx-serialization", "kotlinx-serialization-json-io", "kotlinx-coroutines", "kotlinx-coroutines-test")
 
 	private fun moduleTestList(): List<DynamicTest> =
 		moduleGroups().map { vGroup ->

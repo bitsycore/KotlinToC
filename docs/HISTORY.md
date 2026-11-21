@@ -1144,6 +1144,10 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   scope from the scope's own context: an edit (`TestScope.kt.edit`) has them reach it through a holder the module
   declares weak, which cannot change a result (they are called for a child of the scope, which holds it); the
   scheduler and its time source are a declared cycle.
+- 2026-11-21, `PLAN.md` 2.3: kotlinx-coroutines-test's own tests (`tests/modules/kotlinx-coroutines-test/`, with the
+  repository's shared helpers) pass, in C and on the JVM. A local of type Unit (`val result = block()` of
+  `measureTimedValue` where T is Unit) has no storage: in a coroutine it was a field of type void
+  (`tests/ktc2/regressions/UnitLocalInCoroutine.kt`).
 
 
 ---------------------------------------------------------------------------
