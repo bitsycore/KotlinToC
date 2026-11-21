@@ -9,6 +9,21 @@ Each item: a test that shows it (a program under `tests/integration/`, or a comm
 that cover it, a commit. Estimates are days of work at the pace of the last weeks; nothing below is prototyped
 unless it says so.
 
+**The runtime a program needs, and no more** (the owner, 2026-11-21; read before any work on the runtime or on a
+library's needs):
+- What a library needs costs the programs that use it, not every program. kotlinx.coroutines' cycles (declared
+  cycles, rings, knots and their notes) are its own: their runtime is compiled in only when a module of the program
+  declares cycles or rings (`KTC2_KNOTS` in the program's `ktc2_config.h`, as `KTC2_THREADS` is when it starts a
+  thread). A program without them has none of that code, none of its branches, none of its bits of the count.
+- The runtime is made for each program by such options: a module that needs a part of the runtime turns it on. A new
+  part that only some programs need is a new option of `ktc2_config.h`, written by the emitter from what the program
+  has, not a cost for all.
+- A small addition to ktc2's base is fine when Kotlin itself needs it (the identity hash of `Any`, a cycle of an object
+  and its inner object): what plain Kotlin needs is the base.
+- kotlinx.coroutines first, as it is (its API, so that ordinary Kotlin works), at its own cost. Then `ktc2.coroutines`,
+  ktc2's own implementation for counting, without cycles by design, compatible with the JVM, Kotlin/Native and ktc2
+  (section 7.5). Keep it in mind: nothing for kotlinx.coroutines goes into the base where it could stand in its way.
+
 ---------------------------------------------------------------------------
 ## 1. Where it stands (2026-11-18, night, Windows)
 ---------------------------------------------------------------------------
