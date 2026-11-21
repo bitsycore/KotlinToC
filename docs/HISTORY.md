@@ -1131,6 +1131,9 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   target of the dispatchers of `invoke` of `KFunctionN`, `KSuspendFunctionN` and `SuspendFunctionN` (a suspend function
   reference called as a `KSuspendFunction0`); `name` of a `KSuspendFunction` written where it is read; the box tests'
   `OPTIONAL_JVM_INLINE_ANNOTATION` is `@kotlin.jvm.JvmInline`, as the compiler's tests make it for the JVM.
+- 2026-11-21, `PLAN.md` 2.3: a `suspend fun interface` made of a function value (`Print(::plain)`, `FlowCollector` of a
+  function) called it as a plain function, without its continuation (`tests/ktc2/coroutines/SuspendFunInterfaces.kt`,
+  the box test `kt49168`).
 
 
 ---------------------------------------------------------------------------

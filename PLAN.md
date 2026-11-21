@@ -113,15 +113,14 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
 - [ ] `native/test` (workers, `MultithreadedDispatchersTest`, `DelayExceptionTest`): Native's own tests.
 - [ ] `kotlinx-coroutines-test` as a second module (`runTest`, virtual time, `TestDispatcher`): many programs
   and libraries test with it; its own tests then.
-- [ ] The 16 pending box tests of coroutines (`tests/box/pending/coroutines`; 25 of 41 pass since 2026-11-21): a
-  `suspend fun interface` made of a function reference (`kt49168`, below); a class that implements a suspend function
+- [ ] The 15 pending box tests of coroutines (`tests/box/pending/coroutines`; 26 of 41 pass since 2026-11-21): a class
+  that implements a suspend function
   type (`suspendFunctionAsSupertype*`: a `ClassCastException`, a wrong `is` by arity); the `name` of a function
   reference not written where it is read (`functionReference_eqeq_name`: "Reflection is not available"); `equals` and
   `hashCode` of local function references; two `tailrec` suspend functions that end the program (`tailrec/`); a unit
   tail call through a reference that returns the wrong object; `startCoroutine` with the caller's continuation; leaks of
   a lambda and its continuation (`infiniteLoopInNextMeaningful`, the three `*WithHandleResult`,
   `boxReturnValueOfSuspendLambda`, `resultExceptionOrNullInLambda`).
-- [ ] A `suspend fun interface`.
 
 ### 2.4 kotlinx.serialization (2 to 4 days)
 - [ ] The 27 `.cycles`: a serializer and its descriptor refer to each other through a field typed by an

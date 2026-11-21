@@ -3005,13 +3005,19 @@ internal class BodyBuilder(
 		val vSubst = classParameters(vInterface).map { it.symbol }.zip(mImporter.argumentsOf(vType)).toMap()
 		val vParameters = vMethod.parameters.filter { it.kind == IrParameterKind.Regular }.map { mImporter.close(it.type, vSubst) }
 		val vReturn = mImporter.close(vMethod.returnType, vSubst)
-		val vParamTypes = vParameters.map { kType(it) ?: return fail(inConversion, vWhat) }
-		val vReturnType = kType(vReturn) ?: return fail(inConversion, vWhat)
+		// A suspend member (`fun interface Print { suspend fun print(...) }`) takes the continuation last and returns its result
+		// or COROUTINE_SUSPENDED, as every suspend function here; the function value is then a suspend one, a FunctionN of
+		// one more parameter that takes the continuation too.
+		val vSuspends = vMethod.isSuspend
+		val vParamTypes = vParameters.map { kType(it) ?: return fail(inConversion, vWhat) } + (if (vSuspends) listOf(KObjType) else emptyList())
+		val vReturnType = if (vSuspends) KObjType else kType(vReturn) ?: return fail(inConversion, vWhat)
 		// The function is called as any function value is: through `invoke` of its FunctionN.
-		val vInvokeOwner = mImporter.mBuiltIns.functionN(vParameters.size)
+		val vInvokeOwner = mImporter.mBuiltIns.functionN(vParamTypes.size)
 		val vInvoke = vInvokeOwner.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "invoke" }
 			?: return fail(inConversion, vWhat)
-		val vDispatcher = mImporter.dispatcherFor(vInvoke, mImporter.substFor(vInvoke, vParameters + vReturn, emptyList()))
+		val vAnything = mImporter.mBuiltIns.anyNType
+		val vInvokeArguments = if (vSuspends) vParameters + vAnything + vAnything else vParameters + vReturn
+		val vDispatcher = mImporter.dispatcherFor(vInvoke, mImporter.substFor(vInvoke, vInvokeArguments, emptyList()))
 			?: return fail(inConversion, vWhat)
 		val vFunction = spill(coerce(lowerPure(inConversion.argument), KObjType))
 
