@@ -1267,6 +1267,8 @@ class CEmitter(private val mModule: KModule) {
 			val vValue = bare(expr(inValue))
 			val vType = inValue.type
 			line(inDepth, when {
+				// A struct emptied after a move: through memset (KTC2_ZERO_VALUE, ktc2_core.h, for MSVC).
+				!inReleasesOld && (inValue is KZero || inValue is KNull) && vType is KStructType -> "KTC2_ZERO_VALUE($inSlot);"
 				!inReleasesOld -> "$inSlot = $vValue;"
 				vType is KStructType -> "KTC2_ASSIGN_VALUE(${cType(vType)}, $inSlot, $vValue, ${vType.struct.cName}__release);"
 				else -> "KTC2_ASSIGN($inSlot, $vValue);"

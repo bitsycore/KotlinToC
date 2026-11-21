@@ -543,6 +543,13 @@ static inline void ktc2_release(void* pointer)
  */
 #define KTC2_ASSIGN(slot, value) 	do { 		void* ktc2_new = (value); 		void* ktc2_old = (slot); 		(slot) = ktc2_new; 		ktc2_release(ktc2_old); 	} while (0)
 
+/**
+ * Empties a slot holding a struct (after its value moved elsewhere). By memset and not by assigning `(type){ 0 }`:
+ * MSVC 14.52 at -O1 got such an assignment that followed a copy of the slot wrong, and a release of the value was
+ * lost (a leak of the objects it held, in ktc2test.values.StructReferences: the loop of `map`).
+ */
+#define KTC2_ZERO_VALUE(slot) memset(&(slot), 0, sizeof(slot))
+
 /** The same for a slot holding a struct with references in it; [release] gives up those of the old value. */
 #define KTC2_ASSIGN_VALUE(type, slot, value, release) 	do { 		type ktc2_new = (value); 		type ktc2_old = (slot); 		(slot) = ktc2_new; 		release(ktc2_old); 	} while (0)
 

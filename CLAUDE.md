@@ -114,6 +114,7 @@ Kotlin K2 compiler) on automatic reference counting, no GC.
 - A use of freed memory can pass on one system and crash on another: the double release found on macOS had always passed on Windows. Trust AddressSanitizer over a green run.
 - Apple's SDK declares the C library in private headers (`_stdio.h` behind `stdio.h`): `Bindings.kt` adds them to the headers a `.def` asks for.
 - Do not run the benchmarks or the installed tool while the suite runs: the machine is busy enough to make times meaningless.
+- A leak or a wrong result with MSVC only, at `-O1` and not at `-Od`, is likely cl's optimizer: MSVC 14.52 (VS 18.12, the CI's) lost a release after `x = (T){ 0 };` that followed a copy of `x`, where 14.51 did not (ktc2 empties struct slots with `KTC2_ZERO_VALUE`, a memset, since). Reproduce with the CI's version (`windows-2025-vs2026` image: its readme lists Visual Studio's), compile the program's files at `-O1` but some at `-Od` to find the file, and `#pragma optimize("", off)` around a function to find the function.
 - The last digit of `exp`, `ln`, `pow`, `cbrt` differs between C libraries and from the JVM: a test must not print it (gcc hides it where it works a call on constants out itself; clang calls the C library: glibc's `cbrt(27.0)` is `3.0000000000000004`).
 
 ## Conventions
