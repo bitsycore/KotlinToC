@@ -1,0 +1,1 @@
+Made on purpose, each with the warning the compiler gives for it (UserCycles.warnings): a continuation kept in a variable its own coroutine captures, and a DeepRecursiveFunction whose lambda uses the object that keeps it.

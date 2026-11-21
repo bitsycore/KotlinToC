@@ -1,0 +1,7 @@
+after:                     parkNanos = eventLoop.processNextEvent()
+                    // ktc2: what the jobs of this thread left in cycles when they ended, once nothing holds it (Ktc2Reaper.kt).
+                    ktc2Sweep()
+replace:         // now return result
+        // ktc2: and when the loop ends, after its coroutine (Ktc2Reaper.kt).
+        ktc2Sweep()
+        // now return result

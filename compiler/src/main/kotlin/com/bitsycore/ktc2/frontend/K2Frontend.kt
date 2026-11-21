@@ -549,6 +549,13 @@ class Ktc2Extension : IrGenerationExtension {
 			System.setProperty(kErrorCountProperty, vJavaUses.errors.size.toString())
 			return
 		}
+		// The cycles a program makes through coroutines and lambdas that it can avoid with the API as it is: warnings.
+		if (System.getProperty("ktc2.warnCycles") != "false") {
+			val vUserCycles = UserCycleLint(vLibraryFiles, vOutDir).also { it.check(moduleFragment.files) }.warnings
+			vUserCycles.forEach { System.err.println("ktc2: warning: $it") }
+			// Kept next to the output too, where a run of the suite, which does not show them, leaves them to read.
+			File(vOutDir, "user-cycles.txt").let { if (vUserCycles.isEmpty()) it.delete() else it.writeText(vUserCycles.joinToString("\n", postfix = "\n")) }
+		}
 		val vModule = vImporter.import(moduleFragment)
 		if (vModule.entry == null) vImporter.errors += "no 'fun main()' found"
 		vImporter.errors.forEach { System.err.println("ktc2: error: $it") }

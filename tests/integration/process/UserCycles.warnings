@@ -1,0 +1,2 @@
+the continuation of a coroutine is kept in 'vKept', which the coroutine itself holds
+'depth' keeps a lambda that uses this object (DeepRecursiveFunction keeps it)

@@ -1,1 +1,2 @@
+The user's cycle, warned at compile time (UserCycleLint, PLAN.md "Who answers a cycle", rule 4):
 MutualRec and MutualAndDirectMixRec hold DeepRecursiveFunctions whose lambdas capture the object (`odd`, `even`, `aa()`): the object and its functions refer to each other and are never freed (there is no collector of cycles).

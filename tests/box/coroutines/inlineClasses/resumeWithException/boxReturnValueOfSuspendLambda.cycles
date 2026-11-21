@@ -1,1 +1,2 @@
+The user's cycle, warned at compile time (UserCycleLint, PLAN.md "Who answers a cycle", rule 4):
 The test keeps the continuation of its coroutine in a variable the coroutine captures (c): the variable's cell, the continuation and the coroutine hold one another once it is resumed (the test's design; a collector frees them).

@@ -82,16 +82,13 @@ The rules are "Who answers a cycle", at the top. What the 32 files with `.cycles
 **The user's (rule 4): warnings of the compiler.** A test that does what a program should not, and that the library's
 API as it is lets it avoid: its `.cycles` stays, saying "the user's cycle, warned at compile time", once the warning is
 there.
-- [ ] A coroutine's continuation kept where its own coroutine reaches it: a captured `var` given the continuation in
-  `suspendCoroutine { c = it }`, a list of actions of its receiver holding lambdas that resume it (7 files of
-  kotlinx.coroutines' tests: `CancellableContinuation*`, `CancellableResume*`, `DispatchedContinuationTest`, `JobTest`,
-  `ChannelUndeliveredElementFailureTest`; 6 box tests: `*WithHandleResult`, `boxReturnValueOfSuspendLambda`,
-  `resultExceptionOrNullInLambda`). The warning names the variable: hold the continuation through a `WeakRef`, or clear
-  it once it has resumed.
-- [ ] A property of a class whose lambda, `lazy { }` or `DeepRecursiveFunction` uses `this`, for the life of the object:
-  three objects or more, which no pair check frees (`DeepRecursiveTest`, `LazyValuesTest` of the stdlib). `CycleLint`
-  does not follow a field typed as a function or as a library class whose field holds the lambda: it should, for a
-  class of the program, through the lambdas its constructor makes.
+- Done (2026-11-21, `UserCycleLint`, `DESIGN.md` section on cycles; `tests/integration/process/UserCycles`): a coroutine's
+  continuation kept where its own coroutine reaches it (a captured `var`, a property of an object the coroutine holds, a
+  list of actions that is never drained), a registration whose handler uses its own handle, a property whose
+  `DeepRecursiveFunction` or `lazy` value keeps a lambda that uses the object. Warned in 12 of the files with `.cycles`
+  (7 of kotlinx.coroutines' tests, 3 box tests, `DeepRecursiveTest`, `LazyValuesTest`), whose `.cycles` now say so; and
+  nowhere else in the suite. The three `*WithHandleResult` box tests drain their list of actions and leave one only when
+  it throws: not warned (what no compiler sees, rule 1).
 - An array, a list or exceptions put into themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`): what no
   compiler can see, the program's (rule 1). Accepted.
 
@@ -99,7 +96,16 @@ there.
 edits), compiled only into its programs. Nothing new in ktc2's base but one intrinsic.
 - [ ] `ktc2.internal.referenceCount(obj)`: the count of an object, read (an `external` of the platform layer; its C only
   in the programs that call it). What tells the module "held only by its own structure".
-- [ ] The reaper: a job that reaches its final state (its handlers run, its children done) registers with the reaper of
+- [ ] The reaper, tried 2026-11-21 (`docs/wip/reaper/`: the patch, the module's files): registering a job that ended with
+  an exception through a weak cell, and sweeping in `joinBlocking`, with `ktc2.internal.collectGroupOf` (the runtime's
+  check of a group, from the job, under the lock of pair checks) compiled; two things to settle first. (1) It freed
+  nothing in `ZipTest` and `ChannelBuildersFlowTest`: why the group check from the job does not find the group whole
+  there (`KTC2_RING_TRACE=1`). (2) It crashed `JobStructuredJoinStressTest` (a job that fails on `Dispatchers.Default`
+  while `runBlocking` joins it) even with no group freed: an object marked as having a weak cell had none when destroyed
+  (`weak_link`), so the weak cell of a job made by another thread than the one releasing it is the first suspect; and a
+  check from a job must not walk a group another thread is changing (it now starts only when the job's count is no more
+  than its cycles hold, as a release's does).
+  The design: a job that reaches its final state (its handlers run, its children done) registers with the reaper of
   the thread it completed on, through a `WeakRef` (keeping nothing). Between continuations, where the library already
   runs code (`EventLoopImplBase.processNextEvent`, the worker loop of `CoroutineScheduler`, the end of `runBlocking`),
   the reaper sweeps: for each job still there, if its count is what its own structure holds of it, it cuts that

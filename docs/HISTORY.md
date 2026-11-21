@@ -1175,6 +1175,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   their own continuation in a variable or a list their coroutine holds, by design (`.cycles`). Two mistakes of the first
   form, found by the suite: a local given up after a call that had resumed the coroutine already (a resume inside a call
   before the one tested: the window starts where the label is set), and one read again in the next round of a loop.
+- 2026-11-21, the owner's rules of who answers a cycle (`PLAN.md`, at its top): no general collector; the user's cycles
+  are warnings. `UserCycleLint` warns, in the program's own files, about the cycles made through coroutines and lambdas
+  that the API as it is lets a program avoid; in the suite, exactly the 12 files with such `.cycles` (after leaving out
+  builders that call their lambda, jobs that let go of their block, drained lists, the `this` of a named `suspend`
+  function). The reaper of kotlinx.coroutines was built and taken out for now (`docs/wip/reaper/`, `PLAN.md` 2.2).
 
 
 ---------------------------------------------------------------------------

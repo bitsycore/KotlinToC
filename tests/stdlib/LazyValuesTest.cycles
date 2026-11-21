@@ -1,1 +1,2 @@
+The user's cycle, warned at compile time (UserCycleLint, PLAN.md "Who answers a cycle", rule 4):
 IdentityEqualsIsUsedToUnescapeLazyValTest keeps in a lazy property of its own a value that holds a lambda that uses the test object: the object holds the lazy, which holds the value, which holds the lambda, which holds the object.

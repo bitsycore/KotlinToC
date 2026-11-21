@@ -748,6 +748,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 
 	private fun check(inSource: File) {
 		mInput = File(inSource.parentFile, inSource.nameWithoutExtension + ".in").takeIf { it.isFile }
+		// `<name>.cycles` next to a program: as next to a file of tests, it leaves objects in a cycle, for the reason in it.
+		mAllowsLeaks = File(inSource.parentFile, inSource.nameWithoutExtension + ".cycles").isFile
 		val vOutDir = File("build/integration/${inSource.nameWithoutExtension}").apply { deleteRecursively() }
 		// `<name>.def` next to the program describes a C library it uses.
 		val vDefinition = File(inSource.parentFile, inSource.nameWithoutExtension + ".def")

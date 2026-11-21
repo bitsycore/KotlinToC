@@ -43,6 +43,7 @@ The exceptions to rule 1 that exist today are listed in section 12.
 sources + library sources + generated bindings
   -> Kotlin K2 compiler, in process, with the Ktc2Extension IR plugin   frontend/K2Frontend.kt
   -> JavaUseCheck            no java.* in the program                    frontend/JavaUseCheck.kt
+  -> UserCycleLint           warns about cycles made through coroutines and lambdas   frontend/UserCycleLint.kt
   -> KirImporter/BodyBuilder IR -> KIR, from main, monomorphizing        frontend/KirImport.kt, BodyLowering.kt
   -> CycleLint               warns about classes that can form cycles    backend/CycleLint.kt
   -> Devirtualize            dispatched calls -> direct calls            backend/Devirtualize.kt
@@ -390,6 +391,19 @@ outer reference), `WeakRef` or `@Acyclic` answer the warning. It
 follows the declared types of fields, and a cycle needs a `var` on the way, or a field the owner
 gives an object it makes and hands its own `this` to: an `inner` object (`val key = Key()`), a
 lambda or an object expression that captures `this` (`val handler = { update() }`), `Child(this)`.
+`UserCycleLint` (on the IR, the program's own files only: not the stdlib's nor a bundled module's) warns about the cycles
+a program makes through coroutines and lambdas, which no field's type shows, and which the program can avoid with the
+API as it is (`PLAN.md`, "Who answers a cycle", rule 4): the continuation of a coroutine (the parameter of a
+`suspendCoroutine { }` block) kept in a variable the coroutine captures or in a property of an object it holds (one it
+captures, or the receiver of a `suspend` lambda), never cleared in the file; a lambda that resumes it put into a
+collection such an object keeps and that the file never drains; a `var` given what a call returns when the call was
+handed a lambda that uses that `var` (a registration whose handler disposes of itself); a property given what a call or a
+constructor returns when it keeps a lambda that uses the object (`DeepRecursiveFunction`, a `lazy` whose value keeps such
+a lambda). A call keeps a lambda when its parameter is a `vararg`, a constructor's parameter that is a field, or is stored,
+returned or handed on to what keeps it (three calls deep); a job (`launch`, `async`) lets go of its block once complete,
+a builder that calls its lambda keeps nothing, an inline function's object is a pair the runtime frees. Each warning says
+what to write; `--no-warn-cycles` silences both lints, and the warnings of a compilation are also in
+`<out>/user-cycles.txt`.
 Those are found in the bodies (`let t = new C; t.outer = self; self.key = t`), and a field typed
 as a function or an interface is then followed to the class stored in it
 (`tests/integration/process/SelfCycles`). A field typed as an interface or `Any` is also followed to the
