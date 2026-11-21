@@ -698,25 +698,34 @@ class CEmitter(private val mModule: KModule) {
 					}
 					vBodies.append("\tdefault: break;\n\t}\n")
 				}
+				// A longer cycle: each object on the way held by the one before it alone, the last one's field holding this one
+				// (`chain`). One that is there but with an object on the way held by more (`seen`: two cycles through one object,
+				// a job and an exception that is both its state and its channel's cause of closing) is where a knot may be.
+				var vAnyLonger = false
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
 					if (vPair.via.isEmpty()) continue
-					// A longer cycle: each object on the way held by the one before it alone, the last one's field holding this one.
+					vAnyLonger = true
 					vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
-					vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1;\n")
+					vBodies.append("\tbool seen$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)};\n")
+					vBodies.append("\tbool chain$vIndex = seen$vIndex && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1;\n")
 					var vLast = "partner$vIndex"
 					for ((vStep, vVia) in vPair.via.withIndex()) {
 						val vNext = "step${vIndex}_$vStep"
 						val vTypes = vVia.classes.joinToString(" || ") { "$vNext->typeId == ${typeId(it)}" }
-						vBodies.append("\tktc2_Obj* $vNext = held$vIndex ? ${read(vVia.field, vLast)} : NULL;\n")
-						vBodies.append("\theld$vIndex = held$vIndex && $vNext && ($vTypes) && (KTC2_RC_LOAD($vNext) & KTC2_COUNT_MASK) == 1;\n")
+						vBodies.append("\tktc2_Obj* $vNext = seen$vIndex ? ${read(vVia.field, vLast)} : NULL;\n")
+						vBodies.append("\tseen$vIndex = seen$vIndex && $vNext && ($vTypes);\n")
+						vBodies.append("\tchain$vIndex = chain$vIndex && seen$vIndex && (KTC2_RC_LOAD($vNext) & KTC2_COUNT_MASK) == 1;\n")
 						vLast = vNext
 					}
 					vBodies.append("\tktc2_Obj* last$vIndex = $vLast;\n")
-					vBodies.append("\theld$vIndex = held$vIndex && ${read(vPair.back, vLast)} == object;\n")
-					vBodies.append("\tif (held$vIndex) explained++;\n")
+					vBodies.append("\tseen$vIndex = seen$vIndex && ${read(vPair.back, vLast)} == object;\n")
+					vBodies.append("\tchain$vIndex = chain$vIndex && seen$vIndex;\n")
+					vBodies.append("\tif (chain$vIndex) explained++;\n")
 				}
 				// Held by its cycle and by more: -1, which is where a knot may be (its objects held by one another otherwise).
-				vBodies.append("\tif (explained == 0) return 0;\n\tif ((KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return -1;\n")
+				val vSeen = vClass.pairCycles.withIndex().filter { it.value.via.isNotEmpty() }.joinToString(" || ") { "seen${it.index}" }
+				if (vAnyLonger) vBodies.append("\tif (explained == 0) return ($vSeen) ? -1 : 0;\n") else vBodies.append("\tif (explained == 0) return 0;\n")
+				vBodies.append("\tif ((KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return -1;\n")
 				for ((vField, vEntry) in vDirect.entries.withIndex()) {
 					val vObject = "field$vField"
 					vBodies.append("\tif (held$vField) switch ($vObject->typeId) {\n")
@@ -728,7 +737,7 @@ class CEmitter(private val mModule: KModule) {
 					vBodies.append("\tdefault: break;\n\t}\n")
 				}
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					if (vPair.via.isNotEmpty()) vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
+					if (vPair.via.isNotEmpty()) vBodies.append("\tif (chain$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
 				}
 				// The object is then this function's alone (its count one): the caller releases it, which frees the pair.
 				vBodies.append("\tKTC2_RC_SET(object, (KTC2_RC_LOAD(object) & ~KTC2_COUNT_MASK) | 1);\n\treturn 1;\n}\n")

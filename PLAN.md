@@ -54,8 +54,11 @@ with `.cycles`, every cycle left is a root (nothing else holds it), by kind:
   of a class with no check at all. Option (a) the owner chose (a check at stores into the fields of declared cycles)
   waits until a case of it is found; none is known now.
 - [ ] A job and the exception that is its final state, left in 4 files (`ProducerCoroutine` in `ZipTest` and
-  `ChannelBuildersFlowTest`, `ScopeCoroutine` and `BlockingCoroutine` in `CombineTest` and `IdFlowTest`): declared, so
-  what keeps them is another way round (`lambda.receiver`, a channel's cause of closing); see the items below.
+  `ChannelBuildersFlowTest`, `ScopeCoroutine` and `BlockingCoroutine` in `CombineTest` and `IdFlowTest`). For the
+  producer (`ZipTest`): the job held only by the exception, its channel and its state only by the job, the exception
+  by both (two declared cycles through it). Since 2026-11-21 a longer declared cycle that is there but shared starts
+  the check of a group (knot), which freed the `WithTimeout` tests' knot, but not this one: the walk reaches an object
+  held from outside (`KTC2_RING_TRACE=1`; its lines carry no address yet, which they need to tell this group's apart).
 - [ ] A completion hook of the module: what a finished job lets go of, at the points the library defines (its final
   state and its children done), as edits; the handler lists stay (another thread may still walk them).
 The 16 files of the library's own structures, by kind (each file's `.cycles` names it):

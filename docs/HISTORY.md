@@ -1115,6 +1115,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
 - 2026-11-21, `PLAN.md` 2.2: two neighbouring segments of a channel or a semaphore (`_next`, `_prev`) declared as a cycle of
   the module, on their base class `ConcurrentLinkedListNode`: `SelectBufferedChannelTest`, `SelectMutexStressTest`,
   `CombineParametersTest` and `SelectChannelStressTest` lose their `.cycles`.
+- 2026-11-21, `PLAN.md` 2.2: a longer declared cycle that is there but with an object on the way held by more (two cycles
+  through one object) answered "not a cycle", and the check of a group (knot) never started from it. It answers "held
+  by its cycle and more" now: `WithTimeoutTest` and `WithTimeoutDurationTest` (a job whose result is one of its own
+  handlers) lose their `.cycles`. The variables of those checks are named apart from those of the cycles of two
+  (`chain`, `seen`), which a class with both could have had twice.
 
 
 ---------------------------------------------------------------------------
