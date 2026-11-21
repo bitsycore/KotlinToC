@@ -247,8 +247,8 @@ typedef struct ktc2_Obj {
 #define KTC2_PAIRED UINT32_C(0x10000000)
 
 /**
- * Flag in `rc` of an object of the heap whose identity hash was taken (`Any.hashCode`, which is its address): its
- * memory is not given to the next object at once, or two objects one after the other would have the same hash
+ * Flag in `rc` of an object of the heap whose identity hash was taken (`Any.hashCode`, which is its address), in a program
+ * that takes them (KTC2_IDENTITY_HASH; the bit is kept in every program): its memory is not given to the next object at once, or two objects one after the other would have the same hash
  * (`Any().hashCode() != Any().hashCode()`, as on Kotlin/Native, whose collector frees later).
  */
 #define KTC2_HASHED UINT32_C(0x08000000)
@@ -311,6 +311,7 @@ extern const ktc2_RingRefsFn ktc2_type_ring_refs[];
  * (at most a few dozen) are freed when every reference each has left comes from them. Returns the object to release
  * that frees them all, or NULL.
  */
+#ifdef KTC2_KNOTS
 ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start);
 
 /**
@@ -318,6 +319,7 @@ ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start);
  * cycle found it held by that cycle and by more.
  */
 ktc2_Obj* ktc2_knot_collect(ktc2_Obj* start);
+#endif
 
 /** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left);

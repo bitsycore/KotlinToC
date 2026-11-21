@@ -88,6 +88,12 @@ class KModule(
 	var usesThreads: Boolean = false
 
 	/**
+	 * Set when the program can take the identity hash of an object (`Any.hashCode`, `Any.toString`): the runtime then
+	 * keeps the memory of such an object a while before reuse (`KTC2_IDENTITY_HASH`, `KTC2_HASHED`).
+	 */
+	var usesIdentityHash: Boolean = false
+
+	/**
 	 * The platform layer's functions that throw the exceptions of the language's own checks
 	 * (index out of bounds, division by zero), by name. Empty when the program has no such
 	 * check or is built with `--checks=abort`: those failures then end the program.

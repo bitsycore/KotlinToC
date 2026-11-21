@@ -105,6 +105,13 @@ sources + library sources + generated bindings
 | a lambda, a function reference | an object with an `invoke`; captured variables that are written live in a cell |
 | `CPointer<T>` and the other interop pointers | `void*`, never counted |
 
+**The runtime of each program** is built with the options its `ktc2_config.h` says, written by the emitter from what the
+program has: `KTC2_THREADS` when it can start a thread (atomic counts), `KTC2_KNOTS` when a class of it is of a declared
+cycle or a ring (the checks of rings and knots, the library's own: kotlinx.coroutines), `KTC2_IDENTITY_HASH` when it can
+take an identity hash (`Any.hashCode`, `Any.toString`: the memory of such an object waits before reuse),
+`KTC2_CHECKS_THROW`. A program without them has none of their code or branches (the owner, 2026-11-21: what a library
+needs costs its users; `PLAN.md`, at its top). A new part only some programs need is a new option.
+
 **The object header** is two 32-bit words: a count with flag bits (`KTC2_STACK`, `KTC2_WEAK`,
 `KTC2_ARENA`, `KTC2_PAIRED`, `KTC2_HASHED`; `KTC2_IMMORTAL` for static objects; 27 bits of count) and a type id,
 the index into the generated table of type names and `destroy` functions. The identity hash (`Any.hashCode`) is the

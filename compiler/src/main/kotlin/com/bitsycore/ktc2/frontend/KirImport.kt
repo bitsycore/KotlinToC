@@ -592,6 +592,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return KModule(mUnits, vEntry, mClassList).also {
 			it.erasedBridges = mErasedBridges
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
+			it.usesIdentityHash = "ktc2_any_hashCode" in mRuntime || "ktc2_any_toString" in mRuntime || "ktc2_identityHashCode" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
 			it.realFormatter = vFormatter
 			it.programEnding = vEnding

@@ -81,9 +81,11 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   knots of `regressions/coroutines-incomplete-async` were answered): a deferred that ended with an exception (a declared
   cycle) is named by the node `await` left in its old list of handlers (a ring). When the list goes, the deferred is
   still held by the test; when the test lets go, the check starts from the deferred, which does not reach the list.
-  Proposal: a check that fails only because a member is held from outside leaves a note on that member (a bit of the
-  count, which has 28), and that member's next release checks again from where the first started (kept in a small
-  table, its entry dropped when the start goes).
+  The note (tried 2026-11-21, taken out): a member held from outside noted, the check made again from the same start at
+  its next release. It worked as meant and freed nothing in the files left: their garbage is two groups that hold each
+  other (the producers of `zip`, through a segment of one channel the other's channel holds), which no walk along
+  references from one start sees whole. What is left of these is for a collector (7.1), restricted to the classes of
+  declared cycles and run by the module's programs only (`KTC2_KNOTS`).
 - [ ] A coroutine of a channel (`produce`, and flows built on it) cancelled: its exception is kept both as its
   state and as the channel's cause of closing, and names the coroutine. Two cycles through one object; neither
   declared cycle frees it, and a ring of the four classes made it worse (tried, taken out). Options: a check
@@ -98,9 +100,8 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   keeps the coroutine of its block (`continuation`), which names it (`mCompletion`, `receiver`), and its state is the
   parent's exception, which names the parent. Measured 2026-11-21 (`KTC2_PAIR_TRACE=2`, `KTC2_RING_TRACE=1`, which gives
   addresses now): declaring the pair (tried, taken out) is not enough: its check, a knot, walks into the parent while the
-  test holds it, and no later release of the lazy coroutine brings its count to where a check runs. Needs the knot's note
-  of the item below (a check from where the first stopped, when the member held from outside goes), or the edit of
-  `Builders.common.kt` that tests `isCancelled` where it keeps the block.
+  test holds it, and no later release of the lazy coroutine brings its count to where a check runs. The edit of
+  `Builders.common.kt` that tests `isCancelled` where it keeps the block is what is left to try.
 - [ ] A `select`'s clauses (inner objects in its list): a ring to declare (`rings`), as the job lists are.
 - [ ] The lists of handlers of jobs that end on several threads at once (`ConcurrentExceptionsStressTest`): the
   rings of jobs with several handlers in threaded programs, known since 2026-11-18.

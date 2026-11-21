@@ -478,6 +478,7 @@ void ktc2_release_paired(ktc2_Obj* object)
 }
 #endif
 
+#ifdef KTC2_KNOTS
 /*
  * The rings of objects of the classes a module names in `rings` (a circular list: its head, its nodes, the Removed that
  * mark them). From the object whose count came down, the objects of rings it reaches are gathered (RING_MOST at most);
@@ -650,15 +651,17 @@ static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool*
 	return start;
 }
 
+#endif
 
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left)
 {
 	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
+	ktc2_Obj* freed = NULL;
 	if (left <= type->pairs && type->pair) {
-		ktc2_Obj* freed = type->pair(object);
+		freed = type->pair(object);
 		pair_trace(object, left, freed);
-		ktc2_release(freed);
 	}
+	ktc2_release(freed);
 }
 
 void* ktc2_alloc(size_t size, uint32_t typeId)
@@ -777,14 +780,17 @@ void ktc2_fail_freed(void)
 	abort();
 }
 #else
+#ifdef KTC2_IDENTITY_HASH
 /* The blocks of objects whose identity hash was taken, kept a while before they are used again (KTC2_HASHED). */
 #define HASHED_KEPT 256
 static Retired hashed_kept[HASHED_KEPT];
 static uint32_t hashed_kept_at;
+#endif
 
 static inline void retire(ktc2_Obj* object)
 {
 	size_t pooled = pool_size_of(object);
+#ifdef KTC2_IDENTITY_HASH
 	if (ktc2_seldom(object->rc & KTC2_HASHED)) {
 		runtime_enter();
 		Retired oldest = hashed_kept[hashed_kept_at];
@@ -795,6 +801,7 @@ static inline void retire(ktc2_Obj* object)
 		object = oldest.memory;
 		pooled = oldest.pooled;
 	}
+#endif
 	if (pooled) pool_give(object, pooled); else free(object);
 }
 #endif
@@ -1780,8 +1787,10 @@ void ktc2_print_string(const ktc2_String* s)
 /** The identity hash of [object], its address; an object of the heap is marked so that its memory is not reused at once. */
 static int32_t identity_hash(ktc2_Obj* object)
 {
+#ifdef KTC2_IDENTITY_HASH
 	uint32_t count = KTC2_RC_LOAD(object);
 	if (count != KTC2_IMMORTAL && !(count & (KTC2_STACK | KTC2_ARENA | KTC2_HASHED))) KTC2_RC_OR(object, KTC2_HASHED);
+#endif
 	uintptr_t address = (uintptr_t)object;
 	return (int32_t)((address >> 3) ^ (address >> 35));
 }

@@ -1120,6 +1120,13 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   by its cycle and more" now: `WithTimeoutTest` and `WithTimeoutDurationTest` (a job whose result is one of its own
   handlers) lose their `.cycles`. The variables of those checks are named apart from those of the cycles of two
   (`chain`, `seen`), which a class with both could have had twice.
+- 2026-11-21, the owner's decision (`PLAN.md`, at its top): what a library needs costs its users only. The checks of
+  rings and knots are compiled into a program only when a class of it is of a declared cycle or a ring (`KTC2_KNOTS`),
+  the quarantine of identity hashes only when it can take one (`KTC2_IDENTITY_HASH`: 2 % of `BinaryTrees` otherwise).
+  `tools/bench.py` against the tool of the day before: the same counts, times within 2 %, programs up to 2 % larger. A
+  closure whose case only casts or turns a number into its nullable form, or returns `Unit`, keeps its case in a
+  dispatcher of another signature: through the erased bridge it boxed (31 % more allocations in `Ordinary`).
+  The note of knots (`PLAN.md` 2.2) was built and taken out: it freed nothing in the files left.
 
 
 ---------------------------------------------------------------------------
