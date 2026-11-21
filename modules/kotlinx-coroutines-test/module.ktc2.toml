@@ -1,0 +1,13 @@
+name         = "kotlinx-coroutines-test"
+version      = "1.11.0"
+upstream     = [". = org.jetbrains.kotlinx:kotlinx-coroutines-test"]
+jvm          = ["org.jetbrains.kotlinx:kotlinx-coroutines-test-jvm"]
+dependencies = ["kotlinx-coroutines"]
+optIn        = ["kotlinx.coroutines.InternalCoroutinesApi", "kotlinx.coroutines.ExperimentalCoroutinesApi", "kotlinx.coroutines.DelicateCoroutinesApi", "kotlin.experimental.ExperimentalNativeApi", "kotlin.ExperimentalMultiplatform"]
+edits        = ["commonMain/TestScope.kt = TestScope.kt.edit"]
+# The exception handler of a TestScope reaches its scope without a count: it is called for a child of the scope, which
+# holds the scope (TestScope.kt.edit).
+weak         = ["kotlinx.coroutines.test.TestScopeReference.value"]
+# The scheduler's time source, an object expression, reads the scheduler's time: the two go together when nothing else holds
+# either (a test may keep the time source after its scheduler, so it is no weak reference).
+cycles       = ["kotlinx.coroutines.test.TestCoroutineScheduler.timeSource -> kotlinx.coroutines.test.TestCoroutineScheduler.timeSource.<no name provided>.captured0"]

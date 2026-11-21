@@ -1,0 +1,33 @@
+replace: public fun TestScope(context: CoroutineContext = EmptyCoroutineContext): TestScope {
+public fun TestScope(context: CoroutineContext = EmptyCoroutineContext): TestScope = makeTestScope(context)
+
+/**
+ * ktc2: what the exception handlers of a [TestScope] reach the scope through, weak in the module (its `weak`): the handler
+ * of its context and the supervisor of its background scope. Each is called for a child of the scope while the scope is
+ * alive (the child holds its parent; runTest cancels the background scope's children before the scope ends), and each
+ * held the scope from the scope's own context: a cycle for each runTest otherwise.
+ */
+internal class TestScopeReference {
+    var value: TestScopeImpl? = null
+}
+
+/** ktc2: the supervisor's handler of the background scope, holding no more than [reference]. */
+private fun reportingTo(reference: TestScopeReference): (Throwable) -> Unit = {
+    if (it !is CancellationException) reference.value!!.reportException(it)
+}
+
+private fun makeTestScope(context: CoroutineContext): TestScope {
+replace:     var scope: TestScopeImpl? = null
+    val scope = TestScopeReference()
+replace:             scope!!.reportException(exception)
+            scope.value!!.reportException(exception)
+replace:     return TestScopeImpl(ctxWithDispatcher + exceptionHandler).also { scope = it }
+    return TestScopeImpl(ctxWithDispatcher + exceptionHandler).also { scope.value = it }
+after:     private val lock = SynchronizedObject()
+    private val reference = TestScopeReference().also { it.value = this }
+replace:         CoroutineScope(coroutineContext + BackgroundWork + ReportingSupervisorJob {
+        CoroutineScope(coroutineContext + BackgroundWork + ReportingSupervisorJob(onChildCancellation = reportingTo(reference)))
+replace:             if (it !is CancellationException) reportException(it)
+        // ktc2: the supervisor's handler is reportingTo(reference), above.
+replace:         })
+        // ktc2: (the end of the supervisor's handler, which is reportingTo(reference))

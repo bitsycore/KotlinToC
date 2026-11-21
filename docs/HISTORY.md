@@ -1139,6 +1139,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   `nativeCommonTest`) is decided by its own assertions, without the JVM. An edit of `MultithreadedDispatchers.kt`: a
   delayed block is taken out of its holder as it runs (it runs once), which held the continuation it resumes, whose
   state names the block's handle (a cycle of seven objects).
+- 2026-11-21, `PLAN.md` 2.3: `kotlinx-coroutines-test` is a bundled module (`runTest`, virtual time, the test dispatchers,
+  flows and channels under virtual time: `projects/kotlinx-coroutines-test`). Its scope's exception handlers held the
+  scope from the scope's own context: an edit (`TestScope.kt.edit`) has them reach it through a holder the module
+  declares weak, which cannot change a result (they are called for a child of the scope, which holds it); the
+  scheduler and its time source are a declared cycle.
 
 
 ---------------------------------------------------------------------------

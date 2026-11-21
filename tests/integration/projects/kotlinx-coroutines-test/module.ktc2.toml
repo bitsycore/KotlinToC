@@ -1,0 +1,6 @@
+# A program on the bundled module kotlinx-coroutines-test (runTest, virtual time), run by the suite and compared with
+# the same program on the JVM, there on the library's JVM jars.
+name         = "kotlinx-coroutines-test-program"
+executable   = "kotlinx-coroutines-test-program"
+sources      = ["Main.kt"]
+dependencies = ["kotlinx-coroutines-test"]

@@ -110,8 +110,9 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   This is the decision of section 7.1.
 
 ### 2.3 kotlinx.coroutines: what is not taken yet (3 to 5 days)
-- [ ] `kotlinx-coroutines-test` as a second module (`runTest`, virtual time, `TestDispatcher`): many programs
-  and libraries test with it; its own tests then.
+- [ ] The own tests of `kotlinx-coroutines-test` (`kotlinx-coroutines-test/common/test` at the module's version, in
+  `tests/modules/kotlinx-coroutines-test/`, an entry of `kModuleTests`): the module is bundled since 2026-11-21 and
+  `projects/kotlinx-coroutines-test` passes.
 - [ ] The 15 pending box tests of coroutines (`tests/box/pending/coroutines`; 26 of 41 pass since 2026-11-21): a class
   that implements a suspend function
   type (`suspendFunctionAsSupertype*`: a `ClassCastException`, a wrong `is` by arity); the `name` of a function
