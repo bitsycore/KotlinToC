@@ -546,7 +546,7 @@ static void ring_trace_visit(void* context, ktc2_Obj* from, const char* field, k
 	const RingTrace* trace = context;
 	if (to != trace->target) return;
 	for (uint32_t at = 0; at < trace->ring->count; at++) if (trace->ring->members[at] == from) return;
-	fprintf(stderr, "ring:   held from outside by %s.%s%s\n", ktc2_types[from->typeId].name, field,
+	fprintf(stderr, "ring:   held from outside by %s %p .%s%s\n", ktc2_types[from->typeId].name, (void*)from, field,
 		from->typeId < ktc2_type_count && ktc2_type_ring_refs[from->typeId] ? " (an object of a ring, not reached)" : "");
 }
 #endif
@@ -622,7 +622,8 @@ static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool*
 			static int trace = -1;
 			if (trace < 0) trace = getenv("KTC2_RING_TRACE") != NULL;
 			if (trace) {
-				fprintf(stderr, "ring: %u members, %s has %u, %u from inside\n", ring.count, ktc2_types[ring.members[at]->typeId].name, KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK, inside);
+				fprintf(stderr, "ring: %u members from %s %p, %s %p has %u, %u from inside\n", ring.count, ktc2_types[ring.members[0]->typeId].name, (void*)ring.members[0], ktc2_types[ring.members[at]->typeId].name, (void*)ring.members[at], KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK, inside);
+				for (uint32_t each = 0; each < ring.count; each++) fprintf(stderr, "ring:   member %s %p\n", ktc2_types[ring.members[each]->typeId].name, (void*)ring.members[each]);
 				RingTrace looked = { ring.members[at], &ring };
 				for (size_t slot = 0; slot < live_capacity; slot++) {
 					ktc2_Obj* each = live_set[slot];

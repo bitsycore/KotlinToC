@@ -79,9 +79,13 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
 - [ ] A failed `runBlocking` (and `coroutineScope`, `flowScope`) whose exception names a scope coroutine that
   keeps its caller's continuation (`ScopeCoroutine.uCont`). An edit that lets go of `uCont` once the scope has
   resumed its caller touches the five subclasses; or the general check above.
-- [ ] A lazy coroutine cancelled while it is being made (its parent already cancelled): cancelled in the
-  superclass's constructor, before the subclass keeps its block. The edit of `Builders.common.kt` can test
-  `isCancelled` where it keeps the block.
+- [ ] A lazy coroutine cancelled while it is being made (its parent already cancelled, `CancelledParentAttachTest`): it
+  keeps the coroutine of its block (`continuation`), which names it (`mCompletion`, `receiver`), and its state is the
+  parent's exception, which names the parent. Measured 2026-11-21 (`KTC2_PAIR_TRACE=2`, `KTC2_RING_TRACE=1`, which gives
+  addresses now): declaring the pair (tried, taken out) is not enough: its check, a knot, walks into the parent while the
+  test holds it, and no later release of the lazy coroutine brings its count to where a check runs. Needs the knot's note
+  of the item below (a check from where the first stopped, when the member held from outside goes), or the edit of
+  `Builders.common.kt` that tests `isCancelled` where it keeps the block.
 - [ ] A `select`'s clauses (inner objects in its list): a ring to declare (`rings`), as the job lists are.
 - [ ] The lists of handlers of jobs that end on several threads at once (`ConcurrentExceptionsStressTest`): the
   rings of jobs with several handlers in threaded programs, known since 2026-11-18.
