@@ -129,11 +129,13 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   `KeyValueSerializersTest`: a JVM-only body that needs JUnit's asserter), not differences of ktc2.
 
 ### 2.5 The standard library (2 to 3 days)
-- [ ] The 7 `.cycles` of `tests/stdlib/` (read each reason; most are Regex and coroutine helpers).
-- [ ] `AnyTest.testToString`: the default `toString()` of a local class names it with dots; Native and the JVM
-  use `$`. A second name per class in the runtime's table.
-- [ ] `MapTest.nullKeyAndValue`: a `null` put through an unchecked cast into a map that keeps its values as
-  numbers. Accepted as a difference unless generics of numbers are kept boxed where a cast can reach them.
+- The 5 `.cycles` left of `tests/stdlib/` are the tests' own design: a collection, an array or exceptions put into
+  themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`), an object whose `DeepRecursiveFunction`s or whose lazy
+  value hold lambdas that use it (`DeepRecursiveTest`, `LazyValuesTest`: three objects or more, which no declared cycle
+  of a module names).
+- Known difference, accepted (the owner's to decide otherwise): `MapTest.nullKeyAndValue`, a `null` put through an
+  unchecked cast into a map that keeps its values as numbers. Only generics of numbers kept boxed where a cast can
+  reach them would answer it.
 - [ ] Not taken yet: the tests of `libraries/stdlib/jvm/test` that are not about the JDK, and what is left of
   `kotlin-native/runtime/test`.
 

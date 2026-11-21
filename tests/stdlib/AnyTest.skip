@@ -1,1 +1,0 @@
-testToString: the default toString() of a local class names it with dots in ktc2 (AnyTest.testToString.Local1), with $ on the JVM and Kotlin/Native (PLAN.md, known differences)

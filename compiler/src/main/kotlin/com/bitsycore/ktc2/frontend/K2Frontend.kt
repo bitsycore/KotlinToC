@@ -541,6 +541,7 @@ class Ktc2Extension : IrGenerationExtension {
 			return
 		}
 		val vImporter = KirImporter(pluginContext.irBuiltIns)
+		vImporter.localNames = LocalClassNames().of(moduleFragment)
 		val vJavaUses = JavaUseCheck(vLibraryFiles).also { it.check(moduleFragment.files) }
 		if (vJavaUses.errors.isNotEmpty()) {
 			// Nothing else is said about such a program: every use would be reported again as unsupported.

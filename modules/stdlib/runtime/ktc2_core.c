@@ -1915,7 +1915,7 @@ ktc2_String* ktc2_any_toString(ktc2_Obj* object)
 	case KTC2_TYPE_BOX_ULONG: ktc2_sb_ulong(&sb, box->value.ulong_); break;
 	default: {
 		char text[160];
-		int size = snprintf(text, sizeof text, "%s@%" PRIx32, ktc2_types[object->typeId].name, (uint32_t)ktc2_any_hashCode(object));
+		int size = snprintf(text, sizeof text, "%s@%" PRIx32, ktc2_types[object->typeId].shown ? ktc2_types[object->typeId].shown : ktc2_types[object->typeId].name, (uint32_t)ktc2_any_hashCode(object));
 		ktc2_sb_text(&sb, text, size, size);
 	}
 	}

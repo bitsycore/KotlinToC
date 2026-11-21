@@ -335,6 +335,8 @@ leaves no more references than the class has pairs calls `ktc2_pair_check`, whic
 class's `__collect`: when every reference left is held by a partner that it alone holds, the
 partners give theirs up without a release and the object goes, taking them with it. It is exact:
 nothing is freed while a reference from outside is left, so nothing a program can see changes.
+A partner may be held by more than one field of the object (a delegate kept in a property of its own and in the field
+of the property it delegates, `var b by bDelegate`): its count is then compared with all of them.
 `__collect` reads each field once and tells its partners apart by a `switch` on the class (a field typed with a base
 class pairs with each subclass: some 60 for a node of Regex, which as one test after another took MSVC's optimizer
 minutes a function), and `__pair` calls the partner's `__collect` the same way.
@@ -1159,6 +1161,12 @@ added, a store that now gives up what was there (`<-`), an object put on the sta
   nothing moves does it say "anything". Said in the first round, it would stay said. `KTC2_SKIP=devirtualize` (also
   `copies`, `listloops`, `ranges`, `handover`, `brief`, `walk`, `owned`, `slots`, `rooms`, `inline`, separated by commas) leaves an optimization out, to find which one a
   wrong program comes from; `KTC2_DEBUG_PASSES=1` prints how much the first two did.
+- The default `toString()` of a local class or an object expression names it as Kotlin/Native does
+  (`pkg.Outer$function$Local`, `pkg.function$variable$1`, `pkg.function$2`): the compiler's own lowering
+  (`InventNamesForLocalClasses`, as Native's subclass makes it) runs on the IR before the import (`LocalClassNames.kt`),
+  and its names are kept aside, the type table's `shown`; the class keeps its own name for C, the reports of cycles and
+  the modules' `cycles`. Native numbers an object in the initializer of a member property within its class
+  (`Top$1`), its lowering running after the initializers are moved; ktc2, as the JVM, within the property (`Top$prop$1`).
 - A generic class is one class in Kotlin and several here: `Box<Int>` stores an int, `Box<String>`
   a reference, and they are `Box__Int` and `Box__Any`. A type that names no number for an
   argument (`Box<*>`, `Box<T>` in code written for objects, `Box<String>`) may be given an

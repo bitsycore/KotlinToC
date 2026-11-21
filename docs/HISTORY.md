@@ -1154,6 +1154,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   `*` in a declared step's class). `JsonUpdateModeTest` no longer loops. The okio mode of the JSON tests reads through a
   kotlinx-io stream, as okio's own module does on the JVM: `JsonDecodingErrorMessagesTest`'s two skips go. Left: four
   types that contain themselves, a ring held for the program's life (a known leak in `PLAN.md`).
+- 2026-11-21, `PLAN.md` 2.5: an object that holds its delegate twice (`val bDelegate = Delegates.observable(...)`,
+  `var b by bDelegate`), whose handler uses the object, was never freed: the check of the pair wanted the delegate held
+  once (`tests/ktc2/regressions/DelegateHeldTwice.kt`). `DelegationTest` and `AbstractCollectionsTest` lose their
+  `.cycles`. The default `toString()` of a local class names it as Kotlin/Native does, through the compiler's own
+  naming lowering (`AnyTest.testToString` passes).
 
 
 ---------------------------------------------------------------------------

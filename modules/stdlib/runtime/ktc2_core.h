@@ -278,6 +278,8 @@ typedef struct ktc2_TypeInfo {
 	uint32_t lazy;
 	/* 1 for a class of a declared cycle that is of no ring (a check that starts from a ring does not follow it), 2 for one of a ring too. */
 	uint32_t knot;
+	/* What the default toString() shows of a local class, as Kotlin/Native names it (`pkg.Outer$function$Local`); NULL for any other, which shows [name]. */
+	const char* shown;
 } ktc2_TypeInfo;
 
 /** The table of types, written for each program (ktc2_main.c). */

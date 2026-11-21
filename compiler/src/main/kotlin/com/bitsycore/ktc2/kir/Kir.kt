@@ -235,6 +235,9 @@ class KClass(
 	/** Set when the program constructs this class; only such classes get a type id. */
 	var isInstantiated = false
 
+	/** The name the default `toString()` of a local class shows, as Kotlin/Native names it (`pkg.Outer$function$Local`); null for any other. */
+	var shownName: String? = null
+
 	/**
 	 * Set on the instantiation of a generic class with `Any?` for every argument when the program
 	 * reaches objects through it whose instantiation the type does not settle (`other as Box<*>`):

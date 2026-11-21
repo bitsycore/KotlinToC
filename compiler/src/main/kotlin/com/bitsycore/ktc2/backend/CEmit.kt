@@ -147,7 +147,7 @@ class CEmitter(private val mModule: KModule) {
 				vClass.isRingMember -> 2
 				else -> 1
 			}
-			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, $vPairs, $vLazy, $vKnot },\n")
+			append("\t[${typeId(vClass)}] = { ${cString(vClass.name)}, ${vClass.cName}__destroy, sizeof(${vClass.cName}), $vDeinit, ${cString(vAncestors)}, $vPair, $vPairs, $vLazy, $vKnot, ${vClass.shownName?.let { cString(it) } ?: "NULL"} },\n")
 		}
 		append("};\n\nconst uint32_t ktc2_type_count = KTC2_TYPE_COUNT;\n")
 		// What the objects of a ring hold, where: what the runtime follows to free a ring only its objects hold.
@@ -693,10 +693,18 @@ class CEmitter(private val mModule: KModule) {
 					partner(vIndex, vPair)
 					vDirect.getOrPut(read(vPair.field, "object")) { linkedMapOf() }.getOrPut(vPair.partner) { mutableListOf() } += vPair.back
 				}
+				// The other fields of this object that may hold the same partner (a delegate kept in a property of its own and
+				// in the delegated property's field): the partner is this object's alone when its count is all of them.
+				// A field of a coroutine's frame holds no count of its own (the state machine does): not one of them.
+				val vOwnFields = generateSequence(vClass) { it.superClass }.flatMap { it.fields }
+					.filter { it.weakType == null && !it.isInline && !it.isFrame && (it.type is KClassType || it.type == KObjType) }.toList()
 				for ((vField, vEntry) in vDirect.entries.withIndex()) {
 					val vObject = "field$vField"
 					vBodies.append("\tktc2_Obj* $vObject = ${vEntry.key};\n\tuint32_t held$vField = 0;\n")
-					vBodies.append("\tif ($vObject && (KTC2_RC_LOAD($vObject) & KTC2_COUNT_MASK) == 1) switch ($vObject->typeId) {\n")
+					val vAlso = vOwnFields.filter { vOwn -> read(vOwn, "object") != vEntry.key && (vOwn.type == KObjType || vEntry.value.keys.any { it.isSubclassOf((vOwn.type as KClassType).cls) }) }
+						.map { read(it, "object") }
+					val vHeld = if (vAlso.isEmpty()) "1" else "1u + " + vAlso.joinToString(" + ") { "($it == $vObject)" }
+					vBodies.append("\tif ($vObject && (KTC2_RC_LOAD($vObject) & KTC2_COUNT_MASK) == $vHeld) switch ($vObject->typeId) {\n")
 					for ((vPartner, vBacks) in vEntry.value) {
 						vBodies.append("\tcase ${typeId(vPartner)}:\n")
 						for ((vBit, vBack) in vBacks.withIndex()) vBodies.append("\t\tif (${read(vBack, vObject)} == object) { held$vField |= ${1L shl vBit}u; explained++; }\n")

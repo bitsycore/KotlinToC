@@ -223,6 +223,9 @@ private fun mangle(inType: KType): String = when (inType) {
  */
 class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
+	/** The names Kotlin/Native gives local classes ([LocalClassNames]): what their default `toString()` shows. */
+	var localNames: Map<IrClass, String> = emptyMap()
+
 	val errors = linkedSetOf<String>()
 
 	/** What the program most likely did not mean, though it compiles. */
@@ -1093,6 +1096,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vUnit = KUnit(vFile.packageFqName.asString(), nestedName(inClass) + vSuffix)
 			val vClass = KClass(cPrefix(vUnit.pkg) + cSuffix(nestedName(inClass)) + vSuffix, vUnit, vSuper, jvmNameOf(inClass))
 			vClass.family = inClass
+			localNames[inClass]?.let { vClass.shownName = if (vUnit.pkg.isEmpty()) it else "${vUnit.pkg}.$it" }
 			vUnit.cls = vClass
 			mClasses[vKey] = vClass
 			mClassInfo[vClass] = ClassInfo(inClass, vSubst, inClass.symbol.typeWith(vArguments))
