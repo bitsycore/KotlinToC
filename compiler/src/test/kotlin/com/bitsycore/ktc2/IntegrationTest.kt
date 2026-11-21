@@ -636,12 +636,15 @@ abstract class IntegrationPart(private val mShard: Int) {
 		fun printed(inLines: List<String>): List<String> = inLines.map { kotlinNames(it) }.filter { vLine -> vVarying.none { varies(vLine, it) } }
 		val vResults = ArrayList<String>()
 		val vFailedByFile = LinkedHashMap<File?, MutableList<String>>()
+		// The tests of the C side's own files (a library's `nativeTest`, as Kotlin/Native's, compiled from a copy under `gen/native`):
+		// no JVM side, their own assertions decide.
+		fun isNativeOnly(inFile: File?): Boolean = inFile != null && inFile.invariantSeparatorsPath.let { "/nativeTest/" in it || "/nativeCommonTest/" in it }
 		for ((vName, vOutcome) in vC) {
 			val vFile = fileOfTest(vName)
-			val vOnJvm = vJvm?.get(vName)
+			val vOnJvm = vJvm?.get(vName)?.takeIf { !isNativeOnly(vFile) }
 			val vReason = when {
 				!vOutcome.passed -> "failed in C"
-				vJvm != null && vOnJvm == null -> "not run on the JVM"
+				vJvm != null && vOnJvm == null && !isNativeOnly(vFile) -> "not run on the JVM"
 				vOnJvm != null && !vOnJvm.passed && !(vFile != null && beside(vFile, "native").isFile) -> "failed on the JVM"
 				vOnJvm != null && vOnJvm.passed && printed(vOnJvm.lines) != printed(vOutcome.lines) ->
 					"prints otherwise than on the JVM:\n C: ${printed(vOutcome.lines).take(8).joinToString("\n    ")}\n JVM: ${printed(vOnJvm.lines).take(8).joinToString("\n    ")}"

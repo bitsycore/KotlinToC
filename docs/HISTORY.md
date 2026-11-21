@@ -1134,6 +1134,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
 - 2026-11-21, `PLAN.md` 2.3: a `suspend fun interface` made of a function value (`Print(::plain)`, `FlowCollector` of a
   function) called it as a plain function, without its continuation (`tests/ktc2/coroutines/SuspendFunInterfaces.kt`,
   the box test `kt49168`).
+- 2026-11-21, `PLAN.md` 2.3: kotlinx.coroutines' native tests (`WorkerTest`, `MultithreadedDispatchersTest`,
+  `DelayExceptionTest`, in the module's `nativeTest/`) pass. A test of a file of the C side only (`nativeTest`,
+  `nativeCommonTest`) is decided by its own assertions, without the JVM. An edit of `MultithreadedDispatchers.kt`: a
+  delayed block is taken out of its holder as it runs (it runs once), which held the continuation it resumes, whose
+  state names the block's handle (a cycle of seven objects).
 
 
 ---------------------------------------------------------------------------

@@ -1,0 +1,4 @@
+replace:                 disposableHolder.value?.run()
+                // ktc2: a delayed block runs once; taken out as it runs, it lets go of what it resumes (the continuation,
+                // whose state names this block's handle): a cycle otherwise. dispose() and isDisposed() as before.
+                disposableHolder.getAndSet(null)?.run()

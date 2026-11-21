@@ -59,6 +59,9 @@ sources and Kotlin/Native's `actual`s of them, with Native's test runner. On the
 tests with the JVM jar of kotlin-test (the same assertions and messages, `DefaultAsserter`) and the four
 annotations of `tests/support/KotlinTestAnnotations.kt`.
 
+A library's `nativeTest/` (and `nativeCommonTest/`) files are compiled into the C program only, as Kotlin/Native's
+own tests: their tests have no JVM side and are decided by their own assertions.
+
 ## Groups
 
 The files of tests are compiled by directory, each group one program, as `ktc2 test` compiles them: `tests/stdlib`

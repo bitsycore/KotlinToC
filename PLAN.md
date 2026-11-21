@@ -110,7 +110,6 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   This is the decision of section 7.1.
 
 ### 2.3 kotlinx.coroutines: what is not taken yet (3 to 5 days)
-- [ ] `native/test` (workers, `MultithreadedDispatchersTest`, `DelayExceptionTest`): Native's own tests.
 - [ ] `kotlinx-coroutines-test` as a second module (`runTest`, virtual time, `TestDispatcher`): many programs
   and libraries test with it; its own tests then.
 - [ ] The 15 pending box tests of coroutines (`tests/box/pending/coroutines`; 26 of 41 pass since 2026-11-21): a class
