@@ -15,7 +15,9 @@ esac
 vName=$(basename "$vOut")
 vJobs=${KTC2_ASAN_COMPILE_JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
 say() { [ -n "$KTC2_ASAN_QUIET" ] || echo "asan: $vName: $*" >&2; }
-vFlags="-std=c11 -O1 -ffp-contract=off -fsanitize=address -g -DKTC2_NO_POOL -DKTC2_LEAK_CHECK -w -Wno-unused-but-set-variable -I . $(grep "^cflag=" "$vOut/ktc2_build.txt" | cut -d= -f2- | tr '\n' ' ')"
+# -g1: the lines, which is what a report needs; full debug information made gcc track the variables of the Unicode
+# tables' functions, most of the time of a large program.
+vFlags="-std=c11 -O1 -ffp-contract=off -fsanitize=address -g1 -DKTC2_NO_POOL -DKTC2_LEAK_CHECK -w -Wno-unused-but-set-variable -I . $(grep "^cflag=" "$vOut/ktc2_build.txt" | cut -d= -f2- | tr '\n' ' ')"
 vFiles=$(grep -c "^c=" "$vOut/ktc2_build.txt")
 vStep=$SECONDS
 say "compiling $vFiles C files, $vJobs at once"

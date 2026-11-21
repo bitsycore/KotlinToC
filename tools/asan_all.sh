@@ -4,7 +4,7 @@
 # with AddressSanitizer (tools/asan.sh) and runs it. Fails when one of them does not end with
 # exit code 0, or when the sanitizer or the runtime reported something. Slow: each program is
 # compiled again; KTC2_ASAN_JOBS of them at once (default: the number of processors), each run
-# limited to KTC2_ASAN_TIMEOUT seconds (default 2400: the group of the standard library's tests compiles 4,700 C files).
+# limited to KTC2_ASAN_TIMEOUT seconds (default 3600: the group of the standard library's tests compiles 4,700 C files, 1,960 to more than 2,400 s on the CI runners).
 # KTC2_SHARD=i/n takes the i-th of n shares of the programs (from 0), for several machines at once.
 cd "$(dirname "$0")/.." || exit 1
 
@@ -23,7 +23,7 @@ check() {
 	# The suite says so in the build directory (cycles-allowed); a .cycles of tests/ by the name, for an older run.
 	if [ -f "$vDir/cycles-allowed" ] || [ -n "$(find tests -name "${vName#test-}.cycles" | head -1)" ]; then vLeaks="AddressSanitizer|ktc2: .*freed"; vOptions="detect_leaks=0:$vOptions"; fi
 	local vLimit=()
-	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-2400}")
+	command -v timeout > /dev/null && vLimit=(timeout "${KTC2_ASAN_TIMEOUT:-3600}")
 	local vResult
 	# A large program (a group of tests, thousands of C files) compiles on every processor; the others on two each.
 	local vCompileJobs=$KTC2_ASAN_COMPILE_JOBS
