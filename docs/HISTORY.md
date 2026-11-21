@@ -1148,6 +1148,12 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   repository's shared helpers) pass, in C and on the JVM. A local of type Unit (`val result = block()` of
   `measureTimedValue` where T is Unit) has no storage: in a coroutine it was a field of type void
   (`tests/ktc2/regressions/UnitLocalInCoroutine.kt`).
+- 2026-11-21, `PLAN.md` 2.4: 23 of kotlinx-serialization's 27 `.cycles` go. Half were already free of cycles (the
+  fixes of declared cycles and frames of 2.2); the others were the serializer of a generic class and its descriptor,
+  now a cycle the module declares for every such serializer (`*.$serializer.descriptor -> ...generatedSerializer`: a
+  `*` in a declared step's class). `JsonUpdateModeTest` no longer loops. The okio mode of the JSON tests reads through a
+  kotlinx-io stream, as okio's own module does on the JVM: `JsonDecodingErrorMessagesTest`'s two skips go. Left: four
+  types that contain themselves, a ring held for the program's life (a known leak in `PLAN.md`).
 
 
 ---------------------------------------------------------------------------

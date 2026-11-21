@@ -291,7 +291,7 @@ class CycleLint(private val mModule: KModule) {
 				val vClassName = vStep.substringBeforeLast('.')
 				val vFieldName = vStep.substringAfterLast('.')
 				if (isAnonymous(vClassName)) return@map null
-				mModule.classes.filter { it.name == vClassName }.mapNotNull { vClass ->
+				mModule.classes.filter { matches(vClassName, it.name) }.mapNotNull { vClass ->
 					val vField = generateSequence(vClass) { it.superClass }.flatMap { it.fields }.firstOrNull { it.cName == vFieldName } ?: return@mapNotNull null
 					Triple(vClass, vField, mModule.classes.filter { it.isInstantiated && it.isSubclassOf(vClass) }).takeIf { it.third.isNotEmpty() }
 				}
@@ -336,6 +336,14 @@ class CycleLint(private val mModule: KModule) {
 			}
 		}
 	}
+
+	/**
+	 * Whether the class [inName] is the one a declared step names: its name, or with a `*` any number of characters there
+	 * (`*.$serializer`: the serializer of every class the plugin writes one for).
+	 */
+	private fun matches(inPattern: String, inName: String): Boolean =
+		if ('*' !in inPattern) inName == inPattern
+		else Regex(inPattern.split('*').joinToString(".*") { Regex.escape(it) }).matches(inName)
 
 	/** Whether [inName] is the name a cycle's report gives a class without one of its own: a lambda, an object expression. */
 	private fun isAnonymous(inName: String): Boolean = inName == "lambda" || inName.endsWith("<no name provided>")

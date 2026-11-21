@@ -1,3 +1,4 @@
-The serializer of a generic class (its $serializer) and its descriptor refer to each other
-(PluginGeneratedSerialDescriptor.generatedSerializer): ktc2's part of kotlinx-serialization keeps one of each
-in a cache for the life of the program (PLAN.md, decided on 2026-11-15); reference counts do not free the cycle at the end.
+A serializable type that contains itself (directly, or a sealed class through one of its subclasses) has a descriptor
+that reaches its own serializer again through its children's serializers (PluginGeneratedSerialDescriptor.childSerializers,
+a lazy value): a ring whose size depends on the type, held by the serializer object for the life of the program and
+left at its end.

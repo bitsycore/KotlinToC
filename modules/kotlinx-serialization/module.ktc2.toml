@@ -7,5 +7,8 @@ files    = ["Ktc2Serialization.kt"]
 weak     = ["kotlinx.serialization.json.internal.StreamingJsonEncoder.modeReuseCache"]
 # A JsonElementMarker's ElementMarker reads through a reference bound to that JsonElementMarker (its readIfAbsent): the
 # three go together, when the decoder is done with them.
-cycles   = ["kotlinx.serialization.json.internal.JsonElementMarker.origin -> kotlinx.serialization.internal.ElementMarker.readIfAbsent -> lambda.bound0"]
+# The serializer the plugin writes for a generic class is made for its type arguments, with a descriptor of its own that
+# holds it back (its childSerializers): the two go together.
+cycles   = ["kotlinx.serialization.json.internal.JsonElementMarker.origin -> kotlinx.serialization.internal.ElementMarker.readIfAbsent -> lambda.bound0",
+            "*.$serializer.descriptor -> kotlinx.serialization.internal.PluginGeneratedSerialDescriptor.generatedSerializer"]
 optIn    = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.SealedSerializationApi", "kotlinx.serialization.internal.CoreFriendModuleApi", "kotlinx.serialization.json.internal.JsonFriendModuleApi", "kotlin.ExperimentalMultiplatform", "kotlin.ExperimentalSubclassOptIn", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.reflect.ExperimentalAssociatedObjects", "kotlin.ExperimentalUnsignedTypes"]

@@ -353,7 +353,9 @@ A step may be `lambda.self` (or an object expression's `<no name provided>`), wh
 stands for each lambda the field before can hold that has that field, holding the class of the next step, a cycle
 for each. A class named in a step is each class of that name: a generic class is one for each kind of type argument
 (`CancellableContinuationImpl` of objects, of `Int`, of `Boolean`), and the cycle holds for every combination of
-them (`regressions/declared-cycle-instantiations`).
+them (`regressions/declared-cycle-instantiations`). A `*` in the class of a step stands for any characters there:
+kotlinx-serialization declares `*.$serializer.descriptor -> PluginGeneratedSerialDescriptor.generatedSerializer`, the
+serializer the plugin writes for a generic class and its descriptor, made for each type argument.
 It is the same mechanism, a `KPairCycle` with the steps between (`via`): each class of the cycle gets it from its own
 place, its objects carry `KTC2_PAIRED`, and the check follows the cycle, each object on the way held by the one before
 it alone and the last one's field holding the first; then the cycle is cut there and the first object released, which

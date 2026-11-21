@@ -39,8 +39,8 @@ library's needs):
   run and pass their tests in C and on the JVM; 27 of them leave cycles (`.cycles`): 16 of the library's
   structures not answered yet, 11 by their tests' design or the deprecated `BroadcastChannel` (section 2).
 - **The other libraries**: kotlinx-io, kotlinx.collections.immutable, atomicfu, kotlinx-datetime pass whole;
-  kotlinx.serialization and its JSON pass but 27 files have `.cycles` (a serializer and its descriptor, kept
-  in a cache by decision) and one is pending (`JsonUpdateModeTest`, loops in C).
+  kotlinx.serialization and its JSON pass whole (2026-11-21), 4 files with `.cycles` for a known leak (types that
+  contain themselves, section 2.4).
 - **Speed** (2026-11-17, a Mac, `tools/compare.py`): fastest of the three on 9 of 10 benchmarks, 1.2 to 4.2
   times Kotlin/Native, 1.3 to 8.5 times less memory than Native; the JVM is 9 % faster on making small
   objects in a loop. Programs of about 0.1 MB.
@@ -119,14 +119,14 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
   a lambda and its continuation (`infiniteLoopInNextMeaningful`, the three `*WithHandleResult`,
   `boxReturnValueOfSuspendLambda`, `resultExceptionOrNullInLambda`).
 
-### 2.4 kotlinx.serialization (2 to 4 days)
-- [ ] The 27 `.cycles`: a serializer and its descriptor refer to each other through a field typed by an
-  interface (`PluginGeneratedSerialDescriptor.generatedSerializer`). Decided (2026-11-15): kept in a cache by
-  class and arguments; the tests that make them still leak. The pair freeing through a field typed by an
-  interface (the partner's class checked at run time) would free most.
-- [ ] `JsonUpdateModeTest` loops in C (`.pending`).
-- [ ] The three skipped tests (`ModuleBuildersTest`, two of `JsonDecodingErrorMessagesTest`): the first is the
-  JVM side's message without kotlin-reflect, the others a stream reader's message; to check against Native.
+### 2.4 kotlinx.serialization (done but for a known leak)
+- Known leak, kept: the 4 `.cycles` left (`JsonPathTest`, `JsonDecodingErrorMessagesTest`,
+  `JsonTransformingSerializerTest`, `JsonTreeDecoderPolymorphicTest`) are types that contain themselves (directly, or a
+  sealed class through a subclass): the descriptor reaches its own serializer again through the lazy `childSerializers`,
+  a ring whose size depends on the type. One for each such type, held by its serializer object for the life of the
+  program and left at its end: nothing a program makes again and again.
+- The two skips left are the JVM side's (`ModuleBuildersTest`: its message without kotlin-reflect;
+  `KeyValueSerializersTest`: a JVM-only body that needs JUnit's asserter), not differences of ktc2.
 
 ### 2.5 The standard library (2 to 3 days)
 - [ ] The 7 `.cycles` of `tests/stdlib/` (read each reason; most are Regex and coroutine helpers).
