@@ -644,34 +644,58 @@ class CEmitter(private val mModule: KModule) {
 					val vSlot = "((${inField.owner!!.cName}*)$inObject)->${inField.cName}"
 					return if (isAtomic(inField)) "((ktc2_AtomicRefCell*)&$vSlot)->held = 0" else "$vSlot = NULL"
 				}
+				// The cycles of two, by the field that holds the partner: one object of one class, so one switch on its class,
+				// each case testing the fields of that class that may hold this object back (a bit each, in `held<field>`). A
+				// field typed with a base class has a cycle with each of its subclasses (some 60 for a node of Regex): as one
+				// test after another, with a flag each, MSVC's optimizer took minutes over each such function.
+				val vDirect = linkedMapOf<String, LinkedHashMap<KClass, MutableList<KField>>>()
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					if (vPair.via.isEmpty()) {
-						// Each field read as it is held: a field, or an atomic held in place (its cell).
-						partner(vIndex, vPair)
-						vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
-						vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1 && ${read(vPair.back, "partner$vIndex")} == object;\n")
-					} else {
-						// A longer cycle: each object on the way held by the one before it alone, the last one's field holding this one.
-						vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
-						vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1;\n")
-						var vLast = "partner$vIndex"
-						for ((vStep, vVia) in vPair.via.withIndex()) {
-							val vNext = "step${vIndex}_$vStep"
-							val vTypes = vVia.classes.joinToString(" || ") { "$vNext->typeId == ${typeId(it)}" }
-							vBodies.append("\tktc2_Obj* $vNext = held$vIndex ? ${read(vVia.field, vLast)} : NULL;\n")
-							vBodies.append("\theld$vIndex = held$vIndex && $vNext && ($vTypes) && (KTC2_RC_LOAD($vNext) & KTC2_COUNT_MASK) == 1;\n")
-							vLast = vNext
-						}
-						vBodies.append("\tktc2_Obj* last$vIndex = $vLast;\n")
-						vBodies.append("\theld$vIndex = held$vIndex && ${read(vPair.back, vLast)} == object;\n")
+					if (vPair.via.isNotEmpty()) continue
+					partner(vIndex, vPair)
+					vDirect.getOrPut(read(vPair.field, "object")) { linkedMapOf() }.getOrPut(vPair.partner) { mutableListOf() } += vPair.back
+				}
+				for ((vField, vEntry) in vDirect.entries.withIndex()) {
+					val vObject = "field$vField"
+					vBodies.append("\tktc2_Obj* $vObject = ${vEntry.key};\n\tuint32_t held$vField = 0;\n")
+					vBodies.append("\tif ($vObject && (KTC2_RC_LOAD($vObject) & KTC2_COUNT_MASK) == 1) switch ($vObject->typeId) {\n")
+					for ((vPartner, vBacks) in vEntry.value) {
+						vBodies.append("\tcase ${typeId(vPartner)}:\n")
+						for ((vBit, vBack) in vBacks.withIndex()) vBodies.append("\t\tif (${read(vBack, vObject)} == object) { held$vField |= ${1L shl vBit}u; explained++; }\n")
+						vBodies.append("\t\tbreak;\n")
 					}
+					vBodies.append("\tdefault: break;\n\t}\n")
+				}
+				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
+					if (vPair.via.isEmpty()) continue
+					// A longer cycle: each object on the way held by the one before it alone, the last one's field holding this one.
+					vBodies.append("\tktc2_Obj* partner$vIndex = ${read(vPair.field, "object")};\n")
+					vBodies.append("\tbool held$vIndex = partner$vIndex && partner$vIndex->typeId == ${typeId(vPair.partner)} && (KTC2_RC_LOAD(partner$vIndex) & KTC2_COUNT_MASK) == 1;\n")
+					var vLast = "partner$vIndex"
+					for ((vStep, vVia) in vPair.via.withIndex()) {
+						val vNext = "step${vIndex}_$vStep"
+						val vTypes = vVia.classes.joinToString(" || ") { "$vNext->typeId == ${typeId(it)}" }
+						vBodies.append("\tktc2_Obj* $vNext = held$vIndex ? ${read(vVia.field, vLast)} : NULL;\n")
+						vBodies.append("\theld$vIndex = held$vIndex && $vNext && ($vTypes) && (KTC2_RC_LOAD($vNext) & KTC2_COUNT_MASK) == 1;\n")
+						vLast = vNext
+					}
+					vBodies.append("\tktc2_Obj* last$vIndex = $vLast;\n")
+					vBodies.append("\theld$vIndex = held$vIndex && ${read(vPair.back, vLast)} == object;\n")
 					vBodies.append("\tif (held$vIndex) explained++;\n")
 				}
 				// Held by its cycle and by more: -1, which is where a knot may be (its objects held by one another otherwise).
 				vBodies.append("\tif (explained == 0) return 0;\n\tif ((KTC2_RC_LOAD(object) & KTC2_COUNT_MASK) != explained) return -1;\n")
+				for ((vField, vEntry) in vDirect.entries.withIndex()) {
+					val vObject = "field$vField"
+					vBodies.append("\tif (held$vField) switch ($vObject->typeId) {\n")
+					for ((vPartner, vBacks) in vEntry.value) {
+						vBodies.append("\tcase ${typeId(vPartner)}:\n")
+						for ((vBit, vBack) in vBacks.withIndex()) vBodies.append("\t\tif (held$vField & ${1L shl vBit}u) ${clear(vBack, vObject)};\n")
+						vBodies.append("\t\tbreak;\n")
+					}
+					vBodies.append("\tdefault: break;\n\t}\n")
+				}
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					if (vPair.via.isEmpty()) vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "partner$vIndex")};\n")
-					else vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
+					if (vPair.via.isNotEmpty()) vBodies.append("\tif (held$vIndex) ${clear(vPair.back, "last$vIndex")};\n")
 				}
 				// The object is then this function's alone (its count one): the caller releases it, which frees the pair.
 				vBodies.append("\tKTC2_RC_SET(object, (KTC2_RC_LOAD(object) & ~KTC2_COUNT_MASK) | 1);\n\treturn 1;\n}\n")
@@ -679,12 +703,20 @@ class CEmitter(private val mModule: KModule) {
 				// one partner's references to another object of the pair. What it returns the runtime releases, after the
 				// step a program with threads takes under its lock (ktc2_release_paired).
 				vBodies.append("\nktc2_Obj* ${vClass.cName}__pair(ktc2_Obj* object)\n{\n\tint found = ${vClass.cName}__collect(object);\n\tif (found > 0) return object;\n")
+				// A longer cycle is given to each of its classes from its own place: each finds it for itself. The partners
+				// held in one field are told apart by one switch.
+				val vPartners = linkedMapOf<String, LinkedHashSet<KClass>>()
 				for ((vIndex, vPair) in vClass.pairCycles.withIndex()) {
-					// A longer cycle is given to each of its classes from its own place: each finds it for itself.
 					if (vPair.partner.pairCycles.isEmpty() || vPair.via.isNotEmpty()) continue
 					partner(vIndex, vPair)
-					vBodies.append("\tktc2_Obj* other$vIndex = ${read(vPair.field, "object")};\n")
-					vBodies.append("\tif (other$vIndex && other$vIndex->typeId == ${typeId(vPair.partner)} && ${vPair.partner.cName}__collect(other$vIndex) > 0) return other$vIndex;\n")
+					vPartners.getOrPut(read(vPair.field, "object")) { linkedSetOf() } += vPair.partner
+				}
+				for ((vIndex, vEntry) in vPartners.entries.withIndex()) {
+					vBodies.append("\tktc2_Obj* other$vIndex = ${vEntry.key};\n\tif (other$vIndex) switch (other$vIndex->typeId) {\n")
+					for (vPartner in vEntry.value) {
+						vBodies.append("\tcase ${typeId(vPartner)}: if (${vPartner.cName}__collect(other$vIndex) > 0) return other$vIndex; break;\n")
+					}
+					vBodies.append("\tdefault: break;\n\t}\n")
 				}
 				// Not freed as a cycle of its own: the bounded check of a group, for a ring each time, for a knot only when its own
 				// cycle held it and something more did (an object merely still in use costs no walk).

@@ -325,6 +325,9 @@ leaves no more references than the class has pairs calls `ktc2_pair_check`, whic
 class's `__collect`: when every reference left is held by a partner that it alone holds, the
 partners give theirs up without a release and the object goes, taking them with it. It is exact:
 nothing is freed while a reference from outside is left, so nothing a program can see changes.
+`__collect` reads each field once and tells its partners apart by a `switch` on the class (a field typed with a base
+class pairs with each subclass: some 60 for a node of Regex, which as one test after another took MSVC's optimizer
+minutes a function), and `__pair` calls the partner's `__collect` the same way.
 In a program with threads (`KTC2_THREADS`) the same, once threads run, with one more rule: a release that brings
 the count of a paired object down to its number of pairs or less (its end, nearly always) is made, and its check
 run, one at a time (`ktc2_release_paired`: a flag, and the runtime's lock, under which no weak reference is
