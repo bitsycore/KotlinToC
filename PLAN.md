@@ -41,18 +41,28 @@ library and of ktc2's own passes in C, as on Kotlin/Native. "Passes" means: no `
 few that state a difference the owner's rule accepts (section 8), and no `.cycles` (memory freed as
 Kotlin/Native's collector would). What stands between, in the order to do it:
 
-### 2.1 Bugs found and not fixed (half a day)
-- [ ] `WithTimeoutTest` leaves `lambda.F_t_3 -> TimeoutCoroutine.uCont -> lambda` (a suspend lambda's frame holds the
-  coroutine that holds it as its continuation).
+### 2.1 Bugs found and not fixed
+Nothing left: `WithTimeoutTest`'s cycle is one of the lists of handlers of 2.2 today.
 
 ### 2.2 kotlinx.coroutines' cycles (3 to 5 days)
 The owner's direction (2026-11-20): kotlinx.coroutines keeps its API and behavior, even at some cost; what answers its
-cycles stays in its module (edits, declarations, a small runtime of its own if needed), not in ktc2's base. Measured on
-the 26 files left with `.cycles` (2026-11-20, after the cycle of a dispatched continuation and the one kept for reuse
-was declared: 1,578 such cycles to 55): the lists of handlers of finished jobs (`NodeList`, `ChildHandleNode`,
-`ResumeOnCompletion`, `ListClosed`, `Removed`), some 450; a coroutine's frame that holds the coroutine itself
-(`F_uCont -> itself`, inside `suspendCoroutineUninterceptedOrReturn`), 60: a fix of ktc2's state machines (a frame
-field holding its own coroutine needs no count); channels and broadcast, a few dozen.
+cycles stays in its module (edits, declarations, a small runtime of its own if needed), not in ktc2's base.
+Measured again on 2026-11-21 with the report of what a leak starts from (`[root]`, CLAUDE.md): in each of the 26 files
+with `.cycles`, every cycle left is a root (nothing else holds it), by kind:
+- **A declared cycle closed after its last check** (about 20 files): the dispatched continuation and the cancellable
+  continuation kept for reuse (10 files), a job and the exception that is its final state (`StandaloneCoroutine`,
+  `ProducerCoroutine`, `ScopeCoroutine`, `BlockingCoroutine`, `JobImpl`, `BroadcastCoroutine`), a producer's channel
+  and its cause of closing. `KTC2_PAIR_TRACE=2` shows it for the first: each object was checked while the other was
+  still held elsewhere or the field was empty, then `tryReleaseClaimedContinuation` put the continuation in the field,
+  and no release came after it to check again. The checks run only when a count goes down. The owner's decision:
+  - (a) a check when a reference is stored into a field a declared cycle goes through (the emitter knows the fields:
+    `KPairCycle.field`, `back`), of the object stored and of the one stored into, right after the store. Exact as the
+    checks at a release are; one test on a few stores of a few classes.
+  - (b) the objects a check kept checked again later, at points where nothing runs (an event loop with nothing to do,
+    the end of `runBlocking`, the end of the program): a list of candidates, no store slowed. Covers what (a) misses
+    (a closing through a field not declared), late.
+  - (c) the backup collector of 7.1, restricted to the classes of declared cycles.
+  Recommended: (a), then see what is left.
 - [ ] A frame field that holds its own coroutine (`lambda.F_uCont -> lambda`, `withContextUndispatched.F_uCont`).
 - [ ] A completion hook of the module: what a finished job lets go of, at the points the library defines (its final
   state and its children done), as edits; the handler lists stay (another thread may still walk them).
