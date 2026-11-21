@@ -134,7 +134,8 @@ tasks.test {
 	systemProperty("ktc2.optIn", "kotlin.ExperimentalUnsignedTypes,kotlin.io.encoding.ExperimentalEncodingApi,kotlin.uuid.ExperimentalUuidApi,kotlin.time.ExperimentalTime")
 	// A program compiled with the library sources and not on the kept library takes more than 1 GB on Linux (kotlinx-datetime
 	// with kotlinx-serialization), more than 1.5 (kotlinx.serialization's JSON tests: JSON, its io, kotlinx-io).
-	maxHeapSize = "2g"
+	// KTC2_TEST_HEAP: more for one process that compiles much more (KTC2_TEST_CATEGORIES=all: every test as one program).
+	maxHeapSize = System.getenv("KTC2_TEST_HEAP") ?: "2g"
 	// Several compilers at once: each keeps to a few threads of its own, or they get in each other's way.
 	jvmArgs((System.getenv("KTC2_TEST_JVM") ?: "-XX:+UseParallelGC -XX:ParallelGCThreads=2 -XX:CICompilerCount=2 -Xms1g").split(" ").filter { it.isNotEmpty() })
 	// What each process wrote, put together: the counts (tools/arc_compare.py) and the times of each step.
