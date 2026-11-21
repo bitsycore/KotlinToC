@@ -414,6 +414,28 @@ static void pool_leave(void)
 }
 #endif
 
+#ifdef KTC2_LEAK_CHECK
+/** KTC2_PAIR_TRACE=1, in a debug or test build: each check of a pair, the count it was made at and what it freed. */
+/** Prints a reference of the object a check kept, with the count of what it refers to (KTC2_PAIR_TRACE=2). */
+static void pair_trace_visit(void* context, ktc2_Obj* from, const char* field, ktc2_Obj* to)
+{
+	(void)context;
+	(void)from;
+	if (to) fprintf(stderr, "ktc2:     .%s -> %s %p count %u\n", field, ktc2_types[to->typeId].name, (void*)to, (unsigned)(KTC2_RC_LOAD(to) & KTC2_COUNT_MASK));
+}
+
+static void pair_trace(ktc2_Obj* object, uint32_t left, ktc2_Obj* freed)
+{
+	static int trace = -1;
+	if (trace < 0) trace = getenv("KTC2_PAIR_TRACE") ? atoi(getenv("KTC2_PAIR_TRACE")) : 0;
+	if (!trace) return;
+	fprintf(stderr, "ktc2: pair check %s %p at %u: %s\n", ktc2_types[object->typeId].name, (void*)object, left, freed ? "freed" : "kept");
+	if (trace >= 2 && !freed && object->typeId < ktc2_type_count && ktc2_type_refs[object->typeId]) ktc2_type_refs[object->typeId](object, pair_trace_visit, NULL);
+}
+#else
+#define pair_trace(object, left, freed) ((void)0)
+#endif
+
 #ifdef KTC2_THREADS
 /*
  * Paired objects with threads. A check only matters when a release brings a count down to the number of pairs of its
@@ -444,7 +466,10 @@ void ktc2_release_paired(ktc2_Obj* object)
 	runtime_enter();
 	uint32_t left = ktc2_atomic_sub(&object->rc, 1) & KTC2_COUNT_MASK;
 	ktc2_Obj* freed = NULL;
-	if (left != 0 && left <= type->pairs && type->pair) freed = type->pair(object);
+	if (left != 0 && left <= type->pairs && type->pair) {
+		freed = type->pair(object);
+		pair_trace(object, left, freed);
+	}
 	runtime_leave();
 	ktc2_atomic_exchange(&pair_checking, 0);
 	/* Destroyed after: its destruction releases other objects, paired ones among them. */
@@ -624,10 +649,15 @@ static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool*
 	return start;
 }
 
+
 void ktc2_pair_check(ktc2_Obj* object, uint32_t left)
 {
 	const ktc2_TypeInfo* type = &ktc2_types[object->typeId];
-	if (left <= type->pairs && type->pair) ktc2_release(type->pair(object));
+	if (left <= type->pairs && type->pair) {
+		ktc2_Obj* freed = type->pair(object);
+		pair_trace(object, left, freed);
+		ktc2_release(freed);
+	}
 }
 
 void* ktc2_alloc(size_t size, uint32_t typeId)
@@ -1045,6 +1075,23 @@ static void cycles_report(void)
 	}
 	uint32_t* sizes = calloc(components, sizeof *sizes);
 	for (uint32_t at = 0; at < graph.count; at++) sizes[component[at]]++;
+	/* A group another object left points into is held by it: only the groups nothing else left holds are what leaks (`[root]`). */
+	bool* heldByOthers = calloc(components, sizeof *heldByOthers);
+	for (size_t at = 0; at < graph.edgeCount; at++) {
+		if (component[graph.edges[at].from] != component[graph.edges[at].to]) heldByOthers[component[graph.edges[at].to]] = true;
+	}
+	/* What the leak starts from: the groups nothing else left holds, by class, with what holds them (counts not explained). */
+	{
+		uint32_t* held = calloc(graph.count, sizeof *held);
+		for (size_t at = 0; at < graph.edgeCount; at++) held[graph.edges[at].to]++;
+		for (uint32_t at = 0; at < graph.count; at++) {
+			if (heldByOthers[component[at]]) continue;
+			ktc2_Obj* object = graph.nodes[at];
+			uint32_t count = object->rc & KTC2_COUNT_MASK;
+			if (count > held[at]) fprintf(stderr, "ktc2: start of a leak: %s, %" PRIu32 " reference(s) from no object left\n", ktc2_types[object->typeId].name, count - held[at]);
+		}
+		free(held);
+	}
 	bool* told = calloc(components, sizeof *told);
 	CycleKind* kinds = NULL;
 	uint32_t kindCount = 0;
@@ -1080,7 +1127,7 @@ static void cycles_report(void)
 		}
 		if (endEdge < 0) continue;
 		char text[1024];
-		size_t used = 0;
+		size_t used = heldByOthers[group] ? 0 : (size_t)snprintf(text, sizeof text, "[root] ");
 		/* The steps from the start: walked back from the end, then written in order. */
 		size_t steps[64];
 		uint32_t stepCount = 0;
@@ -1111,6 +1158,7 @@ static void cycles_report(void)
 	free(queue);
 	free(told);
 	free(sizes);
+	free(heldByOthers);
 	free(order);
 	free(low);
 	free(component);
