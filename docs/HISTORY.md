@@ -1112,6 +1112,9 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   waits (`uCont` is the coroutine itself, set without one). `__refs` follows a frame's fields as `__destroy` gives them
   up, by the label it waits at; what those files leave is their tests' own design (a continuation kept in a variable
   the coroutine captures), as their `.cycles` said.
+- 2026-11-21, `PLAN.md` 2.2: two neighbouring segments of a channel or a semaphore (`_next`, `_prev`) declared as a cycle of
+  the module, on their base class `ConcurrentLinkedListNode`: `SelectBufferedChannelTest`, `SelectMutexStressTest`,
+  `CombineParametersTest` and `SelectChannelStressTest` lose their `.cycles`.
 
 
 ---------------------------------------------------------------------------

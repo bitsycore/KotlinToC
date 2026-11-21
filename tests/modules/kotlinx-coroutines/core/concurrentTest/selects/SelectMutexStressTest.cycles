@@ -1,1 +1,0 @@
-The segments of a semaphore (a mutex) are a doubly linked list (_next, _prev) that the mutex keeps. PLAN.md, kotlinx.coroutines' tests.

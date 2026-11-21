@@ -1,1 +1,0 @@
-The segments of a channel are a doubly linked list (_next, _prev) that a channel left unclosed keeps; a select keeps its clauses, inner objects that refer back to it. PLAN.md, kotlinx.coroutines' tests.

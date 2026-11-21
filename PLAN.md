@@ -79,8 +79,7 @@ The 16 files of the library's own structures, by kind (each file's `.cycles` nam
 - [ ] A lazy coroutine cancelled while it is being made (its parent already cancelled): cancelled in the
   superclass's constructor, before the subclass keeps its block. The edit of `Builders.common.kt` can test
   `isCancelled` where it keeps the block.
-- [ ] The segments of a channel or a semaphore (`_next`, `_prev`) of a channel left unclosed, and a
-  `select`'s clauses (inner objects in its list): rings to declare (`rings`), as the job lists are.
+- [ ] A `select`'s clauses (inner objects in its list): a ring to declare (`rings`), as the job lists are.
 - [ ] The lists of handlers of jobs that end on several threads at once (`ConcurrentExceptionsStressTest`): the
   rings of jobs with several handlers in threaded programs, known since 2026-11-18.
 - [ ] The 11 files whose tests keep a continuation in a variable their own coroutine captures, or keep the
