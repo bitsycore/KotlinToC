@@ -282,6 +282,33 @@ the compiler process, the IR to C under a second, the C 0.2 to 20 s. By gain:
   unity build (`ktc2_all.c`) measured on Windows; LTO only for release builds (it is the default for `--build`).
 - [ ] **Smaller C**: fewer C files for small classes (one file per package for classes under a size), the
   instantiations that compile to the same code shared (5.4).
+- [ ] **Dispatchers of a function type sized by what can reach them** (2 to 3 days; first in this list for a large
+  program). Every test as one program (`KTC2_TEST_CATEGORIES=all`, 15,800 C files) had all but 7 of its files compiled
+  at `-O2` within 10 minutes on 32 threads; the 7 left are dispatchers of `Function2.invoke` (`kotlin/Function2__dispatch/invoke__Any_Int_IntOpt__v.c`), about
+  6 minutes each: a dispatcher of one signature (`(Any, Int) -> Int?`) has a case for each of the 3,120 lambdas of
+  `Function2` in the program, most of another signature, each with the boxing and the class checks that adapt it.
+  Leaving the cases of another signature out would break programs: generics are erased, ktc2 takes `Any` for an
+  argument it does not know, and an unchecked cast or a `Function2<*, *, *>` brings a `(String, Int) -> Int` to that
+  dispatcher legitimately (its case checks for a `String` and throws `ClassCastException`, as the JVM does).
+  - Recommended: each lambda class gets one erased entry (`invoke` with every parameter and the result boxed), its
+    address in the class's type table (`ktc2_types[]`); a dispatcher keeps direct cases for the classes whose own
+    signature is its own (or differs only by boxing it can do inline), and sends every other class through the
+    erased entry, one indirect call, its result unboxed. The same answers, a few cases instead of thousands, and
+    one adapter per lambda instead of one per lambda and signature. Kotlin/Native's tables work this way.
+  - Or: prune by flow: a class keeps its case in a dispatcher only if the program converts one of its instances
+    (a cast, an argument, a generic instantiation) to a type whose dispatcher it is. Smaller still, but every
+    conversion has to be found, through monomorphization; a miss is a crash (`ktc2_fail_dispatch_of`) where the
+    program worked.
+  - Or: keep the cases and move each adapter out of line, shared by every dispatcher (a function per lambda and
+    signature): smaller dispatchers, the same number of functions. The least change, the least gain.
+  Measure with the all-in-one program: its C, the time of the slowest files at `-O2`, the size of the program, and
+  `tools/bench.py` for the cost of the indirect call (a lambda called through another signature is rare).
+- [ ] **Interfaces with a source** keep their dispatchers in the interface's own unit: `kotlin/coroutines/Continuation.c`
+  is 10 MB in the all-in-one program (`resumeWith` over every continuation). The same split as the library's classes
+  without a source (a directory `Continuation__dispatch/`, a file per dispatcher) when the unit grows past a size.
+- [ ] **A release with symbols** from `ktc2 --build` (a new setting, `-g` with `-O2`; there is none yet), with the
+  progress of each file as `--build` and CMake show it: the release and the debug program of every test were built by a script
+  of the moment (`-O2 -g -flto=thin`, `-O0 -g -DKTC2_LEAK_CHECK`). Its debug build ran all 6,488 tests and passed.
 
 ---------------------------------------------------------------------------
 ## 7. Other proposals

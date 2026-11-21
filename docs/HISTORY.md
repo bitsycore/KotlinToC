@@ -1080,6 +1080,20 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   `native/Workers.kt` on Linux, found with ThreadSanitizer. The form now asks the closure of what is kept, as the
   summary did. `tests/ktc2/regressions/ResultHeldByKept.kt` shows it without threads (the list read a dead frame).
   The runtime writes `ktc2_threaded` once only.
+- 2026-11-21, the MSVC job's time: `__collect` and `__pair` of a class whose field is typed with a base class (a node of
+  Regex: some 60 subclasses) tested each partner one after another, with a load of its count each; cl took 15 minutes
+  over each program with Regex. Each field is read once and a switch on the class tells the partners apart: 40 s.
+- 2026-11-21, the AddressSanitizer job: the stdlib's tests took 1,960 s, more than the 2,400 s limit on a slower runner;
+  `-g1` (lines only) and 3,600 s: 806 s.
+- 2026-11-21, the MSVC job's last failure, a leak of `ktc2-values` with cl 14.52 (VS 18.12, the CI's) and not 14.51:
+  at `-O1`, cl lost a release after `x = (T){ 0 };` that followed a copy of `x` (the loop of `map` in
+  `StructReferences`). Found with the CI's toolset installed here, files then functions compiled at `-Od`, and a probe
+  of a count after each line printed. A struct slot is emptied by `KTC2_ZERO_VALUE` (a memset) since.
+- 2026-11-21, every test as one program (`KTC2_TEST_CATEGORIES=all`: ktc2's, the stdlib's and the libraries' but
+  kotlinx-serialization-json-io's, which are kotlinx-serialization's at another version): its debug build ran 6,488
+  tests from 716 cases and passed, without a leak. Its `KtDispatch.c` was 167 MB, which clang's `-O2` did not get
+  through in hours: each dispatcher of a library class with no source compiled has a file of its own since, in a
+  directory of the class's (`kotlin/Function2__dispatch/invoke__Any_Int_Any__v.c`).
 
 
 ---------------------------------------------------------------------------
