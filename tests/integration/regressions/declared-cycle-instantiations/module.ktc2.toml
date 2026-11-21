@@ -1,0 +1,5 @@
+name = "declared-cycle-instantiations"
+# A generic class is one class for each kind of type argument here (`Waiter` of objects, of `Int`, of `Boolean`): the
+# cycle declared by its name holds for each of them. It held for the first only, and a `Waiter<Int>` with its `Slot`
+# stayed allocated (kotlinx.coroutines' CancellableContinuationImpl<Int> and its DispatchedContinuation).
+cycles = ["Slot.kept -> Waiter.slot"]

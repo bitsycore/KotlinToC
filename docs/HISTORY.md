@@ -1102,6 +1102,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   address, and the second object got the first one's memory). An object whose hash was taken is marked (`KTC2_HASHED`,
   a bit taken from the count, 27 bits left) and its memory waits in a ring of 256 before reuse. A salt mixed into the
   hash, the other option, would have changed the hash of objects still alive.
+- 2026-11-21, `PLAN.md` 2.2: a cycle a module declares held only for the first instantiation of a generic class (the
+  first class of that name): `CancellableContinuationImpl<Int>` and the `DispatchedContinuation` that kept it for reuse
+  were never checked, in 10 of kotlinx.coroutines' test files. Found with the report of what a leak starts from and
+  `KTC2_PAIR_TRACE`, after a wrong lead (a cycle closed by a store). `OnCompletionTest`, `BroadcastTest` and `FlowOnTest`
+  lose their `.cycles`.
 
 
 ---------------------------------------------------------------------------

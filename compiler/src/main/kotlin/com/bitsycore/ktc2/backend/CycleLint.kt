@@ -285,30 +285,32 @@ class CycleLint(private val mModule: KModule) {
 		for (vLine in vDeclared) {
 			val vSteps = vLine.split("->").map { it.trim() }
 			if (vSteps.size < 2) continue
-			// Each step: the class named, the field of it (or of a class above it), the classes the program makes of it.
+			// Each step: each class of that name (a generic class is one for each kind of type argument: `CancellableContinuationImpl`
+			// of objects, of `Int`, of `Boolean`...), the field of it (or of a class above it), the classes the program makes of it.
 			val vNamed = vSteps.map { vStep ->
 				val vClassName = vStep.substringBeforeLast('.')
 				val vFieldName = vStep.substringAfterLast('.')
 				if (isAnonymous(vClassName)) return@map null
-				val vClass = mModule.classes.firstOrNull { it.name == vClassName } ?: return@map null
-				val vField = generateSequence(vClass) { it.superClass }.flatMap { it.fields }.firstOrNull { it.cName == vFieldName } ?: return@map null
-				Triple(vClass, vField, mModule.classes.filter { it.isInstantiated && it.isSubclassOf(vClass) })
+				mModule.classes.filter { it.name == vClassName }.mapNotNull { vClass ->
+					val vField = generateSequence(vClass) { it.superClass }.flatMap { it.fields }.firstOrNull { it.cName == vFieldName } ?: return@mapNotNull null
+					Triple(vClass, vField, mModule.classes.filter { it.isInstantiated && it.isSubclassOf(vClass) }).takeIf { it.third.isNotEmpty() }
+				}
 			}
 			// A lambda or an object expression has no name of its own: each class of the program the step before can hold there
 			// that has the field, holding the class of the next step. One cycle for each (their fields are not at one place).
 			val vChoices = vSteps.indices.map { vAt ->
-				vNamed[vAt]?.let { return@map listOf(it) }
+				vNamed[vAt]?.let { return@map it }
 				val vClassName = vSteps[vAt].substringBeforeLast('.')
 				val vFieldName = vSteps[vAt].substringAfterLast('.')
-				val vBefore = vNamed[(vAt + vSteps.size - 1) % vSteps.size]
-				val vNext = vNamed[(vAt + 1) % vSteps.size]?.first
-				if (!isAnonymous(vClassName) || vBefore == null || vNext == null) return@map emptyList()
+				val vBefore = vNamed[(vAt + vSteps.size - 1) % vSteps.size].orEmpty()
+				val vNext = vNamed[(vAt + 1) % vSteps.size].orEmpty().map { it.first }
+				if (!isAnonymous(vClassName) || vBefore.isEmpty() || vNext.isEmpty()) return@map emptyList()
 				// What the field before can hold, as the edges know it; a field typed as a function may lead nowhere there.
-				val vHeld = vBefore.third.flatMap { vFrom -> mEdges[vFrom].orEmpty().filter { it.field === vBefore.second }.map { it.to } }
+				val vHeld = vBefore.flatMap { vStep -> vStep.third.flatMap { vFrom -> mEdges[vFrom].orEmpty().filter { it.field === vStep.second }.map { it.to } } }
 					.filter { it.isInstantiated && it.name == vClassName }.distinct()
 				vHeld.ifEmpty { mModule.classes.filter { it.isInstantiated && it.name == vClassName } }
 					.mapNotNull { vClass ->
-						vClass.fields.firstOrNull { it.cName == vFieldName && ownedClass(it.type)?.let { vHeld -> vNext.isSubclassOf(vHeld) } == true }
+						vClass.fields.firstOrNull { vField -> vField.cName == vFieldName && ownedClass(vField.type)?.let { vHeld -> vNext.any { it.isSubclassOf(vHeld) } } == true }
 							?.let { Triple(vClass, it, listOf(vClass)) }
 					}
 			}

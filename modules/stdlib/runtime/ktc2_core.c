@@ -1140,6 +1140,8 @@ static void cycles_report(void)
 			used += (size_t)written;
 		}
 		snprintf(text + used, sizeof text - used, "%s", ktc2_types[graph.nodes[start]->typeId].name);
+		/* KTC2_CYCLES=2: where each one is, to follow it in a trace (KTC2_PAIR_TRACE). */
+		if (getenv("KTC2_CYCLES")[0] == '2') fprintf(stderr, "ktc2: cycle at %p: %s\n", (void*)graph.nodes[start], text);
 		uint32_t kind = 0;
 		while (kind < kindCount && strcmp(kinds[kind].text, text) != 0) kind++;
 		if (kind == kindCount) {

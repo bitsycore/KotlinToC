@@ -49,20 +49,13 @@ The owner's direction (2026-11-20): kotlinx.coroutines keeps its API and behavio
 cycles stays in its module (edits, declarations, a small runtime of its own if needed), not in ktc2's base.
 Measured again on 2026-11-21 with the report of what a leak starts from (`[root]`, CLAUDE.md): in each of the 26 files
 with `.cycles`, every cycle left is a root (nothing else holds it), by kind:
-- **A declared cycle closed after its last check** (about 20 files): the dispatched continuation and the cancellable
-  continuation kept for reuse (10 files), a job and the exception that is its final state (`StandaloneCoroutine`,
-  `ProducerCoroutine`, `ScopeCoroutine`, `BlockingCoroutine`, `JobImpl`, `BroadcastCoroutine`), a producer's channel
-  and its cause of closing. `KTC2_PAIR_TRACE=2` shows it for the first: each object was checked while the other was
-  still held elsewhere or the field was empty, then `tryReleaseClaimedContinuation` put the continuation in the field,
-  and no release came after it to check again. The checks run only when a count goes down. The owner's decision:
-  - (a) a check when a reference is stored into a field a declared cycle goes through (the emitter knows the fields:
-    `KPairCycle.field`, `back`), of the object stored and of the one stored into, right after the store. Exact as the
-    checks at a release are; one test on a few stores of a few classes.
-  - (b) the objects a check kept checked again later, at points where nothing runs (an event loop with nothing to do,
-    the end of `runBlocking`, the end of the program): a list of candidates, no store slowed. Covers what (a) misses
-    (a closing through a field not declared), late.
-  - (c) the backup collector of 7.1, restricted to the classes of declared cycles.
-  Recommended: (a), then see what is left.
+- A declared cycle held only for the first instantiation of a generic class (fixed 2026-11-21, 10 files and 3 freed
+  whole): what was taken for a cycle closed by a store after its last check was a `CancellableContinuationImpl<Int>`,
+  of a class with no check at all. Option (a) the owner chose (a check at stores into the fields of declared cycles)
+  waits until a case of it is found; none is known now.
+- [ ] A job and the exception that is its final state, left in 4 files (`ProducerCoroutine` in `ZipTest` and
+  `ChannelBuildersFlowTest`, `ScopeCoroutine` and `BlockingCoroutine` in `CombineTest` and `IdFlowTest`): declared, so
+  what keeps them is another way round (`lambda.receiver`, a channel's cause of closing); see the items below.
 - [ ] A frame field that holds its own coroutine (`lambda.F_uCont -> lambda`, `withContextUndispatched.F_uCont`).
 - [ ] A completion hook of the module: what a finished job lets go of, at the points the library defines (its final
   state and its children done), as edits; the handler lists stay (another thread may still walk them).

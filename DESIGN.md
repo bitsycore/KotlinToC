@@ -344,7 +344,9 @@ release of a paired object before (2026-11-18): with kotlinx.coroutines' corouti
 is declared by its module, as `KTC2_CYCLES=1` names it: `cycles = ["A.f -> B.g -> C.h"]` (C's `h` holding the A).
 A step may be `lambda.self` (or an object expression's `<no name provided>`), which has no name of its own: it
 stands for each lambda the field before can hold that has that field, holding the class of the next step, a cycle
-for each.
+for each. A class named in a step is each class of that name: a generic class is one for each kind of type argument
+(`CancellableContinuationImpl` of objects, of `Int`, of `Boolean`), and the cycle holds for every combination of
+them (`regressions/declared-cycle-instantiations`).
 It is the same mechanism, a `KPairCycle` with the steps between (`via`): each class of the cycle gets it from its own
 place, its objects carry `KTC2_PAIRED`, and the check follows the cycle, each object on the way held by the one before
 it alone and the last one's field holding the first; then the cycle is cut there and the first object released, which
