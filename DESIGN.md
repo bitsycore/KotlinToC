@@ -403,7 +403,15 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
 - **Inheritance**: a subclass struct starts with its superclass struct.
 - **Virtual and interface calls** go through a generated dispatcher: a `switch` on the type id
   that calls the implementation of that class directly. Only classes the program creates
-  appear in it. `is` and `as` are tests of the same id. There are no vtables.
+  appear in it. `is` and `as` are tests of the same id. There are no vtables but one kind of table: a
+  dispatcher of `invoke` of a function type (`Function2`, one for each signature it is called with) has a case
+  only for the closures of its own signature. A closure of another one (a lambda instantiated with objects,
+  reached through `(Any, Int) -> Int?` by erasure or a cast) is still one of its targets for the passes, but in C
+  it is called through its erased bridge (`<lambda>_invoke__erased`, objects only, a dispatcher of one class with
+  its checks), found in `ktc2_erased_invoke<N>[type id]` (`ktc2_main.c`) by the dispatcher's `default`, the
+  arguments boxed and the result unboxed there (`KFunction.erasedArity`, `KModule.erasedBridges`). Each
+  dispatcher had a case with its adapters for every such closure: 3,120 in one of `Function2` for every test as
+  one program, 6 minutes of clang's `-O2` each.
 - **A dispatched call becomes a direct one** (`Devirtualize`) where the program shows its
   target: one class implements the method, or the class of the receiver is known. The class
   of a value is followed through the whole program, from the allocation through locals,

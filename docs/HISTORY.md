@@ -1094,6 +1094,10 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   tests from 716 cases and passed, without a leak. Its `KtDispatch.c` was 167 MB, which clang's `-O2` did not get
   through in hours: each dispatcher of a library class with no source compiled has a file of its own since, in a
   directory of the class's (`kotlin/Function2__dispatch/invoke__Any_Int_Any__v.c`).
+- 2026-11-21, `PLAN.md` 6: 7 of those dispatchers still took clang's `-O2` 6 minutes each: a dispatcher of one signature
+  of `Function2` had a case, with its adapters, for each of the 3,120 lambdas of the program that could reach it by
+  erasure. A closure of another signature is called through its erased bridge, from a table by class: that file went
+  from 1.6 MB to 824 bytes, the C of the program from 485 MB to 386 MB, and the whole suite from 13 to 9.5 minutes.
 
 
 ---------------------------------------------------------------------------
