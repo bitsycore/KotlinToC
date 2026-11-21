@@ -24,6 +24,7 @@ import org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.util.fileOrNull
+import org.jetbrains.kotlin.ir.util.getPackageFragment
 import org.jetbrains.kotlin.ir.util.isInterface
 import org.jetbrains.kotlin.ir.util.isObject
 import org.jetbrains.kotlin.ir.util.kotlinFqName
@@ -230,7 +231,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private val mUnits = ArrayList<KUnit>()
 	private val mFacades = HashMap<IrFile, KUnit>()
 	private val mInterfaceUnits = HashMap<IrClass, KUnit>()
-	private val mDispatchUnit = KUnit("", "KtDispatch")
+	/** The units of the dispatchers of the library's classes with no source compiled: see [dispatchUnitFor]. */
+	private val mDispatchUnits = LinkedHashMap<IrClass, KUnit>()
 	private val mRuntimeUnit = KUnit("", "ktc2_core")
 	private val mFunctions = HashMap<Mono, KFunction?>()
 	private val mStructs = HashMap<IrClass, KStruct>()
@@ -580,7 +582,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 		settleDeinit()
 		settleInitialization()
-		if (mDispatchUnit.functions.isNotEmpty()) mUnits += mDispatchUnit
+		mUnits += mDispatchUnits.values
 		return KModule(mUnits, vEntry, mClassList).also {
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
@@ -967,6 +969,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	private fun interfaceUnitFor(inClass: IrClass): KUnit = mInterfaceUnits.getOrPut(inClass) {
 		KUnit(inClass.fileOrNull?.packageFqName?.asString() ?: "", nestedName(inClass)).also { mUnits += it }
+	}
+
+	/**
+	 * The unit of the dispatchers of [inClass], a class of the library with no source compiled (`kotlin.Any`, `Function2`):
+	 * `<Class>.dispatch` beside its other units, as `.Box` is. One unit for all of them made a file of 167 MB for every test
+	 * as one program, which clang's -O2 did not get through in hours.
+	 */
+	private fun dispatchUnitFor(inClass: IrClass): KUnit = mDispatchUnits.getOrPut(inClass) {
+		KUnit(inClass.getPackageFragment().packageFqName.asString(), nestedName(inClass) + ".dispatch")
 	}
 
 	// ==================
@@ -2230,7 +2241,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vUnit = when {
 			vClass != null -> vClass.unit
 			vFile != null -> interfaceUnitFor(vOwner)
-			else -> mDispatchUnit
+			else -> dispatchUnitFor(vOwner)
 		}
 		val vScope = vClass?.cName ?: (cPrefix(vFile?.packageFqName?.asString() ?: vOwner.kotlinFqName.parent().asString()) + cSuffix(nestedName(vOwner)))
 		val vGeneric = if (vClass == null && vKey.arguments.isNotEmpty()) "__" + vKey.arguments.joinToString("_") { mangle(it) } else ""
