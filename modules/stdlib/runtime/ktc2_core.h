@@ -583,6 +583,14 @@ void* ktc2_str_cptr(struct ktc2_String* string);
 /** A new string from NUL-terminated UTF-8 text. */
 struct ktc2_String* ktc2_string_of_cstr(const char* text);
 
+#ifdef KTC2_REFERENCE_NAMES
+/** The name of each class that is the closure of a function reference, by its type id (ktc2_main.c); NULL for the others. */
+extern const char* const ktc2_reference_names[];
+
+/** The name of the function [reference] refers to, or NULL when it is no function reference. */
+struct ktc2_String* ktc2_functionReferenceName(ktc2_Obj* reference);
+#endif
+
 /**
  * A C struct held by value (`CValue<T>`) is a byte array with the struct as its content.
  * This is the address of that struct.

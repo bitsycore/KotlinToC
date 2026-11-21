@@ -425,6 +425,44 @@ internal class BodyBuilder(
 		mTailFunction = null
 	}
 
+	/** Whether [inValue], returned, ends in a call of the `tailrec` function being built: through `if`, `when` and blocks. */
+	private fun endsInTailCall(inValue: IrExpression): Boolean = when (inValue) {
+		is IrCall -> inValue.symbol.owner === mTailFunction
+		is IrWhen -> inValue.branches.any { endsInTailCall(it.result) }
+		is IrReturnableBlock -> false
+		is IrBlock -> (inValue.statements.lastOrNull() as? IrExpression)?.let { endsInTailCall(it) } == true
+		else -> false
+	}
+
+	/**
+	 * `return if (a) f(x) else when (b) { ... -> f(y) }` in the `tailrec` function `f`: the return goes into each branch
+	 * (and to the last statement of a block), where a call of `f` is then another round of the loop. True when done.
+	 */
+	private fun returnInBranches(inValue: IrExpression): Boolean {
+		if (mTailFunction == null || mControl.isNotEmpty() || inValue is IrCall || !endsInTailCall(inValue)) return false
+		when (inValue) {
+			is IrWhen -> returnBranches(inValue.branches, 0)
+			is IrBlock -> {
+				inValue.statements.dropLast(1).forEach { lowerStatement(it) }
+				emitReturn(inValue.statements.last() as IrExpression)
+			}
+			else -> return false
+		}
+		return true
+	}
+
+	/** The branches of a returned `when` from [inIndex] on, each returning its own value ([returnInBranches]). */
+	private fun returnBranches(inBranches: List<IrBranch>, inIndex: Int) {
+		if (inIndex >= inBranches.size) return
+		val vBranch = inBranches[inIndex]
+		if (isElse(vBranch)) return emitReturn(vBranch.result)
+		val vCondition = lowerPure(vBranch.condition)
+		if (vCondition === kFalse) return returnBranches(inBranches, inIndex + 1)
+		val vThen = inBlock { emitReturn(vBranch.result) }
+		val vElse = inBlock { returnBranches(inBranches, inIndex + 1) }
+		mBlock += KIf(vCondition, vThen, vElse)
+	}
+
 	/** `return f(args)` in the `tailrec` function `f`: true when it was turned into another round of the loop. */
 	private fun tailCall(inValue: IrExpression?): Boolean {
 		val vFunction = mTailFunction ?: return false
@@ -827,6 +865,7 @@ internal class BodyBuilder(
 			}
 		}
 		val vBindings = vCaptures.mapIndexed { vIndex, vCapture -> Binding(vCapture.declaration, vCaptureFields[vIndex], vCapture.cell, vCapture.invoke) }
+		referenceTarget(inElement, inSam)?.let { mImporter.registerReference(vClass, it, vCaptureFields.toList()) }
 		val vLambdas = HashMap(vSet.lambdas)
 		val vSubst = mSubst
 		mImporter.later {
@@ -1087,6 +1126,16 @@ internal class BodyBuilder(
 	}
 
 	/** Keeps the side effect of an unused value, drops pure expressions. */
+	/**
+	 * A call whose type is Unit gives the Unit object, whatever the function behind it returned (`(::f as () -> Unit)()`
+	 * of an `f` that returns an object, an `invoke` of a function value): as on the JVM and Kotlin/Native.
+	 */
+	private fun unitOfCall(inCall: IrCall, inValue: KExpr): KExpr {
+		if (!inCall.type.isUnit() || inValue.type is KUnitType || inValue.type is KNothingType || inValue === KUnitValue) return inValue
+		discard(inValue)
+		return KUnitValue
+	}
+
 	private fun discard(inValue: KExpr) {
 		// A value nobody takes is still computed when computing it can fail: `1 / zero`, `array[9]`.
 		if (inValue.isImpure() || inValue.anyNode { it.isRuntimeCheck() }) mBlock += KEval(inValue)
@@ -1094,6 +1143,7 @@ internal class BodyBuilder(
 
 	private fun emitReturn(inValue: IrExpression?) {
 		if (tailCall(inValue)) return
+		if (inValue != null && returnInBranches(inValue)) return
 		if (inValue == null && mReturnsUnitObject) {
 			mBlock += KReturn(unitObject())
 			return
@@ -1220,7 +1270,7 @@ internal class BodyBuilder(
 				KUnitValue
 			}
 		}
-		is IrCall -> lowerCall(inExpression)
+		is IrCall -> unitOfCall(inExpression, lowerCall(inExpression))
 		is IrConstructorCall -> lowerConstructorCall(inExpression)
 		is IrDelegatingConstructorCall -> lowerDelegatingConstructorCall(inExpression)
 		is IrInstanceInitializerCall -> lowerInstanceInitializer(inExpression)
@@ -2982,6 +3032,7 @@ internal class BodyBuilder(
 		val vSamClass = inSam?.classOrNull?.owner
 		if (vSamClass != null) mImporter.registerSam(vClass, vInvoke, vSamClass, mImporter.argumentsOf(closed(inSam))) else mImporter.registerClosure(vClass, vInvoke)
 		val vBindings = vCaptures.mapIndexed { vIndex, vCapture -> Binding(vCapture.declaration, vClass.fields[vIndex], vCapture.cell, vCapture.invoke) }
+		referenceTarget(inElement, inSam)?.let { mImporter.registerReference(vClass, it, vClass.fields.toList()) }
 		val vSubst = mSubst
 		mImporter.later { BodyBuilder(mImporter, vInvoke, inFunction, mFile, vSubst).buildClosure(vBindings, inSelf, vLambdas) }
 
@@ -2990,6 +3041,10 @@ internal class BodyBuilder(
 		vCaptures.forEachIndexed { vIndex, vCapture -> writeField(KRead(vObject), vClass.fields[vIndex], KRead(vCapture.source)) }
 		return vObject to vInvoke
 	}
+
+	/** The function a closure made for [inElement] refers to, when it is a function reference given as a function type. */
+	private fun referenceTarget(inElement: IrElement, inSam: IrType?): IrFunction? =
+		if (inSam != null) null else (inElement as? IrRichFunctionReference)?.reflectionTargetSymbol?.owner
 
 	/** `::function`, `value::method`: a closure object forwarding to the function, holding the bound receiver if any. */
 	/**

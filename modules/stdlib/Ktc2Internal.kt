@@ -745,13 +745,16 @@ public fun <T, V> mutableReference1(name: String, getter: (T) -> V, setter: (T, 
  */
 public fun associatedObject(className: String, keyName: String): Any? = null
 
-/** The name of the property [reference] refers to; a reference to a function has none here. */
+/** The name of the property or of the function [reference] refers to. */
 public fun referenceName(reference: Any): String = when (reference) {
 	is Reference0<*> -> reference.name
 	is Reference1<*, *> -> reference.name
 	is PropertyReference -> reference.name
-	else -> throw UnsupportedOperationException("Reflection is not available: the name of a function reference")
+	else -> functionReferenceName(reference) ?: throw UnsupportedOperationException("Reflection is not available: the name of a function value")
 }
+
+/** The name of the function [reference] refers to, when it is the closure of a function reference (`::f`, `x::f`). */
+public external fun functionReferenceName(reference: Any): String?
 
 public fun <V> mutableReferenceSet0(reference: Any, value: V) {
 	(reference as MutableReference0<V>).set(value)

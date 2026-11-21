@@ -1,0 +1,1 @@
+The JVM backend does not pass this test (IGNORE_BACKEND: JVM, "FIR status: not supported in JVM"): a class that implements a suspend function type is not a SuspendFunctionN there. Kotlin/Native passes it, and so does ktc2.

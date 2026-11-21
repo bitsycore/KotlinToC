@@ -93,6 +93,9 @@ class KModule(
 	 */
 	var usesIdentityHash: Boolean = false
 
+	/** Set when the program asks a function reference for its name: the runtime then has a table of their names. */
+	var usesReferenceNames: Boolean = false
+
 	/**
 	 * The platform layer's functions that throw the exceptions of the language's own checks
 	 * (index out of bounds, division by zero), by name. Empty when the program has no such
@@ -237,6 +240,9 @@ class KClass(
 
 	/** The name the default `toString()` of a local class shows, as Kotlin/Native names it (`pkg.Outer$function$Local`); null for any other. */
 	var shownName: String? = null
+
+	/** For the closure of a function reference (`::f`, `x::f`): the name of the function, what its `name` gives. */
+	var referenceName: String? = null
 
 	/**
 	 * Set on the instantiation of a generic class with `Any?` for every argument when the program

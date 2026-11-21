@@ -2539,6 +2539,14 @@ void* ktc2_str_cptr(ktc2_String* string)
 	return string ? string->bytes : NULL;
 }
 
+#ifdef KTC2_REFERENCE_NAMES
+ktc2_String* ktc2_functionReferenceName(ktc2_Obj* reference)
+{
+	const char* name = ktc2_reference_names[reference->typeId];
+	return name ? ktc2_string_of_cstr(name) : NULL;
+}
+#endif
+
 ktc2_String* ktc2_string_of_cstr(const char* text)
 {
 	if (!text) ktc2_fail_null();

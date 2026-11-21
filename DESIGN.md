@@ -102,7 +102,7 @@ sources + library sources + generated bindings
 | `String` | a pointer to `{ header, size, length, bytes[] }`: UTF-8, NUL-terminated |
 | `Array<T>`, `IntArray`... | a pointer to `{ header, length, elementSize, elements[] }` |
 | a `@Struct` class, a final non-generic `value class` | a C struct, by value |
-| a lambda, a function reference | an object with an `invoke`; captured variables that are written live in a cell |
+| a lambda, a function reference | an object with an `invoke`; captured variables that are written live in a cell. Two references to one function that hold equal values (the bound receiver, what a local function captures) are equal and hash alike, whichever expressions made them: the closures of one function and the same kinds of values implement an interface of their own, which their `equals` (made by the importer, `referenceMember`) tests the other for, then compares their fields. A reference knows its name (`ktc2_reference_names`, written only for a program that asks one for it: `KTC2_REFERENCE_NAMES`) |
 | `CPointer<T>` and the other interop pointers | `void*`, never counted |
 
 **The runtime of each program** is built with the options its `ktc2_config.h` says, written by the emitter from what the

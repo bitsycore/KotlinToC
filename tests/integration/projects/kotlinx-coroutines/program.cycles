@@ -1,3 +1,0 @@
-kotlinx.coroutines' dispatchers (Dispatchers.Default and IO) are made once and hold one another through the lambda
-that starts their workers: they live as long as the program, and are left at its end. Nothing else the library
-leaves grows with use (docs/HISTORY.md, the former kotlinx plan, "Cycles"; PLAN.md, section 2.2).

@@ -1159,6 +1159,15 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   once (`tests/ktc2/regressions/DelegateHeldTwice.kt`). `DelegationTest` and `AbstractCollectionsTest` lose their
   `.cycles`. The default `toString()` of a local class names it as Kotlin/Native does, through the compiler's own
   naming lowering (`AnyTest.testToString` passes).
+- 2026-11-21, `PLAN.md` 2.3: 8 more of the pending box tests of coroutines pass. A class that implements a `suspend`
+  function type (`class C : suspend () -> Int`, an object expression, an interface that extends one) is the `FunctionN`
+  that takes the continuation last: `is` and casts hold, and the dispatcher of its `invoke` calls its `suspend` `invoke`.
+  A call whose type is Unit gives the Unit object, whatever the function behind it returned (`(::f as () -> Unit)()`;
+  `tests/ktc2/regressions/UnitTypedCall.kt`). A `tailrec` function whose calls to itself are in the branches of a
+  returned `if` or `when`, or at the end of a block, is a loop there too (100,000 rounds overflowed the stack;
+  `TailrecThroughWhen.kt`). Two references to one function holding equal values are equal and hash alike, and a function
+  reference knows its name (`FunctionReferenceEquality.kt`). `suspendFunctionAsSupertypeIsCheckWithArity` fails on the
+  JVM by design (`.native`).
 
 
 ---------------------------------------------------------------------------

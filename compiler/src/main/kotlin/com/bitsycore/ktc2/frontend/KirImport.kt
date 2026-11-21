@@ -284,6 +284,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	private val mClosures = ArrayList<Closure>()
 
+	/** A closure made of a function reference: what makes two of them equal (its [key]) and the fields it holds of it. */
+	private class Reference(val key: KInterface, val fields: List<KField>)
+
+	/** The closures of function references ([registerReference]). */
+	private val mReferences = LinkedHashMap<KClass, Reference>()
+
+	/** For each function and the types of what its references hold: the interface all those closures implement. */
+	private val mReferenceKeys = HashMap<Pair<IrFunction, List<KType>>, KInterface>()
+
+	/** The `equals` and `hashCode` of each closure of a reference, made when a dispatcher asks for them. */
+	private val mReferenceMembers = HashMap<Pair<KClass, String>, KFunction>()
+
 	/** The erased bridges made so far, by the number of parameters of `invoke`: see [erasedBridgeFor]. */
 	private val mErasedBridges = LinkedHashMap<Int, LinkedHashMap<KClass, KFunction>>()
 	private val mCells = HashMap<KType, Pair<KClass, KField>>()
@@ -339,6 +351,20 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	}
 
 	/** Makes [inClass] callable as a function value through [inInvoke] (its first parameter is the closure). */
+	/**
+	 * [inClass] is the closure of a reference to [inTarget], holding [inFields] (the bound receiver, the values a local
+	 * function captures): two references to one function holding equal values are equal, as on the JVM and Kotlin/Native,
+	 * whichever expression made them. Those of one function and the same kinds of values implement one interface, which
+	 * their `equals` tests the other for.
+	 */
+	internal fun registerReference(inClass: KClass, inTarget: IrFunction, inFields: List<KField>) {
+		val vName = if (inTarget is IrConstructor) "<init>" else inTarget.name.asString()
+		val vKey = mReferenceKeys.getOrPut(inTarget to inFields.map { it.type }) { KInterface("reference to $vName", "ktc2.internal.reference.$vName") }
+		inClass.interfaces += vKey
+		inClass.referenceName = vName
+		mReferences[inClass] = Reference(vKey, inFields)
+	}
+
 	internal fun registerClosure(inClass: KClass, inInvoke: KFunction) {
 		fun shared(inType: KType): KType = if (inType is KRefType) KObjType else inType
 		val vParams = inInvoke.params.drop(1)
@@ -599,6 +625,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			it.erasedBridges = mErasedBridges
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			it.usesIdentityHash = "ktc2_any_hashCode" in mRuntime || "ktc2_any_toString" in mRuntime || "ktc2_identityHashCode" in mRuntime
+			it.usesReferenceNames = "ktc2_functionReferenceName" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
 			it.realFormatter = vFormatter
 			it.programEnding = vEnding
@@ -1371,6 +1398,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mInterfaces[inClass]?.let { return it }
 		val vInterface = KInterface(inClass.name.asString(), jvmNameOf(inClass))
 		mInterfaces[inClass] = vInterface
+		// A `suspend` function type is a `FunctionN` that takes the continuation last: what a class that implements one is too.
+		suspendFunctionArity(inClass)?.let { vInterface.supers += interfaceFor(mBuiltIns.functionN(it + 1)) }
 		for (vSuper in inClass.superTypes.mapNotNull { it.classOrNull?.owner }.filter { it.isInterface }) {
 			val vParent = interfaceFor(vSuper)
 			vInterface.supers += vParent
@@ -2298,6 +2327,94 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		return vTarget
 	}
 
+	/**
+	 * For `invoke` of `FunctionN` and a class that implements `SuspendFunction(N-1)` (`class C : suspend () -> Int`): its
+	 * `suspend` `invoke`, which takes the continuation last as that `invoke` does. Null for any other.
+	 */
+	private fun suspendInvokeOf(inConcrete: KClass, inInfo: ClassInfo, inOwner: IrClass, inFunction: IrSimpleFunction): KFunction? {
+		if (inFunction.name.asString() != "invoke") return null
+		val vOwnerName = inOwner.kotlinFqName.asString()
+		if (!vOwnerName.startsWith("kotlin.Function")) return null
+		val vArity = vOwnerName.removePrefix("kotlin.Function").toIntOrNull()?.takeIf { it > 0 } ?: return null
+		val vSuspend = mBuiltIns.suspendFunctionN(vArity - 1)
+		if (!isSubtype(inInfo.irClass, vSuspend)) return null
+		val vAbstract = vSuspend.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == "invoke" } ?: return null
+		val vMember = membersOf(inInfo.irClass).firstOrNull { it.isSuspend && (it == vAbstract || overrides(it, vAbstract)) } ?: return null
+		val (vImplementation, vSubst) = resolveMember(vMember, inInfo.type, emptyList())
+		if (vImplementation.modality == Modality.ABSTRACT) return null
+		val vOwnerClass = inConcrete.takeIf { it in mLocalCaptures && vImplementation.parent == inInfo.irClass }
+		return functionFor(vImplementation, vSubst, vOwnerClass)
+	}
+
+	/** Whether a function value may be seen as [inOwner]: `Any`, a function type, a reference's type. */
+	private fun isSeenAsFunction(inOwner: IrClass): Boolean {
+		val vName = inOwner.kotlinFqName.asString()
+		return isAnyClass(inOwner) || vName.startsWith("kotlin.Function") || vName.startsWith("kotlin.reflect.") || vName.startsWith("kotlin.coroutines.SuspendFunction")
+	}
+
+	/** The `equals` or `hashCode` ([inName]) of the closure of a reference [inClass]: what it holds, compared or hashed. */
+	private fun referenceMember(inClass: KClass, inName: String): KFunction? {
+		mReferenceMembers[inClass to inName]?.let { return it }
+		val vReference = mReferences[inClass] ?: return null
+		val vAnyMember = mBuiltIns.anyClass.owner.declarations.filterIsInstance<IrSimpleFunction>().firstOrNull { it.name.asString() == inName } ?: return null
+		val vDispatcher = dispatcherFor(vAnyMember) ?: return null
+		val vBool = KPrimType(KPrim.BOOLEAN)
+		val vInt = KPrimType(KPrim.INT)
+		val vSelf = KLocal("self", KClassType(inClass))
+		fun read(inOn: KLocal, inField: KField): KExpr = KFieldRead(KRead(inOn), inField)
+		fun isNull(inValue: KExpr): KExpr = KRefEquals(inValue, KNull(KObjType))
+		fun asParam(inValue: KExpr, inIndex: Int): KExpr = if (inValue.type == vDispatcher.params[inIndex].type) inValue else KRefCast(inValue, vDispatcher.params[inIndex].type)
+		val vBody = ArrayList<KStmt>()
+		val vFunction = if (inName == "equals") {
+			val vOther = KLocal("other", KObjType)
+			val vSame = KLocal("same", KClassType(inClass))
+			val vNo = listOf<KStmt>(KReturn(KConst(false, vBool)))
+			vBody += KIf(KRefEquals(KRead(vSelf), KRead(vOther)), listOf(KReturn(KConst(true, vBool))), emptyList())
+			vBody += KIf(KUnary(KUnaryOp.NOT, KInstanceOf(KRead(vOther), KInterfaceTarget(vReference.key)), vBool), vNo, emptyList())
+			// Another closure of the same function holding the same kinds of values: the same fields, in the same order.
+			vBody += KLet(vSame, KRefCast(KRead(vOther), KClassType(inClass)))
+			for (vField in vReference.fields) {
+				val vMine = read(vSelf, vField)
+				val vTheirs = read(vSame, vField)
+				vBody += when (val vType = vField.type) {
+					is KPrimType -> KIf(KBinary(KBinaryOp.NE, vMine, vTheirs, vType.prim, vBool), vNo, emptyList())
+					is KRefType -> KIf(KRefEquals(vMine, vTheirs, negated = true), listOf(
+						KIf(isNull(vMine), vNo, emptyList()),
+						KIf(isNull(vTheirs), vNo, emptyList()),
+						KIf(KUnary(KUnaryOp.NOT, KCall(vDispatcher, listOf(asParam(vMine, 0), asParam(vTheirs, 1))), vBool), vNo, emptyList()),
+					), emptyList())
+					// A value of another kind (a struct, a number that may be null): the same object only.
+					else -> KIf(KRefEquals(KRead(vSelf), KRead(vOther), negated = true), vNo, emptyList())
+				}
+			}
+			vBody += KReturn(KConst(true, vBool))
+			KFunction(uniqueName("${inClass.cName}_equals"), inClass.unit, listOf(vSelf, vOther), vBool)
+		} else {
+			val vHash = KLocal("hash", vInt)
+			vBody += KLet(vHash, KConst(inClass.referenceName.hashCode(), vInt))
+			for (vField in vReference.fields) {
+				val vValue = read(vSelf, vField)
+				val vPart: KExpr = when (val vType = vField.type) {
+					is KPrimType -> when (vType.prim) {
+						KPrim.INT -> vValue
+						KPrim.BOOLEAN -> KSelect(vValue, KConst(1231, vInt), KConst(1237, vInt), vInt)
+						KPrim.FLOAT, KPrim.DOUBLE -> KConst(0, vInt)
+						else -> KConvert(vValue, vType.prim, KPrim.INT)
+					}
+					is KRefType -> KSelect(isNull(vValue), KConst(0, vInt), KCall(vDispatcher, listOf(asParam(vValue, 0))), vInt)
+					else -> KConst(0, vInt)
+				}
+				vBody += KSet(vHash, KBinary(KBinaryOp.ADD, KBinary(KBinaryOp.MUL, KRead(vHash), KConst(31, vInt), KPrim.INT, vInt), vPart, KPrim.INT, vInt))
+			}
+			vBody += KReturn(KRead(vHash))
+			KFunction(uniqueName("${inClass.cName}_hashCode"), inClass.unit, listOf(vSelf), vInt)
+		}
+		vFunction.body.addAll(vBody)
+		inClass.unit.functions += vFunction
+		mReferenceMembers[inClass to inName] = vFunction
+		return vFunction
+	}
+
 	private fun membersOf(inClass: IrClass): List<IrSimpleFunction> = inClass.declarations.flatMap { vDeclaration ->
 		when (vDeclaration) {
 			is IrSimpleFunction -> listOf(vDeclaration)
@@ -2333,10 +2450,26 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 					vChanged = true
 				}
 			}
+			// `equals` and `hashCode` of a function value: those of the closures of references compare what they hold.
+			val vAnyMember = anyMemberName(vFunction)
+			if ((vAnyMember == "equals" || vAnyMember == "hashCode") && isSeenAsFunction(vOwner)) {
+				for (vClass in mReferences.keys.toList()) {
+					if (!mDispatchDone.add(vKey to vClass)) continue
+					val vMember = referenceMember(vClass, vAnyMember) ?: continue
+					vDispatcher.target.dispatch!! += vClass to vMember
+					vChanged = true
+				}
+			}
 			for (vConcrete in mInstantiated.toList()) {
 				if (!mDispatchDone.add(vKey to vConcrete)) continue
 				val vInfo = mClassInfo[vConcrete] ?: continue
-				if (!isSubtype(vInfo.irClass, vOwner)) continue
+				if (!isSubtype(vInfo.irClass, vOwner)) {
+					suspendInvokeOf(vConcrete, vInfo, vOwner, vFunction)?.let {
+						vDispatcher.target.dispatch!! += vConcrete to it
+						vChanged = true
+					}
+					continue
+				}
 				// A member a class made here implements itself (the state machine of a coroutine class).
 				val vSynthetic = mSyntheticOverrides[vConcrete]?.firstOrNull { (vDeclaration, _) ->
 					vDeclaration == vFunction || overrides(vDeclaration, vFunction) || overrides(vFunction, vDeclaration)
