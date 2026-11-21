@@ -96,5 +96,6 @@ done
 # Launched from cmd, a tool of the same name as a Unix one may be Windows' own (find, sort): none is used above.
 echo "compared:$vNames" | cut -c1-600
 echo "$vCount programs, $vFailed failed, $vKnown left out as known, $vSkipped directories without a program"
-# Nearly every directory has a program after a run of the suite: many without one means the comparison did not happen.
-[ "$vFailed" -eq 0 ] && [ "$vCount" -gt 100 -o -n "$1" ]
+# Nearly every directory has a program after a run of the suite: many without one means the comparison did not happen
+# (a count of programs does not say it: the tests run by group since 2026-11-19, some 50 programs where there were 350).
+[ "$vFailed" -eq 0 ] && [ "$vCount" -gt 0 ] && { [ "$vCount" -gt $((vSkipped * 4)) ] || [ -n "$1" ]; }
