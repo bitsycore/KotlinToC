@@ -1127,6 +1127,10 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   closure whose case only casts or turns a number into its nullable form, or returns `Unit`, keeps its case in a
   dispatcher of another signature: through the erased bridge it boxed (31 % more allocations in `Ordinary`).
   The note of knots (`PLAN.md` 2.2) was built and taken out: it freed nothing in the files left.
+- 2026-11-21, `PLAN.md` 2.3: 25 of the 41 pending box tests of coroutines pass and leave `pending/`. A closure is also a
+  target of the dispatchers of `invoke` of `KFunctionN`, `KSuspendFunctionN` and `SuspendFunctionN` (a suspend function
+  reference called as a `KSuspendFunction0`); `name` of a `KSuspendFunction` written where it is read; the box tests'
+  `OPTIONAL_JVM_INLINE_ANNOTATION` is `@kotlin.jvm.JvmInline`, as the compiler's tests make it for the JVM.
 
 
 ---------------------------------------------------------------------------

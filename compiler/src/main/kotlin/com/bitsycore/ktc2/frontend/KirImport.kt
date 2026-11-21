@@ -70,6 +70,9 @@ private fun cPrefix(inPackage: String): String = if (inPackage.isEmpty()) "kt_" 
 /** The runtime function that starts a thread; a program reaching it is built with atomic counts. */
 private const val kThreadStart = "ktc2_threadStart"
 
+/** The types a function reference is seen as besides its function type: their `invoke` reaches the closure too. */
+private val kReflectedFunctionClass = Regex("""kotlin\.reflect\.K(Suspend)?Function\d+|kotlin\.coroutines\.SuspendFunction\d+""")
+
 /** The function types whose `invoke` dispatchers call closures of another signature through erased bridges. */
 private val kFunctionClass = Regex("""kotlin\.Function\d+""")
 
@@ -2319,7 +2322,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				for (vClosure in mClosures.toList()) {
 					// A converted lambda implements the one abstract method of its interface.
 					if (vClosure.isSam && vFunction.modality != Modality.ABSTRACT) continue
-					if (vClosure.functionClass != vOwner || !accepts(vDispatcher.classArguments, vClosure.arguments)) continue
+					if (!closureFits(vOwner, vFunction, vDispatcher.classArguments, vClosure)) continue
 					if (!mDispatchDone.add(vKey to vClosure.cls)) continue
 					vDispatcher.target.dispatch!! += vClosure.cls to vClosure.invoke
 					vDispatcher.target.erasedArity?.let { vArity -> if (!vClosure.isSam && !sameSignature(vDispatcher.target, vClosure.invoke)) erasedBridgeFor(vClosure, vArity) }
@@ -2400,6 +2403,18 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * implementation written over references (a `Comparator<Comparable<Any>>` used, after a
 	 * cast, to compare Ints) serves a primitive dispatcher, which boxes for it.
 	 */
+	/**
+	 * Whether [inClosure] is called by the dispatcher of [inFunction] of [inOwner]: its own function type, of the arguments
+	 * the dispatcher was made for; or a type a function reference is seen as (`KFunction1`, `KSuspendFunction0`,
+	 * `SuspendFunction1`), whose `invoke` takes as many values (a continuation too when it suspends).
+	 */
+	private fun closureFits(inOwner: IrClass, inFunction: IrSimpleFunction, inArguments: List<KType>, inClosure: Closure): Boolean {
+		if (inClosure.functionClass == inOwner) return accepts(inArguments, inClosure.arguments)
+		if (inClosure.isSam || !kReflectedFunctionClass.matches(inOwner.kotlinFqName.asString())) return false
+		val vTaken = inFunction.parameters.count { it.kind == IrParameterKind.Regular } + (if (inFunction.isSuspend) 1 else 0)
+		return vTaken == inClosure.invoke.params.size - 1
+	}
+
 	/** True when [inImplementation] takes and returns what the dispatcher [inDispatcher] does: it is called with nothing adapted. */
 	private fun sameSignature(inDispatcher: KFunction, inImplementation: KFunction): Boolean =
 		inDispatcher.returnType == inImplementation.returnType && inDispatcher.params.size == inImplementation.params.size &&

@@ -336,7 +336,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 				}
 				vGroup.copies[vFile] = File("build/testmain/box/$vRelative/${vFile.name}").apply {
 					parentFile.mkdirs()
-					writeText(inPackage(vFile.readText(), vPackage) + "\n@kotlin.test.Test\nfun boxTest() {\n\tval vResult = box()\n\tprintln(vResult)\n" +
+					// What the compiler's own tests put for each back end: the JVM's annotation, which common code accepts too.
+					val vText = vFile.readText().replace("OPTIONAL_JVM_INLINE_ANNOTATION", "@kotlin.jvm.JvmInline")
+					writeText(inPackage(vText, vPackage) + "\n@kotlin.test.Test\nfun boxTest() {\n\tval vResult = box()\n\tprintln(vResult)\n" +
 						"\tif (vResult != \"OK\") throw IllegalStateException(\"box() returned \" + vResult)\n}\n")
 				}
 			}

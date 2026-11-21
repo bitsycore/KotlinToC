@@ -2637,7 +2637,8 @@ internal class BodyBuilder(
 		if ((vCallee.parent as? IrClass)?.kotlinFqName?.asString() == "kotlin.Unit") {
 			anyMemberOf(mImporter.mBuiltIns.anyType, vCallee.name.asString(), vCallee.parameters.count { it.kind == IrParameterKind.Regular })?.let { vCallee = it }
 		}
-		// `f(x)` on a reference (`val f = ::name`, a KFunctionN; `String::length`, a KProperty1) is the `invoke` of the function type it extends.
+		// `f(x)` on a reference (`val f = ::name`, a KFunctionN; `String::length`, a KProperty1) is the `invoke`
+		// of the function type it extends.
 		if (vCallee.name.asString() == "invoke" && (vCallee.parent as? IrClass)?.kotlinFqName?.asString()?.let { it.startsWith("kotlin.reflect.KFunction") || it.startsWith("kotlin.reflect.KProperty") || it.startsWith("kotlin.reflect.KMutableProperty") } == true) {
 			vCallee.overriddenSymbols.map { it.owner }.firstOrNull { isFunctionType(it.parentAsClass.symbol.typeWith()) }?.let { vCallee = it }
 		}
@@ -2652,7 +2653,7 @@ internal class BodyBuilder(
 		// `name` of a reference: known here when the reference is written right there (`Builder::char.name`, as kotlinx-datetime
 		// writes a format as code), else the name a property reference holds (`Reference0`).
 		if (vCallee.name.asString() == "<get-name>" && vReflected != null && (vReflected == "kotlin.reflect.KCallable" || vReflected.startsWith("kotlin.reflect.KProperty") ||
-				vReflected.startsWith("kotlin.reflect.KMutableProperty") || vReflected.startsWith("kotlin.reflect.KFunction"))) {
+				vReflected.startsWith("kotlin.reflect.KMutableProperty") || vReflected.startsWith("kotlin.reflect.KFunction") || vReflected.startsWith("kotlin.reflect.KSuspendFunction"))) {
 			val vWritten = when (val vReference = inCall.arguments.firstOrNull()) {
 				is IrRichFunctionReference -> vReference.takeIf { it.boundValues.isEmpty() }?.reflectionTargetSymbol?.owner
 				is IrRichPropertyReference -> vReference.takeIf { it.boundValues.isEmpty() }?.reflectionTargetSymbol?.owner
