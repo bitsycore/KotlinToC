@@ -615,8 +615,26 @@ class CEmitter(private val mModule: KModule) {
 			vBodies.append("\n#ifdef KTC2_LEAK_CHECK\nvoid ${vClass.cName}__refs(ktc2_Obj* object, ktc2_RefVisitor visit, void* context)\n{\n")
 			vBodies.append("\t${vClass.cName}* self = (${vClass.cName}*)object;\n\t(void)self; (void)visit; (void)context;\n")
 			for (vField in vClass.fields) {
-				if (vField.isInline || vField.type !is KRefType) continue
+				if (vField.isInline || vField.type !is KRefType || vField.isFrame) continue
 				vBodies.append("\tvisit(context, object, ${cString(vField.cName)}, (ktc2_Obj*)self->${vField.cName});\n")
+			}
+			// A frame's fields hold only what `__destroy` gives up where the coroutine waits: the others are not counted (a field
+			// that is the coroutine itself, `uCont`), or hold what another field does.
+			mStateMachines[vClass]?.let { vMachine ->
+				val vCoroutine = vMachine.coroutine!!
+				val vFrame = mFrames.getValue(vMachine)
+				val vHeld = vCoroutine.cleanups.mapValues { (_, vCleanup) ->
+					vCleanup.mapNotNull { ((it as? KRelease)?.operand as? KRead)?.local?.let { vLocal -> vFrame[vLocal] } }.filter { it.type is KRefType }.distinct()
+				}.filterValues { it.isNotEmpty() }
+				if (vHeld.isNotEmpty()) {
+					vBodies.append("\tswitch (self->${vCoroutine.label.cName}) {\n")
+					for ((vLabel, vFields) in vHeld) {
+						vBodies.append("\tcase $vLabel:\n")
+						vFields.forEach { vBodies.append("\t\tvisit(context, object, ${cString(it.cName)}, (ktc2_Obj*)self->${it.cName});\n") }
+						vBodies.append("\t\tbreak;\n")
+					}
+					vBodies.append("\tdefault:\n\t\tbreak;\n\t}\n")
+				}
 			}
 			for (vField in vClass.fields) {
 				val vType = vField.type

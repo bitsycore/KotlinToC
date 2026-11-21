@@ -1107,6 +1107,11 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   were never checked, in 10 of kotlinx.coroutines' test files. Found with the report of what a leak starts from and
   `KTC2_PAIR_TRACE`, after a wrong lead (a cycle closed by a store). `OnCompletionTest`, `BroadcastTest` and `FlowOnTest`
   lose their `.cycles`.
+- 2026-11-21, `PLAN.md` 2.2, "a frame field that holds its own coroutine" (`lambda.F_uCont -> lambda`, `F_t_3`, `F_c`): no
+  such leak. The report of cycles followed every field of a coroutine's frame, also those that hold no count where it
+  waits (`uCont` is the coroutine itself, set without one). `__refs` follows a frame's fields as `__destroy` gives them
+  up, by the label it waits at; what those files leave is their tests' own design (a continuation kept in a variable
+  the coroutine captures), as their `.cycles` said.
 
 
 ---------------------------------------------------------------------------

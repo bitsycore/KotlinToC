@@ -56,7 +56,6 @@ with `.cycles`, every cycle left is a root (nothing else holds it), by kind:
 - [ ] A job and the exception that is its final state, left in 4 files (`ProducerCoroutine` in `ZipTest` and
   `ChannelBuildersFlowTest`, `ScopeCoroutine` and `BlockingCoroutine` in `CombineTest` and `IdFlowTest`): declared, so
   what keeps them is another way round (`lambda.receiver`, a channel's cause of closing); see the items below.
-- [ ] A frame field that holds its own coroutine (`lambda.F_uCont -> lambda`, `withContextUndispatched.F_uCont`).
 - [ ] A completion hook of the module: what a finished job lets go of, at the points the library defines (its final
   state and its children done), as edits; the handler lists stay (another thread may still walk them).
 The 16 files of the library's own structures, by kind (each file's `.cycles` names it):
