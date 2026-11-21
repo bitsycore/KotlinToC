@@ -85,8 +85,8 @@ there.
 - Done (2026-11-21, `UserCycleLint`, `DESIGN.md` section on cycles; `tests/integration/process/UserCycles`): a coroutine's
   continuation kept where its own coroutine reaches it (a captured `var`, a property of an object the coroutine holds, a
   list of actions that is never drained), a registration whose handler uses its own handle, a property whose
-  `DeepRecursiveFunction` or `lazy` value keeps a lambda that uses the object. Warned in 12 of the files with `.cycles`
-  (7 of kotlinx.coroutines' tests, 3 box tests, `DeepRecursiveTest`, `LazyValuesTest`), whose `.cycles` now say so; and
+  `DeepRecursiveFunction` or `lazy` value keeps a lambda that uses the object. Warned in 11 of the files with `.cycles`
+  (6 of kotlinx.coroutines' tests, 3 box tests, `DeepRecursiveTest`, `LazyValuesTest`), whose `.cycles` now say so; and
   nowhere else in the suite. The three `*WithHandleResult` box tests drain their list of actions and leave one only when
   it throws: not warned (what no compiler sees, rule 1).
 - An array, a list or exceptions put into themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`): what no
