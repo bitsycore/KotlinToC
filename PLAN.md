@@ -312,6 +312,16 @@ without a declaration in a module. Options:
    default, `--no-cycle-collector` for programs that know they have none): it makes "every test passes" reachable
    and Kotlin code behave as on Native without a module file.
 
+### 7.5 ktc2.coroutines (the owner, 2026-11-21: after kotlinx.coroutines works)
+An implementation of coroutines of ktc2's own, with an API of its own, that runs on the JVM and Kotlin/Native too (as
+the `ktc2.` package does, `compat/`), and costs on ktc2 what counting makes cheap. To be proposed in full before
+anything is built; the directions:
+- No cycles by design: a scope owns its tasks, a task refers to its scope without a count (it cannot outlive it);
+  no lists of handlers that name their job; cancellation is a flag the scope sets, not an exception that names the job.
+- Channels own their waiting tasks one way only; a finished task's frame comes from its scope's arena (`ktc2.arena`).
+- No pair checks, rings or knots: none of kotlinx.coroutines' runtime parts (`KTC2_KNOTS` off).
+- Measured against kotlinx.coroutines on ktc2, Kotlin/Native and the JVM (`tools/compare.py`).
+
 ### 7.2 Ways to use ktc2
 - [ ] **A Gradle plugin**: a ktc2 target in a Kotlin Multiplatform project (`kotlin { ktc2() }`), its
   `commonMain` and `ktc2Main` compiled by ktc2, `ktc2Test` run by the test mode. This is how most Kotlin code
@@ -365,6 +375,11 @@ proposed first.
   use, `Dispatchers.IO` the same pool up to 64; its cycles answered in the library by edits, after atomicfu's
   atomics became fields of their owner (2026-11-18).
 - Each bundled module pins the latest version of its library (2026-11-17).
+- kotlinx.coroutines first, as it is (its API, the base Kotlin experience), and what it needs costs the programs
+  that use it only: nothing of it in ktc2's base where it can be kept out, its runtime parts compiled into a program
+  only when its modules declare cycles or rings (`KTC2_KNOTS`). A `ktc2.coroutines` comes after it: an implementation
+  of ktc2's own, optimized for counting (no cycles by design), compatible with the JVM, Kotlin/Native and ktc2
+  (2026-11-21; section 7.5).
 - The last digit of `exp`, `pow`... is the C library's, as on Native (2026-11-14).
 
 **Not differences** (either platform is right): two entries a `HashMap` hands out for one key are equal and not
