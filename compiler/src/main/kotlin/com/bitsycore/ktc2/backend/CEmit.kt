@@ -101,8 +101,18 @@ class CEmitter(private val mModule: KModule) {
 		mConcrete.forEachIndexed { vIndex, vClass ->
 			append("\t${typeId(vClass)} = KTC2_TYPE_FIRST_USER${if (vIndex == 0) "" else " + $vIndex"},\n")
 		}
-		append("\tKTC2_TYPE_COUNT = KTC2_TYPE_FIRST_USER + ${mConcrete.size}\n};\n\n#endif\n")
+		append("\tKTC2_TYPE_COUNT = KTC2_TYPE_FIRST_USER + ${mConcrete.size}\n};\n")
+		// The erased bridges of the closures, by class, for the dispatchers of `invoke` of another signature (KFunction.erasedArity).
+		for (vArity in mModule.erasedBridges.keys) {
+			append("\n/** The erased bridge of each closure whose `invoke` takes ${vArity - 1} argument(s), by type id; NULL for the other classes. */\n")
+			append("extern ${erasedBridgeType(vArity, "const ktc2_erased_invoke$vArity[KTC2_TYPE_COUNT]")};\n")
+		}
+		append("\n#endif\n")
 	}
+
+	/** The C declaration of [inName] as a pointer to an erased bridge of [inArity] parameters (all objects, the closure first). */
+	private fun erasedBridgeType(inArity: Int, inName: String): String =
+		"ktc2_Obj* (*$inName)(${List(inArity) { "ktc2_Obj*" }.joinToString(", ")})"
 
 	private fun program(inEntry: KFunction): String = buildString {
 		val vStartup = mModule.units.mapNotNull { it.initializer }
@@ -138,6 +148,11 @@ class CEmitter(private val mModule: KModule) {
 		append("\nconst ktc2_RingRefsFn ktc2_type_ring_refs[KTC2_TYPE_COUNT] = {\n")
 		mConcrete.filter { it.isGroupMember }.forEach { append("\t[${typeId(it)}] = ${it.cName}__ring_refs,\n") }
 		append("\t[0] = NULL,\n};\n")
+		for ((vArity, vBridges) in mModule.erasedBridges) {
+			append("\n${erasedBridgeType(vArity, "const ktc2_erased_invoke$vArity[KTC2_TYPE_COUNT]")} = {\n")
+			vBridges.forEach { (vClass, vBridge) -> if (vClass.isInstantiated) append("\t[${typeId(vClass)}] = ${vBridge.cName},\n") }
+			append("\t[0] = NULL,\n};\n")
+		}
 		append("\n#ifdef KTC2_LEAK_CHECK\nconst ktc2_RefsFn ktc2_type_refs[KTC2_TYPE_COUNT] = {\n")
 		mConcrete.forEach { append("\t[${typeId(it)}] = ${it.cName}__refs,\n") }
 		append("};\n#endif\n")
@@ -1035,7 +1050,7 @@ class CEmitter(private val mModule: KModule) {
 				else -> "(${cType(inTo)})$inText"
 			}
 			fun isUnboxed(inType: KType): Boolean = inType is KPrimType || inType is KOptType || inType == KPtrType || inType is KStructType
-			fun call(inTarget: KFunction): String {
+			fun call(inTarget: KFunction, inReleasesResult: Boolean = false): String {
 				mState.includes += inTarget.unit
 				// A value boxed for the implementation is a temporary of the dispatcher: released after the call.
 				val vBefore = StringBuilder()
@@ -1110,6 +1125,7 @@ class CEmitter(private val mModule: KModule) {
 					}
 				}
 				val vCall = "${inTarget.cName}($vArguments)"
+				if (vIsVoid && inReleasesResult) return "{ ${vBefore}ktc2_release($vCall); ${vAfter}return; }"
 				if (vIsVoid) return "{ $vBefore$vCall; ${vAfter}return; }"
 				// An implementation that returns Unit, called where an object is returned (`KSerializer<Unit>.deserialize`): the Unit object.
 				if (inTarget.returnType == KUnitType && inFunction.returnType is KRefType) return "{ $vBefore$vCall; ${vAfter}return (${cType(inFunction.returnType)})&ktc2_unit_object; }"
@@ -1152,10 +1168,34 @@ class CEmitter(private val mModule: KModule) {
 				return vOwn.zip(vTheirs).drop(1).none { (vFrom, vTo) -> incompatible(vFrom.type, vTo.type) } &&
 					!incompatible(inFunction.returnType, inTarget.returnType) && !incompatible(inTarget.returnType, inFunction.returnType)
 			}
+			// A closure of another signature than this dispatcher's goes through its erased bridge, from the table (the
+			// default below): one indirect call instead of a case with its adapters, of which a function type had thousands.
+			val vOwnParams = if (inFunction.slotClasses != null) inFunction.params.dropLast(1) else inFunction.params
+			val vBridges = inFunction.erasedArity?.takeIf { !inFunction.keepsDefault && it == vOwnParams.size }?.let { mModule.erasedBridges[it] }
+			fun bridged(inClass: KClass, inTarget: KFunction): Boolean =
+				vBridges?.containsKey(inClass) == true && inFunction.slotClasses?.containsKey(inTarget) != true &&
+					!(inTarget.returnType == inFunction.returnType && inTarget.params.size == vOwnParams.size &&
+						vOwnParams.drop(1).zip(inTarget.params.drop(1)).all { (vOne, vOther) -> vOne.type == vOther.type })
+			var vAnyBridged = false
 			for ((vClass, vTarget) in inFunction.dispatch!!) {
+				if (bridged(vClass, vTarget)) {
+					vAnyBridged = true
+					continue
+				}
 				if (!takes(vTarget)) continue
 				mState.includes += vClass.unit
 				line(1, "case ${typeId(vClass)}: ${call(vTarget)}")
+			}
+			if (vAnyBridged) {
+				val vArity = vOwnParams.size
+				val vBridge = KFunction("ktc2_bridge", inFunction.unit, vOwnParams.map { KLocal(it.cName, KObjType) }, KObjType)
+				line(1, "default: {")
+				line(2, "${erasedBridgeType(vArity, "ktc2_bridge")} = ((ktc2_Obj*)$vSelf)->typeId < KTC2_TYPE_COUNT ? ktc2_erased_invoke$vArity[((ktc2_Obj*)$vSelf)->typeId] : NULL;")
+				line(2, "if (ktc2_bridge) ${call(vBridge, inReleasesResult = true)}")
+				line(2, inFunction.dispatchDefault?.let { call(it) } ?: "ktc2_fail_dispatch_of(\"${inFunction.cName}\", ((ktc2_Obj*)${vSelf})->typeId);")
+				line(1, "}")
+				line(1, "}")
+				return
 			}
 			if (inFunction.keepsDefault) {
 				val vDefault = inFunction.dispatchDefault!!

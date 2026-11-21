@@ -95,6 +95,12 @@ class KModule(
 	var throwers: Map<String, KFunction> = emptyMap()
 
 	/**
+	 * The erased bridge of each closure called through a dispatcher of another signature (see [KFunction.erasedArity]), by
+	 * the number of parameters of `invoke` with the closure: a function of objects only, `ktc2_erased_invoke<N>[type id]` in C.
+	 */
+	var erasedBridges: Map<Int, Map<KClass, KFunction>> = emptyMap()
+
+	/**
 	 * The platform layer's `formatReal`, which writes a `Float` or `Double` as Kotlin/Native does
 	 * (its `NumberConverter`): the runtime formats every one through it. Null when the program
 	 * has no such number.
@@ -368,6 +374,15 @@ class KFunction(
 	 * other implementations are called as they are and return an object of the heap.
 	 */
 	var slotClasses: Map<KFunction, KClass>? = null
+
+	/**
+	 * Set on a dispatcher of `invoke` of a function type (`Function2`), and on its in-place form: the number of its own
+	 * parameters, the closure first. A closure whose `invoke` has another signature (a lambda instantiated with objects,
+	 * reached through `(Any, Int) -> Int?`) is still one of its [dispatch] targets for the passes, but the emitter calls it
+	 * through its erased bridge ([KModule.erasedBridges]), found in a table by class, instead of writing a case with its
+	 * adapters: a dispatcher of a large program had thousands of such cases, each signature of each function type.
+	 */
+	var erasedArity: Int? = null
 
 	/**
 	 * Set on the `invokeSuspend` of a coroutine class: the function is a state machine. Its

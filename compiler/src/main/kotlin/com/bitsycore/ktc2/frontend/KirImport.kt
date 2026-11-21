@@ -70,6 +70,9 @@ private fun cPrefix(inPackage: String): String = if (inPackage.isEmpty()) "kt_" 
 /** The runtime function that starts a thread; a program reaching it is built with atomic counts. */
 private const val kThreadStart = "ktc2_threadStart"
 
+/** The function types whose `invoke` dispatchers call closures of another signature through erased bridges. */
+private val kFunctionClass = Regex("""kotlin\.Function\d+""")
+
 /** The `kotlinx.cinterop` classes whose values, and whose subclasses' values, are bare C addresses. */
 private val kPointerRoots = setOf(
 	"kotlinx.cinterop.NativePtr", "kotlinx.cinterop.NativePointed", "kotlinx.cinterop.CValuesRef", "kotlinx.cinterop.StableRef",
@@ -274,6 +277,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private class Closure(val functionClass: IrClass, val arguments: List<KType>, val cls: KClass, val invoke: KFunction, val isSam: Boolean = false)
 
 	private val mClosures = ArrayList<Closure>()
+
+	/** The erased bridges made so far, by the number of parameters of `invoke`: see [erasedBridgeFor]. */
+	private val mErasedBridges = LinkedHashMap<Int, LinkedHashMap<KClass, KFunction>>()
 	private val mCells = HashMap<KType, Pair<KClass, KField>>()
 
 	internal val captures = CaptureAnalysis()
@@ -584,6 +590,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		settleInitialization()
 		mUnits += mDispatchUnits
 		return KModule(mUnits, vEntry, mClassList).also {
+			it.erasedBridges = mErasedBridges
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
 			it.realFormatter = vFormatter
@@ -2250,6 +2257,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		}
 		val vTarget = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
 		vTarget.dispatch = mutableListOf()
+		if (inFunction.name.asString() == "invoke" && kFunctionClass.matches(vOwner.kotlinFqName.asString())) vTarget.erasedArity = vSignature.params.size
 		vTarget.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }
 		if (!answersWrongClass(inFunction)) vTarget.wrongClassThrower = internalFunction("throwClassCast")?.let { functionFor(it) }
 		// A plain Throwable, created directly, has no class of its own in the module.
@@ -2313,6 +2321,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 					if (vClosure.functionClass != vOwner || !accepts(vDispatcher.classArguments, vClosure.arguments)) continue
 					if (!mDispatchDone.add(vKey to vClosure.cls)) continue
 					vDispatcher.target.dispatch!! += vClosure.cls to vClosure.invoke
+					vDispatcher.target.erasedArity?.let { vArity -> if (!vClosure.isSam && !sameSignature(vDispatcher.target, vClosure.invoke)) erasedBridgeFor(vClosure, vArity) }
 					vChanged = true
 				}
 			}
@@ -2390,6 +2399,28 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * implementation written over references (a `Comparator<Comparable<Any>>` used, after a
 	 * cast, to compare Ints) serves a primitive dispatcher, which boxes for it.
 	 */
+	/** True when [inImplementation] takes and returns what the dispatcher [inDispatcher] does: it is called with nothing adapted. */
+	private fun sameSignature(inDispatcher: KFunction, inImplementation: KFunction): Boolean =
+		inDispatcher.returnType == inImplementation.returnType && inDispatcher.params.size == inImplementation.params.size &&
+			inDispatcher.params.drop(1).zip(inImplementation.params.drop(1)).all { (vOne, vOther) -> vOne.type == vOther.type }
+
+	/**
+	 * The erased bridge of [inClosure] for a function type of [inArity] parameters with the closure: a dispatcher of one
+	 * class that takes objects and returns one, adapting them as any dispatcher does (unboxed, checked, `ClassCastException`).
+	 * The dispatchers of another signature call it through the table of the module ([KModule.erasedBridges]).
+	 */
+	private fun erasedBridgeFor(inClosure: Closure, inArity: Int): KFunction? {
+		if (inClosure.invoke.params.size != inArity) return null
+		return mErasedBridges.getOrPut(inArity) { LinkedHashMap() }.getOrPut(inClosure.cls) {
+			val vParams = List(inArity) { KLocal(if (it == 0) "self" else "p$it", KObjType) }
+			KFunction(uniqueName(inClosure.cls.cName + "_invoke__erased"), inClosure.cls.unit, vParams, KObjType).also {
+				it.dispatch = mutableListOf(inClosure.cls to inClosure.invoke)
+				it.wrongClassThrower = internalFunction("throwClassCast")?.let { vThrower -> functionFor(vThrower) }
+				inClosure.cls.unit.functions += it
+			}
+		}
+	}
+
 	private fun accepts(inDispatcher: List<KType>, inActual: List<KType>): Boolean =
 		inDispatcher.size == inActual.size && inDispatcher.indices.all {
 			// `Nothing` as an argument (the empty list is a List<Nothing>) fits every instantiation.

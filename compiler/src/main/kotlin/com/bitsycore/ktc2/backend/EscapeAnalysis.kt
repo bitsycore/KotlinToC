@@ -184,6 +184,7 @@ class EscapeAnalysis(private val mModule: KModule) {
 		val vForm = KFunction(inFunction.cName + "__into", inFunction.unit, inFunction.params + KLocal("ktc2_slot", KPtrType), inFunction.returnType)
 		vForm.dispatch = vTargets
 		vForm.slotClasses = vBuilt
+		vForm.erasedArity = inFunction.erasedArity
 		inFunction.unit.functions += vForm
 		return (vForm to vBuilt.values.distinct()).also { mDispatcherInPlace[inFunction] = it }
 	}
