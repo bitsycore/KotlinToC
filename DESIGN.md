@@ -106,8 +106,11 @@ sources + library sources + generated bindings
 | `CPointer<T>` and the other interop pointers | `void*`, never counted |
 
 **The object header** is two 32-bit words: a count with flag bits (`KTC2_STACK`, `KTC2_WEAK`,
-`KTC2_ARENA`; `KTC2_IMMORTAL` for static objects) and a type id, the index into the generated
-table of type names and `destroy` functions.
+`KTC2_ARENA`, `KTC2_PAIRED`, `KTC2_HASHED`; `KTC2_IMMORTAL` for static objects; 27 bits of count) and a type id,
+the index into the generated table of type names and `destroy` functions. The identity hash (`Any.hashCode`) is the
+address; an object of the heap whose hash was taken is marked `KTC2_HASHED`, and its memory waits in a ring of 256
+before it is used again, so that the next object does not get its address and its hash (`Any().hashCode() !=
+Any().hashCode()`, which holds on Kotlin/Native because its collector frees later).
 
 **Strings** keep Kotlin's meaning of `length` and `s[i]` (UTF-16 code units): constant time
 when the string is all ASCII, a scan otherwise. They are UTF-8, with one addition so that a

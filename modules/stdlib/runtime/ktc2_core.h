@@ -246,8 +246,15 @@ typedef struct ktc2_Obj {
  */
 #define KTC2_PAIRED UINT32_C(0x10000000)
 
+/**
+ * Flag in `rc` of an object of the heap whose identity hash was taken (`Any.hashCode`, which is its address): its
+ * memory is not given to the next object at once, or two objects one after the other would have the same hash
+ * (`Any().hashCode() != Any().hashCode()`, as on Kotlin/Native, whose collector frees later).
+ */
+#define KTC2_HASHED UINT32_C(0x08000000)
+
 /** The bits of `rc` that count references. */
-#define KTC2_COUNT_MASK UINT32_C(0x0FFFFFFF)
+#define KTC2_COUNT_MASK UINT32_C(0x07FFFFFF)
 
 /**
  * Per-type data. `destroy` releases the references an instance holds; NULL when it holds none.

@@ -1098,6 +1098,10 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   of `Function2` had a case, with its adapters, for each of the 3,120 lambdas of the program that could reach it by
   erasure. A closure of another signature is called through its erased bridge, from a table by class: that file went
   from 1.6 MB to 824 bytes, the C of the program from 485 MB to 386 MB, and the whole suite from 13 to 9.5 minutes.
+- 2026-11-21, `PLAN.md` 2.1: `Any().hashCode() != Any().hashCode()` failed in release builds (the identity hash is the
+  address, and the second object got the first one's memory). An object whose hash was taken is marked (`KTC2_HASHED`,
+  a bit taken from the count, 27 bits left) and its memory waits in a ring of 256 before reuse. A salt mixed into the
+  hash, the other option, would have changed the hash of objects still alive.
 
 
 ---------------------------------------------------------------------------

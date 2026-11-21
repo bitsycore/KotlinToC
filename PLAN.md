@@ -44,11 +44,6 @@ Kotlin/Native's collector would). What stands between, in the order to do it:
 ### 2.1 Bugs found and not fixed (half a day)
 - [ ] `WithTimeoutTest` leaves `lambda.F_t_3 -> TimeoutCoroutine.uCont -> lambda` (a suspend lambda's frame holds the
   coroutine that holds it as its continuation).
-- [ ] `Any().hashCode() != Any().hashCode()` (`HashCodeNativeTest.hashCodeOfAny`): the first object is freed before
-  the second is made, which takes its address, and the identity hash is the address. The suite's test builds keep
-  freed objects aside before reuse, so it passes there; a release build of `ktc2 test tests/stdlib` fails it. The header
-  has no room for a hash (8 bytes: count and type). Options: a salt mixed in, counted up at each free of an
-  object whose hash was taken (a header bit says so); or a short quarantine of such blocks before reuse.
 
 ### 2.2 kotlinx.coroutines' cycles (3 to 5 days)
 The owner's direction (2026-11-20): kotlinx.coroutines keeps its API and behavior, even at some cost; what answers its

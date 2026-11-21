@@ -687,6 +687,12 @@ ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t 
 	return object;
 }
 
+/** A freed object that waits: [pooled] is its size in the pool, 0 when it is a block of malloc's. */
+typedef struct {
+	void* memory;
+	size_t pooled;
+} Retired;
+
 /*
  * With KTC2_LEAK_CHECK a freed object is first filled with 0xDD, so that code which still
  * uses it (a reference that was not counted) reads nonsense and fails instead of appearing to work.
@@ -712,12 +718,6 @@ ktc2_Obj* ktc2_box_value(const void* data, size_t size, uint32_t typeId, size_t 
  */
 #define RETIRED_COUNT 4096
 #define RETIRED_MAX_SIZE 65536
-
-/** A freed object that waits: [pooled] is its size in the pool, 0 when it is a block of malloc's. */
-typedef struct {
-	void* memory;
-	size_t pooled;
-} Retired;
 
 static Retired retired[RETIRED_COUNT];
 static uint32_t retired_at;
@@ -746,9 +746,24 @@ void ktc2_fail_freed(void)
 	abort();
 }
 #else
+/* The blocks of objects whose identity hash was taken, kept a while before they are used again (KTC2_HASHED). */
+#define HASHED_KEPT 256
+static Retired hashed_kept[HASHED_KEPT];
+static uint32_t hashed_kept_at;
+
 static inline void retire(ktc2_Obj* object)
 {
 	size_t pooled = pool_size_of(object);
+	if (ktc2_seldom(object->rc & KTC2_HASHED)) {
+		runtime_enter();
+		Retired oldest = hashed_kept[hashed_kept_at];
+		hashed_kept[hashed_kept_at] = (Retired){ object, pooled };
+		hashed_kept_at = (hashed_kept_at + 1) % HASHED_KEPT;
+		runtime_leave();
+		if (!oldest.memory) return;
+		object = oldest.memory;
+		pooled = oldest.pooled;
+	}
 	if (pooled) pool_give(object, pooled); else free(object);
 }
 #endif
@@ -1711,6 +1726,15 @@ void ktc2_print_string(const ktc2_String* s)
 /* MARK: Any defaults */
 /* ================== */
 
+/** The identity hash of [object], its address; an object of the heap is marked so that its memory is not reused at once. */
+static int32_t identity_hash(ktc2_Obj* object)
+{
+	uint32_t count = KTC2_RC_LOAD(object);
+	if (count != KTC2_IMMORTAL && !(count & (KTC2_STACK | KTC2_ARENA | KTC2_HASHED))) KTC2_RC_OR(object, KTC2_HASHED);
+	uintptr_t address = (uintptr_t)object;
+	return (int32_t)((address >> 3) ^ (address >> 35));
+}
+
 int32_t ktc2_any_hashCode(ktc2_Obj* object)
 {
 	const ktc2_Box* box = (const ktc2_Box*)object;
@@ -1729,10 +1753,7 @@ int32_t ktc2_any_hashCode(ktc2_Obj* object)
 	case KTC2_TYPE_BOX_USHORT: return (int16_t)box->value.ushort_;
 	case KTC2_TYPE_BOX_UINT: return (int32_t)box->value.uint_;
 	case KTC2_TYPE_BOX_ULONG: return ktc2_hash_ulong(box->value.ulong_);
-	default: {
-		uintptr_t address = (uintptr_t)object;
-		return (int32_t)((address >> 3) ^ (address >> 35));
-	}
+	default: return identity_hash(object);
 	}
 }
 
@@ -3157,8 +3178,7 @@ int32_t ktc2_availableProcessors(void)
 
 int32_t ktc2_identityHashCode(ktc2_Obj* object)
 {
-	uintptr_t address = (uintptr_t)object;
-	return (int32_t)((address >> 3) ^ (address >> 35));
+	return identity_hash(object);
 }
 
 _Noreturn void ktc2_exitProcess(int32_t status)
