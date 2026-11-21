@@ -788,8 +788,8 @@ of kotlinx-io does). The Gradle build reads the `jvm` of each module for the sui
   the module's sources (`ktc2.jvmModule.<name>`, set by Gradle): `tests/integration/projects/kotlinx-io`.
 - Output goes to `<module>/build` (or `./out`, or `-o`): `c/` with one `.h`/`.c` per unit
   under its package (a unit is a class, the top-level declarations of one file as `<File>Kt`,
-  a lambda, the box of a `@Struct`, or the dispatchers of a library class with no source compiled as
-  `<Class>.dispatch`: `kotlin/Any.dispatch.c`), `ktc2_core.h/.c`, `ktc2_config.h` (what this program
+  a lambda, the box of a `@Struct`, or a dispatcher of a library class with no source compiled, in a
+  directory of that class's: `kotlin/Function2__dispatch/invoke__Any_Int_Any__v.c`), `ktc2_core.h/.c`, `ktc2_config.h` (what this program
   needs of the runtime: threads, checks), `ktc2_main.c`, `ktc2_types.h`; a
   `ktc2_build.txt` listing the C files and options; a `CMakeLists.txt`.
 - The C compiler is the one the setting `build.cc` (`KTC2_CC`) names, else the first of clang, gcc and cc on the path

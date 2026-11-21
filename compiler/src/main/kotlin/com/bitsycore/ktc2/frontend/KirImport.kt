@@ -231,8 +231,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	private val mUnits = ArrayList<KUnit>()
 	private val mFacades = HashMap<IrFile, KUnit>()
 	private val mInterfaceUnits = HashMap<IrClass, KUnit>()
-	/** The units of the dispatchers of the library's classes with no source compiled: see [dispatchUnitFor]. */
-	private val mDispatchUnits = LinkedHashMap<IrClass, KUnit>()
+	/** The units of the dispatchers of the library's classes with no source compiled, by dispatcher: see [dispatchUnitFor]. */
+	private val mDispatchUnits = ArrayList<KUnit>()
 	private val mRuntimeUnit = KUnit("", "ktc2_core")
 	private val mFunctions = HashMap<Mono, KFunction?>()
 	private val mStructs = HashMap<IrClass, KStruct>()
@@ -582,7 +582,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 		settleDeinit()
 		settleInitialization()
-		mUnits += mDispatchUnits.values
+		mUnits += mDispatchUnits
 		return KModule(mUnits, vEntry, mClassList).also {
 			it.usesThreads = kThreadStart in mRuntime || "ktc2_threadRelease" in mRuntime
 			if (vThrowers.size == kThrowers.size) it.throwers = vThrowers
@@ -972,13 +972,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	}
 
 	/**
-	 * The unit of the dispatchers of [inClass], a class of the library with no source compiled (`kotlin.Any`, `Function2`):
-	 * `<Class>.dispatch` beside its other units, as `.Box` is. One unit for all of them made a file of 167 MB for every test
-	 * as one program, which clang's -O2 did not get through in hours.
+	 * The unit of the dispatcher [inMember] (`invoke__Any_Int_Any__v`) of [inClass], a class of the library with no source
+	 * compiled (`kotlin.Any`, `Function2`): one for each, in a directory of the class's dispatchers beside its other units
+	 * (`kotlin/Function2__dispatch/invoke__Any_Int_Any__v.c`). A dispatcher is a switch over every class that answers it,
+	 * thousands of lines in a large program: all of them in one file made 167 MB for every test as one program, and those
+	 * of `Function2` alone 79 MB, which clang's -O2 did not get through in hours.
 	 */
-	private fun dispatchUnitFor(inClass: IrClass): KUnit = mDispatchUnits.getOrPut(inClass) {
-		KUnit(inClass.getPackageFragment().packageFqName.asString(), nestedName(inClass) + ".dispatch")
-	}
+	private fun dispatchUnitFor(inClass: IrClass, inMember: String): KUnit =
+		KUnit(inClass.getPackageFragment().packageFqName.asString().let { if (it.isEmpty()) "" else "$it." } + cSuffix(nestedName(inClass)) + "__dispatch", inMember)
+			.also { mDispatchUnits += it }
 
 	// ==================
 	// MARK: Classes
@@ -2238,14 +2240,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vSignature = signatureOf(inFunction, vFile, inSubst) ?: return null
 		val vClassArguments = classParameters(vOwner).map { inSubst[it.symbol] ?: mBuiltIns.anyNType }
 		val vClass = if (vFile != null && !vOwner.isInterface) classFor(vOwner, vClassArguments) else null
-		val vUnit = when {
-			vClass != null -> vClass.unit
-			vFile != null -> interfaceUnitFor(vOwner)
-			else -> dispatchUnitFor(vOwner)
-		}
 		val vScope = vClass?.cName ?: (cPrefix(vFile?.packageFqName?.asString() ?: vOwner.kotlinFqName.parent().asString()) + cSuffix(nestedName(vOwner)))
 		val vGeneric = if (vClass == null && vKey.arguments.isNotEmpty()) "__" + vKey.arguments.joinToString("_") { mangle(it) } else ""
 		val vName = uniqueName("${vScope}_${cSuffix(inFunction.name.asString())}${nameSuffix(inFunction, inSubst)}${vGeneric}__v")
+		val vUnit = when {
+			vClass != null -> vClass.unit
+			vFile != null -> interfaceUnitFor(vOwner)
+			else -> dispatchUnitFor(vOwner, vName.removePrefix(vScope + "_"))
+		}
 		val vTarget = KFunction(vName, vUnit, vSignature.params, vSignature.returnType)
 		vTarget.dispatch = mutableListOf()
 		vTarget.dispatchDefault = anyMemberName(inFunction)?.let { anyDefault(it) }
