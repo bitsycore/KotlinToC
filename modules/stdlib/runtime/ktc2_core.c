@@ -2406,16 +2406,16 @@ bool ktc2_stringToDouble(ktc2_String* s, ktc2_Array* result)
 ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
 {
 	const char* end = s->bytes + s->size;
-	int32_t lone = 0;
-	for (const char* at = lone_surrogate(s->bytes, end); at; at = lone_surrogate(at + 3, end)) lone++;
-	ktc2_Array* bytes = ktc2_array_new(s->size - 2 * lone, 1, KTC2_TYPE_ARRAY_BYTE);
+	ktc2_Array* bytes = ktc2_array_new(s->size, 1, KTC2_TYPE_ARRAY_BYTE);
 	char* out = (char*)(bytes + 1);
 	const char* text = s->bytes;
-	/* As the JVM: `?` for half of a pair on its own. */
+	/* As Kotlin/Native: the replacement character, U+FFFD, for half of a pair on its own (the JVM writes `?`). */
 	for (const char* at = lone_surrogate(text, end); at; at = lone_surrogate(text, end)) {
 		memcpy(out, text, (size_t)(at - text));
 		out += at - text;
-		*out++ = '?';
+		*out++ = (char)0xEF;
+		*out++ = (char)0xBF;
+		*out++ = (char)0xBD;
 		text = at + 3;
 	}
 	memcpy(out, text, (size_t)(end - text));
@@ -2424,7 +2424,8 @@ ktc2_Array* ktc2_stringUtf8(ktc2_String* s)
 
 /**
  * The length of the well-formed UTF-8 sequence at [at], of which [left] bytes remain; or 0, with in
- * [skip] how many bytes one replacement character stands for. The counts are the JVM's.
+ * [skip] how many bytes one replacement character stands for. The counts are Kotlin/Native's (the JVM's but for half a
+ * pair, below).
  */
 static int32_t utf8_sequence(const unsigned char* at, int32_t left, int32_t* skip)
 {
@@ -2437,10 +2438,11 @@ static int32_t utf8_sequence(const unsigned char* at, int32_t left, int32_t* ski
 	}
 	if ((b1 & 0xF0) == 0xE0) {
 		if (left >= 2 && ((b1 == 0xE0 && (at[1] & 0xE0) == 0x80) || (at[1] & 0xC0) != 0x80)) return 0;
+		/* Half of a pair written as a character of its own, whole or cut short: a replacement for each of its bytes, as
+		   Kotlin/Native (the JVM gives one for the three). */
+		if (left >= 2 && b1 == 0xED && at[1] >= 0xA0) return 0;
 		if (left < 3) { *skip = left; return 0; }
 		if ((at[2] & 0xC0) != 0x80) { *skip = 2; return 0; }
-		/* Half of a pair written as a character of its own: one replacement for the three bytes. */
-		if (b1 == 0xED && at[1] >= 0xA0) { *skip = 3; return 0; }
 		return 3;
 	}
 	if ((b1 & 0xF8) == 0xF0) {

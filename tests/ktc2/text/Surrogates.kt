@@ -67,8 +67,9 @@ fun main() {
 	print(vLow); print(vHigh); println()
 	print(vHigh); print(vHigh); print(vLow); println()
 	print(vOnlyHigh); println(vOnlyLow)
-	println(vOnlyHigh.encodeToByteArray().toList())
-	println(("a" + vOnlyLow + "é").encodeToByteArray().toList())
+	// Half a pair encoded is `?` on the JVM and the replacement character on Kotlin/Native, which ktc2 follows: tested
+	// by tests/stdlib/nativeTest/StringEncodingTestNative.kt; here only what both agree on.
+	println(("a" + vOnlyLow + "é").encodeToByteArray().size > 3)
 	println(vText.toCharArray().concatToString() == vText)
 	println(vText.uppercase() == vText.uppercase().lowercase().uppercase())
 }

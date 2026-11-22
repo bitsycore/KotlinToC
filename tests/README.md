@@ -96,6 +96,9 @@ of its own module under `tests/integration/regressions/`. `KTC2_TEST_FILTER=regr
   library's own tests are: with its opt-ins (`kotlin.ExperimentalUnsignedTypes` and the others
   of its `commonTestOptIns`; `ktc2.optIn` in `compiler/build.gradle.kts` for C), and on the JVM seeing
   what the library keeps `internal`.
+- `tests/stdlib/nativeTest/`: tests of Kotlin/Native's own runtime (`kotlin-native/runtime/test`) that the JVM cannot
+  compile (`kotlin.native` APIs): compiled in C only with the group, decided by their own assertions. Their `actual`s
+  answer the common tests too where Native's answer is ktc2's (`StringEncodingTestNative.kt`).
 - `tests/stdlib/support/`: the helpers of the library's tests, compiled with the group `tests/stdlib/`.
   `support/common/` is theirs as they are (`testUtils.kt` without its `expect` line,
   `CollectionBehaviors.kt`, `ComparisonDSL.kt`, `jsCollectionFactories.kt`,

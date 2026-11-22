@@ -106,7 +106,38 @@ private class SynchronizedLazy<T>(initializer: () -> T) : Lazy<T> {
 
 public actual fun <T> lazy(initializer: () -> T): Lazy<T> = SynchronizedLazy(initializer)
 
-public actual fun <T> lazy(mode: LazyThreadSafetyMode, initializer: () -> T): Lazy<T> =
-	if (mode == LazyThreadSafetyMode.NONE) UnsafeLazyImpl(initializer) else SynchronizedLazy(initializer)
+public actual fun <T> lazy(mode: LazyThreadSafetyMode, initializer: () -> T): Lazy<T> = when (mode) {
+	LazyThreadSafetyMode.NONE -> UnsafeLazyImpl(initializer)
+	LazyThreadSafetyMode.PUBLICATION -> Ktc2PublicationLazy(initializer)
+	else -> SynchronizedLazy(initializer)
+}
+
+/**
+ * `lazy(LazyThreadSafetyMode.PUBLICATION)`, as Kotlin/Native's `SafePublicationLazyImpl`: the initializer may run more
+ * than once (on several threads, or again from inside itself), and the first value published is the one kept.
+ */
+private class Ktc2PublicationLazy<out T>(initializer: () -> T) : Lazy<T> {
+	private var mInitializer: (() -> T)? = initializer
+	private var mValue: Any? = null
+
+	@Suppress("UNCHECKED_CAST")
+	override val value: T
+		get() {
+			if (mInitializer == null) return mValue as T
+			val vInitializer = synchronized(this) { mInitializer } ?: return mValue as T
+			val vComputed = vInitializer()
+			return synchronized(this) {
+				if (mInitializer != null) {
+					mValue = vComputed
+					mInitializer = null
+				}
+				mValue as T
+			}
+		}
+
+	override fun isInitialized(): Boolean = mInitializer == null
+
+	override fun toString(): String = if (isInitialized()) value.toString() else "Lazy value not initialized yet."
+}
 
 public actual fun <T> lazy(lock: Any?, initializer: () -> T): Lazy<T> = SynchronizedLazy(initializer)

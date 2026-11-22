@@ -94,8 +94,18 @@ Bugs found, kotlinx.coroutines' cycles, kotlinx.coroutines' box tests and kotlin
 - Known difference, accepted (the owner's to decide otherwise): `MapTest.nullKeyAndValue`, a `null` put through an
   unchecked cast into a map that keeps its values as numbers. Only generics of numbers kept boxed where a cast can
   reach them would answer it.
-- [ ] Not taken yet: the tests of `libraries/stdlib/jvm/test` that are not about the JDK, and what is left of
-  `kotlin-native/runtime/test`.
+- Taken (2026-11-22): of `libraries/stdlib/jvm/test`, `MathJVMTest` (the rest is the JDK's: `java.lang.Character`,
+  files, streams, Java serialization and reflection, `Thread`, `Locale`, JVM-only overloads and internals, `assert` as
+  the JVM enables it); of `kotlin-native/runtime/test`, in `tests/stdlib/nativeTest/` (C only, decided by their own
+  assertions): `CharNativeTest`, `StringEncodingTestNative`, `_IsCasedTest`, `_IsCaseIgnorableTest`, `LazyNativeTest`,
+  `WeakReferenceTest`, `FreezingTest`. They found four differences from Native (`docs/HISTORY.md`).
+- [ ] Left of `kotlin-native/runtime/test`, each waiting for the API it tests, which ktc2 does not have yet (Kotlin/Native
+  gives it to native code, so ktc2 should): `BitSetTest` (`kotlin.native.BitSet`), `ByteArrayTest` (`getIntAt`,
+  `setLongAt`... of `ByteArray`), `ImmutableBlobTest`, `AtomicArrayTest`, `AtomicTest`, `AtomicStressTest` and the two of
+  `concurrent/atomics` (`kotlin.concurrent.AtomicIntArray`, `AtomicLongArray`, `AtomicArray`, `AtomicNativePtr`),
+  `MutableDataTest`, `WorkerTest`, `WorkerBoundReference`, `RandomNativeTest` (a helper of the common random tests and
+  Native's `overrideNativeRandomSeed`). Not to take: `kotlinx.cinterop/*` (Native's interop, which ktc2 has its own
+  way), and `native/internal/*` (`Monitor`, `startThread`, `PriorityQueue`: internal to Native's runtime).
 
 ### 2.6 More tests to take (ongoing)
 - [ ] Box tests of the Kotlin compiler beyond coroutines (`tools/select_box.py`): classes, inline classes,

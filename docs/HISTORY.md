@@ -1202,6 +1202,14 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
 - 2026-11-22, `UserCycleLint` follows the lambdas of a `vararg` and what a collection's `add`, `set`, `put` is given
   (`listOf({ ... })` of `ChannelUndeliveredElementFailureTest`, warned now). The documents gone over whole: `PLAN.md`
   (section 1 rewritten, 2.1 to 2.4 done and out of it), `CLAUDE.md`, `README.md`, `tests/README.md`, `DESIGN.md`.
+- 2026-11-22, `PLAN.md` 2.5: seven of Kotlin/Native's runtime tests (`tests/stdlib/nativeTest/`, C only) and
+  `MathJVMTest`. They found: half a pair encoded as `?` (the JVM's) where Native writes the replacement character, and
+  decoded as one replacement for its three bytes where Native gives one for each (ktc2 follows Native now, as its
+  `StringEncodingTest` answers say); `lazy(PUBLICATION)` that kept the last value of a recursive initializer where Native
+  keeps the first published; `ByteArray.toKString` that did not check its bounds; a `WeakReference` to a boxed number
+  that read null at once (a box is kept as long as the reference now: it holds nothing). The publication lazy, made
+  of plain fields under a lock so that the reaper can walk it, joins kotlinx.serialization's ring of descriptors
+  (its `childSerializers`).
 
 
 ---------------------------------------------------------------------------

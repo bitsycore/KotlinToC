@@ -284,7 +284,9 @@ abstract class IntegrationPart(private val mShard: Int) {
 		val vGroups = ArrayList<TestGroup>()
 		if ("stdlib" in kCategories || "all" in kCategories) split(files("tests/stdlib"))?.let { (vTests, vHelpers) ->
 			val vGroup = TestGroup("stdlib", File("tests/stdlib"), "tests-stdlib", vTests, vHelpers + files("tests/stdlib/support/common"))
-			vGroup.cExtra = files("tests/stdlib/support/ktc2")
+			// Kotlin/Native's own runtime tests that the JVM cannot compile (`kotlin.native` APIs): in C only, decided by their
+			// own assertions (a path with `/nativeTest/`).
+			vGroup.cExtra = files("tests/stdlib/support/ktc2") + files("tests/stdlib/nativeTest")
 			vGroup.jvmExtra = files("tests/stdlib/support/jvm")
 			// The library's tests are of its own module: they opt in to what it calls experimental, and see what it keeps internal.
 			vGroup.jvmOptions = kLibraryOptIns.map { "-opt-in=$it" } + (vTests + vHelpers).flatMap { settingLines(beside(it, "jvm")) }.distinct() +
@@ -539,6 +541,8 @@ abstract class IntegrationPart(private val mShard: Int) {
 		// What is left out: the tests each `.skip` names, and every test of a helper.
 		val vExcluded = inGroup.tests.flatMap { vFile -> skippedOf(vFile).map { "${compiled(vFile).invariantSeparatorsPath}::$it" } } +
 			inGroup.helpers.map { "${compiled(it).invariantSeparatorsPath}::*" }
+		// The original of a path of tests.txt: a file of a Native source set is compiled from ktc2's copy under `gen/native/`.
+		fun originalOf(inPath: String): File = vOriginals[inPath] ?: File(inPath.substringAfter("/gen/native/", inPath))
 		val vVarying = inGroup.tests.flatMap { settingLines(beside(it, "vary")) }.distinct()
 		val vSources = (inGroup.tests + inGroup.helpers).map { compiled(it) }
 		val vKotlinTestModules = bundledWithDependencies("kotlin-test", vOutDir)
@@ -574,7 +578,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			// For tools/asan_all.sh and tools/msvc_all.sh, which build the C again (a job that only translates): a program of
 			// tests checks itself, and may leave cycles.
 			File(vOutDir, "self-checking").writeText("")
-			if (suiteFiles(vOutDir).values.any { vPath -> beside(vOriginals[vPath] ?: File(vPath), "cycles").isFile }) File(vOutDir, "cycles-allowed").writeText("")
+			if (suiteFiles(vOutDir).values.any { vPath -> beside(originalOf(vPath), "cycles").isFile }) File(vOutDir, "cycles-allowed").writeText("")
 			if ("c" !in kSteps) return
 			vExe = compileC(vOutDir)
 			lap("cCompile")
@@ -584,7 +588,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			listOf("ktc2.weak", "ktc2.acyclic", "ktc2.cycles", "ktc2.rings", "ktc2.moduleOptIn", "ktc2.main",
 				com.bitsycore.ktc2.frontend.kTestModeProperty, com.bitsycore.ktc2.frontend.kTestExcludeProperty).forEach { System.clearProperty(it) }
 		}
-		val vSuiteFiles = suiteFiles(vOutDir).mapValues { (_, vPath) -> vOriginals[vPath] ?: File(vPath) }
+		val vSuiteFiles = suiteFiles(vOutDir).mapValues { (_, vPath) -> originalOf(vPath) }
 		fun fileOfTest(inTest: String): File? = vSuiteFiles[inTest.substringBeforeLast('.')]
 
 		// The run in C: each leak or crash looked at by file when it happens.

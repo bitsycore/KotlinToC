@@ -674,6 +674,7 @@ public fun CPointer<ByteVar>.toKStringFromUtf8(): String = toKString()
 /** The text of these UTF-8 bytes up to the first zero byte, or all of them, as Kotlin/Native reads a C string held in an array. */
 @kotlin.jvm.JvmName("toKStringOfBytes")
 public fun ByteArray.toKString(startIndex: Int = 0, endIndex: Int = size, throwOnInvalidSequence: Boolean = false): String {
+	AbstractList.checkBoundsIndexes(startIndex, endIndex, size)
 	var vEnd = startIndex
 	while (vEnd < endIndex && this[vEnd] != 0.toByte()) vEnd++
 	return decodeToString(startIndex, vEnd, throwOnInvalidSequence)

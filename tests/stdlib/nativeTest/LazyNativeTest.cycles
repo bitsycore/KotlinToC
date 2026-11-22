@@ -1,0 +1,1 @@
+captureThis keeps an object in its own lazy property (the lazy holds the object, the object the lazy), and the object's local class holds the test: plain reference counting never frees them.
