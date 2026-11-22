@@ -936,9 +936,27 @@ class CEmitter(private val mModule: KModule) {
 						when {
 							vField.isInline && vType is KClassType && vType.cls.name == kAtomicRefClass ->
 								vBodies.append("\tif ((((ktc2_AtomicRefCell*)&$vSlot)->held & ~(int64_t)1) != ((ktc2_AtomicRefCell*)&$vSlot)->owner) visit(context, (ktc2_Obj*)(intptr_t)(((ktc2_AtomicRefCell*)&$vSlot)->held & ~(int64_t)1), &$vSlot, true);\n")
-							!vField.isInline && vType is KRefType && vField.weakType == null ->
+							!vField.isInline && vType is KRefType && vField.weakType == null && !vField.isFrame ->
 								vBodies.append("\tvisit(context, (ktc2_Obj*)$vSlot, &$vSlot, false);\n")
 						}
+					}
+				}
+				// A frame's fields hold only what `__destroy` gives up where the coroutine waits, as `__refs` follows them: the others
+				// hold no count (a borrowed copy may name an object freed since).
+				mStateMachines[vClass]?.let { vMachine ->
+					val vCoroutine = vMachine.coroutine!!
+					val vFrame = mFrames.getValue(vMachine)
+					val vHeld = vCoroutine.cleanups.mapValues { (_, vCleanup) ->
+						vCleanup.mapNotNull { ((it as? KRelease)?.operand as? KRead)?.local?.let { vLocal -> vFrame[vLocal] } }.filter { it.type is KRefType }.distinct()
+					}.filterValues { it.isNotEmpty() }
+					if (vHeld.isNotEmpty()) {
+						vBodies.append("\tswitch (self->${vCoroutine.label.cName}) {\n")
+						for ((vLabel, vFields) in vHeld) {
+							vBodies.append("\tcase $vLabel:\n")
+							vFields.forEach { vBodies.append("\t\tvisit(context, (ktc2_Obj*)self->${it.cName}, &self->${it.cName}, false);\n") }
+							vBodies.append("\t\tbreak;\n")
+						}
+						vBodies.append("\tdefault:\n\t\tbreak;\n\t}\n")
 					}
 				}
 				vBodies.append("}\n")

@@ -1,1 +1,0 @@
-The deprecated BroadcastChannel keeps its subscriptions in a list, each an inner object that refers back to it: a subscription that is not cancelled and its channel hold each other (the library's design; a collector frees them).
