@@ -41,3 +41,11 @@ private fun madeSerializer(inClassName: String, inArguments: Array<out KSerializ
  * when it has none. Its body is written by ktc2 when it compiles the program, from the classes it has.
  */
 internal fun ktc2GenericSerializer(className: String, arguments: Array<out KSerializer<*>>): KSerializer<*>? = null
+
+/**
+ * ktc2: the reaper of the library (`PLAN.md`, "Who answers a cycle", rule 3). The descriptor of a type that contains
+ * itself reaches its own serializer again through its children's serializers, a ring through arrays and lazy values that
+ * the module declares (`rings`); the runtime's reaper checks it by trial deletion and frees it once nothing else holds
+ * it, at the latest when the program ends.
+ */
+internal actual fun ktc2ReapLater(value: Any) = ktc2.internal.reapLater(value)

@@ -2,7 +2,8 @@ name     = "kotlinx-serialization"
 version  = "1.13.0"
 upstream = ["core = org.jetbrains.kotlinx:kotlinx-serialization-core", "json = org.jetbrains.kotlinx:kotlinx-serialization-json"]
 jvm      = ["org.jetbrains.kotlinx:kotlinx-serialization-core-jvm", "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm"]
-files    = ["Ktc2Serialization.kt"]
+files    = ["Ktc2Serialization.kt", "commonMain/Ktc2Reap.common.kt"]
+edits    = ["core/commonMain/kotlinx/serialization/internal/PluginGeneratedSerialDescriptor.kt = PluginGeneratedSerialDescriptor.kt.edit"]
 # The encoders of one call share an array that the call holds.
 weak     = ["kotlinx.serialization.json.internal.StreamingJsonEncoder.modeReuseCache"]
 # A JsonElementMarker's ElementMarker reads through a reference bound to that JsonElementMarker (its readIfAbsent): the
@@ -12,3 +13,5 @@ weak     = ["kotlinx.serialization.json.internal.StreamingJsonEncoder.modeReuseC
 cycles   = ["kotlinx.serialization.json.internal.JsonElementMarker.origin -> kotlinx.serialization.internal.ElementMarker.readIfAbsent -> lambda.bound0",
             "*.$serializer.descriptor -> kotlinx.serialization.internal.PluginGeneratedSerialDescriptor.generatedSerializer"]
 optIn    = ["kotlinx.serialization.InternalSerializationApi", "kotlinx.serialization.ExperimentalSerializationApi", "kotlinx.serialization.SealedSerializationApi", "kotlinx.serialization.internal.CoreFriendModuleApi", "kotlinx.serialization.json.internal.JsonFriendModuleApi", "kotlin.ExperimentalMultiplatform", "kotlin.ExperimentalSubclassOptIn", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime", "kotlin.reflect.ExperimentalAssociatedObjects", "kotlin.ExperimentalUnsignedTypes"]
+# The descriptor of a type that contains itself and what leads back to it: what the reaper's check follows (Ktc2Serialization.kt).
+rings    = ["kotlinx.serialization.internal.PluginGeneratedSerialDescriptor: kotlin.SynchronizedLazy, kotlinx.serialization.internal.NullableSerializer, kotlinx.serialization.internal.SerialDescriptorForNullable, kotlinx.serialization.SealedClassSerializer, kotlinx.serialization.descriptors.SerialDescriptorImpl, kotlinx.serialization.internal.ArrayListSerializer, kotlinx.serialization.internal.ArrayListClassDesc"]

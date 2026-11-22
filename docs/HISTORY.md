@@ -1195,6 +1195,10 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   The whole suite then crashed once in kotlinx.coroutines under load; AddressSanitizer found the walk of a group
   reading a frame field that held no count (`__ring_refs` visited every field of a frame, `__refs` only those its label
   holds): it follows the label now.
+- 2026-11-22, the owner: no known leak. kotlinx.serialization's types that contain themselves are the reaper's: each
+  descriptor given to it as it is made, the classes of the rings declared, and the reaper's walk going through arrays of
+  references (with room for 1,024 objects on the heap, a static counted as outside); the last reap moved after the
+  program gives up its globals and objects. The 4 `.cycles` of kotlinx-serialization-json-io go: no library leaks.
 
 
 ---------------------------------------------------------------------------

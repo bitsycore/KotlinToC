@@ -56,8 +56,7 @@ no general cycle collector, in the runtime or as an option (section 7.1):
   run and pass their tests in C and on the JVM; 27 of them leave cycles (`.cycles`): 16 of the library's
   structures not answered yet, 11 by their tests' design or the deprecated `BroadcastChannel` (section 2).
 - **The other libraries**: kotlinx-io, kotlinx.collections.immutable, atomicfu, kotlinx-datetime pass whole;
-  kotlinx.serialization and its JSON pass whole (2026-11-21), 4 files with `.cycles` for a known leak (types that
-  contain themselves, section 2.4).
+  kotlinx.serialization and its JSON pass whole, with no `.cycles` left (2026-11-22, section 2.4).
 - **Speed** (2026-11-17, a Mac, `tools/compare.py`): fastest of the three on 9 of 10 benchmarks, 1.2 to 4.2
   times Kotlin/Native, 1.3 to 8.5 times less memory than Native; the JVM is 9 % faster on making small
   objects in a loop. Programs of about 0.1 MB.
@@ -104,20 +103,19 @@ holder (a subscription that is all that holds its channel leaves it unreachable 
 two removed nodes of a list left holding each other by concurrent removals are given to the reaper where that happens.
 Nothing of the library's own is left: the 7 `.cycles` of kotlinx.coroutines' tests are the tests' own (the user's, rule 4).
 
-**Known, kept:** kotlinx.serialization's types that contain themselves (section 2.4): one ring for each such type,
-held for the life of the program by its serializer object.
+kotlinx.serialization's types that contain themselves are the reaper's too (section 2.4): no library leaks.
 
 ### 2.3 kotlinx.coroutines: what is not taken yet (3 to 5 days)
 - Every box test of coroutines taken passes (41 of 41, 2026-11-21; none pending). Six have `.cycles`: they keep a
   continuation in a variable or a list their own coroutine holds (the three `*WithHandleResult`,
   `boxReturnValueOfSuspendLambda` twice, `resultExceptionOrNullInLambda`), the test's design, which a collector frees.
 
-### 2.4 kotlinx.serialization (done but for a known leak)
-- Known leak, kept: the 4 `.cycles` left (`JsonPathTest`, `JsonDecodingErrorMessagesTest`,
-  `JsonTransformingSerializerTest`, `JsonTreeDecoderPolymorphicTest`) are types that contain themselves (directly, or a
-  sealed class through a subclass): the descriptor reaches its own serializer again through the lazy `childSerializers`,
-  a ring whose size depends on the type. One for each such type, held by its serializer object for the life of the
-  program and left at its end: nothing a program makes again and again.
+### 2.4 kotlinx.serialization (done)
+- No `.cycles` left (2026-11-22, the owner: no known leak). A type that contains itself (directly, or a sealed class
+  through a subclass) has a descriptor that reaches its own serializer again through its children's serializers, a ring
+  through arrays and lazy values held by the type's serializer object: each `PluginGeneratedSerialDescriptor` is given to
+  the runtime's reaper as it is made, the module declares the classes of those rings (`rings`), and the last reap, once
+  the program's globals and objects are given up, frees them (`DESIGN.md`, "The reaper").
 - The two skips left are the JVM side's (`ModuleBuildersTest`: its message without kotlin-reflect;
   `KeyValueSerializersTest`: a JVM-only body that needs JUnit's asserter), not differences of ktc2.
 
@@ -357,9 +355,9 @@ anything is built; the directions:
 what Native gives native code ktc2 gives too, so that libraries' `nativeMain` compiles as it is. Where the JVM
 and Native agree the tests check against the JVM; where they differ, ktc2 does as Native and the test says so.
 A difference from both is a bug, fixed in general. Memory is the one difference allowed, never results: a cycle
-is answered by a module's `weak`/`acyclic`/`cycles`/`rings` or an edit where the library's design makes that
-harmless, a bounded cache, or a known leak written here; never a weak reference that changes what a program
-computes. What ktc2 adds is in the `ktc2.` package and changes storage and cost only; any addition to it is
+is answered by a module's `weak`/`acyclic`/`cycles`/`rings`, an edit where the library's design makes that
+harmless, a bounded cache, or the module's reaper; no known leak (the owner, 2026-11-22); never a weak reference that
+changes what a program computes. What ktc2 adds is in the `ktc2.` package and changes storage and cost only; any addition to it is
 proposed first.
 
 **Decided** (the date when it was):

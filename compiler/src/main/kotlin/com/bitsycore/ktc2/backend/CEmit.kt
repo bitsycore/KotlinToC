@@ -192,14 +192,15 @@ class CEmitter(private val mModule: KModule) {
 			append("\t${inEntry.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n")
 		}
 		mModule.programEnding?.let { append("\t${it.cName}();\n\tif (ktc2_has_pending()) ktc2_uncaught();\n") }
-		// What a module's reaper was given that is left in cycles now that main is done (a no-op without declared cycles).
-		if (mConcrete.any { it.isGroupMember }) append("\tktc2_reapEnd();\n")
 		// What the top-level properties and the objects still hold is given up without `deinit`, unless a thread the
 		// program does not wait for (a worker) still runs and may use it.
 		append("\tif (ktc2_ending()) {\n")
 		if (vHasThreadLocals) append("\t\tthread_locals_end();\n")
 		vGlobals.asReversed().forEach { append("\t\t${releaseText(it.type, it.cName)};\n") }
 		vStatics.asReversed().forEach { append("\t\t${it.cls.cName}__destroy((ktc2_Obj*)&${it.cName});\n") }
+		// What a module's reaper was given that is left in cycles, now that nothing of the program holds anything (no other
+		// thread runs here): the last reap, which also gives up the weak cells it kept.
+		if (mConcrete.any { it.isGroupMember }) append("\t\tktc2_reapEnd();\n")
 		append("\t}\n")
 		append("\treturn ktc2_exit();\n}\n")
 	}

@@ -1,0 +1,5 @@
+after: ) : SerialDescriptor, CachedNames {
+    // ktc2: the descriptor of a type that contains itself reaches its own serializer again through its children's
+    // serializers (childSerializers): a ring, held by the type's serializer object. Given to the runtime's reaper, which
+    // frees it once nothing else holds it, at the latest when the program ends (Ktc2Serialization.kt).
+    init { ktc2ReapLater(this) }

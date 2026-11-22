@@ -21,7 +21,7 @@ to do is in `PLAN.md`; why things are as they are, and what was tried on the way
 2. **Memory is the one difference allowed, never results.** There is no collector of cycles: a
    cycle Kotlin/Native would free is answered without changing what a program computes, by
    `weak` and `acyclic` in a module file where the library's own design makes the reference
-   harmless to drop, by a bounded cache, or else by a known leak written down in `PLAN.md`;
+   harmless to drop, by a bounded cache, or by the module's reaper (no known leak is kept);
    never by a weak reference that would make a program answer otherwise. Optimizations
    (escape analysis, borrowed references, devirtualization) are invisible.
 3. **A ktc2 feature changes storage and cost, never behavior.** Everything ktc2 adds is in
@@ -396,7 +396,13 @@ walked. All of it is compiled only into programs with declared cycles or rings (
 the reaper each job that ends with an exception (`JobSupport.kt.edit`) and reaps between the events of `runBlocking`'s
 loops and when they end (`Builders.native.kt.edit`); its scopes let go of their caller's continuation once they resumed it
 or gave it their result (`Scopes.kt.edit`, `ktc2TakeCaller`), and a lazy coroutine cancelled while it was made lets go
-of its block (`Builders.common.kt.edit`). A node of a lock-free list removed while the next one was removed too keeps
+of its block (`Builders.common.kt.edit`). The reaps between events walk as a release's check does (32 objects, on the
+stack: they are frequent); the last one comes once `main` has given up its globals and objects, with no other thread
+left, checks every object kept whatever its count, and also goes through arrays of references (a library's structure
+kept in arrays), with room for 1,024 objects on the heap, an object never freed (a static, a constant array) counted
+as outside. kotlinx.serialization gives it
+each `PluginGeneratedSerialDescriptor` (`PluginGeneratedSerialDescriptor.kt.edit`), whose descriptor of a type that
+contains itself reaches its own serializer again: the module declares the classes of those rings (`rings`). A node of a lock-free list removed while the next one was removed too keeps
 it as its previous (a remover fixes no link of a removed node): the two may be left holding each other outside any list,
 and the remover gives its node to the reaper there (`LockFreeLinkedList.kt.edit`, only under contention). The reaps
 between events go through the list once as many were asked for as it holds (`ktc2_reap`): a cost for each event that
