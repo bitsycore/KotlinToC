@@ -99,13 +99,16 @@ Bugs found, kotlinx.coroutines' cycles, kotlinx.coroutines' box tests and kotlin
   the JVM enables it); of `kotlin-native/runtime/test`, in `tests/stdlib/nativeTest/` (C only, decided by their own
   assertions): `CharNativeTest`, `StringEncodingTestNative`, `_IsCasedTest`, `_IsCaseIgnorableTest`, `LazyNativeTest`,
   `WeakReferenceTest`, `FreezingTest`. They found four differences from Native (`docs/HISTORY.md`).
-- [ ] Left of `kotlin-native/runtime/test`, each waiting for the API it tests, which ktc2 does not have yet (Kotlin/Native
-  gives it to native code, so ktc2 should): `BitSetTest` (`kotlin.native.BitSet`), `ByteArrayTest` (`getIntAt`,
-  `setLongAt`... of `ByteArray`), `ImmutableBlobTest`, `AtomicArrayTest`, `AtomicTest`, `AtomicStressTest` and the two of
-  `concurrent/atomics` (`kotlin.concurrent.AtomicIntArray`, `AtomicLongArray`, `AtomicArray`, `AtomicNativePtr`),
-  `MutableDataTest`, `WorkerTest`, `WorkerBoundReference`, `RandomNativeTest` (a helper of the common random tests and
-  Native's `overrideNativeRandomSeed`). Not to take: `kotlinx.cinterop/*` (Native's interop, which ktc2 has its own
-  way), and `native/internal/*` (`Monitor`, `startThread`, `PriorityQueue`: internal to Native's runtime).
+- Taken next (2026-11-22), with the APIs they test, written in the platform layer after Native's sources: `BitSetTest`
+  (Native's public `BitSet`, which also serves the regex engine now), `ByteArrayTest` (`getIntAt`, `setLongAt`...),
+  `ImmutableBlobTest`, `AtomicArrayTest`, `AtomicStressTest`, `AtomicsStressTest.native` (the atomic arrays of
+  `kotlin.concurrent`; `AtomicNativePtr` in both packages, with a program of its own under `tests/integration/native/`),
+  `MutableDataTest`, `WorkerTest` (`waitForMultipleFutures`, `waitWorkerTermination`, `DetachedObjectGraph`, the jobs
+  left at a worker's termination cancelled), `WorkerBoundReference`, `RandomNativeTest` (`Random.Default` is Native's
+  generator of each thread). Every test of `kotlin-native/runtime/test` that tests Native's public API is taken.
+- Not to take: `AtomicTest` and `AtomicsTest.native` (they reach `kotlin.native.internal.NativePtr`; ktc2's
+  `AtomicNativePtr` has its own test), `kotlinx.cinterop/*` (Native's interop, which ktc2 has its own way), and
+  `native/internal/*` (`Monitor`, `startThread`, `PriorityQueue`: internal to Native's runtime).
 
 ### 2.6 More tests to take (ongoing)
 - [ ] Box tests of the Kotlin compiler beyond coroutines (`tools/select_box.py`): classes, inline classes,

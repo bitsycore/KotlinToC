@@ -1,9 +1,11 @@
-@file:OptIn(ObsoleteWorkersApi::class, kotlin.experimental.ExperimentalNativeApi::class)
+@file:OptIn(ObsoleteWorkersApi::class, kotlin.experimental.ExperimentalNativeApi::class, kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package kotlin.native.concurrent
 
 import ktc2.internal.monitorNotifyAll
 import ktc2.internal.monitorWait
+import kotlinx.cinterop.asStableRef
+import kotlinx.cinterop.rawValue
 import ktc2.internal.ticksNanos
 
 /*
@@ -98,8 +100,12 @@ public class Worker private constructor(public val id: Int, private val mName: S
 		}
 	}
 
-	/** Its name, as given to [start], or `worker <id>`. */
-	public val name: String get() = mName ?: "worker $id"
+	/** Its name, as given to [start], or `worker <id>`; an error once it has terminated, as on Kotlin/Native. */
+	public val name: String
+		get() {
+			if (synchronized(mLock) { mTerminated }) throw IllegalStateException("Worker is already terminated")
+			return mName ?: "worker $id"
+		}
 
 	override fun toString(): String = "Worker $name"
 
@@ -227,9 +233,16 @@ public class Worker private constructor(public val id: Int, private val mName: S
 						return kNone
 					}
 				}
-				synchronized(mLock) { mTerminated = true }
+				val vLeft = synchronized(mLock) {
+					mTerminated = true
+					val vJobs = mQueue.toList() + mDelayed
+					mQueue.clear()
+					mDelayed.clear()
+					vJobs
+				}
 				synchronized(Workers.lock) { Workers.all.remove(this) }
 				vJob.future!!.complete(Unit, true)
+				for (vOther in vLeft) vOther.future?.cancel()
 			}
 			kAfter -> try {
 				vJob.run!!()
@@ -347,7 +360,121 @@ public class Future<T> internal constructor(public val id: Int) {
 			mState = if (inDone) FutureState.COMPUTED else FutureState.THROWN
 			monitorNotifyAll(mLock)
 		}
+		FutureEvents.changed()
+	}
+
+	/** The job will not run: its worker terminated first. */
+	internal fun cancel() {
+		synchronized(mLock) {
+			mState = FutureState.CANCELLED
+			monitorNotifyAll(mLock)
+		}
+		FutureEvents.changed()
 	}
 
 	override fun toString(): String = "future $id"
+}
+
+/** A count of the changes of every future's state, and the monitor that says when it changes. */
+private object FutureEvents {
+	val lock = Any()
+	var version = 0L
+
+	fun changed() {
+		synchronized(lock) {
+			version++
+			monitorNotifyAll(lock)
+		}
+	}
+
+	/** Waits until a future changes after [inVersion] or [inTimeoutMillis] have passed; true when the time passed first. */
+	fun waitAfter(inVersion: Long, inTimeoutMillis: Int): Boolean = synchronized(lock) {
+		if (version != inVersion) return false
+		monitorWait(lock, if (inTimeoutMillis < 0) -1L else inTimeoutMillis * 1_000_000L)
+		version == inVersion
+	}
+}
+
+/**
+ * The futures of [futures] whose result is there, waiting up to [timeoutMillis] (forever when negative) for one when
+ * none is yet: an empty set when the time passed first.
+ */
+@ObsoleteWorkersApi
+public fun <T> waitForMultipleFutures(futures: Collection<Future<T>>, timeoutMillis: Int): Set<Future<T>> {
+	val vResult = mutableSetOf<Future<T>>()
+	while (true) {
+		val vVersion = synchronized(FutureEvents.lock) { FutureEvents.version }
+		for (vFuture in futures) if (vFuture.state == FutureState.COMPUTED) vResult += vFuture
+		if (vResult.isNotEmpty()) return vResult
+		if (FutureEvents.waitAfter(vVersion, timeoutMillis)) break
+	}
+	for (vFuture in futures) if (vFuture.state == FutureState.COMPUTED) vResult += vFuture
+	return vResult
+}
+
+@Deprecated("Use 'waitForMultipleFutures' top-level function instead", ReplaceWith("waitForMultipleFutures(this, millis)"), DeprecationLevel.ERROR)
+@ObsoleteWorkersApi
+public fun <T> Collection<Future<T>>.waitForMultipleFutures(millis: Int): Set<Future<T>> = waitForMultipleFutures(this, millis)
+
+/** Waits until the thread of [worker], started by [Worker.start], has ended (after its termination was asked). */
+@ObsoleteWorkersApi
+public fun waitWorkerTermination(worker: Worker) {
+	worker.thread?.join()
+}
+
+// ==================
+// MARK: What the legacy memory manager needed
+// ==================
+
+/** A reference to [value] that was bound to the worker that made it; now the value itself, as on Kotlin/Native. */
+@ObsoleteWorkersApi
+@Deprecated("Support for the legacy memory manager has been completely removed. Use the referenced value directly.")
+@DeprecatedSinceKotlin(errorSince = "2.1")
+public class WorkerBoundReference<out T : Any>(public val value: T) {
+	public val valueOrNull: T?
+		get() = value
+
+	public val worker: Worker = Worker.current
+}
+
+/**
+ * An object graph detached from its worker, to be attached once on another; now a stable reference to the object, as
+ * Kotlin/Native's deprecation says, given back by [attach].
+ */
+@ObsoleteWorkersApi
+@Deprecated("Support for the legacy memory manager has been completely removed. Use the pointed value directly. To pass the value through the C interop, use the StableRef class.")
+@DeprecatedSinceKotlin(errorSince = "2.1")
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+public class DetachedObjectGraph<T>(pointer: kotlinx.cinterop.COpaquePointer?) {
+	@PublishedApi
+	internal val stable: kotlin.concurrent.AtomicNativePtr = kotlin.concurrent.AtomicNativePtr(pointer.rawOrNull())
+
+	public constructor(mode: TransferMode = TransferMode.SAFE, producer: () -> T) : this(detached(producer()))
+
+	@kotlinx.cinterop.ExperimentalForeignApi
+	public fun asCPointer(): kotlinx.cinterop.COpaquePointer? = kotlinx.cinterop.interpretCPointer(stable.value)
+}
+
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun kotlinx.cinterop.COpaquePointer?.rawOrNull(): kotlinx.cinterop.NativePtr = if (this == null) kotlinx.cinterop.nativeNullPtr else rawValue
+
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+private fun detached(inValue: Any?): kotlinx.cinterop.COpaquePointer? = inValue?.let { kotlinx.cinterop.StableRef.create(it).asCPointer() }
+
+/** The object of a [DetachedObjectGraph], once: the graph holds nothing after. */
+@ObsoleteWorkersApi
+@Deprecated("Support for the legacy memory manager has been completely removed.")
+@DeprecatedSinceKotlin(errorSince = "2.1")
+@Suppress("DEPRECATION_ERROR", "UNCHECKED_CAST")
+public inline fun <reified T> DetachedObjectGraph<T>.attach(): T = attachGraph(stable) as T
+
+@PublishedApi
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+internal fun attachGraph(inStable: kotlin.concurrent.AtomicNativePtr): Any? {
+	val vRaw = inStable.getAndSet(kotlinx.cinterop.nativeNullPtr)
+	val vPointer = kotlinx.cinterop.interpretCPointer<kotlinx.cinterop.COpaque>(vRaw) ?: return null
+	val vRef = vPointer.asStableRef<Any>()
+	val vValue = vRef.get()
+	vRef.dispose()
+	return vValue
 }

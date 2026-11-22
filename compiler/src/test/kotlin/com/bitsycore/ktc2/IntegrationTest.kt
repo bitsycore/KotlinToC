@@ -248,6 +248,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 	/** What the tests of the standard library opt in to (its `commonTestOptIns`). */
 	private val kLibraryOptIns = listOf("kotlin.ExperimentalUnsignedTypes", "kotlin.ExperimentalStdlibApi", "kotlin.io.encoding.ExperimentalEncodingApi", "kotlin.uuid.ExperimentalUuidApi", "kotlin.time.ExperimentalTime")
 
+	/** What Kotlin/Native's runtime tests are compiled opted in to (tests/stdlib/nativeTest), given to every group of tests in C. */
+	private val kNativeTestOptIns = listOf("kotlin.experimental.ExperimentalNativeApi", "kotlin.native.ObsoleteNativeApi",
+		"kotlin.native.concurrent.ObsoleteWorkersApi", "kotlinx.cinterop.ExperimentalForeignApi", "kotlin.ExperimentalStdlibApi")
+
 	/** A declaration a file of tests leaves to the platform. */
 	private val kExpect = Regex("(?m)^(internal |public )?expect .*$")
 
@@ -552,7 +556,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 		System.setProperty("ktc2.acyclic", vModules.flatMap { it.acyclic }.joinToString("\n"))
 		System.setProperty("ktc2.cycles", vModules.flatMap { it.cycles }.joinToString("\n"))
 		System.setProperty("ktc2.rings", vModules.flatMap { it.rings }.joinToString("\n"))
-		System.setProperty("ktc2.moduleOptIn", (vModules.flatMap { it.optIn } + "kotlin.experimental.ExperimentalNativeApi").distinct().joinToString("\n"))
+		System.setProperty("ktc2.moduleOptIn", (vModules.flatMap { it.optIn } + kNativeTestOptIns).distinct().joinToString("\n"))
 		System.setProperty(com.bitsycore.ktc2.frontend.kTestModeProperty, "true")
 		System.setProperty(com.bitsycore.ktc2.frontend.kTestExcludeProperty, vExcluded.joinToString("\n"))
 		System.setProperty("ktc2.main", com.bitsycore.ktc2.frontend.kTestEntryPoint)

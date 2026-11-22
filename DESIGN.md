@@ -526,7 +526,8 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   whose C++ (`Worker.cpp`) is written again in Kotlin: a queue of jobs worked through by a thread
   started for the worker, or by the thread that asked for `Worker.current` when it parks or processes
   its queue; a delayed job joins the queue when its time comes; a termination waits for the delayed
-  jobs unless told not to. A thread waits on the monitor of the queue's lock and is woken by the
+  jobs unless told not to, and the jobs left behind it are cancelled; `waitForMultipleFutures` waits on one
+  monitor that every change of a future's state notifies. A thread waits on the monitor of the queue's lock and is woken by the
   runtime (`ktc2_monitorWait`, `ktc2_monitorNotifyAll`: the monitors of `synchronized`, with a
   condition and a count of notifications). A worker's thread does not keep the program running
   (`ktc2_threadUnwaited`): when `main` returns, a worker that waits for a job is ended
@@ -535,6 +536,13 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   ends with the process, as on Native, and the program then gives up neither its globals, which that
   thread may still use, nor makes the leak check. `tests/integration/native/Workers` has Kotlin/Native's
   output as its `.expected`.
+- **Native's runtime API in Kotlin**: what Kotlin/Native gives native code and does in C++ or as intrinsics is
+  written in the platform layer after its sources, each file saying which: `Ktc2BitSet.kt` (Native's public `BitSet`,
+  also the regex engine's), `Ktc2TypedArrays.kt` (`ByteArray.getIntAt`..., little-endian as on every Native target),
+  `Ktc2Blob.kt`, `Ktc2MutableData.kt`, `Ktc2NativeAtomics.kt` and `Ktc2NativeAtomicArrays.kt` (the atomics of
+  `kotlin.concurrent`, each over one of `kotlin.concurrent.atomics`; `AtomicNativePtr` keeps the address in an atomic
+  Long), `Ktc2Random.kt` (`Random.Default` is a generator of each thread, Native's, seeded from one shared sequence).
+  Their tests are Native's own (`tests/stdlib/nativeTest/`).
 - **Monitors** (`synchronized`, and the workers' queues) are in a table of 64 buckets, each with a lock of its
   own and its own conditions: the monitors of two objects meet only in the same bucket, and a notification
   wakes only the threads waiting in it. With one lock and one condition for all (before 2026-11-18), eight

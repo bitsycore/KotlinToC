@@ -1210,6 +1210,13 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   that read null at once (a box is kept as long as the reference now: it holds nothing). The publication lazy, made
   of plain fields under a lock so that the reaper can walk it, joins kotlinx.serialization's ring of descriptors
   (its `childSerializers`).
+- 2026-11-22, `PLAN.md` 2.5: the rest of Kotlin/Native's runtime tests of its public API (`BitSet`, the typed accessors
+  of `ByteArray`, `ImmutableBlob`, the atomic arrays and `AtomicNativePtr` of `kotlin.concurrent`, `MutableData`,
+  workers, `Random`), with what they test written after Native's sources. Differences found: `Random.Default` was one
+  XorWow shared by every thread (threads that drew at once raced on its state), now Native's generator of each thread;
+  a worker's termination left the jobs after it waiting for ever, now cancelled; `Worker.name` of a terminated worker
+  answered where Native throws; `kotlin.concurrent.atomics`' classes lacked the members Native keeps as errors
+  (`value`, `getAndSet`...), which code suppressing the error still calls.
 
 
 ---------------------------------------------------------------------------

@@ -42,6 +42,33 @@ public actual class AtomicInt public actual constructor(value: Int) {
 	public actual fun compareAndExchange(expectedValue: Int, newValue: Int): Int = atomicInt(cell, 0, kCompareAndExchange, expectedValue, newValue)
 	public actual fun fetchAndAdd(delta: Int): Int = atomicInt(cell, 0, kFetchAndAdd, delta, 0)
 	public actual fun addAndFetch(delta: Int): Int = atomicInt(cell, 0, kFetchAndAdd, delta, 0) + delta
+
+	// Kotlin/Native's API before `load` and `store`, kept as an error there too.
+	@Deprecated("To read the atomic value use load().", ReplaceWith("this.load()"), DeprecationLevel.ERROR)
+	public var value: Int
+		get() = load()
+		set(newValue) = store(newValue)
+
+	@Deprecated("Use exchange(newValue: Int) instead.", ReplaceWith("this.exchange(newValue)"), DeprecationLevel.ERROR)
+	public fun getAndSet(newValue: Int): Int = exchange(newValue)
+
+	@Deprecated("Use fetchAndAdd(newValue: Int) instead.", ReplaceWith("this.fetchAndAdd(newValue)"), DeprecationLevel.ERROR)
+	public fun getAndAdd(delta: Int): Int = fetchAndAdd(delta)
+
+	@Deprecated("Use addAndFetch(newValue: Int) instead.", ReplaceWith("this.addAndFetch(newValue)"), DeprecationLevel.ERROR)
+	public fun addAndGet(delta: Int): Int = addAndFetch(delta)
+
+	@Deprecated("Use fetchAndIncrement() instead.", ReplaceWith("this.fetchAndIncrement()"), DeprecationLevel.ERROR)
+	public fun getAndIncrement(): Int = fetchAndAdd(1)
+
+	@Deprecated("Use incrementAndFetch() instead.", ReplaceWith("this.incrementAndFetch()"), DeprecationLevel.ERROR)
+	public fun incrementAndGet(): Int = addAndFetch(1)
+
+	@Deprecated("Use decrementAndFetch() instead.", ReplaceWith("this.decrementAndFetch()"), DeprecationLevel.ERROR)
+	public fun decrementAndGet(): Int = addAndFetch(-1)
+
+	@Deprecated("Use fetchAndDecrement() instead.", ReplaceWith("this.fetchAndDecrement()"), DeprecationLevel.ERROR)
+	public fun getAndDecrement(): Int = fetchAndAdd(-1)
 	public actual override fun toString(): String = load().toString()
 }
 
@@ -80,6 +107,33 @@ public actual class AtomicLong public actual constructor(value: Long) {
 	public actual fun compareAndExchange(expectedValue: Long, newValue: Long): Long = atomicLong(cell, 0, kCompareAndExchange, expectedValue, newValue)
 	public actual fun fetchAndAdd(delta: Long): Long = atomicLong(cell, 0, kFetchAndAdd, delta, 0L)
 	public actual fun addAndFetch(delta: Long): Long = atomicLong(cell, 0, kFetchAndAdd, delta, 0L) + delta
+
+	// Kotlin/Native's API before `load` and `store`, kept as an error there too.
+	@Deprecated("To read the atomic value use load().", ReplaceWith("this.load()"), DeprecationLevel.ERROR)
+	public var value: Long
+		get() = load()
+		set(newValue) = store(newValue)
+
+	@Deprecated("Use exchange(newValue: Long) instead.", ReplaceWith("this.exchange(newValue)"), DeprecationLevel.ERROR)
+	public fun getAndSet(newValue: Long): Long = exchange(newValue)
+
+	@Deprecated("Use fetchAndAdd(newValue: Long) instead.", ReplaceWith("this.fetchAndAdd(newValue)"), DeprecationLevel.ERROR)
+	public fun getAndAdd(delta: Long): Long = fetchAndAdd(delta)
+
+	@Deprecated("Use addAndFetch(newValue: Long) instead.", ReplaceWith("this.addAndFetch(newValue)"), DeprecationLevel.ERROR)
+	public fun addAndGet(delta: Long): Long = addAndFetch(delta)
+
+	@Deprecated("Use fetchAndIncrement() instead.", ReplaceWith("this.fetchAndIncrement()"), DeprecationLevel.ERROR)
+	public fun getAndIncrement(): Long = fetchAndAdd(1L)
+
+	@Deprecated("Use incrementAndFetch() instead.", ReplaceWith("this.incrementAndFetch()"), DeprecationLevel.ERROR)
+	public fun incrementAndGet(): Long = addAndFetch(1L)
+
+	@Deprecated("Use decrementAndFetch() instead.", ReplaceWith("this.decrementAndFetch()"), DeprecationLevel.ERROR)
+	public fun decrementAndGet(): Long = addAndFetch(-1L)
+
+	@Deprecated("Use fetchAndDecrement() instead.", ReplaceWith("this.fetchAndDecrement()"), DeprecationLevel.ERROR)
+	public fun getAndDecrement(): Long = fetchAndAdd(-1L)
 	public actual override fun toString(): String = load().toString()
 }
 
@@ -170,6 +224,15 @@ public actual class AtomicReference<T> public actual constructor(value: T) {
 		monitorExit(this)
 		return vOld
 	}
+
+	// Kotlin/Native's API before `load` and `store`, kept as an error there too.
+	@Deprecated("To read the atomic value use load().", ReplaceWith("this.load()"), DeprecationLevel.ERROR)
+	public var value: T
+		get() = load()
+		set(newValue) = store(newValue)
+
+	@Deprecated("Use exchange(newValue: T) instead.", ReplaceWith("this.exchange(newValue)"), DeprecationLevel.ERROR)
+	public fun getAndSet(newValue: T): T = exchange(newValue)
 
 	public actual override fun toString(): String = load().toString()
 }
@@ -438,4 +501,34 @@ public actual inline fun <T> AtomicArray<T>.fetchAndUpdateAt(index: Int, transfo
 		val vOld = loadAt(index)
 		if (compareAndSetAt(index, vOld, transform(vOld))) return vOld
 	}
+}
+
+// ==================
+// MARK: AtomicNativePtr
+// ==================
+
+/** A C address that threads change atomically; compared by value (Kotlin/Native's, kept in an atomic Long). */
+@kotlinx.cinterop.ExperimentalForeignApi
+public class AtomicNativePtr(value: kotlinx.cinterop.NativePtr) {
+	private val mCell = AtomicLong(kotlinx.cinterop.internal.cExpr<Long>("(int64_t)(intptr_t)$0", value))
+
+	public fun load(): kotlinx.cinterop.NativePtr = kotlin.concurrent.nativePtrOf(mCell.load())
+	public fun store(newValue: kotlinx.cinterop.NativePtr): Unit = mCell.store(addressOf(newValue))
+	public fun exchange(newValue: kotlinx.cinterop.NativePtr): kotlinx.cinterop.NativePtr = kotlin.concurrent.nativePtrOf(mCell.exchange(addressOf(newValue)))
+	public fun compareAndSet(expectedValue: kotlinx.cinterop.NativePtr, newValue: kotlinx.cinterop.NativePtr): Boolean =
+		mCell.compareAndSet(addressOf(expectedValue), addressOf(newValue))
+	public fun compareAndExchange(expectedValue: kotlinx.cinterop.NativePtr, newValue: kotlinx.cinterop.NativePtr): kotlinx.cinterop.NativePtr =
+		kotlin.concurrent.nativePtrOf(mCell.compareAndExchange(addressOf(expectedValue), addressOf(newValue)))
+
+	// Kotlin/Native's API before `load` and `store`, kept as an error there too.
+	@Deprecated("To read the atomic value use load().", ReplaceWith("this.load()"), DeprecationLevel.ERROR)
+	public var value: kotlinx.cinterop.NativePtr
+		get() = load()
+		set(newValue) = store(newValue)
+
+	@Deprecated("Use exchange(newValue: kotlinx.cinterop.NativePtr) instead.", ReplaceWith("this.exchange(newValue)"), DeprecationLevel.ERROR)
+	public fun getAndSet(newValue: kotlinx.cinterop.NativePtr): kotlinx.cinterop.NativePtr = exchange(newValue)
+	override fun toString(): String = "0x${mCell.load().toString(16)}"
+
+	private fun addressOf(inPointer: kotlinx.cinterop.NativePtr): Long = kotlinx.cinterop.internal.cExpr("(int64_t)(intptr_t)$0", inPointer)
 }

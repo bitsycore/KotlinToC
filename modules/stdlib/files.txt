@@ -80,6 +80,7 @@ commonMain/kotlin/ULongArray.kt
 commonMain/generated/_UArrays.kt
 Ktc2Internal.kt
 Ktc2Workers.kt
+Ktc2MutableData.kt
 Ktc2Exceptions.kt
 Ktc2Collections.kt
 Ktc2Arrays.kt
@@ -97,7 +98,9 @@ wasm/nativeWasmMain/kotlin/native/ObsoleteNativeApi.kt
 wasm/nativeWasmMain/kotlin/native/concurrent/ObsoleteWorkersApi.kt
 wasm/wasmCommonMain/kotlin/text/regex/ObsoleteNativeApi.kt
 wasm/nativeWasmMain/kotlin/native/BitSet.kt
-wasm/wasmCommonMain/kotlin/text/regex/BitSet.kt
+Ktc2BitSet.kt
+Ktc2TypedArrays.kt
+Ktc2Blob.kt
 wasm/wasmCommonMain/kotlin/text/regex/DecompositionHelpers.kt
 wasm/wasmCommonMain/kotlin/text/regex/DecompositionValues.kt
 wasm/nativeWasmMain/kotlin/text/PatternSyntaxException.kt
@@ -207,6 +210,7 @@ commonMain/kotlin/annotations/NativeConcurrentAnnotations.kt
 Ktc2NativeAnnotations.kt
 Ktc2NativeConcurrent.kt
 Ktc2NativeAtomics.kt
+Ktc2NativeAtomicArrays.kt
 Ktc2NativeRef.kt
 Ktc2AssociatedObjects.kt
 commonMain/kotlin/concurrent/Volatile.kt

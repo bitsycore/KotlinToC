@@ -2,6 +2,8 @@
 
 package kotlin.concurrent
 
+import kotlinx.cinterop.toLong
+
 /*
 ktc2 platform layer: Kotlin/Native's atomics of `kotlin.concurrent` (`AtomicInt`, `AtomicLong`,
 `AtomicReference` with `value`, `compareAndSet`, `addAndGet`), which libraries written for
@@ -65,3 +67,23 @@ public class AtomicReference<T>(value: T) {
 	public fun compareAndExchange(expected: T, newValue: T): T = mCell.compareAndExchange(expected, newValue)
 	override fun toString(): String = "AtomicReference(value=$value)"
 }
+
+/** A C address that threads change atomically; compared by value. */
+@kotlinx.cinterop.ExperimentalForeignApi
+public class AtomicNativePtr(value: kotlinx.cinterop.NativePtr) {
+	private val mCell = kotlin.concurrent.atomics.AtomicLong(value.toLong())
+
+	public var value: kotlinx.cinterop.NativePtr
+		get() = nativePtrOf(mCell.load())
+		set(newValue) = mCell.store(newValue.toLong())
+
+	public fun getAndSet(newValue: kotlinx.cinterop.NativePtr): kotlinx.cinterop.NativePtr = nativePtrOf(mCell.exchange(newValue.toLong()))
+	public fun compareAndSet(expected: kotlinx.cinterop.NativePtr, newValue: kotlinx.cinterop.NativePtr): Boolean = mCell.compareAndSet(expected.toLong(), newValue.toLong())
+	public fun compareAndExchange(expected: kotlinx.cinterop.NativePtr, newValue: kotlinx.cinterop.NativePtr): kotlinx.cinterop.NativePtr =
+		nativePtrOf(mCell.compareAndExchange(expected.toLong(), newValue.toLong()))
+	override fun toString(): String = "0x${mCell.load().toString(16)}"
+}
+
+/** The C address [address] holds. */
+@kotlinx.cinterop.ExperimentalForeignApi
+internal fun nativePtrOf(address: Long): kotlinx.cinterop.NativePtr = kotlinx.cinterop.internal.cExpr("(void*)(intptr_t)$0", address)
