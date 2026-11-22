@@ -92,36 +92,20 @@ there.
 - An array, a list or exceptions put into themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`): what no
   compiler can see, the program's (rule 1). Accepted.
 
-**The library's (rule 3): the reaper of kotlinx.coroutines.** Written by hand in the module (Kotlin of its own and
-edits), compiled only into its programs. Nothing new in ktc2's base but one intrinsic.
-- [ ] `ktc2.internal.referenceCount(obj)`: the count of an object, read (an `external` of the platform layer; its C only
-  in the programs that call it). What tells the module "held only by its own structure".
-- [ ] The reaper, tried 2026-11-21 (`docs/wip/reaper/`: the patch, the module's files): registering a job that ended with
-  an exception through a weak cell, and sweeping in `joinBlocking`, with `ktc2.internal.collectGroupOf` (the runtime's
-  check of a group, from the job, under the lock of pair checks) compiled; two things to settle first. (1) It freed
-  nothing in `ZipTest` and `ChannelBuildersFlowTest`: why the group check from the job does not find the group whole
-  there (`KTC2_RING_TRACE=1`). (2) It crashed `JobStructuredJoinStressTest` (a job that fails on `Dispatchers.Default`
-  while `runBlocking` joins it) even with no group freed: an object marked as having a weak cell had none when destroyed
-  (`weak_link`), so the weak cell of a job made by another thread than the one releasing it is the first suspect; and a
-  check from a job must not walk a group another thread is changing (it now starts only when the job's count is no more
-  than its cycles hold, as a release's does).
-  The design: a job that reaches its final state (its handlers run, its children done) registers with the reaper of
-  the thread it completed on, through a `WeakRef` (keeping nothing). Between continuations, where the library already
-  runs code (`EventLoopImplBase.processNextEvent`, the worker loop of `CoroutineScheduler`, the end of `runBlocking`),
-  the reaper sweeps: for each job still there, if its count is what its own structure holds of it, it cuts that
-  structure; a job still held from outside waits for the next sweep. A worker that stops hands its list to a global one;
-  a program that ends sweeps once more. Exact: nothing outside holds what is cut, and no thread can take a new reference
-  to it without holding one already.
-- [ ] Its structures, one at a time, each with the file it frees: a job and the exception that is its final state and
-  names it, also kept as its channel's cause (`ZipTest`, `ChannelBuildersFlowTest`); a failed `runBlocking`,
-  `coroutineScope` or `flowScope` whose exception names a scope that keeps its caller's continuation (`uCont`:
-  `IdFlowTest`, `CombineTest`; when that caller is the user's own frame, an edit that lets go of `uCont` once the scope
-  has resumed it); a lazy coroutine cancelled while it is made (`CancelledParentAttachTest`); a `select`'s clauses
-  (`SelectRendezvousChannelTest`); the lists of handlers of jobs that end on several threads at once
-  (`ConcurrentExceptionsStressTest`); the deprecated `BroadcastChannel`'s subscriptions (`BasicOperationsTest`,
-  `BufferedBroadcastChannelTest`, `ConflatedBroadcastChannelTest`).
-- Its declarations (`cycles`, `rings`, the edits that cut cycles) stay where they free what they free at once; the
-  reaper takes what they cannot.
+**The library's (rule 3): the reaper of kotlinx.coroutines.** Done (2026-11-22; `DESIGN.md`, "The reaper"): a job that
+ends with an exception is given to the runtime's reaper (`ktc2.internal.reapLater`, through its weak cell), which
+checks its group by trial deletion between the events of `runBlocking`'s loops and when `main` returns; with edits that
+let go of what the library is done with (a scope's caller once resumed, a lazy coroutine's block when it was cancelled
+while made) and a select's clauses' outer reference weak. Freed: `ZipTest`, `ChannelBuildersFlowTest`, `IdFlowTest`,
+`CombineTest`, `CancelledParentAttachTest`, `SelectRendezvousChannelTest`. Found on the way: a weak cell given up on one
+thread while its target ended on another crashed the runtime (`regressions/WeakCellAndTargetEndTogether`).
+Left of the library's own:
+- [ ] The lists of handlers of jobs that end on several threads at once (`ConcurrentExceptionsStressTest`): rings of
+  `ChildHandleNode`s and `Removed`s that no job given to the reaper reaches (the parent's list of children).
+- [ ] The deprecated `BroadcastChannel`'s subscriptions (`BasicOperationsTest`, `BufferedBroadcastChannelTest`,
+  `ConflatedBroadcastChannelTest`): each subscription, an inner object the user holds and that names its channel, is in
+  the channel's list; a weak outer reference would let a channel go while a subscription is used. Its own answer: the
+  reaper given the channel when it closes, or an edit that takes a subscription out of the list once cancelled.
 
 **Known, kept:** kotlinx.serialization's types that contain themselves (section 2.4): one ring for each such type,
 held for the life of the program by its serializer object.

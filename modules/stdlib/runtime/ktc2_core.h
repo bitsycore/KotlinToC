@@ -321,6 +321,24 @@ ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start);
  * cycle found it held by that cycle and by more.
  */
 ktc2_Obj* ktc2_knot_collect(ktc2_Obj* start);
+
+/**
+ * The reaper of a module that knows when its objects may be left in cycles that no release finds whole (a job of
+ * kotlinx.coroutines that ended with an exception: `ktc2.internal.reapLater` and `reap`). [ktc2_reapLater] keeps
+ * [object] through its weak cell, which holds nothing; [ktc2_reap] checks the group of each one kept (as
+ * [ktc2_knot_collect], and only when what holds it is no more than its own cycles, as a release would) and frees what
+ * nothing else holds. The program reaps once more when `main` returns.
+ */
+void ktc2_reapLater(ktc2_Obj* object);
+void ktc2_reap(void);
+
+/** The last reap, when `main` returns: then the weak cells of what is still held are given up. */
+void ktc2_reapEnd(void);
+#else
+/* No class of the program is of a declared cycle or a ring: there is nothing to reap. */
+static inline void ktc2_reapLater(ktc2_Obj* object) { (void)object; }
+static inline void ktc2_reap(void) {}
+static inline void ktc2_reapEnd(void) {}
 #endif
 
 /** A release left [left] references to an object of a class with pair cycles: frees the cycle when nothing else holds it. Out of line, so that a release stays small. */

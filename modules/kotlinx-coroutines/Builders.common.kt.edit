@@ -1,9 +1,13 @@
 replace 1:     private val continuation = block.createCoroutineUnintercepted(this, this)
     // ktc2: let go of once started, or once it ends without having started: the block's continuation holds this coroutine.
     private var continuation: Continuation<Unit>? = block.createCoroutineUnintercepted(this, this)
+    // ktc2: cancelled while it was made (its parent was already): onCancelled ran before this property had its value.
+    init { if (isCancelled) continuation = null }
 replace:     private val continuation = block.createCoroutineUnintercepted(this, this)
     // ktc2: let go of once started, or once it ends without having started: the block's continuation holds this coroutine.
     private var continuation: Continuation<Unit>? = block.createCoroutineUnintercepted(this, this)
+    // ktc2: cancelled while it was made (its parent was already): onCancelled ran before this property had its value.
+    init { if (isCancelled) continuation = null }
 replace 1:         continuation.startCoroutineCancellable(this)
         val continuation = this.continuation ?: return
         this.continuation = null
@@ -20,3 +24,7 @@ replace 2:         continuation.startCoroutineCancellable(this)
 
     override fun onCancelled(cause: Throwable, handled: Boolean) {
         continuation = null
+replace:         uCont.intercepted().resumeCancellableWithInternal(recoverResult(state, uCont))
+        // ktc2: the caller's continuation, let go of as it is resumed (Scopes.kt.edit).
+        val caller = ktc2TakeCaller()
+        caller.intercepted().resumeCancellableWithInternal(recoverResult(state, caller))

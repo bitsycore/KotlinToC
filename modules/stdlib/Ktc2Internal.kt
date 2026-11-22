@@ -248,6 +248,17 @@ public external fun arrayKind(value: Any?): Int
 /** The weak cell of [target]: refers to it without keeping it alive. Null for null. */
 public external fun weakCell(target: Any?): Any?
 
+/**
+ * Keeps [value] for [reap], which frees the group of objects of declared cycles and rings it is in once nothing else
+ * holds any of it; it keeps nothing alive meanwhile. For a module that knows when its objects may be left in cycles that
+ * no release finds whole (the reaper of kotlinx.coroutines). A program whose classes are of no declared cycle or ring
+ * has none.
+ */
+public external fun reapLater(value: Any)
+
+/** Frees what was given to [reapLater] that nothing holds any more: at the points the module chooses, and when the program ends. */
+public external fun reap()
+
 /** The target of a weak [cell], or null once it has been destroyed. */
 public external fun weakGet(cell: Any?): Any?
 

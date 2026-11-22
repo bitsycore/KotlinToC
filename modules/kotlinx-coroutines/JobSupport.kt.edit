@@ -34,3 +34,7 @@ replace:             parent.continueCompleting(state, child, proposedUpdate)
             this.child = null
             this.proposedUpdate = null
             parent.continueCompleting(state, child, proposedUpdate)
+after:         val cause = (update as? CompletedExceptionally)?.cause
+        // ktc2: a job that ended with an exception may be left in cycles with it (the exception names it, its channel keeps
+        // it too): the reaper of this thread checks it once nothing else holds any of it (Ktc2Reaper.kt).
+        if (cause != null) ktc2Register(this)

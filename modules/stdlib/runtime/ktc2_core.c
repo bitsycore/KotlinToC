@@ -494,6 +494,8 @@ typedef struct RingEdge {
 	ktc2_Obj* to;
 	void* slot;
 	bool isCell;
+	/* The member it was found in. */
+	uint32_t from;
 } RingEdge;
 
 typedef struct Ring {
@@ -507,6 +509,8 @@ typedef struct Ring {
 	bool knots;
 	/* How many objects it gathers at most. */
 	uint32_t most;
+	/* The member whose references are being visited. */
+	uint32_t current;
 } Ring;
 
 static void ring_visit(void* context, ktc2_Obj* value, void* slot, bool isCell)
@@ -532,7 +536,7 @@ static void ring_visit(void* context, ktc2_Obj* value, void* slot, bool isCell)
 		ring->foundBy[ring->count] = (int32_t)ring->edgeCount;
 		ring->count++;
 	}
-	ring->edges[ring->edgeCount++] = (RingEdge){ value, slot, isCell };
+	ring->edges[ring->edgeCount++] = (RingEdge){ value, slot, isCell, ring->current };
 }
 
 #ifdef KTC2_LEAK_CHECK
@@ -561,6 +565,7 @@ static void ring_trace_visit(void* context, ktc2_Obj* from, const char* field, k
  */
 #define KNOT_MOST 12
 
+
 static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool* outStartInside);
 
 ktc2_Obj* ktc2_ring_collect(ktc2_Obj* start)
@@ -577,19 +582,26 @@ ktc2_Obj* ktc2_knot_collect(ktc2_Obj* start)
 }
 
 /** The check of a group from [start]; [outStartInside]: set when every reference [start] has left came from the group. */
+/** Gathers into [ring] the objects of rings (and of knots, with [knots]) [start] reaches, [most] at most, with each reference among them. */
+static void group_walk(Ring* ring, ktc2_Obj* start, bool knots, uint32_t most)
+{
+	ring->members[0] = start;
+	ring->foundBy[0] = -1;
+	ring->count = 1;
+	ring->edgeCount = 0;
+	ring->tooBig = false;
+	ring->knots = knots;
+	ring->most = most;
+	for (uint32_t at = 0; at < ring->count && !ring->tooBig; at++) {
+		ring->current = at;
+		ktc2_type_ring_refs[ring->members[at]->typeId](ring->members[at], ring_visit, ring);
+	}
+}
+
 static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool* outStartInside)
 {
 	Ring ring;
-	ring.members[0] = start;
-	ring.foundBy[0] = -1;
-	ring.count = 1;
-	ring.edgeCount = 0;
-	ring.tooBig = false;
-	ring.knots = knots;
-	ring.most = most;
-	for (uint32_t at = 0; at < ring.count && !ring.tooBig; at++) {
-		ktc2_type_ring_refs[ring.members[at]->typeId](ring.members[at], ring_visit, &ring);
-	}
+	group_walk(&ring, start, knots, most);
 	if (ring.tooBig) return NULL;
 	/* Every reference each has left comes from the others. */
 	bool headsAlone = true;
@@ -650,6 +662,7 @@ static ktc2_Obj* group_collect(ktc2_Obj* start, bool knots, uint32_t most, bool*
 	}
 	return start;
 }
+
 
 #endif
 
@@ -2764,6 +2777,145 @@ ktc2_Obj* ktc2_weakGet(ktc2_Obj* object)
 	runtime_leave();
 	return target;
 }
+
+#ifdef KTC2_KNOTS
+/*
+ * The check of the reaper, from [start] (a trial deletion on the objects of rings and knots it reaches): a member held
+ * from outside is alive, and so is every member it reaches; when [start] is not, what is not alive is held by nothing
+ * else. Its references to one another are dropped without a count, its counts set to one, and it is given back in
+ * [outGarbage], to be released one by one: each gives up what it holds of the living as it goes. Unlike a release's
+ * check, a member held from outside that holds nothing of the rest does not keep it (a segment all channels share).
+ * Returns how many; none when [start] is alive.
+ */
+static uint32_t group_reap(ktc2_Obj* start, ktc2_Obj** outGarbage)
+{
+	Ring ring;
+	group_walk(&ring, start, true, RING_MOST);
+	if (ring.tooBig) return 0;
+	bool alive[RING_MOST];
+	int32_t target[RING_EDGES];
+	for (uint32_t edge = 0; edge < ring.edgeCount; edge++) {
+		target[edge] = -1;
+		for (uint32_t at = 0; at < ring.count; at++) if (ring.members[at] == ring.edges[edge].to) target[edge] = (int32_t)at;
+	}
+	for (uint32_t at = 0; at < ring.count; at++) {
+		uint32_t inside = 0;
+		for (uint32_t edge = 0; edge < ring.edgeCount; edge++) if (target[edge] == (int32_t)at) inside++;
+		alive[at] = (KTC2_RC_LOAD(ring.members[at]) & KTC2_COUNT_MASK) != inside;
+	}
+	for (bool changed = true; changed;) {
+		changed = false;
+		for (uint32_t edge = 0; edge < ring.edgeCount; edge++) {
+			if (alive[ring.edges[edge].from] && !alive[target[edge]]) {
+				alive[target[edge]] = true;
+				changed = true;
+			}
+		}
+	}
+	if (alive[0]) return 0;
+	for (uint32_t edge = 0; edge < ring.edgeCount; edge++) {
+		if (alive[ring.edges[edge].from] || alive[target[edge]]) continue;
+		if (ring.edges[edge].isCell) ((ktc2_AtomicRefCell*)ring.edges[edge].slot)->held = 0;
+		else *(ktc2_Obj**)ring.edges[edge].slot = NULL;
+	}
+	uint32_t count = 0;
+	for (uint32_t at = 0; at < ring.count; at++) {
+		if (alive[at]) continue;
+		ktc2_Obj* member = ring.members[at];
+		KTC2_RC_SET(member, (KTC2_RC_LOAD(member) & ~KTC2_COUNT_MASK) | 1);
+		outGarbage[count++] = member;
+	}
+	return count;
+}
+
+/** Whether the target of [cell] is gone, or its group was found held by nothing else and freed. */
+static bool reap_one(ktc2_Obj* cell)
+{
+	if (!cell) return true;
+#ifdef KTC2_THREADS
+	/* In the step of the checks of pairs: one at a time, and no weak reference is read meanwhile. */
+	while (ktc2_atomic_exchange(&pair_checking, 1)) thread_yield();
+#endif
+	runtime_enter();
+	ktc2_Obj* target = ((WeakCell*)cell)->target;
+	/* Gone, or going (its last release is being made on another thread): nothing to check. */
+	uint32_t left = target ? KTC2_RC_LOAD(target) & KTC2_COUNT_MASK : 0;
+	bool gone = left == 0;
+	ktc2_Obj* garbage[RING_MOST];
+	uint32_t freed = 0;
+	/*
+	 * Only as a release would check it: when what holds it is no more than its own cycles. Held by more, another thread
+	 * may be using it and changing what the walk would read (adding a handler to its list).
+	 */
+	if (!gone && left <= ktc2_types[target->typeId].pairs && ktc2_type_ring_refs[target->typeId]) freed = group_reap(target, garbage);
+	runtime_leave();
+#ifdef KTC2_THREADS
+	ktc2_atomic_exchange(&pair_checking, 0);
+#endif
+	for (uint32_t at = 0; at < freed; at++) ktc2_release(garbage[at]);
+	return gone || freed != 0;
+}
+
+/* The weak cells of what is to be reaped, given and taken one at a time (reap_busy). */
+static ktc2_Obj** reap_cells;
+static uint32_t reap_count;
+static uint32_t reap_capacity;
+static uint32_t reap_busy;
+
+static void reap_lock(void)
+{
+#ifdef KTC2_THREADS
+	while (ktc2_atomic_exchange(&reap_busy, 1)) thread_yield();
+#endif
+}
+
+static void reap_unlock(void)
+{
+#ifdef KTC2_THREADS
+	ktc2_atomic_exchange(&reap_busy, 0);
+#endif
+}
+
+void ktc2_reapLater(ktc2_Obj* object)
+{
+	if (!object) return;
+	ktc2_Obj* cell = ktc2_weakCell(object);
+	reap_lock();
+	if (reap_count == reap_capacity) {
+		reap_capacity = reap_capacity ? reap_capacity * 2 : 16;
+		reap_cells = realloc(reap_cells, reap_capacity * sizeof *reap_cells);
+		if (!reap_cells) fail("kotlin.OutOfMemoryError", NULL);
+	}
+	reap_cells[reap_count++] = cell;
+	reap_unlock();
+}
+
+void ktc2_reap(void)
+{
+	if (ktc2_atomic_load(&reap_count) == 0) return;
+	reap_lock();
+	uint32_t kept = 0;
+	for (uint32_t at = 0; at < reap_count; at++) {
+		ktc2_Obj* cell = reap_cells[at];
+		if (reap_one(cell)) ktc2_release(cell);
+		else reap_cells[kept++] = cell;
+	}
+	reap_count = kept;
+	reap_unlock();
+}
+
+void ktc2_reapEnd(void)
+{
+	ktc2_reap();
+	reap_lock();
+	for (uint32_t at = 0; at < reap_count; at++) ktc2_release(reap_cells[at]);
+	reap_count = 0;
+	free(reap_cells);
+	reap_cells = NULL;
+	reap_capacity = 0;
+	reap_unlock();
+}
+#endif
 
 void ktc2_weak_cell_destroy(ktc2_Obj* object)
 {

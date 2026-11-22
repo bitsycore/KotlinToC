@@ -1,0 +1,3 @@
+after:     afterCompletionUndispatched()
+    // ktc2: the scope has its result, which its caller gets here: the scope lets go of the caller (Scopes.kt.edit).
+    val uCont = ktc2TakeCaller()

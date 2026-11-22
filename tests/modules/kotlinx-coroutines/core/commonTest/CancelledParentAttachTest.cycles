@@ -1,1 +1,0 @@
-A lazy coroutine made under a parent already cancelled is cancelled while it is being made, before it keeps its block's continuation (which holds it); and a frame keeps the exception that names an undispatched coroutine holding that frame. PLAN.md, kotlinx.coroutines' tests.

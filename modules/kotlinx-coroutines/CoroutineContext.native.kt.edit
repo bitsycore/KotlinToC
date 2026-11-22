@@ -1,0 +1,6 @@
+replace:     override fun afterResume(state: Any?) = uCont.resumeWith(recoverResult(state, uCont))
+    // ktc2: the caller's continuation, let go of as it is resumed (Scopes.kt.edit).
+    override fun afterResume(state: Any?) {
+        val caller = ktc2TakeCaller()
+        caller.resumeWith(recoverResult(state, caller))
+    }

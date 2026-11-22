@@ -1,0 +1,20 @@
+replace:     @JvmField val uCont: Continuation<T> // unintercepted continuation
+    uCont: Continuation<T> // unintercepted continuation
+after: ) : AbstractCoroutine<T>(context, true, true), CoroutineStackFrame {
+    // ktc2: the caller's continuation, let go of once the scope has resumed it, or given it its result at its own start
+    // (ktc2TakeCaller): a scope that ended with an exception is named by it, which the caller may keep (a failed
+    // runBlocking keeps it as its state), and the caller's frame holds the caller: a cycle otherwise.
+    @JvmField var uCont: Continuation<@UnsafeVariance T> = uCont
+
+    /** ktc2: the caller's continuation, which the scope will not resume again: let go of here. */
+    internal fun ktc2TakeCaller(): Continuation<T> {
+        val caller = uCont
+        uCont = ktc2DoneContinuation()
+        return caller
+    }
+replace:         uCont.intercepted().resumeCancellableWithInternal(recoverResult(state, uCont))
+        val caller = ktc2TakeCaller()
+        caller.intercepted().resumeCancellableWithInternal(recoverResult(state, caller))
+replace:         uCont.resumeWith(recoverResult(state, uCont))
+        val caller = ktc2TakeCaller()
+        caller.resumeWith(recoverResult(state, caller))

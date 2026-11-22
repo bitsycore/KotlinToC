@@ -1,6 +1,8 @@
 replace:     private val continuation = block.createCoroutineUnintercepted(this, this)
     // ktc2: let go of once started, or once it ends without having started: the block's continuation holds this coroutine.
     private var continuation: Continuation<Unit>? = block.createCoroutineUnintercepted(this, this)
+    // ktc2: cancelled while it was made (its parent was already): onCancelled ran before this property had its value.
+    init { if (isCancelled) continuation = null }
 replace:         continuation.startCoroutineCancellable(this)
         val continuation = this.continuation ?: return
         this.continuation = null

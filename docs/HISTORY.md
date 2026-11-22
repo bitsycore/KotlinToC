@@ -1180,6 +1180,13 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   that the API as it is lets a program avoid; in the suite, exactly the 12 files with such `.cycles` (after leaving out
   builders that call their lambda, jobs that let go of their block, drained lists, the `this` of a named `suspend`
   function). The reaper of kotlinx.coroutines was built and taken out for now (`docs/wip/reaper/`, `PLAN.md` 2.2).
+- 2026-11-22, `PLAN.md` 2.2: the reaper of kotlinx.coroutines, in the runtime (`ktc2_reapLater`, `ktc2_reap`, a trial
+  deletion over the objects of declared cycles and rings), given the jobs that end with an exception and reaping in
+  `runBlocking`'s loops and at the end of `main`; edits for a scope's caller and a lazy coroutine cancelled while made, a
+  select's clauses' outer reference weak. Six files of kotlinx.coroutines' tests lose their `.cycles`. Its crash was the
+  runtime's: a weak cell given up on one thread while its target ended on another (`weak_drop` reads the mark again under
+  the lock); its first failures were a shared channel segment, held from outside, which the all-or-nothing check of a
+  release took for a member that keeps its group, and the last test's group, freed only by the reap at the end.
 
 
 ---------------------------------------------------------------------------

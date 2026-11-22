@@ -379,6 +379,24 @@ objects), in the same step. Only the head is looked at from the start: the other
 declares the lists of a job's handlers (`LockFreeLinkedListHead: LockFreeLinkedListNode, Removed`): on
 `Dispatchers.Default`, 20,000 cancellations take about 0.2 s instead of 0.1 s without it (a check when
 each job's list goes), 100,000 `async` the same.
+
+**The reaper** (`PLAN.md`, "Who answers a cycle", rule 3). A check made by a release starts from the object whose count
+came down, while something still holds part of its group; when the last outside holder lets go later, nothing comes down
+where a check looks, and a group of declared cycles can be left (a producer, its channel and the exception that is both
+the producer's final state and the channel's cause). A module that knows when its objects may be left so gives them to
+the runtime's reaper (`ktc2.internal.reapLater`, `ktc2_reapLater`): kept through their weak cells, which hold nothing.
+`ktc2.internal.reap` (`ktc2_reap`) checks each, at points the module chooses, and the program once more when `main`
+returns (`ktc2_reapEnd`, which then gives up the cells of what is still held). Its check is a trial deletion over the
+objects of rings and knots reachable from the one kept (`group_reap`): those held from outside are alive, so is what they
+reach in the group, and the rest, when the one kept is in it, is held by nothing else: its references to one another
+are dropped without a count and each is released once (unlike a release's check, a member held from outside that leads
+back to nothing does not keep the group: a channel's segment that other channels share). Only from an object whose count
+is no more than its own cycles hold, as a release checks, and under the same lock: a group another thread uses is not
+walked. All of it is compiled only into programs with declared cycles or rings (`KTC2_KNOTS`). kotlinx.coroutines gives
+the reaper each job that ends with an exception (`JobSupport.kt.edit`) and reaps between the events of `runBlocking`'s
+loops and when they end (`Builders.native.kt.edit`); its scopes let go of their caller's continuation once they resumed it
+or gave it their result (`Scopes.kt.edit`, `ktc2TakeCaller`), and a lazy coroutine cancelled while it was made lets go
+of its block (`Builders.common.kt.edit`).
 Declared cycles and rings can hold one another in more than one cycle: a knot (a job whose result is one of its own
 handlers, boxed as its state, which names the job, while the node `await` left in the job's list names it too). Each
 class of a declared cycle is then of a group as well (`KClass.isKnotMember`, `ktc2_TypeInfo.knot`): its check, when
