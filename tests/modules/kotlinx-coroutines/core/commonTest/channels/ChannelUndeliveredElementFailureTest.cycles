@@ -1,2 +1,2 @@
+The user's cycle, warned at compile time (UserCycleLint, PLAN.md "Who answers a cycle", rule 4):
 The test keeps in a list of its own lambdas that capture the test (shouldBeUnhandled): the test's design; a collector frees them.
-The user's cycle (PLAN.md "Who answers a cycle", rule 4), not warned yet: the lambdas are kept through listOf, which the lint does not follow.

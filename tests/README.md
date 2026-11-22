@@ -186,9 +186,8 @@ bundled module compiles (0.9.3, Apache 2.0): `core/commonTest` and `bytestring/c
 `expect`s, `core/nativeTest/util.kt` and `core/jvmTest/utilJVM.kt`. The files of a `commonTest` are a group
 (above): in C with the module's sources and `nativeTest`, on the JVM with kotlinx-io's jars, whose internals it
 sees as a test of the library does, and `jvmTest` (`moduleTestList` in `IntegrationTest.kt`). All 32 pass.
-`.skip` and `.cycles` next to a file say what they say for the library's tests:
-`bytestring/commonTest/samples/samples.skip` (a sample prints random bytes),
-`core/commonTest/samples/rawSourceSample.cycles` (an object holds an object of its inner class).
+`.skip` next to a file says what it says for the library's tests: `bytestring/commonTest/samples/samples.skip` (a
+sample prints random bytes). No file has `.cycles` any more.
 
 ## The tests of kotlinx.collections.immutable, atomicfu and kotlinx-datetime
 
@@ -233,11 +232,13 @@ dispatcher and an implementation, one as it is and the other as an object, had n
 (`commonTest/testutils`: `TestBase.common.kt`, `LaunchFlow.kt`, `MainDispatcherTestBase.kt`), `concurrentTest` is
 `kotlinx-coroutines-core/concurrent/test`; `nativeTest` has Native's `TestBase` and `ConcurrentTestUtilities`, and
 `jvmTest` the same `TestBase` (Native's, with a line that says so: the JVM's needs JUnit) and the JVM's
-`ConcurrentTestUtilities`. Native's own tests (`native/test`: workers, multithreaded dispatchers) are not taken. The 170
-files, 1368 tests, are one program of some 180 files, about 3 minutes; `KTC2_TEST_FILTER=tests/modules/kotlinx-coroutines/`
-runs them. Files whose tests keep a continuation in a
-variable their own coroutine captures, or that use the deprecated `BroadcastChannel`, leave cycles by their design
-(`.cycles`, with the reason); three stress tests print counts that depend on the threads (`.vary`).
+`ConcurrentTestUtilities`. Of Native's own tests (`native/test`), `WorkerTest`, `MultithreadedDispatchersTest` and
+`DelayExceptionTest` are taken (`nativeTest/`, decided by their own assertions, without the JVM). Some 180 files are one
+program, about 3 minutes; `KTC2_TEST_FILTER=tests/modules/kotlinx-coroutines/` runs them. The 7 files whose tests keep a
+continuation (or a handler, a list of lambdas) where their own coroutine reaches it leave cycles by their design: each
+`.cycles` says so, and the compiler warns of each (`UserCycleLint`). The library itself leaves none (its module's
+declarations and edits, and the runtime's reaper: `DESIGN.md`, "The reaper"). Three stress tests print counts that
+depend on the threads (`.vary`).
 
 They found (2026-11-18): a `val` given its value in a lambda a contract runs in place (`coroutineScope { x = 1 }`)
 read as 0 (`basic/ContractInitialization`); a reference to an ordinary function given as a `suspend` function type
@@ -356,5 +357,5 @@ available since language version 2.5"): they need the compiler of their own vers
 
 A file of a library's own tests (`tests/modules/<module>/`) that does not pass yet is kept out of the
 suite by a `<Name>.pending` next to it, which says why; moved files would no longer be where
-the library has them. `tests/modules/kotlinx-serialization-json-io/.../JsonUpdateModeTest.pending` is
-the first (2026-11-16: it loops in C).
+the library has them. None is pending since 2026-11-21 (the first, `JsonUpdateModeTest`, looped in C from 2026-11-16
+and passes since).

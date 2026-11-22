@@ -5,8 +5,12 @@ itself (K2), and a program behaves as it does on Kotlin/Native (and so on the JV
 agree). The C has no garbage collector: objects are reference counted, and the compiler keeps
 them out of the heap where it can - in the frame, inside their owner, in an arena. Two objects
 that hold each other (an object and its inner object or its own lambda) are freed when nothing
-else holds them; a longer cycle of objects is reported when the program is compiled, and never
-freed: the one difference from Kotlin/Native, of memory only.
+else holds them. A longer cycle a program makes is its own to break, as in Swift: the compiler
+warns where it sees one coming (a property that can lead back to its object, a coroutine's
+continuation kept where the coroutine reaches it) and says what to write (`@Weak`, `WeakRef`,
+clearing a variable). The libraries ktc2 bundles leave no cycle: what they make internally is
+freed by declarations of their modules and the runtime's reaper. Memory is the one difference
+from Kotlin/Native allowed, never results.
 
 ```kotlin
 data class Point(val x: Int, val y: Int)

@@ -1199,6 +1199,9 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   descriptor given to it as it is made, the classes of the rings declared, and the reaper's walk going through arrays of
   references (with room for 1,024 objects on the heap, a static counted as outside); the last reap moved after the
   program gives up its globals and objects. The 4 `.cycles` of kotlinx-serialization-json-io go: no library leaks.
+- 2026-11-22, `UserCycleLint` follows the lambdas of a `vararg` and what a collection's `add`, `set`, `put` is given
+  (`listOf({ ... })` of `ChannelUndeliveredElementFailureTest`, warned now). The documents gone over whole: `PLAN.md`
+  (section 1 rewritten, 2.1 to 2.4 done and out of it), `CLAUDE.md`, `README.md`, `tests/README.md`, `DESIGN.md`.
 
 
 ---------------------------------------------------------------------------

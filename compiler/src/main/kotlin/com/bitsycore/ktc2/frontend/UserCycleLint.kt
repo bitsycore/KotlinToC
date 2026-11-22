@@ -50,6 +50,9 @@ class UserCycleLint(private val mLibraryFiles: Set<String>, private val mOutDir:
 
 	val warnings = ArrayList<String>()
 
+	/** What gives a collection or an array something to hold (the element, after the receiver). */
+	private val kStoring = setOf("add", "set", "put", "addFirst", "addLast", "push", "offer")
+
 	/** What takes something out of a collection: one that is drained does not keep what it was given for ever. */
 	private val kDraining = setOf("remove", "removeAt", "removeFirst", "removeLast", "removeAll", "clear", "poll", "removeFirstOrNull", "removeLastOrNull")
 
@@ -144,7 +147,12 @@ class UserCycleLint(private val mLibraryFiles: Set<String>, private val mOutDir:
 					super.visitReturn(expression)
 				}
 				override fun visitFunctionAccess(expression: IrFunctionAccessExpression) {
-					if (inDepth > 0) expression.arguments.forEachIndexed { vAt, vArgument -> if (isParameter(vArgument) && keeps(expression.symbol.owner, vAt, inDepth - 1)) vKept = true }
+					// What a collection or an array is given to hold is kept (`ArrayList.add` stores it in an array element).
+					val vStores = expression.symbol.owner.name.asString() in kStoring
+					expression.arguments.forEachIndexed { vAt, vArgument ->
+						if (isParameter(vArgument) && vAt > 0 && vStores) vKept = true
+						if (inDepth > 0 && isParameter(vArgument) && keeps(expression.symbol.owner, vAt, inDepth - 1)) vKept = true
+					}
 					super.visitFunctionAccess(expression)
 				}
 			})
@@ -241,7 +249,14 @@ class UserCycleLint(private val mLibraryFiles: Set<String>, private val mOutDir:
 				if (vThis != null && vCall != null && !vCall.symbol.owner.isInline && !makesJob(vCall)) {
 					val vIsLazy = vCall.symbol.owner.kotlinFqName.asString() == "kotlin.lazy"
 					// Only a lambda the call keeps (a builder that calls it and lets go of it is no cycle).
-					val vLambdas = vCall.arguments.withIndex().filter { (vIndex, vArgument) -> vArgument is IrFunctionExpression && keeps(vCall.symbol.owner, vIndex, 3) }.map { it.value as IrFunctionExpression }
+					// The lambdas of a `vararg` are its elements (`listOf({ ... }, { ... })`).
+					val vLambdas = vCall.arguments.withIndex().filter { (vIndex, _) -> keeps(vCall.symbol.owner, vIndex, 3) }.flatMap { (_, vArgument) ->
+						when (vArgument) {
+							is IrFunctionExpression -> listOf(vArgument)
+							is org.jetbrains.kotlin.ir.expressions.IrVararg -> vArgument.elements.filterIsInstance<IrFunctionExpression>()
+							else -> emptyList()
+						}
+					}
 					// `lazy` lets go of its lambda once read: what stays is its value, which keeps the object if it keeps a lambda that
 					// uses it.
 					val vKeeps = if (vIsLazy) vLambdas.any { vLambda -> innerLambdas(vLambda).any { reads(it, vThis) } } else vLambdas.any { reads(it, vThis) }

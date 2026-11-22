@@ -983,10 +983,8 @@ Not Kotlin, by design:
 - destruction is immediate, not deferred: visible only through weak references.
 
 Kotlin, but not done:
-- kotlinx.coroutines (the library, not the language: dispatchers, `launch`, `Flow`); a
-  `suspend fun interface`; a coroutine whose receiver is also its completion is held by it
-  without a count also where suspension is not restricted to it (`startCoroutine(x, x)` with no
-  other reference to `x`);
+- a coroutine whose receiver is also its completion is held by it without a count also where suspension is not
+  restricted to it (`startCoroutine(x, x)` with no other reference to `x`);
 - `isDaemon`, names and priorities of threads;
 - files (to come from kotlinx.io or okio, through a ktc2 compatibility layer).
 
@@ -1110,7 +1108,12 @@ nearly every function; this is the map.
   Kotlin and met in C: a function named as a class of its package, a property named as a
   function, and private top-level declarations of one name in two files of a package (each
   takes its file's name: `kotlin_text_rangeStart__CharCategoriesKt`).
-- `kir/Kir.kt` is KIR; `KirDump.kt` writes it as text, `KirCopy.kt` copies a function.
+- Before the importer, on the IR of the program's own files: `frontend/JavaUseCheck.kt` (nothing of `java.*`),
+  `frontend/UserCycleLint.kt` (the warnings of the cycles a program makes through coroutines and lambdas, also kept in
+  `<out>/user-cycles.txt`), `frontend/LocalClassNames.kt` (the names Kotlin/Native gives local classes, for their
+  default `toString()`).
+- `kir/Kir.kt` is KIR; `KirDump.kt` writes it as text, `KirCopy.kt` copies a function (or one statement with some locals
+  replaced, `withLocals`).
 
 **`KirImporter`** (`frontend/KirImport.kt`) owns everything that exists once per program:
 

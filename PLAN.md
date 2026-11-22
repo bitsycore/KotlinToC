@@ -1,9 +1,10 @@
 # ktc2 - plan
 
 What to do next, in order, with estimates. `DESIGN.md` says how ktc2 works now; `README.md` is the user's view;
-`tests/README.md` the tests. `docs/HISTORY.md` is the archive: the original design, the log of the work, the
-plan and the kotlinx plan as they were kept until 2026-11-18 (for the reasoning behind a decision, never as a
-list to follow). This file replaces them as the one list to follow (rewritten on 2026-11-18).
+`tests/README.md` the tests. `docs/HISTORY.md` is the archive: the original design, the log of the work (a line for each
+item done), the plan and the kotlinx plan as they were kept until 2026-11-18 (for the reasoning behind a decision, never
+as a list to follow). This file is the one list to follow: it holds no log, an item done leaves it (rewritten on
+2026-11-18, gone over whole on 2026-11-22).
 
 Each item: a test that shows it (a program under `tests/integration/`, or a common test), the change, the tests
 that cover it, a commit. Estimates are days of work at the pace of the last weeks; nothing below is prototyped
@@ -42,26 +43,31 @@ no general cycle collector, in the runtime or as an option (section 7.1):
    own objects (a lambda, a class, a frame of theirs) is never cut by a library's rules.
 
 ---------------------------------------------------------------------------
-## 1. Where it stands (2026-11-18, night, Windows)
+## 1. Where it stands (2026-11-22, Windows)
 ---------------------------------------------------------------------------
 
-- **The suite**: 1,218 tests in four categories (integration 185 programs, kotlin ~180 files of the standard
-  library's and Kotlin/Native's tests, box 384 of the compiler's coroutine box tests, libraries ~470 files of
-  the bundled libraries' own tests). The last whole run on Windows with clang: 1,207 passed and none failed;
-  the last 11 (kotlinx-serialization-json-io) were not reached when it was stopped. The CI job of the last
-  push from the Mac failed on Linux (`strdup`, gcc 14's dangling pointer); fixed in `1e64df1`, not pushed.
-  The fix and the work of the night were pushed together on 2026-11-19 (`ab63593` and the eleven before it):
-  read that CI run first.
-- **kotlinx.coroutines**: the library compiles as it is (with 14 edits of the module) and its 170 test files
-  run and pass their tests in C and on the JVM; 27 of them leave cycles (`.cycles`): 16 of the library's
-  structures not answered yet, 11 by their tests' design or the deprecated `BroadcastChannel` (section 2).
-- **The other libraries**: kotlinx-io, kotlinx.collections.immutable, atomicfu, kotlinx-datetime pass whole;
-  kotlinx.serialization and its JSON pass whole, with no `.cycles` left (2026-11-22, section 2.4).
-- **Speed** (2026-11-17, a Mac, `tools/compare.py`): fastest of the three on 9 of 10 benchmarks, 1.2 to 4.2
-  times Kotlin/Native, 1.3 to 8.5 times less memory than Native; the JVM is 9 % faster on making small
-  objects in a loop. Programs of about 0.1 MB.
-- **Compile time**: 9 to 13 s for a first program (the library analysed), 0.4 to 1.5 s after a change through
-  the compiler process, plus the C (20 s for the showcase with clang).
+- **The suite**: five categories, 97 programs and groups, all passing on Windows with clang (15 minutes) and in the CI
+  job on every push (Linux, macOS, Windows, MSVC, AddressSanitizer on Linux; green on 2026-11-22, run 45038779099):
+  `integration` (48 programs, 10 of several modules), `ktc2` (140 files of ktc2's own tests), `stdlib` (179 files of
+  the standard library's and Kotlin/Native's tests), `box` (425 of the Kotlin compiler's box tests, the coroutines', none
+  pending) and `modules` (557 files of the bundled libraries' own tests: kotlinx-coroutines and -test, -serialization and
+  -json-io, -io, -datetime, -collections-immutable, atomicfu). Nothing is pending; 6 `.skip` lines, each a difference of
+  the JVM side or of a C library, or the owner's accepted one (section 2.5).
+- **Memory**: no library leaks (the owner, 2026-11-22: no known leak). What a library leaves in cycles is answered in its
+  module, by declarations, edits and the runtime's reaper (section 2.2, `DESIGN.md`, "The reaper"). The 19 files of
+  tests left with `.cycles` make a cycle of their own: 13 are warned at compile time (`UserCycleLint`; one of them,
+  `integration/process/UserCycles`, makes its cycles on purpose to test the warnings), 3 put an array, a collection or
+  exceptions into themselves (what no compiler sees, as in Swift), and 3 box tests leave an action in a list only when
+  it throws.
+- **The libraries**: kotlinx.coroutines (with kotlinx-coroutines-test), kotlinx.serialization with its JSON and json-io,
+  kotlinx-io, kotlinx-datetime, kotlinx.collections.immutable and atomicfu are bundled, taken as they are, and pass their
+  own tests in C and on the JVM.
+- **Speed** (2026-11-17, a Mac, `tools/compare.py`): fastest of the three on 9 of 10 benchmarks, 1.2 to 4.2 times
+  Kotlin/Native, 1.3 to 8.5 times less memory than Native; the JVM is 9 % faster on making small objects in a loop.
+  Programs of about 0.1 MB. Not measured again since the reaper and the frame's dead locals (2026-11-21/22): the counts
+  of `tools/bench.py` were the same after the changes of 2026-11-21.
+- **Compile time**: 9 to 13 s for a first program (the library analysed), 0.4 to 1.5 s after a change through the
+  compiler process, plus the C (20 s for the showcase with clang).
 
 ---------------------------------------------------------------------------
 ## 2. The first working version: every test passes
@@ -69,61 +75,22 @@ no general cycle collector, in the runtime or as an option (section 7.1):
 
 The objective (the owner, 2026-11-18): every test of the Kotlin standard library, of each bundled kotlinx
 library and of ktc2's own passes in C, as on Kotlin/Native. "Passes" means: no `.pending`, no `.skip` but the
-few that state a difference the owner's rule accepts (section 8), and no `.cycles` (memory freed as
-Kotlin/Native's collector would). What stands between, in the order to do it:
+few that state a difference the owner's rule accepts (section 8), and no `.cycles` but a program's own cycles, warned
+where a compiler can see them ("Who answers a cycle", at the top). What stands between, in the order to do it:
 
-### 2.1 Bugs found and not fixed
-Nothing left: `WithTimeoutTest`'s cycle is one of the lists of handlers of 2.2 today.
-
-### 2.2 Cycles: the reaper of kotlinx.coroutines and the lint (the owner, 2026-11-21; 1 to 2 weeks)
-The rules are "Who answers a cycle", at the top. What the 32 files with `.cycles` leave, by who answers it:
-
-**The user's (rule 4): warnings of the compiler.** A test that does what a program should not, and that the library's
-API as it is lets it avoid: its `.cycles` stays, saying "the user's cycle, warned at compile time", once the warning is
-there.
-- Done (2026-11-21, `UserCycleLint`, `DESIGN.md` section on cycles; `tests/integration/process/UserCycles`): a coroutine's
-  continuation kept where its own coroutine reaches it (a captured `var`, a property of an object the coroutine holds, a
-  list of actions that is never drained), a registration whose handler uses its own handle, a property whose
-  `DeepRecursiveFunction` or `lazy` value keeps a lambda that uses the object. Warned in 11 of the files with `.cycles`
-  (6 of kotlinx.coroutines' tests, 3 box tests, `DeepRecursiveTest`, `LazyValuesTest`), whose `.cycles` now say so; and
-  nowhere else in the suite. The three `*WithHandleResult` box tests drain their list of actions and leave one only when
-  it throws: not warned (what no compiler sees, rule 1).
-- An array, a list or exceptions put into themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`): what no
-  compiler can see, the program's (rule 1). Accepted.
-
-**The library's (rule 3): the reaper of kotlinx.coroutines.** Done (2026-11-22; `DESIGN.md`, "The reaper"): a job that
-ends with an exception is given to the runtime's reaper (`ktc2.internal.reapLater`, through its weak cell), which
-checks its group by trial deletion between the events of `runBlocking`'s loops and when `main` returns; with edits that
-let go of what the library is done with (a scope's caller once resumed, a lazy coroutine's block when it was cancelled
-while made) and a select's clauses' outer reference weak. Freed: `ZipTest`, `ChannelBuildersFlowTest`, `IdFlowTest`,
-`CombineTest`, `CancelledParentAttachTest`, `SelectRendezvousChannelTest`. Found on the way: a weak cell given up on one
-thread while its target ended on another crashed the runtime (`regressions/WeakCellAndTargetEndTogether`).
-Then (2026-11-22) the last two: the deprecated `BroadcastChannel`'s subscriptions reach their channel weakly, through a
-holder (a subscription that is all that holds its channel leaves it unreachable for sending: nothing observable), and
-two removed nodes of a list left holding each other by concurrent removals are given to the reaper where that happens.
-Nothing of the library's own is left: the 7 `.cycles` of kotlinx.coroutines' tests are the tests' own (the user's, rule 4).
-
-kotlinx.serialization's types that contain themselves are the reaper's too (section 2.4): no library leaks.
-
-### 2.3 kotlinx.coroutines: what is not taken yet (3 to 5 days)
-- Every box test of coroutines taken passes (41 of 41, 2026-11-21; none pending). Six have `.cycles`: they keep a
-  continuation in a variable or a list their own coroutine holds (the three `*WithHandleResult`,
-  `boxReturnValueOfSuspendLambda` twice, `resultExceptionOrNullInLambda`), the test's design, which a collector frees.
-
-### 2.4 kotlinx.serialization (done)
-- No `.cycles` left (2026-11-22, the owner: no known leak). A type that contains itself (directly, or a sealed class
-  through a subclass) has a descriptor that reaches its own serializer again through its children's serializers, a ring
-  through arrays and lazy values held by the type's serializer object: each `PluginGeneratedSerialDescriptor` is given to
-  the runtime's reaper as it is made, the module declares the classes of those rings (`rings`), and the last reap, once
-  the program's globals and objects are given up, frees them (`DESIGN.md`, "The reaper").
-- The two skips left are the JVM side's (`ModuleBuildersTest`: its message without kotlin-reflect;
-  `KeyValueSerializersTest`: a JVM-only body that needs JUnit's asserter), not differences of ktc2.
+### 2.1 to 2.4 Done (2026-11-21/22)
+Bugs found, kotlinx.coroutines' cycles, kotlinx.coroutines' box tests and kotlinx.serialization: nothing left
+(`docs/HISTORY.md` has a line for each step). What came of them, and where it is described:
+- The runtime's reaper and the declarations of kotlinx.coroutines and kotlinx.serialization: `DESIGN.md`, "The reaper".
+- The warnings of the cycles a program makes through coroutines and lambdas (`UserCycleLint`): `DESIGN.md`, cycles.
+- A waiting coroutine keeps only what it uses after its suspension point: `DESIGN.md`, coroutines.
+- The two skips of kotlinx.serialization's tests are the JVM side's (`ModuleBuildersTest`: its message without
+  kotlin-reflect; `KeyValueSerializersTest`: a JVM-only body that needs JUnit's asserter), not differences of ktc2.
 
 ### 2.5 The standard library (2 to 3 days)
-- The 5 `.cycles` left of `tests/stdlib/` are the tests' own design: a collection, an array or exceptions put into
-  themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`: the program's, rule 1), an object whose
-  `DeepRecursiveFunction`s or whose lazy value hold lambdas that use it (`DeepRecursiveTest`, `LazyValuesTest`: a
-  warning to come, section 2.2).
+- The 5 `.cycles` of `tests/stdlib/` are the tests' own design: a collection, an array or exceptions put into
+  themselves (`ArraysTest`, `CollectionTest`, `ExceptionTest`: what no compiler sees, rule 1), an object whose
+  `DeepRecursiveFunction`s or whose lazy value hold lambdas that use it (`DeepRecursiveTest`, `LazyValuesTest`: warned).
 - Known difference, accepted (the owner's to decide otherwise): `MapTest.nullKeyAndValue`, a `null` put through an
   unchecked cast into a map that keeps its values as numbers. Only generics of numbers kept boxed where a cast can
   reach them would answer it.
@@ -134,11 +101,11 @@ kotlinx.serialization's types that contain themselves are the reaper's too (sect
 - [ ] Box tests of the Kotlin compiler beyond coroutines (`tools/select_box.py`): classes, inline classes,
   generics, lambdas, when, strings. Thousands; take them directory by directory, the ones without JVM-only
   features.
-- [ ] ktc2's own tests (`tests/ktc2/`, 132 files since 2026-11-19): more of what must hold everywhere as assertions,
+- [ ] ktc2's own tests (`tests/ktc2/`, 140 files on 2026-11-22): more of what must hold everywhere as assertions,
   where a test now only prints and is compared with the JVM.
 
 ### 2.7 Every system (1 to 2 days, mostly waiting)
-- [ ] Push and read the CI job (Linux, macOS, Windows, MSVC, AddressSanitizer on Linux), then fix.
+- CI read and green on 2026-11-22 (run 45038779099: Linux, macOS, Windows, MSVC, AddressSanitizer on Linux).
 - [ ] The whole suite once on the Mac and on Linux (WSL), AddressSanitizer on the coroutines' tests
   (`tools/asan_all.sh kotlinx-coroutines`): threads and counts under contention.
 - [ ] Paths and arguments on Windows as wide characters (now bytes, right for ASCII only).
@@ -226,8 +193,9 @@ specialization) are the references. What to investigate, by expected gain:
   of a small local list).
 - [ ] **Regions inferred**: a loop body whose objects all die by its end allocates from a region reset each
   turn (`arena { }` exists, by hand).
-- [ ] **Coroutine frames**: locals that never live across a suspension as C locals; a coroutine that never
-  escapes (a `suspend` call awaited at once) in its caller's frame; frames from the pool by size.
+- [ ] **Coroutine frames**: a coroutine that never escapes (a `suspend` call awaited at once) in its caller's frame;
+  frames from the pool by size; locals that never live across a suspension as C locals (a frame local dead after its
+  suspension already gives up its count before it, 2026-11-21: what is left is the room of the field).
 
 ### 5.3 Counting
 - [ ] **Non-atomic counts for objects no other thread can reach**: an escape-to-thread analysis (an object
