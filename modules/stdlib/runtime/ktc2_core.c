@@ -2671,13 +2671,18 @@ static void weak_remove(const ktc2_Obj* target)
 	weak_cell_count--;
 }
 
-/** The target is being destroyed: its cell reads NULL from now on. */
+/**
+ * The target is being destroyed: its cell reads NULL from now on. Its mark is read again under the lock: the last
+ * reference to its cell may have gone on another thread meanwhile, which took the cell out and cleared the mark.
+ */
 static void weak_drop(ktc2_Obj* target)
 {
 	runtime_enter();
-	WeakCell* cell = *weak_link(target);
-	weak_remove(target);
-	cell->target = NULL;
+	if (KTC2_RC_LOAD(target) & KTC2_WEAK) {
+		WeakCell* cell = *weak_link(target);
+		weak_remove(target);
+		cell->target = NULL;
+	}
 	runtime_leave();
 }
 
