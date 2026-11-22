@@ -252,6 +252,10 @@ abstract class IntegrationPart(private val mShard: Int) {
 	private val kNativeTestOptIns = listOf("kotlin.experimental.ExperimentalNativeApi", "kotlin.native.ObsoleteNativeApi",
 		"kotlin.native.concurrent.ObsoleteWorkersApi", "kotlinx.cinterop.ExperimentalForeignApi", "kotlin.ExperimentalStdlibApi")
 
+	/** Kotlin's hard keywords, which a part of a package name cannot be. */
+	private val kKeywords = setOf("as", "break", "class", "continue", "do", "else", "false", "for", "fun", "if", "in", "interface", "is",
+		"null", "object", "package", "return", "super", "this", "throw", "true", "try", "typealias", "typeof", "val", "var", "when", "while")
+
 	/** A declaration a file of tests leaves to the platform. */
 	private val kExpect = Regex("(?m)^(internal |public )?expect .*$")
 
@@ -338,7 +342,7 @@ abstract class IntegrationPart(private val mShard: Int) {
 			// Each file in a package of its own (they all declare `box()`), with a test that calls it: as its `main` did.
 			for (vFile in vTests + vOthers) {
 				val vPackage = "boxtest." + (vRelative + "/" + vFile.nameWithoutExtension).split('/', '-', '.').joinToString(".") { vPart ->
-					vPart.replace(Regex("[^A-Za-z0-9_]"), "_").let { if (it.first().isDigit()) "_$it" else it }.lowercase()
+					vPart.replace(Regex("[^A-Za-z0-9_]"), "_").let { if (it.first().isDigit()) "_$it" else it }.lowercase().let { if (it in kKeywords) "${it}_" else it }
 				}
 				vGroup.copies[vFile] = File("build/testmain/box/$vRelative/${vFile.name}").apply {
 					parentFile.mkdirs()
@@ -359,7 +363,29 @@ abstract class IntegrationPart(private val mShard: Int) {
 	 */
 	private fun inPackage(inText: String, inPackage: String): String {
 		val vLines = inText.lines().toMutableList()
-		if (vLines.any { it.startsWith("package ") }) return inText
+		// A file of its own package (`package test`, which several files of a folder share) goes under [inPackage] too,
+		// and so do its imports of what it declares (`import test.A`, or `import Game.*` without a package).
+		val vOwn = vLines.indexOfFirst { it.startsWith("package ") }
+		val vOwnPackage = if (vOwn >= 0) vLines[vOwn].removePrefix("package ").trim() else null
+		val vFullPackage = if (vOwnPackage != null) "$inPackage.$vOwnPackage" else inPackage
+		val vDeclared = Regex("""(?m)^(?:[a-z]+ )*(?:class|object|interface) +(\w+)""").findAll(inText).map { it.groupValues[1] }.toSet()
+		for ((vIndex, vLine) in vLines.withIndex()) {
+			if (!vLine.startsWith("import ")) continue
+			val vPath = vLine.removePrefix("import ").trim()
+			vLines[vIndex] = when {
+				vOwnPackage != null && vPath.startsWith("$vOwnPackage.") -> "import $inPackage.$vPath"
+				vOwnPackage == null && vPath.substringBefore('.') in vDeclared -> "import $inPackage.$vPath"
+				else -> vLine
+			}
+		}
+		if (vOwn >= 0) {
+			vLines[vOwn] = "package $vFullPackage"
+			// Its classes named with their package (`a.b.Batch::class`): under the new one.
+			val vQualified = Regex("""(?<![\w.])${Regex.escape(vOwnPackage!!)}\.(?=(?:${vDeclared.joinToString("|")})\b)""")
+			return vLines.mapIndexed { vIndex, vLine ->
+				if (vIndex == vOwn || vLine.startsWith("import ") || vDeclared.isEmpty()) vLine else vLine.replace(vQualified, "$vFullPackage.")
+			}.joinToString("\n")
+		}
 		var vInComment = false
 		var vInsert = vLines.size
 		for ((vIndex, vLine) in vLines.withIndex()) {

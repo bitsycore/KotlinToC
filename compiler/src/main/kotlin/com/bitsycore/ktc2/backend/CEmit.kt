@@ -451,7 +451,7 @@ class CEmitter(private val mModule: KModule) {
 			is KLet -> if (inStatement.local in inHolders) KSet(inStatement.local, inStatement.init ?: KNull(inStatement.local.type)) else inStatement
 			is KIf -> KIf(inStatement.condition, inStatement.thenBlock.map { storesInto(it, inHolders) }, inStatement.elseBlock.map { storesInto(it, inHolders) })
 			is KLoop -> KLoop(inStatement.id, inStatement.body.map { storesInto(it, inHolders) }, inStatement.latch.map { storesInto(it, inHolders) })
-			is KTryRegion -> KTryRegion(inStatement.id, inStatement.body.map { storesInto(it, inHolders) })
+			is KTryRegion -> KTryRegion(inStatement.id, inStatement.body.map { storesInto(it, inHolders) }, inStatement.escapesFrom)
 			else -> inStatement
 		}
 		var vHeldCount = 0
@@ -473,7 +473,7 @@ class CEmitter(private val mModule: KModule) {
 					vOut += when (vStatement) {
 						is KIf -> KIf(vStatement.condition, rewrite(vStatement.thenBlock, inLoops), rewrite(vStatement.elseBlock, inLoops))
 						is KLoop -> (inLoops + listOfNotNull(vLoops[vStatement])).let { KLoop(vStatement.id, rewrite(vStatement.body, it), rewrite(vStatement.latch, it)) }
-						is KTryRegion -> KTryRegion(vStatement.id, rewrite(vStatement.body, inLoops))
+						is KTryRegion -> KTryRegion(vStatement.id, rewrite(vStatement.body, inLoops), vStatement.escapesFrom)
 						else -> vStatement
 					}
 					continue

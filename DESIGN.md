@@ -486,7 +486,25 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
 - **Exceptions** are checked propagation: `throw` parks the exception in a thread-local slot
   and the function leaves; after a call that can throw, the caller tests the slot and leaves
   in turn, releasing what it holds. A `try` is a `KTryRegion` in KIR, which `ExceptionLowering`
-  turns into a loop that runs once: leaving it is a `break`. There is no `setjmp`.
+  turns into a loop that runs once: leaving it is a `break`. There is no `setjmp`. A `return` or a
+  `break` that leaves a `try` with a `finally` runs a copy of the `finally` where it jumps; that copy
+  is a region marked `escapesFrom` the `try`'s, written in place, from which an exception goes to the
+  handler around that `try`, past the ones whose `finally` blocks have run already.
+- **Casts to a type parameter** (`x as T`) check what the code is made for, `T` as it is there,
+  when the value is used, and only what `T`'s bound says when it is dropped (`this as R` as a
+  statement), as Kotlin checks where `T` is erased; `T : Any` refuses null. The result of a
+  function that returns `T`, made once for objects, is checked where its caller expects a narrower
+  type, as Kotlin checks an unchecked cast where it is used.
+- **A lambda that captures nothing** is one object, a static of its closure class, as on
+  Kotlin/Native and the JVM: the same each time it is met, with nothing allocated.
+- **Captured values reached through nesting**: a local class captures the local functions it
+  calls, as a lambda does (a field holding the function's closure); a closure that creates a local
+  class captures what that class does; and a value that is not a local of the code that needs it is
+  read from the objects it runs on, through the captures of each (`outerBinding`: an object
+  expression inside a method of another, a lambda in a local class's superclass call). A member of
+  a local class that is asked for before its declaration is lowered (a function that returns an
+  object expression, called by the object around it) waits for it in the queue of bodies, and the
+  declaration takes the class that use made.
 - **The checks of the language** (array and string index, integer division by zero, null
   assertion, casts) throw the Kotlin exceptions. `--checks=abort` makes index and division
   failures end the program instead. An array access in the loop of `for (x in array)`,
@@ -498,7 +516,9 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
 - **An assignment whose right-hand side fails** leaves its target as it was.
 - **Objects, enum classes and the top-level properties of a file** are initialized on first
   use, as Kotlin says. When an initializer only computes and stores, it runs at startup
-  instead and costs nothing later. First use from several threads is synchronized.
+  instead and costs nothing later. First use from several threads is synchronized. An enum
+  class's companion object is made right after its entries, and touching the companion makes
+  the entries first, as the JVM's class initializer does.
 - **`@ThreadLocal`** (`kotlin.native.concurrent`) is as on Kotlin/Native: a property or an
   `object` marked so is the thread's own (`KTC2_TLS` storage, with the flags of its
   initialization), initialized the first time each thread uses it, without a lock: the

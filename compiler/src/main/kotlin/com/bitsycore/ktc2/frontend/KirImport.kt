@@ -302,6 +302,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 
 	internal val captures = CaptureAnalysis()
 
+	/** How many times a member of a local class goes back to the end of the queue to wait for the class's declaration. */
+	private val kDeclarationWaits = 64
+
 	/** Queues [inTask] (a body to import) for the reachability loop. */
 	internal fun later(inTask: () -> Unit) {
 		mPending += inTask
@@ -1089,12 +1092,14 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	 * The reference class for [inClass] with [inArguments] for its type parameters, declared
 	 * (layout only) on first use.
 	 */
+	private fun classArguments(inClass: IrClass, inArguments: List<IrType>): List<IrType> =
+		classParameters(inClass).mapIndexed { vIndex, vParameter -> canonical(inArguments.getOrNull(vIndex) ?: contextSubst[vParameter.symbol] ?: mBuiltIns.anyNType) }
+
 	internal fun classFor(inClass: IrClass, inArguments: List<IrType> = emptyList(), inFresh: Boolean = false): KClass? {
 		if (isThrowableClass(inClass)) return throwableBase()
 		// A local class uses the type parameters of the code around it, which its type in the program does not
 		// list: they are what they are where it is met. The type of the class made here lists them, after its own.
-		val vOwn = classParameters(inClass)
-		val vArguments = vOwn.mapIndexed { vIndex, vParameter -> canonical(inArguments.getOrNull(vIndex) ?: contextSubst[vParameter.symbol] ?: mBuiltIns.anyNType) }
+		val vArguments = classArguments(inClass, inArguments)
 		val vKey = Mono(inClass, vArguments.map { kTypeOf(it) ?: KObjType })
 		if (vKey in mClasses && !inFresh) return mClasses[vKey]
 		val vFile = inClass.fileOrNull
@@ -1105,7 +1110,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mClasses[vKey] = null
 		mClassDepth++
 		try {
-			val vSubst = vOwn.map { it.symbol }.zip(vArguments).toMap()
+			val vSubst = classParameters(inClass).map { it.symbol }.zip(vArguments).toMap()
 			val vSuperType = inClass.superTypes.firstOrNull { vType -> vType.classOrNull?.owner?.let { !it.isInterface && !isAnyClass(it) && !isNumberClass(it) } == true }
 			val vSuperIr = vSuperType?.classOrNull?.owner
 			val vSuper = vSuperIr?.let {
@@ -1210,6 +1215,10 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			val vInit = vConstructor?.let { functionFor(it) }
 			if (vInit != null) {
 				val vStartup = KFunction("${vClass.cName}_static_init", vUnit, emptyList(), KUnitType)
+				// The companion of an enum class is made after the entries, as the JVM's class initializer makes it: whichever
+				// is touched first, the entries come first.
+				val vEnum = inClass.takeIf { it.isCompanion }?.parentAsClass?.takeIf { it.kind == org.jetbrains.kotlin.descriptors.ClassKind.ENUM_CLASS }
+				if (vEnum != null) mPending.addFirst { ensureFor(vEnum)?.let { vStartup.body.add(0, KEval(KCall(it, emptyList()))) } }
 				vStartup.body += KEval(KCall(vInit, listOf(KStaticRead(vInstance))))
 				if (vInstance.isThreadLocal) {
 					vUnit.functions += vStartup
@@ -1303,6 +1312,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	/** What a local class captures, as its latest declaration said: given to each instantiation of the class. */
 	private class LocalTemplate(
 		val captures: List<Triple<IrValueDeclaration, KType, KField?>>,
+		/** The local functions it calls: the closure of each, and its `invoke`. */
+		val functions: List<Triple<IrFunction, KType, KFunction>>,
 		val lambdas: Map<IrValueDeclaration, BodyBuilder.InlineLambda>,
 		val weak: Set<IrValueDeclaration>,
 	)
@@ -1322,10 +1333,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		inLambdas: Map<IrValueDeclaration, BodyBuilder.InlineLambda>,
 		/** The captures held weakly: the field holds a weak cell. */
 		inWeak: Set<IrValueDeclaration> = emptySet(),
+		inFunctions: List<Triple<IrFunction, KType, KFunction>> = emptyList(),
 	): List<KField>? {
-		val vClass = classFor(inClass, inFresh = true) ?: return null
+		// Its first declaration takes the class a use of its type made before (a member function that returns an object
+		// expression, called by the object around it): the members built for that one are then the members of this.
+		val vEarlier = if (inClass in mLatestLocalClass) null else
+			mClasses[Mono(inClass, classArguments(inClass, emptyList()).map { kTypeOf(it) ?: KObjType })]?.takeIf { it !in mLocalCaptures }
+		val vClass = vEarlier ?: classFor(inClass, inFresh = true) ?: return null
 		mLatestLocalClass[inClass] = vClass
-		val vTemplate = LocalTemplate(inCaptures, inLambdas, inWeak)
+		val vTemplate = LocalTemplate(inCaptures, inFunctions, inLambdas, inWeak)
 		mLocalTemplates[inClass] = vTemplate
 		return addLocalCaptures(vClass, vTemplate)
 	}
@@ -1341,6 +1357,12 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			if (vWeak) vField.weakType = vType
 			inClass.fields += vField
 			BodyBuilder.Binding(vDeclaration, vField, vCell, null)
+		} + inTemplate.functions.map { (vFunction, vType, vInvoke) ->
+			var vName = "function_" + vFunction.name.asString()
+			while (!vNames.add(vName)) vName += "_"
+			val vField = KField(vName, vType, inClass)
+			inClass.fields += vField
+			BodyBuilder.Binding(vFunction, vField, null, vInvoke)
 		}
 		mLocalCaptures[inClass] = LocalCaptures(vBindings, inTemplate.lambdas)
 		return vBindings.map { it.field }
@@ -1381,6 +1403,15 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 	}
 
 	internal fun localBindingsOf(inClass: KClass): List<BodyBuilder.Binding> = mLocalCaptures[inClass]?.bindings ?: emptyList()
+
+	/** The one instance of the closure class [inClass] of a lambda that captures nothing. */
+	internal fun closureInstance(inClass: KClass): KStatic {
+		inClass.unit.statics.firstOrNull { it.cls === inClass }?.let { return it }
+		val vInstance = KStatic("${inClass.cName}_instance", inClass, inClass.unit)
+		inClass.unit.statics += vInstance
+		instantiate(inClass)
+		return vInstance
+	}
 
 	/** The instance of an `object` declaration. */
 	internal fun objectFor(inClass: IrClass): KStatic? {
@@ -1773,7 +1804,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vStartup = KFunction("${inEnum.cName}_static_init", inEnum.unit, emptyList(), KUnitType)
 		inEnum.unit.initializer = vStartup
 		declareEnsure(inEnum, inEnum.unit, vStartup)
-		mPending += { BodyBuilder(this, vStartup, null, inFile, emptyMap()).buildEnumInitializer(vEntries, vStatics) }
+		mPending += { BodyBuilder(this, vStartup, null, inFile, emptyMap()).buildEnumInitializer(vEntries, vStatics, inClass) }
 	}
 
 	// ==================
@@ -1901,7 +1932,7 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 				KIf(KUnary(KUnaryOp.NOT, KGlobalRead(inLazy.getValue(vCalled)), KPrimType(KPrim.BOOLEAN)), listOf(vStatement), emptyList())
 			vStatement is KIf -> KIf(vStatement.condition, settled(vStatement.thenBlock, inEager, inLazy), settled(vStatement.elseBlock, inEager, inLazy))
 			vStatement is KLoop -> KLoop(vStatement.id, settled(vStatement.body, inEager, inLazy), settled(vStatement.latch, inEager, inLazy))
-			vStatement is KTryRegion -> KTryRegion(vStatement.id, settled(vStatement.body, inEager, inLazy))
+			vStatement is KTryRegion -> KTryRegion(vStatement.id, settled(vStatement.body, inEager, inLazy), vStatement.escapesFrom)
 			else -> vStatement
 		}
 	}
@@ -2262,9 +2293,19 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		val vFunction = KFunction(uniqueName(vScope + vBase + nameSuffix(inFunction, inSubst)), vUnit, vParams, vReturn)
 		vUnit.functions += vFunction
 		mFunctions[vKey] = vFunction
-		// The members of a local class read the values it captured from its fields.
-		val vCaptures = vClass?.let { mLocalCaptures[it] }
-		mPending += { BodyBuilder(this, vFunction, inFunction, vFile, inSubst).buildClosure(vCaptures?.bindings ?: emptyList(), null, vCaptures?.lambdas ?: emptyMap()) }
+		// The members of a local class read the values it captured from its fields. A member asked for before the class's
+		// declaration was lowered (through the type a function returns) waits for it: its captures are known only then.
+		val vIrOwner = inFunction.parent as? IrClass
+		val vWaits = vClass != null && vIrOwner != null && generateSequence(vIrOwner.parent) { (it as? IrClass)?.parent }.firstOrNull { it !is IrClass } !is IrFile && captures.freeVariablesOfClass(vIrOwner).isNotEmpty()
+		fun build(inTries: Int) {
+			val vCaptures = vClass?.let { mLocalCaptures[it] }
+			if (vCaptures == null && vWaits && inTries < kDeclarationWaits) {
+				mPending += { build(inTries + 1) }
+				return
+			}
+			BodyBuilder(this, vFunction, inFunction, vFile, inSubst).buildClosure(vCaptures?.bindings ?: emptyList(), null, vCaptures?.lambdas ?: emptyMap())
+		}
+		mPending += { build(0) }
 		return vFunction
 	}
 

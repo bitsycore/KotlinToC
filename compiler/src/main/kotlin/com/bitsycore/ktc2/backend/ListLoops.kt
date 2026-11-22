@@ -240,7 +240,7 @@ class ListLoops(private val mModule: KModule) {
 			vOut += when (vStatement) {
 				is KIf -> KIf(vStatement.condition, block(vStatement.thenBlock, inReads, inSets), block(vStatement.elseBlock, inReads, inSets))
 				is KLoop -> KLoop(vStatement.id, block(vStatement.body, inReads, inSets), block(vStatement.latch, inReads, inSets))
-				is KTryRegion -> KTryRegion(vStatement.id, block(vStatement.body, inReads, inSets))
+				is KTryRegion -> KTryRegion(vStatement.id, block(vStatement.body, inReads, inSets), vStatement.escapesFrom)
 				else -> vStatement
 			}
 			vIndex++
@@ -371,7 +371,7 @@ class ListLoops(private val mModule: KModule) {
 		when (vStatement) {
 			is KIf -> KIf(vStatement.condition, withoutEntry(vStatement.thenBlock, inEntry, inKey, inValue, outCount), withoutEntry(vStatement.elseBlock, inEntry, inKey, inValue, outCount))
 			is KLoop -> KLoop(vStatement.id, withoutEntry(vStatement.body, inEntry, inKey, inValue, outCount), withoutEntry(vStatement.latch, inEntry, inKey, inValue, outCount))
-			is KTryRegion -> KTryRegion(vStatement.id, withoutEntry(vStatement.body, inEntry, inKey, inValue, outCount))
+			is KTryRegion -> KTryRegion(vStatement.id, withoutEntry(vStatement.body, inEntry, inKey, inValue, outCount), vStatement.escapesFrom)
 			else -> {
 				val vGiven = valueOf(vStatement)
 				val vCall = callOf(vGiven)

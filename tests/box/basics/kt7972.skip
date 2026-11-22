@@ -1,0 +1,1 @@
+boxTest: ktc2 keeps the elements of an ArrayList<Int> as numbers, so adding a String through an unchecked cast throws at once, where Kotlin/Native throws only when the element is read (PLAN 2.5, the accepted difference of MapTest.nullKeyAndValue)

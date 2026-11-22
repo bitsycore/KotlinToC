@@ -23,6 +23,11 @@ import org.jetbrains.kotlin.ir.visitors.IrVisitorVoid
 import org.jetbrains.kotlin.ir.visitors.acceptChildrenVoid
 import org.jetbrains.kotlin.ir.visitors.acceptVoid
 
+/** True for a function declared inside a function or an `init` block: a closure over what it uses there. */
+internal fun isLocalFunction(inFunction: IrFunction): Boolean =
+	inFunction.parent is IrFunction || inFunction.parent is org.jetbrains.kotlin.ir.declarations.IrAnonymousInitializer ||
+		(inFunction as? IrSimpleFunction)?.visibility == org.jetbrains.kotlin.descriptors.DescriptorVisibilities.LOCAL
+
 /** True for `(A) -> B` and the other `kotlin.FunctionN` types. */
 internal fun isFunctionType(inType: IrType): Boolean =
 	inType.classOrNull?.owner?.kotlinFqName?.asString()?.let { it.startsWith("kotlin.Function") && it.removePrefix("kotlin.Function").all(Char::isDigit) } == true
@@ -144,12 +149,12 @@ internal class CaptureAnalysis {
 	}
 
 	/**
-	 * The value declarations a local class (or object expression) uses from the function it is
-	 * declared in, in first-use order.
+	 * What a local class (or object expression) uses from the function it is declared in, in first-use order: value
+	 * declarations, and the local functions it calls ([IrSimpleFunction]).
 	 */
-	fun freeVariablesOfClass(inClass: IrClass): List<IrValueDeclaration> {
+	fun freeVariablesOfClass(inClass: IrClass): List<Any> {
 		val vDeclared = HashSet<Any>()
-		val vFree = LinkedHashSet<IrValueDeclaration>()
+		val vFree = LinkedHashSet<Any>()
 		inClass.acceptVoid(object : IrVisitorVoid() {
 			override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
 
@@ -159,8 +164,15 @@ internal class CaptureAnalysis {
 			}
 
 			override fun visitFunction(declaration: IrFunction) {
+				vDeclared += declaration
 				vDeclared.addAll(declaration.parameters)
 				super.visitFunction(declaration)
+			}
+
+			override fun visitCall(expression: IrCall) {
+				val vCallee = expression.symbol.owner
+				if (isLocalFunction(vCallee) && vCallee !in vDeclared) vFree += vCallee
+				super.visitCall(expression)
 			}
 
 			override fun visitVariable(declaration: IrVariable) {
@@ -216,8 +228,22 @@ internal class CaptureAnalysis {
 
 			override fun visitCall(expression: IrCall) {
 				val vCallee = expression.symbol.owner
-				if (vCallee.parent is IrFunction && vCallee !in vDeclared) vFree += vCallee
+				if (isLocalFunction(vCallee) && vCallee !in vDeclared) vFree += vCallee
 				super.visitCall(expression)
+			}
+
+			// Creating a local class declared outside: what that class captures is captured here too.
+			override fun visitConstructorCall(expression: IrConstructorCall) {
+				val vClass = expression.symbol.owner.parent as? IrClass ?: return super.visitConstructorCall(expression)
+				if (vClass !in vDeclared && vClass.parent !is org.jetbrains.kotlin.ir.declarations.IrFile && vClass.parent !is IrClass) {
+					for (vUsed in freeVariablesOfClass(vClass)) if (vUsed !in vDeclared) vFree += vUsed
+				}
+				super.visitConstructorCall(expression)
+			}
+
+			override fun visitClass(declaration: IrClass) {
+				vDeclared += declaration
+				super.visitClass(declaration)
 			}
 		})
 		vFree.toList()

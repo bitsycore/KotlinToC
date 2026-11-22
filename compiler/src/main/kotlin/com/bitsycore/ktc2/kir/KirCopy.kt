@@ -50,7 +50,7 @@ private class Copier(private val mOnly: Map<KLocal, KLocal>? = null) {
 			it.origin = inStatement.origin
 		}
 		is KThrow -> KThrow(expr(inStatement.value))
-		is KTryRegion -> KTryRegion(inStatement.id, block(inStatement.body))
+		is KTryRegion -> KTryRegion(inStatement.id, block(inStatement.body), inStatement.escapesFrom)
 		is KRelease -> KRelease(expr(inStatement.operand))
 		is KGoto -> KGoto(inStatement.label)
 		is KLabel -> KLabel(inStatement.label)

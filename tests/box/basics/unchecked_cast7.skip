@@ -1,0 +1,1 @@
+boxTest: an Any cast to Int? through an unchecked cast: the unboxing here ends the program (ktc2_fail_cast) where Kotlin/Native throws a ClassCastException the test catches; the same family as unchecked_cast11 (PLAN 2.6)

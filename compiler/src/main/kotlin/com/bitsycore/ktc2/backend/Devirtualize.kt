@@ -505,7 +505,7 @@ class Devirtualize(private val mModule: KModule) {
 			is KThrow -> direct(vStatement.value).let { if (it === vStatement.value) vStatement else KThrow(it) }
 			is KIf -> KIf(vStatement.condition, rewrite(vStatement.thenBlock), rewrite(vStatement.elseBlock))
 			is KLoop -> KLoop(vStatement.id, rewrite(vStatement.body), rewrite(vStatement.latch))
-			is KTryRegion -> KTryRegion(vStatement.id, rewrite(vStatement.body))
+			is KTryRegion -> KTryRegion(vStatement.id, rewrite(vStatement.body), vStatement.escapesFrom)
 			else -> vStatement
 		}
 	}

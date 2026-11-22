@@ -121,6 +121,16 @@ internal class BodyBuilder(
 	private fun adapt(inValue: KExpr, inExpression: IrExpression): KExpr {
 		val vExpected = kType(inExpression.type)
 		if (vExpected == null || vExpected == KUnitType || vExpected == KNothingType || inValue === KUnitValue) return inValue
+		// A function that returns a type parameter, made once for objects (`fun <T> cast(x: Any?) = x as T`), may give
+		// what its caller does not expect: checked here, as Kotlin checks the result of an unchecked cast where it is used.
+		val vCallee = (inExpression as? IrCall)?.symbol?.owner
+		if (inValue.type == KObjType && vExpected is KRefType && vExpected != KObjType && inExpression !== mDropped &&
+			vCallee?.returnType?.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) {
+			val vValue = spill(inValue)
+			val vTest = instanceTest(inExpression, vValue, inExpression.type.makeNotNull())
+			if (vTest !== kTrue) mBlock += KIf(not(isNull(vValue)), listOf(KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())), emptyList())
+			return coerce(vValue, vExpected)
+		}
 		return coerce(inValue, vExpected)
 	}
 
@@ -149,6 +159,19 @@ internal class BodyBuilder(
 	private class LocalFunction(val invoke: KFunction, val holder: KLocal)
 
 	private val mLocalFunctions = HashMap<IrFunction, LocalFunction>()
+
+	/** A cast lowered as a statement: its value is dropped. */
+	private var mDroppedCast: IrTypeOperatorCall? = null
+
+	/** An expression lowered as a statement: its value is dropped, and needs no check of its type. */
+	private var mDropped: IrExpression? = null
+
+	/** Lowers [inExpression], whose value nothing uses. */
+	private fun lowerDropped(inExpression: IrExpression) {
+		if (inExpression is IrTypeOperatorCall && inExpression.operator == IrTypeOperator.CAST) mDroppedCast = inExpression
+		mDropped = inExpression
+		discard(lowerRhs(inExpression))
+	}
 
 	/** What a closure body finds in its closure object: a captured value, cell or local function. */
 	internal class Binding(val declaration: Any, val field: KField, val cell: KField?, val invoke: KFunction?)
@@ -188,13 +211,19 @@ internal class BodyBuilder(
 	}
 
 	/** Startup of an enum class: gives each entry its name and ordinal, then runs its constructor. */
-	fun buildEnumInitializer(inEntries: List<IrEnumEntry>, inStatics: List<KStatic>) {
+	fun buildEnumInitializer(inEntries: List<IrEnumEntry>, inStatics: List<KStatic>, inEnum: IrClass) {
 		val vBaseType = KClassType(mImporter.enumBase())
 		inEntries.forEachIndexed { vOrdinal, vEntry ->
 			val vInstance = KStaticRead(inStatics[vOrdinal])
 			mBlock += KFieldSet(coerce(vInstance, vBaseType), mImporter.enumNameField, KStringLit(vEntry.name.asString()))
 			mBlock += KFieldSet(coerce(vInstance, vBaseType), mImporter.enumOrdinalField, KConst(vOrdinal, kIntType))
-			val vCall = vEntry.initializerExpression?.expression as? IrEnumConstructorCall ?: return@forEachIndexed
+			// Arguments given by name in another order come as a block: their values first, then the call.
+			val vExpression = vEntry.initializerExpression?.expression
+			val vBlock = (vExpression as? IrContainerExpression)?.takeIf { vContainer ->
+				vContainer.statements.lastOrNull() is IrEnumConstructorCall && vContainer.statements.dropLast(1).all { it is IrVariable }
+			}
+			vBlock?.statements?.dropLast(1)?.forEach { lowerStatement(it) }
+			val vCall = (vBlock?.statements?.lastOrNull() ?: vExpression) as? IrEnumConstructorCall ?: return@forEachIndexed
 			val vConstructor = vCall.symbol.owner
 			val vTarget = mImporter.functionFor(vConstructor)
 			if (vTarget == null) {
@@ -203,6 +232,10 @@ internal class BodyBuilder(
 				val vInit = callFunction(vCall, vTarget, vConstructor, vCall.arguments, coerce(vInstance, vTarget.params[0].type))
 				if (vInit is KCall) mBlock += KEval(vInit)
 			}
+		}
+		// Then its companion object, as the JVM's class initializer does.
+		inEnum.declarations.filterIsInstance<IrClass>().firstOrNull { it.isCompanion }?.let { vCompanion ->
+			if (mImporter.objectFor(vCompanion) != null) ensureInitialized(vCompanion)
 		}
 	}
 
@@ -317,11 +350,19 @@ internal class BodyBuilder(
 					val vLambda = mInlineLambdas[vFree]
 					if (vLocal != null) {
 						outSet.values[vFree] = vLocal
-					} else if (vLambda != null && outSet.lambdas.put(vFree, vLambda) == null) {
-						collectCaptures(mImporter.captures.freeVariables(vLambda.expression.function), outSet)
+					} else if (vLambda != null) {
+						if (outSet.lambdas.put(vFree, vLambda) == null) collectCaptures(mImporter.captures.freeVariables(vLambda.expression.function), outSet)
+					} else {
+						// Not a local here, but held by an object the code runs on (a chain of nested objects): read out first.
+						outerHolder(vFree)?.let { (vRead, vCell) ->
+							val vHeld = newTemp(vRead.type)
+							mBlock += KLet(vHeld, vRead)
+							outSet.values[vFree] = vHeld
+							if (vCell != null) mCells[vFree] = vCell
+						}
 					}
 				}
-				is IrFunction -> mLocalFunctions[vFree]?.let { outSet.functions[vFree] = it }
+				is IrFunction -> (mLocalFunctions[vFree] ?: outerFunction(vFree))?.let { outSet.functions[vFree] = it }
 			}
 		}
 	}
@@ -1109,7 +1150,7 @@ internal class BodyBuilder(
 					mBlock += KLet(vLocal, vInit)
 				}
 			}
-			is IrExpression -> discard(lowerRhs(inStatement))
+			is IrExpression -> lowerDropped(inStatement)
 			is IrSimpleFunction -> makeClosure(inStatement, inStatement, inStatement)?.let { (vHolder, vInvoke) ->
 				mLocalFunctions[inStatement] = LocalFunction(vInvoke, vHolder)
 			}
@@ -1149,7 +1190,7 @@ internal class BodyBuilder(
 			return
 		}
 		if (inValue == null || mFunction.returnType == KUnitType) {
-			inValue?.let { discard(lowerRhs(it)) }
+			inValue?.let { lowerDropped(it) }
 			mBlock += KReturn(null)
 		} else if (inValue.type.isNothing()) {
 			// It never gives a value (an endless `loop { }`, a call that throws): nothing is returned after it.
@@ -1287,7 +1328,7 @@ internal class BodyBuilder(
 			} else if (vInline == null) {
 				// The result is computed first, then every enclosing `finally` runs, then the function returns.
 				val vValue = if (vResultExpression == null || mFunction.returnType == KUnitType) {
-					vResultExpression?.let { discard(lowerRhs(it)) }
+					vResultExpression?.let { lowerDropped(it) }
 					null
 				} else {
 					spill(coerce(lowerRhs(vResultExpression), mFunction.returnType))
@@ -1307,7 +1348,8 @@ internal class BodyBuilder(
 			val vId = newLoopId(inExpression)
 			val vBody = inBlock {
 				val vCondition = lowerPure(inExpression.condition)
-				mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
+				// A condition that jumps away (`while (break)`) has nothing to test.
+				if (!inExpression.condition.type.isNothing()) mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
 				inLoopBody(inExpression) { inExpression.body?.let { discard(lowerRhs(it)) } }
 			}
 			mBlock += KLoop(vId, vBody, emptyList())
@@ -1318,7 +1360,8 @@ internal class BodyBuilder(
 			val vBody = inBlock { inLoopBody(inExpression) { inExpression.body?.let { discard(lowerRhs(it)) } } }
 			val vLatch = inBlock {
 				val vCondition = lowerPure(inExpression.condition)
-				mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
+				// A condition that jumps away (`while (break)`) has nothing to test.
+				if (!inExpression.condition.type.isNothing()) mBlock += KIf(not(vCondition), listOf(KBreak(vId)), emptyList())
 			}
 			mBlock += KLoop(vId, vBody, vLatch)
 			KUnitValue
@@ -1472,6 +1515,11 @@ internal class BodyBuilder(
 			val vTarget = vType.classOrNull?.owner ?: return kFalse
 			return if (isSubtype(mImporter.structClassOf(vStructType.struct), vTarget)) kTrue else kFalse
 		}
+		// Unit, which is one object: what the type says of it.
+		if (inValue.type == KUnitType) {
+			val vTargetName = vType.classOrNull?.owner?.kotlinFqName?.asString()
+			return if (vTargetName == "kotlin.Unit" || vTargetName == "kotlin.Any") kTrue else kFalse
+		}
 		if (inValue.type !is KRefType) return fail(inElement, "type test on a value of type '${inType.render()}'")
 		// A String is a CharSequence and a Comparable.
 		if (inValue.type == KStringType) {
@@ -1516,15 +1564,19 @@ internal class BodyBuilder(
 	private fun nullCastCheck(inExpression: IrTypeOperatorCall, inValue: KExpr) {
 		// A type parameter may stand for a nullable type: only a type that is written out says no to null.
 		val vType = closed(inExpression.typeOperand)
-		if (vType.isMarkedNullable() || inExpression.typeOperand.isMarkedNullable()) return
-		if (vType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol || inExpression.typeOperand.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) return
+		if (inExpression.typeOperand.isMarkedNullable()) return
+		// A type parameter all of whose bounds are not null (`T : Any`) is not null either, whatever it stands for here.
+		val vParameter = (inExpression.typeOperand.classifierOrNull as? org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol)?.owner
+		if (vParameter != null && vParameter.superTypes.any { it.isNullable() }) return
+		if (vParameter == null && vType.isMarkedNullable()) return
+		if (vParameter == null && vType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) return
 		val vIsNull = isNull(inValue)
 		if (vIsNull !== kFalse) mBlock += KIf(vIsNull, listOf(failure("throwNullPointer", "ktc2_fail_null")), emptyList())
 	}
 
 	private fun lowerTypeOperator(inExpression: IrTypeOperatorCall): KExpr = when (inExpression.operator) {
 		IrTypeOperator.IMPLICIT_COERCION_TO_UNIT -> {
-			discard(lowerRhs(inExpression.argument))
+			lowerDropped(inExpression.argument)
 			KUnitValue
 		}
 		IrTypeOperator.IMPLICIT_CAST, IrTypeOperator.IMPLICIT_NOTNULL -> coerce(lowerRhs(inExpression.argument), typeOf(inExpression))
@@ -1582,7 +1634,11 @@ internal class BodyBuilder(
 				fail(inExpression, "cast to '${inExpression.typeOperand.render()}'")
 			} else {
 				nullCastCheck(inExpression, vValue)
-				val vTest = instanceTest(inExpression, vValue, inExpression.typeOperand)
+				// `x as T` whose value is dropped checks only what T's bound says, as Kotlin does where T is erased. One whose
+				// value is used checks the T this code is made for: what is typed T here must be one.
+				val vParameter = (inExpression.typeOperand.classifierOrNull as? org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol)?.owner
+				val vChecked = vParameter?.superTypes?.firstOrNull()?.takeIf { inExpression === mDroppedCast } ?: inExpression.typeOperand
+				val vTest = instanceTest(inExpression, vValue, vChecked)
 				if (vTest !== kTrue) {
 					mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
 				}
@@ -1682,8 +1738,10 @@ internal class BodyBuilder(
 		val vSaved = mBlock
 		val vScratch = ArrayList<KStmt>()
 		mBlock = vScratch
+		// Arms after one that always applies (`else`, or `true ->` in the middle) are never reached.
+		val vReached = inWhen.branches.indexOfFirst { isElse(it) }.let { if (it < 0) inWhen.branches else inWhen.branches.subList(0, it + 1) }
 		val vArms = try {
-			inWhen.branches.map { vBranch ->
+			vReached.map { vBranch ->
 				val vCondition = if (isElse(vBranch)) null else lowerRhs(vBranch.condition)
 				vCondition to lowerRhs(vBranch.result)
 			}
@@ -1709,7 +1767,8 @@ internal class BodyBuilder(
 
 	private class LoopMark(val loop: IrLoop) : Control()
 
-	private class FinallyMark(val body: IrExpression) : Control()
+	/** A `try` with a `finally`: [region] is the id of its protected part. */
+	private class FinallyMark(val body: IrExpression, val region: Int) : Control()
 
 	private class InlineMark(val symbol: Any) : Control()
 
@@ -1736,7 +1795,8 @@ internal class BodyBuilder(
 			if (vEntry is FinallyMark) {
 				val vLeft = ArrayList(mControl.subList(vIndex, mControl.size))
 				while (mControl.size > vIndex) mControl.removeLast()
-				discard(lowerRhs(vEntry.body))
+				// An exception the `finally` throws leaves its `try`, and those inside it, for the one around them.
+				mBlock += KTryRegion(mNextLoopId++, inBlock { discard(lowerRhs(vEntry.body)) }, escapesFrom = vEntry.region)
 				mControl += vLeft
 			}
 			vIndex--
@@ -1836,8 +1896,9 @@ internal class BodyBuilder(
 		if (vFinally == null) {
 			protectedPart()
 		} else {
-			mControl += FinallyMark(vFinally)
-			mBlock += KTryRegion(mNextLoopId++, inBlock { protectedPart() })
+			val vRegion = mNextLoopId++
+			mControl += FinallyMark(vFinally, vRegion)
+			mBlock += KTryRegion(vRegion, inBlock { protectedPart() })
 			mControl.removeLast()
 			val vInFlight = takePending()
 			discard(lowerRhs(vFinally))
@@ -2239,21 +2300,42 @@ internal class BodyBuilder(
 	 * outer object of an `inner` class inside another (`this@Outer` from two levels in), or what a
 	 * local class or its outer object captured. Each step reads the field that holds it.
 	 */
-	private fun throughOuter(inDeclaration: IrValueDeclaration): KExpr? {
+	private fun throughOuter(inDeclaration: IrValueDeclaration): KExpr? =
+		outerHolder(inDeclaration)?.let { (vRead, vCell) -> vCell?.let { KFieldRead(vRead, it) } ?: vRead }
+
+	/**
+	 * Where an object the code runs on holds [inDeclaration], captured: the field, and the field of its cell when it is
+	 * a captured `var` (the read is then of the cell itself).
+	 */
+	private fun outerHolder(inDeclaration: Any): Pair<KExpr, KField?>? = outerBinding(inDeclaration)?.let { (vRead, vBinding) -> vRead to vBinding.cell }
+
+	/** The closure of the local function [inFunction] where an object the code runs on holds it, read into a local. */
+	private fun outerFunction(inFunction: IrFunction): LocalFunction? {
+		if (!isLocalFunction(inFunction)) return null
+		val (vRead, vBinding) = outerBinding(inFunction) ?: return null
+		val vInvoke = vBinding.invoke ?: return null
+		val vHolder = newTemp(vRead.type)
+		mBlock += KLet(vHolder, vRead)
+		return LocalFunction(vInvoke, vHolder)
+	}
+
+	/** The binding of [inDeclaration] in an object the code runs on, or in one those hold, and the read of its field. */
+	private fun outerBinding(inDeclaration: Any): Pair<KExpr, Binding>? {
 		val vSeen = HashSet<KClass>()
 		val vQueue = ArrayDeque<KExpr>()
-		for ((vKey, vLocal) in mLocals) if (vKey is IrValueParameter && vKey.parent is IrClass && vKey !in mCells) vQueue += KRead(vLocal)
+		// From the object the code runs on: a class's own `this`, or the receiver of a member function.
+		for ((vKey, vLocal) in mLocals) if (vKey is IrValueParameter && vKey !in mCells &&
+			(vKey.parent is IrClass || vKey.kind == IrParameterKind.DispatchReceiver)) vQueue += KRead(vLocal)
 		while (vQueue.isNotEmpty()) {
 			val vFrom = vQueue.removeFirst()
 			val vClass = (vFrom.type as? KClassType)?.cls ?: continue
 			if (!vSeen.add(vClass)) continue
 			for (vBinding in mImporter.localBindingsOf(vClass)) {
 				val vRead = KFieldRead(fieldTarget(vFrom, vBinding.field), vBinding.field)
-				if (vBinding.declaration === inDeclaration) {
-					return vBinding.cell?.let { KFieldRead(vRead, it) } ?: vRead
-				}
+				if (vBinding.declaration === inDeclaration) return vRead to vBinding
 				if (vBinding.field.weakType != null) continue
-				if (vBinding.cell == null && vBinding.declaration is IrValueParameter && (vBinding.declaration as IrValueParameter).parent is IrClass) vQueue += vRead
+				// On through any object a capture holds: the outer objects of a chain of nested objects and classes.
+				if (vBinding.cell == null && vBinding.declaration is IrValueParameter) vQueue += vRead
 			}
 		}
 		return null
@@ -2280,6 +2362,8 @@ internal class BodyBuilder(
 			val vFactory = mImporter.internalFunction("newObject")?.let { mImporter.functionFor(it) } ?: return fail(inCall, "construction of 'kotlin.Any'")
 			return spill(KCall(vFactory, emptyList()))
 		}
+		// `String()`: the empty string.
+		if (vOwner.kotlinFqName.asString() == "kotlin.String" && inCall.arguments.isEmpty()) return KStringLit("")
 		val vIsStorage = vOwner.kotlinFqName.asString() == "ktc2.internal.Storage"
 		(typeOf(inCall) as? KArrayType)?.takeIf { vOwner.fileOrNull == null || vIsStorage }?.let { return lowerArrayConstructor(inCall, it) }
 		val vClassArguments = mImporter.argumentsOf(closed(inCall.type))
@@ -2289,6 +2373,10 @@ internal class BodyBuilder(
 		if (vTarget.returnType is KStructType) return callFunction(inCall, vTarget, vConstructor, inCall.arguments, null)
 		val vClass = mImporter.classFor(vOwner, vClassArguments) ?: return fail(inCall, "construction of '${vOwner.kotlinFqName}'")
 		mImporter.instantiate(vClass)
+		// The first object of a class makes its companion object first, as the JVM's class initializer does.
+		vOwner.declarations.filterIsInstance<IrClass>().firstOrNull { it.isCompanion && it.fileOrNull != null }?.let { vCompanion ->
+			if (mImporter.objectFor(vCompanion) != null) ensureInitialized(vCompanion)
+		}
 		// Arguments first, as in Kotlin; then allocate and run the constructor on the new object.
 		val vObject = newTemp(KClassType(vClass))
 		val vCall = callFunction(inCall, vTarget, vConstructor, inCall.arguments, KRead(vObject), vSubst)
@@ -2298,9 +2386,13 @@ internal class BodyBuilder(
 		// An inner class instance carries the object it was created on: the receiver of the constructor call.
 		val vOuterThis = if (vOwner.isInner) vOwner.parentAsClass.thisReceiver else null
 		for (vBinding in mImporter.localBindingsOf(vClass)) {
-			val vSource = if (vBinding.declaration === vOuterThis) vCall.arguments.getOrNull(1) else mLocals[vBinding.declaration as IrValueDeclaration]?.let { KRead(it) }
+			val vSource = when (val vDeclaration = vBinding.declaration) {
+				vOuterThis -> vCall.arguments.getOrNull(1)
+				is IrFunction -> (mLocalFunctions[vDeclaration] ?: outerFunction(vDeclaration))?.let { KRead(it.holder) }
+				else -> mLocals[vDeclaration as IrValueDeclaration]?.let { KRead(it) } ?: outerHolder(vDeclaration)?.first
+			}
 			if (vSource == null) {
-				fail(inCall, "creating a local class instance where '${(vBinding.declaration as IrValueDeclaration).name}' is not in scope")
+				fail(inCall, "creating a local class instance where '${(vBinding.declaration as IrDeclarationWithName).name}' is not in scope")
 			} else {
 				writeField(fieldTarget(KRead(vObject), vBinding.field), vBinding.field, coerce(vSource, vBinding.field.weakType ?: vBinding.field.type))
 			}
@@ -2351,7 +2443,8 @@ internal class BodyBuilder(
 		val vCaptures = vSet.values.map { (vDeclaration, vLocal) -> Triple(vDeclaration, vLocal.type, mCells[vDeclaration]) }
 		// The object of a delegate `observable` makes holds the owner of the property weakly, as its lambda would (mWeakCaptures).
 		val vWeak = vCaptures.filter { (vDeclaration, vType, vCell) -> vDeclaration in mWeakCaptures && vCell == null && vType is KClassType }.map { it.first }.toSet()
-		if (mImporter.declareLocalClass(inClass, vCaptures, HashMap(vSet.lambdas), vWeak) == null) fail(inClass, "local class '${inClass.name}'")
+		val vFunctions = vSet.functions.map { (vFunction, vLocal) -> Triple(vFunction, vLocal.holder.type, vLocal.invoke) }
+		if (mImporter.declareLocalClass(inClass, vCaptures, HashMap(vSet.lambdas), vWeak, vFunctions) == null) fail(inClass, "local class '${inClass.name}'")
 	}
 
 	/** An enum constructor delegating to its superclass constructor (`kotlin.Enum` needs nothing). */
@@ -2551,6 +2644,11 @@ internal class BodyBuilder(
 			mBlock += KLet(vTemp, argument(vGiven[vNext++], vArgument, vTemp.type))
 			vBound[vIndex] = vTemp
 		}
+		// A default of an inner class's constructor may use the outer object: the receiver of the call.
+		val vOuterThis = (inCallee as? IrConstructor)?.parentAsClass?.takeIf { it.isInner }?.parentAsClass?.thisReceiver
+		val vReceiverIndex = inCallee.parameters.indexOfFirst { it.kind == IrParameterKind.DispatchReceiver }
+		val vSavedOuter = vOuterThis?.let { mLocals[it] }
+		if (vOuterThis != null && vReceiverIndex >= 0) vBound[vReceiverIndex]?.let { mLocals[vOuterThis] = it }
 		var vFailed = false
 		inArguments.forEachIndexed { vIndex, vArgument ->
 			if (vArgument == null) {
@@ -2583,6 +2681,9 @@ internal class BodyBuilder(
 		}
 		for ((vParam, vLocal) in vSaved) {
 			if (vLocal == null) mLocals.remove(vParam) else mLocals[vParam] = vLocal
+		}
+		if (vOuterThis != null) {
+			if (vSavedOuter == null) mLocals.remove(vOuterThis) else mLocals[vOuterThis] = vSavedOuter
 		}
 		if (vFailed) return fail(inCall, "call with a missing argument")
 		return maybeSuspending(inCall, inCallee, KCall(inTarget, listOfNotNull(inPrefix) + vBound.map { KRead(it!!) }))
@@ -2793,7 +2894,7 @@ internal class BodyBuilder(
 		if (vOwner == null && (vCallee.name.asString() == "println" || vCallee.name.asString() == "print") && vCallee.parent.kotlinFqName.asString() == "kotlin.io") {
 			return lowerLibraryCall(inCall)
 		}
-		mLocalFunctions[vCallee]?.let { return adapt(callFunction(inCall, it.invoke, vCallee, inCall.arguments, KRead(it.holder), mSubst), inCall) }
+		(mLocalFunctions[vCallee] ?: outerFunction(vCallee))?.let { return adapt(callFunction(inCall, it.invoke, vCallee, inCall.arguments, KRead(it.holder), mSubst), inCall) }
 		if (vOwner != null && vCallee.name.asString() == "invoke" && isFunctionType(vOwner.symbol.typeWith())) {
 			// Calling a lambda bound to an inline parameter expands it; any other function value is an interface call.
 			val vBoundLambda = (inCall.arguments.firstOrNull() as? IrGetValue)?.let { mInlineLambdas[it.symbol.owner] }
@@ -3037,6 +3138,11 @@ internal class BodyBuilder(
 		mImporter.later { BodyBuilder(mImporter, vInvoke, inFunction, mFile, vSubst).buildClosure(vBindings, inSelf, vLambdas) }
 
 		val vObject = newTemp(KClassType(vClass))
+		if (vCaptures.isEmpty()) {
+			// A lambda that captures nothing is one object, as on Kotlin/Native and the JVM: the same each time it is met.
+			mBlock += KLet(vObject, KStaticRead(mImporter.closureInstance(vClass)))
+			return vObject to vInvoke
+		}
 		mBlock += KLet(vObject, KAlloc(vClass))
 		vCaptures.forEachIndexed { vIndex, vCapture -> writeField(KRead(vObject), vClass.fields[vIndex], KRead(vCapture.source)) }
 		return vObject to vInvoke
@@ -3454,7 +3560,8 @@ internal class BodyBuilder(
 			return KArrayNew(checkedLength(lowerPure(vIrArguments[0])), vType)
 		}
 		// String?.plus(Any?) is an extension in package kotlin.
-		if (vParent == "kotlin" && vName == "plus" && vIrArguments.size == 2 && kType(vIrArguments[0].type) == KStringType) {
+		if (vParent == "kotlin" && vName == "plus" && vIrArguments.size == 2 &&
+			(kType(vIrArguments[0].type) == KStringType || inCall.symbol.owner.parameters.firstOrNull()?.type?.isNullableString() == true)) {
 			return concat(lowerParts(vIrArguments))
 		}
 		if (vName == "toString" && vIrArguments.size == 1) {
@@ -3801,6 +3908,8 @@ internal class BodyBuilder(
 				vParts += KPrintText("kotlin.Unit")
 				continue
 			}
+			// A piece that jumps away (`"" + break`): what follows it is never reached.
+			if (vValue === KUnitValue && vPiece.type.isNothing()) break
 			if (vValue === KUnitValue) {
 				fail(vPiece, "printing a value of type '${vPiece.type.render()}'")
 				continue

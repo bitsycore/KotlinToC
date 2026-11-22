@@ -122,7 +122,7 @@ class KirDump(private val mModule: KModule) {
 					outText.append("$vIndent}\n")
 				}
 				is KTryRegion -> {
-					outText.append("${vIndent}try ${vStatement.id} {\n")
+					outText.append("${vIndent}try ${vStatement.id}${if (vStatement.escapesFrom >= 0) " escaping ${vStatement.escapesFrom}" else ""} {\n")
 					block(vStatement.body, inDepth + 1, outText)
 					outText.append("$vIndent}\n")
 				}

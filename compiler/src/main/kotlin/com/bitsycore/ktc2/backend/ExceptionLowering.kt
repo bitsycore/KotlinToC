@@ -171,7 +171,11 @@ class ExceptionLowering(private val mModule: KModule) {
 					vOut += vLeave
 				}
 				// A region is a block that can be left from anywhere inside it: a loop that runs once.
-				is KTryRegion -> vOut += KLoop(vStatement.id, rewrite(vStatement.body, inRegions + vStatement.id, inFunction) + KBreak(vStatement.id), emptyList())
+				is KTryRegion -> if (vStatement.escapesFrom >= 0) {
+					vOut += rewrite(vStatement.body, inRegions.takeWhile { it != vStatement.escapesFrom }, inFunction)
+				} else {
+					vOut += KLoop(vStatement.id, rewrite(vStatement.body, inRegions + vStatement.id, inFunction) + KBreak(vStatement.id), emptyList())
+				}
 				is KIf -> {
 					val vThen = rewrite(vStatement.thenBlock, inRegions, inFunction)
 					val vElse = rewrite(vStatement.elseBlock, inRegions, inFunction)

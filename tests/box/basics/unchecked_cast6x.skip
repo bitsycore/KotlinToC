@@ -1,0 +1,1 @@
+boxTest: reads an element of a String array cast to Array<Data> as a Data (an unchecked cast): Kotlin checks the element where it is read, ktc2 keeps the array's element type and checks nothing there (PLAN 2.6, the unchecked casts of arrays)

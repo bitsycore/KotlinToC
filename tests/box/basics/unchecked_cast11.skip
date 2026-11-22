@@ -1,0 +1,1 @@
+boxTest: reads a String out of an Array<String> cast to Array<Int>: the unboxing here ends the program (ktc2_fail_cast) where Kotlin/Native throws a ClassCastException the test catches; the same family as kt7972 (numbers kept unboxed where Kotlin erases them)

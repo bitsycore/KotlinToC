@@ -254,8 +254,15 @@ intercepted continuation; and in a state machine, the release of a call's argume
 suspension when a declaration stood in front of the suspension point, so a coroutine resumed inside the call (a
 dispatcher that runs at once) released it twice (`modules/kotlinx-coroutines`, the combined flows).
 
-To take in more: `git sparse-checkout add compiler/testData/codegen/box/<dir>` in the clone, then
-`python -I tools/select_box.py <clone>/compiler/testData/codegen/box/<dir> tests/box/<dir>`.
+Beyond coroutines, the folders `basics`, `when`, `controlStructures`, `classes`, `closures`, `strings`, `dataClasses`
+and `enum` are taken (657 files; `PLAN.md` 2.6 lists the next). A file of a folder with a package of its own goes under
+its `boxtest.` package too (several of a folder have `package test`), and its imports of what it declares with it; a
+part of a path that is a keyword of Kotlin (`when`, `try`) gets a `_`. `basics/*.skip` names the unchecked casts that
+differ (`PLAN.md` 2.6).
+
+To take in more: `git clone --depth 1 --filter=blob:none --sparse -b v2.5.0-RC https://github.com/JetBrains/kotlin
+build/kotlin-src`, `git sparse-checkout set compiler/testData/codegen/box` in it, then
+`python -I tools/select_box.py build/kotlin-src/compiler/testData/codegen/box/<dir> tests/box/<dir>`.
 
 ## What they found
 

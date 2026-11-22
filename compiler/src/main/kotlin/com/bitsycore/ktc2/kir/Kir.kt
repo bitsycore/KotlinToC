@@ -836,8 +836,12 @@ class KThrow(val value: KExpr) : KStmt
 /**
  * The protected part of a `try`: when an exception is thrown inside [body], control continues
  * after the region with the exception parked in the runtime. Replaced by `ExceptionLowering`.
+ *
+ * With [escapesFrom], it is instead a `finally` run on the way out of the region of that id (a `return` or a `break`
+ * inside it): an exception thrown in [body] leaves that region and every one inside it, whose `finally` blocks have
+ * run already, for the one around them.
  */
-class KTryRegion(val id: Int, val body: List<KStmt>) : KStmt
+class KTryRegion(val id: Int, val body: List<KStmt>, val escapesFrom: Int = -1) : KStmt
 
 /** Added by `ArcInsert`: decrements the count of [operand] (null-safe), destroying it at zero. */
 class KRelease(val operand: KExpr) : KStmt

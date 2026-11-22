@@ -1217,6 +1217,18 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   a worker's termination left the jobs after it waiting for ever, now cancelled; `Worker.name` of a terminated worker
   answered where Native throws; `kotlin.concurrent.atomics`' classes lacked the members Native keeps as errors
   (`value`, `getAndSet`...), which code suppressing the error still calls.
+- 2026-11-22, `PLAN.md` 2.6: the box tests of `basics`, `when`, `controlStructures`, `classes`, `closures`, `strings`,
+  `dataClasses` and `enum` (657). They found: a package of the harness named after a keyword (`when`), and files of
+  one folder sharing `package test`; a `break` or `return` inside a string template or a loop condition; `String()`;
+  `x + "!"` on a type parameter bounded by `String?`; `is Unit`; a `when` whose arm in the middle always applies (a
+  crash of the importer); values reached through nesting (a local function called from a local class or from a lambda
+  of an `init` block, an outer object read from a chain of objects, an inner class's default argument that uses the
+  outer object, a local class created inside a local function), and a member of an object expression built before
+  the object's declaration, without its captures; a `finally` that throws after a `return` ran every `finally` again;
+  an unchecked cast to a type parameter that checked nothing, let a null through `T : Any`, and checked the type made
+  for rather than the bound when its value is dropped; a lambda that captures nothing made anew each time (Kotlin
+  has one object); an enum's companion object made apart from its entries; an enum entry with named arguments in
+  another order not made at all. The unchecked casts that remain are listed in `PLAN.md` 2.6.
 
 
 ---------------------------------------------------------------------------
