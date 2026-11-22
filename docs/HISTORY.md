@@ -1187,6 +1187,14 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   runtime's: a weak cell given up on one thread while its target ended on another (`weak_drop` reads the mark again under
   the lock); its first failures were a shared channel segment, held from outside, which the all-or-nothing check of a
   release took for a member that keeps its group, and the last test's group, freed only by the reap at the end.
+- 2026-11-22, `PLAN.md` 2.2: the last of kotlinx.coroutines' own cycles. A broadcast channel's subscriptions reach it
+  weakly (nested classes with a holder, `BroadcastChannel.kt.edit`); two removed list nodes left holding each other by
+  concurrent removals are given to the reaper where `correctPrev` gives up (`ConcurrentExceptionsStressTest`). The reaps
+  between events are amortized: one through the whole list each time as many were asked for as it holds (a reap at every
+  event made a test of 500,000 dispatches time out).
+  The whole suite then crashed once in kotlinx.coroutines under load; AddressSanitizer found the walk of a group
+  reading a frame field that held no count (`__ring_refs` visited every field of a frame, `__refs` only those its label
+  holds): it follows the label now.
 
 
 ---------------------------------------------------------------------------

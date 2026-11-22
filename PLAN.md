@@ -99,13 +99,10 @@ let go of what the library is done with (a scope's caller once resumed, a lazy c
 while made) and a select's clauses' outer reference weak. Freed: `ZipTest`, `ChannelBuildersFlowTest`, `IdFlowTest`,
 `CombineTest`, `CancelledParentAttachTest`, `SelectRendezvousChannelTest`. Found on the way: a weak cell given up on one
 thread while its target ended on another crashed the runtime (`regressions/WeakCellAndTargetEndTogether`).
-Left of the library's own:
-- [ ] The lists of handlers of jobs that end on several threads at once (`ConcurrentExceptionsStressTest`): rings of
-  `ChildHandleNode`s and `Removed`s that no job given to the reaper reaches (the parent's list of children).
-- [ ] The deprecated `BroadcastChannel`'s subscriptions (`BasicOperationsTest`, `BufferedBroadcastChannelTest`,
-  `ConflatedBroadcastChannelTest`): each subscription, an inner object the user holds and that names its channel, is in
-  the channel's list; a weak outer reference would let a channel go while a subscription is used. Its own answer: the
-  reaper given the channel when it closes, or an edit that takes a subscription out of the list once cancelled.
+Then (2026-11-22) the last two: the deprecated `BroadcastChannel`'s subscriptions reach their channel weakly, through a
+holder (a subscription that is all that holds its channel leaves it unreachable for sending: nothing observable), and
+two removed nodes of a list left holding each other by concurrent removals are given to the reaper where that happens.
+Nothing of the library's own is left: the 7 `.cycles` of kotlinx.coroutines' tests are the tests' own (the user's, rule 4).
 
 **Known, kept:** kotlinx.serialization's types that contain themselves (section 2.4): one ring for each such type,
 held for the life of the program by its serializer object.

@@ -2,3 +2,7 @@ replace:         _removedRef.value ?: Removed(this).also { _removedRef.lazySet(i
         // ktc2: not cached in the node, which would hold it while it holds the node (a cycle of two).
         Removed(this)
 
+replace:                 next.correctPrev()
+                // ktc2: the next node, removed meanwhile, keeps this one as its previous (a remover fixes no link of a
+                // removed node): the two may be left holding each other outside any list, which the reaper finds.
+                if (next.correctPrev() == null) kotlinx.coroutines.ktc2Register(this)

@@ -396,7 +396,12 @@ walked. All of it is compiled only into programs with declared cycles or rings (
 the reaper each job that ends with an exception (`JobSupport.kt.edit`) and reaps between the events of `runBlocking`'s
 loops and when they end (`Builders.native.kt.edit`); its scopes let go of their caller's continuation once they resumed it
 or gave it their result (`Scopes.kt.edit`, `ktc2TakeCaller`), and a lazy coroutine cancelled while it was made lets go
-of its block (`Builders.common.kt.edit`).
+of its block (`Builders.common.kt.edit`). A node of a lock-free list removed while the next one was removed too keeps
+it as its previous (a remover fixes no link of a removed node): the two may be left holding each other outside any list,
+and the remover gives its node to the reaper there (`LockFreeLinkedList.kt.edit`, only under contention). The reaps
+between events go through the list once as many were asked for as it holds (`ktc2_reap`): a cost for each event that
+does not grow with what is kept. A broadcast channel's subscriptions reach it through a holder the module declares weak
+(`BroadcastChannel.kt.edit`, `Ktc2BroadcastReference`).
 Declared cycles and rings can hold one another in more than one cycle: a knot (a job whose result is one of its own
 handlers, boxed as its state, which names the job, while the node `await` left in the job's list names it too). Each
 class of a declared cycle is then of a group as well (`KClass.isKnotMember`, `ktc2_TypeInfo.knot`): its check, when

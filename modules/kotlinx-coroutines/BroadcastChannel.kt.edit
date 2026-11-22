@@ -1,0 +1,24 @@
+after:     private var lastConflatedElement: Any? = NO_ELEMENT // NO_ELEMENT or E
+    // ktc2: what its subscriptions reach it through, weak in the module (`weak`): a subscription that is all that holds its
+    // channel (no one can send to it or close it any more) does not keep it, and the two are not left in a cycle.
+    private val ktc2Reference = Ktc2BroadcastReference(this)
+replace:         val s = if (capacity == CONFLATED) SubscriberConflated() else SubscriberBuffered()
+        val s = if (capacity == CONFLATED) SubscriberConflated<E>(ktc2Reference) else SubscriberBuffered<E>(ktc2Reference, capacity)
+replace:     private inner class SubscriberBuffered : BufferedChannel<E>(capacity = capacity) {
+    private class SubscriberBuffered<E>(private val owner: Ktc2BroadcastReference, capacity: Int) : BufferedChannel<E>(capacity = capacity) {
+replace:         public override fun cancelImpl(cause: Throwable?): Boolean = lock.withLock {
+        public override fun cancelImpl(cause: Throwable?): Boolean {
+            // ktc2: through its channel's weak reference; one that is gone has nothing to remove it from.
+            @Suppress("UNCHECKED_CAST")
+            val broadcast = owner.value as BroadcastChannelImpl<E>? ?: return super.cancelImpl(cause)
+            return broadcast.lock.withLock {
+replace:             removeSubscriber(this@SubscriberBuffered )
+            broadcast.removeSubscriber(this@SubscriberBuffered )
+after:             super.cancelImpl(cause)
+        }
+replace:     private inner class SubscriberConflated : ConflatedBufferedChannel<E>(capacity = 1, onBufferOverflow = DROP_OLDEST) {
+    private class SubscriberConflated<E>(private val owner: Ktc2BroadcastReference) : ConflatedBufferedChannel<E>(capacity = 1, onBufferOverflow = DROP_OLDEST) {
+replace:             removeSubscriber(this@SubscriberConflated )
+            // ktc2: through its channel's weak reference; one that is gone has nothing to remove it from.
+            @Suppress("UNCHECKED_CAST")
+            (owner.value as BroadcastChannelImpl<E>?)?.removeSubscriber(this@SubscriberConflated )

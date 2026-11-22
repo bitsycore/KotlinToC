@@ -2890,9 +2890,12 @@ void ktc2_reapLater(ktc2_Obj* object)
 	reap_unlock();
 }
 
-void ktc2_reap(void)
+/* The reaps asked for since the last one that went through the list (ktc2_reap). */
+static uint32_t reap_asked;
+
+/** Checks each kept object, and gives up the cells of those gone or freed. */
+static void reap_all(void)
 {
-	if (ktc2_atomic_load(&reap_count) == 0) return;
 	reap_lock();
 	uint32_t kept = 0;
 	for (uint32_t at = 0; at < reap_count; at++) {
@@ -2904,9 +2907,21 @@ void ktc2_reap(void)
 	reap_unlock();
 }
 
+/*
+ * Asked for between the events of a loop: the list is gone through once as many reaps were asked for as it holds
+ * objects, a cost for each event that does not grow with what is kept (objects still held stay kept for long).
+ */
+void ktc2_reap(void)
+{
+	uint32_t count = ktc2_atomic_load(&reap_count);
+	if (count == 0 || ktc2_atomic_add(&reap_asked, 1) < count) return;
+	ktc2_atomic_exchange(&reap_asked, 0);
+	reap_all();
+}
+
 void ktc2_reapEnd(void)
 {
-	ktc2_reap();
+	reap_all();
 	reap_lock();
 	for (uint32_t at = 0; at < reap_count; at++) ktc2_release(reap_cells[at]);
 	reap_count = 0;
