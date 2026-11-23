@@ -529,6 +529,8 @@ internal class BodyBuilder(
 		val vStruct = (mFunction.returnType as KStructType).struct
 		val vSelf = KLocal(freshName("self"), mFunction.returnType)
 		if (!inConstructor.isPrimary) {
+			// A `return` in its body ends it with the value made so far.
+			mStructSelf = vSelf
 			for (vStatement in (inConstructor.body as? IrBlockBody)?.statements ?: emptyList()) {
 				when (vStatement) {
 					is IrDelegatingConstructorCall -> {
@@ -1182,7 +1184,15 @@ internal class BodyBuilder(
 		if (inValue.isImpure() || inValue.anyNode { it.isRuntimeCheck() }) mBlock += KEval(inValue)
 	}
 
+	/** The value a struct's secondary constructor builds, while its body is lowered: what a `return` in it gives back. */
+	private var mStructSelf: KLocal? = null
+
 	private fun emitReturn(inValue: IrExpression?) {
+		mStructSelf?.let { vSelf ->
+			inValue?.let { lowerDropped(it) }
+			mBlock += KReturn(KRead(vSelf))
+			return
+		}
 		if (tailCall(inValue)) return
 		if (inValue != null && returnInBranches(inValue)) return
 		if (inValue == null && mReturnsUnitObject) {
@@ -1327,7 +1337,10 @@ internal class BodyBuilder(
 				emitReturn(vResultExpression)
 			} else if (vInline == null) {
 				// The result is computed first, then every enclosing `finally` runs, then the function returns.
-				val vValue = if (vResultExpression == null || mFunction.returnType == KUnitType) {
+				val vValue = if (mStructSelf != null) {
+					vResultExpression?.let { lowerDropped(it) }
+					KRead(mStructSelf!!)
+				} else if (vResultExpression == null || mFunction.returnType == KUnitType) {
 					vResultExpression?.let { lowerDropped(it) }
 					null
 				} else {
@@ -1740,21 +1753,24 @@ internal class BodyBuilder(
 		mBlock = vScratch
 		// Arms after one that always applies (`else`, or `true ->` in the middle) are never reached.
 		val vReached = inWhen.branches.indexOfFirst { isElse(it) }.let { if (it < 0) inWhen.branches else inWhen.branches.subList(0, it + 1) }
+		// Each result is converted to the type of the `when` here too: boxing a value class takes statements (its box), which
+		// would run before the test that keeps them from running (`w?.w?.s` read the inner value out of a null).
 		val vArms = try {
 			vReached.map { vBranch ->
 				val vCondition = if (isElse(vBranch)) null else lowerRhs(vBranch.condition)
-				vCondition to lowerRhs(vBranch.result)
+				val vResult = lowerRhs(vBranch.result)
+				Triple(vCondition, vResult, if (vResult === KUnitValue) vResult else coerce(vResult, inType))
 			}
 		} finally {
 			mBlock = vSaved
 		}
-		if (vScratch.isNotEmpty() || vArms.any { it.first?.isImpure() == true || it.second.isImpure() || it.second === KUnitValue }) {
+		if (vScratch.isNotEmpty() || vArms.any { it.first?.isImpure() == true || it.third.isImpure() || it.second === KUnitValue }) {
 			mNotSelectable += inWhen
 			return null
 		}
-		var vResult = coerce(vArms.last().second, inType)
+		var vResult = vArms.last().third
 		for (vIndex in vArms.size - 2 downTo 0) {
-			vResult = KSelect(vArms[vIndex].first!!, coerce(vArms[vIndex].second, inType), vResult, inType)
+			vResult = KSelect(vArms[vIndex].first!!, vArms[vIndex].third, vResult, inType)
 		}
 		return vResult
 	}
@@ -2758,8 +2774,9 @@ internal class BodyBuilder(
 	}
 
 	private fun memberTarget(inFunction: IrSimpleFunction, inIsSuper: Boolean, inReceiver: IrType?, inOwnArguments: List<IrType?>, inIsErased: Boolean = false): Pair<KFunction, Subst>? {
-		// The class of a struct value is known exactly: its implementation is called directly, the value never boxed.
-		if (inReceiver != null && kType(inReceiver) is KStructType) {
+		// The class of a struct value is known exactly: its implementation is called directly, the value never boxed. Not
+		// for `super<IFoo>.foo()` in a value class: that one is the interface's body.
+		if (!inIsSuper && inReceiver != null && kType(inReceiver) is KStructType) {
 			val vImplementation = inReceiver.classOrNull?.owner?.let { mImporter.implementationIn(it, inFunction) }
 			if (vImplementation != null) {
 				val (vReal, vSubst) = mImporter.resolveMember(vImplementation, inReceiver, inOwnArguments)
@@ -3603,7 +3620,10 @@ internal class BodyBuilder(
 			val vTarget = vClassName?.let { mImporter.internalFunction("kotlin_${it}_$vName") }?.let { mImporter.functionFor(it) }
 			if (vWork != null && vTarget != null) {
 				val vSides = lowerOperands(vIrArguments)
-				return adapt(KCall(vTarget, vSides.mapIndexed { vIndex, vSide -> convert(coerce(vSide, KPrimType(vKinds[vIndex]!!)), vWork) }), inCall)
+				// A side that jumps (`1u .. break`) has no value: what follows never runs.
+				return adapt(KCall(vTarget, vSides.mapIndexed { vIndex, vSide ->
+					if (vIrArguments[vIndex].type.isNothing()) KZero(KPrimType(vWork)) else convert(coerce(vSide, KPrimType(vKinds[vIndex]!!)), vWork)
+				}), inCall)
 			}
 		}
 
@@ -3778,6 +3798,9 @@ internal class BodyBuilder(
 				vLeft is KNull || vRight is KNull -> kFalse
 				inIdentity -> fail(inCall, "'===' on a @Struct value, which has no identity")
 				vLeftType is KStructType -> structEquals(inCall, inLeft.type, spill(vLeft), vRight)
+				// `a == b` is `a.equals(b)`: an object on the left answers, whatever its class says (an `equals` that is
+				// always true), the value boxed for it.
+				vLeftType is KRefType -> objectEquals(inCall, inLeft.type, spill(vLeft), coerce(vRight, KObjType))
 				else -> structEquals(inCall, inRight.type, spill(vRight), vLeft)
 			}
 			// C addresses compare by value.
@@ -3959,7 +3982,11 @@ internal class BodyBuilder(
 
 	private fun lowerStringCall(inCall: IrCall, inName: String, inArguments: List<IrExpression>): KExpr {
 		if (inName == "plus" && inArguments.size == 2) return concat(lowerParts(concatPieces(inArguments[0]) + inArguments[1]))
-		val vOperands = lowerOperands(inArguments)
+		// The receiver is a String, also where its type is a type parameter bounded by String (`value class X<T : String>`,
+		// whose instance holds an Any): so is the other side of `compareTo`.
+		val vOperands = lowerOperands(inArguments).toMutableList()
+		vOperands[0] = coerce(vOperands[0], KStringType)
+		if (inName == "compareTo" && vOperands.size == 2) vOperands[1] = coerce(vOperands[1], KStringType)
 		return when {
 			inName == "<get-length>" -> KIntrinsic("ktc2_str_length", vOperands, kIntType)
 			inName == "get" -> KIntrinsic("ktc2_str_get", vOperands, KPrimType(KPrim.CHAR))

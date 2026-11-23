@@ -47,7 +47,7 @@ No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
   was green on Linux, macOS, Windows, MSVC and AddressSanitizer on Linux.
 - **The suite**: five categories, about 125 programs and groups: `integration` (50 files), `ktc2` (143 files of
   ktc2's own tests), `stdlib` (180 files of the standard library's tests and 17 of Kotlin/Native's runtime tests),
-  `box` (1,872 of the Kotlin compiler's box tests: the coroutines' 425 and 1,447 more, `ranges` the last folder taken) and `modules` (557 files of the
+  `box` (2,576 of the Kotlin compiler's box tests: the coroutines' 425 and 2,151 more, `inlineClasses` the last folder taken) and `modules` (557 files of the
   bundled libraries' own tests). No `.pending`; the `.skip` lines each state a difference the owner accepted or has to
   decide (2.2); the `.cycles` files are tests that make cycles of their own.
 - **The libraries**: kotlinx.coroutines (with -test), kotlinx.serialization (with JSON and json-io), kotlinx-io,
@@ -78,13 +78,13 @@ once, Native throws when it is read; `MapTest.nullKeyAndValue` of the stdlib), a
 
 ### 2.3 The rest of the box tests (1 to 3 weeks, folder by folder)
 5,058 box tests outside coroutines are taken by `tools/select_box.py` (those every back end runs, without several
-files, language options or the JVM). 1,447 are in (with `ranges`, 2026-11-23); one waits in `tests/box/pending/` with its reason. To take a folder: the clone (`git clone --depth 1 --filter=blob:none
+files, language options or the JVM). 2,151 are in (with `ranges` and `inlineClasses`, 2026-11-23); one waits in `tests/box/pending/` with its reason. To take a folder: the clone (`git clone --depth 1 --filter=blob:none
 --sparse -b v2.5.0-RC https://github.com/JetBrains/kotlin build/kotlin-src`, then `git sparse-checkout set
 compiler/testData/codegen/box` in it), `python -I tools/select_box.py build/kotlin-src/compiler/testData/codegen/box/<dir>
 tests/box/<dir>`, `KTC2_TEST_CATEGORIES=box KTC2_TEST_FILTER=tests/box/<dir>`, fix (a regression test for each bug),
 the whole suite, a commit per folder or per few. A file that does not compile stops its whole group: look at the
 `error:` and `not supported yet` lines of the log first. Folders by size, the order to take them:
-- [ ] `inlineClasses` (704), `callableReference` (244), `inference` (188), `bridges` (135),
+- [ ] `callableReference` (244), `inference` (188), `bridges` (135),
   `delegatedProperty` (127), `functions` (96), `primitiveTypes` (94), `objects` (91), `properties` (90), `arrays` (76),
   `defaultArguments` (71), `regressions` (61), `diagnostics` (57), `innerNested` (50), `extensionFunctions` (49),
   `casts` (48), `versionOverloads` (40), `unsignedTypes` (40), `localClasses` (39), `funInterface` (39), `super` (38),

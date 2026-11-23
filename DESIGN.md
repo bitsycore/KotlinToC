@@ -106,6 +106,12 @@ sources + library sources + generated bindings
 | a lambda, a function reference | an object with an `invoke`; captured variables that are written live in a cell. Two references to one function that hold equal values (the bound receiver, what a local function captures) are equal and hash alike, whichever expressions made them: the closures of one function and the same kinds of values implement an interface of their own, which their `equals` (made by the importer, `referenceMember`) tests the other for, then compares their fields. A reference knows its name (`ktc2_reference_names`, written only for a program that asks one for it: `KTC2_REFERENCE_NAMES`) |
 | `CPointer<T>` and the other interop pointers | `void*`, never counted |
 
+A struct value becomes an object, its box (`<Struct>_Box`, made by `KirImporter.boxFor` and instantiated there), where
+Kotlin needs one: as `Any`, as an interface it implements, nullable, or through a dispatcher of erased types (the bridge
+of a lambda). A dispatcher that takes the struct unboxed answers an object of another class as Kotlin's bridges do
+(`contains` false, `indexOf` -1) or throws `ClassCastException`, as it does for a class. `super<I>.f()` in a value class
+is the interface's body, called on the box; any other call on a struct value is its own function, called directly.
+
 **The runtime of each program** is built with the options its `ktc2_config.h` says, written by the emitter from what the
 program has: `KTC2_THREADS` when it can start a thread (atomic counts), `KTC2_KNOTS` when a class of it is of a declared
 cycle or a ring (the checks of rings and knots, the library's own: kotlinx.coroutines), `KTC2_IDENTITY_HASH` when it can

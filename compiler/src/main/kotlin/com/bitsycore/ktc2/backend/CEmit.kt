@@ -1310,6 +1310,15 @@ class CEmitter(private val mModule: KModule) {
 						if (vFrom.type == KObjType && vTo.type == KStringType) {
 							vBefore.append("if (${vFrom.cName} && ((ktc2_Obj*)${vFrom.cName})->typeId != KTC2_TYPE_STRING) $vAbsent ")
 						}
+						// A value class the implementation takes unboxed: only its box holds one (`contains(element: Z)` of a value
+						// class that is a `Collection<Z>`, asked about any object).
+						val vToStruct = vTo.type as? KStructType
+						if (vFrom.type is KRefType && vToStruct != null && vToStruct.struct.boxFunction == null) {
+							vToStruct.struct.box?.let { vBox ->
+								mState.includes += vBox.unit
+								vBefore.append("if (!${vFrom.cName} || ((ktc2_Obj*)${vFrom.cName})->typeId != ${typeId(vBox)}) $vAbsent ")
+							}
+						}
 					}
 					// The box made for the call owns what the struct refers to, until it is released after the call.
 					val vGiven = if (vFrom.type.isCounted() && vFrom.type is KStructType && vTo.type is KRefType) retainText(vFrom.type, vFrom.cName) else vFrom.cName
@@ -1690,6 +1699,9 @@ class CEmitter(private val mModule: KModule) {
 			inField.owner?.let { mState.includes += it.unit }
 			// The one field of a C enum is the number it is.
 			if ((inTarget.type as? KStructType)?.struct?.enumEntries != null) return "((int32_t)${expr(inTarget)})"
+			// A read from a literal null sits in a branch a null test keeps from running (`(null as IC?).toString()`): C still
+			// wants a pointer of its class there.
+			if (inTarget is KNull && inTarget.type is KClassType) return "((${cType(inTarget.type)})NULL)->${inField.cName}"
 			return "${expr(inTarget)}${if (inTarget.type is KClassType) "->" else "."}${inField.cName}"
 		}
 

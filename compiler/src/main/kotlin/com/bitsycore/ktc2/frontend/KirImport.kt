@@ -1106,6 +1106,8 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 		mClassInfo[vClass] = ClassInfo(vIrClass, emptyMap(), vIrClass.symbol.typeWith())
 		mClassList += vClass
 		mUnits += vUnit
+		// Made to be built: a dispatcher's adapter boxes a value too (an erased bridge of a lambda), after the importer.
+		instantiate(vClass)
 		return vClass
 	}
 

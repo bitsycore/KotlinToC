@@ -1,0 +1,13 @@
+// WITH_STDLIB
+// WORKS_WHEN_VALUE_CLASS
+
+OPTIONAL_JVM_INLINE_ANNOTATION
+value class S<T: String>(val string: T)
+
+abstract class Base(val x: S<String>)
+
+class Test : Base {
+    constructor() : super(S("OK"))
+}
+
+fun box() = Test().x.string

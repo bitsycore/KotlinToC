@@ -1244,6 +1244,17 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   do. `forInIndices/kt43159_ArrayUpperBound` is pending: the JVM's front end refuses an array as a type parameter's
   bound (`FirUpperBoundsChecker`, an error that cannot be suppressed), which Native accepts.
   `tests/ktc2/regressions/RangeEdgesFromBoxTests.kt`.
+- 2026-11-23, `PLAN.md` 2.3: the box tests of `inlineClasses` (704). They found: a value class over a type parameter
+  bounded by `String` gave its value, an `Any` there, to the runtime's String functions without a cast (the C did not
+  compile in 17 of the 22 groups); the box class of a value class boxed only by a lambda's bridge had no type id (a
+  box is now instantiated when it is made); a `return` in a value class's secondary constructor returned nothing (it
+  gives back the value made so far); `super<I>.f()` in a value class called the class's own `f`; a dispatcher that
+  takes a value class unboxed read any object as one, where Kotlin's bridge of `contains` answers false (it checks the
+  box's class, as it does a class's); `1u .. break` gave the range a void; a field read from a literal `null` in a branch
+  a null test keeps from running was `NULL->value`, which C refuses; and a `when` made a `?:` chain (a safe call) converted
+  its results after it checked they took no statements: boxing a value class takes some, which ran before the test
+  (`w?.w?.s` read a null); `x == v` with an object on the left and a value class on the right called the value class's
+  `equals` (it is the left side's, the value boxed for it). `regressions/InlineClassEdgesFromBoxTests.kt`.
 
 
 ---------------------------------------------------------------------------
