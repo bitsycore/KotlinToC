@@ -1229,6 +1229,13 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   for rather than the bound when its value is dropped; a lambda that captures nothing made anew each time (Kotlin
   has one object); an enum's companion object made apart from its entries; an enum entry with named arguments in
   another order not made at all. The unchecked casts that remain are listed in `PLAN.md` 2.6.
+- 2026-11-23, `PLAN.md` 2.1, what that commit left: the companion object of a `@SimpleEnum` started the enum's entries
+  as objects, through a constructor a C `enum` does not have (the importer crashed on `tests/ktc2/values`; its entries
+  are constants: `regressions/SimpleEnumCompanion.kt`); `box/basics/unchecked_cast8` (an object through an unchecked
+  cast to an override that needs more of it: the JVM's bridge throws, ktc2 ends the program at the interface call)
+  is a `.skip` of the family of `PLAN.md` 2.2; `box/classes/initializerBlockDImpl` makes a cycle of its own (an inner
+  object that adds itself to a list of its outer one), a `.cycles` file: the compiler does not warn of it yet.
+  `tools/box_one.sh` finds the repository from its own place and runs without `timeout` where there is none (a Mac).
 
 
 ---------------------------------------------------------------------------

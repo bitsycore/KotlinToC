@@ -1216,8 +1216,9 @@ class KirImporter(internal val mBuiltIns: IrBuiltIns) {
 			if (vInit != null) {
 				val vStartup = KFunction("${vClass.cName}_static_init", vUnit, emptyList(), KUnitType)
 				// The companion of an enum class is made after the entries, as the JVM's class initializer makes it: whichever
-				// is touched first, the entries come first.
-				val vEnum = inClass.takeIf { it.isCompanion }?.parentAsClass?.takeIf { it.kind == org.jetbrains.kotlin.descriptors.ClassKind.ENUM_CLASS }
+				// is touched first, the entries come first. A `@SimpleEnum`'s entries are constants: nothing to make.
+				val vEnum = inClass.takeIf { it.isCompanion }?.parentAsClass
+					?.takeIf { it.kind == org.jetbrains.kotlin.descriptors.ClassKind.ENUM_CLASS && !isSimpleEnum(it) }
 				if (vEnum != null) mPending.addFirst { ensureFor(vEnum)?.let { vStartup.body.add(0, KEval(KCall(it, emptyList()))) } }
 				vStartup.body += KEval(KCall(vInit, listOf(KStaticRead(vInstance))))
 				if (vInstance.isThreadLocal) {

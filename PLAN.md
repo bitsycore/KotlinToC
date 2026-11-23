@@ -39,12 +39,12 @@ the base is fine when plain Kotlin needs it.
 No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
 
 ---------------------------------------------------------------------------
-## 1. Where it stands (2026-11-22, Windows)
+## 1. Where it stands (2026-11-23)
 ---------------------------------------------------------------------------
 
-- **Last green commit**: `a56495f6` (pushed; CI green on Linux, macOS, Windows, MSVC and AddressSanitizer on Linux).
-- **The commit after it is not green**: the first box tests beyond coroutines (section 2.1) with some twenty fixes.
-  The whole suite has 3 groups failing, listed in 2.1: fix them first.
+- **Last green commit**: the one after the first box tests beyond coroutines (2026-11-23, the Mac: the whole suite
+  passes; its CI run is to be read, `gh run list --repo bitsycore/KotlinToC`). The one before it on CI, `a56495f6`,
+  was green on Linux, macOS, Windows, MSVC and AddressSanitizer on Linux.
 - **The suite**: five categories, about 125 programs and groups: `integration` (50 files), `ktc2` (143 files of
   ktc2's own tests), `stdlib` (180 files of the standard library's tests and 17 of Kotlin/Native's runtime tests),
   `box` (1,082 of the Kotlin compiler's box tests: the coroutines' 425 and 657 more) and `modules` (557 files of the
@@ -63,22 +63,6 @@ No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
 
 The objective (2026-11-18): every test of the Kotlin standard library, of each bundled kotlinx library, of the Kotlin
 compiler's box tests that Native runs, and of ktc2's own passes in C as on Kotlin/Native.
-
-### 2.1 Make the current work green (hours) - FIRST
-The commit after `a56495f6` took the box folders `basics`, `when`, `controlStructures`, `classes`, `closures`,
-`strings`, `dataClasses`, `enum` (`docs/HISTORY.md` lists what they found and what was fixed). Its last runs:
-- [ ] `ktc2/values` (`tests/ktc2/values/`): the importer crashes (`IndexOutOfBoundsException` in `callFunction`, from
-  `BodyBuilder.buildEnumInitializer`, `BodyLowering.kt`). Cause: the new handling of an enum entry whose initializer is
-  a block (named arguments in another order, `box/enum/constructorWithReordering`). Find the entry of `tests/ktc2/values`
-  that crashes (likely a `@SimpleEnum`, or an entry with a body) and narrow the block case to the reordered arguments.
-- [ ] `box/basics/unchecked_cast8`: `AbstractMethodError` (a getter of an interface not found on a class) after an
-  unchecked cast. Newly reached, not a regression: fix, or `.skip` with the reason if it is the family of 2.2.
-- [ ] `box/classes/initializerBlockDImpl`: leaks one `World`, its `ArrayList` and an array. Newly reached: find the
-  cycle (`KTC2_CYCLES=1`), fix, or a `.cycles` file if it is the test's own (principle 1).
-- [ ] Then the whole suite, a commit, the push when the owner asks, and the CI run read (`gh run list --repo
-  bitsycore/KotlinToC`).
-Tools: `bash tools/box_one.sh "<regex of paths>" [lines]` builds and runs box tests one by one with the installed tool
-(`./gradlew installDist` first); `python tools/failures.py` after a run; the generated C under `build/boxp/<name>/out/c`.
 
 ### 2.2 Unchecked casts: a decision of the owner (then 1 day)
 ktc2 keeps numbers and the element type of an array or collection where Kotlin erases them, so a value put in through
@@ -134,7 +118,7 @@ the whole suite, a commit per folder or per few. A file that does not compile st
   check by file move into the tool.
 - [ ] **Tools** (1 day): what a user needs becomes `ktc2` commands (`ktc2 bench`, `ktc2 asan`), the suite's helpers
   one Python entry (`tools/dev.py failures | jvmdiff | native | msvc | arc-compare`); `try.sh` and `try_cmake.sh` go.
-  `tools/box_one.sh` (2.1) becomes one of them.
+  `tools/box_one.sh` (box tests one by one with the installed tool) becomes one of them.
 - [ ] **The test mode**: `--isolate` (each test in a process of its own), `--report junit.xml`, leaks named by test,
   `tools/native.sh` on the groups (one program each with Native's `-generate-test-runner`).
 
