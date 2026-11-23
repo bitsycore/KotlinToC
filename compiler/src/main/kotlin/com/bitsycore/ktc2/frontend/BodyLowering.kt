@@ -1587,6 +1587,35 @@ internal class BodyBuilder(
 		if (vIsNull !== kFalse) mBlock += KIf(vIsNull, listOf(failure("throwNullPointer", "ktc2_fail_null")), emptyList())
 	}
 
+	/**
+	 * `array as Array<Data>` where [inValue] is an array of a wider element type: each element is checked here. Kotlin
+	 * erases the element type and checks an element where it is read as a `Data`; ktc2 keeps it, and reads it as one
+	 * without a check, so an element that is not one would be read as what it is not (the owner's decision,
+	 * 2026-11-23: PLAN.md, section 7). The ClassCastException comes at the cast instead of at the read.
+	 */
+	private fun checkArrayElements(inExpression: IrTypeOperatorCall, inValue: KExpr, inTo: KType) {
+		val vFrom = (inValue.type as? KArrayType)?.element ?: return
+		val vToElement = (inTo as? KArrayType)?.element ?: return
+		if (vFrom !is KRefType || vToElement !is KRefType || vToElement == KObjType || vFrom == vToElement) return
+		val vElementType = (inExpression.typeOperand as? IrSimpleType)?.arguments?.firstOrNull()?.typeOrNull ?: return
+		// An element of a type parameter is erased in Kotlin too: nothing to check.
+		if (vElementType.classifierOrNull is org.jetbrains.kotlin.ir.symbols.IrTypeParameterSymbol) return
+		val vArray = spill(inValue)
+		val vIndex = newTemp(kIntType)
+		mBlock += KLet(vIndex, KConst(0, kIntType))
+		val vId = mNextLoopId++
+		val vBody = inBlock {
+			mBlock += KIf(not(KBinary(KBinaryOp.LT, KRead(vIndex), arrayLength(vArray), KPrim.INT, kBoolType)), listOf(KBreak(vId)), emptyList())
+			val vElement = spill(KIndexRead(vArray, KRead(vIndex), vFrom))
+			val vTest = instanceTest(inExpression, vElement, vElementType.makeNotNull())
+			if (vTest !== kTrue) {
+				mBlock += KIf(not(isNull(vElement)), listOf(KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())), emptyList())
+			}
+			mBlock += KSet(vIndex, KBinary(KBinaryOp.ADD, KRead(vIndex), KConst(1, kIntType), KPrim.INT, kIntType))
+		}
+		mBlock += KIf(not(isNull(vArray)), listOf(KLoop(vId, vBody, emptyList())), emptyList())
+	}
+
 	private fun lowerTypeOperator(inExpression: IrTypeOperatorCall): KExpr = when (inExpression.operator) {
 		IrTypeOperator.IMPLICIT_COERCION_TO_UNIT -> {
 			lowerDropped(inExpression.argument)
@@ -1655,6 +1684,7 @@ internal class BodyBuilder(
 				if (vTest !== kTrue) {
 					mBlock += KIf(not(vTest), listOf(failure("throwClassCast", "ktc2_fail_cast")), emptyList())
 				}
+				checkArrayElements(inExpression, vValue, vTo)
 				coerce(vValue, vTo)
 			}
 		}

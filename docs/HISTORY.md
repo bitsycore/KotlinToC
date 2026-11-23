@@ -1229,6 +1229,9 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   for rather than the bound when its value is dropped; a lambda that captures nothing made anew each time (Kotlin
   has one object); an enum's companion object made apart from its entries; an enum entry with named arguments in
   another order not made at all. The unchecked casts that remain are listed in `PLAN.md` 2.6.
+- 2026-11-23, `PLAN.md` 2.2, the owner's option (c): an array cast to an array of a narrower element type has its
+  elements checked at the cast (`box/basics/unchecked_cast5`, `6`, `6x` pass: a String was read as a `Data`). The other
+  unchecked casts are accepted differences (`PLAN.md`, section 7).
 - 2026-11-23, `PLAN.md` 2.1, what that commit left: the companion object of a `@SimpleEnum` started the enum's entries
   as objects, through a constructor a C `enum` does not have (the importer crashed on `tests/ktc2/values`; its entries
   are constants: `regressions/SimpleEnumCompanion.kt`); `box/basics/unchecked_cast8` (an object through an unchecked

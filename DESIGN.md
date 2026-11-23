@@ -500,7 +500,12 @@ allocations, retains and releases, written to `build/integration/arc-stats.txt`)
   when the value is used, and only what `T`'s bound says when it is dropped (`this as R` as a
   statement), as Kotlin checks where `T` is erased; `T : Any` refuses null. The result of a
   function that returns `T`, made once for objects, is checked where its caller expects a narrower
-  type, as Kotlin checks an unchecked cast where it is used.
+  type, as Kotlin checks an unchecked cast where it is used. An array cast to an array of a narrower
+  element type (`values as Array<Data>`) has each element checked at the cast (`checkArrayElements`):
+  ktc2 keeps the element type and reads an element without a check, where Kotlin/Native erases it and
+  checks at the read; the ClassCastException comes earlier, never a String read as a `Data` (the owner,
+  2026-11-23; `tests/integration/native/ArrayCastElements`, whose `.expected` is Native's: the JVM's
+  arrays know their type and refuse every such cast).
 - **A lambda that captures nothing** is one object, a static of its closure class, as on
   Kotlin/Native and the JVM: the same each time it is met, with nothing allocated.
 - **Captured values reached through nesting**: a local class captures the local functions it

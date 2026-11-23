@@ -45,11 +45,10 @@ No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
 - **Last green commit**: `19829a13` (the box tests of `inlineClasses`, 2026-11-23): CI green on Linux, macOS,
   Windows, MSVC and AddressSanitizer on Linux (run 45210281224, `gh run list --repo bitsycore/KotlinToC`); the whole
   suite passes on the Mac too.
-- **The suite**: five categories, about 125 programs and groups: `integration` (50 files), `ktc2` (146 files of
+- **The suite**: five categories, about 125 programs and groups: `integration` (51 files), `ktc2` (146 files of
   ktc2's own tests), `stdlib` (180 files of the standard library's tests and 17 of Kotlin/Native's runtime tests),
   `box` (2,576 of the Kotlin compiler's box tests: the coroutines' 425 and 2,151 more, `inlineClasses` the last folder taken) and `modules` (557 files of the
-  bundled libraries' own tests). One `.pending` (a box test of `ranges`, 2.3); the `.skip` lines each state a difference the owner accepted or has to
-  decide (2.2); the `.cycles` files are tests that make cycles of their own.
+  bundled libraries' own tests). One `.pending` (a box test of `ranges`, 2.3); the `.skip` lines each state a difference the owner accepted (section 7); the `.cycles` files are tests that make cycles of their own.
 - **The libraries**: kotlinx.coroutines (with -test), kotlinx.serialization (with JSON and json-io), kotlinx-io,
   kotlinx-datetime, kotlinx.collections.immutable and atomicfu are bundled as they are and pass their own tests in C
   and on the JVM, with no leak.
@@ -63,18 +62,6 @@ No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
 
 The objective (2026-11-18): every test of the Kotlin standard library, of each bundled kotlinx library, of the Kotlin
 compiler's box tests that Native runs, and of ktc2's own passes in C as on Kotlin/Native.
-
-### 2.2 Unchecked casts: a decision of the owner (then 1 day)
-ktc2 keeps numbers and the element type of an array or collection where Kotlin erases them, so a value put in through
-an unchecked cast is caught where it enters (`box/basics/kt7972`: a String added to an `ArrayList<Int>` throws at
-once, Native throws when it is read; `MapTest.nullKeyAndValue` of the stdlib), at an unboxing that ends the program
-(`box/basics/unchecked_cast7` and `11`: `ktc2_fail_cast`, not catchable; `unchecked_cast8` with it), or not at all (`box/basics/unchecked_cast5`,
-`6`, `6x`: an element of a String array cast to `Array<Data>` read as a `Data`, which is unsafe memory). All are
-`.skip` lines naming this. Options:
-- (a) leave them skipped as accepted differences;
-- (b) check each element when an array is cast to an array of a narrower element type, and make a failed unboxing a
-  catchable exception (a test after each unboxing of an object of unknown kind: some cost everywhere);
-- (c) (b) for arrays only. Recommended: (c), it removes the one unsafe case at the cost of the casts that need it.
 
 ### 2.3 The rest of the box tests (1 to 3 weeks, folder by folder)
 5,058 box tests outside coroutines are taken by `tools/select_box.py` (those every back end runs, without several
@@ -197,8 +184,13 @@ Go and Swift are the references. By expected gain, each measured first (`tools/b
   same pool up to 64 (2026-11-18).
 - kotlinx.coroutines first, as it is, at its own cost; `ktc2.coroutines` after it (2026-11-21).
 - No general cycle collector; the four rules of "Who answers a cycle" (2026-11-21); no known leak (2026-11-22).
-- Accepted difference: `MapTest.nullKeyAndValue` (a null put through an unchecked cast into a map of numbers); the
-  family of unchecked casts is open (2.2).
+- Unchecked casts (2026-11-23, option (c)): ktc2 keeps numbers and element types where Kotlin erases them. An array
+  cast to an array of a narrower element type has its elements checked at the cast (where Native throws at the read
+  of the element), which removed the one unsafe case. The rest are accepted differences, each a `.skip` line naming
+  this: `MapTest.nullKeyAndValue` and `box/basics/kt7972` (a value put in through an unchecked cast is refused where
+  it enters, Native refuses it where it is read), `box/basics/unchecked_cast7` and `11` (an unboxing of an object that
+  is not the number ends the program, `ktc2_fail_cast`, not catchable), `box/basics/unchecked_cast8` (an object passed
+  through an unchecked cast to an override that needs more of it: an `AbstractMethodError` that ends the program).
 - Not differences (either platform is right): two entries a `HashMap` hands out for one key are equal and not the
   same object; the last digit of the C library's mathematics.
 
