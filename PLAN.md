@@ -45,10 +45,10 @@ No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
 - **Last green commit**: `19829a13` (the box tests of `inlineClasses`, 2026-11-23): CI green on Linux, macOS,
   Windows, MSVC and AddressSanitizer on Linux (run 45210281224, `gh run list --repo bitsycore/KotlinToC`); the whole
   suite passes on the Mac too.
-- **The suite**: five categories, about 125 programs and groups: `integration` (50 files), `ktc2` (143 files of
+- **The suite**: five categories, about 125 programs and groups: `integration` (50 files), `ktc2` (146 files of
   ktc2's own tests), `stdlib` (180 files of the standard library's tests and 17 of Kotlin/Native's runtime tests),
   `box` (2,576 of the Kotlin compiler's box tests: the coroutines' 425 and 2,151 more, `inlineClasses` the last folder taken) and `modules` (557 files of the
-  bundled libraries' own tests). No `.pending`; the `.skip` lines each state a difference the owner accepted or has to
+  bundled libraries' own tests). One `.pending` (a box test of `ranges`, 2.3); the `.skip` lines each state a difference the owner accepted or has to
   decide (2.2); the `.cycles` files are tests that make cycles of their own.
 - **The libraries**: kotlinx.coroutines (with -test), kotlinx.serialization (with JSON and json-io), kotlinx-io,
   kotlinx-datetime, kotlinx.collections.immutable and atomicfu are bundled as they are and pass their own tests in C
@@ -68,7 +68,7 @@ compiler's box tests that Native runs, and of ktc2's own passes in C as on Kotli
 ktc2 keeps numbers and the element type of an array or collection where Kotlin erases them, so a value put in through
 an unchecked cast is caught where it enters (`box/basics/kt7972`: a String added to an `ArrayList<Int>` throws at
 once, Native throws when it is read; `MapTest.nullKeyAndValue` of the stdlib), at an unboxing that ends the program
-(`box/basics/unchecked_cast7` and `11`: `ktc2_fail_cast`, not catchable), or not at all (`box/basics/unchecked_cast5`,
+(`box/basics/unchecked_cast7` and `11`: `ktc2_fail_cast`, not catchable; `unchecked_cast8` with it), or not at all (`box/basics/unchecked_cast5`,
 `6`, `6x`: an element of a String array cast to `Array<Data>` read as a `Data`, which is unsafe memory). All are
 `.skip` lines naming this. Options:
 - (a) leave them skipped as accepted differences;
@@ -84,6 +84,9 @@ compiler/testData/codegen/box` in it), `python -I tools/select_box.py build/kotl
 tests/box/<dir>`, `KTC2_TEST_CATEGORIES=box KTC2_TEST_FILTER=tests/box/<dir>`, fix (a regression test for each bug),
 the whole suite, a commit per folder or per few. A file that does not compile stops its whole group: look at the
 `error:` and `not supported yet` lines of the log first. Folders by size, the order to take them:
+- [ ] `tests/box/pending/ranges/forInIndices/kt43159_ArrayUpperBound`: the JVM's front end refuses an array as the
+  upper bound of a type parameter (`FirUpperBoundsChecker`, a JVM declaration checker); Native accepts it. Take that
+  one checker out of ktc2's front end, as its inline checks were (`Ktc2InlineChecks`), and move the test back.
 - [ ] `callableReference` (244), `inference` (188), `bridges` (135),
   `delegatedProperty` (127), `functions` (96), `primitiveTypes` (94), `objects` (91), `properties` (90), `arrays` (76),
   `defaultArguments` (71), `regressions` (61), `diagnostics` (57), `innerNested` (50), `extensionFunctions` (49),
@@ -93,12 +96,12 @@ the whole suite, a commit per folder or per few. A file that does not compile st
   and the some 60 smaller folders (`python -I tools/select_box.py` on the whole `box` directory lists them).
 
 ### 2.4 ktc2's own tests as assertions (2 days)
-- [ ] `tests/ktc2/` (143 files): more of what must hold everywhere as assertions, where a test now only prints and is
+- [ ] `tests/ktc2/` (146 files): more of what must hold everywhere as assertions, where a test now only prints and is
   compared with the JVM.
 
 ### 2.5 Every system (1 to 2 days, mostly waiting)
-- [ ] The whole suite once on the Mac and on Linux (WSL), AddressSanitizer on the coroutines' tests
-  (`tools/asan_all.sh kotlinx-coroutines`).
+- [ ] AddressSanitizer on the coroutines' tests under load (`tools/asan_all.sh kotlinx-coroutines`, on Linux or
+  WSL): threads and counts under contention. The whole suite passes on Windows, the Mac and the CI's three systems.
 - [ ] Paths and arguments on Windows as wide characters (now bytes, right for ASCII only).
 
 ---------------------------------------------------------------------------
