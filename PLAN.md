@@ -42,9 +42,9 @@ No known leak (2026-11-22): a library's cycle is never left as an accepted leak.
 ## 1. Where it stands (2026-11-23)
 ---------------------------------------------------------------------------
 
-- **Last green commit**: the one after the first box tests beyond coroutines (2026-11-23, the Mac: the whole suite
-  passes; its CI run is to be read, `gh run list --repo bitsycore/KotlinToC`). The one before it on CI, `a56495f6`,
-  was green on Linux, macOS, Windows, MSVC and AddressSanitizer on Linux.
+- **Last green commit**: `19829a13` (the box tests of `inlineClasses`, 2026-11-23): CI green on Linux, macOS,
+  Windows, MSVC and AddressSanitizer on Linux (run 45210281224, `gh run list --repo bitsycore/KotlinToC`); the whole
+  suite passes on the Mac too.
 - **The suite**: five categories, about 125 programs and groups: `integration` (50 files), `ktc2` (143 files of
   ktc2's own tests), `stdlib` (180 files of the standard library's tests and 17 of Kotlin/Native's runtime tests),
   `box` (2,576 of the Kotlin compiler's box tests: the coroutines' 425 and 2,151 more, `inlineClasses` the last folder taken) and `modules` (557 files of the
