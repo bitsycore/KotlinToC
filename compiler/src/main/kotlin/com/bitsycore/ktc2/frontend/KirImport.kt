@@ -44,6 +44,30 @@ private val kCKeywords = setOf(
 	"true", "false", "main", "NULL",
 )
 
+/**
+ * The object-like macros of the C headers a program includes (`math.h`, `stdio.h`, `stdlib.h`, `stdint.h`, `limits.h`,
+ * `float.h`, `errno.h`, `time.h`), and `math.h`'s constants that macOS and glibc define too: a local, a parameter or a
+ * field of that name would be replaced by the preprocessor (`val NAN = Double.NaN`). A function-like macro (`isnan`)
+ * only expands before a parenthesis, which a name never has.
+ */
+private val kCMacros = setOf(
+	"NAN", "INFINITY", "HUGE_VAL", "HUGE_VALF", "HUGE_VALL", "FP_NAN", "FP_INFINITE", "FP_ZERO", "FP_NORMAL", "FP_SUBNORMAL",
+	"MATH_ERRNO", "MATH_ERREXCEPT", "math_errhandling", "M_E", "M_LOG2E", "M_LOG10E", "M_LN2", "M_LN10", "M_PI", "M_PI_2",
+	"M_PI_4", "M_1_PI", "M_2_PI", "M_2_SQRTPI", "M_SQRT2", "M_SQRT1_2",
+	"EOF", "BUFSIZ", "FILENAME_MAX", "FOPEN_MAX", "L_tmpnam", "TMP_MAX", "SEEK_SET", "SEEK_CUR", "SEEK_END", "stdin",
+	"stdout", "stderr", "EXIT_SUCCESS", "EXIT_FAILURE", "RAND_MAX", "MB_CUR_MAX", "MB_LEN_MAX", "errno", "EDOM",
+	"ERANGE", "EILSEQ", "CLOCKS_PER_SEC", "TIME_UTC",
+	"CHAR_BIT", "CHAR_MIN", "CHAR_MAX", "SCHAR_MIN", "SCHAR_MAX", "UCHAR_MAX", "SHRT_MIN", "SHRT_MAX", "USHRT_MAX",
+	"INT_MIN", "INT_MAX", "UINT_MAX", "LONG_MIN", "LONG_MAX", "ULONG_MAX", "LLONG_MIN", "LLONG_MAX", "ULLONG_MAX",
+	"FLT_MAX", "FLT_MIN", "FLT_EPSILON", "FLT_DIG", "FLT_RADIX", "FLT_MANT_DIG", "DBL_MAX", "DBL_MIN", "DBL_EPSILON",
+	"DBL_DIG", "DBL_MANT_DIG", "LDBL_MAX", "LDBL_MIN", "LDBL_EPSILON", "DECIMAL_DIG",
+	"INT8_MIN", "INT8_MAX", "INT16_MIN", "INT16_MAX", "INT32_MIN", "INT32_MAX", "INT64_MIN", "INT64_MAX", "UINT8_MAX",
+	"UINT16_MAX", "UINT32_MAX", "UINT64_MAX", "INTPTR_MIN", "INTPTR_MAX", "UINTPTR_MAX", "INTMAX_MIN", "INTMAX_MAX",
+	"UINTMAX_MAX", "PTRDIFF_MIN", "PTRDIFF_MAX", "SIZE_MAX", "SIG_ATOMIC_MIN", "SIG_ATOMIC_MAX", "WCHAR_MIN",
+	"WCHAR_MAX", "WINT_MIN", "WINT_MAX", "bool", "alignas", "alignof", "noreturn", "static_assert", "thread_local",
+	"complex", "imaginary", "I",
+)
+
 /** Replaces every character of [inName] that C identifiers do not allow. */
 internal fun cSuffix(inName: String): String =
 	inName.map { if (it.isLetterOrDigit() && it.code < 128 || it == '_') it else '_' }.joinToString("")
@@ -51,7 +75,7 @@ internal fun cSuffix(inName: String): String =
 /** Makes [inName] a valid, non-reserved C identifier. */
 internal fun cIdentifier(inName: String): String {
 	val vClean = cSuffix(inName)
-	return if (vClean.isEmpty() || vClean[0].isDigit() || vClean in kCKeywords) "_$vClean" else vClean
+	return if (vClean.isEmpty() || vClean[0].isDigit() || vClean in kCKeywords || vClean in kCMacros) "_$vClean" else vClean
 }
 
 /**

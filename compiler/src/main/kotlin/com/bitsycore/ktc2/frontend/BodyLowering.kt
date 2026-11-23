@@ -2201,7 +2201,9 @@ internal class BodyBuilder(
 			val vStepValues = listOfNotNull(vStepArgument).map { lowerPure(it) }
 			(listOf<KExpr>(KConst(0, kIntType), spill(arrayLength(vArray))) + vStepValues).toMutableList()
 		} else {
-			lowerOperands(vRange.arguments.map { it!! } + listOfNotNull(vStepArgument))
+			// A bound that jumps (`continue`, `return`) has no value: what follows it never runs, and takes a zero.
+			val vOperands = vRange.arguments.map { it!! } + listOfNotNull(vStepArgument)
+			lowerOperands(vOperands).mapIndexed { vIndex, vValue -> if (vOperands[vIndex].type.isNothing()) KZero(vElement) else vValue }.toMutableList()
 		}
 		val vCounter = KLocal(freshName("i"), vElement)
 		mBlock += KLet(vCounter, convert(vBounds[0], vPrim))
@@ -2209,7 +2211,10 @@ internal class BodyBuilder(
 		val vId = newLoopId(vLoop)
 		val vStepValue = if (vStepArgument != null) spill(convert(vBounds[2], vPrim)) else one(vPrim)
 		if (vStepArgument != null) {
-			mBlock += KEval(KIntrinsic("ktc2_check_step", listOf(convert(vStepValue, KPrim.LONG)), KUnitType, isPure = false))
+			// A call that throws Kotlin's exception, which `assertFailsWith` and a `catch` see.
+			val vCheck = mImporter.internalFunction("checkStep")?.let { mImporter.functionFor(it) }
+			mBlock += KEval(if (vCheck != null) KCall(vCheck, listOf(convert(vStepValue, KPrim.LONG)))
+				else KIntrinsic("ktc2_check_step", listOf(convert(vStepValue, KPrim.LONG)), KUnitType, isPure = false))
 		}
 		val vStep = KSet(vCounter, KBinary(if (vDown) KBinaryOp.SUB else KBinaryOp.ADD, KRead(vCounter), vStepValue, vPrim, vElement))
 		fun compare(inOp: KBinaryOp, inRight: KExpr = vEnd) = KBinary(inOp, KRead(vCounter), inRight, vPrim, kBoolType)
@@ -3587,13 +3592,18 @@ internal class BodyBuilder(
 		}
 		// `a..b` and `a..<b` on integers of any width: the range of `Int`, `Long`, `UInt` or `ULong` both fit in.
 		if ((vName == "rangeTo" || vName == "rangeUntil") && vIrArguments.size == 2 && kPrimByClass[vParent] != null) {
-			val vKinds = vIrArguments.map { (kType(it.type) as? KPrimType)?.prim }
+			// A side of a type parameter bounded by a number (`T : Long`) is that number: the receiver by the class, the other
+			// by the parameter's type.
+			val vKinds = vIrArguments.mapIndexed { vIndex, vArgument ->
+				((kType(vArgument.type) as? KPrimType) ?: (if (vIndex == 0) kPrimByClass[vParent]?.let { KPrimType(it) }
+					else kType(vCallee.parameters[vIndex].type) as? KPrimType))?.prim
+			}
 			val vWork = if (vKinds.any { it == null || it.isFloating || it == KPrim.BOOLEAN || it == KPrim.CHAR }) null else promote(vKinds[0]!!, vKinds[1]!!)
 			val vClassName = kPrimByClass.entries.firstOrNull { it.value == vWork }?.key?.removePrefix("kotlin.")
 			val vTarget = vClassName?.let { mImporter.internalFunction("kotlin_${it}_$vName") }?.let { mImporter.functionFor(it) }
 			if (vWork != null && vTarget != null) {
 				val vSides = lowerOperands(vIrArguments)
-				return adapt(KCall(vTarget, vSides.map { convert(it, vWork) }), inCall)
+				return adapt(KCall(vTarget, vSides.mapIndexed { vIndex, vSide -> convert(coerce(vSide, KPrimType(vKinds[vIndex]!!)), vWork) }), inCall)
 			}
 		}
 

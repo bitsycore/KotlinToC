@@ -1,0 +1,1 @@
+The JVM's front end, which ktc2 runs, refuses an array as the upper bound of a type parameter (FirUpperBoundsChecker, a JVM declaration checker whose error cannot be suppressed); Kotlin/Native accepts it (IGNORE_BACKEND: JVM). Passes once that one checker is taken out of ktc2's front end, as its inline checks were (Ktc2InlineChecks).

@@ -549,6 +549,11 @@ public fun throwStringIndexOutOfBounds(index: Int, length: Int): Nothing = throw
 @Suppress("UNUSED_PARAMETER")
 public fun throwSubstringRange(begin: Int, end: Int, length: Int): Nothing = throw ArrayIndexOutOfBoundsException()
 
+/** The step of a loop over a progression (`for (i in a..b step s)`): Kotlin's check, which a program may catch. */
+public fun checkStep(step: Long) {
+	if (step <= 0L) throw IllegalArgumentException("Step must be positive, was: $step.")
+}
+
 /** An integer division or remainder by zero. */
 public fun throwDivideByZero(): Nothing = throw ArithmeticException()
 

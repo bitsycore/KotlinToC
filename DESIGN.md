@@ -933,6 +933,10 @@ kotlinx.serialization), a function named as a class (`fun DayOfWeek(isoDayNumber
 `enum class DayOfWeek` in kotlinx-datetime). The emitter renames the property (`_value`) or the
 function (`_fun`) before it writes anything (`renameClashingGlobals`).
 
+A name of a local, a parameter or a field that C reserves gets a `_` in front (`cIdentifier`): C's keywords, and the
+object-like macros of the headers a program includes (`NAN`, `INFINITY`, `EOF`, `INT_MAX`, `stdin`, `errno`, `M_PI`...),
+which the preprocessor would replace (`kCMacros`).
+
 | | State |
 |---|---|
 | gcc on Windows (mingw) | the whole suite, on every change |

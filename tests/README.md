@@ -175,8 +175,9 @@ They found, all fixed:
 - a parameter of type `Unit` (`(T) -> Unit` with `T = Unit`, `fun f(u: Unit)`), and `==`
   between a `String` and an `Any?` (not about coroutines either).
 
-`box/pending/` held the 41 that did not pass at first; every one passes since 2026-11-21 (`docs/HISTORY.md`), and
-the folder is gone until a new box test needs it. Six of them have `.cycles`: they keep their own continuation in a
+`box/pending/` held the 41 that did not pass at first; every one passes since 2026-11-21 (`docs/HISTORY.md`). It
+holds one now, `ranges/forInIndices/kt43159_ArrayUpperBound.kt`: its `.pending` says why (the JVM's front end refuses
+an array as a type parameter's bound, which Native accepts). Six of the 41 have `.cycles`: they keep their own continuation in a
 variable or a list their coroutine holds (the three `*WithHandleResult`, `boxReturnValueOfSuspendLambda` twice,
 `intrinsicSemantics/resultExceptionOrNullInLambda`). `featureIntersection/suspendFunctionAsSupertypeIsCheckWithArity`
 fails on the JVM by design (`.native`).

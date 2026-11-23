@@ -1236,6 +1236,14 @@ A line for each item of `PLAN.md` that is done; how it works is in `DESIGN.md`.
   is a `.skip` of the family of `PLAN.md` 2.2; `box/classes/initializerBlockDImpl` makes a cycle of its own (an inner
   object that adds itself to a list of its outer one), a `.cycles` file: the compiler does not warn of it yet.
   `tools/box_one.sh` finds the repository from its own place and runs without `timeout` where there is none (a Mac).
+- 2026-11-23, `PLAN.md` 2.3: the box tests of `ranges` (790; 791 taken, one pending). They found: the step of a loop
+  that is not positive ended the program instead of throwing Kotlin's `IllegalArgumentException`, which a program
+  catches (a call to `ktc2.internal.checkStep` now); a bound that jumps (`for (j in continue downTo x)`) left a value of
+  type void in the loop; `a..b` on a type parameter bounded by an integer was not supported; a name of a C macro
+  (`val NAN = Double.NaN`, a field `EOF`) was a C name the preprocessor replaced: such names get a `_`, as C's keywords
+  do. `forInIndices/kt43159_ArrayUpperBound` is pending: the JVM's front end refuses an array as a type parameter's
+  bound (`FirUpperBoundsChecker`, an error that cannot be suppressed), which Native accepts.
+  `tests/ktc2/regressions/RangeEdgesFromBoxTests.kt`.
 
 
 ---------------------------------------------------------------------------
